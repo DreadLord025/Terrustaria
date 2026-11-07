@@ -93,22 +93,10 @@ pub(crate) fn place_liquids(
             }
         }
     }
-    // Ocean water at both shores. Interim — the faithful `Beaches` pass
-    // (M5-OCEAN phase 2) carves the ocean prism and owns the water; this
-    // flood only keeps the pre-shelf edge wet until then.
-    for shore_x in (0..left_beach_end).chain(right_beach_start..width) {
-        if shore_x < 0 || shore_x >= width {
-            continue;
-        }
-        let top = surface[shore_x as usize];
-        for y in sea_level..top {
-            let i = world.index(shore_x, y);
-            if !world.tiles[i].active() {
-                world.tiles[i].liquid = 255;
-                world.tiles[i].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY);
-            }
-        }
-    }
+    // Ocean water at both shores — retired in M5-OCEAN phase 2: the
+    // faithful `Beaches` pass (`WorldGen.cs:14888`) carves the ocean prism
+    // and owns the water; the compact flood would double-place it inside
+    // the carved columns.
     // Lava puddles on cave floors.
     for _ in 0..700 {
         let x = rng.range(10, width - 10);

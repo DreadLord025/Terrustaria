@@ -14,6 +14,7 @@ use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
 
 /// Everything the surface-height pass computes that the later passes consume.
+#[derive(Clone)]
 pub(crate) struct SurfaceMap {
     /// Per-column surface row; the lake pass lowers its columns to the carved floor.
     pub(crate) heights: Vec<i32>,
@@ -36,6 +37,7 @@ pub(crate) struct SurfaceMap {
 
 /// Layer anchors derived from the finished surface: `world_surface`/`rock_layer`
 /// land on the world, the rest scopes the cave, ore and lava passes.
+#[derive(Clone, Copy)]
 pub(crate) struct Layers {
     pub(crate) avg_surface: f64,
     pub(crate) world_surface: f64,
@@ -208,7 +210,7 @@ pub(crate) fn fill_terrain(
     // --- terrain fill -------------------------------------------------------
     let surface = &map.heights;
     let left_beach_end = map.left_beach_end;
-    let right_beach_start = map.right_beach_start;
+    let _right_beach_start = map.right_beach_start;
     let desert_enabled = map.desert_enabled;
     let desert_start = map.desert_start;
     let desert_end = map.desert_end;
@@ -251,9 +253,11 @@ pub(crate) fn fill_terrain(
             let desert = in_desert(x);
             if y >= top {
                 if y == top {
-                    tile.kind = if x < left_beach_end + 24 || x >= right_beach_start - 24 {
-                        TILE_SAND
-                    } else if x >= snow_start {
+                    // The sand-top rule inside the beach bands retired with
+                    // M5-OCEAN phase 2: the faithful `Ocean Sand` pass
+                    // (`WorldGen.cs:11580`) sandifies the tops itself (and
+                    // the `Beaches` carve re-shapes the whole prism).
+                    tile.kind = if x >= snow_start {
                         TILE_SNOW
                     } else if desert {
                         TILE_SAND

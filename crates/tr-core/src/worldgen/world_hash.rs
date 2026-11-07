@@ -114,8 +114,15 @@ mod tests {
     /// anchors (the living-tree anchors, the jungle/dungeon spans, the
     /// edge flood and the sand-top rule all ride the new values — every
     /// world on every seed changes by design).
-    const SEED42_512: u32 = 2847927285;
-    const DEFAULT_WORLD: u32 = 847770346;
+    /// Re-pinned for M5-OCEAN phase 2: the ocean sand/water family lands —
+    /// the faithful `Ocean Sand` (`WorldGen.cs:11580`) after the spans
+    /// planner, `Beaches` (`:14888`) and `Gravitating Sand` (`:15138`)
+    /// between `dungeon` and `ocean caves` (the carve itself: air/water/
+    /// sand prism, `TuneOceanDepth`'s seafloor curve, the wall wipe, the
+    /// shell anchors), the compact edge flood and fill sand-top rule
+    /// retire — every world on every seed changes by design.
+    const SEED42_512: u32 = 3514183229;
+    const DEFAULT_WORLD: u32 = 3280797184;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
