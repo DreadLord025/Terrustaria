@@ -137,6 +137,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 361 && held.count > 0 && use_goblin_battle_standard(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Frost Legion arm (`Player.cs:43941-43956`):
+        // the Snow Globe 602 — `CanStartInvasion(2, ignoreDelay: true)`, the
+        // roar, then `invasionDelay = 0; StartInvasion(2)` while no invasion
+        // is active.
+        if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' pre-hardmode summons
         // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
@@ -4386,9 +4393,49 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    crate::world_sim::npcs::start_invasion(&mut app.world, 1);
+    crate::world_sim::npcs::start_invasion(&mut app.world, 1, 1);
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// `ItemCheck_UseBossSpawners`' Frost Legion arm (`Player.cs:43941-43956`):
+/// the Snow Globe (602) — the `CanStartInvasion(2, ignoreDelay: true)` gate
+/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
+/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(2)` —
+/// the march state rides the World (the morning-roll resolve's shape).
+pub fn use_snow_globe(app: &mut App) -> bool {
+    if app.world.invasion_type != 0 {
+        return false;
+    }
+    let qualified = app
+        .player
+        .as_ref()
+        .map(|p| p.max_hp >= 200)
+        .unwrap_or(false);
+    if !qualified {
+        return false;
+    }
+    app.audio.play("Roar_0");
+    app.world.invasion_delay = 0;
+    app.world.invasion_goblins = true;
+    app.world.invasion_type = 2;
+    app.world.invasion_warn = 0;
+    app.world.invasion_size = 80 + 40;
+    app.world.invasion_size_start = app.world.invasion_size;
+    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
@@ -4643,10 +4690,10 @@ mod loot_summon_tests {
         let mut w = tr_core::World::new("t".into(), 64, 64);
         assert!(!can_start_invasion(&w, 100), "the base life waits");
         assert!(can_start_invasion(&w, 200));
-        start_invasion(&mut w, 1);
+        start_invasion(&mut w, 1, 1);
         assert!(w.invasion_goblins);
         assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
-        start_invasion(&mut w, 1);
+        start_invasion(&mut w, 1, 1);
         assert_eq!(w.invasion_size, 120, "the active invasion blocks");
     }
 

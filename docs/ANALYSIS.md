@@ -2525,6 +2525,34 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Frost Legion (M4-EVENT-2)
+
+The invasion framework's second slice: `StartInvasion(2)` generalizes
+the start fn over the invasion type (the goblin slice passes 1), the
+warning fn carries the type-2 literals (`Main.InvasionWarning`'s
+`Lang.misc[4..7]` — the en strings stand in), the defeat ride sets the
+new `World.downed_frost` (`SetEventFlagCleared(ref downedFrost, 1)`),
+and the spawn table gets the type-2 arm: the SnowmanGangsta 1/7, the
+SnowBalla 1/3, else the MysterySnowman (`NPC.cs:1450-1459`).
+
+The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
+(`Player.cs:43941-43956`) — the Snow Globe 602 with the
+`CanStartInvasion(2, ignoreDelay: true)` gate (no active invasion, a
+200+ max-hp player; the delay folds out), the roar and
+`invasionDelay = 0; StartInvasion(2)` — the march state rides the World
+(the morning-roll resolve's shape; the size 80+40, the far-side roll).
+
+The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145)
+carry their verbatim `SetDefaults` rows (26×40, 200/240/220 HP, dmg
+50/65/55, def 20/26/22, kb 0.6, value 400) and ride aiStyle 38's
+movement core through the walker (the per-type speeds 3/3.5/4 fold into
+the walker params; the Gangsta's bottle throw, the Balla's kick and the
+Mystery's jump arms land with the projectile work).
+
+Deviations: the throw/kick/jump sub-arms are the projectile-work
+follow-ups; the Mystery's jump-dodge `ai[1] >= 3` state rides the
+walker's generic hop.
+
 ## The death-screen coin loss (M4-REVENGE-1)
 
 The drop half rode the earlier death.rs (`drop_gems`/`drop_coins`/

@@ -106,6 +106,8 @@ pub struct World {
     pub invasion_size: i32,
     /// `World.downedGoblins` — the Goblin Tinkerer's gate.
     pub downed_goblins: bool,
+    /// `NPC.downedFrost` (`NPC.cs:6339`): the defeated Frost Legion.
+    pub downed_frost: bool,
     /// `NPC.savedGoblin` — the rescue flag (`AI_007_TownEntities_
     /// UpdateSavedStates` case 107, `NPC.cs:52944-52946`).
     pub saved_goblin: bool,
@@ -217,6 +219,7 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             downed_goblins: false,
+            downed_frost: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
