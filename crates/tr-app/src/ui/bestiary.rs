@@ -359,98 +359,95 @@ fn portrait_data(
     entry: &crate::bestiary::BestiaryEntryDef,
     lookups: &Lookups,
 ) -> (usize, f32, f32, f32, [f32; 4]) {
+    // The sheet indexes ride `bestiary_npc_sheets`' order (`assets.rs`) —
+    // each kind maps to its `NPC_<net_id>` sheet's position. The parallel
+    // merges had let the per-agent indexes collide (the frost trio took
+    // 48-50, the boss/leech/goblin/golem/pirate rows drifted); the whole
+    // table is re-derived from the vec once.
     let sheet_i = match entry.kind {
-        NpcKind::Slime => 0,
-        NpcKind::DemonEye => 1,
-        NpcKind::WanderingEye => 2,
-        NpcKind::Zombie => 3,
-        NpcKind::KingSlime => 4,
-        NpcKind::EyeOfCthulhu => 41,
-        NpcKind::ServantOfCthulhu => 42,
-        NpcKind::Guide => 5,
-        NpcKind::Skeleton => 6,
-        NpcKind::UndeadMiner => 7,
-        NpcKind::CaveBat => 8,
-        NpcKind::JungleBat => 9,
-        NpcKind::Hellbat => 10,
-        NpcKind::VoodooDemon => 11,
-        NpcKind::EaterOfSouls => 12,
-        NpcKind::Hornet => 13,
-        NpcKind::MeteorHead => 14,
-        NpcKind::GoblinSorcerer => 15,
-        NpcKind::Tim => 16,
-        NpcKind::DarkCaster => 17,
-        NpcKind::FireImp => 18,
-        NpcKind::ChaosBall => 19,
-        NpcKind::BurningSphere => 20,
-        NpcKind::WaterSphere => 21,
-        NpcKind::Goldfish => 22,
-        NpcKind::Piranha => 23,
-        NpcKind::Shark => 24,
-        NpcKind::DevourerHead => 25,
-        NpcKind::DevourerBody => 27,
-        NpcKind::DevourerTail => 28,
-        NpcKind::GiantWormHead => 29,
-        NpcKind::GiantWormBody => 30,
-        NpcKind::GiantWormTail => 31,
-        NpcKind::EaterOfWorldsHead => 32,
-        NpcKind::EaterOfWorldsBody => 33,
-        NpcKind::EaterOfWorldsTail => 34,
-        NpcKind::Merchant => 26,
-        NpcKind::Dryad => 35,
-        NpcKind::Nurse => 36,
-        NpcKind::ArmsDealer => 37,
-        NpcKind::Demolitionist => 38,
-        NpcKind::Painter => 39,
-        NpcKind::WitchDoctor => 40,
-        NpcKind::Clothier => 41,
-        NpcKind::EyeOfCthulhu => 43,
-        NpcKind::QueenBee => 44,
-        NpcKind::SkeletronHead => 45,
-        NpcKind::WallOfFlesh => 47,
-        NpcKind::Hungry => 48,
-        NpcKind::LeechHead => 49,
-        NpcKind::LeechBody => 50,
-        NpcKind::EyeOfCthulhu => 42,
-        NpcKind::QueenBee => 43,
-        NpcKind::SkeletronHead => 44,
-        NpcKind::WallOfFlesh => 46,
-        NpcKind::TheDestroyer => 50,
-        NpcKind::SkeletronPrime => 51,
-        NpcKind::Retinazer => 52,
-        NpcKind::Spazmatism => 53,
-        NpcKind::Plantera => 54,
-        NpcKind::BrainOfCthulhu => 55,
-        NpcKind::Creeper => 56,
-        NpcKind::GoblinThief => 57,
-        NpcKind::GoblinWarrior => 58,
-        NpcKind::GoblinArcher => 59,
-        NpcKind::GoblinPeon => 60,
-        NpcKind::GoblinSummoner => 61,
-        NpcKind::GoblinPeon => 57,
-        NpcKind::GoblinThief => 58,
-        NpcKind::GoblinWarrior => 59,
-        NpcKind::GoblinArcher => 60,
-        NpcKind::BoundGoblin => 61,
-        NpcKind::GoblinTinkerer => 62,
-        NpcKind::Golem => 53,
-        NpcKind::GolemHead => 54,
-        NpcKind::GolemFistLeft => 55,
-        NpcKind::GolemFistRight => 56,
-        NpcKind::GolemHeadFree => 57,
-        NpcKind::SnowmanGangsta => 48,
-        NpcKind::SnowBalla => 49,
-        NpcKind::MysterySnowman => 50,
-        NpcKind::MartianOfficer => 51,
-        NpcKind::GrayGrunt => 51,
+        NpcKind::Slime => 0,           // NPC_1
+        NpcKind::DemonEye => 1,        // NPC_2
+        NpcKind::WanderingEye => 2,    // NPC_133
+        NpcKind::Zombie => 3,          // NPC_3
+        NpcKind::KingSlime => 4,       // NPC_50
+        NpcKind::Guide => 5,           // NPC_22
+        NpcKind::Skeleton => 6,        // NPC_21
+        NpcKind::UndeadMiner => 7,     // NPC_44
+        NpcKind::CaveBat => 8,         // NPC_49
+        NpcKind::JungleBat => 9,       // NPC_51
+        NpcKind::Hellbat => 10,        // NPC_60
+        NpcKind::VoodooDemon => 11,    // NPC_66
+        NpcKind::EaterOfSouls => 12,   // NPC_6
+        NpcKind::Hornet => 13,         // NPC_42
+        NpcKind::MeteorHead => 14,     // NPC_23
+        NpcKind::GoblinSorcerer => 15, // NPC_29
+        NpcKind::Tim => 16,            // NPC_45
+        NpcKind::DarkCaster => 17,     // NPC_32
+        NpcKind::FireImp => 18,        // NPC_24
+        NpcKind::ChaosBall => 19,      // NPC_30
+        NpcKind::BurningSphere => 20,  // NPC_25
+        NpcKind::WaterSphere => 21,    // NPC_33
+        NpcKind::Goldfish => 22,       // NPC_55
+        NpcKind::Piranha => 23,        // NPC_58
+        NpcKind::Shark => 24,          // NPC_65
+        NpcKind::DevourerHead => 25,   // NPC_7
+        NpcKind::Merchant => 26,       // NPC_17
+        NpcKind::DevourerBody => 27,   // NPC_8
+        NpcKind::DevourerTail => 28,   // NPC_9
+        NpcKind::GiantWormHead => 29,  // NPC_10
+        NpcKind::GiantWormBody => 30,  // NPC_11
+        NpcKind::GiantWormTail => 31,  // NPC_12
+        NpcKind::EaterOfWorldsHead => 32, // NPC_13
+        NpcKind::EaterOfWorldsBody => 33, // NPC_14
+        NpcKind::EaterOfWorldsTail => 34, // NPC_15
+        NpcKind::Dryad => 35,          // NPC_20
+        NpcKind::Nurse => 36,          // NPC_18
+        NpcKind::ArmsDealer => 37,     // NPC_19
+        NpcKind::Demolitionist => 38,  // NPC_38
+        NpcKind::Painter => 39,        // NPC_227
+        NpcKind::WitchDoctor => 40,    // NPC_228
+        NpcKind::Clothier => 41,       // NPC_54
+        NpcKind::EyeOfCthulhu => 42,   // NPC_4
+        NpcKind::QueenBee => 43,       // NPC_222
+        NpcKind::SkeletronHead => 44,  // NPC_35
+        NpcKind::ServantOfCthulhu => 45, // NPC_5
+        NpcKind::WallOfFlesh => 46,    // NPC_113
+        NpcKind::Hungry => 47,         // NPC_115
+        NpcKind::SnowmanGangsta => 48, // NPC_143
+        NpcKind::SnowBalla => 49,      // NPC_144
+        NpcKind::MysterySnowman => 50, // NPC_145
+        NpcKind::MartianOfficer => 51, // NPC_383 (the humanoid martians
+        NpcKind::GrayGrunt => 51,      // share the Officer's strip)
         NpcKind::MartianEngineer => 51,
         NpcKind::GigaZapper => 51,
-        NpcKind::MartianWalker => 52,
-        NpcKind::PirateDeckhand => 51,
-        NpcKind::PirateCaptainsMate => 51,
-        NpcKind::PirateArcher => 51,
-        NpcKind::PirateCorsair => 51,
-        NpcKind::PirateCaptain => 52,
+        NpcKind::MartianWalker => 52,  // NPC_520
+        NpcKind::PirateDeckhand => 53, // NPC_212 (the humanoid pirates
+        NpcKind::PirateCaptainsMate => 53, // share the Deckhand's strip)
+        NpcKind::PirateArcher => 53,
+        NpcKind::PirateCorsair => 53,
+        NpcKind::PirateCaptain => 54,  // NPC_216
+        NpcKind::LeechHead => 55,      // NPC_117
+        NpcKind::LeechBody => 56,      // NPC_118
+        NpcKind::TheDestroyer => 57,   // NPC_134
+        NpcKind::SkeletronPrime => 58, // NPC_127
+        NpcKind::Retinazer => 59,      // NPC_125
+        NpcKind::Spazmatism => 60,     // NPC_126
+        NpcKind::Plantera => 61,       // NPC_262
+        NpcKind::BrainOfCthulhu => 62, // NPC_266
+        NpcKind::Creeper => 63,        // NPC_267
+        NpcKind::GoblinThief => 64,    // NPC_26
+        NpcKind::GoblinWarrior => 65,  // NPC_27
+        NpcKind::GoblinArcher => 66,   // NPC_28
+        NpcKind::GoblinPeon => 67,     // NPC_111
+        NpcKind::GoblinSummoner => 68, // NPC_471
+        NpcKind::BoundGoblin => 69,    // NPC_105
+        NpcKind::GoblinTinkerer => 70, // NPC_107
+        NpcKind::Golem => 71,          // NPC_245
+        NpcKind::GolemHead => 72,      // NPC_246
+        NpcKind::GolemFistLeft => 73,  // NPC_247 (the FistRight shares it
+        NpcKind::GolemFistRight => 73, // — NPC_248 is not loaded)
+        NpcKind::GolemHeadFree => 74,  // NPC_249
+        NpcKind::MartianProbe => 75,   // NPC_399
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -476,7 +473,7 @@ fn portrait_data(
         }
         // The hungry (3 frames) / the leech segments (1).
         (NpcKind::Hungry, _) => {
-            let h = lookups.bestiary_npc_sheets[48]
+            let h = lookups.bestiary_npc_sheets[47]
                 .map(|s| s.height as f32 / 3.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
@@ -485,7 +482,7 @@ fn portrait_data(
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {
-            let h = lookups.bestiary_npc_sheets[43]
+            let h = lookups.bestiary_npc_sheets[42]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(110.0);
             (sheet_i, h, 100.0, h, white)
@@ -590,22 +587,29 @@ fn portrait_data(
         }
         (NpcKind::MartianWalker, _) => {
             let h = lookups.bestiary_npc_sheets[52]
-                .map(|s| s.height as f32 / 11.0)
+                .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(110.0);
             (sheet_i, h, 34.0, h, white)
+        }
+        // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
+        (NpcKind::MartianProbe, _) => {
+            let h = lookups.bestiary_npc_sheets[75]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(72.0);
+            (sheet_i, h, 42.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
         | (NpcKind::PirateCaptainsMate, _)
         | (NpcKind::PirateArcher, _)
         | (NpcKind::PirateCorsair, _) => {
-            let h = lookups.bestiary_npc_sheets[51]
+            let h = lookups.bestiary_npc_sheets[53]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::PirateCaptain, _) => {
-            let h = lookups.bestiary_npc_sheets[52]
+            let h = lookups.bestiary_npc_sheets[54]
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
@@ -614,31 +618,31 @@ fn portrait_data(
         // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
         // display boxes (the frame height rides each sheet).
         (NpcKind::GoblinThief, _) => {
-            let h = lookups.bestiary_npc_sheets[57]
+            let h = lookups.bestiary_npc_sheets[64]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinWarrior, _) => {
-            let h = lookups.bestiary_npc_sheets[58]
+            let h = lookups.bestiary_npc_sheets[65]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinArcher, _) => {
-            let h = lookups.bestiary_npc_sheets[59]
+            let h = lookups.bestiary_npc_sheets[66]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinPeon, _) => {
-            let h = lookups.bestiary_npc_sheets[60]
+            let h = lookups.bestiary_npc_sheets[67]
                 .map(|s| s.height as f32 / 21.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinSummoner, _) => {
-            let h = lookups.bestiary_npc_sheets[61]
+            let h = lookups.bestiary_npc_sheets[68]
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
