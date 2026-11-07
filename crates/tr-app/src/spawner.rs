@@ -84,6 +84,12 @@ pub struct SpawnFlags {
     pub wof_active: bool,
 }
 
+/// `Main.wallLight` (`Main.cs:10578-10595`) — the wall list
+/// `SetSpawnFlags`' `skyBehindPlayer` gate reads (plus wall 73's separate
+/// `||` arm, `NPC.cs:412`).
+pub(crate) const LIGHT_WALLS: [u16; 16] =
+    [0, 21, 318, 106, 317, 107, 138, 140, 141, 139, 145, 150, 152, 245, 315, 168];
+
 pub struct SpawnContext<'a> {
     pub world: &'a World,
     /// Player centre in pixels (`player.Center`).
@@ -106,6 +112,24 @@ pub struct SpawnContext<'a> {
     /// The bound-Tinkerer roll gate: `downedGoblins && !savedGoblin &&
     /// !AnyNPCs(105/107)` — the world_sim pass computes it.
     pub bound_goblin_ok: bool,
+    /// `Spawner.invaders` (`NPC.cs:395`'s `ShouldSpawnInvasionEnemies`) —
+    /// gates the skyMob detection (`FindSpawnTile`'s `!this.invaders`).
+    pub invaders: bool,
+    /// `NPC.downedGolemBoss` — the probe arms' gate.
+    pub downed_golem: bool,
+    /// `NPC.downedMartians` — the probe rolls' short-circuit.
+    pub downed_martians: bool,
+    /// `Main.invasionType` — the skyMob dispatch's drone arm.
+    pub invasion_type: i32,
+    /// `NPC.AnyDanger()` (`NPC.cs:80243`): an invasion, a moon event or
+    /// any active boss NPC — the probe arms' edge-band gate.
+    pub any_danger: bool,
+    /// `NPC.AnyNPCs(399)`: the probe is unique.
+    pub probe_exists: bool,
+    /// `Spawner.skyBehindPlayer` (`NPC.cs:412`): the wall behind the
+    /// player's tile is light-passing (or wall 73) — the skyMob probe
+    /// arm's open-sky gate.
+    pub sky_behind_player: bool,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap.
@@ -538,7 +562,11 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         return None;
     }
 
-    // `FindSpawnTile` (NPC.cs:969-1010): 50 random candidates.
+    // `FindSpawnTile` (NPC.cs:969-1010): 50 random candidates. The per-
+    // attempt `skyMob` latch (`SetSpawnFlags`' reset, `NPC.cs:372`) rides
+    // the loop — the skyMob candidates skip the ground descent (the spawn
+    // tile stays the random air tile).
+    let mut sky_mob = false;
     for _ in 0..50 {
         let num = rng.next(spawn_area.right - spawn_area.left) + spawn_area.left;
         let mut j = rng.next(spawn_area.bottom - spawn_area.top) + spawn_area.top;
@@ -553,18 +581,39 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         if solid {
             continue;
         }
-        // Descend to the first solid tile (NPC.cs:990-996).
-        while j < ctx.world.height
-            && j < spawn_area.bottom
-            && !ctx
-                .world
-                .tile(num, j)
-                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        // The skyMob detection (`:981-987`): the deep-sky band
+        // (`j < worldSurface*0.35`, the 45%/55% middle cut or hardmode),
+        // else the 0.45-band's hardmode Next(10) roll — both behind
+        // `!invaders`; the roll consumes only where the vanilla's
+        // short-circuit reaches it. The house-wall arm of the solid check
+        // is unmodelled (the port has no `wallHouse` table).
+        if !ctx.invaders
+            && (j as f64) < ctx.world.world_surface * 0.3499999940395355
+            && (num < ctx.world.width * 45 / 100
+                || num > ctx.world.width * 55 / 100
+                || ctx.flags.hard_mode)
         {
-            j += 1;
-        }
-        if j >= spawn_area.bottom {
-            continue;
+            sky_mob = true;
+        } else if !ctx.invaders
+            && (j as f64) < ctx.world.world_surface * 0.44999998807907104
+            && ctx.flags.hard_mode
+            && rng.next(10) == 0
+        {
+            sky_mob = true;
+        } else {
+            // Descend to the first solid tile (NPC.cs:990-996).
+            while j < ctx.world.height
+                && j < spawn_area.bottom
+                && !ctx
+                    .world
+                    .tile(num, j)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+            {
+                j += 1;
+            }
+            if j >= spawn_area.bottom {
+                continue;
+            }
         }
         if safe_area.contains(num, j) {
             continue;
@@ -585,7 +634,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         // converts to pixels at the boundary (`spawn_npc_at`'s `y` is
         // pixels — the `Main.worldSurface` comparisons run on the tile
         // coordinate through `y / 16`).
-        return spawn_npc_at(ctx, rng, num, j * 16);
+        return spawn_npc_at(ctx, rng, num, j * 16, sky_mob);
     }
     None
 }
@@ -609,8 +658,19 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
 /// - `RollOnlyBadLuck`/`RollLuck` run as the plain `Next(n)` (the luck
 ///   modifier does not reach the spawn stream);
 /// - `GetZombieSettings`' skyblock style-forcing and armed-zombie cut are
-///   constants-off (M5-SEED-1).
-fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Option<Npc> {
+///   constants-off (M5-SEED-1);
+/// - the skyMob dispatch (`NPC.cs:1354-1412`): the Drone arm consumes the
+///   dispatch position (the port's invasion path short-circuits the
+///   ladder), the probe arm is verbatim (`:1399-1402`), and the Wyvern arm
+///   (`:1407-1410`) consumes its `Next(10)` and returns no spawn — the
+///   kind lands with the flyer family.
+fn spawn_npc_at(
+    ctx: &SpawnContext,
+    rng: &mut FastRandom,
+    x: i32,
+    y: i32,
+    sky_mob: bool,
+) -> Option<Npc> {
     // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
     // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
     // day or night, surface or underground.
@@ -622,6 +682,56 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     } else {
         12
     };
+
+    // ---- the skyMob dispatch (`NPC.cs:1354-1412`, the zone chain's
+    // `else if (this.skyMob)` arm) ---- the pillar-zone branches ahead of
+    // it sit behind the lunar pillar flags (constants-off, consume
+    // nothing — post-Lunar).
+    if sky_mob {
+        // The drone arm (`this.invaders && Main.invasionType == 4` → 388,
+        // `:1395-1398`): the vanilla spawns the Drone here; the port's
+        // invasion path resolves through `invasion_pick` before the
+        // spawner runs, so the arm only consumes the dispatch position
+        // (the Drone kind lands with its AI family).
+        if ctx.invaders && ctx.invasion_type == 4 {
+            return None;
+        }
+        // The probe arm (`:1399-1402`): `flag5` — the 33% edge band +
+        // `skyBehindPlayer`, then `AnyDanger`'s refusal (`:1385-1389`).
+        let mut flag5 = (x as f32 - ctx.world.width as f32 / 2.0).abs()
+            / (ctx.world.width as f32 / 2.0)
+            > 0.33
+            && ctx.sky_behind_player;
+        if ctx.any_danger {
+            flag5 = false;
+        }
+        // The water-candle table (`:1387-1392`).
+        let (mv2, mv3) = if ctx.flags.zone_water_candle { (3, 10) } else { (8, 30) };
+        // The martians' short-circuit rolls — the `Next(mv2)` fires only
+        // while `!downedMartians`, and a hit skips the `Next(mv3)`.
+        let probe_roll = if !ctx.downed_martians && rng.next(mv2) == 0 {
+            true
+        } else {
+            rng.next(mv3) == 0
+        };
+        if flag5
+            && ctx.flags.hard_mode
+            && ctx.downed_golem
+            && probe_roll
+            && !ctx.probe_exists
+        {
+            return spawn_martian_probe(x, y);
+        }
+        // The duplicated probe arm (`:1403-1406`, `&& this.ZoneWaterCandle`
+        // appended) is dead in the source — its condition is a subset of
+        // the arm above.
+        // The Wyvern arm (`:1407-1410`): the kind lands with the flyer
+        // family; the roll consumes (the vanilla's `Next(10)` here) and a
+        // hit returns no spawn.
+        if ctx.flags.hard_mode && rng.next(10) == 0 {
+            return None;
+        }
+    }
 
     // `world_surface` is in tiles; `y` arrives in pixels (`Main.worldSurface`
     // comparisons run on the tile coordinate — NPC.cs:4846's `spawnTileY <
@@ -687,6 +797,30 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         // map to the port's closest kinds there).
     }
     if surface {
+        // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
+        // branch): the graveyard/snow-rain/rain specials ahead of it sit
+        // behind unmodelled flags and consume nothing; `flag17` is the
+        // 33% edge band with the `AnyDanger` refusal (`:4168-4171`).
+        let mut flag17 =
+            (x as f32 - ctx.world.width as f32 / 2.0).abs() / (ctx.world.width as f32 / 2.0)
+                > 0.33;
+        if ctx.any_danger {
+            flag17 = false;
+        }
+        // The martians' short-circuit rolls (100/400 — `:4194`).
+        let probe_roll = if !ctx.downed_martians && rng.next(100) == 0 {
+            true
+        } else {
+            rng.next(400) == 0
+        };
+        if flag17
+            && ctx.flags.hard_mode
+            && ctx.downed_golem
+            && probe_roll
+            && !ctx.probe_exists
+        {
+            return spawn_martian_probe(x, y);
+        }
         if ctx.day_time {
             // The day ladder's critter/water/wind specials all sit behind
             // unmodelled tile+weather gates; the first reachable arm is the
@@ -924,6 +1058,23 @@ fn is_ices_snow(kind: u16) -> bool {
     matches!(kind, 147 | 161 | 163 | 164 | 200)
 }
 
+/// `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, 399)` (`NPC.cs:1401`/
+/// `:4200`/`:4196`'s arms): the probe materializes at the candidate tile —
+/// a skyMob candidate is the air tile, the surface candidate the random
+/// tile above the ground scan. `direction` arrives 0 (`NewNPC`'s zero
+/// velocity) — the aiStyle-80 machine's `TargetClosest` arm resolves it.
+fn spawn_martian_probe(x: i32, y: i32) -> Option<Npc> {
+    let mut n = Npc::new(
+        NpcKind::MartianProbe,
+        x as f32 * TILE_PX + 8.0,
+        y as f32,
+        0,
+        0.0,
+    );
+    n.hp = n.max_hp;
+    Some(n)
+}
+
 fn spawn_basic_slime(
     ctx: &SpawnContext,
     rng: &mut FastRandom,
@@ -972,6 +1123,13 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
+            invaders: false,
+            downed_golem: false,
+            downed_martians: false,
+            invasion_type: 0,
+            any_danger: false,
+            probe_exists: false,
+            sky_behind_player: false,
         }
     }
 
@@ -1134,7 +1292,7 @@ mod tests {
     /// their depth band.
     fn outcome_at(ctx: &SpawnContext<'_>, seed: u64, y_px: i32) -> Option<(NpcKind, SlimeVariant)> {
         let mut rng = FastRandom::new(seed);
-        spawn_npc_at(ctx, &mut rng, 210, y_px).map(|n| (n.kind, n.slime))
+        spawn_npc_at(ctx, &mut rng, 210, y_px, false).map(|n| (n.kind, n.slime))
     }
 
     #[test]
@@ -1274,7 +1432,7 @@ mod tests {
         let mut kinds: Vec<NpcKind> = Vec::new();
         for seed in 1..4000u64 {
             let mut rng = FastRandom::new(seed);
-            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16) {
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false) {
                 kinds.push(n.kind);
             }
         }
@@ -1293,7 +1451,7 @@ mod tests {
         let mut hellbats = 0;
         for seed in 1..6000u64 {
             let mut rng = FastRandom::new(seed);
-            if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16) {
+            if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16, false) {
                 if n.kind == NpcKind::Hellbat {
                     hellbats += 1;
                 }
@@ -1325,6 +1483,13 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
+            invaders: false,
+            downed_golem: false,
+            downed_martians: false,
+            invasion_type: 0,
+            any_danger: false,
+            probe_exists: false,
+            sky_behind_player: false,
         }
     }
 
@@ -1503,6 +1668,13 @@ mod tests {
                         ..SpawnFlags::default()
                     },
                     bound_goblin_ok: false,
+                    invaders: false,
+                    downed_golem: false,
+                    downed_martians: false,
+                    invasion_type: 0,
+                    any_danger: false,
+                    probe_exists: false,
+                    sky_behind_player: false,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -1669,7 +1841,7 @@ mod tests {
         for seed in 1..3000u64 {
             // The ocean column 10 — `outcome_at`'s x is the land 210.
             let mut rng = FastRandom::new(seed);
-            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16).map(|n| n.kind) {
+            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16, false).map(|n| n.kind) {
                 Some(NpcKind::Shark) => sharks += 1,
                 _ => others += 1,
             }
@@ -1725,5 +1897,107 @@ mod tests {
             }
         }
         assert!(worms > 0, "the cavern sweep never rolled the Giant Worm");
+    }
+
+    // ---- the Martian Probe's spawn arms (M4-EVENT-4b) ----
+
+    /// The post-Golem probe gates: hardmode + `downedGolemBoss`, the
+    /// martians' short-circuit rolls, the uniqueness gate, the 33% edge
+    /// band, and `AnyDanger`'s refusal (`NPC.cs:1385-1402`/`:4194-4198`).
+    fn probe_ctx(world: &World) -> SpawnContext<'_> {
+        SpawnContext {
+            world,
+            player_center: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),
+            player_pos: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),
+            nearby_active_npcs: 100.0,
+            town_npcs: 0,
+            day_time: true,
+            player_life_max: 100,
+            underworld_for_bats: false,
+            flags: SpawnFlags {
+                hard_mode: true,
+                ..SpawnFlags::default()
+            },
+            bound_goblin_ok: false,
+            invaders: false,
+            downed_golem: true,
+            downed_martians: false,
+            invasion_type: 0,
+            any_danger: false,
+            probe_exists: false,
+            sky_behind_player: true,
+        }
+    }
+
+    #[test]
+    fn the_sky_probe_arm_spawns_the_probe() {
+        let w = ground();
+        let c = probe_ctx(&w);
+        // The skyMob candidate: tile (2, 5) — under the 0.35 worldSurface
+        // band, inside the edge band, air.
+        let mut found = None;
+        for seed in 0..400u64 {
+            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 5 * 16, true) {
+                found = Some(n);
+                break;
+            }
+        }
+        let n = found.expect("the probe roll lands within 400 seeds");
+        assert_eq!(n.kind, NpcKind::MartianProbe);
+        assert_eq!((n.x, n.y), (2.0 * TILE_PX + 8.0, 80.0));
+        assert_eq!(n.facing, 0, "TargetClosest resolves on the first tick");
+    }
+
+    #[test]
+    fn the_probe_is_unique() {
+        // `!NPC.AnyNPCs(399)`'s gate: while a probe exists no seed in the
+        // sweep yields one.
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.probe_exists = true;
+        for seed in 0..400u64 {
+            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 5 * 16, true) {
+                assert_ne!(n.kind, NpcKind::MartianProbe);
+            }
+        }
+    }
+
+    #[test]
+    fn the_surface_probe_arm_spawns_at_the_edge_band() {
+        let w = ground();
+        let c = probe_ctx(&w);
+        // The surface candidate: tile (2, 29) — under worldSurface 30, in
+        // the 33% edge band (2 < 0.33 * 64 = 21.1); the 1% roll.
+        let mut got = false;
+        for seed in 0..4000u64 {
+            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+                if n.kind == NpcKind::MartianProbe {
+                    got = true;
+                    break;
+                }
+            }
+        }
+        assert!(got, "the surface probe roll lands within 4000 seeds");
+    }
+
+    #[test]
+    fn the_probe_arms_refuse_danger_and_the_golem_gate() {
+        // `AnyDanger`'s refusal (`:1387-1389`/`:4168-4171`) and the
+        // `downedGolemBoss` gate: no seed in the sweep yields the probe.
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.any_danger = true;
+        for seed in 0..4000u64 {
+            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+                assert_ne!(n.kind, NpcKind::MartianProbe);
+            }
+        }
+        c.any_danger = false;
+        c.downed_golem = false;
+        for seed in 0..4000u64 {
+            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+                assert_ne!(n.kind, NpcKind::MartianProbe);
+            }
+        }
     }
 }

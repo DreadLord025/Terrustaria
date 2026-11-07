@@ -90,7 +90,26 @@ pub enum NpcKind {
     /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
     /// 220 HP, kb 0.6, value 400).
     MysterySnowman,
-
+    /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
+    MartianOfficer,
+    /// `NPCID.GrayGrunt` (385) — the martian grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600).
+    GrayGrunt,
+    /// `NPCID.MartianEngineer` (386) — the martian engineer (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
+    MartianEngineer,
+    /// `NPCID.GigaZapper` (389) — the martian zapper (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200).
+    GigaZapper,
+    /// `NPCID.MartianWalker` (520) — the martian walker (`NPC.cs`: 34×110,
+    /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0).
+    MartianWalker,
+    /// `NPCID.MartianProbe` (399) — the Martian Madness trigger (`NPC.cs`:
+    /// 42×72, aiStyle 80, dmg 5, def 5, 500 HP, kb 0, value 0, noGravity,
+    /// chaseable false, rarity 1; the escape machine runs
+    /// `AI()`'s aiStyle-80 block).
+    MartianProbe,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -466,23 +485,23 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
-            NpcKind::PirateDeckhand => 68,
-            NpcKind::PirateCaptainsMate => 69,
-            NpcKind::PirateArcher => 70,
-            NpcKind::PirateCorsair => 71,
-            NpcKind::PirateCaptain => 72,
-            NpcKind::SnowmanGangsta => 65,
-            NpcKind::SnowBalla => 66,
-            NpcKind::MysterySnowman => 67,
-            NpcKind::SnowmanGangsta => 65,
-            NpcKind::SnowBalla => 66,
-            NpcKind::MysterySnowman => 67,
-            NpcKind::SnowmanGangsta => 65,
-            NpcKind::SnowBalla => 66,
-            NpcKind::MysterySnowman => 67,
-            NpcKind::SnowmanGangsta => 65,
-            NpcKind::SnowBalla => 66,
-            NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            // The pirates: the 73-77 slots went to the Golem family (the
+            // parallel merges), so the family rides 78-82 and the probe
+            // takes 83 — the port-local protocol ids, renumbered from the
+            // collided 68-72 slots the pirate merge shipped (the duplicated
+            // martian/snowman arms above were the merge leftovers; the
+            // unreachable dead copies are gone).
+            NpcKind::PirateDeckhand => 78,
+            NpcKind::PirateCaptainsMate => 79,
+            NpcKind::PirateArcher => 80,
+            NpcKind::PirateCorsair => 81,
+            NpcKind::PirateCaptain => 82,
+            NpcKind::MartianProbe => 83,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -561,11 +580,19 @@ impl NpcKind {
             65 => NpcKind::SnowmanGangsta,
             66 => NpcKind::SnowBalla,
             67 => NpcKind::MysterySnowman,
-            68 => NpcKind::PirateDeckhand,
-            69 => NpcKind::PirateCaptainsMate,
-            70 => NpcKind::PirateArcher,
-            71 => NpcKind::PirateCorsair,
-            72 => NpcKind::PirateCaptain,
+            68 => NpcKind::MartianOfficer,
+            69 => NpcKind::GrayGrunt,
+            70 => NpcKind::MartianEngineer,
+            71 => NpcKind::GigaZapper,
+            72 => NpcKind::MartianWalker,
+            // The pirates + the probe: to_u16's renumber (the Golem family
+            // owns 73-77).
+            78 => NpcKind::PirateDeckhand,
+            79 => NpcKind::PirateCaptainsMate,
+            80 => NpcKind::PirateArcher,
+            81 => NpcKind::PirateCorsair,
+            82 => NpcKind::PirateCaptain,
+            83 => NpcKind::MartianProbe,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -742,6 +769,14 @@ impl NpcKind {
             | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
+            // The martians: 18x40 (`NPC.cs`'s cases 383/385/386/389) + the walker's 34x110.
+            NpcKind::MartianOfficer => (18.0, 40.0),
+            NpcKind::GrayGrunt => (18.0, 40.0),
+            NpcKind::MartianEngineer => (18.0, 40.0),
+            NpcKind::GigaZapper => (18.0, 40.0),
+            NpcKind::MartianWalker => (34.0, 110.0),
+            // The probe: 42x72 (`NPC.cs`'s case 399).
+            NpcKind::MartianProbe => (42.0, 72.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -891,6 +926,14 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 200,
             NpcKind::SnowBalla => 240,
             NpcKind::MysterySnowman => 220,
+            // The martians: 300/750/400/600/2000 (`NPC.cs`'s cases 383-520).
+            NpcKind::MartianOfficer => 300,
+            NpcKind::GrayGrunt => 750,
+            NpcKind::MartianEngineer => 400,
+            NpcKind::GigaZapper => 600,
+            NpcKind::MartianWalker => 2000,
+            // The probe: 500 (`NPC.cs`'s case 399).
+            NpcKind::MartianProbe => 500,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -987,6 +1030,14 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
             NpcKind::MysterySnowman => 55,
+            // The martians: 75/80/40/75/60.
+            NpcKind::MartianOfficer => 75,
+            NpcKind::GrayGrunt => 80,
+            NpcKind::MartianEngineer => 40,
+            NpcKind::GigaZapper => 75,
+            NpcKind::MartianWalker => 60,
+            // The probe: 5 (`NPC.cs`'s case 399).
+            NpcKind::MartianProbe => 5,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1032,6 +1083,10 @@ impl NpcKind {
 
 #[derive(Clone, Debug)]
 pub struct Npc {
+    /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
+    /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
+    /// `+= extraValue` (:79680).
+    pub extra_value: u64,
     pub kind: NpcKind,
     /// The slime colour variant (`SlimeVariant`); only meaningful while
     /// `kind == NpcKind::Slime`.
@@ -1141,6 +1196,10 @@ pub struct Npc {
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
     /// into the pool (the `wants_sphere` shape).
     pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
+    /// The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm:
+    /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
+    /// so the sim resolves the invasion and removes the NPC.
+    pub wants_martian_invasion: bool,
 }
 
 impl Npc {
@@ -1426,6 +1485,7 @@ impl Npc {
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
             y,
@@ -1467,6 +1527,7 @@ impl Npc {
             dont_take_damage: false,
             swarm_done: false,
             wants_hostile_shot: None,
+            wants_martian_invasion: false,
         }
     }
 
@@ -1520,6 +1581,14 @@ impl Npc {
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
+            // The martians: 0.25/0/0.4/0.3/0.
+            NpcKind::MartianOfficer => 0.25,
+            NpcKind::GrayGrunt => 0.0,
+            NpcKind::MartianEngineer => 0.4,
+            NpcKind::GigaZapper => 0.3,
+            NpcKind::MartianWalker => 0.0,
+            // The probe: 0 (`NPC.cs`'s case 399).
+            NpcKind::MartianProbe => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1641,6 +1710,14 @@ impl Npc {
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
             NpcKind::MysterySnowman => 22,
+            // The martians: 50/30/34/38/40.
+            NpcKind::MartianOfficer => 50,
+            NpcKind::GrayGrunt => 30,
+            NpcKind::MartianEngineer => 34,
+            NpcKind::GigaZapper => 38,
+            NpcKind::MartianWalker => 40,
+            // The probe: 5 (`NPC.cs`'s case 399).
+            NpcKind::MartianProbe => 5,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1756,6 +1833,16 @@ impl Npc {
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The martians: 1200/600/1200/1200/0 (the walker has no value row —
+            // the vanilla's 2000-HP body drops through the kill chain).
+            NpcKind::MartianOfficer => 1200.0,
+            NpcKind::GrayGrunt => 600.0,
+            NpcKind::MartianEngineer => 1200.0,
+            NpcKind::GigaZapper => 1200.0,
+            NpcKind::MartianWalker => 0.0,
+            // The probe: 0 (`NPC.cs`'s case 399; the uniform drops don't
+            // exist — the vanilla registers no loot for it).
+            NpcKind::MartianProbe => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -1992,6 +2079,17 @@ impl Npc {
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_skeleton(world, player, dt)
             }
+            // The martians: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Scrambler/RayGunner/zapper
+            // shot arms land with the projectile work).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper
+            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
+            // aiStyle-80 block, `NPC.cs:36532-36624`).
+            NpcKind::MartianProbe => self.update_martian_probe(world, player),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2001,9 +2099,6 @@ impl Npc {
             | NpcKind::PirateCorsair
             | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
-            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
-                self.update_cave_bat(world, player, dt)
-            }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -2090,6 +2185,36 @@ impl Npc {
                     };
                     self.frame = (self.frame + 1) % count;
                 }
+            }
+            // The martians: the 9-frame strips (the walker's 11) — the same
+            // accumulator.
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            NpcKind::MartianWalker => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    // `Main.npcFrameCount[520]` = 8 (`Main.cs:67082`) — the
+                    // 11 the martian slice shipped sliced the sheet past the
+                    // vanilla count.
+                    self.frame = (self.frame + 1) % 8;
+                }
+            }
+            // The probe: `case 399` (`NPC.cs:71885-71887`) — the accumulator
+            // steps 0.25 per tick, wraps over 4 rows, and the alerted
+            // machine (`ai[0] != 0`) rides the +4 rows of NPC_399's strip.
+            NpcKind::MartianProbe => {
+                self.frame_counter =
+                    (self.frame_counter + 0.25) % 4.0 + if self.ai[0] != 0.0 { 4.0 } else { 0.0 };
+                self.frame = self.frame_counter as u32;
             }
             // The pirates: the 16/20-frame humanoid strips (the same
             // accumulator).
@@ -3907,6 +4032,101 @@ impl Npc {
         self.y += self.vy;
     }
 
+    /// `AI()`'s aiStyle-80 block (`NPC.cs:36532-36624`) — the Martian
+    /// Probe's hover/detect/escape machine. `ai[0] == 0` hovers: the
+    /// X drift 3·direction (the collideX flip), the vertical scan's
+    /// 15/20-tile rise/damp/sink bands (`NPC.cs:36541-36557`), and the
+    /// detect gate (the closest player within 352 px whose centre sits
+    /// below the probe, `:36564-36569`). `ai[0] == 1` is the 60-tick
+    /// detect flash (the velocity damp ×0.95). `ai[0] == 2` escapes: the
+    /// `noTileCollide` rise (`:36577`'s velocity.Y − 0.1 to −10) with the
+    /// `ai[3]` x-drift, and the leave-world/180-tick arm fires
+    /// `Main.StartInvasion(4); active = false` — the AI holds `&World`,
+    /// so the resolve rides `wants_martian_invasion` (the sim starts the
+    /// invasion and removes the NPC). The SkyBlue/Red lighting tint is
+    /// unmodelled (the port has no NPC light sources).
+    fn update_martian_probe(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            if self.facing == 0 {
+                // TargetClosest: the direction toward the nearest player
+                // (`NPC.cs:36534-36537`).
+                self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
+            }
+            self.vx = 3.0 * self.facing as f32;
+            // The vertical scan: the first solid tile within 30 tiles
+            // below the centre (`:36541-36552`).
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            let tx = (cx / TILE_PX) as i32;
+            let ty = (cy / TILE_PX) as i32;
+            let mut num1138 = 30;
+            if world.in_bounds(tx, ty) {
+                for dy in 0..30 {
+                    if world.tile(tx, ty + dy).is_some_and(|t| {
+                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    }) {
+                        num1138 = dy;
+                        break;
+                    }
+                }
+            }
+            if num1138 < 15 {
+                self.vy = (self.vy - 0.05).max(-3.5);
+            } else if num1138 < 20 {
+                self.vy *= 0.95;
+            } else {
+                self.vy = (self.vy + 0.05).min(1.5);
+            }
+            // `FindClosestPlayer`'s dead fold (`:36559-36562`).
+            if player.hp <= 0 {
+                return;
+            }
+            let dist = ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt();
+            if dist < 352.0 && pcy > cy {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The detect flash (`:36571-36586`).
+            self.ai[1] += 1.0;
+            self.vx *= 0.95;
+            self.vy *= 0.95;
+            if self.ai[1] >= 60.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 2.0;
+                self.ai[3] = if pcx > self.x + w * 0.5 { -1.0 } else { 1.0 };
+            }
+        } else if self.ai[0] == 2.0 {
+            // The escape (`:36588-36600`): the rise, the drift away, and
+            // the leave-world/180-tick invasion arm.
+            self.ai[1] += 1.0;
+            self.vy = (self.vy - 0.1).max(-10.0);
+            self.vx = (self.vx + self.ai[3] * 0.05).min(4.0);
+            if self.y < -(h as f32) || self.ai[1] >= 180.0 {
+                self.wants_martian_invasion = true;
+            }
+        }
+        // The movement: phases 0/1 collide with tiles (the vanilla's
+        // velocity passes through TileCollision); phase 2 sets
+        // `noTileCollide` and flies through.
+        let no_collide = self.ai[0] == 2.0;
+        let nx = self.x + self.vx;
+        if no_collide || !crate::player::collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            // collideX (`:36537-36540`): flip the drift direction.
+            self.facing = -self.facing;
+            self.vx = 3.0 * self.facing as f32;
+        }
+        let ny = self.y + self.vy;
+        if no_collide || !crate::player::collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+        } else {
+            self.vy = 0.0;
+        }
+    }
+
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
@@ -4561,11 +4781,20 @@ impl Npc {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
-            NpcKind::PirateDeckhand => 68,
-            NpcKind::PirateCaptainsMate => 69,
-            NpcKind::PirateArcher => 70,
-            NpcKind::PirateCorsair => 71,
-            NpcKind::PirateCaptain => 72,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            // The pirates + the probe: to_u16's renumber (the hash values
+            // ride the same table — the collided 68-72 pirate slots go
+            // 78-82/83 like the protocol ids).
+            NpcKind::PirateDeckhand => 78,
+            NpcKind::PirateCaptainsMate => 79,
+            NpcKind::PirateArcher => 80,
+            NpcKind::PirateCorsair => 81,
+            NpcKind::PirateCaptain => 82,
+            NpcKind::MartianProbe => 83,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

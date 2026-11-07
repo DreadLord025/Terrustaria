@@ -35,8 +35,35 @@ use crate::world::World;
 fn ore_replaceable(kind: u16) -> bool {
     matches!(
         kind,
-        0 | 1 | 23 | 25 | 40 | 53 | 57 | 59 | 60 | 70 | 109 | 112 | 116 | 117 | 147 | 161
-            | 163 | 164 | 199 | 200 | 203 | 234 | 396 | 397 | 398 | 399 | 400 | 401 | 402 | 403
+        0 | 1
+            | 23
+            | 25
+            | 40
+            | 53
+            | 57
+            | 59
+            | 60
+            | 70
+            | 109
+            | 112
+            | 116
+            | 117
+            | 147
+            | 161
+            | 163
+            | 164
+            | 199
+            | 200
+            | 203
+            | 234
+            | 396
+            | 397
+            | 398
+            | 399
+            | 400
+            | 401
+            | 402
+            | 403
     ) || crate::tiledata::TILE_MOSS.has(kind)
         || (kind == 225)
 }
@@ -88,9 +115,15 @@ pub fn ore_runner(
     }
 }
 
-/// The saved ore tiers (`SavedOreTiers`): −1 = not rolled yet.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// The saved ore tiers (`SavedOreTiers`, `WorldGen.cs:3283-3297`): the four
+/// pre-hardmode metals roll once per world at `GenerateWorld` setup
+/// (`:11266-11297`); the hardmode trio stays −1 until an altar is smashed.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SavedOreTiers {
+    pub copper: i32,
+    pub iron: i32,
+    pub silver: i32,
+    pub gold: i32,
     pub cobalt: i32,
     pub mythril: i32,
     pub adamantite: i32,
@@ -99,10 +132,24 @@ pub struct SavedOreTiers {
 impl SavedOreTiers {
     pub fn new() -> Self {
         Self {
+            // The C# static-constructor defaults (`WorldGen.cs:3299-3307`,
+            // re-applied per world at `:11266-11269`).
+            copper: 7,
+            iron: 6,
+            silver: 9,
+            gold: 8,
             cobalt: -1,
             mythril: -1,
             adamantite: -1,
         }
+    }
+}
+
+/// Aligned with [`SavedOreTiers::new`] — the derived `Default` would give 0,
+/// which is the dirt tile id.
+impl Default for SavedOreTiers {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -162,7 +209,10 @@ pub fn smash_altar(
                 num4 = 9;
                 count_scale *= 0.899_999_976_158_142_1;
             }
-            (tiers.adamantite, (world.rock_layer * 2.0 + world.height as f64) / 3.0)
+            (
+                tiers.adamantite,
+                (world.rock_layer * 2.0 + world.height as f64) / 3.0,
+            )
         }
     };
     // `:48935-48937`: the blob count.
@@ -189,7 +239,7 @@ pub fn can_smash_altar(_world: &World, hard_mode: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, Tile};
+    use crate::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> World {
         let mut w = World::new("t".into(), 1200, 800);
@@ -275,9 +325,8 @@ mod tests {
         let top_of = |kind: u16| -> i32 {
             (0..w.height)
                 .find(|y| {
-                    (0..w.width).any(|x| {
-                        w.tile(x, *y).is_some_and(|t| t.active() && t.kind == kind)
-                    })
+                    (0..w.width)
+                        .any(|x| w.tile(x, *y).is_some_and(|t| t.active() && t.kind == kind))
                 })
                 .unwrap_or(-1)
         };

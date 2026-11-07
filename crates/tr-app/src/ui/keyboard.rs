@@ -59,6 +59,14 @@ pub const ENTER_CHARACTER_NAME: &str = "Enter Character Name:";
 /// `Lang.menu[48]` — the world-name keyboard's label
 /// (`UIWorldListItem.cs:418`, `LegacyMenu.48`).
 pub const ENTER_WORLD_NAME: &str = "Enter World Name:";
+/// `Language.GetText("UI.EnterNewName")` — the chest-rename keyboard's label
+/// (`IngameFancyUI.cs:100`).
+pub const ENTER_NEW_NAME: &str = "Enter new name:";
+/// `Language.GetText("UI.Save")` — the desktop submit pair's label for the
+/// sign/chest contexts (`(this._editingSign || this._editingChest) ?
+/// Language.GetText("UI.Save") : Language.GetText("UI.Submit")`,
+/// `UIVirtualKeyboard.cs:327`).
+pub const SUBMIT_SAVE: &str = "Save";
 
 /// The default key labels, column bands of 10 (`DEFAULT_KEYS`, `:33`): the
 /// grid loop reads `DEFAULT_KEYS[j * 10 + i]` (`:223`), so the string is
@@ -104,21 +112,46 @@ const SILVER: [u8; 4] = [192, 192, 192, 255];
 
 // --- Model --------------------------------------------------------------------
 
+/// The ctor's `inputMode` — the static `KeyboardContext` (`:159`, `:161`,
+/// `:147-157`). The port serves the text keyboards (0) and the chest rename
+/// (2); the sign context (1) stays out (the sign editor is not ported).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Context {
+    /// `inputMode = 0` — the character/world-name keyboards.
+    #[default]
+    Text = 0,
+    /// `inputMode = 2` — the chest rename (`IngameFancyUI.cs:147-156`).
+    Chest = 2,
+}
+
+impl Context {
+    /// `this._editingChest = this._keyboardContext == 2` (`:167`). The sign
+    /// twin (`_editingSign`, `:166`) is context 1's and stays out.
+    pub fn editing_chest(self) -> bool {
+        self == Context::Chest
+    }
+}
+
 /// What the keyboard edits — the `UIVirtualKeyboard` ctor args (`:159`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Request {
     /// The `UIText` label above the box (`:408`): `Lang.menu[45]`
-    /// ([`ENTER_CHARACTER_NAME`]) / `Lang.menu[48]` ([`ENTER_WORLD_NAME`]).
+    /// ([`ENTER_CHARACTER_NAME`]) / `Lang.menu[48]` ([`ENTER_WORLD_NAME`]) /
+    /// `UI.EnterNewName` ([`ENTER_NEW_NAME`]).
     pub label: String,
     /// `startingText` — `this.Text = startingText` (`:429`).
     pub initial: String,
     /// `_allowEmpty` (`:162`): the rename keyboards open with
     /// `allowEmpty: true` (`UICharacterListItem.cs:199`,
-    /// `UIWorldListItem.cs:419`).
+    /// `UIWorldListItem.cs:419`); the chest context passes the ctor default
+    /// `false` (`IngameFancyUI.cs:147-156`).
     pub allow_empty: bool,
     /// `SetTextMaxLength(maxLength)` (`:428`; the ctor default is 20, `:159`;
     /// the world rename passes 27, `UIWorldListItem.cs:419`).
     pub max_length: usize,
+    /// The `inputMode` (`:161`) — [`Context::Text`] unless the chest rename
+    /// opened the keyboard.
+    pub context: Context,
 }
 
 /// The `KeyState` enum (`:19-24`; the port orders the variants Default, Shift,
@@ -521,11 +554,22 @@ pub fn submit_colors(valid: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
     (bg, border)
 }
 
-/// `TextIsValidForSubmit` (`:615-626`) with the custom validator unset and
-/// the sign/chest contexts out of the port (the App's keyboards are all
-/// context 0): a trimmed-empty string submits iff `allowEmpty`.
+/// `TextIsValidForSubmit` (`:615-626`) with the custom validator unset: a
+/// trimmed-empty string submits iff `_allowEmpty` — but only while neither
+/// editor flag holds (`!this._editingSign && !this._editingChest`), so the
+/// chest context (2) is **always** valid and the text context (0) falls back
+/// to `allowEmpty`.
+pub fn text_valid_for(text: &str, allow_empty: bool, context: Context) -> bool {
+    if text.trim().is_empty() && !context.editing_chest() {
+        return allow_empty;
+    }
+    true
+}
+
+/// [`text_valid_for`] at the text context — the historical signature for the
+/// character/world keyboards.
 pub fn text_valid(text: &str, allow_empty: bool) -> bool {
-    !text.trim().is_empty() || allow_empty
+    text_valid_for(text, allow_empty, Context::Text)
 }
 
 // --- Clicks -----------------------------------------------------------------------
@@ -908,7 +952,13 @@ pub fn draw(
     } else {
         // `outerLayer2` (`:705-726`): the 0.72 pair only — `DrawPanel` is
         // false (`:329`, `:369`), so they are text: Silver at 0.72, White at
-        // 0.85 while hovered (`:334-343`, `:370-379`).
+        // 0.85 while hovered (`:334-343`, `:370-379`). The submit label is
+        // `UI.Save` for the sign/chest contexts (`:327`).
+        let submit_label = if request.context.editing_chest() {
+            SUBMIT_SAVE
+        } else {
+            SUBMIT
+        };
         let submit_hover = in_rect(mouse, l.submit);
         draw_panel_label(
             r,
@@ -916,7 +966,7 @@ pub fn draw(
             l.submit,
             [0.0, 12.0, 0.0, 12.0],
             if submit_hover { SUBMIT2_HOVER_SCALE } else { SUBMIT2_SCALE },
-            SUBMIT,
+            submit_label,
             if submit_hover { [1.0; 4] } else { color::tint(SILVER) },
         );
         let cancel_hover = in_rect(mouse, l.cancel);
@@ -1081,6 +1131,22 @@ mod tests {
     }
 
     #[test]
+    fn text_valid_for_always_validates_the_chest_context() {
+        // `:615-626` — the empty rule is gated on `!_editingChest`, so the
+        // chest context (2) submits every text; the text context (0) keeps
+        // the `allowEmpty` fallback.
+        assert!(text_valid_for("", false, Context::Chest));
+        assert!(text_valid_for("   ", false, Context::Chest));
+        assert!(text_valid_for("Chest", false, Context::Chest));
+        assert!(!text_valid_for("", false, Context::Text));
+        assert!(text_valid_for("a", false, Context::Text));
+        // `_editingSign` (context 1) is out of the port; `Context::Chest` is
+        // the only always-valid arm.
+        assert!(!Context::Text.editing_chest());
+        assert!(Context::Chest.editing_chest());
+    }
+
+    #[test]
     fn new_state_seeds_shift_on_empty_text() {
         // `:429-433` — empty starting text seeds `KeyState.Shift`.
         let seeded = KeyboardState::new(&Request {
@@ -1088,6 +1154,7 @@ mod tests {
             initial: String::new(),
             allow_empty: true,
             max_length: 20,
+            context: Context::Text,
         });
         assert_eq!(seeded.key_state, KeyState::Shift);
         assert!(seeded.shift_latched);
@@ -1098,6 +1165,7 @@ mod tests {
             initial: "World 1".into(),
             allow_empty: true,
             max_length: 27,
+            context: Context::Text,
         });
         assert_eq!(named.key_state, KeyState::Default);
         assert!(!named.shift_latched);
@@ -1108,6 +1176,7 @@ mod tests {
             initial: "0123456789".into(),
             allow_empty: false,
             max_length: 4,
+            context: Context::Text,
         });
         assert_eq!(capped.text, "0123");
     }
@@ -1121,6 +1190,7 @@ mod tests {
             initial: String::new(),
             allow_empty: true,
             max_length: 20,
+            context: Context::Text,
         });
         type_char(&mut state, 'h');
         assert_eq!(state.text, "h");
@@ -1148,6 +1218,7 @@ mod tests {
             initial: String::new(),
             allow_empty: true,
             max_length: 8,
+            context: Context::Text,
         });
         assert_eq!(state.key_state, KeyState::Shift);
         write_str(&mut state, "ab");
@@ -1170,6 +1241,7 @@ mod tests {
             initial: "x".into(),
             allow_empty: false,
             max_length: 20,
+            context: Context::Text,
         });
         assert_eq!(state.key_state, KeyState::Default);
         state.toggle_key_state();
@@ -1194,6 +1266,7 @@ mod tests {
             initial: String::new(),
             allow_empty: true,
             max_length: 20,
+            context: Context::Text,
         });
         let centre = |rect: [f32; 4]| Vec2::new(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
         // The grid's corners and a middle key (`:219-227`) — the letters read

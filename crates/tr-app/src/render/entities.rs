@@ -166,6 +166,13 @@ pub(crate) struct NpcAssets {
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
     pub(crate) mystery_snowman: Option<BgTex>,
+    /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
+    /// `NPC_520` — the Martian Walker (8 frames of 34x110,
+    /// `Main.npcFrameCount[520]`), `NPC_399` — the Martian Probe (8 frames
+    /// of 42x72).
+    pub(crate) martian_walkers: Option<BgTex>,
+    pub(crate) martian_walker_big: Option<BgTex>,
+    pub(crate) martian_probe: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -253,6 +260,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         snowman_gangsta: sky_tex(atlas, "NPC_143", None),
         snow_balla: sky_tex(atlas, "NPC_144", None),
         mystery_snowman: sky_tex(atlas, "NPC_145", None),
+        martian_walkers: sky_tex(atlas, "NPC_383", None),
+        martian_walker_big: sky_tex(atlas, "NPC_520", None),
+        martian_probe: sky_tex(atlas, "NPC_399", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -865,6 +875,31 @@ pub(crate) fn draw_npcs(
                     [n.x, n.y],
                 )
             }
+            // The martians: the 9-frame strips over the 18x40 frames (the
+            // walker's 8-frame 34x110 sheet rides NPC_520 —
+            // `Main.npcFrameCount[520]` = 8).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => (
+                assets.martian_walkers.as_ref(),
+                assets.martian_walkers.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
+            NpcKind::MartianProbe => (
+                assets.martian_probe.as_ref(),
+                assets.martian_probe.as_ref().map_or(72.0, |t| t.h / 8.0),
+                [42.0, 72.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianWalker => (
+                assets.martian_walker_big.as_ref(),
+                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 8.0),
+                [34.0, 110.0],
+                [n.x, n.y],
+            ),
             // The pirates: the 16/20-frame strips over the 18x40 frames
             // (the Captain's 20-frame sheet rides NPC_216).
             NpcKind::PirateDeckhand

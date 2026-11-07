@@ -110,6 +110,8 @@ pub struct World {
     pub downed_frost: bool,
     /// `NPC.downedPirates` (`NPC.cs:6343`): the defeated Pirate Invasion.
     pub downed_pirates: bool,
+    /// `NPC.downedMartians` (`NPC.cs:6347`): the defeated Martian Madness.
+    pub downed_martians: bool,
     /// `NPC.savedGoblin` — the rescue flag (`AI_007_TownEntities_
     /// UpdateSavedStates` case 107, `NPC.cs:52944-52946`).
     pub saved_goblin: bool,
@@ -242,6 +244,7 @@ impl World {
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,
+            downed_martians: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
