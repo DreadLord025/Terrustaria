@@ -1387,6 +1387,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
+    // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
+    // the shared counter's third break summons the Eater of Worlds (a
+    // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
+    // nearest player; the port polls the count delta (the flag edge is
+    // the edge — the sim resets it to 0 on the summon, exactly like the
+    // vanilla's `shadowOrbCount = 0`).
+    if app.world.shadow_orb_count >= 3 && !app.world.downed_eow {
+        app.world.shadow_orb_count = 0;
+        if let Some(p) = app.player.as_ref() {
+            let (px, py) = p.center();
+            let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+            let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+            // The crimson flag rides the orb frame — the port's worldgen
+            // places the corruption/crimson orbs per the chasm side; the
+            // port's spawn picks the corruption EoW (the crimson-Brain
+            // arm rides the flag, the detection lands with the wave event).
+            let mut head = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+            head.hp = head.max_hp;
+            head.worm_left = 65;
+            app.npcs.push(head);
+        }
+    }
     // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
     // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
     // centre for the head/fist tethers; the BODY is invulnerable while

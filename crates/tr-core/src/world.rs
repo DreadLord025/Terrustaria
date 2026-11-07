@@ -168,6 +168,11 @@ pub struct World {
     /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
     /// corruption orb arms the morning invasion rolls.
     pub shadow_orb_smashed: bool,
+    /// `WorldGen.shadowOrbCount` (`WorldGen.cs:54293`): the shared
+    /// orb/heart/mana-crystal smash counter — the third break in a world
+    /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
+    /// summons the boss (`:54294-54321`).
+    pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
@@ -269,6 +274,7 @@ impl World {
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
+            shadow_orb_count: 0,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,
