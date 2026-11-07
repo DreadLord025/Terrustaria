@@ -914,14 +914,15 @@ M2-MOUNT-3 minecart system, M2-MOUNT-4 special-ability mounts.
   iterate children **back-to-front** (324-352); events **bubble child→parent**; double
   click 500 ms, state-change click lockout 200 ms (`UserInterface.cs:41-47`); draw uses
   `Main.UIScaleMatrix`, `OverflowHidden` = scissor rect.
-- Inventory UX: ItemSlot contexts 0-33+ (`ItemSlot.cs:44-102`); actions 0-5
-  (`PickItemMovementAction` 1484-1633); cursorOverride special clicks: 3 favorite, 6
-  quick-trash, 7 shift-transfer, 8 transfer+sync, 9 put-in-UI, 10 quick-sell
-  (730-912); right-click stack-split: first delay 30, repeat `stackDelay = 7`, superFast
+- Inventory UX: ItemSlot contexts 0-43 (`ItemSlot.cs:44-130`); actions 0-5
+  (`PickItemMovementAction` 1484-1633); cursorOverride special clicks: 6 Trash,
+  7 TransferToBackpack/Unequip, 8 TransferFromChest, 9 TransferToChest, 10 Sell
+  (ItemSlot.cs:213-218); right-click stack-split: first delay 30, repeat `stackDelay = 7`, superFast
   after ~2 s (`Main.cs:61785-61803`); coin slots accept only 71-74; shop sell excludes
   coins; journey duplication ignores source decrement (ctx 29).
-- Chest UI buttons 0-4 (`ChestUI.cs`): LootAll 393, DepositAll 540, QuickStack 661,
-  Restock 871, MoveCoins first for banks.
+- Chest UI buttons 0-6 (`Terraria/UI/ChestUI.cs:20-42` — the file lives in `UI/`,
+  not GameContent/UI): LootAll 0, DepositAll 1, QuickStack 2, Restock 3, Sort 4,
+  RenameChest 5, RenameChestCancel 6 — MoveCoins is a helper, not a button.
 - Crafting: legacy `CraftingUI` + `NewCraftingUI` (grid, filters station/water,
   `NewCraftingUI.cs:132-171`); craft-from-nearby-chests toggle.
 - Screens (all in `GameContent/UI/States/`): CharacterSelect 17, CharacterCreation 23,
@@ -1317,7 +1318,7 @@ section in brackets before starting a row.
 | M3-EQUIP-4 | `M3-EQUIP-4-dye-slots` | dye plumbing [11][12] |
 | M3-PREFIX | `M3-PREFIX` | roll engine + tables [11] |
 | M3-REFORGE-1 | `M3-REFORGE-1-goblin` | reforge UI + cost + best-tier [11] |
-| 🔄 M3-CHEST-UI | `M3-CHEST-UI` | chest UI + world chests [13][23] |
+| ✅ M3-CHEST-UI | `M3-CHEST-UI` | chest UI + world chests [13][23] — done 2026-11-07: the storage loop — `crates/tr-app/src/chest.rs` owns the `Chest.cs` entity (the indexed world-chest store over `App.world_chests` with the coord-collision −1 `Chest.cs:522-533`, the locked-frame decode `:307-313`, `IsLockedOrInUse` `:178-188`, `Lock`/`Unlock` frame shifts ±36/±180 `:346-495` taking the `plant_boss` param — no world flag yet, call sites pass true), the `Player.cs` chest branch (the open-click path `:33056-33260` incl. the frame-derived key ids 327/329/1533+(col−23)/4714 with unlock-consumes-the-click, the per-tick range close `:31015-31124` sound 11, `OpenChest` `:33505`; entries are created lazily on first open, no placement hook), the item-movement helpers (`try_placing_in_chest` ≈ `ChestUI.cs:1209-1289`'s TryPlacingInChest, `quick_transfer_from_slot`) and the rename flow (`ChestUI.cs:827-869`) riding `FrontScreen::Keyboard` with the `KeyboardTail::ChestRename` tail; one interception line beside `try_open_shop_at_cursor` in `world_sim/editing.rs` + one `tick_open` line in `world_sim/player.rs` (the PHYS-7 sanctioned minimum); `crates/tr-app/src/ui/chest.rs` mirrors `Terraria/UI/ChestUI.cs` (the name line at (504, 258) with the tile-style default names + the "Locked " + twin rule, the rename pair 5/6 at x=506 / y=invBottom+40+ID·26 with the 0-4 anchors reserved for M3-STORE-2, the 10×4 slot window at scale 0.755 from (73, 258) with the scroll clamp `Main.cs:17436-17452` — dead at the default 40 slots, 1:1), `ui/slot.rs` the context-3 `Inventory_Back5` arm, `clicks.rs` the ctx-3 clicks (left action 0 through the shared `left_click_movement`, right stack-split 30/7/superFast, shift-transfer cursors 8/9, the tile re-click toggle). 67 new tests across the 5 phases, suite 1038/16/570/19 ok; `TR_CHEST` double-run SHA256 pairs equal (`db882ea0…`, byte-identical to the pre-change HEAD). Deviations in ANALYSIS "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no stale-entry sweep, no lid animation, the rigged-chest arm out, the rename overlay pause, favorites stateless, the craft scan's [21,341] latent note …). Remains: M3-STORE-1 banks, M3-STORE-2 transfer buttons (the per-slot helpers are in place), M3-STORE-3 trash/favorites, M5-CHEST-gen loot, M6-SAVE-2 persistence (`WorldFile.cs` `SaveChests`/`LoadChests` `:1606`/`:2723`), the keyboard overlay rework, the Cursor_8/9 textures |
 | M3-STORE-1 | `M3-STORE-1-banks` | piggy/safe/defender/void [13] |
 | M3-STORE-2 | `M3-STORE-2-quick-stack` | loot all/deposit/quick stack/restock [13] |
 | M3-STORE-3 | `M3-STORE-3-trash-favorites` | trash + favorites rules [13] |

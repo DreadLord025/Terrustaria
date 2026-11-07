@@ -2242,9 +2242,14 @@ cites its builder chain. Deviations and seams:
   styles 13/25, `TileObjectData.cs:3182-3190`) and the gemspark/glow tiles
   stay excluded (research decision — they are wall/light render work, not
   placement); adding objects is data-only until the generator lands.
-- The chest is a pure tile object: the `Chest.FindEmptyChest`/`Chest.
-  AfterPlacement_Hook` hooks (`TileObjectData.cs:3464-3465`), chest indices
-  and item storage are NOT ported — the M3-CHEST-UI seam.
+- The chest is no longer a pure tile object (flipped 2026-11-07, M3-CHEST-UI):
+  the item storage and the open/lock/unlock/rename interaction are ported —
+  `crates/tr-app/src/chest.rs` owns the `Chest.cs` entity semantics and the
+  world-chest store, `crates/tr-app/src/ui/chest.rs` the `ChestUI.cs` panel
+  (see "Chest UI + world chests (M3-CHEST-UI)" below). The placement-time
+  entry hooks (`Chest.FindEmptyChest`/`Chest.AfterPlacement_Hook`,
+  `TileObjectData.cs:3464-3465`) stay unhooked — store entries are created
+  lazily on first open instead (empty-entry-equivalent; that section).
 - Net placement replication (`apply_edit` kind 1, `world_sim/editing.rs:548`)
   sends style 0 / dir 1: the generic replication path carries no
   style/alternate/direction (vanilla's `NetMessage.SendObjectPlacement`
@@ -2282,8 +2287,9 @@ cites its builder chain. Deviations and seams:
   (`WorldGen.cs:62219-62326`) refuses a locked door type 10 (`:62290-62295` —
   the already-ported `IsLockedDoor` frames, `:69191-69197`), a chest 21/467/88
   holding items (`:62311-62323` — the app's chest store answers
-  `CanDestroyChest`, `Chest.cs:609-623`; the store stays empty until
-  M3-CHEST-UI) and the tile under a container {21,26,72,77,88,467,488}
+  `CanDestroyChest`, `Chest.cs:609-623`; the store is populated since
+  M3-CHEST-UI, so a stocked chest refuses its break for real) and the tile
+  under a container {21,26,72,77,88,467,488}
   (`:62259-62270`); `edit::can_kill_tile` (`edit.rs:1798`) ports the three
   and gates the mining tick (`damage = 0`, `Player.cs:53830-53833`),
   `break_tile`, the replicated break (`apply_edit` kind 0) and the bomb
@@ -2297,8 +2303,10 @@ cites its builder chain. Deviations and seams:
   the outer break sources instead, one query shared by all of them); the
   per-tick `KillTile(fail: true)` sound/dust of a refused pick
   (`Player.cs:53822-53831`) has no ported path, so the refusal is silent;
-  explosion/replication pass `|_, _| false` for the chest store (not
-  reachable without the app — unobservable while the store is empty).
+  explosion/replication pass `|_, _| false` for the chest store — the
+  M3-CHEST-UI task left this unchanged (the M1.4-TO-6 deviation stands; the
+  store is populated now, so the widening is observable and is the PHYS-7
+  follow-up).
 - The mining break carries no net messages: vanilla syncs the break/fail
   with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
   SP port has no replication for it (the same seam as the door message 19
@@ -3978,10 +3986,14 @@ world chests within 600 px of the player's feet
 (`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
 the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
 gated by the new `craft_from_nearby_chests` setting wired to the panel's
-nearby-chests toggle. Deviations: the store's population is M3-CHEST-UI's
-(the chest tiles place with no inventories yet), the save/persistence is
-M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
-passes for every chest (no chest locking); the scan order is raster (the
+nearby-chests toggle. Deviations: the store's population landed with
+M3-CHEST-UI (2026-11-07 — `crates/tr-app/src/chest.rs`; entries appear
+lazily on first open, so a never-opened chest still contributes nothing to
+the scan — "Chest UI + world chests (M3-CHEST-UI)"), the save/persistence
+is M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
+is ported with M3-CHEST-UI but the craft scan still passes every in-range
+chest (the lock gate is unwired here — a latent note, not fixed in that
+task); the scan order is raster (the
 vanilla iterates `Main.chest[]`'s instance order — the port has no instance
 registry); the group drain walks members in the group's registration order
 when the inventory pass runs per-member (the vanilla drains one flat pass
@@ -4546,3 +4558,124 @@ PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
 positions ride the generic centre anchor (the C# positions them via the
 composite arms' stretch-dependent offsets — the arms carry the pose; the
 item offset differences are sub-10px polish for the render pass).
+
+## Chest UI + world chests (M3-CHEST-UI)
+
+The storage loop landed 2026-11-07 (phases 1-5, commits `3d953e4`,
+`37949d5`, `ac0b326`, `7956aa9` + fix `1bfe0a4`, `c5eadd2`):
+`crates/tr-app/src/chest.rs` owns the `Chest.cs` entity — the indexed
+world-chest store over `App.world_chests` (`Chest.cs:522-533` find/find-empty
+with the coord-collision −1), the locked-frame decode `is_locked`
+(`Chest.cs:307-313`), `is_locked_or_in_use` (`Chest.cs:178-188`),
+`Lock`/`Unlock` frame shifts ±36/±180 (`Chest.cs:346-495`), the open-click
+path (`Player.cs:33056-33260`: the key-unlock arm with the frame-derived key
+ids 327/329/1533+(col−23)/4714, the unlock-consumes-the-click rule, the
+open/re-open sounds 10/12), the per-tick range close `tick_open`
+(`Player.cs:31015-31124`, sound 11), `OpenChest` (`Player.cs:33505`), the
+item-movement helpers (`try_placing_in_chest` ≈ `TryPlacingInChest`
+`ChestUI.cs:1209-1289`, `quick_transfer_from_slot`) and the rename flow
+(`ChestUI.cs:827-869`). `crates/tr-app/src/ui/chest.rs` mirrors the
+`ChestUI.Draw` half (the name line, the rename pair, the 10×4 slot window at
+scale 0.755); `ui/slot.rs` gained the context-3 `Inventory_Back5` arm
+(`ItemSlot.cs:2215-2221`) and `clicks.rs` the context-3 click arm. The
+rename rides the existing `FrontScreen::Keyboard` with a
+`KeyboardTail::ChestRename` session. Suite 1038/16/570/19 ok; `TR_CHEST`
+double-run SHA256 pairs `adbdaeac…` (phase 3) and `db882ea0…` (phase 5)
+equal, the latter byte-identical to the pre-change HEAD.
+
+Deviations (deliberate, in plan order):
+
+- **Lazy store entry on first open, not at placement.** The C# placement
+  path books the chest through `Chest.FindEmptyChest`/`Chest.
+  AfterPlacement_Hook` (`TileObjectData.cs:3464-3465`); the port's placement
+  hooks are unreachable without `editing.rs` edits, so the open path creates
+  the entry on first open (`chest.rs` `try_open_chest_at_cursor`'s
+  `create_chest` miss arm). Empty-entry-equivalent: a never-opened chest
+  behaves exactly like an absent store entry everywhere the store is read
+  (the craft scan, `CanDestroyChest`, `using_chest`), so the divergence is
+  player-invisible.
+- **No stale-entry sweep.** A broken chest leaves its store entry behind
+  (the sweep would need another `editing.rs` hook); every consumer filters
+  by live tile presence instead — `chests_in_range` structurally excludes
+  dead tiles (the tile-active scan) and a stocked chest refuses its break
+  through `can_kill_tile`/`CanDestroyChest` (M1.4-TO-6), so a stale entry is
+  always an empty one.
+- **The rigged/dead-man's chest branch is out** (`Player.cs:33253-33258` —
+  the explosive trap on chest open). It is a wiring system; the port has no
+  wiring trap to arm it with, and no owning task has claimed it yet.
+- **The chest lid animation is out.** `Chest.frame`/`UpdateChestFrames`
+  (`Chest.cs:3603`) animates the open/close lid through the tile draw; the
+  port's chest tiles render statically. Render follow-up — the open state
+  itself is correct.
+- **The PHYS-7 coordination lines.** Exactly two simulation-file lines ride
+  this task: the one-line `try_open_chest_at_cursor` interception beside
+  `try_open_shop_at_cursor` (`world_sim/editing.rs:582`'s pattern — the
+  tile-interaction dispatch, NOT the mining/break paths, which stay
+  untouched) and the one-line `crate::chest::tick_open(app);` per-tick hook
+  in `world_sim/player.rs` (the `HandleBeingInChestRange` slot,
+  `Player.cs:25290`/`:31015-31124`). Both are the plan's sanctioned
+  additive minimum (Decision Log #6/#9; the research doc's categorical
+  "no editing.rs edits" was waived by the owner — "делай как лучше").
+- **Explosion/replication `|_, _| false` unchanged.** The bomb-explosion
+  and apply-edit break paths still skip the chest-store refusal (the
+  M1.4-TO-6 deviation stands — the store was empty when it was written).
+  With the store populated the widening is now observable; it is the PHYS-7
+  follow-up, not done here.
+- **The `downed_plant_boss` gate has no world flag.** `spread.rs:232`'s
+  flag is a worldgen parameter, not the runtime world flag; `lock_chest`/
+  `unlock_chest` take a `plant_boss: bool` parameter and the call sites
+  pass `true` (Decision Log #8). Flip to the real flag when M4 lands it.
+- **Chest names are hardcoded strings, not localized.** `default_chest_name`
+  derives the vanilla names from the generated `itemdata::ITEMS`
+  (tile + place style) with the `"Locked " + twin` rule for the lock-shifted
+  frames (`Chest.Lock` shifts the style by +1; `default_chest_name(21, 72)`
+  = "Locked Gold Chest"). No localization content exists on disk
+  (`LegacyChestType.*` is embedded in the retail exe) — the house precedent
+  for hardcoded UI labels (Decision Log #11).
+- **The rename keyboard is a front screen, not an overlay.** The port opens
+  `FrontScreen::Keyboard` mid-game, so the world sim pauses and the HUD
+  hides while renaming; vanilla draws the keyboard as a `LegacyGameInterfaceLayer`
+  ("Vanilla: Fancy UI", `Main.cs:44778`) inside the same interface pass as
+  the inventory (`:44839`), with the game UI live underneath. The caret arm
+  (`ChestUI.cs:165-184`), the `inter[47]` "Save" label and the panel-button
+  clicks are ported and unit-tested but visually unreachable until an
+  overlay rework. The submit sounds converge: the port's unified submit
+  plays 10+12 where C#'s Enter path plays 12+11 (`UIVirtualKeyboard.cs`
+  submit tail). The panel-cancel closes the keyboard with the edit
+  discarded (`RenameChestCancel`, sound 12).
+- **The entity folds are parked at M6-SAVE-2.** `Chest.name` rides the
+  `App.chest_names` side map (the frozen `editing.rs:2680` literal keeps the
+  `WorldChest` widening out until then); `ChestSlot` carries no prefix byte
+  (the port's player items have none); `maxItems` is the
+  `DEFAULT_MAX_ITEMS = 40` const, not a per-chest field. All three fold
+  into the entity when M6-SAVE-2 ports the `.wld` chest sections
+  (`WorldFile.cs` `SaveChests`/`LoadChests` `:1606`/`:2723`).
+- **Favorites are stateless.** The `canFavoriteAt`/`retainFavoriteOnMoveAt`
+  RULE tables are ported (`ItemSlot.cs:386-394`/`:1255-1263` — context 3 is
+  excluded from favoriting, moving out clears the flag); no favorite flag
+  exists on any slot yet (M7-UI-2 owns the state), and the cursor-override
+  TEXTURE display is deferred (`Cursor_8/9` are on disk but not in the
+  packed atlas — the 8/9 state machinery is fully ported, Decision Log
+  #14).
+- **The context-0 inventory keeps its half-take.** Right-click in context 0
+  stays the half-take — the stack-split machinery (30/7/superFast) is
+  context-3 only, as in vanilla. `Player.ItemSpace`'s ammo-`FillAmmo`/
+  void-vault/`IsAPickup` arms (`Player.cs:39148-39347`) and `DoCoins`
+  (`:39246`) are unported; the keyboard's `Main.blockKey` guard
+  (`ChestUI.cs:868`), the IME composition (`UIVirtualKeyboard.cs:747`) and
+  the `Main.clrInput()` reset (`IngameFancyUI.cs:128`) are out.
+- **The open set vs the craft scan.** The chest interaction uses
+  `TileID.Sets.BasicChest` {21, 467} (`TileID.cs:570`); the craft scan's
+  `CHEST_TILES` froze [21, 341] (`craft.rs:392`) — 341 is
+  `LivingDemonFire` (`TileID.cs:1311`), not a chest. Latent M3-CRAFT-2
+  note, deliberately not fixed in this task (its file scope is closed).
+- **The wheel gate is dead at 40 slots.** The scroll clamp is
+  `0..ceil(maxItems/10) − 4` (`Main.cs:17436-17452`) — at the default 40
+  slots that is `0..0`, so the wheel never scrolls. 1:1 with vanilla.
+
+The stale notes flipped with this landing (located by content; the cited
+line numbers had drifted): "Tile objects (M1.4-TO)"'s "the chest is a pure
+tile object" bullet and the M1.4-TO-6 `CanKillTile` entry's "the store stays
+empty until M3-CHEST-UI" both now point at the landed implementation, and
+the M3-CRAFT-2 section's "the store's population is M3-CHEST-UI's"
+deviation is retired the same way.
