@@ -42,6 +42,9 @@ use crate::npc::Npc;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
 pub const WOODEN_ARROW: u16 = 1;
+/// `ProjectileID.WoodenArrowHostile` (`ProjectileID.cs:716`) — the
+/// Goblin Archer's shot; the box/flight mirror the wooden arrow.
+pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -140,6 +143,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:807-815` / `:817-827` (the flame arrow shares the
             // box; `timeLeft = 1200` on both).
             WOODEN_ARROW | FLAME_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
+            // flight, `timeLeft = 1200`.
+            WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
@@ -197,6 +203,10 @@ pub struct Projectile {
     /// The crit decision rolled at throw time (the item stream lives in the
     /// app, not in the projectile step).
     pub crit: bool,
+    /// `Projectile.friendly` (`:3115`): true = the player's shots (the pool's
+    /// PVE pass hits NPCs), false = the hostile shots (the player-contact
+    /// pass hurts the owner).
+    pub friendly: bool,
     /// `timeLeft` — ticks down once per update, `Kill()` at `<= 0` (`:17201`).
     pub time_left: i32,
     /// `maxPenetrate` / `penetrate`; 1 = single hit.
@@ -244,6 +254,7 @@ impl Default for Projectile {
             damage: 0,
             knock_back: 0.0,
             crit: false,
+            friendly: true,
             time_left: TIME_LEFT_DEFAULT,
             max_penetrate: 1,
             penetrate: 1,
@@ -723,6 +734,24 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// The hostile shot spawn (`NPC.cs`'s `Projectile.NewProjectile`
+    /// arms — the archer's arrow 1, the Destroyer's laser 100): the
+    /// owner folds to 0 (the single-player quirk), `friendly = false`,
+    /// the crit false (the hostile crits ride the expert rolls, not the
+    /// item stream).
+    pub fn spawn_hostile(
+        &mut self,
+        kind: u16,
+        pos: Vec2,
+        vel: Vec2,
+        damage: i32,
+        knock_back: f32,
+    ) -> Option<usize> {
+        let slot = self.spawn(kind, 0, pos, vel, damage, knock_back, false)?;
+        self.slots[slot].friendly = false;
+        Some(slot)
+    }
+
     /// Configure the immunity system of a just-spawned slot (the C# sets these
     /// in the per-type `SetDefaults`).
     pub fn set_immunity(
@@ -747,7 +776,14 @@ impl ProjectilePool {
     /// `Projectile.NewProjectile(..., 0f, 0.41f, projType, dmg, ...)` +
     /// `ai[0] = 1f`, `WorldGen.cs:86071-86073`): the 10×10 sand ball falls
     /// with the tile-fall gravity and places its tile on landing.
-    pub fn spawn_falling(&mut self, tile_kind: u16, proj_kind: u16, damage: i32, x: f32, y: f32) -> Option<usize> {
+    pub fn spawn_falling(
+        &mut self,
+        tile_kind: u16,
+        proj_kind: u16,
+        damage: i32,
+        x: f32,
+        y: f32,
+    ) -> Option<usize> {
         let mut slot = None;
         for (i, p) in self.slots.iter().enumerate() {
             if !p.active {
@@ -785,6 +821,7 @@ impl ProjectilePool {
             bounces: 0,
             falling_tile: Some(tile_kind),
             detonated: false,
+            ..Default::default()
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -841,6 +878,7 @@ impl ProjectilePool {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            ..Default::default()
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -850,7 +888,13 @@ impl ProjectilePool {
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
-    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc], owner: Option<(f32, f32)>) {
+    pub fn update(
+        &mut self,
+        world: &mut World,
+        npcs: &mut [Npc],
+        owner: Option<(f32, f32)>,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
@@ -919,6 +963,12 @@ impl ProjectilePool {
                 self.explode_bomb(i, world, npcs);
             }
             self.damage_pve(i, npcs);
+            // The hostile shots' player contact (`Projectile.Damage_PVP`'s
+            // single-player stand-in): the box overlap -> `Player.hurt`
+            // (the iframes gate inside), the shot dies on the hit.
+            if self.slots[i].active && !self.slots[i].friendly {
+                self.damage_player(i, player.as_deref_mut());
+            }
             // `:17199-17208`.
             let (time_left, penetrate) = {
                 let p = &self.slots[i];
@@ -1098,6 +1148,32 @@ impl ProjectilePool {
             }
         }
     }
+
+    /// The hostile shot's player contact: the box overlap with the
+    /// player's rect hurts through `Player.hurt` (its iframe gate holds
+    /// the per-tick repeats off) and kills the shot (the single-hit
+    /// default).
+    fn damage_player(&mut self, slot: usize, player: Option<&mut crate::player::Player>) {
+        let Some(player) = player else {
+            return;
+        };
+        let p = &self.slots[slot];
+        if p.damage <= 0 {
+            return;
+        }
+        let cx = p.pos.x + SIZE * 0.5;
+        let cy = p.pos.y + SIZE * 0.5;
+        let inside = cx >= player.x
+            && cx < player.x + crate::player::WIDTH
+            && cy >= player.y
+            && cy < player.y + crate::player::HEIGHT;
+        if !inside {
+            return;
+        }
+        player.hurt(p.damage, cx);
+        self.slots[slot].active = false;
+        self.slots[slot].time_left = 0;
+    }
 }
 
 #[cfg(test)]
@@ -1127,6 +1203,46 @@ mod tests {
     fn one_npc(world: &World) -> Npc {
         Npc::spawn_slime(world, 20).unwrap()
     }
+    #[test]
+    fn the_hostile_shot_hurts_the_player_and_dies() {
+        // The hostile contact pass: the box overlap -> `Player.hurt`
+        // (the iframes gate inside), the shot dies on the hit.
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        pool.spawn_hostile(
+            100,
+            Vec2::new(pcx - 5.0, pcy - 5.0),
+            Vec2::new(2.0, 0.0),
+            25,
+            0.0,
+        );
+        assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
+        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player));
+        assert!(player.hp < player.max_hp, "the shot hurt");
+        assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
+        // The friendly shuriken at the same spot never hurts the player.
+        let mut player2 = crate::player::Player::spawn(&w);
+        let (pcx2, pcy2) = player2.center();
+        let mut pool2 = ProjectilePool::new();
+        pool2.spawn(
+            SHURIKEN,
+            0,
+            Vec2::new(pcx2 - 5.0, pcy2 - 5.0),
+            Vec2::new(2.0, 0.0),
+            10,
+            12.0,
+            false,
+        );
+        pool2.update(
+            &mut w.clone(),
+            &mut [],
+            Some((pcx2, pcy2)),
+            Some(&mut player2),
+        );
+        assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
+    }
 
     /// One pool update plus the per-NPC decay the NPC update would run
     /// (`NPC.cs:90454-90459`), so multi-tick tests see the gates age.
@@ -1135,7 +1251,7 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None);
+        pool.update(world, std::slice::from_mut(npc), None, None);
     }
 
     #[test]
@@ -1186,8 +1302,11 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None);
-        assert!(!pool.slots()[slot].active, "penetrate 1 → dead after the hit");
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None);
+        assert!(
+            !pool.slots()[slot].active,
+            "penetrate 1 → dead after the hit"
+        );
         assert_eq!(pool.slots()[slot].penetrate, 0);
         assert!(npc.hp < npc.max_hp);
         // `:14112-14119`: a single-hit projectile applies no immunity.
@@ -1264,7 +1383,11 @@ mod tests {
         tick(&mut world, &mut pool, &mut npc);
         assert_eq!(npc.hp, hp0 - 20, "the 10th decay tick freed the gate");
         assert_eq!(npc.immune[0], 10, "re-applied");
-        assert_eq!(pool.slots()[slot].penetrate, 3, "the freed gate landed a hit");
+        assert_eq!(
+            pool.slots()[slot].penetrate,
+            3,
+            "the freed gate landed a hit"
+        );
     }
 
     #[test]
@@ -1323,7 +1446,7 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None);
+            pool.update(&mut world, &mut [], None, None);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -1345,7 +1468,7 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None);
+        pool.update(&mut world, &mut [], None, None);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -1377,12 +1500,10 @@ mod falling_tests {
     #[test]
     fn the_falling_block_falls_at_the_tile_fall_gravity() {
         let mut pool = ProjectilePool::new();
-        let slot = pool
-            .spawn_falling(53, 31, 10, 160.0, 200.0)
-            .unwrap();
+        let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None);
+        pool.update(&mut w, &mut npcs, None, None);
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -1398,13 +1519,11 @@ mod falling_tests {
         // The spawn just above the solid row 24: the bottom edge (y + 10)
         // starts at 384 — the top of row 24 — and the first gravity step
         // pushes it inside.
-        let slot = pool
-            .spawn_falling(53, 31, 10, 160.0, 374.0)
-            .unwrap();
+        let slot = pool.spawn_falling(53, 31, 10, 160.0, 374.0).unwrap();
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None);
+        pool.update(&mut w, &mut npcs, None, None);
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -1447,7 +1566,7 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -1530,10 +1649,13 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
-        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 14 ticks");
-        pool.update(&mut w, &mut npcs, None);
+        assert_eq!(
+            pool.slots[0].vel.y, 0.0,
+            "no gravity for the first 14 ticks"
+        );
+        pool.update(&mut w, &mut npcs, None, None);
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -1557,7 +1679,7 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -1579,7 +1701,7 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -1599,11 +1721,14 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None);
-        assert!((pool.slots[0].vel.y - 0.2).abs() < 1e-6, "the 6th tick adds 0.2");
+        pool.update(&mut w, &mut npcs, None, None);
+        assert!(
+            (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
+            "the 6th tick adds 0.2"
+        );
     }
 }
 
@@ -1662,10 +1787,10 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None);
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None);
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -1675,7 +1800,15 @@ mod boomerang_tests {
         // `:14594-14602`: the outbound tile hit reverses the velocity and
         // sets the return state instead of killing.
         let mut pool = ProjectilePool::new();
-        pool.spawn_with_data(WOODEN_BOOMERANG, 8.0 * 16.0, 16.0 * 16.0, 10.0, 0.0, 10, 5.0);
+        pool.spawn_with_data(
+            WOODEN_BOOMERANG,
+            8.0 * 16.0,
+            16.0 * 16.0,
+            10.0,
+            0.0,
+            10,
+            5.0,
+        );
         let mut w = world();
         for y in 14..20 {
             for x in 12..24 {
@@ -1684,7 +1817,7 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)));
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None);
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -1722,7 +1855,7 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)));
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None);
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -1748,7 +1881,7 @@ mod boomerang_tests {
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)));
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -1809,11 +1942,14 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
-        assert!(w.tile(20, 20).unwrap().flags & FLAG_ACTIVE == 0, "the center dug");
+        assert!(
+            w.tile(20, 20).unwrap().flags & FLAG_ACTIVE == 0,
+            "the center dug"
+        );
         assert!(
             w.tile(23, 20).unwrap().flags & FLAG_ACTIVE == 0,
             "3 tiles out dug"
@@ -1837,10 +1973,13 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
         assert!(!pool.slots[0].active);
-        assert!(w.tile(26, 20).unwrap().flags & FLAG_ACTIVE == 0, "6 tiles out dug");
+        assert!(
+            w.tile(26, 20).unwrap().flags & FLAG_ACTIVE == 0,
+            "6 tiles out dug"
+        );
         assert!(
             w.tile(28, 20).unwrap().flags & FLAG_ACTIVE != 0,
             "8 tiles out survives"
@@ -1874,7 +2013,7 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None);
+            pool.update(&mut w, &mut npcs, None, None);
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -1893,11 +2032,14 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None);
+        pool.update(&mut w, &mut [], None, None);
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
-        assert!((pool.slots[0].vel.y - 0.2).abs() > 1e-6, "no gravity before tick 5");
+        assert!(
+            (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
+            "no gravity before tick 5"
+        );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None);
+            pool.update(&mut w, &mut [], None, None);
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,

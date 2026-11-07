@@ -1036,6 +1036,10 @@ pub struct Npc {
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
+    /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
+    /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
+    /// into the pool (the `wants_sphere` shape).
+    pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
 }
 
 impl Npc {
@@ -1340,6 +1344,7 @@ impl Npc {
             defense_override: None,
             dont_take_damage: false,
             swarm_done: false,
+            wants_hostile_shot: None,
         }
     }
 
@@ -1792,10 +1797,10 @@ impl Npc {
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
-            NpcKind::GoblinPeon
-            | NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher => self.update_goblin(world, player),
+            NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
+                self.update_goblin(world, player)
+            }
+            NpcKind::GoblinArcher => self.update_archer(world, player, rng),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3): the walker speed
@@ -3955,6 +3960,103 @@ impl Npc {
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
             self.hp = 0;
+        }
+    }
+
+    /// The Goblin Archer (`AI_003`'s ranged family, `NPC.cs:59069-59700`):
+    /// the walk until the shot gate — grounded, `CanHit`, the distance
+    /// < 700 (`num179`), `ai[1] <= 0` — then the stop state (`ai[2] = 1`,
+    /// `ai[1] = num162 = 180` for 111, `velocity.X *= 0.5`); the state
+    /// damps `velocity.X *= 0.9` (`:59614-59616`'s `!flag16` arm) and
+    /// fires at the midpoint tick `ai[1] == 90` (`num163 = num162 / 2`):
+    /// the aim = the player's centre minus the archer's, the vertical
+    /// lead `|dx| * 0.1` (`num166`), the aim jitter +-40 px (`:59370`'s
+    /// `Next(-40, 41)` fallthrough), the normalized speed 9 (`num164 =
+    /// 9f` for 111), the hostile Wooden Arrow Hostile 81 at the damage
+    /// 11 (`num170 = 81`, `num169 = 11`, the `:59571` call). The justHit
+    /// staggers (`ai[1] = 30`, `ai[2] = 0`, `:59088-59094` — the port's
+    /// `hurt_cd` window re-arms it, the same ~30-tick pause); the state
+    /// exits on the cooldown end (`:59611-59615`'s `ai[1] <= 0` arm —
+    /// the airborne exit folds).
+    fn update_archer(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[2] > 0.0 {
+            if self.hurt_cd > 0.0 {
+                self.ai[1] = 30.0;
+                self.ai[2] = 0.0;
+            } else {
+                self.vx *= 0.9;
+                self.ai[1] -= 1.0;
+                self.facing = if pcx >= cx { 1 } else { -1 };
+                if self.ai[1] == 90.0 {
+                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        let mut dx = pcx - cx;
+                        let mut dy = pcy - cy - dx.abs() * 0.1;
+                        dx += crate::app::rand01(rng) * 81.0 - 40.0;
+                        dy += crate::app::rand01(rng) * 81.0 - 40.0;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        self.wants_hostile_shot = Some((
+                            crate::projectile::WOODEN_ARROW_HOSTILE,
+                            cx,
+                            cy,
+                            dx / d * 9.0,
+                            dy / d * 9.0,
+                            11,
+                        ));
+                    }
+                }
+                if self.ai[1] <= 0.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            // The stand: the zero-speed walker keeps the gravity.
+            crate::npc_ai::walker_step(
+                self,
+                world,
+                pcx,
+                pcy,
+                crate::npc_ai::WalkerParams {
+                    speed: 0.0,
+                    jump: 0.0,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+            return;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The shot gate (`:59658-59676`): grounded, the clear line, the
+        // distance < 700, the cooldown spent.
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if self.on_ground
+            && self.ai[1] <= 0.0
+            && dist < 700.0
+            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[2] = 1.0;
+            self.ai[1] = 180.0;
+            self.vx *= 0.5;
         }
     }
 
@@ -6171,5 +6273,50 @@ mod tests {
         assert_eq!(n.max_hp, 250);
         assert_eq!(n.hp, 250);
         assert_eq!(w.saved_goblin, true);
+    }
+    #[test]
+    fn the_archer_stops_fires_and_staggers() {
+        // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
+        // (grounded, the line, the dist < 700) enters the stop state
+        // (`ai[2] = 1`, `ai[1] = 180`, the brake x0.5), the midpoint tick
+        // fires the hostile arrow 81 at 9 px/tick, the hit staggers
+        // (`ai[1] = 30`, `ai[2] = 0`), the cooldown end exits.
+        let w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 30.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut a =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        let mut rng = 1u64;
+        // The gate: the walk tick with the clear line enters the stop.
+        a.update_archer(&w, &mut player, &mut rng);
+        if a.ai[2] > 0.0 {
+            assert_eq!(a.ai[1], 180.0, "the 180-tick cadence");
+            assert!(a.vx.abs() < 1.5, "the entry brake");
+            // Ticking to the midpoint fires the arrow (180 - 90 = the
+            // 90th tick).
+            for _ in 0..90 {
+                a.update_archer(&w, &mut player, &mut rng);
+            }
+            assert!(a.wants_hostile_shot.is_some(), "the midpoint fires");
+            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.take().unwrap();
+            assert_eq!(kind, crate::projectile::WOODEN_ARROW_HOSTILE);
+            assert_eq!(dmg, 11);
+            let sp = (vx * vx + vy * vy).sqrt();
+            assert!((sp - 9.0).abs() < 0.5, "the 9-speed aim ({sp})");
+            // The cooldown end exits the state.
+            a.ai[1] = 1.0;
+            a.update_archer(&w, &mut player, &mut rng);
+            assert_eq!(a.ai[2], 0.0, "the state exits");
+        }
+        // The stagger: a hit during the state resets it.
+        let mut a2 =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        a2.ai[2] = 1.0;
+        a2.ai[1] = 100.0;
+        a2.hurt(10, a2.x - 5.0, 5.0, false);
+        a2.update_archer(&w, &mut player, &mut rng);
+        assert_eq!(a2.ai[2], 0.0, "the hit staggers");
+        assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
     }
 }
