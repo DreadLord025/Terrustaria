@@ -84,6 +84,10 @@ pub const SCRAMBLER_SHOT: u16 = 436;
 /// (`Projectile.cs:5081-5089`: 8x8, aiStyle 1, hostile, alpha 255,
 /// extraUpdates 3, ignoreWater).
 pub const MARTIAN_RAY: u16 = 438;
+/// `ProjectileID.Arrow`-family hostile arrow (180) — the pirate Deadeye's
+/// (`Projectile.cs:3922-3933`: 4x4, aiStyle 1, hostile, penetrate -1,
+/// light 0.5, alpha 255, scale 1.2).
+pub const PIRATE_ARROW: u16 = 180;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -259,6 +263,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
             SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
+            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
+            // and the Corsair's musket ball 82 (10x10, aiStyle 1).
+            PIRATE_ARROW => (4.0, 4.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false),
+            MUSKET_BALL => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
             DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,

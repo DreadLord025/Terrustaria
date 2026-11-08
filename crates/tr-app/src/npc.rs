@@ -2353,11 +2353,16 @@ impl Npc {
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
-            NpcKind::PirateDeckhand
-            | NpcKind::PirateCaptainsMate
-            | NpcKind::PirateArcher
+            NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => {
+                self.update_skeleton(world, player, dt)
+            }
+            // The pirate shooters: the aiStyle-3 shooter block (the stop
+            // entry's 80-tick timer, the per-kind projectile/speed/damage,
+            // the fire at the half-cooldown) — the Archer's arrows, the
+            // Corsair's musket balls, the Captain's wounded barrage.
+            NpcKind::PirateArcher
             | NpcKind::PirateCorsair
-            | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
+            | NpcKind::PirateCaptain => self.update_martian_shooter(world, player, rng),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -4659,6 +4664,22 @@ impl Npc {
         }
     }
 
+    /// The per-kind table (`NPC.cs:59100-59500`'s rows): the fire cooldown
+    /// `num162`, the shot speed `num164`, the projectile `num170` and its
+    /// damage `num169` — the pirate trio rides it (the Archer 214's arrow
+    /// 180 at 25/10, the Corsair 215's musket ball 82 at 35/14, the Captain
+    /// 216's arrow 180 at 30/9 with the ±50 jitter), the martians too.
+    fn shooter_params(kind: NpcKind) -> (u32, f32, u16, i32) {
+        match kind {
+            NpcKind::PirateArcher => (50, 10.0, 180, 25),
+            NpcKind::PirateCorsair => (90, 14.0, 82, 35),
+            NpcKind::PirateCaptain => (60, 9.0, 180, 30),
+            NpcKind::RayGunner => (80, 7.0, 438, 30),
+            NpcKind::BrainScrambler => (80, 11.0, 436, 24),
+            _ => (80, 11.0, 436, 24),
+        }
+    }
+
     /// `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`) for the
     /// BrainScrambler 381 / the RayGunner 382. The walk rides the walker
     /// (the per-type speed folds); the stop-and-fire cycle: the
@@ -4673,6 +4694,7 @@ impl Npc {
     /// walker's (the per-type 5/0.25/0.7 table folds like the other
     /// aiStyle-3 families).
     fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (cooldown, speed, proj, dmg) = Self::shooter_params(self.kind);
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -4698,25 +4720,24 @@ impl Npc {
             self.ai[2] = 0.0;
         }
         if self.ai[2] > 0.0 {
-            if self.ai[1] == 40.0 {
-                // The fire (`:59204-59602`'s 381/382 arm).
+            // The fire (`:59204-59602`): at the half-cooldown the aim
+            // carries the per-kind jitter (±100×0.4 for the martians'
+            // rays, ±50 for the Captain's arrow) re-scaled ×(0.85..1.15);
+            // the spawn is the centre + 6 y, the velocity at the speed.
+            if self.ai[1] * 2.0 >= cooldown as f32 {
                 let mut ax = dx;
                 let mut ay = dy;
-                // The ±100 × 0.4 jitter + the 0.85..1.15 scale.
-                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
-                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                let (jit, jit_scale) = if self.kind == NpcKind::PirateCaptain {
+                    (50.0, 1.0)
+                } else {
+                    (100.0, 0.4)
+                };
+                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
+                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
                 ax *= 0.85 + 0.3 * crate::app::rand01(rng);
                 ay *= 0.85 + 0.3 * crate::app::rand01(rng);
                 let len = (ax * ax + ay * ay).sqrt().max(0.001);
-                // The speed: 11 (381) / 7 (382); the projectile 436 dmg 24
-                // (381) / 438 dmg 30 (382).
-                let (proj, dmg, speed) = if self.kind == NpcKind::RayGunner {
-                    (438u16, 30, 7.0)
-                } else {
-                    (436u16, 24, 11.0)
-                };
                 let inv = speed / len;
-                // The spawn: the centre + y 6, the velocity at the aim.
                 self.wants_hostile_shot
                     .push((proj, cx, cy + 6.0, ax * inv, ay * inv, dmg));
                 self.ai[2] = octant(ax, ay);

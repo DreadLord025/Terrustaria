@@ -4186,3 +4186,140 @@ mod dutchman_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod pirate_shot_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_deadeye_fires_the_arrow() {
+        // The Archer 214's arm of the shooter block (`NPC.cs:59502-59507`):
+        // the arrow 180 at 25 damage, the ±45 jitter, the 10 speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 25);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 10.0).abs() < 0.01, "the arrow's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Deadeye never fired");
+    }
+
+    #[test]
+    fn the_corsair_fires_the_musket_ball() {
+        // The Corsair 215's arm: the musket ball 82 at 35 damage at 14
+        // speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 11u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCorsair,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 82);
+                assert_eq!(s.5, 35);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 14.0).abs() < 0.01, "the ball's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Corsair never fired");
+    }
+
+    #[test]
+    fn the_captain_fires_the_wounded_barrage() {
+        // The Captain 216's arm (`NPC.cs:59390-59397`): the arrow 180 at
+        // 30 damage with the ±50 jitter at the 9 speed; the wounded arm
+        // (localAI[2] >= 20) is the follow-up.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 30);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 9.0).abs() < 0.01, "the captain's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Captain never fired");
+    }
+
+    #[test]
+    fn the_pirate_shooters_round_trip_their_pool_shots() {
+        // The 180/82 projectile rows landed: the machine's payload
+        // resolves into the pool through the sim (the 180 arrow at 25).
+        let (mut app, mut player) = app_with_player();
+        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        app.player.as_mut().unwrap().x = 160.0 * TILE_PX;
+        app.player.as_mut().unwrap().y = 118.0 * TILE_PX;
+        app.npcs.push(n);
+        let mut fired = 0;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            fired += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 180 && p.damage == 25)
+                .count();
+        }
+        assert!(fired > 0, "the 180 arrow lands in the pool");
+        player.x += 0.0;
+    }
+}

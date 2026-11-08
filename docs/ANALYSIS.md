@@ -2710,6 +2710,22 @@ the pirate invasion gains its boss-minion. The port's link model: the
 pre-pass counts the ship's live cannons and links the cannons' ride to
 the ship (the vanilla's `Main.npc[ai[i]]` indices have no port model).
 
+## The pirate trio's shots (M4-EVENT-5b)
+
+The aiStyle-3 shooter block now generalises across the event families:
+`shooter_params` carries the vanilla's per-kind cooldown/speed/
+projectile/damage rows — the pirate Archer 214's arrow 180 (25, 10, the
+±45 jitter), the Corsair 215's musket ball 82 (35, 14), the Captain
+216's arrow 180 (30, 9, the ±50 jitter), beside the martians' 436/438.
+The block's shape: the stop entry (an aim under 700 px arms the octant
+and the 80-tick timer), the fire at the half-cooldown (the per-kind
+jitter re-scaled ×(0.85..1.15), the spawn at the centre + 6 y, the
+speed-scaled velocity), the hurt interrupt, the sleep's exit.
+
+The 180/82 projectile rows join `proj_data` — the pool's data gate
+previously dropped every kind outside its hand-listed set, so the
+family's shots silently never spawned.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
