@@ -13,11 +13,16 @@ use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
 
-/// The player's epitaph: a DoT drain death uses its attribution's table text
-/// (`KillMe(PlayerDeathReason.ByOther(N))` — `Player.cs:19321-19331`,
-/// `:19362-19385`); every other death keeps the M2-DEATH-1 stub.
-fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
-    pending.map_or("was slain...", crate::death::death_text_for)
+/// The player's death message: a DoT drain death resolves its attribution's
+/// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
+/// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
+/// draws it from the item stream, the M4-LOOT convention, the first use in
+/// this path); every other death is the `DeathText.Slain` row.
+fn dot_death_text(pending: Option<DotDeath>, player_name: &str, roll: f32) -> String {
+    match pending {
+        Some(death) => crate::death::death_message(death, roll, player_name),
+        None => crate::death::slain_message(player_name),
+    }
 }
 
 /// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
@@ -137,6 +142,7 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::GoblinTinkerer => 6,
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
+        NpcKind::TravellingMerchant => 19,
         _ => return None,
     })
 }
@@ -180,6 +186,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -902,9 +909,17 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     if app.world.dd2_spawn_hold > 0 {
         app.world.dd2_spawn_hold -= 1;
     }
-    // The win-death: the crystal's own ai[0] counter rides the machine;
-    // the sim resolves it into the event-stop request (the DD2Event
-    // framework's slice).
+    // The win-death resolve (`AI`'s aiStyle-105 arm's
+    // `DD2Event.StopInvasion`): the event stops and the crystal goes.
+    if app.npcs.iter().any(|n| {
+        n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop
+    }) {
+        app.world.dd2_event_ongoing = false;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
+        });
+    }
 }
 
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
@@ -1457,6 +1472,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         })
         .collect();
     app.revenge_markers.extend(cached);
+    // The Old One's Army's tick (the spawn hold's decay + the crystal's
+    // 600-tick win-death resolve) rides before the death retain: the
+    // win-death zeroes the crystal's hp AND stops the event in one pass.
+    update_dd2_event(app, dt);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -2028,12 +2047,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if player.hp <= 0 && !player.dead {
             let (dx, dy) = player.center();
             let boss_near = player.boss_hinders(&app.npcs);
-            let death_text = dot_death_text(player.dot_death).to_string();
+            // The `Main.rand.Next(n) + 1` variant roll rides the item
+            // stream (the M4-LOOT `Main.rand` stand-in) — one draw per
+            // death, before the player borrow is taken.
+            let roll = crate::app::rand01(&mut app.item_rng);
+            let death_text = dot_death_text(player.dot_death, &app.player_name, roll);
             player.dot_death = None;
             drop(player);
-            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
-            // color (`ChatColors.cs`); the ported monitor rides the App.
-            crate::chat::broadcast_death(&mut app.chat, &app.player_name, &death_text);
+            // `Player.KillMe`'s chat broadcast: the resolved message in
+            // the Death color (`ChatColors.cs`); the ported monitor rides
+            // the App.
+            crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
@@ -2284,6 +2308,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer = 1.0 / 60.0;
 }
 
+
 /// The full NPC loot through the rule engine
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
@@ -2460,12 +2485,19 @@ mod tests {
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // DW-1.3 — the death collection resolves the DoT table text when the
-        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and keeps
-        // the M2-DEATH-1 stub for any other death.
-        assert_eq!(dot_death_text(None), "was slain...");
-        assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
-        assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
+        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
+        // Slain row for any other death (`Lang.cs` CreateDeathMessage).
+        assert_eq!(dot_death_text(None, "Belsin", 0.0), "Belsin was slain...");
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Poison), "Belsin", 0.5),
+            "Belsin couldn't find the antidote."
+        );
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Burned), "Belsin", 0.0),
+            "Belsin couldn't put the fire out."
+        );
     }
 
     #[test]
@@ -5078,5 +5110,60 @@ mod dd2_wave_tests {
         app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
         report_invasion_kill(&mut app, NpcKind::Skeleton);
         assert_eq!(app.world.dd2_wave_kills, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod crystal_death_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_win_death_stops_the_army() {
+        // `AI`'s aiStyle-105 arm's win-death (`NPC.cs:40959-40966`):
+        // `ai[0] >= 600` → `DD2Event.StopInvasion` + `life = 0` — via
+        // update_dd2_event's resolve the event clears and the crystal goes.
+        let mut app = base_app();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.ai[0] = 599.0;
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.push(n);
+        app.player = Some(player);
+        // The sim's tick runs the machine (the 600 counter) and the
+        // event's tick resolves the request.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the event stops");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal is gone"
+        );
     }
 }

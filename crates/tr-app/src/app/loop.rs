@@ -164,7 +164,15 @@ impl ApplicationHandler for App {
                                     } else {
                                         let name = self.player_name.clone();
                                         let mut rng = self.item_rng;
-                                        self.chat.send(&text, &name, &mut rng, &mut self.emotes);
+                                        // The chat commands read the player
+                                        // state (`DeathCommand`'s counters).
+                                        self.chat.send_with(
+                                            &text,
+                                            &name,
+                                            &mut rng,
+                                            &mut self.emotes,
+                                            self.player.as_ref(),
+                                        );
                                         self.item_rng = rng;
                                     }
                                     // The host relays the lines its own submit

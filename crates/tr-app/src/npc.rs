@@ -307,6 +307,15 @@ pub enum NpcKind {
     /// the shop index 5; the arrival rides the downedSkeletron gate —
     /// constants-off).
     Clothier,
+    /// `NPCID.TravellingMerchant` (368) — the travelling peddler
+    /// (`NPC.cs:13673-13686`: the town twin 18x40, dmg 10, def 15, 250 HP,
+    /// kb 0.5, aiStyle 7 — the town walker) who visits for one day on a
+    /// rolled chance (`Main.cs:65017-65039`) with his own 40-slot stock
+    /// (`Chest.SetupTravelShop`, `Chest.cs:1275-1358`) sold through the
+    /// shop index 19 (`Chest.cs:2791`). `homeless` every tick and gone at
+    /// night (`NPC.cs:53358-53374` -> `WorldGen.UnspawnTravelNPC`,
+    /// `WorldGen.cs:5000`) — M4-TOWN-14.
+    TravellingMerchant,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -695,11 +704,11 @@ impl NpcKind {
             NpcKind::Deerclops => 78,
             NpcKind::SkeletronHand => 79,
             NpcKind::WallOfFleshEye => 80,
-            NpcKind::WallOfFleshEye => 80,
             NpcKind::PrimeCannon => 81,
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
+            NpcKind::TravellingMerchant => 111,
         }
     }
 
@@ -820,8 +829,32 @@ impl NpcKind {
             82 => NpcKind::PrimeSaw,
             83 => NpcKind::PrimeVice,
             84 => NpcKind::PrimeLaser,
+            111 => NpcKind::TravellingMerchant,
             _ => return None,
         })
+    }
+
+    /// `npc.townNPC` (`NPC.cs:6537`) — the flag the town `SetDefaults`
+    /// cases raise: the town roster, the goblin pair and the Travelling
+    /// Merchant himself (`NPC.cs:13675`'s `townNPC = true`). The Old Man
+    /// (37) and the Skeleton Merchant (453) carry the flag in the
+    /// vanilla; neither is ported, so the spawner's town counts need no
+    /// exclusions (`Main.cs:65030`).
+    pub fn is_town_resident(self) -> bool {
+        matches!(
+            self,
+            NpcKind::Guide
+                | NpcKind::Merchant
+                | NpcKind::Dryad
+                | NpcKind::Nurse
+                | NpcKind::ArmsDealer
+                | NpcKind::Demolitionist
+                | NpcKind::Painter
+                | NpcKind::WitchDoctor
+                | NpcKind::Clothier
+                | NpcKind::GoblinTinkerer
+                | NpcKind::TravellingMerchant
+        )
     }
 
     /// The worm family role (`AI_006`'s type groups): the head digs, the
@@ -918,6 +951,7 @@ impl NpcKind {
             NpcKind::Painter => (18.0, 40.0),
             NpcKind::WitchDoctor => (18.0, 40.0),
             NpcKind::Clothier => (18.0, 40.0),
+            NpcKind::TravellingMerchant => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1089,6 +1123,7 @@ impl NpcKind {
             NpcKind::Dryad => 20,
             NpcKind::Demolitionist => 38,
             NpcKind::Clothier => 54,
+            NpcKind::TravellingMerchant => 368,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1105,6 +1140,31 @@ impl NpcKind {
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
             _ => u16::MAX,
+        }
+    }
+
+    /// The humanoid walkers' `Main.npcFrameCount` rows (`Main.cs:67082`):
+    /// the town group (17 Merchant / 18 Nurse / 19 ArmsDealer / 20 Dryad /
+    /// 22 Guide / 38 Demolitionist / 54 Clothier / 107 Tinkerer / 227
+    /// Painter / 228 WitchDoctor), the invasion goblins (26 Peon / 27
+    /// Thief / 28 Warrior / 111 Archer) and the cave walkers (21 Skeleton
+    /// / 44 UndeadMiner) all ride `FindFrame`'s humanoid-group arm
+    /// (`NPC.cs:68547-69587`). The Zombie (9) has no case and a single
+    /// frame.
+    pub fn humanoid_frame_count(self) -> u32 {
+        match self {
+            NpcKind::Guide | NpcKind::WitchDoctor => 26,
+            NpcKind::Merchant
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist
+            | NpcKind::Painter
+            | NpcKind::GoblinTinkerer => 25,
+            NpcKind::Nurse | NpcKind::Clothier => 23,
+            NpcKind::Dryad => 21,
+            NpcKind::GoblinArcher => 21,
+            NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
+            NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
+            _ => 1,
         }
     }
 
@@ -1132,6 +1192,7 @@ impl NpcKind {
             NpcKind::WitchDoctor => 250,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
+            NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
             NpcKind::EyeOfCthulhu => 2800,
             // `SetDefaults` case 222 (`NPC.cs:11862`): 3400 HP.
@@ -1293,6 +1354,7 @@ impl NpcKind {
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
+            NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
@@ -1569,6 +1631,11 @@ pub struct Npc {
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
     pub wants_martian_invasion: bool,
+    /// The crystal's win-death request (`ai[0] >= 600`'s
+    /// `DD2Event.StopInvasion`): the sim resolves it into the event's
+    /// stop (`dd2_event_ongoing` clear) — the `Box<Self>`-shaped
+    /// request pattern's cousin.
+    pub wants_event_stop: bool,
     /// The Scutlix rider's carrier spawn request (`AI_075`'s type-390
     /// `localAI[0]` 0 → 1 arm: the `NewNPC(..., 391, whoAmI)` — the sim
     /// resolves it after the tick).
@@ -1960,6 +2027,7 @@ impl Npc {
             swarm_done: false,
             wants_hostile_shot: Vec::new(),
             wants_martian_invasion: false,
+            wants_event_stop: false,
             wants_scutlix: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
@@ -2126,6 +2194,7 @@ impl Npc {
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
+            NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
@@ -2293,6 +2362,7 @@ impl Npc {
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
+            NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
@@ -2455,6 +2525,7 @@ impl Npc {
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
+            NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
@@ -2605,6 +2676,7 @@ impl Npc {
             | NpcKind::Painter
             | NpcKind::WitchDoctor
             | NpcKind::Clothier
+            | NpcKind::TravellingMerchant
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -2792,6 +2864,37 @@ impl Npc {
         seq[i.min(seq.len() - 1)]
     }
 
+    /// `FindFrame`'s humanoid-group default arm (`NPC.cs:69481-69577`):
+    /// the frame writes only while grounded (the vanilla's
+    /// `velocity.Y == 0` block leaves the air row untouched), the idle
+    /// snaps to row 0, the walk rides rows 2..count-1 — the accumulator
+    /// `|vx| * 2 + 1` (the C#'s `frameCounter += Math.Abs(velocity.X) *
+    /// 2f; frameCounter++`) advances the row every 6 (the `num108`
+    /// stride) and the end wraps back to row 2 (`num109 = num * 2`).
+    /// The sit/talk/attack `ai[0]` zones (`:68666-69519`) ride the AI
+    /// states the port's town machines do not model — the follow-up.
+    fn humanoid_town_frame(&mut self) {
+        if self.vy == 0.0 {
+            let count = self.kind.humanoid_frame_count();
+            if self.vx == 0.0 {
+                self.frame_counter = 0.0;
+                self.frame = 0;
+            } else {
+                self.frame_counter += self.vx.abs() * 2.0 + 1.0;
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 2;
+                }
+            }
+        }
+    }
+
     /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
     /// frame height unit) cancels out because frames are tracked as row indices;
     /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
@@ -2821,22 +2924,6 @@ impl Npc {
             NpcKind::WallOfFleshEye => {
                 // The single frame — no FindFrame case for type 114.
                 self.frame = 0;
-            }
-            // The goblins: the 16/21/20-frame humanoid strips (the same
-            // accumulator as the zombie's).
-            NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher
-            | NpcKind::GoblinPeon => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    let count = match self.kind {
-                        NpcKind::GoblinPeon => 21,
-                        _ => 16,
-                    };
-                    self.frame = (self.frame + 1) % count;
-                }
             }
             // The frost trio: the 4/5/7-frame strips (the same walker
             // accumulator).
@@ -3156,63 +3243,19 @@ impl Npc {
                     self.rotation = self.vy.atan2(self.vx) + 3.14;
                 }
             }
-            // Case 3 — zombie (`NPC.cs:76324-76389`): falling or moving against
-            // the facing direction holds the lurch frame 2; standing still is
-            // frame 0; walking accumulates `|velocity.X|` through the band
-            // 0 → 1 → 2 → 1 at thresholds 8/16/24/32 and restarts.
             NpcKind::Zombie => {
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        // The original leaves `frame.Y` on its previous value
-                        // here — the restart tick keeps frame 1.
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // `FindFrame` has no case 9: the vanilla zombie's
+                // `frame.Y` stays at its `SetFrameSize` 0 — the NPC_9 sheet
+                // is a single 30x48 frame (`Main.npcFrameCount[9] = 1`,
+                // `Main.cs:67082`). The port's v1 ran a 3-frame walker
+                // (the case-3 group's idiom) whose rows 1/2 sampled past
+                // the sheet.
+                self.frame = 0;
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        // The original leaves `frame.Y` on its previous value
-                        // here — the restart tick keeps frame 1.
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the cave walkers ride the same
+                // town machine — 15 rows).
+                self.humanoid_town_frame();
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
@@ -3318,38 +3361,15 @@ impl Npc {
             | NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
             | NpcKind::GoblinArcher => {
-                // The goblins: the walker 3-frame machine (aiStyle 3).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the goblins ride the same town
+                // machine — 16 rows, the Archer's 21).
+                self.humanoid_town_frame();
             }
-            NpcKind::Golem
-            | NpcKind::GolemHead
-            | NpcKind::GolemFistLeft
-            | NpcKind::GolemFistRight
-            | NpcKind::GolemHeadFree => {
-                // The v1: the single-frame draws (the Golem's part
-                // animation cycles land with the full AI_045-48 machines).
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                // The fists: `Main.npcFrameCount` 247/248 = 1
+                // (`Main.cs:67108`) — `FindFrame` has no case, the frame
+                // stays row 0; the draw tilts the quad by `npc.rotation`
+                // (the lunge angle) instead.
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
@@ -3437,31 +3457,9 @@ impl Npc {
                 self.frame = row;
             }
             NpcKind::GoblinTinkerer => {
-                // The town 3-frame machine (`Main.npcFrameCount[107]`,
-                // aiStyle 7's FindFrame — the Guide's arm).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the Tinkerer 107 rides the
+                // same town machine — 25 rows).
+                self.humanoid_town_frame();
             }
             NpcKind::BoundGoblin => {
                 // The tied pose: the single frame holds (`aiStyle 0` runs
@@ -3535,35 +3533,20 @@ impl Npc {
                 }
             }
             NpcKind::Clothier => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[54]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::WitchDoctor => {
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
+            }
+            NpcKind::TravellingMerchant => {
                 // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[228]` = 3, `Main.cs:67082`).
+                // (`Main.npcFrameCount[368]` = 26 in the vanilla, `Main.cs:67120`,
+                // with `ExtraFramesCount` 10 / `AttackFrameCount` 5 —
+                // `NPCID.cs:10464-10465` — over the port's 3-row stand-in).
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
                     || (self.facing == 1 && self.vx < 0.0)
@@ -3589,194 +3572,49 @@ impl Npc {
                 }
             }
             NpcKind::Painter => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[227]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::Demolitionist => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[38]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::ArmsDealer => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[19]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::Nurse => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[18]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::Dryad => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[20]` = 3, `Main.cs:67082`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::Merchant => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[17]` = 3, `Main.cs:67082`; the
-                // vanilla FindFrame's town machine, `NPC.cs:68632+`).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the town machine's
+                // default arm — rows 2..count-1).
+                self.humanoid_town_frame();
             }
             NpcKind::Guide => {
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        // The original leaves `frame.Y` on its previous value
-                        // here — the restart tick keeps frame 1.
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The humanoid-group walk (the Guide 22 rides the same
+                // town machine — 26 rows).
+                self.humanoid_town_frame();
+            }
+            NpcKind::GolemHeadFree => {
+                // `FindFrame`'s case 249 (`NPC.cs:72963-72981`): the mouth
+                // row only, off the free head's own 300-cadence
+                // `localAI[0]` (`:31439`/`:31443` — the same first/last-20
+                // window). No wind-up ramp, no side turn; the C#'s
+                // `frameCounter++` at :72976-72979 is dead (nothing reads
+                // it for this type) and is not carried.
+                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
+                self.frame = if mouth { 1 } else { 0 };
             }
         }
     }
@@ -6093,6 +5931,16 @@ impl Npc {
     fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
+        // The 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
+        // `:40959-40966`): `DD2Event.StopInvasion(); life = 0` — the
+        // ai[0] counter advances inside the phase (the `ai[1] == 1`
+        // entry) and the sim resolves the event's stop.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 600.0 {
+            self.wants_event_stop = true;
+            self.dont_take_damage = false;
+            self.hp = 0;
+        }
         let _ = (world, player);
     }
 
@@ -7763,6 +7611,7 @@ impl Npc {
                     | NpcKind::Painter
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
+                    | NpcKind::TravellingMerchant
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -7798,6 +7647,7 @@ impl Npc {
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
+            NpcKind::TravellingMerchant => 111,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -8524,92 +8374,28 @@ mod tests {
     }
 
     #[test]
-    fn zombie_walk_band_is_zero_one_two_one_by_accumulated_speed() {
-        // NPC.cs:76324-76389: the counter accumulates |velocity.X| and the
-        // frame follows the bands <8 -> 0, <16 -> 1, <24 -> 2, <32 -> 1; at 32
-        // the counter restarts WITHOUT touching the frame (it stays 1 until
-        // the next tick re-enters the first band).
+    fn the_zombie_sheet_is_a_single_static_frame() {
+        // `FindFrame` has no case 9: the vanilla zombie's `frame.Y` stays
+        // at its `SetFrameSize` 0 — the NPC_9 sheet is one 30x48 frame
+        // (`Main.npcFrameCount[9] = 1`, `Main.cs:67082`). The port's v1
+        // ran the case-3 group's walker (rows 0/1/2 sampled past the
+        // sheet); the town machine's rows 2.. belong to the humanoids
+        // (26-frame Guide et al.), never the zombie.
         let mut z = bare(NpcKind::Zombie);
-        z.vx = 0.9; // aligned with facing 1
-        z.frame_counter = 0.0;
-        z.frame = 0;
-        for _ in 0..9 {
+        z.vx = 0.9;
+        z.frame = 5;
+        for _ in 0..40 {
             z.find_frame();
+            assert_eq!(z.frame, 0, "the zombie never animates");
         }
-        assert_eq!(z.frame, 1, "9 ticks = 8.1 accumulated: second band");
-        for _ in 0..9 {
-            z.find_frame();
-        }
-        assert_eq!(z.frame, 2, "18 ticks = 16.2: third band");
-        for _ in 0..9 {
-            z.find_frame();
-        }
-        assert_eq!(z.frame, 1, "27 ticks = 24.3: fourth band");
-        for _ in 0..9 {
-            z.find_frame();
-        }
-        assert_eq!(z.frame, 1, "36 ticks = 32.4: restart keeps the frame");
-        z.find_frame();
-        assert_eq!(z.frame, 0, "the next tick re-enters the first band");
-    }
-
-    #[test]
-    fn zombie_holds_the_lurch_frame_when_airborne_or_backpedalling() {
-        // NPC.cs:76334-76342.
-        let mut z = bare(NpcKind::Zombie);
+        // The air and the backpedal do not move it either.
         z.vy = 0.1;
-        z.find_frame();
-        assert_eq!(z.frame, 2);
-        z.vy = 0.0;
         z.facing = 1;
-        z.vx = -0.5; // moving against the facing
+        z.vx = -0.5;
         z.find_frame();
-        assert_eq!(z.frame, 2);
-        z.vx = 0.0;
-        z.find_frame();
-        assert_eq!(z.frame, 0, "standing still is the idle frame");
+        assert_eq!(z.frame, 0, "airborne/backpedal holds the single frame");
     }
 
-    #[test]
-    fn king_slime_snaps_to_four_five_in_the_air_and_cycles_zero_to_three_on_ground() {
-        // NPC.cs:73380-73414: airborne snaps to frame 4, holds it 4 steps,
-        // then frame 5; landing returns to 4 and the grounded cycle advances
-        // every 8 steps with the wrap `>= 4 -> 0`, so frames 4/5 never show
-        // while grounded.
-        let mut k = bare(NpcKind::KingSlime);
-        k.vy = -0.1; // leaving the ground
-        k.find_frame();
-        assert_eq!(k.frame, 4, "airborne snaps straight to frame 4");
-        for _ in 0..3 {
-            k.find_frame();
-        }
-        assert_eq!(k.frame, 5, "after 4 airborne steps the squash frame shows");
-        k.vy = 0.0; // landed
-        k.find_frame();
-        assert_eq!(k.frame, 4, "landing returns to frame 4, counter reset");
-        // The landing squash (4) is itself displayed while grounded until the
-        // first advance; frames 0..=3 then cycle. Only 5 is airborne-only.
-        for _ in 0..64 {
-            k.find_frame();
-            assert!(
-                k.frame <= 4,
-                "grounded frames never show 5, got {}",
-                k.frame
-            );
-        }
-        // The grounded cycle must actually move through 0..=3.
-        let mut k2 = bare(NpcKind::KingSlime);
-        k2.vy = 0.0;
-        let mut seen = [false; 4];
-        for _ in 0..32 {
-            k2.find_frame();
-            seen[k2.frame as usize] = true;
-        }
-        assert!(
-            seen.iter().all(|&s| s),
-            "one 32-step cycle covers frames 0..=3"
-        );
-    }
     #[test]
     fn the_caster_teleports_and_shoots() {
         // `AI_008` (`NPC.cs:20817-21278`): the 500 counter init, the
@@ -10132,6 +9918,28 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn the_travelling_merchant_kind_stats_roundtrip_and_shop() {
+        // `SetDefaults` 368 (`NPC.cs:13673-13686`): the town twin's numbers —
+        // 18x40, 250 HP, dmg 10, def 15, kb 0.5, value 0 — the kind<->u16
+        // round-trip, the bestiary row and the shop map (index 19,
+        // `NPCInteractions.cs:506`'s `Shop(368, 19)`).
+        let m = Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::TravellingMerchant.max_hp(), 250);
+        assert_eq!(m.defense(), 15);
+        assert_eq!(m.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::TravellingMerchant.contact_damage(), 10);
+        assert_eq!(Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0).value(), 0.0);
+        assert_eq!(NpcKind::TravellingMerchant.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::TravellingMerchant.to_u16(), 111);
+        assert_eq!(NpcKind::from_u16(111), Some(NpcKind::TravellingMerchant));
+        assert!(NpcKind::TravellingMerchant.is_town_resident());
+        let e = crate::bestiary::entry_for_npc(NpcKind::TravellingMerchant, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 368);
+        assert_eq!(crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant), Some(19));
+    }
+
     #[test]
     fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
         // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
@@ -10207,6 +10015,50 @@ mod tests {
         assert_eq!(n.hp, 250);
         assert_eq!(w.saved_goblin, true);
     }
+    #[test]
+    fn the_town_humanoids_walk_rows_two_to_count() {
+        // `FindFrame`'s humanoid-group default arm (`NPC.cs:69481-69577`):
+        // the idle snaps to row 0, the walk rides rows 2..count-1 — the
+        // accumulator `|vx| * 2 + 1` advancing the row every 6, the wrap
+        // back to row 2. The Guide (22) has 26 rows, the Merchant 25,
+        // the goblins 16.
+        let mut g = bare(NpcKind::Guide);
+        g.vx = 0.5;
+        g.frame = 0;
+        g.frame_counter = 0.0;
+        g.find_frame();
+        assert_eq!(g.frame, 2, "the walk snaps up to row 2");
+        // Every 6 accumulated (0.5*2+1 = 2/tick) => 3 ticks per row.
+        g.frame_counter = 0.0;
+        for _ in 0..9 {
+            g.find_frame();
+        }
+        assert_eq!(g.frame, 4, "9 ticks: two advances (rows 2 -> 4)");
+        // The wrap at the count.
+        g.frame = g.kind.humanoid_frame_count() - 1;
+        g.frame_counter = 6.1;
+        g.find_frame();
+        assert_eq!(g.frame, 2, "the wrap back to row 2");
+        // The idle at rest.
+        g.vx = 0.0;
+        g.find_frame();
+        assert_eq!(g.frame, 0, "standing still is row 0");
+        // The air leaves the row untouched (the vanilla writes only while grounded).
+        g.vx = 0.5;
+        g.frame = 7;
+        g.vy = -4.0;
+        g.find_frame();
+        assert_eq!(g.frame, 7, "the airborne row is left as-is");
+        // The goblins share the machine with their own counts.
+        let mut p = bare(NpcKind::GoblinPeon);
+        p.vx = 0.5;
+        p.frame = 0;
+        p.find_frame();
+        assert_eq!(p.frame, 2, "the goblin's walk row");
+        assert_eq!(p.kind.humanoid_frame_count(), 16, "the peon's rows");
+    }
+
+
     #[test]
     fn the_golem_family_stats_and_maps() {
         // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the

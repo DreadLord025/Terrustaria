@@ -204,6 +204,12 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
+    /// counter `/death` reads (`DeathCommand`).
+    pub deaths_pve: u32,
+    /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
+    /// counter `/pvpdeath` reads (`PVPDeathCommand`).
+    pub deaths_pvp: u32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -638,6 +644,8 @@ impl Player {
         };
         Self {
             dead: false,
+            deaths_pve: 0,
+            deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
             prev_jump_input: false,
@@ -1238,6 +1246,10 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
+        // flag splits the two counters; the port has no PVP, so every
+        // death is PVE.
+        self.deaths_pve = self.deaths_pve.saturating_add(1);
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
@@ -3268,6 +3280,10 @@ impl Player {
             self.wing_time = self.wing_time_max as f32;
             self.mount.reset_flight_time(self.vx);
         }
+        // `Player.cs:24761`: every resting tick recovers 2 hover fatigue.
+        if self.vy == 0.0 {
+            self.mount.fatigue_recovery();
+        }
         // `:26859-26862`: the rocket fuel refills on any rest tick (or an
         // auto-jump mount's re-jump).
         if self.vy == 0.0 || (self.auto_jump && self.just_jumped) {
@@ -3340,10 +3356,21 @@ impl Player {
             return true;
         }
         if !flag19 {
-            // `:26962-26964`: the hover mounts (`Mount.Hover`) — no table row
-            // sets `usesHover` yet, so the branch cannot fire (M2-MOUNT-2).
+            // `:26962-26964`: the hover mounts (`Mount.Hover`, `Mount.cs:3340`)
+            // — the branch carries the vertical move itself, so it is
+            // consumed like the vanilla `else if` chain.
             if self.mount.can_hover() {
-                return false;
+                self.vy = self.mount.hover_integrate(
+                    self.vy,
+                    false, // no `controlUp` key ported (M2-MOUNT-4)
+                    self.control_jump,
+                    self.control_down,
+                    gravity,
+                );
+                // `:3459`: the fall origin refreshes every hover tick (no
+                // fall damage accrues while hovering).
+                self.fall_start = (self.y / TILE_PX) as i32;
+                return true;
             }
             // `:26965-27015`: the mount flight thrust — the flying mounts'
             // replacement for the wing ascent while the budget lasts.
@@ -3364,6 +3391,11 @@ impl Player {
                         let mut num41 = self.jump_speed;
                         if self.mount.kind() == 50 {
                             num41 *= 0.5;
+                        }
+                        // `:26981`: the Bat/Pixie rise cap is 2/3 of the
+                        // others.
+                        if matches!(self.mount.kind(), 56 | 61) {
+                            num41 /= 1.5;
                         }
                         if self.vy > 0.0 {
                             self.vy -= num40 * 5.0;

@@ -123,30 +123,48 @@ pub const EVIL_ROW_IDS: [u8; 3] = [0, 1, 2];
 /// ("Small"/"Medium"/"Large") with `Color.Cyan`,
 /// `Color.Lerp(Cyan, LimeGreen, 0.5)`, `Color.LimeGreen`. The lerp truncates
 /// through the vector space like every XNA `Color.Lerp` (`lerp_rgb`).
-pub const SIZE_ROWS: [(&str, [u8; 4]); 3] = [
-    ("Small", [0, 255, 255, 255]),    // Color.Cyan (`:380`)
-    ("Medium", [25, 230, 152, 255]),  // Lerp(Cyan, LimeGreen, 0.5) (`:381`)
-    ("Large", [50, 205, 50, 255]),    // Color.LimeGreen (`:382`)
+pub fn size_row_label(k: usize) -> String {
+    crate::lang::menu(92 + k as usize)
+}
+pub const SIZE_ROWS: [([u8; 4]); 3] = [
+    [0, 255, 255, 255],   // Color.Cyan (`:380`)
+    [25, 230, 152, 255],  // Lerp(Cyan, LimeGreen, 0.5) (`:381`)
+    [50, 205, 50, 255],   // Color.LimeGreen (`:382`)
 ];
 
 /// (label, title tint) per difficulty button (`:412-432`): `UI.Creative`
 /// "Journey" / `UI.Normal` "Classic" / `UI.Expert` / `UI.Master` with
 /// `Main.creativeModeColor` / White / `Main.mcColor` / `Main.hcColor`.
-pub const DIFFICULTY_ROWS: [(&str, [u8; 4]); 4] = [
-    ("Journey", uistate::CREATIVE_MODE_COLOR), // (`:428`)
-    ("Classic", [255, 255, 255, 255]),         // Color.White (`:429`)
-    ("Expert", uistate::MC_COLOR),             // (`:430`)
-    ("Master", uistate::HC_COLOR),             // (`:431`)
+pub fn difficulty_row_label(k: usize) -> String {
+    match k {
+        0 => crate::lang::text("UI.Creative"),
+        1 => crate::lang::text("UI.Normal"),
+        2 => crate::lang::text("UI.Expert"),
+        _ => crate::lang::text("UI.Master"),
+    }
+}
+pub const DIFFICULTY_ROWS: [[u8; 4]; 4] = [
+    uistate::CREATIVE_MODE_COLOR, // (`:428`)
+    [255, 255, 255, 255],         // Color.White (`:429`)
+    uistate::MC_COLOR,            // (`:430`)
+    uistate::HC_COLOR,            // (`:431`)
 ];
 
 /// (label, title tint) per evil button (`:460-477`): `Lang.misc[103]` "Random"
 /// / `Lang.misc[101]` "Corruption" / `Lang.misc[102]` "Crimson" with White /
 /// `Color.MediumPurple` / `Color.IndianRed` (the XNA named colours,
 /// #9370DB / #CD5C5C).
-pub const EVIL_ROWS: [(&str, [u8; 4]); 3] = [
-    ("Random", [255, 255, 255, 255]),      // Color.White (`:474`)
-    ("Corruption", [147, 112, 219, 255]),  // Color.MediumPurple (`:475`)
-    ("Crimson", [205, 92, 92, 255]),       // Color.IndianRed (`:476`)
+pub fn evil_row_label(k: usize) -> String {
+    match k {
+        1 => crate::lang::menu(101),
+        2 => crate::lang::menu(102),
+        _ => crate::lang::menu(103),
+    }
+}
+pub const EVIL_ROWS: [[u8; 4]; 3] = [
+    [255, 255, 255, 255],      // Color.White (`:474`)
+    [147, 112, 219, 255],      // Color.MediumPurple (`:475`)
+    [205, 92, 92, 255],        // Color.IndianRed (`:476`)
 ];
 
 /// `GroupOptionButton._color` (`GroupOptionButton.cs:133`) — every
@@ -780,10 +798,10 @@ fn mouse_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -
 // twin's shared copy.
 
 /// The plate strings (`UICharacterNameButton`'s ctor args, `:236` and `:264`).
-const NAME_TITLE: &str = "Name:";             // UI.WorldCreationName
-const SEED_TITLE: &str = "Seed:";             // UI.WorldCreationSeed
-const NAME_EMPTY: &str = "<Empty>";           // UI.WorldCreationNameEmpty
-const SEED_EMPTY: &str = "<Leave Blank For Random>"; // UI.WorldCreationSeedEmpty
+fn name_title() -> String { crate::lang::text("UI.WorldCreationName") }
+fn seed_title() -> String { crate::lang::text("UI.WorldCreationSeed") }
+fn name_empty() -> String { crate::lang::text("UI.WorldCreationNameEmpty") }
+fn seed_empty() -> String { crate::lang::text("UI.WorldCreationSeedEmpty") }
 
 /// `UICharacterNameButton.DrawSelf` (`UICharacterNameButton.cs:63-83`) plus
 /// the title/value text (`:44-59`, `SetContents` `:85-99`): the spliced
@@ -1003,58 +1021,58 @@ fn draw_icon_button(
 /// The hovered element's description (`ShowOptionDescription`/`ClearOption-
 /// Description`, `UIWorldCreation.cs:601-633`): the option's own
 /// `WorldDescription*` string, or the default when nothing hovers.
-fn hover_description(l: &Layout, mouse: Vec2) -> &'static str {
+fn hover_description(l: &Layout, mouse: Vec2) -> String {
     const SIZE_DESCRIPTIONS: [&str; 3] = [
         // `UI.WorldDescriptionSizeSmall/Medium/Large`
-        "Ideal for a quick, single player experience.",
-        "Bigger and better for prolonged exploration, or bringing a friend.",
-        "Super-sized for long term progression and multiple players.",
+        "UI.WorldDescriptionSizeSmall",
+        "UI.WorldDescriptionSizeMedium",
+        "UI.WorldDescriptionSizeLarge",
     ];
     const DIFFICULTY_DESCRIPTIONS: [&str; 4] = [
         // `UI.WorldDescriptionCreative/Normal/Expert/Master`
-        "With great power comes great responsibility (Unearth your creativity)",
-        "Your Adventure Begins... (The Standard Terraria Experience)",
-        "Fortune & Glory, Kid. (Far Greater Difficulty & Loot)",
-        "Game over man, game over! (Brutally hard, for the truly brave)",
+        "UI.WorldDescriptionCreative",
+        "UI.WorldDescriptionNormal",
+        "UI.WorldDescriptionExpert",
+        "UI.WorldDescriptionMaster",
     ];
     const EVIL_DESCRIPTIONS: [&str; 3] = [
         // `UI.WorldDescriptionEvilRandom/Corrupt/Crimson`
-        "Let nature decide whether corruption or crimson infects your world.",
-        "Disease-like corruption is guaranteed to be present in your world.",
-        "Macabre, grotesque crimson is guaranteed to be present in your world.",
+        "UI.WorldDescriptionEvilRandom",
+        "UI.WorldDescriptionEvilCorrupt",
+        "UI.WorldDescriptionEvilCrimson",
     ];
     for (k, text) in SIZE_DESCRIPTIONS.into_iter().enumerate() {
         if in_rect(mouse, l.size_buttons[k]) {
-            return text;
+            return crate::lang::text(text);
         }
     }
     for (k, text) in DIFFICULTY_DESCRIPTIONS.into_iter().enumerate() {
         if in_rect(mouse, l.difficulty_buttons[k]) {
-            return text;
+            return crate::lang::text(text);
         }
     }
     for (k, text) in EVIL_DESCRIPTIONS.into_iter().enumerate() {
         if in_rect(mouse, l.evil_buttons[k]) {
-            return text;
+            return crate::lang::text(text);
         }
     }
     // The plates and icons (`:616-623`'s `UICharacterNameButton`/
     // `GroupOptionButton<bool>` arms).
     if in_rect(mouse, l.name_button) {
-        return "Give your world a name! You can always change it later if needed!"; // UI.WorldDescriptionName
+        return crate::lang::text("UI.WorldDescriptionName");
     }
     if in_rect(mouse, l.seed_plate) {
-        return "The DNA marker that defines your world's specific shape and traits."; // UI.WorldDescriptionSeed
+        return crate::lang::text("UI.WorldDescriptionSeed");
     }
     if in_rect(mouse, l.random_name_icon) {
-        return "Randomize your world's name."; // UI.WorldCreationRandomizeNameDescription
+        return crate::lang::text("UI.WorldCreationRandomizeNameDescription");
     }
     if in_rect(mouse, l.seed_button) {
         // UI.WorldCreationSeedMenuDescription — the Advanced tab's entry
         // point; the tab itself is out of scope (plan Uncertainty 4).
-        return "Customize your world's seed, or choose some game-changing ones!";
+        return crate::lang::text("UI.WorldCreationSeedMenuDescription");
     }
-    "Please choose how your world will be built with the options above." // UI.WorldDescriptionDefault
+    crate::lang::text("UI.WorldDescriptionDefault") // UI.WorldDescriptionDefault
 }
 
 /// The whole screen in the source's z-order (`UIElement.Draw` draws self, then
@@ -1090,9 +1108,9 @@ pub fn draw(
         r,
         lookups,
         l.name_button,
-        NAME_TITLE,
+        &name_title(),
         &draft.name,
-        NAME_EMPTY,
+        &name_empty(),
         20.0, // `DistanceFromTitleToOption` default (`UICharacterNameButton.cs:32`)
         mouse,
     );
@@ -1101,9 +1119,9 @@ pub fn draw(
         r,
         lookups,
         l.seed_plate,
-        SEED_TITLE,
+        &seed_title(),
         &draft.seed,
-        SEED_EMPTY,
+        &seed_empty(),
         29.0, // `DistanceFromTitleToOption = 29f` (`UIWorldCreation.cs:270`)
         mouse,
     );
@@ -1123,39 +1141,39 @@ pub fn draw(
     }
 
     // The option rows (`:358-495`), each button against the live draft.
-    for (k, (title, tint)) in SIZE_ROWS.iter().enumerate() {
+    for (k, tint) in SIZE_ROWS.iter().enumerate() {
         let rect = l.size_buttons[k];
         draw_option_button(
             r,
             lookups,
             rect,
-            title,
+            &size_row_label(k),
             *tint,
             lookups.wc_size_icons[k],
             draft.size == SIZE_ROW_IDS[k],
             in_rect(mouse, rect),
         );
     }
-    for (k, (title, tint)) in DIFFICULTY_ROWS.iter().enumerate() {
+    for (k, tint) in DIFFICULTY_ROWS.iter().enumerate() {
         let rect = l.difficulty_buttons[k];
         draw_option_button(
             r,
             lookups,
             rect,
-            title,
+            &difficulty_row_label(k),
             *tint,
             lookups.wc_difficulty_icons[k],
             draft.difficulty == DIFFICULTY_ROW_IDS[k],
             in_rect(mouse, rect),
         );
     }
-    for (k, (title, tint)) in EVIL_ROWS.iter().enumerate() {
+    for (k, tint) in EVIL_ROWS.iter().enumerate() {
         let rect = l.evil_buttons[k];
         draw_option_button(
             r,
             lookups,
             rect,
-            title,
+            &evil_row_label(k),
             *tint,
             lookups.wc_evil_icons[k],
             draft.evil == EVIL_ROW_IDS[k],
@@ -1186,7 +1204,7 @@ pub fn draw(
         l.description[1] + 11.0,  // `Top 5` (`:349`) + `PaddingTop 6` (`:353`)
         0.82,                     // the `UIText` scale (`:343`)
         [1.0; 4],
-        desc,
+        &desc,
     );
 
     // Back / Create (`:635-663`): the hover pair swaps inside
@@ -1346,27 +1364,19 @@ mod tests {
     #[test]
     fn row_tables_carry_the_source_labels_and_tints() {
         // `:366-383` (Lang.menu[92..94] + Cyan/LimeGreen lerps).
-        assert_eq!(SIZE_ROWS[0].0, "Small");
-        assert_eq!(SIZE_ROWS[0].1, [0, 255, 255, 255]);
-        assert_eq!(SIZE_ROWS[1].1, [25, 230, 152, 255]); // Lerp(Cyan, LimeGreen, 0.5)
-        assert_eq!(SIZE_ROWS[2].1, [50, 205, 50, 255]);  // LimeGreen
-        // `:412-432` (UI.Creative/Normal/Expert/Master + the Main colours).
-        assert_eq!(DIFFICULTY_ROWS[0].0, "Journey");
-        assert_eq!(DIFFICULTY_ROWS[0].1, [255, 120, 187, 255]); // creativeModeColor
-        assert_eq!(DIFFICULTY_ROWS[1].0, "Classic");
-        assert_eq!(DIFFICULTY_ROWS[1].1, [255, 255, 255, 255]);
-        assert_eq!(DIFFICULTY_ROWS[2].0, "Expert");
-        assert_eq!(DIFFICULTY_ROWS[2].1, [255, 153, 0, 255]); // mcColor
-        assert_eq!(DIFFICULTY_ROWS[3].0, "Master");
-        assert_eq!(DIFFICULTY_ROWS[3].1, [255, 38, 25, 255]); // hcColor
+        assert_eq!(SIZE_ROWS[0], [0, 255, 255, 255]);
+        assert_eq!(SIZE_ROWS[1], [25, 230, 152, 255]); // Lerp(Cyan, LimeGreen, 0.5)
+        assert_eq!(SIZE_ROWS[2], [50, 205, 50, 255]);  // LimeGreen
+        // `:412-432` (the labels resolve UI.*; the tints are the Main colours).
+        assert_eq!(DIFFICULTY_ROWS[0], [255, 120, 187, 255]); // creativeModeColor
+        assert_eq!(DIFFICULTY_ROWS[1], [255, 255, 255, 255]);
+        assert_eq!(DIFFICULTY_ROWS[2], [255, 153, 0, 255]); // mcColor
+        assert_eq!(DIFFICULTY_ROWS[3], [255, 38, 25, 255]); // hcColor
         // The display order maps to the enum ids (`:405-411`).
         assert_eq!(DIFFICULTY_ROW_IDS, [3, 0, 1, 2]);
         // `:460-477` (Lang.misc[103/101/102] + the XNA named colours).
-        assert_eq!(EVIL_ROWS[0].0, "Random");
-        assert_eq!(EVIL_ROWS[1].0, "Corruption");
-        assert_eq!(EVIL_ROWS[1].1, [147, 112, 219, 255]); // Color.MediumPurple
-        assert_eq!(EVIL_ROWS[2].0, "Crimson");
-        assert_eq!(EVIL_ROWS[2].1, [205, 92, 92, 255]); // Color.IndianRed
+        assert_eq!(EVIL_ROWS[1], [147, 112, 219, 255]); // Color.MediumPurple
+        assert_eq!(EVIL_ROWS[2], [205, 92, 92, 255]); // Color.IndianRed
     }
 
     #[test]

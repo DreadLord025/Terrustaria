@@ -48,8 +48,8 @@ pub(crate) struct PlayerAssets {
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the M2-MOUNT-1 ground set.
-    pub(crate) mount_back: [Option<BgTex>; 12],
-    pub(crate) mount_front: [Option<BgTex>; 12],
+    pub(crate) mount_back: [Option<BgTex>; 23],
+    pub(crate) mount_front: [Option<BgTex>; 23],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -134,6 +134,8 @@ pub(crate) struct NpcAssets {
     pub(crate) painter: Option<BgTex>,
     pub(crate) witch_doctor: Option<BgTex>,
     pub(crate) clothier: Option<BgTex>,
+    /// `NPC_368.xnb` — the Travelling Merchant sheet.
+    pub(crate) travelling_merchant: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
@@ -269,6 +271,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         painter: sky_tex(atlas, "NPC_227", None),
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
+        travelling_merchant: sky_tex(atlas, "NPC_368", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
@@ -328,10 +331,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         crystal: sky_tex(atlas, "NPC_548", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
-        goblin_thief: sky_tex(atlas, "NPC_26", None),
-        goblin_warrior: sky_tex(atlas, "NPC_27", None),
-        goblin_archer: sky_tex(atlas, "NPC_28", None),
-        goblin_peon: sky_tex(atlas, "NPC_111", None),
+        goblin_thief: sky_tex(atlas, "NPC_27", None),
+        goblin_warrior: sky_tex(atlas, "NPC_28", None),
+        goblin_archer: sky_tex(atlas, "NPC_111", None),
+        goblin_peon: sky_tex(atlas, "NPC_26", None),
         goblin_summoner: sky_tex(atlas, "NPC_471", None),
         tim: sky_tex(atlas, "NPC_45", None),
         dark_caster: sky_tex(atlas, "NPC_32", None),
@@ -387,6 +390,28 @@ fn deerclops_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
         tex.uv[0] + du * (c + 1.0) + ox,
         tex.uv[1] + dv * (r + 1.0) + oy,
     ]
+}
+
+/// The humanoid walkers' draw: the sheet's real row (`t.h / count`, the
+/// per-kind `Main.npcFrameCount` rows — 56 for most humanoids, the Tim's
+/// 70) at the generic anchor — the frame centred on the box's centre-X,
+/// its centre 4 px below the box's bottom (`Main.cs:25511-25516`). The
+/// v1 drew every humanoid as a fixed 38x48, stretching the art.
+fn humanoid_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(48.0, |t| t.h / count as f32);
+    let fw = tex.map_or(38.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
 }
 
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
@@ -878,75 +903,28 @@ pub(crate) fn draw_npcs(
                     .map_or([38.0, 24.0], |t| [38.0, t.h / 4.0]),
                 [cx - 19.0, cy - 12.0],
             ),
-            NpcKind::Zombie => (
-                assets.zombie.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Guide rides the zombie's humanoid frame machine (the
-            // `Main.npcFrameCount[22]` = 3 rows of the same 38x48 shape).
-            NpcKind::Guide => (
-                assets.guide.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Merchant: the same humanoid shape over NPC_17.
-            NpcKind::Merchant => (
-                assets.merchant.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Dryad: the same humanoid shape over NPC_20.
-            NpcKind::Dryad => (
-                assets.dryad.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Nurse: the same humanoid shape over NPC_18.
-            NpcKind::Nurse => (
-                assets.nurse.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Arms Dealer: the same humanoid shape over NPC_19.
-            NpcKind::ArmsDealer => (
-                assets.arms_dealer.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Demolitionist: the same humanoid shape over NPC_38.
-            NpcKind::Demolitionist => (
-                assets.demolitionist.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Painter: the same humanoid shape over NPC_227.
-            NpcKind::Painter => (
-                assets.painter.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Witch Doctor: the same humanoid shape over NPC_228.
-            NpcKind::WitchDoctor => (
-                assets.witch_doctor.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
-            // The Clothier: the same humanoid shape over NPC_54.
-            NpcKind::Clothier => (
-                assets.clothier.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
+            // The humanoid walkers: the sheet's real row at the generic
+            // anchor (the frame centred on the box's centre-X, its centre
+            // 4 px below the box's bottom, `Main.cs:25511-25516`); the
+            // rows ride each kind's `Main.npcFrameCount` (`npc.rs`'s
+            // `humanoid_frame_count`). The Zombie's sheet is the single
+            // 30x48 NPC_9 frame (no `FindFrame` case — static).
+            NpcKind::Zombie => humanoid_draw(assets.zombie.as_ref(), 1, n, w, h),
+            NpcKind::Guide => humanoid_draw(assets.guide.as_ref(), 26, n, w, h),
+            NpcKind::Merchant => humanoid_draw(assets.merchant.as_ref(), 25, n, w, h),
+            NpcKind::Dryad => humanoid_draw(assets.dryad.as_ref(), 21, n, w, h),
+            NpcKind::Nurse => humanoid_draw(assets.nurse.as_ref(), 23, n, w, h),
+            NpcKind::ArmsDealer => humanoid_draw(assets.arms_dealer.as_ref(), 25, n, w, h),
+            NpcKind::Demolitionist => humanoid_draw(assets.demolitionist.as_ref(), 25, n, w, h),
+            NpcKind::Painter => humanoid_draw(assets.painter.as_ref(), 25, n, w, h),
+            NpcKind::WitchDoctor => humanoid_draw(assets.witch_doctor.as_ref(), 26, n, w, h),
+            NpcKind::Clothier => humanoid_draw(assets.clothier.as_ref(), 23, n, w, h),
+            NpcKind::TravellingMerchant => humanoid_draw(
+                assets.travelling_merchant.as_ref(),
+                26,
+                n,
+                w,
+                h,
             ),
             // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
             NpcKind::EyeOfCthulhu => (
@@ -1233,12 +1211,7 @@ pub(crate) fn draw_npcs(
                 [n.x, n.y],
             ),
             // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
-            NpcKind::GoblinTinkerer => (
-                assets.goblin_tinkerer.as_ref(),
-                48.0,
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
+            NpcKind::GoblinTinkerer => humanoid_draw(assets.goblin_tinkerer.as_ref(), 25, n, w, h),
             // The bound goblin: the single tied frame over NPC_105.
             NpcKind::BoundGoblin => (
                 assets.bound_goblin.as_ref(),
@@ -1284,7 +1257,8 @@ pub(crate) fn draw_npcs(
                     [cw, ch],
                     [n.x + w * 0.5 + lean - cw * 0.5, n.y + h + 4.0 - ch],
                 )
-            }            // The Skeletron's hand: the 52x52 single-frame sheet.
+            }
+            // The Skeletron's hand: the 52x52 single-frame sheet.
             NpcKind::SkeletronHand => (
                 assets.skeletron_hand.as_ref(),
                 assets.skeletron_hand.as_ref().map_or(52.0, |t| t.h),
@@ -1344,16 +1318,14 @@ pub(crate) fn draw_npcs(
             }
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
-            NpcKind::Skeleton | NpcKind::UndeadMiner => (
-                if n.kind == NpcKind::Skeleton {
+            NpcKind::Skeleton | NpcKind::UndeadMiner => {
+                let tex = if n.kind == NpcKind::Skeleton {
                     assets.skeleton.as_ref()
                 } else {
                     assets.undead_miner.as_ref()
-                },
-                assets.skeleton.as_ref().map_or(48.0, |t| t.h / 15.0),
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
+                };
+                humanoid_draw(tex, 15, n, w, h)
+            }
             // The goblin army's fighters: the humanoid strips (the 16-frame
             // family 26/27/28/111, the summoner's 20) — the frame height
             // rides each sheet, the display box the zombie's 38x48 shape.
@@ -1362,44 +1334,29 @@ pub(crate) fn draw_npcs(
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon
             | NpcKind::GoblinSummoner => {
-                let (tex, frames) = match n.kind {
-                    NpcKind::GoblinThief => (assets.goblin_thief.as_ref(), 16.0),
-                    NpcKind::GoblinWarrior => (assets.goblin_warrior.as_ref(), 16.0),
-                    NpcKind::GoblinArcher => (assets.goblin_archer.as_ref(), 16.0),
-                    NpcKind::GoblinPeon => (assets.goblin_peon.as_ref(), 21.0),
-                    _ => (assets.goblin_summoner.as_ref(), 20.0),
+                let (tex, count) = match n.kind {
+                    NpcKind::GoblinPeon => (assets.goblin_peon.as_ref(), 16),
+                    NpcKind::GoblinThief => (assets.goblin_thief.as_ref(), 16),
+                    NpcKind::GoblinWarrior => (assets.goblin_warrior.as_ref(), 16),
+                    NpcKind::GoblinArcher => (assets.goblin_archer.as_ref(), 21),
+                    _ => (assets.goblin_summoner.as_ref(), 20),
                 };
-                (
-                    tex,
-                    tex.map_or(48.0, |t| t.h / frames),
-                    [38.0, 48.0],
-                    [n.x - 10.0, n.y - 5.0],
-                )
+                humanoid_draw(tex, count, n, w, h)
             }
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
             // The casters: the humanoid sheets — the sorcerer's strip is 3
             // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
             // `Main.cs:67082`), the display box the zombie's 38x48 shape.
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
-                let (tex, frames) = match n.kind {
-                    NpcKind::GoblinSorcerer => (assets.goblin_sorcerer.as_ref(), 3.0),
-                    NpcKind::Tim => (assets.tim.as_ref(), 3.0),
-                    _ => (assets.dark_caster.as_ref(), 6.0),
+                let (tex, count) = match n.kind {
+                    NpcKind::GoblinSorcerer => (assets.goblin_sorcerer.as_ref(), 3),
+                    NpcKind::Tim => (assets.tim.as_ref(), 3),
+                    _ => (assets.dark_caster.as_ref(), 6),
                 };
-                (
-                    tex,
-                    tex.map_or(48.0, |t| t.h / frames),
-                    [38.0, 48.0],
-                    [n.x - 10.0, n.y - 5.0],
-                )
+                humanoid_draw(tex, count, n, w, h)
             }
             // The Fire Imp: the 10-frame strip (`Main.npcFrameCount[24]`).
-            NpcKind::FireImp => (
-                assets.fire_imp.as_ref(),
-                assets.fire_imp.as_ref().map_or(48.0, |t| t.h / 10.0),
-                [38.0, 48.0],
-                [n.x - 10.0, n.y - 5.0],
-            ),
+            NpcKind::FireImp => humanoid_draw(assets.fire_imp.as_ref(), 10, n, w, h),
             // The spheres: the single-frame 16x16 sheets.
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
                 let tex = match n.kind {

@@ -2833,6 +2833,20 @@ consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
 advance — the hold's early refusal, the budget's pass → wave+1 with
 the 1800-tick break.
 
+## The crystal's win-death (M4-EVENT-5p)
+
+The event's end: the crystal's `ai[0] >= 600` arm fires
+`DD2Event.StopInvasion` + `life = 0` — the port's `wants_event_stop`,
+resolved by `update_dd2_event` before the death retain (the flag and the
+crystal go in one pass).
+
+## The DD2 tiers (M4-EVENT-5q)
+
+The tier-2/tier-3 rosters and budgets (`Difficulty_2/3_*`): the tiers
+swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
+554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
+wave 7's tier-3 budget is Betsy's own HP bucket.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -6400,4 +6414,27 @@ The envelope and the ported bodies are 1:1; the deviations:
   `NetManager.Read` does.
 - **The `82` envelope is not whitelisted in the accept gate**, matching the
   C#: a pre-`IN_WORLD` slot's module message is booted
-  (`MessageBuffer.cs:161`'s whitelist does not contain 82).
+  (`MessageBuffer.cs:161`'s whitelist does not contain 82).## The humanoid walkers' display (M4-NPC-3c)
+
+- **The zombie never animates.** `FindFrame` has no case 9 and
+  `npcFrameCount[9] = 1`: the vanilla zombie's sprite is the single 30x48
+  NPC_9 frame, its walk expressed purely in the body motion. The port's
+  v1 ran the case-3 group's walker (the 0/1/2 band cycle) on it — rows
+  1/2 did not exist in the sheet.
+- **The town NPCs and goblins are not 3-frame walkers.** They belong to
+  `FindFrame`'s humanoid-group arm (`NPC.cs:68547-69587`), which walks
+  rows 2..npcFrameCount-1: 26 rows for the Guide/Witch Doctor, 25 for
+  the Merchant/Arms Dealer/Demolitionist/Painter/Tinkerer, 23 for the
+  Nurse/Clothier, 21 for the Dryad and the Goblin Archer, 16 for the
+  other three goblins, 15 for the cave walkers. The v1's 3-frame machine
+  showed the idle rows while walking.
+- **The sit/talk/attack zones are the follow-up.** The group's
+  `ai[0]` 2/3/4/5/6/7/11/18/19/23 arms (the sit, the talking, the
+  downed, the shop-attack cycles over `AttackFrameCount`) ride the town
+  AI states the port does not model; the default (idle/walk) arm is
+  what the port draws.
+- **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
+  and their widths differ per town NPC (40/46/48/50/52/56) — the draw
+  takes each sheet's real frame instead of a stretched 38x48.
+
+

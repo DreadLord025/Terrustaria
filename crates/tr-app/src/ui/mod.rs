@@ -136,7 +136,8 @@ pub(crate) fn draw_death_screen(
     let color = [1.0, 1.0, 1.0, 1.0];
     text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
     if lost_coins > 0 {
-        let line = format!("Dropped coins: {lost_coin_string}");
+        // `Game.DroppedCoins` ("dropped {0}") with the `ValueToCoins` string.
+        let line = crate::lang::text_args("Game.DroppedCoins", &[lost_coin_string.to_string()]);
         text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
     }
 }

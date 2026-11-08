@@ -149,3 +149,132 @@ mod tests {
         assert!(check_progress(false, false, false, 0, 1, 59.0, 59.0, 1.0).is_none());
     }
 }
+
+/// `DD2Event.Difficulty_2_GetEnemiesForWave` (`DD2Event.cs:1132-1159`) —
+/// the tier-2 rosters (`ReadyForTier2`'s hardmode mech boss gate).
+pub fn enemies_for_wave_t2(wave: i32) -> (&'static [u16], i32) {
+    match wave {
+        1 => (&[553, 562], 90),
+        2 => (&[553, 562, 572], 70),
+        3 => (&[553, 556, 562, 559, 572], 60),
+        4 => (&[553, 559, 570, 572, 562], 55),
+        5 => (&[553, 556, 559, 572, 574, 570], 50),
+        6 => (&[553, 556, 562, 559, 568, 570, 572, 574], 45),
+        7 => (&[553, 556, 572, 559, 568, 574, 570, 576], 42),
+        _ => (&[553], 60),
+    }
+}
+
+/// `DD2Event.Difficulty_3_GetEnemiesForWave` (`DD2Event.cs:1437-1463`) —
+/// the tier-3 rosters (`ReadyForTier3`'s hardmode golem gate).
+pub fn enemies_for_wave_t3(wave: i32) -> (&'static [u16], i32) {
+    match wave {
+        1 => (&[554, 557, 563], 85),
+        2 => (&[554, 557, 563, 573, 578], 75),
+        3 => (&[554, 563, 560, 573, 571], 60),
+        4 => (&[554, 560, 571, 573, 563, 575, 565], 60),
+        5 => (&[554, 557, 573, 575, 571, 569, 577], 55),
+        6 => (&[554, 557, 563, 578, 569, 571, 577, 565], 60),
+        7 => (&[554, 557, 563, 569, 571, 551], 90),
+        _ => (&[554], 60),
+    }
+}
+
+/// `DD2Event.Difficulty_2_GetRequiredWaveKills` (`:1162-1195`) — the
+/// tier-2 budgets: 60/80/100/120/140/180/220 (the wave-7's 219 cap), the
+/// wave-8 win sentinel.
+pub fn required_wave_kills_t2(wave: i32, current_kills: &mut i32) -> i32 {
+    match wave {
+        0 => 0,
+        1 => 60,
+        2 => 80,
+        3 => 100,
+        4 => 120,
+        5 => 140,
+        6 => 180,
+        7 => {
+            if *current_kills > 219 {
+                *current_kills = 219;
+            }
+            220
+        }
+        8 => 1,
+        _ => 10,
+    }
+}
+
+/// `DD2Event.Difficulty_3_GetRequiredWaveKills` (`:1468-1500`) — the
+/// tier-3 budgets: 60/80/100/120/140/180 then the wave-7 Betsy HP bucket
+/// (`100 - life/max*100`), the wave-8 win sentinel.
+pub fn required_wave_kills_t3(wave: i32, current_kills: &mut i32, betsy_hp_ratio: f32) -> i32 {
+    match wave {
+        0 => 0,
+        1 => 60,
+        2 => 80,
+        3 => 100,
+        4 => 120,
+        5 => 140,
+        6 => 180,
+        7 => {
+            let mut betsy_found = true;
+            let _ = betsy_found;
+            *current_kills = (100.0 - betsy_hp_ratio * 100.0).max(0.0) as i32;
+            100
+        }
+        8 => 1,
+        _ => 10,
+    }
+}
+
+/// `DD2Event.FindProperDifficulty` (`:358-370`): the tier from the
+/// `ReadyForTier2/3` gates (hardmode mech any / golem downed).
+pub fn find_tier(hard_mode: bool, downed_mech_any: bool, downed_golem: bool) -> i32 {
+    if hard_mode && downed_golem {
+        3
+    } else if hard_mode && downed_mech_any {
+        2
+    } else {
+        1
+    }
+}
+
+#[cfg(test)]
+mod tier_tests {
+    use super::*;
+
+    #[test]
+    fn the_tier2_rosters_and_budgets_climb() {
+        // `Difficulty_2_*` (`:1132-1195`): the rosters grow, the budgets
+        // climb 60→220 with the wave-7 cap.
+        assert_eq!(enemies_for_wave_t2(1), (&[553, 562][..], 90));
+        assert_eq!(enemies_for_wave_t2(7).0.len(), 8);
+        let mut wave = 1;
+        let mut kills = 260;
+        assert_eq!(required_wave_kills_t2(1, &mut kills), 60);
+        // The wave-7 cap reads the over-219 count down.
+        assert_eq!(required_wave_kills_t2(7, &mut kills), 220);
+        assert_eq!(kills, 219);
+    }
+
+    #[test]
+    fn the_tier3_rosters_peak_at_betsy() {
+        // `Difficulty_3_*` (`:1437-1500`): the last wave rosters Betsy
+        // (551) and the budget's the HP ratio.
+        assert_eq!(enemies_for_wave_t3(7).0.last(), Some(&551));
+        let mut kills = 0;
+        assert_eq!(required_wave_kills_t3(6, &mut kills, 0.4), 180);
+        let mut kills = 0;
+        assert_eq!(required_wave_kills_t3(7, &mut kills, 0.4), 100);
+        assert_eq!(kills, 60, "Betsy's HP bucket");
+    }
+
+    #[test]
+    fn the_tier_gates_pick_the_difficulty() {
+        // `FindProperDifficulty` (`:358-370`): hardmode alone → tier 1,
+        // the mech boss → 2, the golem → 3.
+        assert_eq!(find_tier(false, true, true), 1);
+        assert_eq!(find_tier(true, false, false), 1);
+        assert_eq!(find_tier(true, true, false), 2);
+        assert_eq!(find_tier(true, true, true), 3);
+    }
+}
