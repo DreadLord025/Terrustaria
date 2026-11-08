@@ -4616,30 +4616,85 @@ walls too); the remix `ChlorophyteDefense` conversion is out (no remix
 worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
 unconditionally).
 
-## Lihzahrd temple (M1.4-WGEN-6)
+## Lihzahrd temple (M1.4-WGEN-6 / M5-TEMPLE)
 
-The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
-temple, the last big generation structure:
+The temple is now the faithful C# port, landed as three pipeline steps over
+the M5-BIOME seam:
 
-- **The placement** (`:15840-15848`): the y between the rock layer and
-  `maxTilesY − 600` (the port clamps to the height), the x under the
-  jungle band's deep half (`dungeonSide`'s opposite in the C#).
-- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
-  Lihzahrd brick (226) with the unsafe walls (87), the carved central
-  hall + the side rooms with the safe walls (112), the brick pillars
-  inside the hall.
-- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
-  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
-  room at the hall's west end.
-- **The traps**: the dart traps (137, the case-137 wiring variants the
-  wiring trip fires — the trap frameY selects the variant) embedded in
-  the hall's brick walls every 12 columns.
-- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+- **The placement search** (`LihzahrdTemple` pass, `WorldGen.cs:15834-15926`):
+  the y between `(int)Main.rockLayer` and `maxTilesY − 600`, the x from the
+  dungeon-opposite reach `((NextDouble() · num3 + 0.1) · −dungeonSide + 0.5) ·
+  maxTilesX`, the tile-60 acceptance, the 1,000,000-attempt widening valve
+  (0.25 → 0.30 → 0.35, 11 cap stages) and the fallback — the M5-BIOME
+  phase-6 port, unchanged.
+- **The interior** (`makeTemple`, `:33435-34237`): the room walk
+  (`Next(10,16)` rooms at `scale = maxTilesX/4200`, the staggered
+  horizontal/vertical steps with the `Next(1,3)` flip period and the −10
+  downward drift), `makeTemple_GenerateBricks` (the per-depth `DungeonBounds`
+  union, `Inflate(10)`, the `ClearEverything` brick fill and the four
+  corner-to-corner `Line_StrictAngles`/`Line`/`FillY`/`FillX` walkers), the
+  jitter carve (the two counter-sweeps over the drifting inset edges), the
+  `templePather` corridors, the four `outerTempled` sweeps (the unsafe-wall
+  skin conversion), the entrance shaft with the Lihzahrd door (tile 10,
+  style 11, `frameY = 594/612/630`), the `templeCleaner` sweeps, the wall-87
+  widen pass, the altar (`PlaceTile(237)` → `Place3x2`, the published
+  `lAltarX/lAltarY` from the frames, the hand-built 1000-try fallback) and
+  the wooden-spike (232) staircase loop.
+- **The part-2 content** (`LihzahrdTemplePart2` pass, `:17701-17709` →
+  `templePart2`, `:34464-34658`): the dart traps (`mayanTrap` — the pressure
+  plate 135 style 6 over the dart column 137 with the `AddWireFromPointToPoint`
+  wire run), the buried chests (`AddBuriedChest`, style 16, the Pygmy-staff
+  main item is M5-CHEST-gen's), the statues (105, styles 43-45), the
+  workbench/table/chair furniture (`Place2x1`/`Place3x2`/`Place1x2` with the
+  faithful frame strides) and the one painting (240, style 88).
+- **The altar re-write** (`LihzahrdAltar` pass, `:21943-21976`): the 3×2
+  frames + the 3-wide brick base row + six `SquareTileFrame`, as the late
+  anchor safety.
 
-Deviations: the C#'s multi-room crawl with the doors
-(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
-summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
-are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+Deviations:
+
+- **The stream model**: the C# shares one `genRand` across the world; the
+  port re-seeds per pass (`pass_rng("Jungle Temple")` / `"Temple"` /
+  `"Lihzahrd Altars"` — the step slugs map to the vanilla chain rows
+  "Jungle Temple" / "Temple" / "Lihzahrd Altars"). The draws INSIDE each
+  step follow the C# statement order 1:1 (pinned by the draw-ledger tests);
+  the loot tables' draws in `AddBuriedChest` are M5-CHEST-gen's — until they
+  land, the part-2 stream carries their absence (a documented sub-vanilla
+  gap, same class as the earlier phases).
+- **The `tileSolid` windows**: the port has no global table. The part-2
+  wrapper runs with 162 (BreakableIce) non-solid / 226 solid for the whole
+  step, and the wood spike 232 solid only during the trap loop (the C#'s
+  `:34499` flip); the C# leaves 162/232 non-solid for the rest of the chain
+  until `BeeLarvaInBeehives` — the port's later passes keep their own
+  predicates (recorded delta; the temple's spikes are the only 232 tiles).
+- **The executed-pipeline order**: `temple part 2` runs immediately after
+  `lihzahrd temple` (the C# runs it after the liquid/tile passes — the port's
+  compact chain delta), and `lihzahrd altar` sits between `cacti` and
+  `water plants` (vanilla `:21310` → `:21943` → `:21963`). 50 → 52 steps.
+- **The sub-vanilla guards**: the C#'s unguarded writes (`templePather`'s
+  carve squares, the altar fallback's floor scan, `array[num2-1]` on a
+  world whose walk rolls no room) would throw on the port's smaller test
+  worlds; the port's `in_world` guards keep the writes total.
+- **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
+  (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) —
+  M5-SEED-1's scope, not a deviation here.
+- **The drunk/good/remix branches** (×3/×2 room counts, the drunk spike
+  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
+  M5-SEED-1/2's scope.
+- **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
+  Golem-BOSC-19's; the traps fire through the wiring engine's case-137
+  variants (the frameY selects the variant, the trap column's wires are
+  laid by the pass itself).
+- **The world hashes** are re-pinned (every world on every seed changes by
+  design): `SEED42_512 = 1248943602`, `DEFAULT_WORLD = 3359703751` (the
+  phase-3/final pair; the phase-1 pins 2067651109/2366599377 and the phase-2
+  pins 2109138558/948698174 are recorded in the commits). Screenshot
+  determinism pair (seed 1, the altar room at `TR_CAM=1836,703`
+  `TR_SHOT_FRAME=600` `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`): zoom 1.0
+  `b2600c92…` and zoom 2.0 `501baf30…` both reproduce byte-equal on the
+  repeat run; a zoom-2.0 frame-900 pair showed the known `TR_SHOT` harness
+  timing sensitivity (the ANALYSIS harness note) in the HUD hotbar region
+  only.
 
 ## Polish passes (M1.4-WGEN-7)
 
