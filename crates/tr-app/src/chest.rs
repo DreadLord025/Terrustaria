@@ -1162,7 +1162,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
     // (`ChestUI.RenameChestSubmit`/`RenameChestCancel` + `Close`).
     app.open_keyboard_with_tail(
         Request {
-            label: keyboard::ENTER_NEW_NAME.into(),
+            label: crate::ui::keyboard::enter_new_name(),
             initial,
             allow_empty: false,
             max_length: CHEST_MAX_NAME_LENGTH,
@@ -2631,7 +2631,7 @@ mod tests {
             let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_ref() else {
                 panic!("the rename keyboard is live");
             };
-            assert_eq!(s.request.label, keyboard::ENTER_NEW_NAME);
+            assert_eq!(s.request.label, crate::ui::keyboard::enter_new_name());
             assert_eq!(s.request.initial, "Chest", "the tile default prefills");
             assert_eq!(s.state.text, "Chest");
             assert_eq!(s.request.allow_empty, false, "the ctor default (:147-156)");

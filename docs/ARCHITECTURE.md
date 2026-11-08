@@ -241,6 +241,12 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   (the `UIElement`/`UITextPanel`/spliced-panel kit), `cards.rs`, `char_select.rs`,
   `world_select.rs`, `char_creation.rs`, `world_creation.rs`, `keyboard.rs`,
   `save_list.rs`. Shared: `text.rs`, `panel.rs`, `color.rs`, `sliders.rs`, `resources.rs`.
+  Framework halves of `UIElement`/`UserInterface` (2026-11-08, M7-UI-1):
+  `uistate.rs` (the layout pass + the element draw kit), `pointer.rs` (the
+  `UserInterface` pointer machine — press/release → click/`DoubleClick`, the 500 ms
+  window, the 200 ms state-change disable), `framework.rs` (the `GetElementAt`
+  back-to-front hit order over a flat element list), `select_hit.rs` (the element
+  ids the two select screens' hit order needs).
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
   wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the

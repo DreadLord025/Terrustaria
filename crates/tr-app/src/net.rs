@@ -21,6 +21,10 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
+
+use flate2::read::DeflateDecoder;
+use flate2::write::DeflateEncoder;
+use flate2::Compression;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Condvar, Mutex};
@@ -60,26 +64,31 @@ pub mod id {
     pub const SPAWN_REQUEST: u8 = 8; // MessageBuffer.cs:671-806
     pub const STATUS: u8 = 9; // MessageBuffer.cs:877-888 — load progress
     pub const PLAYER_ACTIVE: u8 = 14; // MessageBuffer.cs:1061-1088
-    pub const WORLD_CHUNK: u8 = 15; // internal (dead id in 1.4.5.8): the whole-world
-                                    // blob stream. M6-NET-3 replaces the producer with `10 TileBlock` sections.
+    pub const TILE_BLOCK: u8 = 10; // NetMessage.cs:424-426 / MessageBuffer.cs:889-894
+    pub const NET_MODULE: u8 = 82; // NetPacket.cs:19-42 / MessageBuffer.cs:3243-3245
+    pub const SECTION_RANGE: u8 = 20; // NetMessage.cs:543-644 / MessageBuffer.cs:1335-1443
     pub const PLAYER_HP: u8 = 16; // MessageBuffer.cs:1095-1112
     pub const PASSWORD_REQUEST: u8 = 37; // MessageBuffer.cs:2203-2216 — no body
     pub const PASSWORD: u8 = 38; // MessageBuffer.cs:2218-2231
     pub const PLAYER_SPAWN: u8 = 12; // MessageBuffer.cs:908-930
     pub const WORLD_COMPLETE: u8 = 49; // MessageBuffer.cs:2448-2452 — world load done
+    pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
+    pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
+    pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
+    pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
+    pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
 
-    /// The ad-hoc event ids `netglue` still owns until M6-NET-2 ports the 1:1
-    /// entity messages. Kept out of the 1..162 range so the accept gate
-    /// (`GetData`, `MessageBuffer.cs:148-172`) rejects them before the slot is
-    /// fully in-world (State 10) — exactly what those messages need.
-    pub const INT_PLAYER: u8 = 200;
-    pub const INT_EDIT: u8 = 201;
-    pub const INT_PICKUP: u8 = 202;
-    pub const INT_JOINED: u8 = 203;
-    pub const INT_LEFT: u8 = 204;
-    pub const INT_TIME: u8 = 205;
-    pub const INT_NPCS: u8 = 206;
-    pub const INT_ITEMS: u8 = 207;
+    /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
+    /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
+    /// before the slot is fully in-world (State 10) — exactly what those
+    /// messages need. The entity snapshots left this block in M6-NET-2 (they
+    /// became the 1:1 `13/21/151/22/23`); the remaining ones have no C# body
+    /// of their own in the port's scope yet.
+    pub const INT_EDIT: u8 = 201; // tile edit request/echo
+    pub const INT_PICKUP: u8 = 202; // item pickup request (the client's `SyncItem`→151 stand-in)
+    pub const INT_JOINED: u8 = 203; // peer-join notice
+    pub const INT_LEFT: u8 = 204; // peer-leave notice
+    pub const INT_TIME: u8 = 205; // clock broadcast
 }
 
 // ===========================================================================
@@ -278,6 +287,18 @@ impl NetWriter {
         self.buf.extend_from_slice(b);
         self
     }
+    /// Appends raw bytes with no length prefix (the deflate blob's tail of
+    /// a `10 TileBlock` frame).
+    pub fn raw(mut self, b: &[u8]) -> Self {
+        self.buf.extend_from_slice(b);
+        self
+    }
+    /// The 7-bit-encoded int on its own (`BinaryWriter`'s
+    /// `Write7BitEncodedInt` without a following payload).
+    pub fn u7(mut self, v: u32) -> Self {
+        write_u7(&mut self.buf, v);
+        self
+    }
 
     /// Closes the frame: backfills the length (`NetMessage.cs:1680-1684`).
     /// The length covers the whole packet, header included.
@@ -299,6 +320,10 @@ pub struct NetReader<'a> {
 impl<'a> NetReader<'a> {
     pub fn new(d: &'a [u8]) -> Self {
         Self { d, p: 0 }
+    }
+    /// Bytes still unread.
+    pub fn remaining(&self) -> usize {
+        self.d.len().saturating_sub(self.p)
     }
     fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         let end = self.p.checked_add(n)?;
@@ -357,6 +382,14 @@ impl<'a> NetReader<'a> {
         let n = self.u32()? as usize;
         self.take(n).map(|s| s.to_vec())
     }
+    /// A standalone 7-bit-encoded int.
+    pub fn u7(&mut self) -> Option<u32> {
+        self.read_u7()
+    }
+    /// The unread remainder (the deflate blob of a `10` body).
+    pub fn rest(&mut self) -> Option<&'a [u8]> {
+        self.take(self.remaining())
+    }
     fn read_u7(&mut self) -> Option<u32> {
         let mut v: u32 = 0;
         for shift in 0..5 {
@@ -409,10 +442,41 @@ fn read_frame(r: &mut impl Read) -> std::io::Result<Vec<u8>> {
 }
 
 // ===========================================================================
+// Sections (200x150 tiles — `Netplay.GetSectionX/Y`, Netplay.cs:770-777)
+// ===========================================================================
+
+/// A tile section's width and height (`Main.maxSectionsX/Y`,
+/// `Main.cs:66792-66793`).
+pub const SECTION_W: i32 = 200;
+pub const SECTION_H: i32 = 150;
+
+/// The tile → section mapping (`Netplay.GetSectionX`).
+pub fn section_x(tile_x: i32) -> i32 {
+    tile_x.div_euclid(SECTION_W)
+}
+
+/// `Netplay.GetSectionY`.
+pub fn section_y(tile_y: i32) -> i32 {
+    tile_y.div_euclid(SECTION_H)
+}
+
+/// The section grid dimensions for a world (`maxTilesX / 200`, rounded up).
+pub fn sections_x(world_w: i32) -> i32 {
+    (world_w + SECTION_W - 1) / SECTION_W
+}
+
+pub fn sections_y(world_h: i32) -> i32 {
+    (world_h + SECTION_H - 1) / SECTION_H
+}
+
+// ===========================================================================
 // Payload structs
 // ===========================================================================
 
-/// The internal (pre-M6-NET-2) remote-player snapshot.
+/// The render-facing remote-player snapshot. The wire fields arrive via
+/// `13 PlayerState`; `off_x/off_y` are the client-side smoothing accumulator
+/// (`Player.netOffset`'s port, `MessageBuffer.cs:1004-1008`) and never cross
+/// the wire.
 #[derive(Clone, Debug, Default)]
 pub struct PlayerNet {
     pub id: u32,
@@ -428,31 +492,323 @@ pub struct PlayerNet {
     pub on_ground: bool,
     pub leg_frame: u32,
     pub body_frame: u32,
+    /// `Player.netOffset` — the visual lag toward zero; drawn at
+    /// `x + off_x` (see `netglue::decay_net_offsets`).
+    pub off_x: f32,
+    pub off_y: f32,
 }
 
-#[derive(Clone, Debug)]
-pub struct NpcNet {
-    pub id: u32,
-    pub kind: u16,
+/// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
+/// BitsByte groups, the selected item, the full-float position and the
+/// conditional velocity/mount/potion/camera bodies. The port has no mounts,
+/// potions or camera-target sync, so those bits ride as flags with no bodies
+/// (deviation in `docs/ANALYSIS.md`); the trailing anim/hp fields are the
+/// port's two-client extension — the C# derives them from each peer's local
+/// simulation, which the port does not run for remote players.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlayerState {
+    pub player_id: u8,
+    /// bitsByte21: controlUp/Down/Left/Right/Jump/UseItem/direction==1/controlDash.
+    pub flags_a: BitsByte,
+    /// bitsByte22: pulley/pulley2/velocity!=0/vortexStealth/gravDir/shieldRaised/ghost/mount.
+    pub flags_b: BitsByte,
+    /// bitsByte23: hoveringUp/voidVault/sitting/downedDD2/petting/petSmall/potionReturn/hoveringDown.
+    pub flags_c: BitsByte,
+    /// bitsByte24: sleeping/autoReuse/controlDownHold/operatingEntity/controlUseTile/cameraTarget/lastUseSuccess/snapStone.
+    pub flags_d: BitsByte,
+    pub selected_item: u8,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    // ---- port extension: the render fields the C# derives locally ----
+    pub on_ground: bool,
+    pub leg_frame: u32,
+    pub body_frame: u32,
     pub hp: i32,
     pub max_hp: i32,
-    pub facing: i32,
-    pub on_ground: bool,
-    pub anim: f32,
-    pub hurt_cd: f32,
 }
 
-#[derive(Clone, Debug)]
-pub struct ItemNet {
-    pub id: u32,
-    pub item: u16,
-    pub count: u32,
+impl PlayerState {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut w = w
+            .u8(self.player_id)
+            .bitsbyte(self.flags_a)
+            .bitsbyte(self.flags_b)
+            .bitsbyte(self.flags_c)
+            .bitsbyte(self.flags_d)
+            .u8(self.selected_item)
+            .f32(self.x)
+            .f32(self.y);
+        // `velocity != Vector2.Zero` gate (`NetMessage.cs:491-495`).
+        if self.flags_b.get(2) {
+            w = w.f32(self.vx).f32(self.vy);
+        }
+        // The port's render extension (two-client only; see the struct doc).
+        w.bool(self.on_ground)
+            .u32(self.leg_frame)
+            .u32(self.body_frame)
+            .i32(self.hp)
+            .i32(self.max_hp)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let flags_a = r.bitsbyte()?;
+        let flags_b = r.bitsbyte()?;
+        let flags_c = r.bitsbyte()?;
+        let flags_d = r.bitsbyte()?;
+        let selected_item = r.u8()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let (vx, vy) = if flags_b.get(2) {
+            (r.f32()?, r.f32()?)
+        } else {
+            (0.0, 0.0)
+        };
+        let on_ground = r.bool()?;
+        let leg_frame = r.u32()?;
+        let body_frame = r.u32()?;
+        let hp = r.i32()?;
+        let max_hp = r.i32()?;
+        Some(Self {
+            player_id,
+            flags_a,
+            flags_b,
+            flags_c,
+            flags_d,
+            selected_item,
+            x,
+            y,
+            vx,
+            vy,
+            on_ground,
+            leg_frame,
+            body_frame,
+            hp,
+            max_hp,
+        })
+    }
+}
+
+/// `msg 23 NPCInfo`'s body (`NetMessage.cs:686-748`), adapted to the port's
+/// NPC shape: the slot index, the generation counter (bumped on a kind change
+/// so the client re-creates the slot, the C#'s `existing.generation !=
+/// generation` spawn test), the anchored position, the velocity, the two flag
+/// bytes and the width-switched life. The `ai[]`, `difficulty`,
+/// `statsAreScaledForThisManyPlayers`, `releaseOwner` and `SyncAnchor` fields
+/// have no port home (deviation in `docs/ANALYSIS.md`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcInfo {
+    /// The host's NPC slot index (`whoAmI`).
+    pub slot: u8,
+    /// Bumped on a kind change / fresh spawn → the client re-creates the slot.
+    pub generation: u8,
+    /// `spawnNeedsSyncing` — a full-create for a slot the client already has.
+    pub spawn: bool,
+    pub kind: i16,
     pub x: f32,
     pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    /// flags1 b0: `direction > 0`.
+    pub dir_right: bool,
+    /// flags1 b1: `directionY > 0`.
+    pub dir_y_down: bool,
+    /// flags1 b6: `spriteDirection > 0`.
+    pub sprite_right: bool,
+    /// flags1 b7: `life == lifeMax` → the life block is omitted.
+    pub life_full: bool,
+    pub hp: i32,
+}
+
+impl NpcInfo {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut flags1 = BitsByte::new();
+        flags1.set(0, self.dir_right);
+        flags1.set(1, self.dir_y_down);
+        flags1.set(6, self.sprite_right);
+        flags1.set(7, self.life_full);
+        let mut flags2 = BitsByte::new();
+        flags2.set(3, self.spawn);
+        let mut w = w
+            .u8(self.slot)
+            .u8(self.generation)
+            .f32(self.x)
+            .f32(self.y)
+            .f32(self.vx)
+            .f32(self.vy)
+            .u16(0) // `target`: the port has no NPC targeting sync yet
+            .bitsbyte(flags1)
+            .bitsbyte(flags2)
+            .i16(self.kind);
+        // The width-switched life block (`NetMessage.cs:734-751`), skipped
+        // when the NPC is at full health.
+        if !self.life_full {
+            let hp = self.hp.max(0);
+            if hp > 0x7FFF {
+                w = w.u8(4).i32(hp);
+            } else if hp > 0x7F {
+                w = w.u8(2).i16(hp as i16);
+            } else {
+                w = w.u8(1).i8(hp as i8);
+            }
+        }
+        w
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.u8()?;
+        let generation = r.u8()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let vx = r.f32()?;
+        let vy = r.f32()?;
+        let _target = r.u16()?;
+        let flags1 = r.bitsbyte()?;
+        let flags2 = r.bitsbyte()?;
+        let kind = r.i16()?;
+        let hp = if flags1.get(7) {
+            -1 // full health: the client keeps its local lifeMax
+        } else {
+            match r.u8()? {
+                2 => r.i16()? as i32,
+                4 => r.i32()?,
+                _ => r.i8()? as i32,
+            }
+        };
+        Some(Self {
+            slot,
+            generation,
+            spawn: flags2.get(3),
+            kind,
+            x,
+            y,
+            vx,
+            vy,
+            dir_right: flags1.get(0),
+            dir_y_down: flags1.get(1),
+            sprite_right: flags1.get(6),
+            life_full: flags1.get(7),
+            hp,
+        })
+    }
+}
+
+/// `msg 21 ItemDrop`'s body (`NetMessage.cs:646-669`): the slot, the
+/// position/velocity, the stack, the prefix, the flag byte and the type, plus
+/// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
+/// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
+/// `docs/ANALYSIS.md`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemState {
+    pub slot: i16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub stack: i16,
+    pub prefix: u8,
+    pub kind: i16,
+    pub shimmered: bool,
+    pub shimmer_time: f32,
+}
+
+impl ItemState {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut flags = BitsByte::new();
+        flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        let w = w
+            .i16(self.slot)
+            .f32(self.x)
+            .f32(self.y)
+            .f32(self.vx)
+            .f32(self.vy)
+            .i16(self.stack)
+            .u8(self.prefix)
+            .bitsbyte(flags)
+            .i16(self.kind);
+        if self.shimmered || self.shimmer_time > 0.0 {
+            w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        }
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.i16()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let vx = r.f32()?;
+        let vy = r.f32()?;
+        let stack = r.i16()?;
+        let prefix = r.u8()?;
+        let flags = r.bitsbyte()?;
+        let kind = r.i16()?;
+        let (shimmered, shimmer_time) = if flags.get(2) {
+            (r.bool()?, r.f32()?)
+        } else {
+            (false, 0.0)
+        };
+        Some(Self {
+            slot,
+            x,
+            y,
+            vx,
+            vy,
+            stack,
+            prefix,
+            kind,
+            shimmered,
+            shimmer_time,
+        })
+    }
+}
+
+/// `msg 22 ItemOwner`'s body (`NetMessage.cs:675-685`): the reservation.
+/// Server→client only; the varints are the C# 7-bit encodings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemOwner {
+    pub slot: i16,
+    /// `playerIndexTheItemIsReservedFor` (255 = none).
+    pub reserved_for: u8,
+    /// `timeToKeepReservation` in ticks.
+    pub hold: u32,
+    pub grab_delay_player: u8,
+    pub grab_delay: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl ItemOwner {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.i16(self.slot)
+            .u8(self.reserved_for)
+            .u7(self.hold)
+            .u8(self.grab_delay_player)
+            .u7(self.grab_delay)
+            .f32(self.x)
+            .f32(self.y)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.i16()?;
+        let reserved_for = r.u8()?;
+        let hold = r.u7()?;
+        let grab_delay_player = r.u8()?;
+        let grab_delay = r.u7()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        Some(Self {
+            slot,
+            reserved_for,
+            hold,
+            grab_delay_player,
+            grab_delay,
+            x,
+            y,
+        })
+    }
 }
 
 /// `msg 5 PlayerInventory`'s item body (`NetMessage.cs:199-222`): the slot
@@ -893,8 +1249,17 @@ pub enum C2s {
         hp: i16,
         max_hp: i16,
     },
-    // ---- internal (M6-NET-2 territory) ----
-    Player(PlayerNet),
+    /// `13 PlayerState` — this client's per-tick state (the C#'s
+    /// `TrySyncingInput`/heartbeat sends, `Player.cs:6852-6916`,
+    /// `Main.cs:64522-64529`).
+    PlayerState(PlayerState),
+    /// `82` — a NetModule envelope: the module id plus the module's own body
+    /// (`NetPacket.cs:19-42`'s header; `netglue` dispatches by module id).
+    NetModule {
+        module: u16,
+        body: Vec<u8>,
+    },
+    // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
         y: i32,
@@ -934,12 +1299,6 @@ pub enum S2c {
         text: String,
         max: i32,
     },
-    /// `15 WorldChunk` — internal: one slice of the whole-world blob.
-    WorldChunk {
-        index: i32,
-        total: i32,
-        data: Vec<u8>,
-    },
     /// `49 WorldComplete` — the world stream is done.
     WorldComplete,
     /// `14 PlayerActive` — another peer's presence.
@@ -953,7 +1312,29 @@ pub enum S2c {
         hp: i16,
         max_hp: i16,
     },
-    // ---- internal (M6-NET-2 territory) ----
+    /// `82` — a NetModule envelope (see `C2s::NetModule`).
+    NetModule {
+        module: u16,
+        body: Vec<u8>,
+    },
+    /// `10 TileBlock` — one section's tile snapshot (the C#'s
+    /// `SendSection`, `NetMessage.cs:2697-2712`).
+    TileBlock(Box<TileBlock>),
+    /// `20 SectionRange` — a rectangle of tile changes
+    /// (`SendTileSquare`, `NetMessage.cs:2627-2630`).
+    SectionRange(Box<SectionRange>),
+    /// `23 NPCInfo` — one NPC's state (the C#'s per-NPC `SendData(23)`,
+    /// `NPC.cs:90613`).
+    NpcInfo(Box<NpcInfo>),
+    /// `21 ItemDrop` — one drop's state.
+    ItemState(Box<ItemState>),
+    /// `151` — the item slot is gone (`NetMessage.cs:96-99`'s air rewrite).
+    ItemDead {
+        slot: i16,
+    },
+    /// `22 ItemOwner` — the reservation announcement.
+    ItemOwner(Box<ItemOwner>),
+    // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
         name: String,
@@ -961,7 +1342,7 @@ pub enum S2c {
     Left {
         id: u32,
     },
-    Player(PlayerNet),
+    PlayerState(Box<PlayerState>),
     Time {
         time: f64,
         day: bool,
@@ -972,8 +1353,6 @@ pub enum S2c {
         kind: u8,
         tile: u16,
     },
-    Npcs(Vec<NpcNet>),
-    Items(Vec<ItemNet>),
 }
 
 impl C2s {
@@ -988,7 +1367,8 @@ impl C2s {
             Self::PlayerSpawn(_) => id::PLAYER_SPAWN,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
-            Self::Player(_) => id::INT_PLAYER,
+            Self::PlayerState(_) => id::PLAYER_STATE,
+            Self::NetModule { .. } => id::NET_MODULE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1026,9 +1406,10 @@ impl C2s {
                 hp,
                 max_hp,
             } => w.u8(*player_id).i16(*hp).i16(*max_hp),
-            Self::Player(p) => encode_player(w, p),
+            Self::PlayerState(ps) => ps.write_to(w),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::Pickup { drop } => w.u32(*drop),
+            Self::NetModule { module, body } => w.u16(*module).raw(body),
         };
         w.finish()
     }
@@ -1080,7 +1461,7 @@ impl C2s {
                 hp: r.i16()?,
                 max_hp: r.i16()?,
             },
-            id::INT_PLAYER => Self::Player(decode_player(r)?),
+            id::PLAYER_STATE => Self::PlayerState(PlayerState::read_from(r)?),
             id::INT_EDIT => Self::Edit {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -1088,6 +1469,10 @@ impl C2s {
                 tile: r.u16()?,
             },
             id::INT_PICKUP => Self::Pickup { drop: r.u32()? },
+            id::NET_MODULE => Self::NetModule {
+                module: r.u16()?,
+                body: r.rest()?.to_vec(),
+            },
             _ => return None,
         })
     }
@@ -1103,21 +1488,38 @@ impl S2c {
             Self::Inventory { .. } => id::PLAYER_INVENTORY,
             Self::WorldInfo(_) => id::WORLD_INFO,
             Self::Status { .. } => id::STATUS,
-            Self::WorldChunk { .. } => id::WORLD_CHUNK,
+            Self::TileBlock(_) => id::TILE_BLOCK,
+            Self::SectionRange(_) => id::SECTION_RANGE,
+            Self::NetModule { .. } => id::NET_MODULE,
             Self::WorldComplete => id::WORLD_COMPLETE,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
+            Self::NpcInfo(_) => id::NPC_INFO,
+            Self::ItemState(_) => id::ITEM_DROP,
+            Self::ItemDead { .. } => id::ITEM_DEAD,
+            Self::ItemOwner(_) => id::ITEM_OWNER,
             Self::Joined { .. } => id::INT_JOINED,
             Self::Left { .. } => id::INT_LEFT,
-            Self::Player(_) => id::INT_PLAYER,
+            Self::PlayerState(_) => id::PLAYER_STATE,
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
-            Self::Npcs(_) => id::INT_NPCS,
-            Self::Items(_) => id::INT_ITEMS,
         }
     }
 
     pub fn encode(&self) -> Vec<u8> {
+        // The tile messages build their frame directly: the deflate blob and
+        // the uncompressed per-tile bodies bypass the builder chain.
+        match self {
+            Self::TileBlock(b) => return b.frame(),
+            Self::SectionRange(r) => return r.frame(),
+            Self::NetModule { module, body } => {
+                return NetWriter::open(id::NET_MODULE)
+                    .u16(*module)
+                    .raw(body)
+                    .finish();
+            }
+            _ => {}
+        }
         let w = NetWriter::open(self.msg_id());
         let w = match self {
             Self::Disconnect(reason) => NetText(reason.clone()).write_to(w),
@@ -1141,7 +1543,6 @@ impl S2c {
                 }),
             Self::WorldInfo(wi) => wi.write_to(w),
             Self::Status { text, max } => NetText(text.clone()).write_to(w.i32(*max)).u8(0),
-            Self::WorldChunk { index, total, data } => w.i32(*index).i32(*total).bytes(data),
             Self::WorldComplete => w,
             Self::PlayerActive { player_id, active } => w.u8(*player_id).u8(u8::from(*active)),
             Self::PlayerHp {
@@ -1149,37 +1550,17 @@ impl S2c {
                 hp,
                 max_hp,
             } => w.u8(*player_id).i16(*hp).i16(*max_hp),
+            Self::NpcInfo(n) => n.write_to(w),
+            Self::ItemState(d) => d.write_to(w),
+            Self::ItemDead { slot } => w.i16(*slot),
+            Self::ItemOwner(o) => o.write_to(w),
             Self::Joined { id, name } => w.u32(*id).str(name),
             Self::Left { id } => w.u32(*id),
-            Self::Player(p) => encode_player(w, p),
+            Self::PlayerState(ps) => ps.write_to(w),
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
-            Self::Npcs(list) => {
-                let mut w = w.u8(list.len().min(255) as u8);
-                for n in list.iter().take(255) {
-                    w = w
-                        .u32(n.id)
-                        .u16(n.kind)
-                        .f32(n.x)
-                        .f32(n.y)
-                        .f32(n.vx)
-                        .f32(n.vy)
-                        .i32(n.hp)
-                        .i32(n.max_hp)
-                        .i32(n.facing)
-                        .bool(n.on_ground)
-                        .f32(n.anim)
-                        .f32(n.hurt_cd);
-                }
-                w
-            }
-            Self::Items(list) => {
-                let mut w = w.u16(list.len().min(1024) as u16);
-                for it in list.iter().take(1024) {
-                    w = w.u32(it.id).u16(it.item).u32(it.count).f32(it.x).f32(it.y);
-                }
-                w
-            }
+            // Returned early above; unreachable through the builder chain.
+            Self::TileBlock(_) | Self::SectionRange(_) | Self::NetModule { .. } => unreachable!(),
         };
         w.finish()
     }
@@ -1219,12 +1600,12 @@ impl S2c {
                 let _flags = r.u8()?; // the server's special flags, MessageBuffer.cs:884
                 Self::Status { text, max }
             }
-            id::WORLD_CHUNK => {
-                let index = r.i32()?;
-                let total = r.i32()?;
-                let data = r.bytes()?;
-                Self::WorldChunk { index, total, data }
-            }
+            id::TILE_BLOCK => Self::TileBlock(Box::new(TileBlock::decode_from(r)?)),
+            id::SECTION_RANGE => Self::SectionRange(Box::new(SectionRange::decode_from(r)?)),
+            id::NET_MODULE => Self::NetModule {
+                module: r.u16()?,
+                body: r.rest()?.to_vec(),
+            },
             id::WORLD_COMPLETE => Self::WorldComplete,
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
@@ -1240,7 +1621,11 @@ impl S2c {
                 name: r.str()?,
             },
             id::INT_LEFT => Self::Left { id: r.u32()? },
-            id::INT_PLAYER => Self::Player(decode_player(r)?),
+            id::PLAYER_STATE => Self::PlayerState(Box::new(PlayerState::read_from(r)?)),
+            id::NPC_INFO => Self::NpcInfo(Box::new(NpcInfo::read_from(r)?)),
+            id::ITEM_DROP => Self::ItemState(Box::new(ItemState::read_from(r)?)),
+            id::ITEM_DEAD => Self::ItemDead { slot: r.i16()? },
+            id::ITEM_OWNER => Self::ItemOwner(Box::new(ItemOwner::read_from(r)?)),
             id::INT_TIME => Self::Time {
                 time: r.f64()?,
                 day: r.bool()?,
@@ -1251,78 +1636,602 @@ impl S2c {
                 kind: r.u8()?,
                 tile: r.u16()?,
             },
-            id::INT_NPCS => {
-                let n = r.u8()? as usize;
-                let mut list = Vec::with_capacity(n);
-                for _ in 0..n {
-                    list.push(NpcNet {
-                        id: r.u32()?,
-                        kind: r.u16()?,
-                        x: r.f32()?,
-                        y: r.f32()?,
-                        vx: r.f32()?,
-                        vy: r.f32()?,
-                        hp: r.i32()?,
-                        max_hp: r.i32()?,
-                        facing: r.i32()?,
-                        on_ground: r.bool()?,
-                        anim: r.f32()?,
-                        hurt_cd: r.f32()?,
-                    });
-                }
-                Self::Npcs(list)
-            }
-            id::INT_ITEMS => {
-                let n = r.u16()? as usize;
-                let mut list = Vec::with_capacity(n);
-                for _ in 0..n {
-                    list.push(ItemNet {
-                        id: r.u32()?,
-                        item: r.u16()?,
-                        count: r.u32()?,
-                        x: r.f32()?,
-                        y: r.f32()?,
-                    });
-                }
-                Self::Items(list)
-            }
             _ => return None,
         })
     }
 }
 
-fn encode_player(w: NetWriter, p: &PlayerNet) -> NetWriter {
-    w.u32(p.id)
-        .str(&p.name)
-        .f32(p.x)
-        .f32(p.y)
-        .f32(p.vx)
-        .f32(p.vy)
-        .i32(p.hp)
-        .i32(p.max_hp)
-        .i32(p.facing)
-        .u16(p.selected)
-        .bool(p.on_ground)
-        .u32(p.leg_frame)
-        .u32(p.body_frame)
+// ===========================================================================
+// msg 10 TileBlock / msg 20 SectionRange — the tile codec
+// ===========================================================================
+
+/// The tile kinds the C# save-compression refuses to batch
+/// (`TileID.Sets.AllowsSaveCompressionBatching`, `ID/TileID.cs:484`).
+const NO_BATCH: [u16; 4] = [520, 423, 723, 724];
+
+/// One tile's synced state, flattened out of the port's `Tile` (12 packed
+/// bytes), the sparse `extras` byte and the wire side-table. The field set is
+/// the C# compressor's written fields (`NetMessage.cs:1952-2168`) mapped
+/// onto the port's storage; `frame_important` rides along so the codec can
+/// apply the `frameX/Y` gate, and `wall_frame` (the C#'s `bTileHeader2`) is
+/// the one added byte — the C# relies on `CopyFrom` inside a run, the port
+/// needs it on the wire. Both are documented in `docs/ANALYSIS.md`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TileRecord {
+    pub active: bool,
+    pub kind: u16,
+    /// Only meaningful when `frame_important` (the C#'s
+    /// `Main.tileFrameImportant[type]` gate).
+    pub frame_important: bool,
+    pub frame_x: i16,
+    pub frame_y: i16,
+    pub wall: u16,
+    pub wall_frame: u8,
+    pub liquid: u8,
+    /// 0 water, 1 lava, 2 honey, 3 shimmer (`Tile.cs:65-68`).
+    pub liquid_kind: u8,
+    pub half_brick: bool,
+    pub slope: u8,
+    pub actuator: bool,
+    pub inactive: bool,
+    /// Block paint 0..31 (the C#'s `color()` / the port's `meta` high bits).
+    pub paint: u8,
+    /// Wall paint 0..31 (the port's `extras` low bits).
+    pub wall_paint: u8,
+    /// Bit 0 red, 1 blue, 2 green, 3 yellow (`World::wires`).
+    pub wires: u8,
+    pub invisible_block: bool,
+    pub invisible_wall: bool,
+    pub fullbright_block: bool,
+    pub fullbright_wall: bool,
 }
 
-fn decode_player(r: &mut NetReader) -> Option<PlayerNet> {
-    Some(PlayerNet {
-        id: r.u32()?,
-        name: r.str()?,
-        x: r.f32()?,
-        y: r.f32()?,
-        vx: r.f32()?,
-        vy: r.f32()?,
-        hp: r.i32()?,
-        max_hp: r.i32()?,
-        facing: r.i32()?,
-        selected: r.u16()?,
-        on_ground: r.bool()?,
-        leg_frame: r.u32()?,
-        body_frame: r.u32()?,
-    })
+impl TileRecord {
+    /// `b` (the always-present flag byte, `NetMessage.cs:1944`).
+    fn flags_b(&self) -> u8 {
+        let mut b = 0u8;
+        if self.active {
+            b |= 0x02;
+        }
+        if self.wall != 0 {
+            b |= 0x04;
+        }
+        if self.liquid != 0 {
+            // water 0x08, lava 0x10, honey 0x18, shimmer 0x08 + b3 bit7.
+            b |= 0x08 << (self.liquid_kind & 1);
+            if self.liquid_kind >= 2 {
+                b |= 0x10;
+            }
+        }
+        if self.kind > 255 {
+            b |= 0x20;
+        }
+        b
+    }
+
+    /// `b2` — wires and the shape code.
+    fn flags_b2(&self) -> u8 {
+        let mut b = 0u8;
+        if self.wires & 1 != 0 {
+            b |= 0x02;
+        }
+        if self.wires & 2 != 0 {
+            b |= 0x04;
+        }
+        if self.wires & 4 != 0 {
+            b |= 0x08;
+        }
+        if self.half_brick {
+            b |= 0x10;
+        } else if self.slope != 0 {
+            b |= (self.slope + 1) << 4;
+        }
+        b
+    }
+
+    /// `b3` — actuator, colors, wire4, the wall high byte and shimmer.
+    fn flags_b3(&self) -> u8 {
+        let mut b = 0u8;
+        if self.actuator {
+            b |= 0x02;
+        }
+        if self.inactive {
+            b |= 0x04;
+        }
+        if self.paint != 0 {
+            b |= 0x08;
+        }
+        if self.wall_paint != 0 {
+            b |= 0x10;
+        }
+        if self.wires & 8 != 0 {
+            b |= 0x20;
+        }
+        if self.wall > 255 {
+            b |= 0x40;
+        }
+        if self.liquid != 0 && self.liquid_kind == 3 {
+            b |= 0x80;
+        }
+        b
+    }
+
+    /// `b4` — the invisible/fullbright quad. Bit 0 is unused by the C# and
+    /// carries the port's `frame_important` flag (the C# reads its global
+    /// `Main.tileFrameImportant[]` table; the port's table is per-world and
+    /// the reader thread has no world — deviation in `docs/ANALYSIS.md`).
+    fn flags_b4(&self) -> u8 {
+        let mut b = 0u8;
+        if self.frame_important {
+            b |= 0x01;
+        }
+        if self.invisible_block {
+            b |= 0x02;
+        }
+        if self.invisible_wall {
+            b |= 0x04;
+        }
+        if self.fullbright_block {
+            b |= 0x08;
+        }
+        if self.fullbright_wall {
+            b |= 0x10;
+        }
+        b
+    }
+
+    /// Writes one record: the nested flag bytes, the payload in the C#'s
+    /// order and the trailing repeat count (`NetMessage.cs:1945`,
+    /// `:2206-2207`).
+    fn write_into(&self, out: &mut Vec<u8>, repeat: u32) {
+        // The nested presence bits are set bottom-up, exactly as the C# does
+        // (`NetMessage.cs:2169-2187`): b4 != 0 sets b3's bit 0, b3 != 0 sets
+        // b2's bit 0, b2 != 0 sets b's bit 0 — otherwise a lone b3 (a wall
+        // high byte, say) would never reach the wire.
+        let mut b = self.flags_b();
+        let mut b2 = self.flags_b2();
+        let mut b3 = self.flags_b3();
+        let b4 = self.flags_b4();
+        if b4 != 0 {
+            b3 |= 0x01;
+        }
+        if b3 != 0 {
+            b2 |= 0x01;
+        }
+        if b2 != 0 {
+            b |= 0x01;
+        }
+        if repeat > 255 {
+            b |= 0x80;
+        } else if repeat > 0 {
+            b |= 0x40;
+        }
+        out.push(b);
+        if b & 0x01 != 0 {
+            out.push(b2);
+        }
+        if b2 & 0x01 != 0 {
+            out.push(b3);
+        }
+        if b3 & 0x01 != 0 {
+            out.push(b4);
+        }
+        if self.active {
+            out.push((self.kind & 0xFF) as u8);
+            if self.kind > 255 {
+                out.push((self.kind >> 8) as u8);
+            }
+            if self.frame_important {
+                out.extend_from_slice(&self.frame_x.to_le_bytes());
+                out.extend_from_slice(&self.frame_y.to_le_bytes());
+            }
+        }
+        if self.paint != 0 {
+            out.push(self.paint);
+        }
+        if self.wall != 0 {
+            out.push((self.wall & 0xFF) as u8);
+            // The port extension: the C#'s `CopyFrom` covers it inside a run.
+            out.push(self.wall_frame);
+        }
+        if self.wall_paint != 0 {
+            out.push(self.wall_paint);
+        }
+        if self.liquid != 0 {
+            out.push(self.liquid);
+        }
+        if self.wall > 255 {
+            out.push((self.wall >> 8) as u8);
+        }
+        if repeat > 0 {
+            if repeat <= 255 {
+                out.push(repeat as u8);
+            } else {
+                out.extend_from_slice(&(repeat as u16).to_le_bytes());
+            }
+        }
+    }
+}
+
+/// One section's tile snapshot — the C#'s `CompressTileBlock` body
+/// (`NetMessage.cs:1895-1904`: a raw-deflate stream with the rectangle
+/// header, then the records).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TileBlock {
+    pub x: i32,
+    pub y: i32,
+    pub w: i16,
+    pub h: i16,
+    /// Exactly `w * h` records, row-major y-outer/x-inner.
+    pub records: Vec<TileRecord>,
+}
+
+impl TileBlock {
+    /// Builds the wire frame `[u16 len][u8 10][deflate blob]`.
+    pub fn frame(&self) -> Vec<u8> {
+        let mut inner: Vec<u8> = Vec::new();
+        inner.extend_from_slice(&self.x.to_le_bytes());
+        inner.extend_from_slice(&self.y.to_le_bytes());
+        inner.extend_from_slice(&self.w.to_le_bytes());
+        inner.extend_from_slice(&self.h.to_le_bytes());
+        // The run-length batching: a run continues while the next record is
+        // identical and its kind is batchable (`NetMessage.cs:1921-1947`).
+        let mut i = 0usize;
+        while i < self.records.len() {
+            let rec = self.records[i];
+            let mut run = 1usize;
+            if !NO_BATCH.contains(&rec.kind) {
+                while i + run < self.records.len() && self.records[i + run] == rec {
+                    run += 1;
+                }
+            }
+            rec.write_into(&mut inner, (run - 1) as u32);
+            i += run;
+        }
+        let mut enc = DeflateEncoder::new(Vec::new(), Compression::fast());
+        let _ = enc.write_all(&inner);
+        let blob = enc.finish().unwrap_or_default();
+        let total = 2 + 1 + blob.len();
+        let mut frame = Vec::with_capacity(total);
+        frame.extend_from_slice(&(total as u16).to_le_bytes());
+        frame.push(id::TILE_BLOCK);
+        frame.extend_from_slice(&blob);
+        debug_assert!(total <= MAX_PACKET, "net: tile block over the frame cap");
+        frame
+    }
+
+    /// Parses a `10` body (the reader threads strip the length+id already).
+    pub fn decode_from(r: &mut NetReader) -> Option<Self> {
+        let blob = r.rest()?;
+        let mut dec = DeflateDecoder::new(blob);
+        let mut inner = Vec::new();
+        dec.read_to_end(&mut inner).ok()?;
+        let mut b = NetReader::new(&inner);
+        let x = b.i32()?;
+        let y = b.i32()?;
+        let w = b.i16()?;
+        let h = b.i16()?;
+        let want = (w as i32 * h as i32).max(0) as usize;
+        let mut records: Vec<TileRecord> = Vec::with_capacity(want);
+        while records.len() < want {
+            let rec = read_record(&mut b)?;
+            let repeat = match (rec_flags_inline::last_b() & 0xC0) >> 6 {
+                0 => 0usize,
+                1 => b.u8()? as usize,
+                _ => b.u16()? as usize,
+            };
+            for _ in 0..=repeat {
+                records.push(rec);
+                if records.len() == want {
+                    break;
+                }
+            }
+        }
+        Some(Self {
+            x,
+            y,
+            w,
+            h,
+            records,
+        })
+    }
+}
+
+mod rec_flags_inline {
+    /// The last record's `b` byte, stashed by `read_record` for the repeat
+    /// count (the C# reads the count from the same flag byte).
+    pub static mut LAST_B: u8 = 0;
+    pub fn last_b() -> u8 {
+        unsafe { LAST_B }
+    }
+}
+
+/// Reads one record back (`NetMessage.cs:2259-2418`'s field order).
+fn read_record(b: &mut NetReader) -> Option<TileRecord> {
+    let b0 = b.u8()?;
+    let b2 = if b0 & 0x01 != 0 { b.u8()? } else { 0 };
+    let b3 = if b2 & 0x01 != 0 { b.u8()? } else { 0 };
+    let b4 = if b3 & 0x01 != 0 { b.u8()? } else { 0 };
+    // The frame pair's presence must be known before the payload is read.
+    let frame_important = b4 & 0x01 != 0;
+    unsafe { rec_flags_inline::LAST_B = b0 };
+    let mut rec = TileRecord {
+        active: b0 & 0x02 != 0,
+        kind: 0,
+        frame_important,
+        frame_x: 0,
+        frame_y: 0,
+        wall: 0,
+        wall_frame: 0,
+        liquid: 0,
+        liquid_kind: 0,
+        half_brick: false,
+        slope: 0,
+        actuator: false,
+        inactive: false,
+        paint: 0,
+        wall_paint: 0,
+        wires: 0,
+        invisible_block: false,
+        invisible_wall: false,
+        fullbright_block: false,
+        fullbright_wall: false,
+    };
+    if rec.active {
+        rec.kind = b.u8()? as u16;
+        if b0 & 0x20 != 0 {
+            rec.kind |= (b.u8()? as u16) << 8;
+        }
+        if rec.frame_important {
+            rec.frame_x = b.i16()?;
+            rec.frame_y = b.i16()?;
+        }
+    }
+    if b3 & 0x08 != 0 {
+        rec.paint = b.u8()?;
+    }
+    if b0 & 0x04 != 0 {
+        rec.wall = b.u8()? as u16;
+        rec.wall_frame = b.u8()?;
+    }
+    if b3 & 0x10 != 0 {
+        rec.wall_paint = b.u8()?;
+    }
+    if b0 & 0x18 != 0 {
+        rec.liquid = b.u8()?;
+        rec.liquid_kind = ((b0 & 0x18) >> 3) - 1 + if b3 & 0x80 != 0 { 3 } else { 0 };
+    }
+    if b3 & 0x40 != 0 {
+        rec.wall |= (b.u8()? as u16) << 8;
+    }
+    if b2 & 0x02 != 0 {
+        rec.wires |= 1;
+    }
+    if b2 & 0x04 != 0 {
+        rec.wires |= 2;
+    }
+    if b2 & 0x08 != 0 {
+        rec.wires |= 4;
+    }
+    if b2 & 0x20 != 0 {
+        rec.wires |= 8;
+    }
+    if b2 & 0x10 != 0 {
+        rec.half_brick = true;
+    } else if b2 & 0x40 != 0 || b2 & 0x20 != 0 {
+        // The shape code sits in bits 4-6: 1 half-brick, 2..5 slopes.
+        let code = (b2 & 0x70) >> 4;
+        if code == 1 {
+            rec.half_brick = true;
+        } else {
+            rec.slope = code - 1;
+        }
+    }
+    if b3 & 0x02 != 0 {
+        rec.actuator = true;
+    }
+    if b3 & 0x04 != 0 {
+        rec.inactive = true;
+    }
+    if b4 & 0x02 != 0 {
+        rec.invisible_block = true;
+    }
+    if b4 & 0x04 != 0 {
+        rec.invisible_wall = true;
+    }
+    if b4 & 0x08 != 0 {
+        rec.fullbright_block = true;
+    }
+    if b4 & 0x10 != 0 {
+        rec.fullbright_wall = true;
+    }
+    Some(rec)
+}
+
+/// A rectangle of tile changes — `SendTileSquare`'s body
+/// (`NetMessage.cs:543-644`): uncompressed, three flag bytes per tile.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SectionRange {
+    pub x: i16,
+    pub y: i16,
+    pub w: u8,
+    pub h: u8,
+    /// `TileChangeType` — the port has no switch family yet, so it rides 0.
+    pub change_type: u8,
+    /// Exactly `w * h` records, row-major.
+    pub records: Vec<TileRecord>,
+}
+
+impl SectionRange {
+    /// Builds the wire frame `[u16 len][u8 20][header][per-tile bodies]`.
+    pub fn frame(&self) -> Vec<u8> {
+        let mut w = NetWriter::open(id::SECTION_RANGE)
+            .i16(self.x)
+            .i16(self.y)
+            .u8(self.w)
+            .u8(self.h)
+            .u8(self.change_type);
+        for r in &self.records {
+            let mut f1 = 0u8;
+            if r.active {
+                f1 |= 0x01;
+            }
+            if r.wall != 0 {
+                f1 |= 0x04;
+            }
+            if r.liquid != 0 {
+                f1 |= 0x08;
+            }
+            if r.wires & 1 != 0 {
+                f1 |= 0x10;
+            }
+            if r.half_brick {
+                f1 |= 0x20;
+            }
+            if r.actuator {
+                f1 |= 0x40;
+            }
+            if r.inactive {
+                f1 |= 0x80;
+            }
+            let mut f2 = 0u8;
+            if r.wires & 2 != 0 {
+                f2 |= 0x01;
+            }
+            if r.wires & 4 != 0 {
+                f2 |= 0x02;
+            }
+            if r.paint != 0 {
+                f2 |= 0x04;
+            }
+            if r.wall_paint != 0 {
+                f2 |= 0x08;
+            }
+            f2 |= (r.slope & 0x07) << 4;
+            if r.wires & 8 != 0 {
+                f2 |= 0x80;
+            }
+            let mut f3 = 0u8;
+            if r.frame_important {
+                // Port extension: the C# reads its global frame table here.
+                f3 |= 0x10;
+            }
+            if r.fullbright_block {
+                f3 |= 0x01;
+            }
+            if r.fullbright_wall {
+                f3 |= 0x02;
+            }
+            if r.invisible_block {
+                f3 |= 0x04;
+            }
+            if r.invisible_wall {
+                f3 |= 0x08;
+            }
+            w = w
+                .bitsbyte(BitsByte(f1))
+                .bitsbyte(BitsByte(f2))
+                .bitsbyte(BitsByte(f3));
+            if f2 & 0x04 != 0 {
+                w = w.u8(r.paint);
+            }
+            if f2 & 0x08 != 0 {
+                w = w.u8(r.wall_paint);
+            }
+            if r.active {
+                w = w.u16(r.kind);
+                if r.frame_important {
+                    w = w.i16(r.frame_x).i16(r.frame_y);
+                }
+            }
+            if r.wall != 0 {
+                w = w.u16(r.wall);
+            }
+            if r.liquid != 0 {
+                w = w.u8(r.liquid).u8(r.liquid_kind);
+            }
+        }
+        w.finish()
+    }
+
+    /// Parses a `20` body.
+    pub fn decode_from(r: &mut NetReader) -> Option<Self> {
+        let x = r.i16()?;
+        let y = r.i16()?;
+        let w = r.u8()?;
+        let h = r.u8()?;
+        let change_type = r.u8()?;
+        let want = (w as usize) * (h as usize);
+        let mut records = Vec::with_capacity(want);
+        for _ in 0..want {
+            let f1 = r.bitsbyte()?.0;
+            let f2 = r.bitsbyte()?.0;
+            let f3 = r.bitsbyte()?.0;
+            let mut rec = TileRecord {
+                active: f1 & 0x01 != 0,
+                kind: 0,
+                frame_important: f3 & 0x10 != 0,
+                frame_x: 0,
+                frame_y: 0,
+                wall: 0,
+                wall_frame: 0,
+                liquid: 0,
+                liquid_kind: 0,
+                half_brick: f1 & 0x20 != 0,
+                slope: (f2 & 0x70) >> 4,
+                actuator: f1 & 0x40 != 0,
+                inactive: f1 & 0x80 != 0,
+                paint: 0,
+                wall_paint: 0,
+                wires: 0,
+                invisible_block: f3 & 0x04 != 0,
+                invisible_wall: f3 & 0x08 != 0,
+                fullbright_block: f3 & 0x01 != 0,
+                fullbright_wall: f3 & 0x02 != 0,
+            };
+            if f2 & 0x04 != 0 {
+                rec.paint = r.u8()?;
+            }
+            if f2 & 0x08 != 0 {
+                rec.wall_paint = r.u8()?;
+            }
+            if rec.active {
+                rec.kind = r.u16()?;
+                if rec.frame_important {
+                    rec.frame_x = r.i16()?;
+                    rec.frame_y = r.i16()?;
+                }
+            }
+            if f1 & 0x04 != 0 {
+                rec.wall = r.u16()?;
+            }
+            if f1 & 0x08 != 0 {
+                rec.liquid = r.u8()?;
+                rec.liquid_kind = r.u8()?;
+            }
+            if f2 & 0x01 != 0 {
+                rec.wires |= 1;
+            }
+            if f2 & 0x02 != 0 {
+                rec.wires |= 2;
+            }
+            if f1 & 0x10 != 0 {
+                rec.wires |= 4;
+            }
+            if f2 & 0x80 != 0 {
+                rec.wires |= 8;
+            }
+            records.push(rec);
+        }
+        Some(Self {
+            x,
+            y,
+            w,
+            h,
+            change_type,
+            records,
+        })
+    }
 }
 
 // ===========================================================================
@@ -1390,6 +2299,11 @@ pub struct Slot {
     pub state: i32,
     pub name: String,
     pub last_seen: Instant,
+    /// `RemoteClient.TileSections` (`RemoteClient.cs:31`): the flattened
+    /// `sections_w * sections_h` latch grid of the sections already streamed.
+    pub sections: Vec<bool>,
+    /// The grid width the latch is sized for (0 = not allocated yet).
+    pub sections_w: i32,
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -1457,6 +2371,8 @@ impl Server {
                         state: slot_state::FRESH,
                         name: String::new(),
                         last_seen: Instant::now(),
+                        sections: Vec::new(),
+                        sections_w: 0,
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -1631,51 +2547,60 @@ impl Server {
         dead
     }
 
-    /// Streams the world blob as `WorldChunk` messages (the internal `15`
-    /// seam for M6-NET-3's `10 TileBlock` sections): the frame cap forces the
-    /// split, and the count is announced through `9 Status` first.
-    pub fn send_world(&self, id: u32, blob: &[u8]) {
-        const PAYLOAD_CAP: usize = MAX_PACKET - 2 - 1 - 4 - 4;
-        if blob.is_empty() {
-            self.send(
-                id,
-                &S2c::Status {
-                    text: "Receiving world".into(),
-                    max: 1,
-                },
-            );
-            self.send(
-                id,
-                &S2c::WorldChunk {
-                    index: 0,
-                    total: 1,
-                    data: Vec::new(),
-                },
-            );
-            self.send(id, &S2c::WorldComplete);
+    /// Allocates (or resizes) a slot's section latch grid for a world of the
+    /// given dimensions — the C#'s `Netplay.Clients[i].TileSections`
+    /// (`RemoteClient.cs:31`), the "which sections this peer already holds"
+    /// bookkeeping.
+    pub fn ensure_sections(&self, id: u32, world_w: i32, world_h: i32) {
+        let want = (sections_x(world_w) * sections_y(world_h)).max(0) as usize;
+        let w = sections_x(world_w);
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                if c.sections.len() != want || c.sections_w != w {
+                    c.sections = vec![false; want];
+                    c.sections_w = w;
+                }
+            }
+        }
+    }
+
+    /// Whether the section at `(sx, sy)` was already streamed to this slot.
+    pub fn is_section_sent(&self, id: u32, sx: i32, sy: i32) -> bool {
+        let w = self
+            .slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.sections_w))
+            .unwrap_or(0);
+        if w == 0 || sx < 0 || sy < 0 {
+            return false;
+        }
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.sections[(sy * w + sx) as usize]))
+            .unwrap_or(false)
+    }
+
+    /// Locks the section as sent (`SendSection`'s latch, `NetMessage.cs:2707`).
+    pub fn mark_section_sent(&self, id: u32, sx: i32, sy: i32) {
+        let w = self
+            .slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.sections_w))
+            .unwrap_or(0);
+        if w == 0 || sx < 0 || sy < 0 {
             return;
         }
-        let total = blob.len().div_ceil(PAYLOAD_CAP);
-        self.send(
-            id,
-            &S2c::Status {
-                text: "Receiving world".into(),
-                max: total as i32,
-            },
-        );
-        let mut index: i32 = 0;
-        for chunk in blob.chunks(PAYLOAD_CAP) {
-            self.send(
-                id,
-                &S2c::WorldChunk {
-                    index,
-                    total: total as i32,
-                    data: chunk.to_vec(),
-                },
-            );
-            index += 1;
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                let i = (sy * w + sx) as usize;
+                if i < c.sections.len() {
+                    c.sections[i] = true;
+                }
+            }
         }
-        self.send(id, &S2c::WorldComplete);
     }
 }
 
@@ -1732,6 +2657,7 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -1913,7 +2839,7 @@ mod tests {
                 hp: 90,
                 max_hp: 200,
             },
-            C2s::Player(PlayerNet::default()),
+            C2s::PlayerState(PlayerState::default()),
             C2s::Edit {
                 x: 5,
                 y: 6,
@@ -1990,11 +2916,58 @@ mod tests {
                 text: "Receiving world".into(),
                 max: 12,
             },
-            S2c::WorldChunk {
-                index: 1,
-                total: 3,
-                data: vec![1, 2, 3],
-            },
+            S2c::TileBlock(Box::new(TileBlock {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 1,
+                records: vec![
+                    TileRecord {
+                        active: true,
+                        kind: 7,
+                        frame_important: false,
+                        frame_x: 0,
+                        frame_y: 0,
+                        wall: 0,
+                        wall_frame: 0,
+                        liquid: 0,
+                        liquid_kind: 0,
+                        half_brick: false,
+                        slope: 0,
+                        actuator: false,
+                        inactive: false,
+                        paint: 0,
+                        wall_paint: 0,
+                        wires: 0,
+                        invisible_block: false,
+                        invisible_wall: false,
+                        fullbright_block: false,
+                        fullbright_wall: false,
+                    },
+                    TileRecord {
+                        active: true,
+                        kind: 7,
+                        frame_important: false,
+                        frame_x: 0,
+                        frame_y: 0,
+                        wall: 0,
+                        wall_frame: 0,
+                        liquid: 0,
+                        liquid_kind: 0,
+                        half_brick: false,
+                        slope: 0,
+                        actuator: false,
+                        inactive: false,
+                        paint: 0,
+                        wall_paint: 0,
+                        wires: 0,
+                        invisible_block: false,
+                        invisible_wall: false,
+                        fullbright_block: false,
+                        fullbright_wall: false,
+                    },
+                ],
+            })),
             S2c::WorldComplete,
             S2c::PlayerActive {
                 player_id: 1,
@@ -2010,27 +2983,92 @@ mod tests {
                 name: "a".into(),
             },
             S2c::Left { id: 1 },
-            S2c::Npcs(vec![NpcNet {
-                id: 1,
-                kind: 2,
-                x: 3.0,
-                y: 4.0,
+            S2c::PlayerState(Box::new(PlayerState {
+                player_id: 1,
+                flags_a: BitsByte(0b0100_0000),
+                flags_b: BitsByte(0b0000_0100),
+                flags_c: BitsByte::new(),
+                flags_d: BitsByte::new(),
+                selected_item: 3,
+                x: 12.0,
+                y: 34.0,
+                vx: 0.5,
+                vy: -1.0,
+                on_ground: true,
+                leg_frame: 2,
+                body_frame: 7,
+                hp: 80,
+                max_hp: 100,
+            })),
+            S2c::NpcInfo(Box::new(NpcInfo {
+                slot: 3,
+                generation: 2,
+                spawn: false,
+                kind: 4,
+                x: 64.0,
+                y: 96.0,
                 vx: 0.0,
                 vy: 0.0,
-                hp: 10,
-                max_hp: 10,
-                facing: 1,
-                on_ground: true,
-                anim: 0.5,
-                hurt_cd: 0.0,
-            }]),
-            S2c::Items(vec![ItemNet {
-                id: 1,
-                item: 2,
-                count: 3,
-                x: 4.0,
-                y: 5.0,
-            }]),
+                dir_right: true,
+                dir_y_down: false,
+                sprite_right: true,
+                life_full: false,
+                hp: 40,
+            })),
+            // The life width switch: the > 127 and > 32767 arms.
+            S2c::NpcInfo(Box::new(NpcInfo {
+                slot: 4,
+                generation: 1,
+                spawn: true,
+                kind: -1,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                dir_right: false,
+                dir_y_down: true,
+                sprite_right: false,
+                life_full: false,
+                hp: 9000,
+            })),
+            S2c::ItemState(Box::new(ItemState {
+                slot: 5,
+                x: 16.0,
+                y: 32.0,
+                vx: 1.0,
+                vy: -2.0,
+                stack: 12,
+                prefix: 7,
+                kind: 42,
+                shimmered: true,
+                shimmer_time: 30.0,
+            })),
+            S2c::ItemState(Box::new(ItemState {
+                slot: 6,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                stack: 1,
+                prefix: 0,
+                kind: 1,
+                shimmered: false,
+                shimmer_time: 0.0,
+            })),
+            S2c::ItemDead { slot: 9 },
+            S2c::NetModule {
+                module: 1,
+                body: b"hello module".to_vec(),
+            },
+            S2c::ItemOwner(Box::new(ItemOwner {
+                slot: 5,
+                reserved_for: 2,
+                hold: 15,
+                grab_delay_player: 255,
+                grab_delay: 100,
+                x: 16.0,
+                y: 32.0,
+            })),
         ];
         for msg in &msgs {
             let frame = msg.encode();

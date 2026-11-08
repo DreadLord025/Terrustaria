@@ -1548,6 +1548,46 @@ and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
 
+### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
+
+The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall
+loops, M1.4-BG-20) and the rain/wind music-pool loops were already in main, so this task
+ported the remaining three and verified the fourth:
+
+* **Blizzard loops** (`SceneState.cs:189-253`). The two tracked global loops resume on
+  `ZoneRain && ZoneSnow` — the raw zone pair, not the `UseStormEffects`-gated visual — and
+  cross-fade through `_blizzardSoundVolume` (`MoveTowards ±0.01` per `SceneState.Update`,
+  so it lives on the port's `SceneState` beside the other fades, not on a tick) split
+  `min(1, cloudAlpha*2) * outsideWeatherEffectIntensity`. `audio.rs::set_ambient_loop` is
+  the `ActiveSound.DetermineIntendedVolume` engine half: global → no attenuation,
+  `clamp(Style.Volume × Volume × ambientVolume)`, `SoundID.cs:1598-1599`'s 0.5/1 style
+  volumes. The sink is created on the first non-zero volume and then kept (muted at 0) —
+  the C# `SlotId` policy.
+* **Thunder strike** (`Main.cs:58747-58766`). The cue plays from the weather tick with the
+  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream. Two
+  documented gaps: the `case 43` re-roll-on-playing loop has no port model (no per-slot
+  instance bookkeeping), and the pitch jitter is consumed but not applied (the rodio
+  sources have no pitch control — the same gap as the BG-20 liquid loops).
+* **Critter sounds** (`NPC.cs:92244-92340`) and **liquid-change sounds**
+  (`WorldGen.cs:4632-4650`) land as pure, tested tables. Their call sites need the critter
+  NPC kinds (M4-NPC — the roster has none today) and the liquid merge pass
+  (`Liquid.CreateLiquidMergeTile`, `Liquid.cs:1324` — `tr-core/liquid.rs` ports the settle
+  but not the merge tiles), so they run constants-off with citations, the M6-MUSIC-1
+  pattern.
+
+Deviations (deliberate):
+
+* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
+  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
+  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
+  map to (a sink never dies in the port).
+* The thunder/pitch and critter rolls come from the owning system's stream (the
+  WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand` the C# draws.
+* `FocusHelper.UpdateBackgroundThunder`'s unfocused half and `StopAmbientSounds`
+  (`Main.cs:11040-11045`) stay as BG-20 pinned them (the port always claims focus).
+* The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
+  the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
@@ -1978,6 +2018,76 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
 * **`Color` multiplication wraps, not saturates** (`color.rs`'s pinned
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` — the ghosted Master-difficulty bunny preview.
+
+## UIElement framework (M7-UI-1, 2026-11-08)
+
+The framework halves of `UIElement`/`UserInterface` that the screens cannot live
+without — the pointer machine (`ui/pointer.rs`) and the flat hit order
+(`ui/framework.rs`, `ui/select_hit.rs`) — landed on branch `M7-UI-1-uielement`
+with the layout pass unchanged in `ui/uistate.rs`. The screen-model ruling stays:
+an immediate port, no retained tree, no `UserInterface` object. Card double-click
+play is the feature it buys, and it is **routing only**: the port has no per-card
+selection state and its play path closes the front flow rather than loading the
+entry (spec §9.4), so a double-click resolves to the same flow a Play button
+click does.
+
+Corrected deviations (both were geometry the layout pass would have got right):
+
+* **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
+  `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
+  `UIBestiaryTest.cs:71-79` is `Top 180` + `Height.Set(-220f, 1f)` = `screenH − 220`
+  tall (bottom at `screenH − 40`), `MaxWidth 900`, `MinWidth 700`
+  (`600 + Utils.ToInt(true) * 100`). The container is now `uistate::resolve`'d
+  verbatim; the old numbers stayed because nothing pinned the absolute bottom in
+  a test.
+* **The emotes wheel borrowed the bestiary panel.** `ui/emotes.rs` reused
+  `bestiary::panel_rect` and a 44 px / 8-column grid, while `UIEmotesMenu.cs`
+  has its own 590-wide container (`Top 120 / Height −120` in game,
+  `Top 220 / −220` in the menu) and `EmotesGroupListItem.cs:15`/`:25` specify
+  36 px cells at `maxEmotesPerRow = 14`. The wheel now owns its container and
+  grid, and its scroll offset moved from standing still to `UIList.ScrollWheel`
+  (`UIList.cs:107-114`) with `UIScrollbar`'s clamp (`:37-47`), reset on each open
+  (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
+  — the port keeps one flat roster — and the menu-side container split is
+  unimplemented (the wheel is reachable only in-game).
+
+Open gaps (deliberately out, each with its reason):
+
+* **Event bubbling** (`UIElement.cs:414-546`: every mouse event fires the
+  element's handler and then the *parent's*) — a no-op on flat screens; the port's
+  click tables return one action.
+* **`MouseOver`/`MouseOut` edges** — hover is draw-derived (`in_rect` at draw
+  time) and the colour swaps are `ui::hover_pair`; the edge itself has no ported
+  consumer, and the sound 12 it drives is a recorded deviation.
+* **`OverflowHidden`** (`:47`, `:222-237`, 6 users: `UIList`,
+  `UIBestiaryEntryButton`, `UIBestiaryNPCEntryPortrait`, `UIResourcePack`,
+  `AWorkshopPublishInfoState`) — the select screens' clipped rows already emulate
+  the clip by omitting the row from the element list.
+* **`UIList`/`UIScrollbar` behaviour** (`UIList.cs:107-128`, `UIScrollbar.cs:37-143`):
+  the draw-only helpers exist in `ui/panel.rs`, but there is no `view_position`,
+  no drag and no handle geometry; the char/world select bars draw at a hard-coded
+  ratio and the emotes wheel's scroll is a plain row offset.
+* **`IsElementUnderMouse`/`MouseCaptured`** (`UserInterface.cs:113-124`, `:349-356`)
+  — only the minimap's hover mirrors the mine/place suppression today.
+* **`OnActivate`/`OnDeactivate` for the remaining screens** —
+  `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
+  `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
+  `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
+  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
+  enter direction only (`enter_front`), not on the leave direction the C#'s
+  `SetState(null)` also resets.
+* **Snap points / gamepad** (already recorded as out of scope) and
+  `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
+
+Screenshot baselines (deterministic double-run pairs, SHA256, 1600x900):
+`TR_CHEST` `d4ba148e…` (also byte-identical to the pre-phase HEAD build taken in
+the same session), `TR_BESTIARY=0` `faf45d9e…` (new — the panel's bottom moved),
+`TR_EMOTES` `9d00f7b0…` (new — the wheel's box and cell pitch moved), `TR_UI=charsel`
+`39b1f697…` and `TR_UI=worldsel` `077087ab…` (both need `TR_NAME` — the session
+name falls back to `menu::random_name()`, `app/mod.rs:1830`, so an unpinned pair
+differs in the card name's pixels). The absolute HUD hash is environment-dependent:
+two sessions produced `c4980496…` and `d4ba148e…` for the *same* code, so a
+cross-session comparison must re-take the baseline beside the run.
 
 ## Architecture refactor (2026-11-01)
 
@@ -2809,6 +2919,158 @@ The type-3 table's half-points window (`:1460-1468`) spawns the ship —
 the pirate invasion gains its boss-minion. The port's link model: the
 pre-pass counts the ship's live cannons and links the cannons' ride to
 the ship (the vanilla's `Main.npc[ai[i]]` indices have no port model).
+
+## The pirate trio's shots (M4-EVENT-5b)
+
+The aiStyle-3 shooter block now generalises across the event families:
+`shooter_params` carries the vanilla's per-kind cooldown/speed/
+projectile/damage rows — the pirate Archer 214's arrow 180 (25, 10, the
+±45 jitter), the Corsair 215's musket ball 82 (35, 14), the Captain
+216's arrow 180 (30, 9, the ±50 jitter), beside the martians' 436/438.
+The block's shape: the stop entry (an aim under 700 px arms the octant
+and the 80-tick timer), the fire at the half-cooldown (the per-kind
+jitter re-scaled ×(0.85..1.15), the spawn at the centre + 6 y, the
+speed-scaled velocity), the hurt interrupt, the sleep's exit.
+
+The 180/82 projectile rows join `proj_data` — the pool's data gate
+previously dropped every kind outside its hand-listed set, so the
+family's shots silently never spawned.
+
+## The Captain's wounded barrage (M4-EVENT-5c)
+
+The pirate Captain 216 counts his shots (`localAI[2]` — the port's
+`caster_counter`); past 20 the wounded arm swaps the plain 180 arrow for
+the 240 shell: 100 damage, 15 speed, no jitter, on the rolling
+`max(60, 180 - localAI[3]*20)` cooldown (`localAI[3]` = the barrage
+count, the port's `cast_windup`). The barrage resets the shot counter.
+The 240 shell rides the Dutchman's data row.
+
+## The DD2 goblins (M4-EVENT-5d)
+
+The Old One's Army attackers (`NPC.cs`'s 552-554): the improved-walker
+harness with the tiers' adds and the wave acceleration — the
+`localAI[3]` ramp (below 60 the accel element is
+`0.01 + localAI[3]/60*0.05`, past 60 it holds at the value) mirrors the
+DD2 event's escalating pressure. The port's `caster_counter` stands in
+for `localAI[3]` (the counter ticks with the Wave).
+
+The DD2 framework (the crystal 548, the tavernkeep 550, the
+`DD2Event.EnemiesShouldChasePlayers` chase flag, the wave tiers' bosses
+— the Dark Mage 564, Betsy 551) is the next slice.
+
+## The DD2 support families (M4-EVENT-5e)
+
+The Old One's Army's second echelon: the kobold bombers (555-557, kb
+0.1, walk 0.88/1.12), the javelin throwers (561-563, 26×52, the spear
+projectiles 662/685 at the 82-tick cadence) and the etherian skeletons
+(566-567 with the materialize cycle — `localAI[3]`'s spawn-in counter,
+the alpha fade over the 110-tick run; the walk rides the harness while
+translucent).
+
+The families' walk arms ride the port's harness with the vanilla's
+per-kind speed rows; the bombers' bomb throw, the throwers' spears and
+the skeletons' fade render ride their own slices.
+
+## The DD2 weapons (M4-EVENT-5f)
+
+The javelin throwers' arm: the 82-tick cadence throws the 662 spear
+(the tier-3's 685) at the classic 30/60/80 damages from the centre -
+14, the ballistic aim at the player. The walk rides the harness with
+the vanilla's fast row (speed 8, accel × 3). The 681 bomb's row joins
+the pool's data set — the bomber's throw arm rides it when it lands.
+
+## The kobold bombers (M4-EVENT-5g)
+
+The bomber's lob: the 18-tick cadence throws the 681 bomb at the
+tiered classic damages (20/30/40) from the centre - 14, the ballistic
+aim at the player (the vanilla's `num10 = 6` speed — the bomb's own
+aiStyle-16 flight carries the arc). The walk rides the harness with
+the tiers' speeds and arc weights.
+
+## The Dark Mage (M4-EVENT-5h)
+
+The Old One's Army's caster (564): materializes in from the portal
+(60 ticks of `localAI[3]`), hovers with the slow damped approach, and
+runs the cast cycle on `ai[0]`'s negative rest / positive march: the
+summon (`ai[1] == 2` at 64 — the 673 marker + `RaiseGoblins`), the
+shadowflame (`ai[1] == 0` at 32 — the 675 at 40), the heal (`ai[1] == 1`
+at 40/48/56 — the 674 markers), then the pattern advance and the
+97/127/183 re-arm.
+
+## Betsy (M4-EVENT-5i)
+
+The dragon's v1: the spawn pause, the phase-1 approach to the
+300/-200 offset past the player (7.5 speed / 0.45 accel), the phase
+rotation's pick (0/1/3 → 2, 2 → 3, 4/6 → 5, the 8-wrap) and phase 2's
+687 breath at 35. The fireball 686, the circle flight and the dash
+ride the attack family's slices.
+
+## Betsy's attacks (M4-EVENT-5j)
+
+The phase arms verbatim: the wind pause, the flame breath (the 600-px
+reposition + the 687 at 35), the fireball volley (the 1500-px
+reposition, the rotated muzzle, the 686 at 35 every 10 ticks), the
+circle flight and the dash.
+
+## The Wither Beast (M4-EVENT-5k)
+
+The ethereal caster-beast: the walk with its row (speed 1.4, damp 0.7)
+and the aura phase — the pulse counter, the ring dust at the 400-px
+radius, the 60-tick self-heal (`lifeMax / 20` capped to the missing
+hp). The 683 crystal shots ride the shooter block's slice.
+
+## The tavernkeeper + the etherian crystal (M4-EVENT-5m)
+
+The Old One's Army's entry: the tavernkeeper (a town NPC) and the
+Eternia Crystal (548) with its 180-tick spawn-in shield — the
+`localAI[0]` counter holds `dontTakeDamage` until the crystal opens,
+then the event's waves ride it. The summon arm (the crystal item over
+the stand, `SummonCrystal`'s frame-offset spawn) is the seam to
+`DD2Event`.
+
+## The crystal summon (M4-EVENT-5n)
+
+The Old One's Army's entry point: the crystal item over the stand runs
+`SummonCrystal` — the gates, the frame math's spawn point, the
+consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
+`dd2_wave` carry the event's seam.
+
+## The Old One's Army's waves (M4-EVENT-5o)
+
+`tr-core/src/dd2.rs` ports the wave engine: the rosters (552/555/561/
+558/564 by wave) with the lane rates (90→40), the budgets (60/80/100/
+120/140, the wave-5 cap, the wave-6 win sentinel) and `CheckProgress`'s
+advance — the hold's early refusal, the budget's pass → wave+1 with
+the 1800-tick break.
+
+## The crystal's win-death (M4-EVENT-5p)
+
+The event's end: the crystal's `ai[0] >= 600` arm fires
+`DD2Event.StopInvasion` + `life = 0` — the port's `wants_event_stop`,
+resolved by `update_dd2_event` before the death retain (the flag and the
+crystal go in one pass).
+
+## The DD2 tiers (M4-EVENT-5q)
+
+The tier-2/tier-3 rosters and budgets (`Difficulty_2/3_*`): the tiers
+swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
+554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
+wave 7's tier-3 budget is Betsy's own HP bucket.
+
+## The Ancient Cultist (M4-EVENT-6)
+
+The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual
+dissolve, the sine-bob hover, the far-player regen and the two ritual
+projectile arms (the 3240-px line-of-sight gate, the 1080-px below
+gate). The pillar summons (Stardust 493 / Nebula 507 / Solar 517 with
+their shield strengths) and the boss bar ride the next slice.
+
+## The pillar shields (M4-EVENT-7)
+
+The Lunar towers' shield lifecycle on `World`: the raise
+(`ShieldStrengthTowerMax` = 100, / 2 post-Moon-Lord), the spend
+(per-tower drain, the downed flag) and the reset. The 629 pulse fires
+from the towers' hit path.
 
 ## The invasion progress bar (M4-EVENT-1b)
 
@@ -3680,40 +3942,91 @@ M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
 
 ## Traps & statues (M7-WIRE-2)
 
-`wiring.rs` gains the statue half of `HitWireSingle`'s case 105
-(`Wiring.cs:2125-2440`): the style decode (`num138 = frameX / 36 +
-(frameY / 54 % 3) * 55`), the 3×2 `SkipWire`, the spawn anchor
-`(num137·16 + 16, (num136 + 3)·16)` and the verbatim style → spawn map. The
-NPC styles run `CheckMech(30)`; the item styles `CheckMech(600)` plus the
-`Item.MechSpawn` group checks. The engine emits `StatueSpawn` requests; the
-app layer (`world_sim/wiring.rs`) runs the `MechSpawn` caps and constructs the
-entities.
+The wire-driven device effects landed in two layers: `tr-core/src/wiring.rs`
+ports every device arm of `HitWireSingle`/`HitSwitch` verbatim (`Wiring.cs`
+citations on each block) and emits typed requests; `tr-app/src/world_sim/
+wiring.rs` resolves them through the port's spawn engines. Landed: the statue
+device (case 105, `:2125-2478`, both spawn tables, the `flag6`/`flag7` gates,
+the mushroom swap 34, the teleporting statues 40/41, the mushroom statue 349
+`:2480-2508`, the boulder statue 531 `:1994-2013`), the traps (case 137,
+`:1760-1982`, all eleven variants), the cannons (209 `:1237-1343` → `WorldGen.
+ShootFromCannon :50586-50697`, 212 snowball `:1345-1420`), the fireworks
+(216/335/338), the explosives/mine/geyser (141/210/443, the latter two in
+`HitSwitch` too, `:288-296`), the toilets (497/15) and the volcano traps
+(593/594). The requests: `StatueSpawn::{Npc, Item, Teleport, Boulder}`,
+`TrapRequest::{Shot, Spear{count_kind}}` and `DeviceShot{kind, x, y, vx, vy,
+damage, knock_back, ai0, ai1}`.
 
 Deviations:
 
-- **The ported statue subset**: the Blue Slime statue (style 4 → NPC 1 →
-  `NpcKind::Slime`/Blue), the Demon Eye statue (style 35 → NPC 2) and the
-  Heart/Star/Bomb item statues (styles 37/2/17 → the C# item ids 58/184/166,
-  dropped as `ItemDrop`s with the pickup ids). The remaining ~50 styles map
-  to C# NPCs/items outside the port's content (the critters, the Eater of
-  Souls, the special teleporting/jar statues) — they emit nothing; the map
-  arms arrive with the NPC families (M4-NPC-1).
-- **The `MechSpawn` caps are verbatim**: `NPC.MechSpawn` (`NPC.cs:7420-7505`,
-  the rings 200/600 px, the caps 3/6/10, the same-type group merging — the
-  port's kinds map 1:1 to their C# ids so the groups only matter once those
-  NPCs land) and `Item.MechSpawn` (`Item.cs:49385-49405`, the rings 300/800
-  px) — implemented in `crates/tr-app/src/wiring_stub.rs` over the app's
-  entity lists.
-- **The statue-spawned loot gating**: `Npc.spawned_from_statue` carries
-  `NPC.SpawnedFromStatue` (`NPC.cs:6061`); the `NPCLoot`'s
-  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks
-  (`NPC.cs:78849`) gate the drops — the port's statue-spawned slimes drop
-  nothing until the AnyInteractions tracking lands (M4-NPC polish).
-- **The trap projectile emission** (the dart/spear/flame/boulder traps'
-  `Projectile.NewProjectile` calls, `Wiring.cs:1774-2000`) needs the
-  projectile families (M4-PROJ-2+) — their `CheckMech` cooldowns (200/90/300/
-  900) are already exercised by the queue; the emission arms are
-  passthroughs.
+- **The ported statue kinds**: the app spawns the statue NPC styles whose C#
+  id has a ported `NpcKind` — 1 BlueSlime, 2 DemonEye, 6 EaterofSouls,
+  21 Zombie, 24 FireImp, 42 Hornet, 49 CaveBat, 55 Goldfish, 58 Piranha,
+  65 Shark — at the verbatim bottom-center anchor (`NPC.NewNPC`'s
+  `Bottom = (X, Y)`, `NPC.cs:80770`). The rest (the critters 51-62, the
+  birds 74/297/298, the WallCreeper 164/165, the Bunny 46/540, the Crab 67,
+  the BlueJellyfish 63, the Mimic 85, the dragonflies, the macaws,
+  UndeadViking 167, Pigrons 170/171/180, Medusa 480, GraniteGolem 482, … )
+  emit their id and drop at the drain with one note; each kind's family
+  lands the arm.
+- **The projectile families that dropped** (requests emitted verbatim, the
+  app spawn drops them — `proj_data` has no row): the fireworks rockets
+  167-174 and 415-418 (aiStyle 34), the fountains 419-422 (aiStyle 73), the
+  cannonball 162 (aiStyle 2), the bunny 281 (aiStyle 49), the snowball 166
+  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153),
+  the boulder 99 (aiStyle 25) and the flame jet 187 (aiStyle 38). Landed
+  rows: 108/164 (the aiStyle-16 blast family, the explosives/mine), 178 and
+  601 (the cannon's aiStyle-1 ammo) and 980 (the venom dart, aiStyle 1).
+- **The cap/dedupe gates run app-side (decision D1)**: the spear's
+  proximity scan, `BunnyCannonCanFire` and the fountain's anchored-projectile
+  dedupe read the app's pools, so the engine emits the request with its roll
+  results and the app gates the spawn. Consequence: a blocked spawn still
+  consumes the engine's rolls (the C# evaluates its cap before its rolls) —
+  invisible outside the port's stand-in RNG stream, which is not byte-equal
+  to `Main.rand` anyway (ANALYSIS "Wiring engine (M7-WIRE-1)"). The cannon's
+  static/per-tile cooldowns are assigned before the app-side gate, as in the
+  C#, so a bunny-blocked shot still leaves them standing.
+- **The ceiling spiky ball's shared cap decision**: the C# evaluates the cap
+  once and spawns the projectile twice (in-case `:1961` and in the shared
+  tail `:1977-1981`); the port emits two identical `Spear` requests and the
+  drain applies one cap decision to both.
+- **The floor spiky ball's cap is a verbatim no-op (F1)**: the C#'s cap loop
+  counts `type == num95` with `num95` still 0 (`Wiring.cs:1815-1822`) —
+  `ProjectileID.None`, which no live slot can hold. The request carries
+  `count_kind = 0` and the cap never blocks.
+- **`Item.MechSpawn` filters by type** (`Item.cs:49385-49406`): the caps
+  travel with the request (`cap_ids` — the spawn id when empty, plus the
+  seasonal cap ids 58/{58,1734,1867}, 184/{184,1735,1868}, 166/{166} — F6)
+  and each id must pass on its own exact-type count. `NPC.MechSpawn`
+  (`:7420-7506`) carries the C#'s group table (birds, bunnies, ducks,
+  seagulls, turtles, goldfish, dragonflies) — the port's kinds map 1:1 to
+  their C# ids, so the groups bite only for the ids the port actually holds.
+- **The first-table anchor correction**: the WIRE-1 scaffold spawned style 35
+  at `num141 - 12`; the C# first table spawns at `(num140, num141)`
+  (`Wiring.cs:2270`) — corrected with a regression test.
+- **The spawn flags**: `spawned_from_statue` carries `NPC.SpawnedFromStatue`
+  (`NPC.cs:6061`) and gates the loot (`NPCLoot`'s
+  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks,
+  `NPC.cs:78849` — the port's statue-spawned NPCs drop nothing until the
+  AnyInteractions tracking lands). The C#'s other three flags
+  (`value = 0`, `npcSlots = 0`, `CanBeReplacedByOtherNPCs`) have no port
+  field yet.
+- **`PartyIsUp` and `getGoodWorld` are unmodelled**: style 9 always drops the
+  plain Bunny (46, `Wiring.cs:2303-2307`) and `NewNPC`'s 46→614/62→66
+  getGoodWorld remap never fires (`NPC.cs:80752-80762`).
+- **The traps' spec is now complete but 187 waits on aiStyle 38**: the trap
+  table (98/184/187/185/186/980 — `ProjectileID.cs:750/922/926/928/924/2514`;
+  the WIRE-1 const names 185 "TRAP_SPEAR"/980 "TRAP_SPIKY" were wrong
+  against the C# and are renamed) is emitted verbatim; the port's own names
+  in the earlier docs (dart/superdart/flame/spear/boulder/spiky) did not match
+  the C# table and are corrected in the code comments.
+- **The visual layer stays deferred**: `PoofOfSmoke` (the blocked-spawn puff),
+  `Animation.NewTemporaryAnimation` (the volcano traps, the mushroom swap)
+  and `SoundEngine.PlaySound(28, …)` have no port target, exactly as the
+  WIRE-1 burn-out poof and sounds were deferred.
+- **`HitSwitch`'s 132/411 lever arm** (the lever flip + `CheckMech(60)` + the
+  2×2 detonator lamp flip, `Wiring.cs:335-372`) is still unported — a WIRE-1
+  gap outside this row's scope.
 
 ## Falling blocks (M7-FALL-1)
 
@@ -4716,30 +5029,89 @@ walls too); the remix `ChlorophyteDefense` conversion is out (no remix
 worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
 unconditionally).
 
-## Lihzahrd temple (M1.4-WGEN-6)
+## Lihzahrd temple (M1.4-WGEN-6 / M5-TEMPLE)
 
-The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
-temple, the last big generation structure:
+The temple is now the faithful C# port, landed as three pipeline steps over
+the M5-BIOME seam:
 
-- **The placement** (`:15840-15848`): the y between the rock layer and
-  `maxTilesY − 600` (the port clamps to the height), the x under the
-  jungle band's deep half (`dungeonSide`'s opposite in the C#).
-- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
-  Lihzahrd brick (226) with the unsafe walls (87), the carved central
-  hall + the side rooms with the safe walls (112), the brick pillars
-  inside the hall.
-- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
-  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
-  room at the hall's west end.
-- **The traps**: the dart traps (137, the case-137 wiring variants the
-  wiring trip fires — the trap frameY selects the variant) embedded in
-  the hall's brick walls every 12 columns.
-- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+- **The placement search** (`LihzahrdTemple` pass, `WorldGen.cs:15834-15926`):
+  the y between `(int)Main.rockLayer` and `maxTilesY − 600`, the x from the
+  dungeon-opposite reach `((NextDouble() · num3 + 0.1) · −dungeonSide + 0.5) ·
+  maxTilesX`, the tile-60 acceptance, the 1,000,000-attempt widening valve
+  (0.25 → 0.30 → 0.35, 11 cap stages) and the fallback — the M5-BIOME
+  phase-6 port, unchanged.
+- **The interior** (`makeTemple`, `:33435-34237`): the room walk
+  (`Next(10,16)` rooms at `scale = maxTilesX/4200`, the staggered
+  horizontal/vertical steps with the `Next(1,3)` flip period and the −10
+  downward drift), `makeTemple_GenerateBricks` (the per-depth `DungeonBounds`
+  union, `Inflate(10)`, the `ClearEverything` brick fill and the four
+  corner-to-corner `Line_StrictAngles`/`Line`/`FillY`/`FillX` walkers), the
+  jitter carve (the two counter-sweeps over the drifting inset edges), the
+  `templePather` corridors, the four `outerTempled` sweeps (the unsafe-wall
+  skin conversion), the entrance shaft with the Lihzahrd door (tile 10,
+  style 11, `frameY = 594/612/630`), the `templeCleaner` sweeps, the wall-87
+  widen pass, the altar (`PlaceTile(237)` → `Place3x2`, the published
+  `lAltarX/lAltarY` from the frames, the hand-built 1000-try fallback) and
+  the wooden-spike (232) staircase loop.
+- **The part-2 content** (`LihzahrdTemplePart2` pass, `:17701-17709` →
+  `templePart2`, `:34464-34658`): the dart traps (`mayanTrap` — the pressure
+  plate 135 style 6 over the dart column 137 with the `AddWireFromPointToPoint`
+  wire run), the buried chests (`AddBuriedChest`, style 16, the Pygmy-staff
+  main item is M5-CHEST-gen's), the statues (105, styles 43-45), the
+  workbench/table/chair furniture (`Place2x1`/`Place3x2`/`Place1x2` with the
+  faithful frame strides) and the one painting (240, style 88).
+- **The altar re-write** (`LihzahrdAltar` pass, `:21943-21976`): the 3×2
+  frames + the 3-wide brick base row + six `SquareTileFrame`, as the late
+  anchor safety.
 
-Deviations: the C#'s multi-room crawl with the doors
-(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
-summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
-are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+Deviations:
+
+- **The stream model**: the C# shares one `genRand` across the world; the
+  port re-seeds per pass (`pass_rng("Jungle Temple")` / `"Temple"` /
+  `"Lihzahrd Altars"` — the step slugs map to the vanilla chain rows
+  "Jungle Temple" / "Temple" / "Lihzahrd Altars"). The draws INSIDE each
+  step follow the C# statement order 1:1 (pinned by the draw-ledger tests);
+  the loot tables' draws in `AddBuriedChest` are M5-CHEST-gen's — until they
+  land, the part-2 stream carries their absence (a documented sub-vanilla
+  gap, same class as the earlier phases).
+- **The `tileSolid` windows**: the port has no global table. The part-2
+  wrapper runs with 162 (BreakableIce) non-solid / 226 solid for the whole
+  step, and the wood spike 232 solid only during the trap loop (the C#'s
+  `:34499` flip); the C# leaves 162/232 non-solid for the rest of the chain
+  until `BeeLarvaInBeehives` — the port's later passes keep their own
+  predicates (recorded delta; the temple's spikes are the only 232 tiles).
+- **The executed-pipeline order**: `temple part 2` runs immediately after
+  `lihzahrd temple` (the C# runs it after the liquid/tile passes — the port's
+  compact chain delta), and `lihzahrd altar` sits between `cacti` and
+  `water plants` (vanilla `:21310` → `:21943` → `:21963`). 50 → 52 steps.
+- **The sub-vanilla guards**: the C#'s unguarded writes (`templePather`'s
+  carve squares, the altar fallback's floor scan, `array[num2-1]` on a
+  world whose walk rolls no room) would throw on the port's smaller test
+  worlds; the port's `in_world` guards keep the writes total.
+- **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
+  (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) —
+  M5-SEED-1's scope, not a deviation here.
+- **The drunk/good/remix branches** (×3/×2 room counts, the drunk spike
+  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
+  M5-SEED-1/2's scope.
+- **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
+  Golem-BOSC-19's; the traps fire through the wiring engine's case-137
+  variants (the frameY selects the variant, the trap column's wires are
+  laid by the pass itself).
+- **The world hashes** are re-pinned (every world on every seed changes by
+  design): `SEED42_512 = 1248943602`, `DEFAULT_WORLD = 3359703751` (the
+  phase-3/final pair; the phase-1 pins 2067651109/2366599377 and the phase-2
+  pins 2109138558/948698174 are recorded in the commits). Screenshot
+  determinism pair (seed 1, the altar room at `TR_CAM=1836,703`
+  `TR_SHOT_FRAME=600` `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`): zoom 1.0
+  `8a75a259…` and zoom 2.0 `352859a2…`, each byte-equal on its repeat run
+  (taken from the merged `main` build); the worktree-built pair differed
+  from these by 900 px (max channel 9, the near-black altar-room corner) —
+  a cross-build f32-order delta in the render path, not a world-state or
+  determinism difference (the world hashes are pinned by the tests). A
+  zoom-2.0 frame-900 pair separately showed the known `TR_SHOT` harness
+  timing sensitivity (the ANALYSIS harness note) in the HUD hotbar region
+  only.
 
 ## Polish passes (M1.4-WGEN-7)
 
@@ -6140,6 +6512,41 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Entity sync (M6-NET-2)
+
+The entity messages and the smoothing are 1:1 ports; the deviations:
+
+- **`13 PlayerState` carries the port's render extension.** The C# derives
+  each peer's animation frames and on-ground state from its local simulation
+  of that player (`Main.player[i].Update` runs on every peer); the port
+  simulates remote players nowhere, so the wire body appends
+  `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
+  (two-client compatibility only). The control BitsBytes ride as flags with
+  no port-side replay: each peer's input is local.
+- **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
+  (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
+  `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
+  the per-type `SyncAnchor` (position is sent raw). The `generation` byte
+  bumps on a kind change so the client re-creates the slot — the C#'s
+  `existing.generation != generation` spawn test. `hurt_cd` stays 0 on
+  clients (`28 NPCStrike` is not ported), so a networked NPC shows no hit
+  flash yet.
+- **The cadence is the port's tick, not the C#'s per-NPC `netSpam` gate.**
+  The host streams every live NPC at 10 Hz (the `netSpam` 30/5-tick per-NPC
+  gate and the section culling are the M6-NET-3 follow-ups); the player
+  cadence is change-driven + a 42-tick heartbeat (the C#'s 420 ticks at
+  60 Hz = 7 s). The client's despawn is a 200 ms staleness prune (the host
+  sends nothing when an NPC dies — the C# broadcasts life = 0 and keeps the
+  slot; the port has no inactive-slot state, so the slot is dropped).
+- **Item ids are host-Vec indices**, not the C#'s fixed 400 slots: a removal
+  shifts the higher indices, and the next tick's `21` diff re-announces them
+  (the fixed-slot scheme is M6-NET-5). `22 ItemOwner` is consumed by the
+  client's grab gate but not yet emitted by the host — the port's pickup
+  request validates and removes in one step, so no reservation window
+  exists yet.
+- **The peer slots are seeded at the world spawn** on first sight (the C#'s
+  `Main.player[i]` exists at the spawn before its first `13`), so the first
+  snapshot's lag accrues from there rather than from (0, 0).
 ## Localized item tooltips (M6-LOCALIZE-wire)
 
 The "wire the localization core into the HUD/menus" row's item-hover slice:
@@ -6164,3 +6571,154 @@ Deliberate deviations and notes:
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
   resources the loader probes) the keys show through — vanilla's own
   unknown-key behaviour.
+
+
+## Tile sections (M6-NET-3)
+
+The `10`/`20` codecs and the section flow are 1:1 ports; the deviations:
+
+- **`frame_important` rides the wire.** The C# reads its global
+  `Main.tileFrameImportant[]` table on both sides of `10`/`20`; the port's
+  table is per-world (`World::frame_important`) and the reader thread has no
+  world, so the flag rides in a previously-unused bit (`10`'s `b4` bit 0,
+  `20`'s third flag byte bit 4). Two-client only.
+- **`wall_frame` is the one added byte** in `10`'s payload (after the wall
+  low byte): the C# covers it through `CopyFrom` inside a run, the port needs
+  it on the wire so a section's walls render identically.
+- **The chest/sign/tile-entity tail of `CompressTileBlock` is not ported**
+  (`NetMessage.cs:2208-2230`): the port's chests are world chests synced by
+  the item stream and its signs/tile-entities have no sync path yet — the
+  section stream covers tiles, walls, liquids, the four wire colours, paint
+  and the invisible/fullbright quad.
+- **The deflate stream is wire-compatible, not byte-identical**: the port
+  uses flate2's raw deflate (a .NET `DeflateStream` peer decodes it), while
+  byte-for-byte equality would need .NET's encoder internals.
+- **The NPC/chest pushes inside `SendSection` ride the cadence tick**: the
+  C# streams `23` for the section's town NPCs and the chest contents inline
+  (`NetMessage.cs:2715-2753`); the port's 10 Hz tick covers both within a
+  tick of the section arriving.
+- **The per-NPC `netSpam` gate and the section culling of `23` are not
+  ported** (all live NPCs stream each tick); the client's despawn is a 200 ms
+  staleness prune rather than the C#'s life-to-0 broadcast.
+- **`20 SectionRange` replicates the 1x1 edit**: the C# widens door/object
+  edits to their frame group (`SendTileSquare(-1, x, y, 2)`); the port's
+  multi-tile objects arrive as per-tile edits, so the widening waits for the
+  door/object sync. `changeType` rides 0 (no switch family yet).
+## The Golem family's display (M4-BOSS-19b)
+
+The port draws the Golem family over the extracted sheets' real rows, but
+several vanilla details are deliberately not carried:
+
+- **The 1-px flight row.** `FindFrame` case 245's flight arm writes
+  `frame.Y = 1` (`NPC.cs:72938`) — a literal pixel into a field whose unit
+  is the row height (174 px for 245). The port tracks rows, so the flight
+  draws row 0: a 1-px vertical offset exists in vanilla and is not
+  reproduced.
+- **The glow passes.** The C# draws `TextureAssets.Golem[1..3]` and
+  `Extra[106/107]` over the body/head/free-head (the eye glows, the
+  `Main.cs:25729-25768` arms) — those textures have no port entries; the
+  base sheets only.
+- **The head's `timeLeft = 300`** on the volley beams (`NPC.cs:31326`)
+  rides the projectile pool's timed-spawn arm only for the Destroyer
+  laser kind; the Golem beams take the pool default.
+- **The cadences that consume `Main.rand`.** The head's volley trigger
+  (`60 + Next(600)`, `:31273`) and the free head's barrage
+  (`100 + Next(4800)`, `:31506`) fold to flat averages (300 / 1500) —
+  the RNG stream discipline shared with the other folded cadences.
+- **The fists' `collideX/collideY` dash exit** (`NPC.cs:19445`): the
+  port's sim carries no per-NPC tile-collision flags, so the dash ends
+  on the 700-px anchor distance only.
+- **The fist's state 3** (the `ai[0] == 3` hover, `:19450-19503`): no
+  port code sets `ai[0] = 3` for the fists — the arm is dead in the
+  vanilla AI itself and is not carried.
+- **`GetMyBalance`** (`NPC.cs:18485`): 1.0 for the solo unscaled player;
+  the multiplayer/good-world multipliers (the +3, the `*2` outside the
+  temple/jungle) stay off like the other difficulty branches.
+- **The head's tether** (`aiStyle 46`) converges under a ±7 velocity
+  clamp where the C# snaps the raw delta inside 100 px
+  (`NPC.cs:31148-31160`) — the anchor holds within the clamp.
+- **The anchor's freshness.** The C# parts read `Main.npc[golemBoss]`
+  live (the body's lower slot updates first in the same tick); the port's
+  pre-pass hoist feeds the head/fists the body's end-of-previous-tick
+  centre/velocity — the ratio is exact (damage lands outside the NPC
+  pass), the tether carries the one-tick shape.
+- **`alpha` on the whole NPC draw.** `Npc::alpha` (new) tints every NPC
+  through `GetAlpha`'s `(255 - alpha)/255`; only the Golem family's
+  spawn fades set it today.
+
+## The Deerclops' display (M4-BOSS-24)
+
+- **The sheet is a grid, not a column.** `DrawNPCDirect_Deerclops` decodes
+  `npc.frame` as a 5x5 cell index (`cell / 5` column, `cell % 5` row) over
+  the 1090x1200 sheet's 218x240 cells drawn 220x242 (`Utils.Frame`'s +2/+2
+  size offsets, `Main.cs:26338`). `Main.npcFrameCount[668] = 8` only feeds
+  `SetFrameSize` and the dead `DrawNPCDirect_DeerclopsLeg`; the live draw
+  never uses it. The C#'s `frame.Width = 180` write is vestigial.
+- **The flip is inverted vs the generic NPCs.** The vanilla passes
+  `npcSpriteEffect ^ FlipHorizontally`, cancelling the generic
+  `spriteDirection == 1` flip — the sheet faces RIGHT by default, so the
+  port flips on `facing < 0` (the generic path keeps `facing > 0`).
+- **The anchor.** The cell is drawn at the NPC's Bottom with the origin
+  (106, 238) (or (114, 238) flipped): the cell's centre sits 4 px against
+  the facing direction and its bottom 4 px below the hitbox — the
+  `origin.Y -= 4` sink of the vanilla's art.
+- **The damage/phase overlays not carried.** The `localAI[3]` red shake
+  copies and the ai[0]==7/8 purple ghosts (`Main.cs:26366-26404`) read
+  `Main.GlobalTimeWrappedHourly` — wall-clock, so they cannot ride the
+  port's deterministic frame cache. The port's `hurt_cd` tint covers the
+  flash; the sequence cells are the visible part.
+- **The step sounds.** `FindFrame` case 668 plays `SoundID.DeerclopsStep`
+  at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
+  audio access, so the cue rides the follow-up like the other NPC steps.
+
+
+## NetModules (M6-NET-4)
+
+The envelope and the ported bodies are 1:1; the deviations:
+
+- **The chat relay broadcasts to everyone including the sender.** The C#'s
+  `ChatHelper.BroadcastChatMessageAs` does the same; the port's host also
+  runs the sender's line through its own `ChatMonitor::send` locally, so the
+  author's slot rides only for the line's colour (player chat is one colour
+  in the port until the team/chat channels land).
+- **The Ping module echoes back to the sender.** The C# skips the sender
+  (`ignoreClient = userId`) because its diagnostics UI counts bytes, not
+  round trips; the port measures an RTT for the client (`net_rtt_ms`), which
+  the C# does not need.
+- **`SkyEntity` grew `net_seed`/`net_sent`** so the host can relay the exact
+  spawn; the `SkyKind` → `SkyEntityType` mapping is the port's declaration
+  order until the C#'s `SkyEntityType.cs` values are pinned.
+- **The NetText module's keyed/format `NetworkText` modes are not resolved**:
+  a non-zero mode byte keeps the raw text (the substitution list is skipped).
+- **The unmapped module ids ride reserved** (0 Liquid, 4 Bestiary, 5/7
+  CreativeUnlocks+Report, 6/10 CreativePowers+Permissions, 8
+  TeleportPylon): their bodies land with the systems' multiplayer passes
+  (the creative registry's per-player split, the pylon system, the
+  npc-netId → credit-id table). Unknown ids are silently ignored exactly as
+  `NetManager.Read` does.
+- **The `82` envelope is not whitelisted in the accept gate**, matching the
+  C#: a pre-`IN_WORLD` slot's module message is booted
+  (`MessageBuffer.cs:161`'s whitelist does not contain 82).
+
+## The humanoid walkers' display (M4-NPC-3c)
+
+- **The zombie never animates.** `FindFrame` has no case 9 and
+  `npcFrameCount[9] = 1`: the vanilla zombie's sprite is the single 30x48
+  NPC_9 frame, its walk expressed purely in the body motion. The port's
+  v1 ran the case-3 group's walker (the 0/1/2 band cycle) on it — rows
+  1/2 did not exist in the sheet.
+- **The town NPCs and goblins are not 3-frame walkers.** They belong to
+  `FindFrame`'s humanoid-group arm (`NPC.cs:68547-69587`), which walks
+  rows 2..npcFrameCount-1: 26 rows for the Guide/Witch Doctor, 25 for
+  the Merchant/Arms Dealer/Demolitionist/Painter/Tinkerer, 23 for the
+  Nurse/Clothier, 21 for the Dryad and the Goblin Archer, 16 for the
+  other three goblins, 15 for the cave walkers. The v1's 3-frame machine
+  showed the idle rows while walking.
+- **The sit/talk/attack zones are the follow-up.** The group's
+  `ai[0]` 2/3/4/5/6/7/11/18/19/23 arms (the sit, the talking, the
+  downed, the shop-attack cycles over `AttackFrameCount`) ride the town
+  AI states the port does not model; the default (idle/walk) arm is
+  what the port draws.
+- **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
+  and their widths differ per town NPC (40/46/48/50/52/56) — the draw
+  takes each sheet's real frame instead of a stretched 38x48.

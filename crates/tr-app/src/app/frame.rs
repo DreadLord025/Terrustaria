@@ -123,7 +123,31 @@ impl App {
             // (the freeze stops the advance entirely).
             let rate = self.creative_powers.time_rate();
             if rate > 0.0 {
-                advance_time(&mut self.world, dt * rate);
+                // The dawn/dusk event rolls ride the clock's own stream
+                // (`Main.rand`'s time cluster — the C# rolls at both phase
+                // boundaries read the same stream), drawn once per advance.
+                let roll01 = f64::from(rand01(&mut self.clock_rng));
+                // `Main.cs:65342-65349`'s player gate.
+                let any_over_120 = self
+                    .player
+                    .as_ref()
+                    .is_some_and(|p| p.max_hp > 120);
+                let (blood_moon, eclipse) =
+                    advance_time(&mut self.world, dt * rate, roll01, any_over_120);
+                if blood_moon {
+                    crate::chat::broadcast_death_text(
+                        &mut self.chat,
+                        &crate::lang::text("LegacyMisc.8"),
+                        crate::chat::COLOR_WORLD,
+                    );
+                }
+                if eclipse {
+                    crate::chat::broadcast_death_text(
+                        &mut self.chat,
+                        &crate::lang::text("LegacyMisc.20"),
+                        crate::chat::COLOR_WORLD,
+                    );
+                }
             }
         }
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
@@ -227,6 +251,12 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
+            // `UserInterface.Update`'s lockout countdown
+            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+            // state-change gate decays with the frame step, deterministic under
+            // `TR_SHOT` (dt pinned to 1/60 above).
+            self.pointer_ms = self.anim_time as f64 * 1000.0;
+            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
@@ -396,6 +426,9 @@ impl App {
             // `ApplyVisuals` driver; the post branch consumes
             // `filter_driver.output`.
             crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            // The SceneState blizzard loops' sound emitter rides inside
+            // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
+            // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
             // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
             // the per-tick audio update): the sticky windy-day/storm flags the
             // ambience gates read; the hysteresis bands make the per-frame
@@ -463,6 +496,9 @@ impl App {
             }
         }
         self.poll_net();
+        // The `netOffset` decay (`UpdateNetOffset`, `Player.cs:28721-28749`) —
+        // client-only, and after the incoming snapshots are applied.
+        self.net_interp_tick(dt);
         // `Main.DrawBG`: advance the surface-background cross-fade once per drawn
         // frame, exactly where the original runs it (inside the draw pass).
         self.update_bg_visibility();
@@ -914,6 +950,31 @@ impl App {
                     },
                     light_generation: light.generation(),
                     waterfall: waterfall.anim_key(),
+                    net_key: {
+                        // FNV-1a over the peers' smoothed state and the NPC
+                        // smoothing accumulators (`npc_key` covers the base
+                        // positions; the offsets decay every frame without
+                        // moving the base).
+                        let mut h: u32 = 0xcbf2_9ce4;
+                        let mut mix = |h: &mut u32, v: u32| {
+                            for b in v.to_le_bytes() {
+                                *h = (*h ^ b as u32).wrapping_mul(0x0100_0193);
+                            }
+                        };
+                        for rp in remote_players.values() {
+                            mix(&mut h, rp.id);
+                            mix(&mut h, (rp.x + rp.off_x).to_bits());
+                            mix(&mut h, (rp.y + rp.off_y).to_bits());
+                            mix(&mut h, rp.leg_frame);
+                            mix(&mut h, rp.body_frame);
+                            mix(&mut h, rp.hp as u32);
+                        }
+                        for n in npcs.iter() {
+                            mix(&mut h, n.net_offset.x.to_bits());
+                            mix(&mut h, n.net_offset.y.to_bits());
+                        }
+                        h
+                    },
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);

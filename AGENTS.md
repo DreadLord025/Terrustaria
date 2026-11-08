@@ -8,11 +8,13 @@ record of who is working on what.
 
 **Every task follows this loop:**
 
-1. **Sync + graphify first — always, in every scenario.** Before ANY other action
-   (taking a task, resuming, finishing, merging, after a pull): bring the code and the
-   graph to the same state:
+1. **Sync first — always, in every scenario.** Before ANY other action
+   (taking a task, resuming, finishing, merging, after a pull): bring the code
+   and the graph to the same state. **Do this from your own worktree, never by
+   checking out in the primary checkout:**
    ```powershell
-   git checkout main && git pull          # if a remote is configured
+   git fetch origin --prune               # refresh the branch list + origin/main
+   git merge --ff-only origin/main        # inside YOUR worktree's branch
    graphify update .                      # rebuild the Rust graph from crates/
    graphify merge-graphs decompiled/graphify-out/graph.json `
            decompiled-libs/graphify-out/graph.json graphify-out/graph.json `
@@ -21,25 +23,47 @@ record of who is working on what.
    `graphify-out/` is **gitignored** — the graph never travels with git, so a stale
    local graph after a pull/merge gives queries answered from pre-refactor locations.
    When the update reports no changes, it is a no-op and cheap.
-2. **Branch.** `git checkout -b <branch-name>` from main. Branch name = the task, in
-   slug form: `M1.4-BG-11-cloud-parallax`, `M2-DRAW-1-player-layers`,
+2. **Branch + worktree, from main.** `git worktree add ../<task-dir> -b <branch-name>
+   origin/main` (the primary checkout is NEVER used for task work). Branch name = the
+   task, in slug form: `M1.4-BG-11-cloud-parallax`, `M2-DRAW-1-player-layers`,
    `refactor-app-env-flags`, `fix-crafting-scrollbar`. One branch = one task; do not
-   stack unrelated work.
+   stack unrelated work. A FRESH worktree lacks the gitignored trees — create the
+   symlinks before the first build or the localization tests fail with false
+   "unknown key" errors:
+   ```powershell
+   cd ..\{task-dir}
+   cmd /c mklink /J assets ..\Terraria-Rust\assets
+   cmd /c mklink /J decompiled ..\Terraria-Rust\decompiled
+   cmd /c mklink /J decompiled-libs ..\Terraria-Rust\decompiled-libs
+   ```
 3. **Work.** Commit early and often on the branch with imperative messages. Keep the
    rules below (golden rule, tests green, no fmt noise). The rule "never work on the
    same task as another agent" still applies — pick a catalog task nobody's branch
    covers (check `git branch -a` first). If your change moves or renames code (a
    refactor-shaped task), run `graphify update .` again before committing so the
    branch's last state is graphed.
-4. **Re-sync before merging.** Bring the branch up to date with main
-   (`git merge main` inside the branch, or rebase if you prefer linear history) and
-   resolve everything there, not in the final merge. Then repeat step 1's graphify
-   update on the synced branch.
+4. **Re-sync before merging.** Bring the branch up to date with the remote main
+   (`git merge origin/main` inside the branch, or rebase if you prefer linear
+   history) and resolve everything there, not in the final merge. Then repeat
+   step 1's graphify update on the synced branch.
 5. **Verify the merge result.** `cargo test --workspace -- --skip
    migrates_version_2_kinds_to_item_ids` must be green **on the branch after the
    sync** (see the exit-code gotcha below). For visual work also re-take the
    deterministic screenshots on the merged state.
-6. **Merge into main.** `git checkout main && git merge <branch-name>`. Conflicts
+6. **Merge into main — by ref update, never by checkout.** The primary checkout
+   stays on `main`, clean, and unoccupied. From YOUR worktree, after step 4's sync:
+   ```powershell
+   # set your identity first if needed (git config user.name / user.email)
+   $m = git commit-tree "$(git rev-parse HEAD)^{tree}" -p origin/main -p HEAD `
+        -m "Merge branch '<branch-name>'
+   <one-line scope>"
+   # the ref race: if another agent merged in the meantime the update-ref
+   # (or the push) fails — re-fetch, re-sync your branch onto the new main
+   # (step 4) and retry. Never force main.
+   git update-ref refs/heads/main $m $(git rev-parse main)
+   git push origin main
+   ```
+   Conflicts (when the merge is done as `git merge origin/main` inside the branch)
    must be resolved **thoughtfully**: a conflict means two tasks touched the same
    system — re-read the C# source for that system and decide what the *port* needs,
    rather than picking "mine" or "theirs" blindly. Never take `--ours`/`--theirs`
@@ -73,21 +97,61 @@ list lie about who is working on what. After step 7 of the loop, always:
    `git fetch --prune` (delete one branch per command — a batch fails whole if any
    ref is already gone).
 3. **Worktrees are temporary, never permanent.** Each worktree is created for one
-   task (`git worktree add <path> <branch>`) and removed as soon as its branch is
-   merged: `git worktree remove <path>` (add `--force` only after inspecting it),
-   then `git worktree prune`. Before removing, run `git -C <path> status --porcelain`
-   — if there are uncommitted or untracked files, resolve them first: commit what is
-   real, and for an untracked file that duplicates a committed one (compare
-   `sha256sum` with the tracked copy) discard it. A `crash.log`/log file is junk.
-4. **One checkout = one agent = one branch.** Never `git checkout`/switch branches in
-   a checkout another agent is working in, never stage or commit from someone else's
-   worktree — a stray `git add`/`git commit` in a shared index can silently stage a
-   revert of merged work (this bit us 2026-11-01). When two agents must work at the
-   same time, each gets its own worktree; the primary checkout belongs to whoever
-   holds `main`.
+   task (`git worktree add <path> <branch>` from `origin/main`) and removed as soon
+   as its branch is merged: `git worktree remove <path>` (add `--force` only after
+   inspecting it), then `git worktree prune`. The removal must run from another
+   checkout — you cannot remove the worktree you are standing in. Before removing,
+   run `git -C <path> status --porcelain` — if there are uncommitted or untracked
+   files, resolve them first: commit what is real, and for an untracked file that
+   duplicates a committed one (compare `sha256sum` with the tracked copy) discard it.
+   A `crash.log`/log file is junk.
+4. **Nobody occupies the primary checkout (2026-11-08).** The primary checkout
+   (`Terraria-Rust`) is a shared, always-clean, always-on-`main` repository — it is
+   NOT anyone's workspace and no agent checks out a task branch in it, stages, or
+   commits there. Task work happens ONLY in per-task worktrees; merges are ref
+   updates (step 6). If the primary's `git status --porcelain` is non-empty,
+   something bypassed this rule — recover per the 2026-11-08 rules below and NEVER
+   commit the foreign state. Before `git worktree add`, `git status --porcelain` in
+   the primary must be empty.
 5. **End state after a cleanup pass:** `git branch -a` shows only `main` (local +
    `origin/main`) plus branches that are genuinely in flight, `git worktree list`
-   shows only the primary checkout, and local `main` is pushed.
+   shows only the primary checkout (on `main`, pushed), and no `../TR-*` task
+   directories or stray scratch files (`*.rs`, `*.patch`, screenshots outside
+   `docs/screenshots/`) remain on the Desktop.
+
+### Mandatory safety checks — the 2026-11-08 incidents
+
+Three failures on 2026-11-08 shape these: a **stale index** in the primary checkout
+that staged a full revert of merged work (`D ambient_sound.rs`, deleted screenshots,
+~1200 lines cut from `npc.rs`/`render/entities.rs` — the index matched the old
+`f0c2476d` tree while HEAD had already absorbed later merges); a **lossy merge** that
+silently dropped an entire merged task (another branch's merge resolution overwrote
+the Golem's regions in the hot files); and task agents checking out inside the shared
+primary.
+
+1. **Before every git write, check what you are standing on.** `git status
+   --porcelain` non-empty in a checkout you do not own = STOP — never commit,
+   reset or "clean" it. Report it and work in your own worktree.
+2. **Verify the task diff before pushing.** `git diff origin/main..<branch> --stat`
+   must list ONLY your task's files. Unrelated files or deletions of files you never
+   touched mean the branch base or the merge is wrong — fix it before pushing.
+3. **Verify the merge after every merge.** Run the catalog command
+   (`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`) after
+   merging `origin/main` into your branch or merging your branch into main. A
+   previously-green test that now fails = the auto-resolution is wrong: `git merge
+   --abort`, redo the merge, resolve the hot files (`npc.rs`, `render/entities.rs`,
+   `world_sim/npcs.rs`, `world.rs`, `app/mod.rs`) by re-reading the C# — a semantic
+   conflict there means two tasks touched one system.
+4. **Stale-index recovery (primary only).** If the primary's index/worktree drifted
+   from HEAD through merges, preserve it BEFORE resetting:
+   `git branch backup-stale-index-<date> "$(git commit-tree "$(git write-tree)" -p
+   HEAD -m "backup: stale staged index")"` → `git reset --hard HEAD` → confirm the
+   stale tree was a subset of HEAD (no unique content) → run the tests → delete the
+   backup branch once confirmed. This is a recovery path, not a workflow: with rule 4
+   of the lifecycle section it should never be needed again.
+5. **Never delete another agent's branch.** Delete only your own, only after
+   `git log main..<branch>` is empty, and delete local + remote + prune in that
+   order.
 
 ---
 

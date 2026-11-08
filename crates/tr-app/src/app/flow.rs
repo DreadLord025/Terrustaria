@@ -111,8 +111,10 @@ pub(crate) enum FlowClick {
     CharNew,
     /// `PlayGame` (`:256-261`) -> `SelectPlayer`'s single-player tail
     /// `menuMode = 6` (`Main.cs:66245-66249`) -> 888 world select
-    /// (`:49468-49472`).
-    CharPlay,
+    /// (`:49468-49472`). The card index rides along for the double-click arm
+    /// (`UICharacterListItem.cs:68-69`); the port loads nothing per-entry
+    /// (spec §9.4), so the index is routing information only.
+    CharPlay(usize),
     /// `DeleteButtonClick` (`UICharacterListItem.cs:242-254`): `menuMode = 5`.
     CharDelete(usize),
     /// `GoBackClick`: `menuMode = (!menuMultiplayer) ? 1 : 12`
@@ -120,8 +122,10 @@ pub(crate) enum FlowClick {
     WorldBack,
     /// `PlayGame` (`UIWorldListItem.cs:360-374`): the launch. `WorldGen.
     /// playWorld` + `UIWorldLoad` are the out-of-scope loading flow (spec
-    /// §9.4), so the port closes everything and plays the loaded world.
-    WorldPlay,
+    /// §9.4), so the port closes everything and plays the loaded world. The
+    /// card index rides along for the double-click arm
+    /// (`UIWorldListItem.cs:69`/`:99`) and is routing information only.
+    WorldPlay(usize),
     /// `DeleteButtonClick` (`UIWorldListItem.cs:346-358`): `menuMode = 9`.
     WorldDelete(usize),
     /// `NewWorldClick` (`UIWorldSelect.cs:110-116`): the stand-in world name
@@ -173,13 +177,13 @@ pub(crate) fn next_flow_state(
             None,
             None,
         ),
-        FlowClick::CharPlay => (Some(FrontScreen::WorldSelect), None, None),
+        FlowClick::CharPlay(_) => (Some(FrontScreen::WorldSelect), None, None),
         // `menuMode = 5` clears the 888 state (`Main.cs:51066-51069`'s else
         // branch — `MenuUI.SetState(null)`).
         FlowClick::CharDelete(_) => (None, backup, Some(P::ConfirmDeletePlayer)),
         FlowClick::WorldBack => (Some(FrontScreen::CharSelect), None, None),
         // The launch closes both sides (the loading flow is out of scope).
-        FlowClick::WorldPlay => (None, None, None),
+        FlowClick::WorldPlay(_) => (None, None, None),
         FlowClick::WorldDelete(_) => (None, backup, Some(P::ConfirmDeleteWorld)),
         // `NewWorldClick` (`UIWorldSelect.cs:110-116`): the world creator
         // opens with the stand-in name and the active player's difficulty
@@ -306,15 +310,15 @@ pub(crate) trait FrontScreenBehaviours {
     /// Player" / "Select World"). The creation screens and the keyboard draw
     /// their own title pieces (the keyboard's label is the session's
     /// [`ui::keyboard::Request::label`]), so they have none.
-    fn header(&self) -> &'static str;
+    fn header(&self) -> String;
 
     /// The header's Death-font width (`UITextPanel.cs:126-131`, the
     /// `App::front_header_w` convention) measured over the draw pass — the
     /// select screens' draw prologue.
     fn header_w(&self, d: &FrontDraw<'_>) -> f32 {
         match &d.lookups.death_font {
-            Some(f) => font_width(f, self.header(), 1.0),
-            None => d.renderer.text_width(self.header(), 1.0),
+            Some(f) => font_width(f, &self.header(), 1.0),
+            None => d.renderer.text_width(&self.header(), 1.0),
         }
     }
 
@@ -328,7 +332,17 @@ pub(crate) trait FrontScreenBehaviours {
     /// screen payload mutates through `app.front` (the live slot), the list
     /// screens mutate `App`'s lists; a returned click routes through
     /// [`App::apply_front_flow`].
-    fn click(&self, app: &mut App, screen: Vec2, mouse: Vec2) -> Option<FlowClick>;
+    /// `double_click` is the pointer machine's `DoubleClick` for this press
+    /// (`UserInterface.cs:236-240`) — the same element hit twice inside 500 ms —
+    /// which is what the card tables turn into `PlayGame`
+    /// (`UICharacterListItem.cs:68-69`).
+    fn click(
+        &self,
+        app: &mut App,
+        screen: Vec2,
+        mouse: Vec2,
+        double_click: bool,
+    ) -> Option<FlowClick>;
 
     /// The physical-key path while the screen is live (`Main.GetInputText`
     /// feeding the focused text box). Default: nothing — the keyboard
@@ -337,13 +351,13 @@ pub(crate) trait FrontScreenBehaviours {
 }
 
 impl FrontScreenBehaviours for FrontScreen {
-    fn header(&self) -> &'static str {
+    fn header(&self) -> String {
         match self {
-            FrontScreen::CharSelect => ui::char_select::SELECT_PLAYER,
-            FrontScreen::WorldSelect => ui::world_select::SELECT_WORLD,
+            FrontScreen::CharSelect => ui::char_select::select_player(),
+            FrontScreen::WorldSelect => ui::world_select::select_world(),
             // The creation screens and the keyboard draw their own title
             // pieces; no static `UITextPanel`.
-            _ => "",
+            _ => String::new(),
         }
     }
 
@@ -414,16 +428,22 @@ impl FrontScreenBehaviours for FrontScreen {
         }
     }
 
-    fn click(&self, app: &mut App, screen: Vec2, mouse: Vec2) -> Option<FlowClick> {
+    fn click(
+        &self,
+        app: &mut App,
+        screen: Vec2,
+        mouse: Vec2,
+        double_click: bool,
+    ) -> Option<FlowClick> {
         match self {
             FrontScreen::CharSelect => {
                 let l = ui::char_select::resolved_layout(
                     screen,
-                    app.front_header_w(self.header()),
+                    app.front_header_w(&self.header()),
                     app.players.len(),
                 );
                 let favorites: Vec<bool> = app.players.iter().map(|p| p.is_favorite).collect();
-                match ui::char_select::hit(&l, &favorites, mouse) {
+                match ui::char_select::card_hit(&l, &favorites, mouse, double_click).1 {
                     Some(ui::char_select::CardAction::Back) => Some(FlowClick::CharBack),
                     // `NewCharacterClick` (`:108-114`): a fresh `PendingPlayer`
                     // and the creation screen (`FlowClick::CharNew`).
@@ -434,7 +454,16 @@ impl FrontScreenBehaviours for FrontScreen {
                     Some(ui::char_select::CardAction::Play(i))
                         if app.players.get(i).is_some_and(|p| p.playable) =>
                     {
-                        Some(FlowClick::CharPlay)
+                        Some(FlowClick::CharPlay(i))
+                    }
+                    // `OnLeftDoubleClick += PlayGame`
+                    // (`UICharacterListItem.cs:68-69`): the same card, the
+                    // second press inside 500 ms. Routing only — the port has
+                    // no per-card selection state (spec §9.4).
+                    Some(ui::char_select::CardAction::DoubleClickPlay(i))
+                        if app.players.get(i).is_some_and(|p| p.playable) =>
+                    {
+                        Some(FlowClick::CharPlay(i))
                     }
                     // `FavoriteButtonClick` (`:264-283`): the flag flips and
                     // the list re-orders (`UpdateOrder`). No `.plr` exists to
@@ -461,7 +490,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                label: ui::keyboard::enter_character_name(),
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 20,
@@ -556,7 +585,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         let back = FrontScreen::CharCreation(state);
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                label: ui::keyboard::enter_character_name(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::char_creation::MAX_NAME_LENGTH,
@@ -574,7 +603,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             let back = FrontScreen::CharCreation(state);
                             app.open_keyboard_with_tail(
                                 ui::keyboard::Request {
-                                    label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                    label: ui::keyboard::enter_character_name(),
                                     initial: String::new(),
                                     allow_empty: false,
                                     max_length: ui::char_creation::MAX_NAME_LENGTH,
@@ -686,7 +715,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         // empty even on a renamed draft (`:693`).
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
@@ -716,7 +745,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     Nav::NameAndCreate(draft) => {
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: String::new(),
                                 allow_empty: false,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
@@ -748,11 +777,11 @@ impl FrontScreenBehaviours for FrontScreen {
                 // lives on `char_select` and serves both hit-tests.
                 let l = ui::char_select::resolved_layout(
                     screen,
-                    app.front_header_w(self.header()),
+                    app.front_header_w(&self.header()),
                     app.worlds.len(),
                 );
                 let favorites: Vec<bool> = app.worlds.iter().map(|w| w.is_favorite).collect();
-                match ui::world_select::hit(&l, &favorites, mouse) {
+                match ui::world_select::card_hit(&l, &favorites, mouse, double_click).1 {
                     Some(ui::world_select::CardAction::Back) => Some(FlowClick::WorldBack),
                     // `NewWorldClick` (`:110-116`): the stand-in name reads
                     // `Main.WorldList.Count + 1` and the Journey default reads
@@ -768,7 +797,16 @@ impl FrontScreenBehaviours for FrontScreen {
                     Some(ui::world_select::CardAction::Play(i))
                         if app.worlds.get(i).is_some_and(|w| w.valid) =>
                     {
-                        Some(FlowClick::WorldPlay)
+                        Some(FlowClick::WorldPlay(i))
+                    }
+                    // `OnLeftDoubleClick += PlayGame`
+                    // (`UIWorldListItem.cs:69`/`:99`): the same card, the
+                    // second press inside 500 ms. Routing only — the port has
+                    // no per-card selection state (spec §9.4).
+                    Some(ui::world_select::CardAction::DoubleClickPlay(i))
+                        if app.worlds.get(i).is_some_and(|w| w.valid) =>
+                    {
+                        Some(FlowClick::WorldPlay(i))
                     }
                     // `FavoriteButtonClick` (`:439-458`): `ToggleFavorite`
                     // saves (`FileData.cs:38-40`) and the list re-orders. The
@@ -800,7 +838,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 27,
@@ -912,12 +950,59 @@ impl FrontScreenBehaviours for FrontScreen {
 }
 
 impl App {
+    /// The element id under the pointer on the live front screen — the
+    /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
+    /// machine so its `LastClicked` compares elements and a card's double-click
+    /// is recognised (`UICharacterListItem.cs:68-69`). `None` on the screens
+    /// without element ids (the creation screens and the keyboard) and when no
+    /// front screen is live.
+    pub(crate) fn front_hit(&self) -> Option<u32> {
+        let front = self.front.as_ref()?;
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        match front {
+            FrontScreen::CharSelect => {
+                let header = front.header();
+                let l = ui::char_select::resolved_layout(
+                    screen,
+                    self.front_header_w(&header),
+                    self.players.len(),
+                );
+                let favorites: Vec<bool> = self.players.iter().map(|p| p.is_favorite).collect();
+                ui::char_select::hit_element(&l, &favorites, self.mouse_pos)
+            }
+            FrontScreen::WorldSelect => {
+                let header = front.header();
+                let l = ui::world_select::resolved_layout(
+                    screen,
+                    self.front_header_w(&header),
+                    self.worlds.len(),
+                );
+                let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
+                ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
+            }
+            _ => None,
+        }
+    }
+
     /// One left click on a live front screen: the card-hit table routed into
     /// the flow (`UICharacterSelect.cs:108-133` / `UIWorldSelect.cs:110-135`'s
     /// handlers through the App). The favourite toggles re-order the list like
     /// `FavoriteButtonClick`'s `UpdateOrder` (`UICharacterListItem.cs:280-282`
     /// / `UIWorldListItem.cs:455-458`).
     pub(crate) fn handle_front_click(&mut self) {
+        // `UserInterface.Update`'s click gate (`UserInterface.cs:214-218`): the
+        // press that lands inside the 200 ms window after a screen switch is
+        // dropped, exactly as the C# skips `HandleClick` while
+        // `_clickDisabledTimeRemaining > 0` (`:203-204`).
+        if self.pointer.clicks_disabled() {
+            self.pointer_event = None;
+            return;
+        }
+        // The machine's `DoubleClick` for this press (`:236-240`), consumed
+        // here like the C#'s delegate fires once.
+        let double_click = self.pointer_event == Some(ui::pointer::PointerEvent::DoubleClick);
+        self.pointer_event = None;
         // `FrontScreen` stopped being `Copy` when the keyboard variant grew a
         // payload — the snapshot clones instead of moving out of `self`.
         let Some(front) = self.front.clone() else {
@@ -929,7 +1014,7 @@ impl App {
         let screen = Vec2::new(sw, sh);
         let mouse = self.mouse_pos;
         // The `UIState` dispatch: the live screen owns its `Click_*` table.
-        let click = front.click(self, screen, mouse);
+        let click = front.click(self, screen, mouse, double_click);
         if let Some(click) = click {
             self.apply_front_flow(front, click);
         }
@@ -1044,7 +1129,7 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::CharSelect),
             None,
             None,
-            FlowClick::CharPlay,
+            FlowClick::CharPlay(0),
         );
         assert_eq!(
             (front, backup.is_some(), page.is_some()),
@@ -1080,7 +1165,7 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::WorldSelect),
             None,
             None,
-            FlowClick::WorldPlay,
+            FlowClick::WorldPlay(0),
         );
         assert_eq!(
             (front.is_some(), backup.is_some(), page.is_some()),
@@ -1168,7 +1253,7 @@ pub(crate) mod front_flow_tests {
         // the Task 6 gap, the creation screen joins with Task 7.
         let session = || {
             let request = ui::keyboard::Request {
-                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                label: ui::keyboard::enter_character_name(),
                 initial: String::new(),
                 allow_empty: true,
                 max_length: 20,
@@ -1218,10 +1303,10 @@ pub(crate) mod front_flow_tests {
         let clicks = [
             FlowClick::CharBack,
             FlowClick::CharNew,
-            FlowClick::CharPlay,
+            FlowClick::CharPlay(0),
             FlowClick::CharDelete(0),
             FlowClick::WorldBack,
-            FlowClick::WorldPlay,
+            FlowClick::WorldPlay(0),
             FlowClick::WorldDelete(0),
             FlowClick::WorldNew(0, 0),
             FlowClick::WorldCreateBack,
@@ -1249,6 +1334,36 @@ pub(crate) mod front_flow_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn dw_2_3_a_double_click_press_routes_to_play() {
+        // `UICharacterListItem.cs:68-69`: the second press of the same card
+        // inside 500 ms fires `PlayGame`. The machine's `DoubleClick` reaches
+        // the screen through `App::pointer_event`, and the card table turns it
+        // into the play flow (routing only — the port has no per-card selection
+        // state, spec §9.4).
+        let players = vec![entry("Alpha", true), entry("Beta", true)];
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            players.clone(),
+            Vec::new(),
+        );
+        // The 200 ms entry lockout from `enter_front` must be gone first.
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 2);
+        let c0 = ui::char_select::card_layout(l.list, 0);
+        // The first press on the card body: a plain selection, no card action.
+        app.mouse_pos = Vec2::new(c0.card[0] + c0.card[2] * 0.5, c0.card[1] + c0.card[3] * 0.5);
+        app.pointer_event = Some(ui::pointer::PointerEvent::Down);
+        app.handle_front_click();
+        assert!(app.front_hint.is_none());
+        // The second press, marked `DoubleClick` by the machine: the play flow.
+        app.pointer_event = Some(ui::pointer::PointerEvent::DoubleClick);
+        app.handle_front_click();
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
     }
 
     #[test]
@@ -1399,13 +1514,27 @@ pub(crate) mod front_flow_tests {
             local_id: 0,
             net_timer: 0.0,
             net_state: crate::net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,
             net_status_count: 0,
             net_last_recv: std::time::Instant::now(),
             net_dropped: false,
+            net_npcs: std::collections::HashMap::new(),
+            net_npc_seen: Vec::new(),
+            net_npcs_seen_at: std::collections::HashMap::new(),
+            net_npcs_dirty: false,
+            net_npc_gen: std::collections::HashMap::new(),
+            net_items: std::collections::HashMap::new(),
+            net_items_dirty: false,
+            net_item_last: std::collections::HashMap::new(),
+            net_reserved: std::collections::HashMap::new(),
+            net_ps_last: crate::net::PlayerState::default(),
+            net_beat: 0,
+            net_module_beat: 0,
+            net_ping_at: None,
+            net_rtt_ms: 0,
             join_target: None,
             map: None,
             map_grab: None,
@@ -1418,6 +1547,9 @@ pub(crate) mod front_flow_tests {
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            pointer: ui::pointer::PointerState::default(),
+            pointer_ms: 0.0,
+            pointer_event: None,
             mouse_pos: Vec2::ZERO,
             cursor: ui::cursor::CursorState::default(),
             os_cursor_hidden: None,
@@ -1486,6 +1618,7 @@ pub(crate) mod front_flow_tests {
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
             ambience_rng: 1,
+            clock_rng: 7,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
@@ -1533,7 +1666,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         app.mouse_pos = Vec2::new(l.back[0] + l.back[2] * 0.5, l.back[1] + l.back[3] * 0.5);
@@ -1557,7 +1690,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         let delete = ui::char_select::card_layout(l.list, 0).delete;
@@ -1589,7 +1722,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.front_header_w(&ui::world_select::select_world()),
             app.worlds.len(),
         );
         let delete = ui::world_select::card_layout(l.list, 0, false).delete;
@@ -1645,7 +1778,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.front_header_w(&ui::world_select::select_world()),
             app.worlds.len(),
         );
         let new = l.new;
@@ -1720,7 +1853,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("the name plate opens the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_WORLD_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_world_name());
         assert!(session.request.initial.is_empty(), "the box opens empty");
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 27);
@@ -1798,7 +1931,7 @@ pub(crate) mod front_flow_tests {
     /// `RenameButtonClick` builds (`UICharacterListItem.cs:196-206`).
     fn keyboard_app() -> App {
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            label: ui::keyboard::enter_character_name(),
             initial: "Bob".into(),
             allow_empty: true,
             max_length: 20,
@@ -1829,7 +1962,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         let rename = ui::char_select::card_layout(l.list, 0).rename;
@@ -1838,7 +1971,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("the rename click opens the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_character_name());
         assert_eq!(session.request.initial, "Bob");
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
@@ -1882,7 +2015,7 @@ pub(crate) mod front_flow_tests {
         // `:763-766`: `Main.inputTextEnter && CanSubmit` — an empty text with
         // `allowEmpty: false` keeps the keyboard up; typing fixes it.
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            label: ui::keyboard::enter_character_name(),
             initial: String::new(),
             allow_empty: false,
             max_length: 20,
@@ -1932,7 +2065,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("TR_UI=vk presets the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_character_name());
         assert!(
             session.state.text.is_empty(),
             "the fresh name is empty (`Player.cs:826`)"
@@ -1953,7 +2086,7 @@ pub(crate) mod front_flow_tests {
         // `Close(quiet: true)` tail (`IngameFancyUI.cs:148-156`) closes into
         // gameplay even on the chest<0 no-op (`ChestUI.cs:844-848`).
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_NEW_NAME.into(),
+            label: ui::keyboard::enter_new_name(),
             initial: String::new(),
             allow_empty: false,
             max_length: 20,
@@ -2008,7 +2141,7 @@ pub(crate) mod front_flow_tests {
         let (sw, sh) = app.screen_size();
         let l = ui::char_select::resolved_layout(
             Vec2::new(sw, sh),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         click_creation(&mut app, l.new);
