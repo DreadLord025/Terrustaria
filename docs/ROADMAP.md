@@ -996,10 +996,10 @@ menu flow (`Main.cs:48519-48523`), `Settings.language` under the vanilla `"Langu
 key (`Main.cs:4099`) applied at startup (`Main.cs:4345`, `TR_LANG` = the `-lang` flag),
 plus the font fix the localized strings needed (the shipped `DynamicSpriteFont` parse —
 159 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
-texture array the XNA `SurfaceFormat.Dxt3` path implies). Remaining: the UIState screens (char/world
-creation and select, keyboard) still draw their English labels; the death texts landed
-with slice 3 (`DeathText.*` row families with the `DeathText.{base}_{variant}`
-roll, `Currency.*` coin names, `Game.DroppedCoins`). Font groundwork done in slice 1: the shipped `DynamicSpriteFont` parse — 159
+texture array the XNA `SurfaceFormat.Dxt3` path implies). Slice 3 localized the death
+texts (`DeathText.*` families, `Currency.*`, `Game.DroppedCoins`), slice 4 the front-end
+UIState screens (char/world select + creation, the virtual keyboard). No menu/front-end
+labels remain to localize. Font groundwork done in slice 1: the shipped `DynamicSpriteFont` parse — 159
 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
 texture array the XNA `SurfaceFormat.Dxt3` path implies.
 
