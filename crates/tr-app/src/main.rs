@@ -23,6 +23,7 @@ mod luck;
 mod wiring_stub;
 mod item;
 mod itemdata;
+mod lang;
 mod loot_db;
 mod loot_db_gen;
 mod map;
@@ -48,6 +49,7 @@ mod regen;
 mod research;
 mod sand;
 mod ambience;
+mod chest_gen;
 mod craft;
 mod registry;
 mod variants;
@@ -55,6 +57,7 @@ mod render;
 mod spawner;
 mod settings;
 mod shop;
+mod shimmer;
 mod sound;
 mod test_world_helpers;
 mod town;
@@ -108,15 +111,26 @@ fn main() -> Result<()> {
     log::info!("content: {}", content_dir.display());
     let assets_dir = content_dir.join("Images");
 
+    // `LoadSettings`'s `LanguageManager.SetLanguage(text)` (`Main.cs:4345`):
+    // register the shipped resources and apply the saved culture before the
+    // first menu draws. `TR_LANG` mirrors LaunchInitializer's `-lang` flag
+    // (`LaunchInitializer.cs:120` sets the culture ahead of the config read).
+    let settings = settings::Settings::load();
+    let culture = std::env::var("TR_LANG")
+        .ok()
+        .map(|name| tr_core::localization::GameCulture::from_name(&name))
+        .unwrap_or_else(|| tr_core::localization::GameCulture::from_name(&settings.language));
+    lang::init(culture);
+
     app::log_world_diagnostics(&world);
 
-    let (atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
+    let (atlas, font_atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::new(world, world_path, atlas, lookups, atlas_stats);
+    let mut app = app::App::new(world, world_path, atlas, font_atlas, lookups, atlas_stats);
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
     event_loop.run_app(&mut app)?;

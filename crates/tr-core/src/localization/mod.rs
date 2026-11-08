@@ -171,6 +171,12 @@ impl LanguageManager {
         self.sources.push((resource_name.into(), text.into()));
     }
 
+    /// The registered `(resource name, json text)` pairs — the runtime loader
+    /// probes this to keep from double-registering the same files.
+    pub fn sources(&self) -> &[(String, String)] {
+        &self.sources
+    }
+
     /// `Language`/`Lang.SetGlobalSubstitution`.
     pub fn set_substitution(&mut self, name: impl Into<String>, value: impl Into<Substitution>) {
         self.substitutions.insert(name.into(), value.into());

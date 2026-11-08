@@ -195,7 +195,15 @@ fn square_tile_frame(
         let Some(cell) = world.tile(cx, cy) else {
             continue;
         };
-        if !cell.active() || crate::tileobject::def_for_tile(cell.kind).is_none() {
+        // The vanilla's `TileFrameImportant` runs off `Main.tileFrameImportant`
+        // alone (`WorldGen.cs:81353-81359`) — the frame-important kinds
+        // (the orbs 12/31/639, the altars 26) need no `TileObject` def.
+        let important = world
+            .frame_important
+            .get(cell.kind as usize)
+            .copied()
+            .unwrap_or(false);
+        if !cell.active() || (crate::tileobject::def_for_tile(cell.kind).is_none() && !important) {
             continue;
         }
         // `Check*` re-entrancy guard (`WorldGen.destroyObject`, read at
@@ -384,7 +392,10 @@ struct CheckPlan {
 /// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
 /// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
 /// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
-/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275).
+/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
+/// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
+/// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
+/// `:53129-53139`).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -392,6 +403,9 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         11 => check_door_open(world, x, y),
         13 | 33 | 49 | 78 => check_on_table_1x1(world, x, y),
         29 => check_piggy(world, x, y),
+        // `WorldGen.cs:85249-85252`'s TileFrameImportant arm: 12 (Crimson
+        // Heart), 31 (Shadow Orb), 639 (Mana Crystal).
+        12 | 31 | 639 => check_orb(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
@@ -399,6 +413,9 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
         34 => check_chandelier(world, x, y),
+        // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
+        // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
+        219 | 642 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
@@ -409,6 +426,102 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         185 => check_pile(world, x, y),
         _ => None,
     }
+}
+
+/// `WorldGen.CheckOrb` (`:54169-54344`) — the 2x2 object arm shared
+/// by the Shadow Orb (31), the Crimson Heart (12, the +36 frameX) and
+/// the Mana Crystal (639): the top-left anchor snap, the integrity scan,
+/// the break plan, and the world-state flags (`shadowOrbSmashed =
+/// true`, the shared `shadowOrbCount++`). The 5-way drop tables
+/// (`:54226-54290`) need the two-item `ObjectDrop` extension — the
+/// documented follow-up; the boss-summon edge (`:54294-54321`'s
+/// `count >= 3`) rides the sim pass (the app's `update_npcs` reads the
+/// count delta).
+fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let kind = t.kind;
+    let frame_x = t.frame_x as i32;
+    let frame_y = t.frame_y as i32;
+    // `:54185-54188`'s anchor: the 2x2's top-left — frameX 0/36 is the
+    // left column, 18/54 the right; frameY 18 is the bottom row.
+    let ox = x - (if frame_x == 18 || frame_x == 54 { 1 } else { 0 });
+    let oy = y - (if frame_y != 0 { 1 } else { 0 });
+    let crimson = frame_x >= 36;
+    let mut broken = false;
+    let mut cells = Vec::with_capacity(4);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 2 {
+            cells.push((k, l));
+            let expected_x = (if k == ox { 0 } else { 18 }) + if crimson { 36 } else { 0 };
+            let expected_y = if l == oy { 0 } else { 18 };
+            let ok = world.tile(k, l).is_some_and(|c| {
+                c.active()
+                    && c.kind == kind
+                    && c.frame_x as i32 == expected_x
+                    && c.frame_y as i32 == expected_y
+            });
+            if !ok {
+                broken = true;
+            }
+        }
+    }
+    if !broken {
+        // `:54213-54214`: the intact object returns without a plan — the
+        // break that triggered this check is a different cell.
+        return None;
+    }
+    // `:54226-54290`'s drop switch: the 5-way roll, the forced case 0
+    // until the world's first smash (`:54240`/`:54268`'s `!shadowOrbSmashed`
+    // arm). The port rolls the deterministic position seed (the vanilla's
+    // `Main.rand`); the case-0 Musket Ball stack rolls into the documented
+    // note (the ObjectDrop carries the single item).
+    let mut seed = crate::flame::frame_seed_for(0x5EAF_00D5, ox, oy);
+    let forced = !world.shadow_orb_smashed;
+    let pick = if forced {
+        0
+    } else {
+        crate::flame::random_int(&mut seed, 0, 5)
+    };
+    let item = if crimson {
+        match pick {
+            0 => Some(800),  // The Undertaker
+            1 => Some(1256), // Crimson Rod
+            2 => Some(802),  // The Rotted Fork
+            3 => Some(3062), // Crimson Heart (the pet item)
+            _ => Some(1290), // Panic Necklace
+        }
+    } else if kind == 639 {
+        Some(109) // the Mana Crystal
+    } else {
+        match pick {
+            0 => Some(96),  // The Musket
+            1 => Some(64),  // Vilethorn
+            2 => Some(162), // Ball O' Hurt
+            3 => Some(115), // Shadow Orb (the pet item)
+            _ => Some(111), // Band of Starpower
+        }
+    };
+    // The 2x2's drop position: the orb's centre tile (`Item.NewItem`'s
+    // spawn at the object centre).
+    let cx = ox + 1;
+    let cy = oy + 1;
+    // `:54292-54293`'s flags (outside the drop switch — all three kinds
+    // count toward the same world counter).
+    world.shadow_orb_smashed = true;
+    world.shadow_orb_count += 1;
+    Some(CheckPlan {
+        drop: Some(crate::edit::ObjectDrop {
+            tile_kind: kind,
+            x: cx,
+            y: cy,
+            item,
+        }),
+        cells,
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+    })
 }
 
 /// `WorldGen.Check2x1`'s case-29 arm (`WorldGen.cs:47003-47013`) for the
@@ -454,7 +567,7 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
+        // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
     })
 }
 
@@ -504,7 +617,7 @@ fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_lamp).
+        // floats until a later break (`WorldGen.cs`'s check_lamp).
     })
 }
 
@@ -568,7 +681,7 @@ fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_clock).
+        // floats until a later break (`WorldGen.cs`'s check_clock).
     })
 }
 
@@ -654,11 +767,12 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     // alternate (`flag4`, `WorldGen.cs:46752-46756` — the rope branch is the
     // Dead-Cells jar's, not the lantern's).
     let above = world.tile(x, oy - 1);
-    let platform_ok = above.is_some_and(|a| {
-        a.active() && (td::SET_PLATFORMS.has(a.kind) || a.kind == 380)
-    });
+    let platform_ok =
+        above.is_some_and(|a| a.active() && (td::SET_PLATFORMS.has(a.kind) || a.kind == 380));
     let solid_ok = above.is_some_and(|a| {
-        (a.active() || a.has_any_liquid()) && td::TILE_SOLID.has(a.kind) && !td::TILE_SOLID_TOP.has(a.kind)
+        (a.active() || a.has_any_liquid())
+            && td::TILE_SOLID.has(a.kind)
+            && !td::TILE_SOLID_TOP.has(a.kind)
     });
     if !platform_ok && !solid_ok {
         broken = true;
@@ -678,7 +792,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_lantern).
+        // floats until a later break (`WorldGen.cs`'s check_lantern).
     })
 }
 
@@ -706,7 +820,11 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     for k in ox..ox + 4 {
         for l in oy..oy + 2 {
             region.push((k, l));
-            let fx = if second_col { (k - ox + 4) * 18 } else { (k - ox) * 18 };
+            let fx = if second_col {
+                (k - ox + 4) * 18
+            } else {
+                (k - ox) * 18
+            };
             let expected = (fx as i16, ((l - oy) * 18 + style_row * 36) as i16);
             if world
                 .tile(k, l)
@@ -804,7 +922,76 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+        // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+    })
+}
+
+/// `WorldGen.Check3x3`'s bottom-support arm (`WorldGen.cs:53059-53158`) —
+/// the group the C# lists at `:53114` (106/212/219/220/228/231/243/247/283,
+/// 300-308, 354/355/406/412/452/455/491/642/733): the nine cells must carry
+/// the matching kind and the style frames, and all three cells of the row
+/// below the object must be `SolidTileAllowBottomSlope` (`:53116-53127`).
+/// Otherwise `destroyObject` kills the whole 3x3 and the object's item drops at
+/// the trigger cell (`:53159-53175`, 219 → 997, 642 → 5296). The frame check is
+/// the same math `check_chandelier` ports.
+fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let mut style_col = t.frame_x as i32 / 18;
+    let mut sx = 0i32;
+    while style_col >= 3 {
+        style_col -= 3;
+        sx += 1;
+    }
+    let ox = x - style_col;
+    let style_x = 54 * sx;
+    let style_row = t.frame_y as i32 / 54;
+    let oy = y - (t.frame_y as i32 % 54 / 18);
+    let mut broken = false;
+    let mut region = Vec::with_capacity(9);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 3 {
+            region.push((k, l));
+            let expected = (
+                ((k - ox) * 18 + style_x) as i16,
+                ((l - oy) * 18 + style_row * 54) as i16,
+            );
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+    }
+    // `:53116-53127` — the three cells below the object.
+    for n in ox..ox + 3 {
+        let supported = world.tile(n, oy + 3).is_some_and(|c| {
+            (c.active() || c.has_any_liquid())
+                && td::TILE_SOLID.has(c.kind)
+                && !td::TILE_SOLID_TOP.has(c.kind)
+        });
+        if !supported {
+            broken = true;
+            break;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            // `:53170-53175` — the item per tile kind (219 → 997, 642 → 5296).
+            item: Some(if kind == 219 { 997 } else { 5296 }),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
 
@@ -844,7 +1031,9 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     // `:53117-53124`: the ceiling anchor above the origin column.
     let ceil = world.tile(ox + 1, oy - 1);
     let ceil_ok = ceil.is_some_and(|c| {
-        (c.active() || c.has_any_liquid()) && td::TILE_SOLID.has(c.kind) && !td::TILE_SOLID_TOP.has(c.kind)
+        (c.active() || c.has_any_liquid())
+            && td::TILE_SOLID.has(c.kind)
+            && !td::TILE_SOLID_TOP.has(c.kind)
     });
     if !ceil_ok {
         broken = true;
@@ -864,7 +1053,7 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_chandelier).
+        // floats until a later break (`WorldGen.cs`'s check_chandelier).
     })
 }
 
@@ -929,7 +1118,7 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_door_closed).
+        // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
 }
 
@@ -978,7 +1167,7 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_door_open).
+        // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
 }
 
@@ -1045,10 +1234,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
                 } else if let Some(g) = world.tile(k, oy + rows).filter(|g| g.active()) {
                     match style {
                         26..=31 => {
-                            if !(td::SET_ICES_SNOW.has(g.kind)
-                                || g.kind == 162
-                                || g.kind == 224)
-                            {
+                            if !(td::SET_ICES_SNOW.has(g.kind) || g.kind == 162 || g.kind == 224) {
                                 broken = true;
                             }
                         }
@@ -1197,7 +1383,7 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_chair).
+        // floats until a later break (`WorldGen.cs`'s check_chair).
     })
 }
 
@@ -1236,7 +1422,7 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_bench).
+        // floats until a later break (`WorldGen.cs`'s check_bench).
     })
 }
 
@@ -1291,7 +1477,7 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s check_chest).
+        // floats until a later break (`WorldGen.cs`'s check_chest).
     })
 }
 
@@ -1319,8 +1505,7 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
     };
     t.active()
         && td::TILE_SOLID.has(t.kind)
-        && ((td::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope()))
-            || t.slope() == 0)
+        && ((td::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope())) || t.slope() == 0)
         && !t.half_brick()
         && crate::tileobject::nactive(t)
 }
@@ -1542,9 +1727,9 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
     let left = world.tile(ox, y);
     let right = world.tile(ox + 1, y);
     // :47000-47006 — the pair intact.
-    let mut broken = !right.is_some_and(|c| {
-        c.frame_x == left.map(|l| l.frame_x).unwrap_or(i16::MIN) + 18
-    }) || !left.is_some_and(|c| c.active() && c.kind == kind)
+    let mut broken = !right
+        .is_some_and(|c| c.frame_x == left.map(|l| l.frame_x).unwrap_or(i16::MIN) + 18)
+        || !left.is_some_and(|c| c.active() && c.kind == kind)
         || !right.is_some_and(|c| c.active() && c.kind == kind);
     // :47026-47031 — the default support arm.
     if !solid_tile_allow_bottom_slope(world, ox, y + 1)
@@ -1555,12 +1740,11 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
     if kind == 185 {
         // :47041-47048 — the grass-covered variants revert on non-dirt
         // ground (both columns).
-        let ground_not_dirt =
-            |world: &World, dx: i32| {
-                world
-                    .tile(ox + dx, y + 1)
-                    .is_none_or(|g| !matches!(g.kind, 2 | 477 | 492))
-            };
+        let ground_not_dirt = |world: &World, dx: i32| {
+            world
+                .tile(ox + dx, y + 1)
+                .is_none_or(|g| !matches!(g.kind, 2 | 477 | 492))
+        };
         if left.is_some_and(|c| (1368..=1458).contains(&i32::from(c.frame_x)))
             && ground_not_dirt(world, 0)
             && ground_not_dirt(world, 1)
@@ -1655,8 +1839,7 @@ fn anchor_valid_table(below: &Tile) -> bool {
     if td::TILE_SOLID.has(below.kind) && td::TILE_SOLID_TOP.has(below.kind) {
         return true;
     }
-    crate::tileobject::is_table(below.kind)
-        && crate::tileobject::block_type(below) == 0
+    crate::tileobject::is_table(below.kind) && crate::tileobject::block_type(below) == 0
 }
 
 /// `WorldGen.CheckOnTable1x1` (`WorldGen.cs:43503-43546`) — the dispatch
@@ -1697,8 +1880,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         true // :43525-43528
     } else {
         // :43530-43532 — the table anchors survive before the type test.
-        if anchor_valid_table(&below)
-            || (below.active() && crate::tileobject::is_table(below.kind))
+        if anchor_valid_table(&below) || (below.active() && crate::tileobject::is_table(below.kind))
         {
             return None;
         }
@@ -2029,10 +2211,7 @@ pub fn place_alch(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     // `nactive()` — active and not actuated (`Tile.nactive`, `Tile.cs:240-246`;
     // wiring actuation keeps `FLAG_ACTIVE` and sets `FLAG_INACTIVE`) — and flat
     // (`!halfBrick() && slope() == 0`).
-    if herb.active()
-        || !crate::tileobject::nactive(&soil)
-        || soil.half_brick()
-        || soil.slope() != 0
+    if herb.active() || !crate::tileobject::nactive(&soil) || soil.half_brick() || soil.slope() != 0
     {
         return false;
     }
@@ -2067,8 +2246,8 @@ pub fn place_alch(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     cell.frame_x = (18 * style) as i16;
     cell.frame_y = 0;
     cell.set_paint(soil.paint());
-    cell.flags = (cell.flags & !crate::tile::FLAG_FULLBRIGHT)
-        | (soil.flags & crate::tile::FLAG_FULLBRIGHT);
+    cell.flags =
+        (cell.flags & !crate::tile::FLAG_FULLBRIGHT) | (soil.flags & crate::tile::FLAG_FULLBRIGHT);
     touch(world, x, y);
     // `Main.tileFrameImportant[82..84]` are boot statics (`Main.cs:7685-7687`);
     // mirror all three so the re-frame below keeps the fresh herb and any
@@ -2189,6 +2368,14 @@ pub enum TileInteraction {
     /// changes and no sound plays. No object drops — the dial arms kill no
     /// tiles.
     DialRefused,
+    /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
+    /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
+    /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
+    /// held-item swing cadence rather than the click edge; the app-side arm in
+    /// `world_sim/extract.rs` owns the held-item gate, the roll, the drop and
+    /// the consumption). No world write here — the extraction only consumes the
+    /// held item and spawns the output.
+    Extractinator,
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -2359,9 +2546,21 @@ pub fn interact_at(
                 text: format!("{num45}:{num46:02} {am_pm}"),
             }
         }
+        crate::tileobject::Interaction::Extractinator => {
+            // The extractinator tiles (219/642) — the C# arm is not part of
+            // `TileInteractionsUse`'s chain at all: it lives in the held-item
+            // `PlaceThing` path (`Player.cs:39591`, `PlaceThing_ItemInExtractinator`
+            // `:41665-41697`), which fires on the swing's action ticks. The
+            // dispatch here only tells the caller the tile IS an extractinator
+            // (the C# chain tests the kind literals, `:41669`/`:41691`), so the
+            // app-layer arm can gate on the held item before consuming the tick.
+            // No world change: vanilla only consumes the held item and spawns
+            // the output at the cursor (`ExtractinatorUse` `:42072-42079`,
+            // `DropItemFromExtractinator` `:42081-42089`).
+            TileInteraction::Extractinator
+        }
         crate::tileobject::Interaction::None => TileInteraction::None,
-        crate::tileobject::Interaction::Door => {
-            let mut drops = Vec::new();
+        crate::tileobject::Interaction::Door => {            let mut drops = Vec::new();
             if t.kind == 10 {
                 // The closed-door branch (`Player.cs:32835-32856`): open with
                 // the player's facing; while the tile is still a closed door,
@@ -4425,6 +4624,59 @@ mod tests {
         }
     }
 
+    /// A 40x40 world with a placed 3x3 extractinator at origin (9, 17)
+    /// (tile 219) — the registry route, so the frames come from
+    /// `TileObject.Place`.
+    fn extractinator_world() -> World {
+        let mut w = World::new("e".into(), 40, 40);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let def = crate::tileobject::def_for_tile(219).unwrap();
+        let inst = crate::tileobject::can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        assert!(crate::tileobject::place(&mut w, &inst));
+        // Clear the floor cells the object now covers is NOT done by Place; the
+        // object's own cells are what the dispatch reads.
+        w
+    }
+
+    #[test]
+    fn test_M7_EXTRACT_1_interact_at_dispatches_the_extractinators() {
+        // M7-EXTRACT-1: both extractinator tiles (219/642) answer the dispatch
+        // (`Player.cs:41669`/`:41691`'s kind literals) with the new bare
+        // variant — no world change; the held-item semantics are the app's.
+        let mut w = extractinator_world();
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 11, 18, 1, &blocked),
+            TileInteraction::Extractinator
+        ));
+        // The cells keep their frames (the extraction only consumes the item).
+        let t = w.tile(11, 18).unwrap();
+        // (11, 18) is the object's middle row, right column of the (9, 17)
+        // origin — frames (36, 18), untouched by the dispatch.
+        assert_eq!((t.kind, t.frame_x, t.frame_y), (219, 36, 18));
+        // An unrelated tile (the stone floor below) is still `None` (the
+        // registry gate) — but every cell of the object answers Extractinator,
+        // the way the C# kind test does.
+        assert!(matches!(
+            interact_at(&mut w, 9, 17, 1, &blocked),
+            TileInteraction::Extractinator
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 5, 20, 1, &blocked),
+            TileInteraction::None
+        ));
+    }
+
     #[test]
     fn test_DW_4_1_interact_at_dispatches_door_kinds() {
         let mut w = closed_door_world();
@@ -6140,5 +6392,92 @@ mod tests {
             TileInteraction::None
         ));
         assert!(!w.fast_forward_to_dawn);
+    }
+    #[test]
+    fn the_orb_break_sets_the_world_flag_and_count() {
+        // `WorldGen.CheckOrb` (`:54169-54344`): the 2x2 integrity scan,
+        // the smash flag + the shared counter. The third break rides the
+        // app's summon edge.
+        use crate::worldgen::evil::{TILE_SHADOW_ORB, add_shadow_orb};
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        // The frame-important bits ride the generated world's pipeline
+        // init () — the direct-built test world sets
+        // them by hand.
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[31] = true;
+        w.frame_important[12] = true;
+        w.frame_important[639] = true;
+        add_shadow_orb(&mut w, 100, 100, false);
+        // The first hit on any member breaks the whole 2x2 — the C#'s
+        // `CheckOrb` integrity scan (`:54200-54213`) re-kills the rest
+        // and raises the flags at once (`:54292-54293`).
+        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        let _ = kill;
+        assert!(w.shadow_orb_smashed, "the smash flag");
+        assert_eq!(w.shadow_orb_count, 1, "the shared counter");
+        // A second hit on the already-broken object does not re-flag.
+        let _ = super::kill_tile(&mut w, 100, 100, true);
+        assert_eq!(
+            w.shadow_orb_count, 1,
+            "the broken object holds its single count"
+        );
+        // The tiles are gone.
+        assert!(!w.tile(100, 100).unwrap().active());
+    }
+
+    #[test]
+    fn the_first_smash_forced_gun_and_the_roll_table() {
+        // `:54240`/`:54268`'s forced case 0: the FIRST smash in the world
+        // always drops the Musket (96); after the flag sets the 5-way
+        // roll takes over (the table's ids 96/64/162/115/111).
+        use crate::worldgen::evil::add_shadow_orb;
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[31] = true;
+        w.frame_important[12] = true;
+        w.frame_important[639] = true;
+        add_shadow_orb(&mut w, 100, 100, false);
+        // no_item = false — the drop flows (the frame walk pushes the
+        // plan's drop only when the drops are not suppressed).
+        let kill = super::kill_tile(&mut w, 99, 99, false).expect("the break");
+        let drop = kill.object_drops.first().copied().expect("the drop");
+        assert_eq!(drop.item, Some(96), "the forced gun on the first smash");
+        // A second orb (the flag now set) rolls the table.
+        add_shadow_orb(&mut w, 140, 100, false);
+        let kill2 = super::kill_tile(&mut w, 139, 99, false).expect("the second break");
+        let drop2 = kill2
+            .object_drops
+            .first()
+            .copied()
+            .expect("the rolled drop");
+        assert!(
+            matches!(
+                drop2.item,
+                Some(96) | Some(64) | Some(162) | Some(115) | Some(111)
+            ),
+            "the 5-way table item: {:?}",
+            drop2.item
+        );
+        assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
     }
 }

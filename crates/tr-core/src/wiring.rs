@@ -3914,6 +3914,27 @@ mod trap_tests {
         assert!(wiring.take_trap_requests().is_empty());
     }
 
+    fn put_device(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The trigger switch two tiles left, wired red (`put_trap`'s shape).
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
     #[test]
     fn the_spear_variant_requests_the_capped_spawn() {
         // Variant 3 (frameY 54): a `Spear` request with the ±1 px spread

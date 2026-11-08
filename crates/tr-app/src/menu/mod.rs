@@ -828,9 +828,9 @@ impl Menu {
         // The six labels at scale 0.5 (`Main.cs:51489-51525`): the three names
         // and their percentages, 90 px right of the names (`:51502`, `:51506`,
         // `:51511`).
-        border_string_four_way(r, font, label_x, 350.0, label, "Sound:"); // [98] (`:51490`)
-        border_string_four_way(r, font, label_x, 320.0, label, "Music:"); // [99] (`:51494`)
-        border_string_four_way(r, font, label_x, 380.0, label, "Ambient:"); // [119] (`:51497`)
+        border_string_four_way(r, font, label_x, 350.0, label, &crate::lang::menu(98)); // [98] (`:51490`)
+        border_string_four_way(r, font, label_x, 320.0, label, &crate::lang::menu(99)); // [99] (`:51494`)
+        border_string_four_way(r, font, label_x, 380.0, label, &crate::lang::menu(119)); // [119] (`:51497`)
         border_string_four_way(
             r,
             font,
@@ -1207,64 +1207,78 @@ mod tests {
 
     #[test]
     fn main_menu_has_the_seven_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let items = menu(Page::Main).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Single Player",
-                "Multiplayer",
-                "Achievements",
-                "Resource Packs",
-                "Settings",
-                "Credits",
-                "Exit"
-            ]
-        );
+        // The rows resolve `Lang.menu[12]`/`[13]`/`[131]`, `UI.ResourcePacks`,
+        // `Lang.menu[14]`, `UI.Credits`, `Lang.menu[15]` (`Main.cs:48908-48971`)
+        // — compared against the same `lang::` reads, so the pin holds with or
+        // without the shipped resources.
+        let expected = [
+            crate::lang::menu(12),
+            crate::lang::menu(13),
+            crate::lang::menu(131),
+            crate::lang::text("UI.ResourcePacks"),
+            crate::lang::menu(14),
+            crate::lang::text("UI.Credits"),
+            crate::lang::menu(15),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         assert!(items.iter().all(|i| i.scale == 1.0));
     }
 
     #[test]
     fn settings_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let items = menu(Page::Settings).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            ["General", "Interface", "Video", "Volume", "Cursor", "Controls", "Language", "Back"]
-        );
+        let expected = [
+            crate::lang::menu(114),
+            crate::lang::menu(210),
+            crate::lang::menu(63),
+            crate::lang::menu(65),
+            crate::lang::menu(218),
+            crate::lang::menu(219),
+            crate::lang::menu(103),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         assert!(items.iter().all(|i| i.scale == 0.75));
         assert_eq!(items[7].y, 8.0, "array4[num5 - 1] = 8");
     }
 
     #[test]
     fn general_rows_are_toggles_with_state_labels() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let mut m = menu(Page::General);
         assert_eq!(m.items().len(), 6);
-        assert_eq!(m.items()[0].label, "Autosave On");
+        assert_eq!(m.items()[0].label, crate::lang::menu(67));
         m.settings.auto_save = false;
-        assert_eq!(m.items()[0].label, "Autosave Off");
+        assert_eq!(m.items()[0].label, crate::lang::menu(68));
         assert_eq!(m.items()[5].y, 18.0, "array4[num5 - 1] = 18");
     }
 
     #[test]
     fn interface_screen_has_twelve_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let m = menu(Page::Interface);
         let items = m.items();
         assert_eq!(items.len(), 12);
         assert!(items[..11].iter().all(|i| i.scale == 0.6));
-        assert_eq!(items[11].label, "Back");
+        assert_eq!(items[11].label, crate::lang::menu(5));
         assert_eq!(items[11].y, 16.0);
     }
 
     #[test]
     fn video_screen_leaves_back_at_scale_one() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let m = menu(Page::Video);
         let items = m.items();
         assert_eq!(items.len(), 12);
         assert!(items[..11].iter().all(|i| i.scale == 0.6));
         // The original only sets `array7` for the first ten rows; our Zoom row
         // shares their 0.6 scale, so only Back keeps 1.0.
-        assert_eq!(items[11].label, "Back");
+        assert_eq!(items[11].label, crate::lang::menu(5));
         assert_eq!(items[11].scale, 1.0);
         assert_eq!(items[11].y, 8.0);
     }
@@ -1389,11 +1403,13 @@ mod tests {
 
     #[test]
     fn volume_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50362-50380`: `array9 = ["", Lang.menu[65], Lang.menu[5]]`,
         // `array4 = [0, 10, 250]`, `array[1] = true`.
         let items = menu(Page::Volume).items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["", "Volume", "Back"]);
+        let expected = ["".to_string(), crate::lang::menu(65), crate::lang::menu(5)];
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 10.0, 250.0]);
         assert!(items[1].header, "array[1] = true");
@@ -1406,11 +1422,13 @@ mod tests {
 
     #[test]
     fn parallax_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50381-50400`: `array9 = ["", Lang.menu[52], Lang.menu[5]]`,
         // `array4 = [0, 10, 170]`, `array[1] = true`.
         let items = menu(Page::Parallax).items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["", "Parallax", "Back"]);
+        let expected = ["".to_string(), crate::lang::menu(52), crate::lang::menu(5)];
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 10.0, 170.0]);
         assert!(items[1].header, "array[1] = true");
@@ -1543,6 +1561,7 @@ mod tests {
 
     #[test]
     fn cursor_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50242-50317`: `num5 = 7`, `array4[6] = 18`, every `array7`
         // 0.73. The defaults column: a fresh `Menu` shows Toggle [121] (the
         // `:67178` default) and Disabled [216] (the `Player.cs:331` default).
@@ -1551,19 +1570,17 @@ mod tests {
         // FocusTarget to ThreeDS (`Main.cs:4496-4505`), so a fresh boot never
         // sits on FocusTarget.
         let items = menu(Page::Cursor).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Cursor Color",
-                "Border Color",
-                "Smart Cursor Mode: Toggle",
-                "Smart Cursor Priority: Pickaxe → Axe",
-                "Smart Block Placement: Disabled",
-                "Lock On Priority: Clearest Line",
-                "Back",
-            ]
-        );
+        let expected = [
+            crate::lang::menu(64),
+            crate::lang::menu(217),
+            crate::lang::menu(121),
+            crate::lang::menu(213),
+            crate::lang::menu(216),
+            crate::lang::menu(234),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 18.0]);
         assert!(items.iter().all(|i| i.scale == 0.73));
@@ -1576,23 +1593,27 @@ mod tests {
         m.settings.smart_blocks = true;
         m.settings.lock_on_priority = 1;
         let labels: Vec<String> = m.items().iter().map(|i| i.label.clone()).collect();
-        assert_eq!(labels[2], "Smart Cursor Mode: Hold");
-        assert_eq!(labels[3], "Smart Cursor Priority: Axe → Pickaxe");
-        assert_eq!(labels[4], "Smart Block Placement: To Cursor");
-        assert_eq!(labels[5], "Lock On Priority: Target Closest");
+        assert_eq!(labels[2], crate::lang::menu(122));
+        assert_eq!(labels[3], crate::lang::menu(214));
+        assert_eq!(labels[4], crate::lang::menu(215));
+        assert_eq!(labels[5], crate::lang::menu(233));
     }
 
     #[test]
     fn colour_screens_match_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50318-50339` / `:50340-50361`: `num5 = 3`,
         // `array9 = ["", Lang.menu[64]/[217], Lang.menu[5]]`,
         // `array4 = [0, 10, 250]`, `array[1] = true`; Back opens 1125.
-        for (page, header) in
-            [(Page::CursorColor, "Cursor Color"), (Page::BorderColor, "Border Color")]
-        {
+        for (page, header) in [
+            (Page::CursorColor, crate::lang::menu(64)),
+            (Page::BorderColor, crate::lang::menu(217)),
+        ] {
             let items = menu(page).items();
-            let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-            assert_eq!(labels, ["", header, "Back"]);
+            let expected: Vec<String> =
+                vec!["".to_string(), header, crate::lang::menu(5)];
+            let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+            assert_eq!(labels, expected);
             let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
             assert_eq!(ys, [0.0, 10.0, 250.0]);
             assert!(items[1].header, "array[1] = true");
@@ -1631,6 +1652,7 @@ mod tests {
 
     #[test]
     fn lock_on_cycles_to_target_closest_not_focus_target() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `LockOnHelper.CycleUseModes` (`LockOnHelper.cs:103-116`): FocusTarget
         // → TargetClosest → ThreeDS → TargetClosest — the vanilla quirk pins
         // the third hop to 1, not 0.
@@ -1645,16 +1667,17 @@ mod tests {
             m.settings.lock_on_priority, 1,
             "ThreeDS cycles to TargetClosest, not FocusTarget"
         );
-        assert_eq!(m.items()[5].label, "Lock On Priority: Target Closest");
+        assert_eq!(m.items()[5].label, crate::lang::menu(233));
     }
 
     #[test]
     fn smart_cursor_rows_flip_their_settings() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50273-50275` / `:50282-50284` / `:50287-50289`.
         let mut m = menu(Page::Cursor);
         m.activate(2);
         assert!(!m.settings.smart_cursor_toggle);
-        assert_eq!(m.items()[2].label, "Smart Cursor Mode: Hold");
+        assert_eq!(m.items()[2].label, crate::lang::menu(122));
         m.activate(3);
         assert!(m.settings.smart_axe_first);
         m.activate(4);
@@ -1767,23 +1790,22 @@ mod tests {
 
     #[test]
     fn resolution_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50169-50241`: `num2 = 210`, `num4 = 55` (`:50175-50176`),
         // every `array7` 0.85 (`:50170-50174`); `array4 = 100` on Apply
         // (`:50212`) and Back (`:50230`). The pending resolution mirrors the
         // current window (`:66399-66400`), so a fresh `Menu` reads the
         // 1600x900 reference frame.
         let items = menu(Page::Resolution).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Fullscreen Resolution: 1600x900",
-                "Borderless Window: Disabled",
-                "Go Fullscreen",
-                "Apply",
-                "Back",
-            ]
-        );
+        let expected = [
+            format!("{}: 1600x900", crate::lang::menu(73)),
+            crate::lang::menu(246),
+            crate::lang::menu(50),
+            crate::lang::menu(134),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 0.0, 0.0, 100.0, 100.0]);
         assert!(items.iter().all(|i| i.scale == 0.85));
@@ -1810,15 +1832,17 @@ mod tests {
 
     #[test]
     fn resolution_row_tracks_the_window_size() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50178` concatenates the pending resolution; the port's
         // `screen_size` refreshes from the draw target (`:66399-66400`).
         let mut m = menu(Page::Resolution);
         m.screen_size = Vec2::new(1280.0, 720.0);
-        assert_eq!(m.items()[0].label, "Fullscreen Resolution: 1280x720");
+        assert_eq!(m.items()[0].label, format!("{}: 1280x720", crate::lang::menu(73)));
     }
 
     #[test]
     fn effects_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50097-50168`: `num2 = 210`, `num4 = 28`, `num5 = 9` with
         // `array4[num5 - 1] = 24` (`:50099-50102`) — but `array9[8]` stays
         // null and the item loop skips it (`Main.cs:51654`), so there are
@@ -1827,20 +1851,18 @@ mod tests {
         let m = menu(Page::Effects);
         let items = m.items();
         assert_eq!(items.len(), 8, "the phantom ninth row is skipped");
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Effects",
-                "Storm Effects: Enabled",
-                "Sunlight Effects: Enabled",
-                "Heat Distortion: Enabled",
-                "Waves Quality: High",
-                "Screen Shake: Enabled",
-                "Thunder Effects: On",
-                "Back",
-            ]
-        );
+        let expected = [
+            crate::lang::text("UI.Effects"),
+            crate::lang::text_args("GameUI.StormEffects", &[crate::lang::text("GameUI.Enabled")]),
+            crate::lang::text_args("GameUI.ForegroundSunlightEffects", &[crate::lang::text("GameUI.Enabled")]),
+            crate::lang::text_args("GameUI.HeatDistortion", &[crate::lang::text("GameUI.Enabled")]),
+            crate::lang::text_args("GameUI.WaveQuality", &[crate::lang::text("GameUI.QualityHigh")]),
+            crate::lang::text_args("GameUI.ScreenShake", &[crate::lang::text("GameUI.Enabled")]),
+            crate::lang::text("UI.FlashyEffectsWorldOn"),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [-8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         // `array7` 0.6 with the header at 0.7 (`Main.cs:50103-50110`).
@@ -1858,38 +1880,39 @@ mod tests {
 
     #[test]
     fn effects_rows_toggle_the_six_settings() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50117`, `:50124`, `:50131`, `:50154`, `:50161` flip the
         // flags; `:50144` cycles `WaveQuality = (q + 1) % 4`.
         let mut m = menu(Page::Effects);
         m.activate(1);
         assert!(!m.settings.use_storm_effects);
-        assert_eq!(m.items()[1].label, "Storm Effects: Disabled");
+        assert_eq!(m.items()[1].label, crate::lang::text_args("GameUI.StormEffects", &[crate::lang::text("GameUI.Disabled")]));
         m.activate(2);
         assert!(!m.settings.foreground_sunlight);
-        assert_eq!(m.items()[2].label, "Sunlight Effects: Disabled");
+        assert_eq!(m.items()[2].label, crate::lang::text_args("GameUI.ForegroundSunlightEffects", &[crate::lang::text("GameUI.Disabled")]));
         m.activate(3);
         assert!(!m.settings.use_heat_distortion);
-        assert_eq!(m.items()[3].label, "Heat Distortion: Disabled");
+        assert_eq!(m.items()[3].label, crate::lang::text_args("GameUI.HeatDistortion", &[crate::lang::text("GameUI.Disabled")]));
         m.activate(5);
         assert!(!m.settings.use_screen_shake);
-        assert_eq!(m.items()[5].label, "Screen Shake: Disabled");
+        assert_eq!(m.items()[5].label, crate::lang::text_args("GameUI.ScreenShake", &[crate::lang::text("GameUI.Disabled")]));
         m.activate(6);
         assert!(!m.settings.flashy_effects_world);
-        assert_eq!(m.items()[6].label, "Thunder Effects: Reduced");
+        assert_eq!(m.items()[6].label, crate::lang::text("UI.FlashyEffectsWorldOff"));
         // The wave cycle: 3 High -> 0 Off -> 1 Low -> 2 Medium -> 3 High.
         assert_eq!(m.settings.wave_quality, 3);
         m.activate(4);
         assert_eq!(m.settings.wave_quality, 0);
-        assert_eq!(m.items()[4].label, "Waves Quality: Off");
+        assert_eq!(m.items()[4].label, crate::lang::text_args("GameUI.WaveQuality", &[crate::lang::text("GameUI.QualityOff")]));
         m.activate(4);
         assert_eq!(m.settings.wave_quality, 1);
-        assert_eq!(m.items()[4].label, "Waves Quality: Low");
+        assert_eq!(m.items()[4].label, crate::lang::text_args("GameUI.WaveQuality", &[crate::lang::text("GameUI.QualityLow")]));
         m.activate(4);
         assert_eq!(m.settings.wave_quality, 2);
-        assert_eq!(m.items()[4].label, "Waves Quality: Medium");
+        assert_eq!(m.items()[4].label, crate::lang::text_args("GameUI.WaveQuality", &[crate::lang::text("GameUI.QualityMedium")]));
         m.activate(4);
         assert_eq!(m.settings.wave_quality, 3);
-        assert_eq!(m.items()[4].label, "Waves Quality: High");
+        assert_eq!(m.items()[4].label, crate::lang::text_args("GameUI.WaveQuality", &[crate::lang::text("GameUI.QualityHigh")]));
         // Back opens 1111 (`Main.cs:50169`).
         m.activate(7);
         assert_eq!(m.page, Page::Video);
@@ -1897,16 +1920,19 @@ mod tests {
 
     #[test]
     fn language_screen_lists_the_twelve_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48493-48535`: the `Lang.menu[102]` header (`array4[0] =
-        // -20`, `array7` 0.85), the twelve `Language.*` rows at 0.65, then
-        // Back (`array4[13] = 9`, `array7` 0.8) — draw y `200 + 26*13 + 9` =
-        // 547 (`:48510`, `:48525-48534`).
+        // -20`, `array7` 0.85), the twelve `Language.GetTextValue` rows at
+        // 0.65, then Back (`array4[13] = 9`, `array7` 0.8) — draw y
+        // `200 + 26*13 + 9` = 547 (`:48510`, `:48525-48534`).
         let m = menu(Page::Language);
         let items = m.items();
         assert_eq!(items.len(), 14);
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(&labels[..13], &["Select language", "English", "Deutsch (German)", "Italiano (Italian)", "Français (French)", "Español (Spanish)", "Русский (Russian)", "简体中文 (Simplified Chinese)", "Português brasileiro (Brazilian Portuguese)", "Polski (Polish)", "日本語 (Japanese)", "한국어 (Korean)", "繁體中文 (Traditional Chinese)"]);
-        assert_eq!(labels[13], "Back");
+        let mut expected = vec![crate::lang::menu(102)];
+        expected.extend(crate::lang::cultures().iter().map(|c| crate::lang::text(c.language_key())));
+        let labels: Vec<String> = items.iter().take(13).map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
+        assert_eq!(items[13].label, crate::lang::menu(5));
         assert!(items[0].header);
         assert_eq!(items[0].scale, 0.85);
         assert_eq!(items[0].y, -20.0);
@@ -1920,13 +1946,16 @@ mod tests {
         assert_eq!(draw_y(0), 180.0);
         assert_eq!(draw_y(1), 226.0);
         assert_eq!(draw_y(13), 547.0);
-        // Language rows show the notice (the original calls
-        // `LanguageManager.SetLanguage`, `Main.cs:48519-48523`); Back opens 11
-        // (`:48512-48517`).
+        // A language row calls `LanguageManager.SetLanguage(selectedMenu)`
+        // (`Main.cs:48519-48523`) and the page stays up — the rows redraw in
+        // the chosen culture; Back opens 11 (`:48512-48517`).
+        let before = crate::lang::active_culture();
         let mut m = menu(Page::Language);
         m.activate(1);
-        assert!(m.hint.is_some());
+        assert_eq!(crate::lang::active_culture(), tr_core::localization::GameCulture::from_legacy_id(1));
+        assert!(m.hint.is_none());
         assert_eq!(m.page, Page::Language);
+        crate::lang::set_language(before);
         m.activate(13);
         assert_eq!(m.page, Page::Settings);
         assert!(m.hint.is_none());
@@ -1934,6 +1963,7 @@ mod tests {
 
     #[test]
     fn language_initial_picker_differs_from_the_language_screen() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48458-48491`: the same header and twelve rows but
         // `num4 = 30` (`:48462`), no Back row, `array7[0] = 1f` (`:48483`) —
         // versus 1213's `num4 = 26`, header 0.85, Back 0.8 (`:48525-48534`).
@@ -1943,7 +1973,10 @@ mod tests {
         assert_eq!(items[0].scale, 1.0);
         assert_eq!(items[0].y, -20.0);
         assert!(items[1..].iter().all(|i| i.scale == 0.65));
-        assert_eq!(items[1].label, "English");
+        assert_eq!(
+            items[1].label,
+            crate::lang::text(tr_core::localization::GameCulture::English.language_key())
+        );
         let initial = Page::LanguageInitial.layout();
         assert_eq!((initial.y0, initial.row), (200.0, 30.0));
         // Draw y (`Main.cs:51769`): header 180, English 230, last row 560 —
@@ -1951,12 +1984,12 @@ mod tests {
         let draw_y = |i: usize| initial.y0 + initial.row * i as f32 + items[i].y;
         assert_eq!(draw_y(1), 230.0);
         assert_eq!(draw_y(12), 560.0);
-        // A language row still only shows the notice (the original would
-        // `SetLanguage` and jump to menuMode 0, `Main.cs:48484-48490`).
+        // A language row `SetLanguage`s and jumps to the title
+        // (`Main.cs:48484-48490`).
         let mut m = menu(Page::LanguageInitial);
         m.activate(1);
-        assert!(m.hint.is_some());
-        assert_eq!(m.page, Page::LanguageInitial);
+        assert!(m.hint.is_none());
+        assert_eq!(m.page, Page::Main);
     }
 
     #[test]
@@ -1980,6 +2013,7 @@ mod tests {
 
     #[test]
     fn controls_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50638-50698`: `num2 = 250`, `num4 = 52`, `num5 = 4`,
         // `array4[3] = 18`, every `array7` 0.78 (`:50639-50646`). The defaults
         // column: `ReversedUpDownArmorSetBonuses` is a plain static
@@ -1989,16 +2023,14 @@ mod tests {
         // Control [224]. Draw y (`Main.cs:51769`): 250, 302, 354, 424 — the
         // plan table's 464 for Back drops the `52 * 3` term.
         let items = menu(Page::Controls).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Activate Set Bonuses: Down",
-                "Quick Trash: Left Control",
-                "Keybindings",
-                "Back",
-            ]
-        );
+        let expected = [
+            crate::lang::menu(221),
+            crate::lang::menu(224),
+            crate::lang::menu(222),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 0.0, 0.0, 18.0]);
         assert!(items.iter().all(|i| i.scale == 0.78));
@@ -2016,11 +2048,11 @@ mod tests {
         let mut m = menu(Page::Controls);
         m.settings.reversed_armor_bonuses = true;
         m.settings.disable_left_shift_trash = false;
-        assert_eq!(m.items()[0].label, "Activate Set Bonuses: Up");
-        assert_eq!(m.items()[1].label, "Quick Trash: Left Shift");
+        assert_eq!(m.items()[0].label, crate::lang::menu(220));
+        assert_eq!(m.items()[1].label, crate::lang::menu(223));
         let mut m = menu(Page::Controls);
         m.settings.quick_trash = true;
-        assert_eq!(m.items()[1].label, "Quick Trash: Disabled");
+        assert_eq!(m.items()[1].label, crate::lang::menu(253));
     }
 
     #[test]
@@ -2034,25 +2066,27 @@ mod tests {
 
     #[test]
     fn quick_trash_cycles_left_control_left_shift_disabled() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50665-50684`: Left Control -> Left Shift -> Disabled ->
         // Left Control, starting from the ctor defaults (`ItemSlot.cs:36-37`).
         let mut m = menu(Page::Controls);
-        assert_eq!(m.items()[1].label, "Quick Trash: Left Control");
+        assert_eq!(m.items()[1].label, crate::lang::menu(224));
         m.activate(1);
-        assert_eq!(m.items()[1].label, "Quick Trash: Left Shift");
+        assert_eq!(m.items()[1].label, crate::lang::menu(223));
         assert!(!m.settings.disable_left_shift_trash);
         assert!(!m.settings.quick_trash);
         m.activate(1);
-        assert_eq!(m.items()[1].label, "Quick Trash: Disabled");
+        assert_eq!(m.items()[1].label, crate::lang::menu(253));
         assert!(m.settings.quick_trash);
         m.activate(1);
-        assert_eq!(m.items()[1].label, "Quick Trash: Left Control");
+        assert_eq!(m.items()[1].label, crate::lang::menu(224));
         assert!(!m.settings.quick_trash);
         assert!(m.settings.disable_left_shift_trash);
     }
 
     #[test]
     fn keybindings_screen_lists_the_fourteen_binds() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50501-50637`: `num2 = 176`, `num4 = 22`, `num5 = 16`; the
         // bind rows are left-aligned at `array5 = -80` with scale 0.45
         // (`:50543-50545`), the raw `Lang.menu` values ([74]..[85], [120],
@@ -2063,28 +2097,26 @@ mod tests {
         let m = menu(Page::Keybindings);
         let items = m.items();
         assert_eq!(items.len(), 16);
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Up                W",
-                "Down             S",
-                "Left               A",
-                "Right             D",
-                "Jump             Space",
-                "Throw            T",
-                "Inventory         Escape",
-                "Quick Heal       H",
-                "Quick Mana      J",
-                "Quick Buff       B",
-                "Grapple           E",
-                "Auto Select       LeftShift",
-                "Smart Cursor    LeftControl",
-                "Mount             R",
-                "Reset to Default",
-                "Back",
-            ]
-        );
+        let expected: Vec<String> = vec![
+            "Up                W".to_string(),
+            "Down             S".to_string(),
+            "Left               A".to_string(),
+            "Right             D".to_string(),
+            "Jump             Space".to_string(),
+            "Throw            T".to_string(),
+            "Inventory         Escape".to_string(),
+            "Quick Heal       H".to_string(),
+            "Quick Mana      J".to_string(),
+            "Quick Buff       B".to_string(),
+            "Grapple           E".to_string(),
+            "Auto Select       LeftShift".to_string(),
+            "Smart Cursor    LeftControl".to_string(),
+            "Mount             R".to_string(),
+            crate::lang::menu(86),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         for (i, item) in items.iter().enumerate() {
             if i < 14 {
                 assert_eq!(item.x, -80.0, "array5[{i}] = -80");
@@ -2151,6 +2183,7 @@ mod tests {
 
     #[test]
     fn map_keys_screen_lists_the_six_map_binds() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50401-50500`: `num2 = 200`, `num4 = 30`, `num5 = 14` — but
         // rows 8-13 stay null and the item loop skips them (`Main.cs:51654`),
         // so eight rows show. The bind rows are left-aligned at
@@ -2163,20 +2196,18 @@ mod tests {
         let m = menu(Page::MapKeys);
         let items = m.items();
         assert_eq!(items.len(), 8);
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Toggle Map Style           Tab",
-                "Toggle Fullscreen           M",
-                "Zoom In                      Add",
-                "Zoom Out                    Subtract",
-                "Decrease Transparency     PageUp",
-                "Increase Transparency      PageDown",
-                "Reset to Default",
-                "Back",
-            ]
-        );
+        let expected: Vec<String> = vec![
+            "Toggle Map Style           Tab".to_string(),
+            "Toggle Fullscreen           M".to_string(),
+            "Zoom In                      Add".to_string(),
+            "Zoom Out                    Subtract".to_string(),
+            "Decrease Transparency     PageUp".to_string(),
+            "Increase Transparency      PageDown".to_string(),
+            crate::lang::menu(86),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         for (i, item) in items.iter().enumerate() {
             if i < 6 {
                 assert_eq!(item.x, -140.0, "array5[{i}] = -140");
@@ -2207,6 +2238,7 @@ mod tests {
 
     #[test]
     fn selector_rows_show_their_default_labels() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:49941-49979` with the defaults: the minimap key and the
         // resource-set key default to their first entries here (the port's
         // resource-set default is "Default" — the recorded deviation), the
@@ -2215,18 +2247,18 @@ mod tests {
         // `Main.FlashyEffectsInterface = true` (`Main.cs:66578`).
         let m = menu(Page::Interface);
         let items = m.items();
-        assert_eq!(items[6].label, "Minimap Border: Default");
-        assert_eq!(items[7].label, "Health and Mana Style: Classic");
-        assert_eq!(items[8].label, "Portraits Style: Detailed");
-        assert_eq!(items[9].label, "Boss Health Bar Numbers: On");
-        assert_eq!(items[10].label, "Inventory Effects: On");
+        assert_eq!(items[6].label, crate::lang::text_args("UI.SelectMapBorder", &[crate::lang::text("UI.MinimapFrame_Default")]));
+        assert_eq!(items[7].label, crate::lang::text_args("UI.SelectHealthStyle", &[crate::lang::text("UI.HealthManaStyle_Default")]));
+        assert_eq!(items[8].label, crate::lang::text("UI.PortraitsDetailed"));
+        assert_eq!(items[9].label, crate::lang::text("UI.ShowBossLifeTextOn"));
+        assert_eq!(items[10].label, crate::lang::text("UI.FlashyEffectsInterfaceOn"));
         // An unknown stored name normalizes to the first option for the label
         // (`SelectionHolder.cs:71-78` / `PlayerResourceSetsManager.cs:74-83`).
         let mut m = menu(Page::Interface);
         m.settings.minimap_frame = "Nope".into();
         m.settings.resource_sets = "Nope".into();
-        assert_eq!(m.items()[6].label, "Minimap Border: Default");
-        assert_eq!(m.items()[7].label, "Health and Mana Style: Fancy");
+        assert_eq!(m.items()[6].label, crate::lang::text_args("UI.SelectMapBorder", &[crate::lang::text("UI.MinimapFrame_Default")]));
+        assert_eq!(m.items()[7].label, crate::lang::text_args("UI.SelectHealthStyle", &[crate::lang::text("UI.HealthManaStyle_New")]));
     }
 
     #[test]
@@ -2274,6 +2306,7 @@ mod tests {
 
     #[test]
     fn resource_set_cycle_walks_backwards_and_wraps() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `PlayerResourceSetsManager.CycleResourceSet`
         // (`PlayerResourceSetsManager.cs:84-101`) — the same backwards walk
         // over the `:42-47` load order.
@@ -2297,34 +2330,36 @@ mod tests {
         m.activate(7);
         assert_eq!(m.settings.resource_sets, "Default", "the sixth hop closes the cycle");
         // The label tracks the set (`Main.cs:49948`).
-        assert_eq!(m.items()[7].label, "Health and Mana Style: Classic");
+        assert_eq!(m.items()[7].label, crate::lang::text_args("UI.SelectHealthStyle", &[crate::lang::text("UI.HealthManaStyle_Default")]));
         m.activate(7);
-        assert_eq!(m.items()[7].label, "Health and Mana Style: Fancy");
+        assert_eq!(m.items()[7].label, crate::lang::text_args("UI.SelectHealthStyle", &[crate::lang::text("UI.HealthManaStyle_New")]));
     }
 
     #[test]
     fn portrait_preference_cycles_the_four_modes() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.CycleNPCPortraitMode` (`Main.cs:40297-40315`): Detailed ->
         // CloseUp -> FullBodyRetro -> Disabled -> Detailed, labelled by the
         // `UI.Portraits*` values (`Main.cs:49954-49965`).
         let mut m = menu(Page::Interface);
-        assert_eq!(m.items()[8].label, "Portraits Style: Detailed");
+        assert_eq!(m.items()[8].label, crate::lang::text("UI.PortraitsDetailed"));
         m.activate(8);
         assert_eq!(m.settings.portrait_preference, 1);
-        assert_eq!(m.items()[8].label, "Portraits Style: Profile");
+        assert_eq!(m.items()[8].label, crate::lang::text("UI.PortraitsCloseUp"));
         m.activate(8);
         assert_eq!(m.settings.portrait_preference, 2);
-        assert_eq!(m.items()[8].label, "Portraits Style: Retro");
+        assert_eq!(m.items()[8].label, crate::lang::text("UI.PortraitsFullBody"));
         m.activate(8);
         assert_eq!(m.settings.portrait_preference, 3);
-        assert_eq!(m.items()[8].label, "Portraits Style: Disabled");
+        assert_eq!(m.items()[8].label, crate::lang::text("UI.PortraitsDisabled"));
         m.activate(8);
         assert_eq!(m.settings.portrait_preference, 0);
-        assert_eq!(m.items()[8].label, "Portraits Style: Detailed");
+        assert_eq!(m.items()[8].label, crate::lang::text("UI.PortraitsDetailed"));
     }
 
     #[test]
     fn boss_bar_and_inventory_effects_rows_toggle_their_flags() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:49966-49979`: `ToggleShowText()` (no sound) and the
         // `FlashyEffectsInterface` flip. The boss-bar flag is stored only —
         // P4's bar owns the numbers rendering.
@@ -2332,14 +2367,14 @@ mod tests {
         assert!(m.settings.boss_bar_text);
         m.activate(9);
         assert!(!m.settings.boss_bar_text);
-        assert_eq!(m.items()[9].label, "Boss Health Bar Numbers: Off");
+        assert_eq!(m.items()[9].label, crate::lang::text("UI.ShowBossLifeTextOff"));
         m.activate(9);
-        assert_eq!(m.items()[9].label, "Boss Health Bar Numbers: On");
+        assert_eq!(m.items()[9].label, crate::lang::text("UI.ShowBossLifeTextOn"));
         m.activate(10);
         assert!(!m.settings.flashy_effects_interface);
-        assert_eq!(m.items()[10].label, "Inventory Effects: Reduced");
+        assert_eq!(m.items()[10].label, crate::lang::text("UI.FlashyEffectsInterfaceOff"));
         m.activate(10);
-        assert_eq!(m.items()[10].label, "Inventory Effects: On");
+        assert_eq!(m.items()[10].label, crate::lang::text("UI.FlashyEffectsInterfaceOn"));
     }
 
     #[test]
@@ -2358,6 +2393,7 @@ mod tests {
 
     #[test]
     fn multiplayer_screen_shows_join_first() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50699-50736` with `num41 = 0` (no Steam network): the
         // `Lang.menu[145]` "Join via Steam" row stored at index 1 (`:50704`)
         // is overwritten by "Host & Play" (`:50705`), so the screen is
@@ -2366,7 +2402,9 @@ mod tests {
         let m = menu(Page::Multiplayer);
         let items = m.items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["Join", "Host & Play", "Back"]);
+        let expected = [crate::lang::menu(87), crate::lang::menu(88), crate::lang::menu(5)];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0 && !i.header));
         let layout = Page::Multiplayer.layout();
         let draw_y = |i: usize| layout.y0 + layout.row * i as f32;
@@ -2388,6 +2426,7 @@ mod tests {
 
     #[test]
     fn join_ip_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50798-50848`: the header, the input row at
         // `array4[1] = 19`, seven blank recent rows (`array4 = 40`,
         // `array7 = 0.6` — the port keeps no recents), Accept
@@ -2396,11 +2435,11 @@ mod tests {
         let items = m.items();
         assert_eq!(items.len(), 11);
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels[0], "Enter Server IP Address:");
+        assert_eq!(labels[0], crate::lang::menu(89));
         assert_eq!(labels[1], " ", "the blank frame appends a space to the empty IP");
         assert!(labels[2..9].iter().all(|l| l.is_empty()));
-        assert_eq!(labels[9], "Accept");
-        assert_eq!(labels[10], "Back");
+        assert_eq!(labels[9], crate::lang::menu(4));
+        assert_eq!(labels[10], crate::lang::menu(5));
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 19.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 44.0, 64.0]);
         assert!(items[0].header && items[1].header);
@@ -2433,13 +2472,20 @@ mod tests {
 
     #[test]
     fn join_port_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:50903-50953` over the 250/80 defaults: header, input at
         // `array4[1] = -20`, Accept at `array4[2] = 20`, Back.
         let mut m = menu(Page::JoinPort);
         m.get_port = "7777".into();
         let items = m.items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["Enter Server Port:", "7777 ", "Accept", "Back"]);
+        let expected = [
+            crate::lang::menu(90),
+            "7777 ".to_string(),
+            crate::lang::menu(4),
+            crate::lang::menu(5),
+        ];
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, -20.0, 20.0, 0.0]);
         assert!(items[0].header && items[1].header);
@@ -2469,17 +2515,20 @@ mod tests {
 
     #[test]
     fn password_screens_match_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48677-48715` (30) / `:48553-48591` (31): the
         // `Lang.menu[7]` / `Lang.menu[3]` headers, the input at
         // `array4[1] = -20`, Accept at `array4[2] = 20`, Back — `num5 = 4`
         // over the 250/80 defaults.
-        for (page, header) in
-            [(Page::HostPassword, "Enter Server Password:"), (Page::JoinPassword, "Server Requires Password:")]
-        {
+        for (page, header) in [
+            (Page::HostPassword, crate::lang::menu(91)),
+            (Page::JoinPassword, crate::lang::menu(3)),
+        ] {
             let m = menu(page);
             let items = m.items();
-            let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-            assert_eq!(labels, [header, " ", "Accept", "Back"]);
+            let expected = [header, " ".to_string(), crate::lang::menu(4), crate::lang::menu(5)];
+            let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+            assert_eq!(labels, expected);
             let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
             assert_eq!(ys, [0.0, -20.0, 20.0, 0.0]);
             assert!(items[0].header && items[1].header);
@@ -2683,6 +2732,7 @@ mod tests {
 
     #[test]
     fn server_settings_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48726-48809`: `num2 = 200`, `num4 = 60` (`:48728-48729`),
         // `array4 = [_, 30, 30, 30, 70, 70]` (`:48730-48734`); the [135]
         // header, the Lobby toggle, two blank non-clickable rows without
@@ -2690,10 +2740,16 @@ mod tests {
         let mut m = menu(Page::ServerSettings);
         let items = m.items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            ["Server Settings", "Steam Multiplayer: Disabled", "", "", "Start", "Back"]
-        );
+        let expected = [
+            crate::lang::menu(135),
+            crate::lang::menu(136),
+            "".to_string(),
+            "".to_string(),
+            crate::lang::menu(144),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = labels.iter().map(|l| l.to_string()).collect();
+        assert_eq!(labels, expected);
         let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
         assert_eq!(ys, [0.0, 30.0, 30.0, 30.0, 70.0, 70.0]);
         assert!(items[0].header && items[2].header && items[3].header);
@@ -2706,7 +2762,7 @@ mod tests {
         // (`:48784-48787`) and shows [137] while set.
         m.activate(1);
         assert!(m.server_lobby);
-        assert_eq!(m.items()[1].label, "Steam Multiplayer: Enabled");
+        assert_eq!(m.items()[1].label, crate::lang::menu(137));
         m.activate(1);
         assert!(!m.server_lobby);
         // Start clears the password and opens the host password screen
@@ -2788,6 +2844,7 @@ mod tests {
 
     #[test]
     fn credits_page_has_one_back_row_at_500() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:49693-49704`: `num5 = 1`, `num2 = 500`,
         // `array7[0] = 0.9f`, `array9[0] = Lang.menu[5]`; the click (or
         // `flag5`) returns to menuMode 0 (`:49700-49703`).
@@ -2795,7 +2852,7 @@ mod tests {
         assert_eq!(m.page, Page::Credits);
         let items = m.items();
         assert_eq!(items.len(), 1, "num5 = 1");
-        assert_eq!(items[0].label, "Back");
+        assert_eq!(items[0].label, crate::lang::menu(5));
         assert_eq!(items[0].scale, 0.9, "array7[0] = 0.9f");
         assert_eq!(items[0].y, 0.0);
         let layout = Page::Credits.layout();

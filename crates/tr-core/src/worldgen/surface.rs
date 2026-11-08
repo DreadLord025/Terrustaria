@@ -33,10 +33,23 @@ pub(crate) fn apply_slopes(world: &mut World, width: i32, surface: &[i32]) {
 }
 
 /// Grows the forest/snow trees: a port of `WorldGen.GrowTree`'s frame tables.
-pub(crate) fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
+///
+/// The beach palm arm is the `AddTrees` beach-band roll (`WorldGen.cs:31372-31386`):
+/// per column within `beachDistance` (380) of either edge, each row up to the
+/// surface rolls `NextDouble() < 0.1 + NextDouble() * 0.35` with a liquid-0
+/// gate, and a hit grows a palm on tile 323. The compact forest model keeps
+/// its own density (the full `AddTrees` per-tile forest arms belong to the
+/// faithful Trees pass — M5-STRUCT's follow-up).
+pub(crate) fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32], world_surface: i32) {
     let width = world.width;
     let mut last = -20;
     let mut x = 12;
+    // The two beach densities, drawn once before the column loop
+    // (`WorldGen.cs:31373-31374`).
+    let (palm_left, palm_right) = (
+        0.1 + rng.next_f64() * 0.35,
+        0.1 + rng.next_f64() * 0.35,
+    );
     while x < width - 12 {
         // Forest density, like vanilla: a tree every 6-14 columns with gaps.
         x += rng.range(5, 15);
@@ -45,6 +58,21 @@ pub(crate) fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         }
         if x - last < 5 {
             continue;
+        }
+        // The AddTrees beach palm arm (`WorldGen.cs:31372-31386`): the
+        // per-column, per-row roll inside the beach bands.
+        if x < super::ocean::ZONE_MARGIN || x >= width - super::ocean::ZONE_MARGIN {
+            let prob = if x < super::ocean::ZONE_MARGIN {
+                palm_left
+            } else {
+                palm_right
+            };
+            for j in 20..world_surface {
+                let idx = world.index(x, j);
+                if rng.next_f64() < prob && world.tiles[idx].liquid == 0 {
+                    super::ocean::grow_palm_tree(world, x, j, 0, false, rng);
+                }
+            }
         }
         let top = surface[x as usize];
         let ground = *world.tile(x, top).unwrap_or(&Tile::default());
@@ -257,6 +285,11 @@ pub(crate) fn plant_surface_flora(world: &mut World, rng: &mut Rng, width: i32, 
 }
 
 /// Plants cacti (tile 80) on flat desert sand inside the desert band.
+///
+/// Retired with M5-OCEAN phase 5: the faithful `Cactus, Palm Trees, & Coral`
+/// pass (`WorldGen.cs:21310`) — its middle zone's `PlantCactus` covers the
+/// desert's cacti with the vanilla density — replaced this compact scatter.
+#[allow(dead_code)]
 pub(crate) fn plant_cacti(world: &mut World, rng: &mut Rng, map: &SurfaceMap, width: i32) {
     // --- desert cacti -------------------------------------------------------
     // Tile 80 has its own 7x3 frame grid, so it is flagged important and framed by

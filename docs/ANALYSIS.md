@@ -2617,6 +2617,150 @@ with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
 the stream where the C#'s short-circuit reaches it; the four unported
 kinds' hits map to the ground fallback until their AI families land.
 
+## The martian riders (M4-EVENT-4d)
+
+The 381 BrainScrambler / 382 RayGunner pair (the grouped `SetDefaults`
+row: 18×40, dmg 50, def 25, 350 HP, kb 0.35) walk through the walker
+step and run `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`):
+the stop entry (an aim under 700 px with `ai[2] <= 0` and `ai[1] <= 0`
+arms the 80-tick timer and the aim octant), the fire at `ai[1] == 40`
+(the ±100×0.4 jitter re-scaled ×(0.85..1.15), the spawn at the centre
++ 6 — the 436 ray at 24 damage and speed 11 for the Scrambler, the
+438 at 30 and 7 for the RayGunner), the hurt interrupt (the 30-tick
+rest), the sleep's exit. The vanilla's `stealth`/`itemAnimation`
+aggression gate is constants-off (the port's Player carries no swing
+timer).
+
+The 390 ScutlixRider (`AI_075`'s type-390 arm, `:35506-35745`) is a
+MOUNT machine: it spawns its 391 Scutlix carrier once through the
+sim (`wants_scutlix` → the carrier at the rider's feet), rides 14 px
+above its centre with the carrier's velocity, and fires the same 438
+ray at a 60/−60 cycle (the 700-px window, the carrier-direction match,
+the ±50×(0.8..1.2) aim). The port has no NPC indices, so the link is
+the sim's write-through (the WoF shape) in a pre-pass — the vanilla
+reads the carrier's live centre inside its own pass, the port's is one
+tick earlier (documented). The rider falls with its carrier: the
+`timeLeft` latch has no port model, so the retirement rides the
+carrier's death instead of the 750-tick decay.
+
+The type-4 table is complete but for the Saucer 395 family: the
+`num8` arm ports the RayGunner (<2) / the BrainScrambler (==2) / the
+Drone (>=4), and the num6 >= 6 arm's `Next(2)` split ports the Rider.
+
+## The Martian Saucer (M4-EVENT-4e)
+
+The type-4 event's boss: the 395 Core (dmg 80, 10000 HP, aiStyle 76,
+dontTakeDamage) plus its crew — the 392 Shell (150×80), the 393 Turrets
+(40×16, 5000 HP) and the 394 Cannons (46×36, 3500 HP), all aiStyle-75
+mounts. The core's init spawns the crew at its centre with the seat
+`ai[1]`; the mounts ride the core (the shell at UnitY+2, the turrets at
+UnitY+29 ± UnitX·60, the cannons at UnitY−13 ± UnitX·49) through the
+pre-pass write-through link.
+
+`ai[0]`'s states: the ±1/−2 despawn rides (the player out of the 5600-px
+window), the 600-tick SCAN cycle (the six step bands — approach,
+dive, park, brake — with the ground-clearance reads easing the dive,
+the 20/260/279/439 force-jumps on the approach bands), the vulnerable
+WOBBLE (150 ticks of the rotation ramp — the classic-only gate the
+shell's bridge drives), the GUN (the 3600-tick cycle: the 60-tick
+firing window per 120 fires the 447 projectile at 80 damage; the
+8·ai[2] dash in the window, the 16-lerp outside), and the phase-3
+death ride (`StrikeNPCNoInteraction(9999)` → the port's hp=0).
+
+The type-4 table is now complete — every kind in `NPC.cs:1487-1540`
+ports. The shell's missile battery and the core phase bridge (the
+`flag80` classic/expert split) are the follow-ups: until they land,
+the core stays in the scan/gun loop and is killed by damage.
+
+## The saucer's guns (M4-EVENT-4f)
+
+The mounts' batteries ride the core's mirrored `ai[3]` timer and `ai[0]`
+phase through the pre-pass write-through (the vanilla reads
+`Main.npc[localAI[i]]`'s sibling state directly — the port approximates
+the crew's aliveness with the pre-pass counts). The 393 turret aims
+with the 8-way table (the player vector's rotation, Y-clamped, mirrored
+by the spriteDirection) between its 280-420 windows and fires the 449
+rays (35, 16 speed, ±0.785/3 jitter) every 6 ticks inside; the 394
+cannon fires the 448 shells (50, 8 speed, side·36 + 8 spawn, ±0.785
+aim) every 20 ticks of its 440-580 window; the 392 shell fires the 447
+entry shot (50) at the phase-0 window's edge and the 450 missile
+battery (30, 3 speed — the turret side's wide ±0.26 arcs and the cannon
+side's narrow ±0.785 arcs) in the windows: the core's gun phase (2)
+opens them always, else the 280-400 and 440-580 bands.
+
+The bridge: with the crew dead and the core open (the classic arm),
+the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
+whose guns die falls out of the fight on its own.
+
+## The Flying Dutchman (M4-EVENT-5a)
+
+The pirate invasion's ship (`NPC.cs:14632-14650`): 350×120, aiStyle 93,
+dmg 0, def 100, 50 own HP, dontTakeDamage. Its machine
+(`:38858-38956`): the init spawns 4 cannons 492 across its centre
+(`seat*40 - 150`); the crew-alive loop self-strikes when all four are
+down (the pending-crew gate keeps the ship alive through its spawn
+tick — the vanilla's `ai[i]` links point at the children immediately);
+every 300 ticks a pirate drops off the rotated side offset with the
+±5 X + -8.01 Y launch; the flight holds the 350-450 ground-clearance
+band ahead of the direction, the X drift engages past 300 px, and the
+rotation rides `velocity.X * 0.025`.
+
+The type-3 table's half-points window (`:1460-1468`) spawns the ship —
+the pirate invasion gains its boss-minion. The port's link model: the
+pre-pass counts the ship's live cannons and links the cannons' ride to
+the ship (the vanilla's `Main.npc[ai[i]]` indices have no port model).
+
+## The pirate trio's shots (M4-EVENT-5b)
+
+The aiStyle-3 shooter block now generalises across the event families:
+`shooter_params` carries the vanilla's per-kind cooldown/speed/
+projectile/damage rows — the pirate Archer 214's arrow 180 (25, 10, the
+±45 jitter), the Corsair 215's musket ball 82 (35, 14), the Captain
+216's arrow 180 (30, 9, the ±50 jitter), beside the martians' 436/438.
+The block's shape: the stop entry (an aim under 700 px arms the octant
+and the 80-tick timer), the fire at the half-cooldown (the per-kind
+jitter re-scaled ×(0.85..1.15), the spawn at the centre + 6 y, the
+speed-scaled velocity), the hurt interrupt, the sleep's exit.
+
+The 180/82 projectile rows join `proj_data` — the pool's data gate
+previously dropped every kind outside its hand-listed set, so the
+family's shots silently never spawned.
+
+## The Captain's wounded barrage (M4-EVENT-5c)
+
+The pirate Captain 216 counts his shots (`localAI[2]` — the port's
+`caster_counter`); past 20 the wounded arm swaps the plain 180 arrow for
+the 240 shell: 100 damage, 15 speed, no jitter, on the rolling
+`max(60, 180 - localAI[3]*20)` cooldown (`localAI[3]` = the barrage
+count, the port's `cast_windup`). The barrage resets the shot counter.
+The 240 shell rides the Dutchman's data row.
+
+## The DD2 goblins (M4-EVENT-5d)
+
+The Old One's Army attackers (`NPC.cs`'s 552-554): the improved-walker
+harness with the tiers' adds and the wave acceleration — the
+`localAI[3]` ramp (below 60 the accel element is
+`0.01 + localAI[3]/60*0.05`, past 60 it holds at the value) mirrors the
+DD2 event's escalating pressure. The port's `caster_counter` stands in
+for `localAI[3]` (the counter ticks with the Wave).
+
+The DD2 framework (the crystal 548, the tavernkeep 550, the
+`DD2Event.EnemiesShouldChasePlayers` chase flag, the wave tiers' bosses
+— the Dark Mage 564, Betsy 551) is the next slice.
+
+## The DD2 support families (M4-EVENT-5e)
+
+The Old One's Army's second echelon: the kobold bombers (555-557, kb
+0.1, walk 0.88/1.12), the javelin throwers (561-563, 26×52, the spear
+projectiles 662/685 at the 82-tick cadence) and the etherian skeletons
+(566-567 with the materialize cycle — `localAI[3]`'s spawn-in counter,
+the alpha fade over the 110-tick run; the walk rides the harness while
+translucent).
+
+The families' walk arms ride the port's harness with the vanilla's
+per-kind speed rows; the bombers' bomb throw, the throwers' spears and
+the skeletons' fade render ride their own slices.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -5463,6 +5607,41 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
+
+**Resource source:** the C# embeds its 84 strings files as assembly manifest
+resources (`Terraria.Localization.Content.<culture>[.<Group>].json`); the port
+reads the extracted resources off disk (`TR_LOCALE` → the `../decompiled`
+sibling of `Content` → the working dir → the exe dir). This is the same
+retail-derived, gitignored content model the `.xnb` assets already use;
+without any of them the menus keep their bundled English strings, which is
+the vanilla "unknown key prints the key" behaviour — the 1:1 rule only
+reaches as far as the resources present.
+
+**Font encoding:** the shipped ReLogic writes a different `DynamicSpriteFont`
+byte layout than the decompiled `DynamicSpriteFontReader` documents —
+default char 7-bit + `Int32` page count, reader-indexed tables with `Int32`
+counts, and the character list as a UTF-8 string (details in
+`crates/tr-content/src/font.rs` docs). A font is accepted only when the walk
+consumes the payload exactly; `Mouse_Text` is 159 pages / 38 636 glyphs.
+
+**Font upload:** XNA samples the font pages as `SurfaceFormat.Dxt3`; the
+port uploads the shipped BC2 blocks verbatim into a texture array
+(`tr-render/src/font_atlas.rs`, one 8192² layer per shelf set, ~220 MB —
+the same order of magnitude as the vanilla ~226 MB, where the RGBA
+decompression would cost ~900 MB). The shader selects between the two
+textures per instance, so the draw order stays exactly one instanced pass.
+Glyph UVs bake the half-texel inset the main-atlas path applies in the
+shader (the both textures' layers are 8192 px wide).
+
+**Missing glyphs:** the original falls back to the font's default char
+(`'*'`); `UiFont::glyph` does the same and the 8×8 bitmap fallback still
+drops non-ASCII — it now only serves the no-retail-content build.
+
+**Test gate:** the M1.4-BG-18 leftover `tmp_dump::dump_flame0_tiles4_rgba`
+writes into a hardcoded scratch directory and failed wherever it does not
+exist (pre-existing on main); it now skips instead of failing.
+
 ## Biome passes fidelity (M5-BIOME)
 
 The evil + jungle worldgen replaced its shape-level approximation with the
@@ -5749,3 +5928,319 @@ M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
 items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
+
+## Multiplayer protocol core (M6-NET-1)
+
+The handshake and the wire frame are 1:1 ports; the deliberate deviations
+(all resolved in M6-NET-2/3, where noted):
+
+- **`15 WorldChunk` is a port-internal id** (dead in 1.4.5.8): the whole-world
+  zlib blob (`save::to_bytes` + flate2) streams as `[i32 index][i32 count][u32
+  len][bytes]` slices under the 65535-byte frame cap, announced by `9 Status`
+  and closed by `49 WorldComplete`. The C# streams `10 TileBlock` sections
+  instead (`NetMessage.cs:1895-2240` `CompressTileBlock`); M6-NET-3 replaces
+  the producer — the client install hook stays.
+- **`NetworkText` is literal-mode only** (mode byte 0 + the string,
+  `NetworkText.cs:65-70`). Keyed/format texts and the substitution list
+  (`:72-80`) are not ported; every kick/status string is a literal. The keys
+  themselves (`Lang.mp[1..5]`, the `Net.*` name keys) ride as English text
+  with the C# strings quoted in `netglue.rs`'s `TXT_*` constants.
+- **`5 PlayerInventory` is accepted and dropped server-side.** The server
+  keeps no peer-inventory state yet (the C# `Main.player[i].inventory`); the
+  storage lands with M6-NET-2's peer-state sync. The client's push order is
+  already the C# one (`MessageBuffer.cs:230-282`'s list, adapted to the
+  port's slot layout: 59 grid + 20 armour + 10 dye + 5 misc dyes + 5 misc
+  equips + 4×40 banks + trash).
+- **`7 WorldInfo` fields without a port home ride as defaults** with the C#
+  write order preserved: the 11 background styles, `ice/jungle BackStyle`,
+  the tree/cave backups, the 13 tree-top bytes, the 14 world-flag groups,
+  the ore tiers, the dungeon point, the spawn-point list and `lobbyId`
+  (0 without a social API). The port-sourced fields are time/day flags,
+  the moon phase/type, the world size, the spawn, the surface/rock layer,
+  the dial cooldowns and the hell back style; `generator_version` carries
+  `save::VERSION` (the closest marker) pending the generator-version home.
+- **The clock rides the internal `205 Time` broadcast** (host → clients at
+  10 Hz). The C# sends `7 WorldInfo` only at join
+  (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
+  flags; the exact 1:1 clock path is pinned in M6-NET-2.
+- **The name gate is the ported C# gate** (`MessageBuffer.cs:360-396`): empty,
+  `> Player.nameLen` (20, `Player.cs:57105`) or already taken by another slot
+  → the C# kick texts. The creative-mode mismatch checks
+  (`Net.PlayerIsCreativeAndWorldIsNotCreative`) have no port flags yet and
+  are deferred.
+- **`4 PlayerInfo` carries the 1:1 body** (skin/voice, hair, colours, the
+  three `BitsByte` groups, `NetMessage.cs:147-197`); only the name has a port
+  home (`App.player_name`), the rest is vanilla defaults until the character
+  milestone.
+- **The in-process join replaces the relaunch.** The old flow saved the world
+  blob and re-executed the binary with `TR_JOINED` (`netglue.rs`'s
+  `relaunch_into_world`, deleted here); the client now swaps `App.world` and
+  rebuilds the world-derived systems (`LiquidSystem`, `WorldMap`, the player
+  spawn) in place — the C#'s `WorldGen.clearWorld` arm
+  (`Netplay.cs:484-505`) has no port equivalent.
+- **The idle sweep is the C# shape, port-tuned**: reader threads stamp a
+  `last_seen` per slot and a frame-paced sweep drops peers idle for
+  [`net::IDLE_TIMEOUT`] (120 s), the C#'s `TimeOutTimer > 7200` ticks
+  (`Main.cs:64610-64618`).
+## Extractinator (M7-EXTRACT-1)
+
+`tr-core/src/extract.rs` ports `ExtractinatorHelper.RollExtractinatorDrop`
+(`ExtractinatorHelper.cs:5-525`) as an RNG-injected chain — the branch order is
+the roll order and the port keeps it a straight-line `else if` chain rather than
+a table, so no draw is reordered. `Player.PlaceThing_ItemInExtractinator`
+(`Player.cs:41665-41697`) is item data (the mode map `ItemID.cs:1321` and the
+`ItemTrader.ChlorophyteExtractinator` first-match table `ItemTrader.cs:82-108`);
+the tile side is `TileObjectData.cs:4042-4045` (`Style3x3`, `DrawYOffset = 2`)
+plus `Check3x3`'s bottom-support arm (`WorldGen.cs:53114-53158`).
+
+Deliberate deviations and notes:
+
+- **The loot engine is not used.** Vanilla rolls the plain `Main.rand` sequence
+  here, not `IItemDropRule`; forcing the table through `loot.rs`'s rule types
+  would reorder draws. The port keeps a separate cited function and rolls on
+  `app.item_rng` (the `Main.rand` seam, PORT_MAP's item-loot convention).
+- **The interaction is swing-anchored, not click-anchored.** The C# arm runs
+  inside `PlaceThing` (re-firing every `useTime` inside a held swing,
+  `Player.cs:39591`/`:41669`), so the port routes it through the same
+  `starting || inside_swing` cadence the tile/wall placement uses
+  (`world_sim/editing.rs`); the press-edge `interact_tile` falls through for the
+  new variant (the chest/shop/door seam is untouched — `interact_at` only gained
+  one registry arm). `ApplyItemTime`'s shape (`Player.cs:4406-4413`) makes the
+  swing and the action time the same value, ×0.33 on tile 642 (`:41673-41677` →
+  3 frames), which the apply mirrors.
+- **The drop spawns at the cursor pixel** (`DropItemFromExtractinator`,
+  `Player.cs:42081-42089`); the smart-cursor/gamepad player-centre branch
+  (`:42084-42087`) has no port mechanic yet — with smart cursor on, vanilla
+  spawns at the player centre and the port still spawns at the cursor.
+- **The input is consumed per action by the arm itself.** The C#'s generic
+  consumable path (`Player.cs:43280`) decrements one per swing-start while the
+  arm re-fires mid-swing; the port consumes one per extraction (the convention
+  `place_item_and_consume` already uses). The C# also never checks weapon-ness
+  in this arm, and the port's `item_gate_blocks` would refuse a `projectile`-set
+  item on the place route — the arm's own decrement keeps the behaviour right.
+- **Reach** is the plain `TileReachCheckSettings.Simple` region (5/3,
+  `Player.cs:32025-32030`): every extractinator input has `tileBoost = 0`
+  (verified in the C# `Item.SetDefaults` bodies), and the port has no
+  `blockRange` (builder-potion buff 107 / gizmo-pack 407).
+- **Item-data bug found (pre-existing, not fixed here):** `itemdata.rs:3465-3466`
+  carries 1.4.4-era melee-thrower data for 3347/3348 (`projectile: Some(610)`,
+  `consumable: false`) where the C# `Item.cs:30521-30549` has a consumable
+  placeable (useTime 10, createTile 404 / createWall 311). The extractinator
+  path is immune (the arm's own decrement), but the fossil items are wrong
+  elsewhere — regenerating `tools/GenItemData` is the fix.
+- **Out of scope:** the wired extractination (`Wiring.cs:2554-2584` —
+  `CheckMech` 60, `TryFindChestForExtractinator`'s 6×6 chest scan, the
+  first-non-air chest item, the wiring broad-cast drop) = M7-WIRE-2/3; the tile
+  animator (`Main.cs:18659-18678`: 10 frames for 219, 6 for 642, advancing
+  every 5 ticks; `drawdata.rs` already ports the `tileFrame * 54` offset but
+  `render/tiles.rs` passes the t=0 state) = TILE-DRAW-3; smart cursor
+  (`Player.cs:17595-17614`'s strategy 7) = M7-SMARTCURSOR-1.
+## Shimmer transforms (M7-SHIMMER-1)
+
+`tr-core/src/shimmer.rs` + `shimmer_tables.rs` port the transform data and the
+resolution order (`ShimmerTransforms.cs:88-111`, `ShimmerHelper.cs`);
+`tr-app/src/shimmer.rs` ports the whole chain (`WorldItem.cs:1691-1849`) with
+its branch order intact, and `world_sim/items.rs` + `item.rs` port
+`WorldItem.UpdateShimmer`'s ramp on the `ItemDrop` state.
+
+Deliberate deviations and notes:
+
+- **The crimson/corruption decraft variant is not ported.** The port's recipe
+  data (`recipes_gen.rs`/`craft.rs`) carries no `crimson`/`corruption` tags, so
+  `GetDecraftingRecipeIndex` (`ShimmerTransforms.cs:22-29`) falls back to the
+  plain `IsCrafted` index. The 15 variant pairs (`Recipe.cs`'s `crimson`/
+  `corruption` flags — extracted for the follow-up: e.g. 5092 creates the
+  corruption/crimson pair at recipe indices 90/91) need the generator to grow
+  the tags.
+- **`customShimmerResults` are absent** from the port's recipe data
+  (`Recipe.cs:176-183`) — the decraft spends the plain `requiredItem` list.
+- **`Item.makeNPC` has no port field**, so the release arm
+  (`WorldItem.cs:1747-1772`) never fires from real items: the override map
+  (`NPCID.cs:10470`), the ≤50 attempt budget and `shimmerTransparency = 1f` are
+  ported and unit-tested, but the item-side input and the NPC roster (676
+  Shimmer Slime / 677 shimmered town NPC / 681 Rainbow Slime) wait for
+  `GenItemData` + M4-NPC.
+- **The ramp's transform tick** follows the C#'s f32 `+= 0.01f` accumulation
+  and fires inside the same update (the port marks a pending flag and applies
+  after the fixed step, so the spawn/flag side-effects do not run mid-borrow).
+- **`unlocked_slime_rainbow_spawn` is a `World` field** standing in for the
+  C#'s `Main`-global (`NPC.unlockedSlimeRainbowSpawn`) — the save format does
+  not carry it yet.
+- **The shimmered item's dust/light arms** (`WorldItem.cs:459-482`: dust 309 at
+  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) are render
+  layer and skipped.
+- **Out:** the player's §7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
+  `ShimmerUnstuckHelper`'s unstuck — the helper is ported, the driver is not);
+  `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
+  table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
+  shimmer tile's rendering/animation.
+## Ocean passes fidelity (M5-OCEAN)
+
+The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
+`470672a`→`c1759e8`): the vanilla beach geometry (P1), `Ocean Sand` +
+`Beaches` + `Gravitating Sand` (P2), the faithful `oceanCave` walker (P3),
+`Remove Water From Sand` + `Shell Piles` + the `Water Plants` seaweed arm
+(P4) and `Cactus, Palm Trees, & Coral` + the `AddTrees` beach palms (P5).
+Final pins: `SEED42_512 = 3862881231`, `DEFAULT_WORLD = 2822219158`
+(`world_hash.rs` provenance block has the per-phase history). Suites green
+(`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+Deviations and accepted changes:
+
+- **Reset-stand-in position.** Vanilla draws `leftBeachEnd`/`rightBeachStart`
+  in `Reset` (`WorldGen.cs:11415-11440`) before every pass; the port draws
+  them at the head of the terrain height-map step (the first consumer —
+  `plan biome spans` is later) from `pass_rng("Beaches")`, mirroring the
+  M5-BIOME spans-step stand-in. Dungeon side is fixed Right (M5-BIOME), so
+  the left side always adds `beachSandDungeonExtraWidth` (40) and the right
+  side takes the `beachSandJungleExtraWidth` (20) arm — the `−= 40` arm is
+  the dead `dungeonSide == Left` branch. The tenth-anniversary fixed 340 is
+  skipped (no seed framework).
+- **Terrain hybrid.** `TerrainPass`'s absolute beach band `[0.17, 0.23]·
+  maxTilesY` (`TerrainPass.cs:131-134`, `:193-201`) is not portable onto
+  the compact interior curve; the shelf holds the model's sea level flat
+  over the beach width and blends out over 30 columns. The compact t²·30
+  edge ramp retires (the seafloor profile is `TuneOceanDepth`'s curve).
+- **`tileSolid[192] = true` deferred.** `RemoveSurfaceWaterAboveSand`'s tail
+  mutation (`WorldGen.cs:16240`, `TileID.LeafBlock`) has no port
+  counterpart — the tile sets are generated statics (`tiledata/`); the owner
+  is `tools/GenTileData`.
+- **`drng` → `pass_rng`.** The ocean caves moved from the shared `drng` to
+  their own stream (the M5-BIOME phase-3/6 accepted-shift class); the later
+  `drng` consumers shift accordingly.
+- **512-wide degeneracy.** `range(0, 1)` returns 0 without a draw (.NET
+  `Next` semantics, world re-pinned once), and the ocean-zone widths on
+  sub-vanilla worlds behave as vanilla never sees them (vanilla min 4200) —
+  pinned, not valve'd. `leftBeachEnd > rightBeachStart` overlap on 512 is
+  accepted (the living-tree anchors order their span instead of panicking).
+- **Vanilla quirks ported verbatim.** The Shell Piles right branch's offset
+  arms write `shellStartXLeft` (`WorldGen.cs:16381`, `:16385`); the
+  `ShellPile` wobble clamps discard their result (`:10430-10431`); the
+  stalactite's `Next(3)` widening writes without the `badOceanCaveTiles`
+  check (`:76623-76628`); the `Cactus, Palm Trees, & Coral` middle zone's
+  unused `num5`/`num6` draws still burn; `PlaceTile(81)` places crystal on
+  liquid tiles (`:59460-59474`).
+- **Deferred with citations.** The `Sand Patches` pass (global sand patches,
+  M5-DESERT-structures); the `Water Plants` lily/cattail/bamboo arms
+  (out of ocean scope — their draws are deferred with them, so the
+  per-pass stream diverges from vanilla by exactly those draws); the
+  `Oasis` pass and its `GenVars.numOasis` writer (the CactusPalm oasis
+  block is dead in the port); the full `AddTrees` per-tile forest arms (the
+  compact forest model keeps its density — the beach palm arm is faithful);
+  the `PyrX/PyrY/numPyr` slots are published but unconsumed (the faithful
+  Pyramids pass is M5-DESERT-structures); `UnderwaterChests` is
+  M5-CHEST-gen (this task publishes `GenVars.ocean_cave_treasure` only).
+- **KillTile slice.** `GrowCheckSeaweed`'s dry-out arm uses `KillTile`'s
+  generation-time strip (inactive + type 0, frames 0); the item-drop /
+  `SquareTileFrame` / net arms do not exist in the port.
+- **Cactus arm.** `plant_cacti`'s compact desert scatter retires (the
+  faithful middle zone's `PlantCactus` covers the desert's cacti); the
+  pass re-declares `frame_important[80]` (the boot static the retired
+  scatter used to own).
+- **World re-rolls by design** at every phase — the per-phase pin history
+  lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
+  (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
+  `test_DW_4_3`-style vanilla-position tests for the ocean slots).
+
+## Entity sync (M6-NET-2)
+
+The entity messages and the smoothing are 1:1 ports; the deviations:
+
+- **`13 PlayerState` carries the port's render extension.** The C# derives
+  each peer's animation frames and on-ground state from its local simulation
+  of that player (`Main.player[i].Update` runs on every peer); the port
+  simulates remote players nowhere, so the wire body appends
+  `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
+  (two-client compatibility only). The control BitsBytes ride as flags with
+  no port-side replay: each peer's input is local.
+- **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
+  (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
+  `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
+  the per-type `SyncAnchor` (position is sent raw). The `generation` byte
+  bumps on a kind change so the client re-creates the slot — the C#'s
+  `existing.generation != generation` spawn test. `hurt_cd` stays 0 on
+  clients (`28 NPCStrike` is not ported), so a networked NPC shows no hit
+  flash yet.
+- **The cadence is the port's tick, not the C#'s per-NPC `netSpam` gate.**
+  The host streams every live NPC at 10 Hz (the `netSpam` 30/5-tick per-NPC
+  gate and the section culling are the M6-NET-3 follow-ups); the player
+  cadence is change-driven + a 42-tick heartbeat (the C#'s 420 ticks at
+  60 Hz = 7 s). The client's despawn is a 200 ms staleness prune (the host
+  sends nothing when an NPC dies — the C# broadcasts life = 0 and keeps the
+  slot; the port has no inactive-slot state, so the slot is dropped).
+- **Item ids are host-Vec indices**, not the C#'s fixed 400 slots: a removal
+  shifts the higher indices, and the next tick's `21` diff re-announces them
+  (the fixed-slot scheme is M6-NET-5). `22 ItemOwner` is consumed by the
+  client's grab gate but not yet emitted by the host — the port's pickup
+  request validates and removes in one step, so no reservation window
+  exists yet.
+- **The peer slots are seeded at the world spawn** on first sight (the C#'s
+  `Main.player[i]` exists at the spawn before its first `13`), so the first
+  snapshot's lag accrues from there rather than from (0, 0).
+## Localized item tooltips (M6-LOCALIZE-wire)
+
+The "wire the localization core into the HUD/menus" row's item-hover slice:
+`lang.rs` grew the `Lang.tip`/`Lang.inter` accessors (the `LegacyTooltip.{i}` /
+`LegacyInterface.{i}` keys, `Lang.cs:497`/`:485` — `menu`/`item_name` were
+already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
+`MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
+computed from the port's own `ItemDef` values.
+
+Deliberate deviations and notes:
+
+- **The player-side layers are out** (the accessory/M3 layer): the C#'s
+  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
+  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
+  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
+  with a comment.
+- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
+  the damage row's gate is the plain `damage > 0` (the coin-type exception and
+  the ammo gate ride along when the fields land).
+- The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
+  copies) is unchanged — only the row list changed.
+- Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
+  resources the loader probes) the keys show through — vanilla's own
+  unknown-key behaviour.
+
+
+## The Golem family's display (M4-BOSS-19b)
+
+The port draws the Golem family over the extracted sheets' real rows, but
+several vanilla details are deliberately not carried:
+
+- **The 1-px flight row.** `FindFrame` case 245's flight arm writes
+  `frame.Y = 1` (`NPC.cs:72938`) — a literal pixel into a field whose unit
+  is the row height (174 px for 245). The port tracks rows, so the flight
+  draws row 0: a 1-px vertical offset exists in vanilla and is not
+  reproduced.
+- **The glow passes.** The C# draws `TextureAssets.Golem[1..3]` and
+  `Extra[106/107]` over the body/head/free-head (the eye glows, the
+  `Main.cs:25729-25768` arms) — those textures have no port entries; the
+  base sheets only.
+- **The head's `timeLeft = 300`** on the volley beams (`NPC.cs:31326`)
+  rides the projectile pool's timed-spawn arm only for the Destroyer
+  laser kind; the Golem beams take the pool default.
+- **The cadences that consume `Main.rand`.** The head's volley trigger
+  (`60 + Next(600)`, `:31273`) and the free head's barrage
+  (`100 + Next(4800)`, `:31506`) fold to flat averages (300 / 1500) —
+  the RNG stream discipline shared with the other folded cadences.
+- **The fists' `collideX/collideY` dash exit** (`NPC.cs:19445`): the
+  port's sim carries no per-NPC tile-collision flags, so the dash ends
+  on the 700-px anchor distance only.
+- **The fist's state 3** (the `ai[0] == 3` hover, `:19450-19503`): no
+  port code sets `ai[0] = 3` for the fists — the arm is dead in the
+  vanilla AI itself and is not carried.
+- **`GetMyBalance`** (`NPC.cs:18485`): 1.0 for the solo unscaled player;
+  the multiplayer/good-world multipliers (the +3, the `*2` outside the
+  temple/jungle) stay off like the other difficulty branches.
+- **The head's tether** (`aiStyle 46`) converges under a ±7 velocity
+  clamp where the C# snaps the raw delta inside 100 px
+  (`NPC.cs:31148-31160`) — the anchor holds within the clamp.
+- **The anchor's freshness.** The C# parts read `Main.npc[golemBoss]`
+  live (the body's lower slot updates first in the same tick); the port's
+  pre-pass hoist feeds the head/fists the body's end-of-previous-tick
+  centre/velocity — the ratio is exact (damage lands outside the NPC
+  pass), the tether carries the one-tick shape.
+- **`alpha` on the whole NPC draw.** `Npc::alpha` (new) tints every NPC
+  through `GetAlpha`'s `(255 - alpha)/255`; only the Golem family's
+  spawn fades set it today.

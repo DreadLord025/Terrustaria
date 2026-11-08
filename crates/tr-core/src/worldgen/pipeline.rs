@@ -39,6 +39,7 @@ use super::liquids;
 use super::living_trees;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
+use super::ocean;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -138,6 +139,7 @@ pub(crate) struct TempleBounds {
 /// The cross-pass generation state — the port's slice of the C# `GenVars`
 /// statics (`WorldBuilding/GenVars.cs`): the stage products every later pass
 /// scopes against, plus the shrine spots the chest pass fills.
+#[derive(Clone)]
 pub(crate) struct GenVars {
     map: Option<SurfaceMap>,
     layers: Option<Layers>,
@@ -171,6 +173,50 @@ pub(crate) struct GenVars {
     pub(crate) water_line: i32,
     #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
     pub(crate) lava_line: i32,
+    /// `GenVars.leftBeachEnd`/`rightBeachStart` (`GenVars.cs:90-92`) — the
+    /// inland beach anchors drawn in `Reset` (`WorldGen.cs:11415-11440`).
+    /// The port draws them at the head of the terrain height-map step (the
+    /// first consumer; the spans step remains the stand-in for the jungle
+    /// draw): `Next(300, 340)` per side, the tenth-anniversary fixed 340
+    /// skipped (no seed framework), the dungeon-side extra widths applied —
+    /// the port's dungeon side is fixed Right (M5-BIOME), so the left side
+    /// always takes `beachSandDungeonExtraWidth` (40, `:11194`) and the right
+    /// side the `beachSandJungleExtraWidth` arm (20, `:11195`,
+    /// `:11420-11427` / `:11433-11440`). Ocean Sand (P2) and Beaches (P2)
+    /// consume them without redrawing.
+    #[allow(dead_code)] // written here; consumed from Phase 2 on
+    pub(crate) left_beach_end: i32,
+    #[allow(dead_code)] // written here; consumed from Phase 2 on
+    pub(crate) right_beach_start: i32,
+    /// `GenVars.shellStartXLeft/YLeft/XRight/YRight` (`GenVars.cs:104-110`,
+    /// reset 0 in `WorldGen.cs:11168-11171`) — the Beaches carve's first
+    /// water-surface anchors, consumed by the Shell Piles pass (P4) and
+    /// mutated by it (the vanilla right-side offsets adjust
+    /// `shellStartXLeft`, `WorldGen.cs:16357-16360`).
+    #[allow(dead_code)] // written by the Beaches pass from Phase 2 on
+    pub(crate) shell_start_x_left: i32,
+    #[allow(dead_code)] // written by the Beaches pass from Phase 2 on
+    pub(crate) shell_start_y_left: i32,
+    #[allow(dead_code)] // written by the Beaches pass from Phase 2 on
+    pub(crate) shell_start_x_right: i32,
+    #[allow(dead_code)] // written by the Beaches pass from Phase 2 on
+    pub(crate) shell_start_y_right: i32,
+    /// `GenVars.PyrX/PyrY/numPyr` (`GenVars.cs:156-160`, reset at
+    /// `WorldGen.cs:11172-11174`) — the pyramid-slot anchors the Dunes pass
+    /// allocates and the Ocean Sand wedge appends. The port has no faithful
+    /// Dunes pass (the compact desert flattens inside the terrain step), so
+    /// the slots are pre-sized vectors — the append counter is what the
+    /// Pyramids pass consumes (M5-DESERT-structures).
+    pub(crate) pyr_x: Vec<i32>,
+    pub(crate) pyr_y: Vec<i32>,
+    pub(crate) num_pyr: i32,
+    /// `GenVars.numOceanCaveTreasure`/`oceanCaveTreasure[2]`
+    /// (`GenVars.cs:130-134`, reset in `WorldGen.cs:11224`, `GenVars.cs:440-442`)
+    /// — the ocean-cave walker's treasure anchors (the counter wraps at
+    /// `maxOceanCaveTreasure` = 2, `WorldGen.cs:76454-76457`). Consumed by
+    /// `UnderwaterChests` (`:17245-17355`, M5-CHEST-gen) — published here.
+    pub(crate) num_ocean_cave_treasure: i32,
+    pub(crate) ocean_cave_treasure: [(i32, i32); 2],
 }
 
 impl Default for GenVars {
@@ -199,6 +245,24 @@ impl Default for GenVars {
             // (`TerrainPass.cs:235-236`).
             water_line: 0,
             lava_line: 0,
+            // The C# Reset zeroes the beach anchors before drawing them
+            // (`WorldGen.cs:11199-11200`).
+            left_beach_end: 0,
+            right_beach_start: 0,
+            // The shell anchors zero in Reset (`WorldGen.cs:11168-11171`).
+            shell_start_x_left: 0,
+            shell_start_y_left: 0,
+            shell_start_x_right: 0,
+            shell_start_y_right: 0,
+            // The C# allocates the arrays in the Dunes pass (`:11536`); the
+            // port pre-sizes them (no faithful Dunes yet) with the C# `null`
+            //-until-allocated semantics carried by an empty Vec.
+            pyr_x: Vec::new(),
+            pyr_y: Vec::new(),
+            num_pyr: 0,
+            // The C# resets the treasure counter to 0 (`WorldGen.cs:11224`).
+            num_ocean_cave_treasure: 0,
+            ocean_cave_treasure: [(0, 0); 2],
         }
     }
 }
@@ -950,6 +1014,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain height map", "Terrain", step_terrain_height_map),
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
+    // The vanilla Ocean Sand slot (`WorldGen.cs:11580`): right after the
+    // spans planner, before the jungle (`:12466`). Vanilla runs it third
+    // (after TerrainPass and Dunes, both compact-model steps here) — the
+    // M5-OCEAN phase-2 insertion.
+    step!("ocean sand", "Ocean Sand", step_ocean_sand),
     step!("jungle", "Jungle", step_jungle),
     step!(
         "mud caves to grass",
@@ -971,6 +1040,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
     step!("dungeon", "Dungeon", step_dungeon),
+    // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
+    // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
+    // (`:15167`) — the M5-OCEAN phase-2 insertion.
+    step!("beaches", "Beaches", step_beaches),
+    step!("gravitating sand", "Gravitating Sand", step_gravitating_sand),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
@@ -1018,11 +1092,20 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Floating Islands",
         step_floating_islands
     ),
+    // The vanilla Remove Water From Sand / Shell Piles slots
+    // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
+    // World (`:16419`) — the M5-OCEAN phase-4 insertion.
+    step!("remove water", "Remove Water From Sand", step_remove_water),
+    step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
+    // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
+    // vegetation family, before the world tail — the M5-OCEAN phase-4
+    // insertion (the seaweed arm of the pass).
+    step!("water plants", "Water Plants", step_water_plants),
     step!("world tail", "", step_world_tail),
 ];
 
@@ -1035,13 +1118,83 @@ pub(crate) fn executed_pass_names() -> Vec<&'static str> {
 fn step_terrain_height_map(
     _world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (_world.width, _world.height);
-    gv.map = Some(terrain::surface_height_map(width, height, noise));
+    // `Reset`'s beach draws (`WorldGen.cs:11415-11440`), taken at the head of
+    // the terrain step — the first consumer of the anchors (vanilla draws
+    // them in Reset before every pass; the spans step stays the stand-in for
+    // the later jungle draw). `Next(300, 340)` per side; the tenth-anniversary
+    // fixed 340 is skipped (no seed framework, always the random branch); the
+    // dungeon side is fixed Right (M5-BIOME) so the left side always adds
+    // `beachSandDungeonExtraWidth` = 40 and the right side always takes the
+    // `beachSandJungleExtraWidth` = 20 arm (`:11194-11195`,
+    // `:11420-11427` / `:11433-11440`).
+    let (left_beach_end, right_beach_start) = {
+        let mut brng = streams.pass_rng("Beaches");
+        let left = brng.range(300, 340) + 40;
+        let right = width - (brng.range(300, 340) + 20);
+        (left, right)
+    };
+    gv.left_beach_end = left_beach_end;
+    gv.right_beach_start = right_beach_start;
+    gv.map = Some(terrain::surface_height_map(
+        width,
+        height,
+        noise,
+        left_beach_end,
+        right_beach_start,
+    ));
+}
+
+fn step_ocean_sand(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The pyramid-slot arrays the C# Dunes pass allocates
+    // (`WorldGen.cs:11536-11537`: `random + 3` with the config Count 1-2 per
+    // the embedded Configuration.json) — the port pre-sizes them here (no
+    // faithful Dunes pass; the append counter stays ≤ 2 in practice, the C#
+    // worst case is 5).
+    if gv.pyr_x.is_empty() {
+        gv.pyr_x = vec![0; 5];
+        gv.pyr_y = vec![0; 5];
+    }
+    let layers = *gv.layers();
+    ocean::ocean_sand(world, gv, &layers, &mut streams.pass_rng("Ocean Sand"));
+}
+
+fn step_beaches(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The ocean carve (`WorldGen.cs:14888`) reads the beach anchors and the
+    // live surface, writes GenVars.shellStart*.
+    ocean::beaches(world, gv, &mut streams.pass_rng("Beaches"));
+}
+
+fn step_gravitating_sand(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `GravitatingSandCleanup` (`WorldGen.cs:15138`) — no RNG of its own.
+    let world_surface = gv.layers().world_surface;
+    ocean::gravitating_sand(world, world_surface);
 }
 
 fn step_terrain_fill(
@@ -1094,12 +1247,22 @@ fn step_plan_biome_spans(
         (world.width as f64 * (percent as f64 * 0.01)) as i32
     };
     gv.jungle_origin_x = jungle_origin_x;
-    let (width, beach) = {
+    let (width, left_beach_end, right_beach_start) = {
         let map = gv.map();
-        (world.width, map.beach)
+        (
+            world.width,
+            map.left_beach_end,
+            map.right_beach_start,
+        )
     };
     let surface = gv.map().heights.clone();
-    gv.spans = Some(biomes::plan_spans(width, &surface, beach, jungle_origin_x));
+    gv.spans = Some(biomes::plan_spans(
+        width,
+        &surface,
+        left_beach_end,
+        right_beach_start,
+        jungle_origin_x,
+    ));
 }
 
 fn step_jungle(
@@ -1118,7 +1281,7 @@ fn step_jungle(
         (l.world_surface, l.rock_layer)
     };
     let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
-    let beach = gv.map().beach;
+    let map = gv.map();
     biomes::pass_jungle(
         world,
         jungle_origin_x,
@@ -1126,7 +1289,8 @@ fn step_jungle(
         rock_layer,
         water_line,
         lava_line,
-        beach,
+        map.left_beach_end,
+        map.right_beach_start,
         &mut streams.pass_rng("Jungle"),
     );
 }
@@ -1373,11 +1537,14 @@ fn step_ocean_caves(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let (heights, beach) = {
-        let map = gv.map();
-        (&map.heights, map.beach)
-    };
-    biome_detail::pass_ocean_caves(world, heights, beach, &mut streams.drng);
+    // The faithful `WorldGen.oceanCave` walker (`WorldGen.cs:76452-76713`)
+    // on its own fresh per-pass stream — the shape-level placeholder
+    // (`biome_detail::pass_ocean_caves`) retired with this move. The stream
+    // shift `drng → pass_rng("Create Ocean Caves")` is the accepted world
+    // change of this phase (the later `drng` consumers shift along their
+    // stream — the same class as the M5-BIOME phase-3/6 accepted shifts).
+    let layers = *gv.layers();
+    ocean::ocean_caves(world, gv, &layers, &mut streams.pass_rng("Create Ocean Caves"));
 }
 
 fn step_fragile_ice(
@@ -1707,7 +1874,8 @@ fn step_living_trees(
         world,
         &mut streams.rng,
         &map.heights,
-        map.beach,
+        map.left_beach_end,
+        map.right_beach_start,
         (map.desert_start, map.desert_end),
     );
 }
@@ -1721,7 +1889,8 @@ fn step_trees(
     _pass_config: &ConfigSection,
 ) {
     let map = gv.map();
-    surface::plant_trees(world, &mut streams.rng, &map.heights);
+    let world_surface = gv.layers().world_surface as i32;
+    surface::plant_trees(world, &mut streams.rng, &map.heights, world_surface);
 }
 
 fn step_surface_flora(
@@ -1736,6 +1905,45 @@ fn step_surface_flora(
     surface::plant_surface_flora(world, &mut streams.rng, width, heights);
 }
 
+fn step_remove_water(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `RemoveSurfaceWaterAboveSand` (`WorldGen.cs:16211`) — no RNG of its own.
+    let world_surface = gv.layers().world_surface;
+    ocean::remove_water_from_sand(world, world_surface);
+}
+
+fn step_shell_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The shell-pile blobs (`WorldGen.cs:16266`) over the Beaches anchors.
+    let world_surface = gv.layers().world_surface;
+    ocean::shell_piles(world, gv, world_surface, &mut streams.pass_rng("Shell Piles"));
+}
+
+fn step_water_plants(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The seaweed arm (`WorldGen.cs:21973-22036`).
+    let layers = *gv.layers();
+    ocean::water_plants(world, &layers, &mut streams.pass_rng("Water Plants"));
+}
+
 fn step_cacti(
     world: &mut World,
     gv: &mut GenVars,
@@ -1744,8 +1952,12 @@ fn step_cacti(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let (width, map) = (world.width, gv.map());
-    surface::plant_cacti(world, &mut streams.rng, map, width);
+    // The faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) —
+    // the three zones, the beach palms/coral/shells, the middle cactus, the
+    // sea oats — replacing the compact desert-only cactus scatter (the
+    // faithful middle zone's `PlantCactus` covers the desert's cacti).
+    let layers = *gv.layers();
+    ocean::cactus_palm_trees_and_coral(world, &layers, &mut streams.pass_rng("Cactus, Palm Trees, & Coral"));
 }
 
 fn step_world_tail(
@@ -1815,6 +2027,17 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[186] = true;
     world.frame_important[187] = true;
     world.frame_important[380] = true;
+    // The ocean tiles the ocean passes write — the palm trunk 323, the
+    // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
+    // (`Main.cs:7376`) and the oasis plants 530 (`:7385`) are all
+    // style-driven, not auto-framed, so the framer keeps their stored frames.
+    world.frame_important[323] = true;
+    world.frame_important[81] = true;
+    world.frame_important[324] = true;
+    world.frame_important[495] = true;
+    world.frame_important[529] = true;
+    world.frame_important[530] = true;
+    world.frame_important[549] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -1871,9 +2094,9 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_44_named_steps() {
+    fn the_executed_pipeline_is_50_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 44);
+        assert_eq!(names.len(), 50);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -1886,17 +2109,22 @@ mod tests {
         // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) —
         // the phase-4 move of `evil` to its vanilla slot between
         // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`),
-        // and the three phase-5 insertions — `wet jungle` right after
+        // the three phase-5 insertions — `wet jungle` right after
         // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
         // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
         // and `muds walls in jungle` between `vines` and `floating islands`
-        // (vanilla `:20193` → `:20813`).
+        // (vanilla `:20193` → `:20813`) — and the three M5-OCEAN phase-2
+        // insertions: `ocean sand` right after `plan biome spans`
+        // (vanilla `:11517` → `:11580`), and `beaches` + `gravitating sand`
+        // between `dungeon` (`:14757`) and `ocean caves` (`:14888` →
+        // `:15138` → `:15167`).
         assert_eq!(
             names,
             vec![
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
+                "ocean sand",
                 "jungle",
                 "mud caves to grass",
                 "mushroom patches",
@@ -1910,6 +2138,8 @@ mod tests {
                 "evil",
                 "liquids",
                 "dungeon",
+                "beaches",
+                "gravitating sand",
                 "ocean caves",
                 "fragile ice",
                 "underground jungle trees",
@@ -1932,11 +2162,14 @@ mod tests {
                 "vines",
                 "muds walls in jungle",
                 "floating islands",
+                "remove water",
+                "shell piles",
                 "slopes",
                 "living trees",
                 "trees",
                 "surface flora",
                 "cacti",
+                "water plants",
                 "world tail",
             ]
         );
@@ -1963,6 +2196,59 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Mud Caves To Grass") == cpos("Jungle") + 1);
         assert!(cpos("Dirt To Mud") < cpos("Shinies") && cpos("Dirt To Mud") < cpos("Underworld"));
+    }
+
+    /// DW-2.3: the three M5-OCEAN phase-2 ocean steps sit in their vanilla
+    /// positions — `ocean sand` immediately after `plan biome spans`
+    /// (vanilla `:11517` Dunes → `:11580` Ocean Sand), and `beaches` +
+    /// `gravitating sand` between `dungeon` (`:14757`) and `ocean caves`
+    /// (vanilla `:14888` → `:15138` → `:15167`).
+    #[test]
+    fn test_DW_2_3_ocean_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("ocean sand"), pos("plan biome spans") + 1);
+        assert_eq!(names[pos("ocean sand") + 1], "jungle");
+        assert_eq!(pos("beaches"), pos("dungeon") + 1);
+        assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
+        assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dunes") < cpos("Ocean Sand"));
+        assert!(cpos("Ocean Sand") < cpos("Sand Patches"));
+        assert!(cpos("Sand Patches") < cpos("Tunnels"));
+        assert!(cpos("Dungeon") < cpos("Beaches"));
+        assert!(cpos("Beaches") < cpos("Gravitating Sand"));
+        assert!(cpos("Gravitating Sand") < cpos("Create Ocean Caves"));
+    }
+
+    /// DW-4.4: the three M5-OCEAN phase-4 steps sit in their vanilla
+    /// positions — `remove water` + `shell piles` right before `slopes`
+    /// (vanilla `:16211`/`:16266` → Smooth World `:16419`), and
+    /// `water plants` right after `cacti` (vanilla `:21310` → `:21973`).
+    #[test]
+    fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(names[pos("remove water") + 1], "shell piles");
+        assert_eq!(names[pos("shell piles") + 1], "slopes");
+        assert_eq!(names[pos("water plants") - 1], "cacti");
+        assert_eq!(names[pos("water plants") + 1], "world tail");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Remove Water From Sand") < cpos("Shell Piles"));
+        assert!(cpos("Shell Piles") < cpos("Smooth World"));
+        assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 
     /// DW-4.3: the evil step sits between `ores and gems`/Shinies
@@ -2147,6 +2433,12 @@ mod tests {
                 l_altar_y: 0,
             }
         );
+        // The beach anchors zero until the Reset draws write them
+        // (`WorldGen.cs:11199-11200`).
+        assert_eq!(gv.left_beach_end, 0);
+        assert_eq!(gv.right_beach_start, 0);
+        assert_eq!(gv.water_line, 0);
+        assert_eq!(gv.lava_line, 0);
     }
 
     // --- Phase 6: temple stub -------------------------------------------------

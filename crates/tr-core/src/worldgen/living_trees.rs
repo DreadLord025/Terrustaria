@@ -22,12 +22,15 @@ pub(crate) const TILE_LIVING_WOOD: u16 = 191;
 pub(crate) const TILE_LEAVES: u16 = 192;
 pub(crate) const WALL_LIVING_WOOD: u16 = 244;
 
-/// The "Living Trees" pass (`WorldGen.cs:15476-15715`).
+/// The "Living Trees" pass (`WorldGen.cs:15476-15715`). The beach anchors
+/// are the vanilla GenVars pair (`GenVars.cs:90-92`): placements stay inland
+/// of both beaches.
 pub(crate) fn plant_living_trees(
     world: &mut World,
     rng: &mut Rng,
     surface: &[i32],
-    beach: i32,
+    left_beach_end: i32,
+    right_beach_start: i32,
     desert: (i32, i32),
 ) {
     // `WorldGen.cs:15482-15492`: the count scales with the world width.
@@ -41,11 +44,20 @@ pub(crate) fn plant_living_trees(
     #[cfg(test)]
     let mut placed_trees = 0u32;
     let half = world.width / 2;
+    // The anchor span stays valid on sub-vanilla worlds: the vanilla minimum
+    // is 4200 wide, so `leftBeachEnd > rightBeachStart` (the 512 pin worlds)
+    // is a degenerate case vanilla never sees — order the span, don't panic.
+    let (anchor_lo, anchor_hi) = if left_beach_end <= right_beach_start {
+        (left_beach_end, right_beach_start)
+    } else {
+        (right_beach_start, left_beach_end)
+    };
+    let anchor_hi = anchor_hi.max(anchor_lo + 1);
     for _ in 0..count {
         // `WorldGen.cs:15543-15546`: the anchor attempts, up to maxTilesX/2.
         let mut anchor = None;
         for _ in 0..world.width / 2 {
-            let x = rng.range(beach, world.width - beach);
+            let x = rng.range(anchor_lo, anchor_hi);
             // `WorldGen.cs:15537`: grow OUTSIDE the spawn plateau (the anchor
             // must satisfy `x <= half - num || x >= half + num`).
             if x > half - exclusion && x < half + exclusion {

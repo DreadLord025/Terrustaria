@@ -76,12 +76,65 @@ impl Rng {
         (x >> 32) as u32
     }
 
+    /// The `Next(min, max)` draw. An empty range returns `lo` without a
+    /// draw, mirroring `Random.Next` (`minValue == maxValue` → `minValue`;
+    /// only `minValue > maxValue` throws) — the degenerate band widths the
+    /// sub-vanilla 512 test worlds produce (`GenVars` quartet collapses a
+    /// band flat) stay well-formed.
     pub(crate) fn range(&mut self, lo: i32, hi: i32) -> i32 {
-        debug_assert!(hi > lo);
+        debug_assert!(hi >= lo, "range({lo}, {hi})");
+        if hi == lo {
+            return lo;
+        }
         lo + (self.next_u32() % (hi - lo) as u32) as i32
     }
 
     pub(crate) fn chance(&mut self, n: u32) -> bool {
         self.next_u32() % n == 0
+    }
+
+    /// The fraction draw — the port's `NextDouble` for the passes that draw
+    /// one (the ocean-cave walker's direction/budget/jitter chain
+    /// `WorldGen.cs:76462+`, the `AddTrees` beach-palm probability
+    /// `:31372-31386`, the oasis density `:21333-21348`). One convention over
+    /// the xorshift stream: the next word scaled into `[0, 1)`. The vanilla
+    /// `UnifiedRandom.NextDouble` has different numerics — the port's streams
+    /// are already xorshift (module doc), so only the *fraction* semantics
+    /// (`0.0` inclusive, `1.0` exclusive, deterministic order) carry over.
+    pub(crate) fn next_f64(&mut self) -> f64 {
+        f64::from(self.next_u32()) / 4_294_967_296.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DW-1.1: the fraction draw is pinned — the word-scaling convention
+    /// (exact float bits), the `[0, 1)` bounds and the stream determinism.
+    #[test]
+    fn next_f64_is_bounded_deterministic_and_word_scaled() {
+        // The convention: one word per draw, scaled into [0, 1) — the k-th
+        // `next_f64` equals the k-th `next_u32` over 2^32, bit-exact.
+        let mut a = Rng(0x0CEA);
+        let mut b = Rng(0x0CEA);
+        for _ in 0..64 {
+            let word = b.next_u32();
+            let got = a.next_f64();
+            let expected = f64::from(word) / 4_294_967_296.0;
+            assert_eq!(got.to_bits(), expected.to_bits());
+            assert!((0.0..1.0).contains(&got));
+        }
+        // Determinism: a fresh same-seed stream replays the sequence.
+        let mut c = Rng(0x0CEA);
+        let mut d = Rng(0x0CEA);
+        for _ in 0..64 {
+            assert_eq!(c.next_f64().to_bits(), d.next_f64().to_bits());
+        }
+        // The draw never returns 1.0.
+        let mut r = Rng(u64::MAX);
+        for _ in 0..10_000 {
+            assert!(r.next_f64() < 1.0);
+        }
     }
 }

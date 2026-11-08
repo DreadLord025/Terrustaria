@@ -463,6 +463,9 @@ impl App {
             }
         }
         self.poll_net();
+        // The `netOffset` decay (`UpdateNetOffset`, `Player.cs:28721-28749`) —
+        // client-only, and after the incoming snapshots are applied.
+        self.net_interp_tick(dt);
         // `Main.DrawBG`: advance the surface-background cross-fade once per drawn
         // frame, exactly where the original runs it (inside the draw pass).
         self.update_bg_visibility();
@@ -914,6 +917,31 @@ impl App {
                     },
                     light_generation: light.generation(),
                     waterfall: waterfall.anim_key(),
+                    net_key: {
+                        // FNV-1a over the peers' smoothed state and the NPC
+                        // smoothing accumulators (`npc_key` covers the base
+                        // positions; the offsets decay every frame without
+                        // moving the base).
+                        let mut h: u32 = 0xcbf2_9ce4;
+                        let mut mix = |h: &mut u32, v: u32| {
+                            for b in v.to_le_bytes() {
+                                *h = (*h ^ b as u32).wrapping_mul(0x0100_0193);
+                            }
+                        };
+                        for rp in remote_players.values() {
+                            mix(&mut h, rp.id);
+                            mix(&mut h, (rp.x + rp.off_x).to_bits());
+                            mix(&mut h, (rp.y + rp.off_y).to_bits());
+                            mix(&mut h, rp.leg_frame);
+                            mix(&mut h, rp.body_frame);
+                            mix(&mut h, rp.hp as u32);
+                        }
+                        for n in npcs.iter() {
+                            mix(&mut h, n.net_offset.x.to_bits());
+                            mix(&mut h, n.net_offset.y.to_bits());
+                        }
+                        h
+                    },
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);

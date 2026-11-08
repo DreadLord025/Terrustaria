@@ -38,7 +38,6 @@ use winit::window::Window;
 
 use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
-use crate::app::netglue::compressed_world;
 use crate::assets;
 use crate::audio;
 use crate::banners;
@@ -53,7 +52,7 @@ use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
 use crate::menu;
 use crate::net;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::persist;
 use crate::player::{self, Player};
 use crate::projectile::ProjectilePool;
@@ -105,6 +104,9 @@ pub(crate) struct App {
     pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
+    /// The packed BC2 font pages the renderer uploads (`loop`'s
+    /// `SpriteRenderer::new`); `None` without the retail fonts.
+    pub(crate) font_atlas: Option<tr_render::FontAtlas>,
     pub(crate) lookups: assets::Lookups,
     pub(crate) clouds: Vec<CloudSprite>,
     pub(crate) sky: SkyAssets,
@@ -309,6 +311,52 @@ pub(crate) struct App {
     /// Our id assigned by the host (0 while hosting).
     pub(crate) local_id: u32,
     pub(crate) net_timer: f32,
+    /// The client handshake state — `Netplay.Connection.State`
+    /// (`Netplay.cs:469-543`); stays at 0 while hosting.
+    pub(crate) net_state: i32,
+    /// The world-blob slice buffer while the host streams the world
+    /// (`15 WorldChunk`), assembled in order at `WorldComplete`.
+    pub(crate) net_chunks: Vec<Option<Vec<u8>>>,
+    /// The `7 WorldInfo` header, held until the blob completes the install.
+    pub(crate) net_info: Option<net::WorldInfo>,
+    /// The `9 Status` load-progress line (`Netplay.cs:526-540`'s StatusText).
+    pub(crate) net_status_text: String,
+    pub(crate) net_status_max: i32,
+    pub(crate) net_status_count: i32,
+    /// The last received frame stamp — the client-side `TimeOutTimer`
+    /// (`Main.cs:64540-64544`).
+    pub(crate) net_last_recv: Instant,
+    /// A disconnect ran inside `poll_net`'s dispatch: the swapped-out role
+    /// must not be restored afterwards (the `mem::replace` borrow dance has
+    /// no other way to say "the handlers changed the role").
+    pub(crate) net_dropped: bool,
+    /// The client's NPC slots keyed by the host's slot index (the `23`
+    /// store — the C#'s `Main.npc[]` on a client). Rebuilt into `npcs` in
+    /// slot order for the render.
+    pub(crate) net_npcs: HashMap<u32, crate::npc::Npc>,
+    /// The slots seen in the current `poll_net` batch: the `23` despawn diff.
+    pub(crate) net_npc_seen: Vec<u32>,
+    /// When each `23` slot was last heard from — a slot silent past
+    /// `NPC_STALE` is despawned (the host sends nothing when an NPC dies).
+    pub(crate) net_npcs_seen_at: HashMap<u32, Instant>,
+    /// Set when the npc store changed and `self.npcs` must be rebuilt.
+    pub(crate) net_npcs_dirty: bool,
+    /// The host's per-slot NPC bookkeeping: `(kind, generation)` — the
+    /// generation bumps on a kind change so the client recreates the slot
+    /// (`MessageBuffer.cs:1602-1613`'s test).
+    pub(crate) net_npc_gen: HashMap<u32, (i16, u32)>,
+    /// The client's item drops keyed by the host slot index (the `21` store).
+    pub(crate) net_items: HashMap<i16, crate::item::ItemDrop>,
+    /// Set when the item store changed and `self.items` must be rebuilt.
+    pub(crate) net_items_dirty: bool,
+    /// The host's last-sent `21` state per slot — the change-detection diff.
+    pub(crate) net_item_last: HashMap<i16, net::ItemState>,
+    /// The client's `22 ItemOwner` reservations: slot → (reserver, hold ticks).
+    pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
+    /// The client's last-sent `13 PlayerState` — the change-driven send test.
+    pub(crate) net_ps_last: net::PlayerState,
+    /// The heartbeat counter for the `13` cadence (`net_tick` calls).
+    pub(crate) net_beat: u32,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -562,6 +610,10 @@ pub(crate) struct WorldFrameKey {
     pub(crate) light_generation: u64,
     /// Waterfall animation frames + visible-list revision (0 when none visible).
     pub(crate) waterfall: u64,
+    /// Remote peers' smoothed positions/animations and the NPC smoothing
+    /// accumulators: the networked entities drawn inside the cached world
+    /// range. Zero in single-player (the offsets are zero and no peers).
+    pub(crate) net_key: u32,
     pub(crate) world_revision: u64,
 }
 
@@ -1352,6 +1404,7 @@ impl App {
         world: World,
         world_path: PathBuf,
         atlas: Atlas,
+        font_atlas: Option<tr_render::FontAtlas>,
         lookups: assets::Lookups,
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
@@ -1598,7 +1651,26 @@ impl App {
         }
         if std::env::var_os("TR_BOSS").is_some() {
             if let Some(p) = &player {
-                if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
+                // `TR_BOSS=golem` places the Golem body for the family's
+                // deterministic shots (the parts ride the body's one-shot
+                // init); any other value (or a bare flag) keeps the King
+                // Slime. The body takes the `SetDefaults` alpha fade.
+                let boss = std::env::var("TR_BOSS").unwrap_or_default();
+                if boss == "golem" {
+                    let (bw, bh) = NpcKind::Golem.size();
+                    let mut g = Npc::new(
+                        NpcKind::Golem,
+                        p.x + 12.0 * TILE_PX,
+                        p.y + p.height - bh,
+                        1,
+                        0.0,
+                    );
+                    g.hp = g.max_hp;
+                    g.alpha = 255;
+                    npcs.push(g);
+                } else if let Some(n) =
+                    Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
+                {
                     npcs.push(n);
                 }
             }
@@ -1764,7 +1836,7 @@ impl App {
         };
         let mut net_role = NetRole::Off;
         if let Some((addr, pw)) = join_target.as_ref() {
-            match net::Client::connect(addr, player_name.clone(), pw.clone()) {
+            match net::Client::connect(addr) {
                 Ok(c) => {
                     log::info!("joining {addr}");
                     net_role = NetRole::Client(c);
@@ -1773,7 +1845,7 @@ impl App {
             }
         }
         if let Some(port) = auto_host {
-            match net::Server::start(port, String::new(), compressed_world(&world)) {
+            match net::Server::start(port, String::new()) {
                 Ok(server) => {
                     log::info!("hosting on {}", server.addr());
                     net_role = NetRole::Host(server);
@@ -1802,6 +1874,11 @@ impl App {
                 .unwrap_or(1);
             ty.map(|ty| (ty, seed))
         });
+        // The chests roll their loot here — before the struct literal moves
+        // `world` (`AddBuriedChest`'s stock inline with the placement, the
+        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
+        // chest merges in (its anchor is already stocked — the roll skips).
+        let world_chests = crate::chest_gen::generate_world_chests(&world);
         let mut app = App {
             window: None,
             gpu: None,
@@ -1816,6 +1893,7 @@ impl App {
             filter_driver: crate::app::filters::FilterDriver::new(),
             world,
             atlas: Some(atlas),
+            font_atlas,
             lookups,
             clouds,
             sky,
@@ -2012,7 +2090,10 @@ impl App {
             crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
-            world_chests: tr_chest_store,
+            // The load-time loot roll (the hoist above); the `TR_CHEST`
+            // store's own chests stay (its anchor gets double-stocked in
+            // vanilla too — the fixture stock wins the first slots).
+            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2046,6 +2127,25 @@ impl App {
             remote_players: HashMap::new(),
             local_id: 0,
             net_timer: 0.0,
+            net_state: net::client_state::NOT_CONNECTED,
+            net_chunks: Vec::new(),
+            net_info: None,
+            net_status_text: String::new(),
+            net_status_max: 0,
+            net_status_count: 0,
+            net_last_recv: Instant::now(),
+            net_dropped: false,
+            net_npcs: HashMap::new(),
+            net_npc_seen: Vec::new(),
+            net_npcs_seen_at: HashMap::new(),
+            net_npcs_dirty: false,
+            net_npc_gen: HashMap::new(),
+            net_items: HashMap::new(),
+            net_items_dirty: false,
+            net_item_last: HashMap::new(),
+            net_reserved: HashMap::new(),
+            net_ps_last: net::PlayerState::default(),
+            net_beat: 0,
             join_target,
             map: Some(world_map),
             map_grab: None,
@@ -2709,6 +2809,12 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::ClockRead { text } => {
                     log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
                 }
+                // M7-EXTRACT-1: the extractinator's item-anchored arm has no
+                // load-time meaning (no held item) — the dispatch only reports
+                // the tile kind.
+                edit::TileInteraction::Extractinator => {
+                    log::info!("TR_TOGGLE {},{} -> extractinator", op.x, op.y)
+                }
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
                 }
@@ -2725,7 +2831,7 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
 pub(crate) fn build_atlas(
     world: &World,
     assets_dir: &Path,
-) -> Result<(Atlas, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -2744,8 +2850,7 @@ pub(crate) fn build_atlas(
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let (font_images, ui_font_meta, item_font_meta, death_font_meta) = assets::load_fonts();
-    images.extend(font_images);
+    let fonts = assets::load_fonts();
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -2768,15 +2873,6 @@ pub(crate) fn build_atlas(
         log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
     }
 
-    let ui_font = ui_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let item_font = item_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let death_font = death_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
     let lookups = assets::Lookups::build(
         &atlas,
         tile_ids
@@ -2785,9 +2881,11 @@ pub(crate) fn build_atlas(
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
-        ui_font,
-        item_font,
-        death_font,
+        fonts.ui,
+        fonts.item,
+        fonts.death,
+        fonts.combat_text,
+        fonts.combat_crit,
     );
 
     let atlas_stats = (
@@ -2796,7 +2894,7 @@ pub(crate) fn build_atlas(
         atlas.memory_bytes(),
         atlas.sheets.len(),
     );
-    Ok((atlas, lookups, atlas_stats))
+    Ok((atlas, fonts.atlas, lookups, atlas_stats))
 }
 
 /// The world-dump diagnostics: `TR_DUMP_TILES` prints the raw tile grid and

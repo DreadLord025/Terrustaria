@@ -26,6 +26,17 @@ pub fn get(id: u16) -> Option<&'static ItemDef> {
     ITEMS.iter().find(|d| d.id == id)
 }
 
+/// `Item.makeNPC` (`Item.cs`'s per-item field) — the item's critter/bait
+/// NPC id, the shimmer release arm's input (`WorldItem.GetShimmered`'s
+/// makeNPC arm, `WorldItem.cs:1747-1772`). The generated item data does not
+/// carry the field yet (a `tools/GenItemData` follow-up), so every kind maps to
+/// 0 (no release) until it lands — the release arm's mechanism, the
+/// `ShimmerTransformToNPC` override and the ≤50-attempt budget are ported and
+/// unit-tested without it.
+pub fn make_npc(_id: u16) -> u16 {
+    0
+}
+
 pub fn name(id: u16) -> &'static str {
     get(id).map_or("Item", |d| d.name)
 }

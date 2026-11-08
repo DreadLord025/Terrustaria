@@ -133,6 +133,31 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
+    /// head/fists/free-head tethers read it (the WoF write-through
+    /// shape).
+    pub golem_present: bool,
+    /// `WorldGen.spawnMeteor` (`WorldGen.cs:4208`): the pending meteorite
+    /// landing — the night bookend's `Next(50)` after the boss-2 downing
+    /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
+    /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
+    pub spawn_meteor: bool,
+    /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
+    /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
+    /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
+    pub golem_hp_ratio: f32,
+    pub golem_x: f32,
+    pub golem_y: f32,
+    /// `NPC.unlockedSlimeRainbowSpawn` (`WorldItem.GetShimmered`'s 4986 arm,
+    /// `WorldItem.cs:1720-1735`) — a `Main`-global in the C#; a world field is
+    /// the port's standing-in (ANALYSIS "Shimmer transforms").
+    pub unlocked_slime_rainbow_spawn: bool,
+    /// The body's `velocity.X` — the fists' tether anchor folds it in
+    /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
+    /// (0, -9 * scale)`, `NPC.cs:19261-19265`) — the WoF write-through
+    /// shape. The head's tether (`aiStyle 46`, `:31148-31160`) does NOT
+    /// carry the term.
+    pub golem_vx: f32,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -153,6 +178,11 @@ pub struct World {
     /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
     /// corruption orb arms the morning invasion rolls.
     pub shadow_orb_smashed: bool,
+    /// `WorldGen.shadowOrbCount` (`WorldGen.cs:54293`): the shared
+    /// orb/heart/mana-crystal smash counter — the third break in a world
+    /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
+    /// summons the boss (`:54294-54321`).
+    pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
@@ -225,6 +255,13 @@ impl World {
             brain_y: 0.0,
             downed_golem: false,
             downed_deerclops: false,
+            golem_present: false,
+            golem_hp_ratio: 1.0,
+            spawn_meteor: false,
+            golem_x: 0.0,
+            golem_y: 0.0,
+            unlocked_slime_rainbow_spawn: false,
+            golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
@@ -249,6 +286,7 @@ impl World {
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
+            shadow_orb_count: 0,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,

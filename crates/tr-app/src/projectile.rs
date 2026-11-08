@@ -47,6 +47,57 @@ pub const WOODEN_ARROW: u16 = 1;
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
+/// `ProjectileID.Fireball` (`ProjectileID.cs`'s 258) — the Golem's head
+/// and free-head fireballs (`NPC.cs:31200`/`:31460`'s `num686`/`num720`).
+pub const GOLEM_FIREBALL: u16 = 258;
+/// `ProjectileID.EyeBeam` (259) — the Golem's eye beams
+/// (`NPC.cs:31282`'s `num698`, `:31565`'s `num729`).
+pub const GOLEM_EYE_BEAM: u16 = 259;
+/// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
+/// (`NPC.cs:26628`'s `num412`).
+pub const EYE_LASER: u16 = 83;
+/// `ProjectileID.CursedFlameHostile` (96) — the Spazmatism's phase-1 spit
+/// (`NPC.cs:27223`'s `num451`).
+pub const CURSED_FLAME: u16 = 96;
+/// `ProjectileID.EyeFire` (101) — the Spazmatism's phase-2 spit
+/// (`NPC.cs:27519`'s `num467`).
+pub const EYE_FIRE: u16 = 101;
+/// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
+/// (`NPC.cs`'s `num412`/`:26640`).
+pub const BRAIN_SCRAMBLER: u16 = 436;
+/// `ProjectileID.RayGunnerLaser` (438) — the Ray Gunner's ray.
+pub const RAY_GUNNER: u16 = 438;
+/// `ProjectileID.SaucerDeathray` (447) — the saucer core's deathray
+/// (`NPC.cs`'s aiStyle-76 battery).
+pub const SAUCER_DEATHRAY: u16 = 447;
+/// `ProjectileID.SaucerMissile` (448) — the cannon's shells.
+pub const SAUCER_MISSILE: u16 = 448;
+/// `ProjectileID.SaucerLaser` (449) — the turret's rays.
+pub const SAUCER_LASER: u16 = 449;
+/// `ProjectileID.SaucerScrap` (450) — the shell's missiles.
+pub const SAUCER_SCRAP: u16 = 450;
+/// `ProjectileID.BrainScramblerShot` (436) — the martian ground shooter's
+/// ray (`Projectile.cs:5064-5070`: 10x10, aiStyle 1, hostile,
+/// ignoreWater).
+pub const SCRAMBLER_SHOT: u16 = 436;
+/// `ProjectileID.MartianRay` (438) — the Scutlix rider's ray
+/// (`Projectile.cs:5081-5089`: 8x8, aiStyle 1, hostile, alpha 255,
+/// extraUpdates 3, ignoreWater).
+pub const MARTIAN_RAY: u16 = 438;
+/// `ProjectileID.Arrow`-family hostile arrow (180) — the pirate Deadeye's
+/// (`Projectile.cs:3922-3933`: 4x4, aiStyle 1, hostile, penetrate -1,
+/// light 0.5, alpha 255, scale 1.2).
+pub const PIRATE_ARROW: u16 = 180;
+/// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
+/// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
+/// penetrate -1, alpha 255).
+pub const DUTCHMAN_SHELL: u16 = 240;
+/// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
+/// (`NPC.cs:44582`'s `TryMakingSpike`).
+pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
+/// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
+pub const SHADOW_HAND: u16 = 965;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -172,6 +223,67 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
             // (the AI_037 arm overrides to 300 post-spawn).
             DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false),
+            // `Projectile.cs:3417-3426` — the Fireball: 16x16, aiStyle 8,
+            // `timeLeft = 300`, `penetrate = -1`, hostile, alpha 100.
+            GOLEM_FIREBALL => (16.0, 16.0, 8, -1, 300, 0, true, false, false),
+            // `Projectile.cs:3427-3440` — the Eye Beam: 8x8, aiStyle 1,
+            // `extraUpdates = 1`, `tileCollide = false`, `penetrate = -1`,
+            // hostile, `timeLeft = 300` (the call sites' override).
+            GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false),
+            // `Projectile.cs:1632-1645` — the EyeLaser: 4x4, aiStyle 1,
+            // penetrate 3, extraUpdates 2, timeLeft 600, hostile.
+            EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false),
+            // `Projectile.cs:1803-1815` — the CursedFlameHostile: 16x16,
+            // aiStyle 8, penetrate -1, hostile.
+            CURSED_FLAME => (16.0, 16.0, 8, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // `Projectile.cs:1885-1895` — the EyeFire: 6x6, aiStyle 23,
+            // penetrate -1, extraUpdates 3, hostile.
+            EYE_FIRE => (6.0, 6.0, 23, -1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            // `Projectile.cs:1602-1610` — the Scrambler's bolt: 10x10,
+            // aiStyle 1, hostile, ignoreWater.
+            BRAIN_SCRAMBLER => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // `Projectile.cs:1639-1648` — the Ray Gunner's laser: 8x8,
+            // aiStyle 1, extraUpdates 3.
+            RAY_GUNNER => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            // `Projectile.cs:1804-1818` — the deathray: 30x30, aiStyle 79
+            // (the port's boomerang family's homing stand-in), penetrate
+            // -1, tileCollide false, timeLeft 240.
+            SAUCER_DEATHRAY => (30.0, 30.0, 79, -1, 240, 0, false, false, false),
+            // `Projectile.cs:1816-1825` — the missile: 14x14, aiStyle 80
+            // (the port's boomerang return stand-in), penetrate -1.
+            SAUCER_MISSILE => (
+                14.0,
+                14.0,
+                80,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+            ),
+            // `Projectile.cs:1826-1837` — the laser: 5x5, aiStyle 1,
+            // extraUpdates 1, timeLeft 600.
+            SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false),
+            // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
+            // penetrate -1, timeLeft 360.
+            SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false),
+            // `Projectile.cs:9270-9279` — the ice spike: 32x32, aiStyle 157
+            // (the sharp-tears family), tileCollide false, ignoreWater.
+            DEERCLOPS_ICE_SPIKE => (
+                32.0,
+                32.0,
+                157,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+            ),
+            // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
+            // 187, penetrate -1, tileCollide false, timeLeft 300.
+            SHADOW_HAND => (40.0, 40.0, 187, -1, 300, 0, false, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
@@ -209,6 +321,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
             BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
             DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
+            // The martian family's guns + the Dutchman's cannon — the
+            // `SetDefaults` rows packed into the data shape (the saucer
+            // family's four consts ride the origin/main set).
+            SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
+            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
+            // and the Corsair's musket ball 82 (10x10, aiStyle 1).
+            PIRATE_ARROW => (4.0, 4.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false),
+            MUSKET_BALL => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {
@@ -783,7 +906,11 @@ impl ProjectilePool {
         damage: i32,
         knock_back: f32,
     ) -> Option<usize> {
-        let slot = self.spawn(kind, 0, pos, vel, damage, knock_back, false)?;
+        // The vanilla's NewProjectile applies `SetDefaults` for hostile
+        // shots (the box/flight/penetrate/extraUpdates) — the port routes
+        // the data-carrying spawn, so the hostile kinds move like the
+        // player's (the pre-base spawn path left them inert).
+        let slot = self.spawn_with_data(kind, pos.x, pos.y, vel.x, vel.y, damage, knock_back)?;
         self.slots[slot].friendly = false;
         Some(slot)
     }

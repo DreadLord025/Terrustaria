@@ -174,6 +174,29 @@ pub(crate) struct NpcAssets {
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
     pub(crate) martian_drone: Option<BgTex>,
+    /// `NPC_381/382` — the martian shooter strips (9 frames of 18x40),
+    /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
+    /// the Scutlix carrier (6 frames of 60x40).
+    pub(crate) martian_shooters: Option<BgTex>,
+    pub(crate) scutlix_rider: Option<BgTex>,
+    pub(crate) scutlix: Option<BgTex>,
+    /// `NPC_392/393/394/395` — the saucer family (the shell 150x80 4
+    /// frames, the turret 40x16 18, the cannon 46x36 8, the core 120x90
+    /// 11).
+    pub(crate) saucer: Option<BgTex>,
+    pub(crate) saucer_turret: Option<BgTex>,
+    pub(crate) saucer_cannon: Option<BgTex>,
+    pub(crate) saucer_core: Option<BgTex>,
+    /// `NPC_491` — the Flying Dutchman (1 frame of 350x120), `NPC_492` —
+    /// its cannons (9 frames of 30x30).
+    pub(crate) dutchman: Option<BgTex>,
+    pub(crate) dutchman_cannon: Option<BgTex>,
+    /// `NPC_552/553/554` — the DD2 goblin attackers (14-frame strips of
+    /// 18x40; the sheets are the shared humanoid shape).
+    pub(crate) dd2_goblins: Option<BgTex>,
+    /// `NPC_555-567` — the DD2 support family (the bombers/javelineers'
+    /// humanoid strips + the skeletons' 14-frame materialize sheets).
+    pub(crate) dd2_support: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -265,6 +288,17 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_walker_big: sky_tex(atlas, "NPC_520", None),
         martian_probe: sky_tex(atlas, "NPC_399", None),
         martian_drone: sky_tex(atlas, "NPC_388", None),
+        martian_shooters: sky_tex(atlas, "NPC_382", None),
+        scutlix_rider: sky_tex(atlas, "NPC_390", None),
+        scutlix: sky_tex(atlas, "NPC_391", None),
+        saucer: sky_tex(atlas, "NPC_392", None),
+        saucer_turret: sky_tex(atlas, "NPC_393", None),
+        saucer_cannon: sky_tex(atlas, "NPC_394", None),
+        saucer_core: sky_tex(atlas, "NPC_395", None),
+        dutchman: sky_tex(atlas, "NPC_491", None),
+        dutchman_cannon: sky_tex(atlas, "NPC_492", None),
+        dd2_goblins: sky_tex(atlas, "NPC_553", None),
+        dd2_support: sky_tex(atlas, "NPC_556", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -748,13 +782,26 @@ pub(crate) fn draw_npcs(
 ) -> u32 {
     let white = r.white_uv();
     let mut quads = 0;
-    for n in npcs {
+    for npc in npcs {
+        // The C# wraps the whole NPC draw with `position += netOffset`
+        // (`Main.cs:22335`, restored at `:22450`) — the port clones the NPC
+        // and adds the accumulator to its position, which every arm derives
+        // its anchor from. Zero on the host / single-player.
+        let n_owned = npc.offset_clone();
+        let n: &Npc = if npc.net_offset == Vec2::ZERO {
+            npc
+        } else {
+            &n_owned
+        };
         let (cx, cy) = n.center();
         let tx = (cx / TILE_PX) as i32;
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
-        let (w, _) = n.size();
+        // The width + the height: the Golem family's draw anchors the
+        // frame off the box's bottom edge (the vanilla's
+        // `position.Y + height + 4`, `Main.cs:25513`).
+        let (w, h) = n.size();
         let (tex, frame_h, size, pos) = match n.kind {
             NpcKind::Slime => (
                 assets.slime.as_ref(),
@@ -937,6 +984,96 @@ pub(crate) fn draw_npcs(
                 [40.0, 30.0],
                 [n.x, n.y],
             ),
+            // The shooters: the 9-frame NPC_382 strip over the 18x40
+            // frames (the 181/382 sheets are the shared humanoid shape).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => (
+                assets.martian_shooters.as_ref(),
+                assets.martian_shooters.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+            NpcKind::ScutlixRider => (
+                assets.scutlix_rider.as_ref(),
+                assets.scutlix_rider.as_ref().map_or(40.0, |t| t.h / 5.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+            NpcKind::Scutlix => (
+                assets.scutlix.as_ref(),
+                assets.scutlix.as_ref().map_or(40.0, |t| t.h / 6.0),
+                [60.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The saucer family: the shell 4-frame (150x80), the turret
+            // 18-frame (40x16), the cannon 8-frame (46x36), the core
+            // 11-frame (120x90) strips.
+            NpcKind::MartianSaucer => (
+                assets.saucer.as_ref(),
+                assets.saucer.as_ref().map_or(80.0, |t| t.h / 4.0),
+                [150.0, 80.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerTurret => (
+                assets.saucer_turret.as_ref(),
+                assets.saucer_turret.as_ref().map_or(16.0, |t| t.h / 18.0),
+                [40.0, 16.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerCannon => (
+                assets.saucer_cannon.as_ref(),
+                assets.saucer_cannon.as_ref().map_or(36.0, |t| t.h / 8.0),
+                [46.0, 36.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerCore => (
+                assets.saucer_core.as_ref(),
+                assets.saucer_core.as_ref().map_or(90.0, |t| t.h / 11.0),
+                [120.0, 90.0],
+                [n.x, n.y],
+            ),
+            // The Dutchman: the 1-frame ship strip + the cannons'
+            // 9-frame strip.
+            NpcKind::FlyingDutchman => (
+                assets.dutchman.as_ref(),
+                assets.dutchman.as_ref().map_or(120.0, |t| t.h),
+                [350.0, 120.0],
+                [n.x, n.y],
+            ),
+            NpcKind::FlyingDutchmanCannon => (
+                assets.dutchman_cannon.as_ref(),
+                assets.dutchman_cannon.as_ref().map_or(30.0, |t| t.h / 9.0),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            // The DD2 goblins: the 14-frame NPC_552-554 strips over the
+            // 18x40 frames (the sheets are the shared humanoid shape).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (
+                assets.dd2_goblins.as_ref(),
+                assets.dd2_goblins.as_ref().map_or(40.0, |t| t.h / 14.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The support family: the bombers' 18x40 and the javelin
+            // throwers' 26x52 strips (the shared humanoid sheets), the
+            // skeletons' 18x40 strips.
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3 => (
+                assets.dd2_support.as_ref(),
+                assets.dd2_support.as_ref().map_or(40.0, |t| t.h / 14.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
+                assets.dd2_support.as_ref(),
+                assets.dd2_support.as_ref().map_or(52.0, |t| t.h / 14.0),
+                [26.0, 52.0],
+                [n.x, n.y],
+            ),
             NpcKind::MartianWalker => (
                 assets.martian_walker_big.as_ref(),
                 assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 8.0),
@@ -1025,27 +1162,49 @@ pub(crate) fn draw_npcs(
                 [34.0, 54.0],
                 [n.x - 8.0, n.y - 10.0],
             ),
-            // The Golem family (the v1 single-frame draws): the body
-            // 140x140, the heads 70x70, the fists 40x30 (the SetDefaults
-            // boxes; the sheets draw at the box size).
-            NpcKind::Golem => (
-                assets.golem.as_ref(),
-                assets.golem.as_ref().map_or(140.0, |t| t.h),
-                [140.0, 140.0],
-                [n.x, n.y],
-            ),
-            NpcKind::GolemHead | NpcKind::GolemHeadFree => (
-                if n.kind == NpcKind::GolemHead {
-                    assets.golem_head.as_ref()
+            // The Golem family: the multi-frame draws over the real
+            // sheets. `Main.npcFrameCount` 245 = 7 / 246 = 6 / 247 = 248
+            // = 1 / 249 = 2 (`Main.cs:67108`) — the sheets divide into
+            // rows of `t.h / count` (1218/7 = 174, 708/6 = 118, 276/2 =
+            // 138, 40/1 = 40) and `npc_frame_uv` selects the row the
+            // machines wrote (`FindFrame` cases 245/246/249). The
+            // generic draw anchor (`Main.cs:25511-25516`) centers the
+            // frame on the box's centre-X and puts the frame's centre
+            // 4 px below the box's bottom: `n.x + w/2 - frame.w/2`,
+            // `n.y + h + 4 - frame.h/2`.
+            NpcKind::Golem => {
+                let t = assets.golem.as_ref();
+                let fh = t.map_or(174.0, |t| t.h / 7.0);
+                (
+                    t,
+                    fh,
+                    [186.0, fh],
+                    [n.x + w * 0.5 - 93.0, n.y + h + 4.0 - fh * 0.5],
+                )
+            }
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => {
+                let (t, count) = if n.kind == NpcKind::GolemHead {
+                    (assets.golem_head.as_ref(), 6.0)
                 } else {
-                    assets.golem_head_free.as_ref()
-                },
-                70.0,
-                [70.0, 70.0],
-                [n.x, n.y],
-            ),
+                    (assets.golem_head_free.as_ref(), 2.0)
+                };
+                let fh = t.map_or(if count == 6.0 { 118.0 } else { 138.0 }, |t| t.h / count);
+                (
+                    t,
+                    fh,
+                    [112.0, fh],
+                    [n.x + w * 0.5 - 56.0, n.y + h + 4.0 - fh * 0.5],
+                )
+            }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
-                (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
+                let t = assets.golem_fist.as_ref();
+                let fh = t.map_or(40.0, |t| t.h);
+                (
+                    t,
+                    fh,
+                    [50.0, fh],
+                    [n.x + w * 0.5 - 25.0, n.y + h + 4.0 - fh * 0.5],
+                )
             }
             // The Deerclops: the 60x154 sheet (the v1 single-frame).
             NpcKind::Deerclops => (
@@ -1250,24 +1409,41 @@ pub(crate) fn draw_npcs(
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
+        // `NPC.GetAlpha`'s `(255 - alpha)/255` (`NPC.cs:93406-93412`)
+        // rides every NPC: the Golem family spawns at `alpha = 255` and
+        // fades in over 26 ticks (the others start at 0 — a no-op tint).
+        let fade = 1.0 - n.alpha as f32 / 255.0;
         let base = if n.kind == NpcKind::Slime {
             let k = n.slime.stats().color;
             [
-                c[0] * k[0] as f32 / 255.0,
-                c[1] * k[1] as f32 / 255.0,
-                c[2] * k[2] as f32 / 255.0,
-                k[3] as f32 / 255.0,
+                c[0] * k[0] as f32 / 255.0 * fade,
+                c[1] * k[1] as f32 / 255.0 * fade,
+                c[2] * k[2] as f32 / 255.0 * fade,
+                k[3] as f32 / 255.0 * fade,
             ]
         } else {
-            [c[0], c[1], c[2], 1.0]
+            [c[0] * fade, c[1] * fade, c[2] * fade, fade]
         };
         let tint = if n.hurt_cd > 0.0 {
-            [c[0].max(0.8), c[1].max(0.8), c[2].max(0.8), 1.0]
+            [
+                c[0].max(0.8) * fade,
+                c[1].max(0.8) * fade,
+                c[2].max(0.8) * fade,
+                fade,
+            ]
         } else {
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
-        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0 {
+        if n.rotation != 0.0
+            && matches!(
+                n.kind,
+                NpcKind::DemonEye
+                    | NpcKind::WanderingEye
+                    | NpcKind::GolemFistLeft
+                    | NpcKind::GolemFistRight
+            )
+        {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight

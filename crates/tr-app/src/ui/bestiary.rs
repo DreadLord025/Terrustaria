@@ -450,6 +450,27 @@ fn portrait_data(
         NpcKind::MartianProbe => 76,   // NPC_399
         NpcKind::MartianDrone => 77,   // NPC_388
         NpcKind::Deerclops => 75,      // NPC_668
+        NpcKind::BrainScrambler => 78, // NPC_381
+        NpcKind::RayGunner => 79,      // NPC_382
+        NpcKind::ScutlixRider => 80,   // NPC_390
+        NpcKind::Scutlix => 81,        // NPC_391
+        NpcKind::MartianSaucer => 82, // NPC_392
+        NpcKind::MartianSaucerTurret => 83, // NPC_393
+        NpcKind::MartianSaucerCannon => 84, // NPC_394
+        NpcKind::MartianSaucerCore => 85, // NPC_395
+        NpcKind::FlyingDutchman => 86,    // NPC_491
+        NpcKind::FlyingDutchmanCannon => 87, // NPC_492
+        NpcKind::DD2GoblinT1 => 88,    // NPC_552
+        NpcKind::DD2GoblinT2 => 89,    // NPC_553
+        NpcKind::DD2GoblinT3 => 90,    // NPC_554
+        NpcKind::DD2GoblinBomberT1 => 91, // NPC_555
+        NpcKind::DD2GoblinBomberT2 => 92, // NPC_556
+        NpcKind::DD2GoblinBomberT3 => 93, // NPC_557
+        NpcKind::DD2JavelinT1 => 94,  // NPC_561
+        NpcKind::DD2JavelinT2 => 95,  // NPC_562
+        NpcKind::DD2JavelinT3 => 96,  // NPC_563
+        NpcKind::DD2SkeletonT1 => 97, // NPC_566
+        NpcKind::DD2SkeletonT3 => 98, // NPC_567
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -607,6 +628,96 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
+        }
+        // The shooters: the 9-frame NPC_381/382 strips over the 18x40
+        // frames.
+        (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {
+            let h = lookups.bestiary_npc_sheets[78]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+        (NpcKind::ScutlixRider, _) => {
+            let h = lookups.bestiary_npc_sheets[80]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+        (NpcKind::Scutlix, _) => {
+            let h = lookups.bestiary_npc_sheets[81]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        // The saucer family: the shell 4-frame, the turret 18-frame, the
+        // cannon 8-frame, the core 11-frame strips.
+        (NpcKind::MartianSaucer, _) => {
+            let h = lookups.bestiary_npc_sheets[82]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(80.0);
+            (sheet_i, h, 150.0, h, white)
+        }
+        (NpcKind::MartianSaucerTurret, _) => {
+            let h = lookups.bestiary_npc_sheets[83]
+                .map(|s| s.height as f32 / 18.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::MartianSaucerCannon, _) => {
+            let h = lookups.bestiary_npc_sheets[84]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MartianSaucerCore, _) => {
+            let h = lookups.bestiary_npc_sheets[85]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 120.0, h, white)
+        }
+        // The Dutchman: the 1-frame ship strip + the cannons' 9-frame.
+        (NpcKind::FlyingDutchman, _) => {
+            let h = lookups.bestiary_npc_sheets[86]
+                .map(|s| s.height as f32)
+                .unwrap_or(120.0);
+            (sheet_i, h, 350.0, h, white)
+        }
+        (NpcKind::FlyingDutchmanCannon, _) => {
+            let h = lookups.bestiary_npc_sheets[87]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        // The DD2 goblins: the 14-frame NPC_552-554 strips over the 18x40
+        // frames.
+        (NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[88]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The support family: the bombers'/skeletons' 18x40 and the
+        // javelin throwers' 26x52 strips.
+        (
+            NpcKind::DD2GoblinBomberT1
+                | NpcKind::DD2GoblinBomberT2
+                | NpcKind::DD2GoblinBomberT3
+                | NpcKind::DD2SkeletonT1
+                | NpcKind::DD2SkeletonT3,
+            _
+        ) => {
+            let h = lookups.bestiary_npc_sheets[91]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[94]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 26.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
