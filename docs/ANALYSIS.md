@@ -1655,12 +1655,18 @@ and the boss bar (`BigProgressBarHelper.DrawFancyBar`) are ported at the source
 geometry (`docs/UI.md` → "Minimap frame" / "Boss bar"). The deviations and
 behaviour notes:
 
-* `Main.MapScale` is `1.0` only. The whole minimap transform chain
-  (`mapScale = Main.MapScale`, the `CreateScale(MapScale)` position/scale
-  fixups, `Main.cs:55308-55329`, and the foreground batch at `:55768`) is
-  evaluated at the reference value, where every `*= num16` fixup is a no-op;
-  the `MapScale` config key still round-trips (load-clamped `0.5..1.0`,
-  `Main.cs:4494`). The `Map Scale` Interface slider is a P5 hand-off, not ported.
+* `Main.MapScale` is **live** as of M6-SETTINGS P4 (before that it was pinned to
+  the reference `1.0`): the minimap anchor and the whole panel's render scale
+  read the `MapScale` config key (load-clamped `0.5..1.0`, `Main.cs:4494`), and
+  the port stands in for `Matrix.CreateScale(Main.MapScale)`
+  (`Main.cs:55308-55329`, foreground batch at `:55768`) by keeping
+  `ui::minimap`'s geometry in the source's transform space — the origin divided
+  by the scale (`:55510-55511`), the pointer too (`:55512-55513`) — and
+  multiplying back inside the two draw passes. The full map keeps
+  `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f `:66756`) and the zoom
+  axis `Main.mapMinimapScale` (`Main.cs:55515-55522`) is unaffected. The
+  Interface slider itself is still a P5 hand-off — the key is read from
+  `config.json` only.
 * No UI cue plays: the buttons' hover/click sounds `SoundEngine.PlaySound(12)`
   (`MinimapFrame.cs:167,174`) and the icon row's `PlaySound(10)/(12)`
   (`Main.cs:41100,41109-41119`) are not ported — no UI cue is loaded
@@ -1679,8 +1685,11 @@ behaviour notes:
 * The shielded 7-arg `DrawFancyBar` overload (`BigProgressBarHelper.cs:72-126`)
   and `DrawBareBonesBar` (`:11-23`) are not ported — the former has no
   reachable caller in this port, the latter is dead code.
-* `BigProgressBarSystem.ShowText` is always on (`:259`); the boss-bar-numbers
-  settings toggle does not exist in the port, so the health text always draws.
+* `BigProgressBarSystem.ShowText` is **live** as of M6-SETTINGS P4 (before that
+  it was always on): `boss_bar_text` feeds `ui::bars::draw_fancy_bar`, which
+  skips `DrawHealthText` when the flag is off (`BigProgressBarHelper.cs:53-55`)
+  — the bar, the frame and the head icon keep drawing, only the `current / max`
+  numbers disappear.
 * The map-style icon row draws without the `Main.mapEnabled` gate
   (`:41056`) while its clicks keep the gate (the documented draw/click
   asymmetry in `chrome.rs`/`app/clicks.rs`): the row is visible with the map disabled,
@@ -1756,10 +1765,55 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
   (a vanilla `config.json`'s `HidePasswords` entry is ignored by the port).
 * **Stored without consumers yet** (visual-only, spec §9.1): the volume sliders
   (no audio engine reads the volumes), the six Effects toggles / smart-cursor
-  flags / `FlashyEffects*` (no gameplay consumer), `boss_bar_text` (P4's boss bar
-  draws the numbers unconditionally), `resource_sets` (the HUD always renders the
-  Classic set — the default above) and `portrait_preference`. The Interface
-  "Minimap Border" row is the exception — live, see below.
+  flags / `FlashyEffects*` (no gameplay consumer), `resource_sets` (the HUD
+  always renders the Classic set — the default above) and
+  `portrait_preference`. The Interface "Minimap Border" row is the exception —
+  live, see below. `boss_bar_text` and `map_scale` left this list with the
+  P4 consumers below.
+  Flags whose *system* the port does not have at all stay stored-only, each with
+  its own note (never a stand-in consumer — the P4 rule): a flag is either wired
+  to the real system or written down here.
+  - **`blood`** (`ChildSafety.Disabled`, key `GoreVisualsAllowed`, `Main.cs:4101`
+    Put / `:4349` Get) is vanilla's gore gate — it also suppresses the dangerous
+    dust (`Dust.cs:194`, `:445`) and the player-side blood
+    (`Player.cs:38912`), with the gore check itself at `Gore.cs:1334`. The port
+    has no gore system (only the ambient leaf gores of `render/foliage.rs`), so
+    nothing exists for the flag to turn off: it stays stored-only until the gore
+    port lands.
+  - **`placement_preview`** (`Main.placementPreview`, key `PlacementPreview`,
+    `Main.cs:4100`/`:4348`) drives the placement preview's opacity ramp —
+    `Player.UpdatePlacementPreview` (`Player.cs:43402`) counts the frames the
+    player has been moving and `GetPlacementPreviewOpacity`
+    (`Player.cs:43389-43399`) remaps that count from full alpha to zero, which
+    `TileObject.DrawPreview` draws (`TileDrawing.cs:740`). The port places tiles
+    without drawing the tile-object preview, so the flag has no consumer yet.
+  - **`mouse_border_color`** (`Main.MouseBorderColor`, key `MouseBorderColor`,
+    `Main.cs:4179` Put / `:4462` Get, default `(64,64,64,64)` `:66514`) is the
+    cursor's border tint: `Main.ThickMouse` (`Main.cs:2599`) thickens the
+    smart-cursor outline with it and shifts the mouse-text block 6 px
+    (`Main.cs:20203`; the other reader is `Utils.cs:2789`). The port draws
+    neither a cursor border nor a smart-cursor outline, so the colour (like
+    `mouse_color`, which the cursor tint does read) has no consumer.
+  - **`smart_cursor_toggle`** (`Main.cSmartCursorModeIsToggleAndNotHold`, key
+    `SmartCursorToggle`, `Main.cs:4094`/`:4330`, default `true` `:67178`) picks
+    toggle vs hold for the smart cursor in `Player.TryToToggleSmartCursor`
+    (`Player.cs:28814-28842`). The port has no `SmartCursorHelper` block
+    selection, so there is no smart cursor to toggle.
+  - **`smart_axe_first`** (`Player.SmartCursorSettings.SmartAxeAfterPickaxe`,
+    `Player.cs:331`, key `UseSmartAxeAfterSmartPickaxe`, `Main.cs:4139`/`:4412`,
+    default `false`) is the smart-cursor priority order — axe before pickaxe
+    instead of after. Without the ported block selection there is no priority to
+    order.
+  - **`smart_blocks`** (`Player.SmartCursorSettings.SmartBlocksEnabled`,
+    `Player.cs:330`, key `UseSmartCursorForCommonBlocks`, `Main.cs:4138`/`:4411`,
+    default `false`) lets the smart cursor bridge to common blocks; it is the
+    branch `SmartCursorHelper` takes when scanning for a target. The port has no
+    such scan, so the flag is inert.
+  All three smart-cursor flags share one missing system:
+  `SmartCursorHelper` (`SmartCursorHelper.cs`) and its drawing half
+  `Main.DrawSmartCursor` (`Main.cs:46609`) — the 16x16 outline around
+  `Main.SmartCursorX/Y` plus the directional arrows (`:46650-46656`) — are not
+  ported, so no consumer is honest until that task lands.
 * **The menuMode 888 destinations stay hints**: the 1127 "Keybindings" row shows
   the not-ported notice because `ManageControlsMenu` is a `UIState` screen, out
   of P5 scope (spec §9.1) — the 27/272727 lists below cover the raw bind data.
@@ -1805,9 +1859,9 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
     Retro.
   - `BigProgressBarSystem.ShowText` defaults **true** (static ctor,
     `BigProgressBarSystem.cs:259`), so `TR_PAGE=interface` shows "Boss Health
-    Bar Numbers: On" by default, not the plan's "Off". The flag is stored
-    only; P4's boss bar draws the numbers unconditionally (its note above
-    still holds until a consumer lands).
+    Bar Numbers: On" by default, not the plan's "Off". The flag is live:
+    `boss_bar_text` reaches `ui::bars::draw_fancy_bar`, which skips
+    `DrawHealthText` when it is off (`BigProgressBarHelper.cs:53-55`).
 * `resource_sets` defaults to `"Default"` (label "Classic") while vanilla's
   config default is `"New"` (`PlayerResourceSetsManager.cs:28`) — the planned
   deviation: the port renders the Classic set, so the row must agree with the
@@ -1815,8 +1869,15 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
 * The Interface "Minimap Border" row is *live* behaviour, not visual-only:
   cycling rewrites `settings.minimap_frame`, which the game loop feeds
   through `ui::minimap::style_index` (`app/clicks.rs`), so the minimap frame
-  re-renders immediately. Map Scale stays the P4 visual-only ruling
-  (reference 1.0).
+  re-renders immediately. Map Scale is the other live row: `map_scale` feeds
+  the minimap's anchor (`52 + (int)(240 * MapScale)`, `Main.cs:55275-55276`) and
+  the whole panel's render scale, through the port's stand-in for
+  `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`): `ui::minimap`
+  keeps its geometry in the source's transform space (the origin divided by the
+  scale, `Main.cs:55510-55511`, the pointer likewise `:55512-55513`) and the two
+  draw passes multiply back. The full map is untouched — it scales by
+  `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f `:66756`) — and so is
+  the `mapMinimapScale` zoom axis (`Main.cs:55515-55522`).
 
 ## Front-end screens (P6) (`ui/`, `app/flow.rs`)
 
