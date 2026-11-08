@@ -344,6 +344,24 @@ fn npc_frame_uv(tex: &BgTex, frame_h: f32, frame: u32) -> [f32; 4] {
     ]
 }
 
+/// The Deerclops' 5x5 grid cell (`DrawNPCDirect_Deerclops`'s
+/// `value.Frame(5, 5, frame.Y / 5, frame.Y % 5, 2, 2)`, `Main.cs:26338`):
+/// NPC_668's 1090x1200 sheet is 5x5 cells of 218x240 drawn 220x242 (the
+/// +2/+2 size offsets), the cell index in `npc.frame` (0..24).
+fn deerclops_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 5.0, span.1 / 5.0);
+    let (ox, oy) = (span.0 * (2.0 / tex.w), span.1 * (2.0 / tex.h));
+    let (col, row) = (cell / 5, cell % 5);
+    let (c, r) = (col as f32, row as f32);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0) + ox,
+        tex.uv[1] + dv * (r + 1.0) + oy,
+    ]
+}
+
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
 /// the same source texels while the camera moves (no crawling pixel grid).
 #[inline]
@@ -1206,13 +1224,23 @@ pub(crate) fn draw_npcs(
                     [n.x + w * 0.5 - 25.0, n.y + h + 4.0 - fh * 0.5],
                 )
             }
-            // The Deerclops: the 60x154 sheet (the v1 single-frame).
-            NpcKind::Deerclops => (
-                assets.deerclops.as_ref(),
-                assets.deerclops.as_ref().map_or(154.0, |t| t.h),
-                [60.0, 154.0],
-                [n.x, n.y],
-            ),
+            // The Deerclops: `DrawNPCDirect_Deerclops` (`Main.cs:26334-26412`)
+            // — the 5x5 grid's cell (218x240 drawn 220x242) anchored at the
+            // NPC's Bottom with the origin (106 or 114, 238): the cell's
+            // centre lands 4 px against the facing direction and its bottom
+            // 4 px below the hitbox (`origin.Y -= 4`).
+            NpcKind::Deerclops => {
+                let t = assets.deerclops.as_ref();
+                let cw = t.map_or(220.0, |t| t.w / 5.0 + 2.0);
+                let ch = t.map_or(242.0, |t| t.h / 5.0 + 2.0);
+                let lean = if n.facing < 0 { 4.0 } else { -4.0 };
+                (
+                    t,
+                    ch,
+                    [cw, ch],
+                    [n.x + w * 0.5 + lean - cw * 0.5, n.y + h + 4.0 - ch],
+                )
+            }
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon
@@ -1434,7 +1462,16 @@ pub(crate) fn draw_npcs(
         } else {
             base
         };
-        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
+        // The Deerclops' sheet is a 5x5 grid, not a column: the cell
+        // index in `npc.frame` decodes as column `cell / 5`, row
+        // `cell % 5`, and the C#'s `spriteEffects ^ FlipHorizontally`
+        // (Main.cs:26386) cancels the generic flip — the sheet faces
+        // RIGHT by default, so the flip rides `facing < 0`.
+        let uv = if n.kind == NpcKind::Deerclops {
+            flip_uv(deerclops_frame_uv(tex, n.frame()), n.facing < 0)
+        } else {
+            flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0)
+        };
         if n.rotation != 0.0
             && matches!(
                 n.kind,
