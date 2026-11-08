@@ -781,6 +781,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Dark Mage",
     },
     BestiaryEntryDef {
+        credit_id: "DD2Betsy",
+        net_id: 551,
+        kind: NpcKind::DD2Betsy,
+        variant: None,
+        quick_unlock: false,
+        name: "Betsy",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,

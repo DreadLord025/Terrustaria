@@ -2787,6 +2787,14 @@ shadowflame (`ai[1] == 0` at 32 — the 675 at 40), the heal (`ai[1] == 1`
 at 40/48/56 — the 674 markers), then the pattern advance and the
 97/127/183 re-arm.
 
+## Betsy (M4-EVENT-5i)
+
+The dragon's v1: the spawn pause, the phase-1 approach to the
+300/-200 offset past the player (7.5 speed / 0.45 accel), the phase
+rotation's pick (0/1/3 → 2, 2 → 3, 4/6 → 5, the 8-wrap) and phase 2's
+687 breath at 35. The fireball 686, the circle flight and the dash
+ride the attack family's slices.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

@@ -180,6 +180,10 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.DD2Betsy` (551) — the Old One's Army's dragon boss
+    /// (`NPC.cs:16400-16424`: 190×90, aiStyle 110, 50000 HP, dmg 80,
+    /// def 38, noGravity, noTileCollide, lavaImmune).
+    DD2Betsy,
     /// `NPCID.DD2DarkMageT1` (564) — the Old One's Army caster (`NPC.cs`
     /// `:16445-16466`: 34×62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
     /// noGravity, lavaImmune; the summon/heal/shadowflame casts).
@@ -610,6 +614,7 @@ impl NpcKind {
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
             NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -721,6 +726,7 @@ impl NpcKind {
             104 => NpcKind::DD2SkeletonT1,
             105 => NpcKind::DD2SkeletonT3,
             106 => NpcKind::DD2DarkMage,
+            107 => NpcKind::DD2Betsy,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -935,6 +941,8 @@ impl NpcKind {
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => (18.0, 40.0),
             // The Dark Mage: 34x62 (`NPC.cs`'s case 564).
             NpcKind::DD2DarkMage => (34.0, 62.0),
+            // Betsy: 190x90 (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => (190.0, 90.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1126,6 +1134,8 @@ impl NpcKind {
             NpcKind::DD2SkeletonT3 => 480,
             // The Dark Mage: 800 HP.
             NpcKind::DD2DarkMage => 800,
+            // Betsy: 50000 HP (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => 50000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1262,6 +1272,8 @@ impl NpcKind {
             NpcKind::DD2SkeletonT3 => 70,
             // The Dark Mage: dmg 40.
             NpcKind::DD2DarkMage => 40,
+            // Betsy: dmg 80.
+            NpcKind::DD2Betsy => 80,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1933,6 +1945,8 @@ impl Npc {
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
             // The Dark Mage: kb 0 (case 564 sets nothing).
             NpcKind::DD2DarkMage => 0.0,
+            // Betsy: kb 0 (case 551 sets nothing).
+            NpcKind::DD2Betsy => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -2096,6 +2110,8 @@ impl Npc {
             NpcKind::DD2SkeletonT3 => 22,
             // The Dark Mage: def 18.
             NpcKind::DD2DarkMage => 18,
+            // Betsy: def 38.
+            NpcKind::DD2Betsy => 38,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2249,7 +2265,8 @@ impl Npc {
             | NpcKind::DD2JavelinT3
             | NpcKind::DD2SkeletonT1
             | NpcKind::DD2SkeletonT3
-            | NpcKind::DD2DarkMage => 0.0,
+            | NpcKind::DD2DarkMage
+            | NpcKind::DD2Betsy => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2543,6 +2560,8 @@ impl Npc {
             }
             // The Dark Mage: aiStyle 109's cast machine.
             NpcKind::DD2DarkMage => self.update_dark_mage(world, player, rng),
+            // Betsy: aiStyle 110's phase machine.
+            NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2768,6 +2787,14 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // Betsy: the 11-frame dragon strip.
+            NpcKind::DD2Betsy => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
                 }
             }
             // The Dark Mage: the 20-frame caster strip.
@@ -5590,6 +5617,80 @@ impl Npc {
         let _ = rng;
     }
 
+    /// `AI_110_Betsy` (`NPC.cs:61850-62150`) — the Old One's Army's
+    /// dragon. The v1 machine: phase 0 (the hover-in — the spawn pause),
+    /// phase 1 (the approach to the 300/-200 offset past the player with
+    /// the `num5 = 7.5` speed / `num6 = 0.45` accel flight, the phase
+    /// table's pick per `ai[3]`'s rotation — 0/1/3 → 2, 2 → 3, 4 → 5, 5
+    /// → 6, the wrapped 6 → 2, the mid-sequence `ai[3] == 5 &&
+    /// Next(3) == 0` hop), phase 2 (the breath — the 687 projectile at 35
+    /// damage from the centre at the velocity), and the off-world /
+    /// target-loss guards. The remaining phases (the fireball 686, the
+    /// circle flight, the dash) + the phase-5/6 renders ride the attack
+    /// family's follow-ups.
+    fn update_betsy(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            // The spawn pause (`:61878-61884`).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 10.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 1.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The approach (`:61886-61900`).
+            if self.ai[2] == 0.0 {
+                self.ai[2] = if pcx < cx { 1.0 } else { -1.0 };
+            }
+            // The offset: the player + (-ai[2] * 300, -200).
+            let (tx, ty) = (pcx - self.ai[2] * 300.0, pcy - 200.0);
+            let (dx, dy) = (tx - cx, ty - cy);
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            let inv = 7.5 / d;
+            self.vx += (dx * inv - self.vx) * 0.45;
+            self.vy += (dy * inv - self.vy) * 0.45;
+            self.facing = if pcx < cx { 1 } else { -1 };
+            // The phase pick (the vanilla's `num29` table).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                let mut pick = 2;
+                if self.ai[3] == 5.0 && crate::app::rand01(rng) < 1.0 / 3.0 {
+                    self.ai[3] += 1.0;
+                }
+                match self.ai[3] as u32 {
+                    2 => pick = 3,
+                    4 | 6 => pick = 5,
+                    _ => pick = 3, // the C# default for 5+ → 6 lands as the
+                    // next attack family; the port folds 5's pick as 3
+                    // (the fireball) until it lands.
+                }
+                if self.ai[3] >= 7.0 {
+                    self.ai[3] = 0.0;
+                }
+                self.ai[3] += 1.0;
+                self.ai[0] = pick as f32;
+                self.ai[1] = 0.0;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The breath (`:61929-61945`): the 687 projectile at 35 from
+            // the centre at the velocity; the return to phase 1.
+            let dir = self.facing;
+            self.wants_hostile_shot
+                .push((687u16, cx, cy, self.vx, self.vy, 35));
+            let _ = dir;
+            self.ai[0] = 1.0;
+            self.ai[1] = 0.0;
+            self.ai[2] = 0.0;
+            let _ = rng;
+        }
+        // The flight (noGravity + noTileCollide).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -7057,6 +7158,7 @@ impl Npc {
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
             NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

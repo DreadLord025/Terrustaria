@@ -473,6 +473,7 @@ fn portrait_data(
         NpcKind::DD2SkeletonT1 => 97,        // NPC_566
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
         NpcKind::DD2DarkMage => 99,       // NPC_564
+        NpcKind::DD2Betsy => 100,        // NPC_551
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -728,6 +729,13 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(62.0);
             (sheet_i, h, 34.0, h, white)
+        }
+        // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
+        (NpcKind::DD2Betsy, _) => {
+            let h = lookups.bestiary_npc_sheets[100]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 190.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
