@@ -3345,7 +3345,9 @@ impl Npc {
             NpcKind::FireImp => {
                 self.frame_counter += 1.0;
                 if self.cast_windup > 0 {
-                    if self.frame < 4 {
+                    // The snap guard covers both ends (`NPC.cs:76991-76994`'s
+                    // `frame.Y < num * 4 || frame.Y > num * 9`).
+                    if self.frame < 4 || self.frame > 9 {
                         self.frame = 4;
                         self.frame_counter = 0.0;
                     }
@@ -10477,6 +10479,42 @@ mod tests {
         b2.find_frame();
         assert_eq!(b2.rotation, -0.2, "the leftward tilt");
         assert_eq!(b2.facing, -1, "the leftward flight faces left");
+    }
+
+
+    #[test]
+    fn the_casters_pose_by_facing_and_the_imp_snaps_the_cast_strip() {
+        // `FindFrame`'s case 29/32/45 group (`NPC.cs:77019-77055`): the
+        // pose rows — 0 stands, 1 casts (`ai[1] > 0`), 2 airborne; the
+        // Fire Imp's case 24 (`:76979-77017`): the cast snaps to row 4 and
+        // holds 9, the walk cycles rows 0..3 at the 5-tick stride, the
+        // snap guard covers both ends (`< 4 || > 9`).
+        let mut s = bare(NpcKind::GoblinSorcerer);
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the standing pose");
+        s.cast_windup = 1;
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the cast pose");
+        s.vy = -1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 2, "the airborne pose");
+        // The Imp's walk.
+        let mut imp = bare(NpcKind::FireImp);
+        imp.frame_counter = 0.0;
+        for _ in 0..5 {
+            imp.find_frame();
+        }
+        imp.find_frame();
+        assert_eq!(imp.frame, 1, "the walk's first stride");
+        // The cast: the snap to row 4 and the held row 9.
+        imp.cast_windup = 1;
+        imp.frame = 2;
+        imp.find_frame();
+        assert_eq!(imp.frame, 4, "the cast snaps to row 4");
+        for _ in 0..30 {
+            imp.find_frame();
+        }
+        assert_eq!(imp.frame, 9, "the cast holds the last row");
     }
 
 

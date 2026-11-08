@@ -1751,6 +1751,10 @@ impl App {
                         "junglebat" => NpcKind::JungleBat,
                         "hellbat" => NpcKind::Hellbat,
                         "voodoodemon" => NpcKind::VoodooDemon,
+                        "sorcerer" => NpcKind::GoblinSorcerer,
+                        "tim" => NpcKind::Tim,
+                        "darkcaster" => NpcKind::DarkCaster,
+                        "fireimp" => NpcKind::FireImp,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
