@@ -4503,4 +4503,61 @@ mod dd2_goblin_tests {
         let _ = app;
         app.npcs.push(b);
     }
+    #[test]
+    fn the_javelin_thrower_throws_the_spear_at_82() {
+        // The javelin arm (`NPC.cs:63434-63465`): the cadence fires the
+        // 662 spear (the tier-3's 685) at the classic damage.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 662);
+        assert_eq!(s.5, 30);
+    }
+
+    #[test]
+    fn the_tier3_thrower_throws_the_685() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 685);
+        assert_eq!(s.5, 80);
+    }
 }

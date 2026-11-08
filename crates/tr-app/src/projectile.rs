@@ -88,6 +88,16 @@ pub const MARTIAN_RAY: u16 = 438;
 /// (`Projectile.cs:3922-3933`: 4x4, aiStyle 1, hostile, penetrate -1,
 /// light 0.5, alpha 255, scale 1.2).
 pub const PIRATE_ARROW: u16 = 180;
+/// `ProjectileID.DD2JavelinHostile` (662) — the javelin throwers' spear
+/// (`Projectile.cs:7122-7130`: 16x16, aiStyle 1, hostile, penetrate -1;
+/// 685 the tier-3 twin).
+pub const DD2_SPEAR: u16 = 662;
+/// `ProjectileID.DD2JavelinHostile`'s tier-3 twin (685).
+pub const DD2_SPEAR_T3: u16 = 685;
+/// `ProjectileID.DD2GoblinBomb` (681) — the kobold bomber's bomb
+/// (`Projectile.cs:7263-7272`: 14x14, aiStyle 16, hostile, penetrate -1,
+/// ranged).
+pub const DD2_BOMB: u16 = 681;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -302,6 +312,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             MUSKET_BALL => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
             DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The DD2 families' weapons (`Projectile.cs`'s SetDefaults): the
+            // javelin throwers' spears 662/685 (16x16, aiStyle 1, penetrate
+            // -1) and the bombers' bombs 681 (14x14, aiStyle 16, the bomb
+            // flight, penetrate -1).
+            DD2_SPEAR => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            DD2_SPEAR_T3 => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            DD2_BOMB => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {

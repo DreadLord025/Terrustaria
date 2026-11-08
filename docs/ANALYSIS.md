@@ -2761,6 +2761,14 @@ The families' walk arms ride the port's harness with the vanilla's
 per-kind speed rows; the bombers' bomb throw, the throwers' spears and
 the skeletons' fade render ride their own slices.
 
+## The DD2 weapons (M4-EVENT-5f)
+
+The javelin throwers' arm: the 82-tick cadence throws the 662 spear
+(the tier-3's 685) at the classic 30/60/80 damages from the centre -
+14, the ballistic aim at the player. The walk rides the harness with
+the vanilla's fast row (speed 8, accel × 3). The 681 bomb's row joins
+the pool's data set — the bomber's throw arm rides it when it lands.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

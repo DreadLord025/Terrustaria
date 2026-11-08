@@ -2494,12 +2494,15 @@ impl Npc {
             // The DD2 support families (`AI_107_ImprovedWalkers`'s arms):
             // the bombers, the javelin throwers, the materializing
             // skeletons.
+            // The DD2 throwers' weapon arm FIRST (the match's order):
+            // the javelineers throw the spear (662, the tier-3's 685) at
+            // the ai[1] == 82 cadence.
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => {
+                self.update_dd2_thrower(world, player, rng)
+            }
             NpcKind::DD2GoblinBomberT1
             | NpcKind::DD2GoblinBomberT2
-            | NpcKind::DD2GoblinBomberT3
-            | NpcKind::DD2JavelinT1
-            | NpcKind::DD2JavelinT2
-            | NpcKind::DD2JavelinT3 => self.update_dd2_goblin(world, player, dt),
+            | NpcKind::DD2GoblinBomberT3 => self.update_dd2_goblin(world, player, dt),
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
                 self.update_dd2_skeleton(world, player)
             }
@@ -5389,6 +5392,54 @@ impl Npc {
     /// (the port's render-carrying counter) and the walk rides the
     /// improved-walker harness once materialized; the arm's dust/fade is
     /// the render follow-up.
+    /// `AI_107_ImprovedWalkers`'s javelin-thrower arm (`NPC.cs:63434-63465`)
+    /// — the spear cadence: `ai[1]` counts to 82, the throw fires the
+    /// spear (662; the tier-3's 685) at the classic damage (30/60/80) from
+    /// the centre with the `UnitY * -14` spawn offset and the vanilla's
+    /// gravity arc (the port's ballistic integration stands in for the
+    /// projectile's own aiStyle-1 flight). The walk rides the harness
+    /// with the `speed = 8, accel × 3` row.
+    fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The walker harness (the vanilla's `num23 = 8`, `num24 *= 3`).
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 8.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The throw cycle: `ai[1]` to 82.
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 82.0 {
+            self.ai[1] = 0.0;
+            let (proj, dmg) = if self.kind == NpcKind::DD2JavelinT3 {
+                (685u16, 80)
+            } else if self.kind == NpcKind::DD2JavelinT2 {
+                (662u16, 60)
+            } else {
+                (662u16, 30)
+            };
+            // The ballistic aim: at the player with the vanilla's arc.
+            let (dx, dy) = (pcx - cx, pcy - (cy - 14.0));
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+            let speed = 11.0;
+            let inv = speed / dist;
+            self.wants_hostile_shot
+                .push((proj, cx, cy - 14.0, dx * inv, dy * inv, dmg));
+            let _ = rng;
+        }
+    }
+
     fn update_dd2_skeleton(&mut self, world: &World, player: &Player) {
         self.caster_counter += 1;
         // The walk rides the harness (the vanilla walks the materializing
