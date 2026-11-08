@@ -14,13 +14,13 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::{save, World, TILE_PX};
+use tr_core::{TILE_PX, World, save};
 
 use crate::app::{App, LiquidSystem, NetRole};
 use crate::item;
 use crate::map;
 use crate::menu;
-use crate::net::{self, id, slot_state, C2s, S2c};
+use crate::net::{self, C2s, S2c, id, slot_state};
 use crate::player;
 use crate::world_sim::editing::apply_edit;
 
@@ -1292,6 +1292,7 @@ fn npc_seed(
         | crate::npc::NpcKind::GolemFistRight
         | crate::npc::NpcKind::GolemHeadFree
         | crate::npc::NpcKind::Deerclops
+        | crate::npc::NpcKind::SkeletronHand
         | crate::npc::NpcKind::Creeper => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
