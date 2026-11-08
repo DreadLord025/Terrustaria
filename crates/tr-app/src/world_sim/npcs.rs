@@ -1558,6 +1558,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npcs.append(&mut spheres);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
+    {
+        let prime = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+            .cloned();
+        if let Some(prime) = prime {
+            let (pw, ph) = prime.size();
+            app.world.prime_present = true;
+            app.world.prime_x = prime.x + pw * 0.5;
+            app.world.prime_y = prime.y;
+            let _ = ph;
+        } else {
+            app.world.prime_present = false;
+        }
+    }
     // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
     {
         let head = app
