@@ -142,6 +142,7 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::GoblinTinkerer => 6,
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
+        NpcKind::TravellingMerchant => 19,
         _ => return None,
     })
 }
@@ -185,6 +186,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
         .inventory

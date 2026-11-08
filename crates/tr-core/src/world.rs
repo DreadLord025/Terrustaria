@@ -233,6 +233,13 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// `Main.travelShop` (`Main.cs:1779`; the 40 slots of
+    /// `Main.TravelShopMaxSlots`, allocated at `Main.cs:67030`): the
+    /// Travelling Merchant's per-visit stock — `Chest.SetupTravelShop`
+    /// (`Chest.cs:1275-1358`) regenerates it for every visit, the shop
+    /// index 19 (`Chest.cs:2791-2810`) reads it back. A `0` slot is
+    /// an empty one.
+    pub travel_shop: [u16; 40],
 
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
@@ -335,6 +342,7 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            travel_shop: [0; 40],
             butterfly_chance: 0,
         }
     }

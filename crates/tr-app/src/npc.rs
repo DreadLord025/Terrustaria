@@ -307,6 +307,15 @@ pub enum NpcKind {
     /// the shop index 5; the arrival rides the downedSkeletron gate —
     /// constants-off).
     Clothier,
+    /// `NPCID.TravellingMerchant` (368) — the travelling peddler
+    /// (`NPC.cs:13673-13686`: the town twin 18x40, dmg 10, def 15, 250 HP,
+    /// kb 0.5, aiStyle 7 — the town walker) who visits for one day on a
+    /// rolled chance (`Main.cs:65017-65039`) with his own 40-slot stock
+    /// (`Chest.SetupTravelShop`, `Chest.cs:1275-1358`) sold through the
+    /// shop index 19 (`Chest.cs:2791`). `homeless` every tick and gone at
+    /// night (`NPC.cs:53358-53374` -> `WorldGen.UnspawnTravelNPC`,
+    /// `WorldGen.cs:5000`) — M4-TOWN-14.
+    TravellingMerchant,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -695,11 +704,11 @@ impl NpcKind {
             NpcKind::Deerclops => 78,
             NpcKind::SkeletronHand => 79,
             NpcKind::WallOfFleshEye => 80,
-            NpcKind::WallOfFleshEye => 80,
             NpcKind::PrimeCannon => 81,
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
+            NpcKind::TravellingMerchant => 111,
         }
     }
 
@@ -820,8 +829,32 @@ impl NpcKind {
             82 => NpcKind::PrimeSaw,
             83 => NpcKind::PrimeVice,
             84 => NpcKind::PrimeLaser,
+            111 => NpcKind::TravellingMerchant,
             _ => return None,
         })
+    }
+
+    /// `npc.townNPC` (`NPC.cs:6537`) — the flag the town `SetDefaults`
+    /// cases raise: the town roster, the goblin pair and the Travelling
+    /// Merchant himself (`NPC.cs:13675`'s `townNPC = true`). The Old Man
+    /// (37) and the Skeleton Merchant (453) carry the flag in the
+    /// vanilla; neither is ported, so the spawner's town counts need no
+    /// exclusions (`Main.cs:65030`).
+    pub fn is_town_resident(self) -> bool {
+        matches!(
+            self,
+            NpcKind::Guide
+                | NpcKind::Merchant
+                | NpcKind::Dryad
+                | NpcKind::Nurse
+                | NpcKind::ArmsDealer
+                | NpcKind::Demolitionist
+                | NpcKind::Painter
+                | NpcKind::WitchDoctor
+                | NpcKind::Clothier
+                | NpcKind::GoblinTinkerer
+                | NpcKind::TravellingMerchant
+        )
     }
 
     /// The worm family role (`AI_006`'s type groups): the head digs, the
@@ -918,6 +951,7 @@ impl NpcKind {
             NpcKind::Painter => (18.0, 40.0),
             NpcKind::WitchDoctor => (18.0, 40.0),
             NpcKind::Clothier => (18.0, 40.0),
+            NpcKind::TravellingMerchant => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1089,6 +1123,7 @@ impl NpcKind {
             NpcKind::Dryad => 20,
             NpcKind::Demolitionist => 38,
             NpcKind::Clothier => 54,
+            NpcKind::TravellingMerchant => 368,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1157,6 +1192,7 @@ impl NpcKind {
             NpcKind::WitchDoctor => 250,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
+            NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
             NpcKind::EyeOfCthulhu => 2800,
             // `SetDefaults` case 222 (`NPC.cs:11862`): 3400 HP.
@@ -1318,6 +1354,7 @@ impl NpcKind {
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
+            NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
@@ -2157,6 +2194,7 @@ impl Npc {
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
+            NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
@@ -2324,6 +2362,7 @@ impl Npc {
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
+            NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
@@ -2486,6 +2525,7 @@ impl Npc {
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
+            NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
@@ -2636,6 +2676,7 @@ impl Npc {
             | NpcKind::Painter
             | NpcKind::WitchDoctor
             | NpcKind::Clothier
+            | NpcKind::TravellingMerchant
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3500,6 +3541,35 @@ impl Npc {
                 // The humanoid-group walk (the town machine's
                 // default arm — rows 2..count-1).
                 self.humanoid_town_frame();
+            }
+            NpcKind::TravellingMerchant => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[368]` = 26 in the vanilla, `Main.cs:67120`,
+                // with `ExtraFramesCount` 10 / `AttackFrameCount` 5 —
+                // `NPCID.cs:10464-10465` — over the port's 3-row stand-in).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
             }
             NpcKind::Painter => {
                 // The humanoid-group walk (the town machine's
@@ -7541,6 +7611,7 @@ impl Npc {
                     | NpcKind::Painter
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
+                    | NpcKind::TravellingMerchant
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -7576,6 +7647,7 @@ impl Npc {
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
+            NpcKind::TravellingMerchant => 111,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -9844,6 +9916,28 @@ mod tests {
             (dash_speed - 12.0).abs() < 2.0,
             "the 12-speed lunge ({dash_speed})"
         );
+    }
+
+
+    #[test]
+    fn the_travelling_merchant_kind_stats_roundtrip_and_shop() {
+        // `SetDefaults` 368 (`NPC.cs:13673-13686`): the town twin's numbers —
+        // 18x40, 250 HP, dmg 10, def 15, kb 0.5, value 0 — the kind<->u16
+        // round-trip, the bestiary row and the shop map (index 19,
+        // `NPCInteractions.cs:506`'s `Shop(368, 19)`).
+        let m = Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::TravellingMerchant.max_hp(), 250);
+        assert_eq!(m.defense(), 15);
+        assert_eq!(m.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::TravellingMerchant.contact_damage(), 10);
+        assert_eq!(Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0).value(), 0.0);
+        assert_eq!(NpcKind::TravellingMerchant.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::TravellingMerchant.to_u16(), 111);
+        assert_eq!(NpcKind::from_u16(111), Some(NpcKind::TravellingMerchant));
+        assert!(NpcKind::TravellingMerchant.is_town_resident());
+        let e = crate::bestiary::entry_for_npc(NpcKind::TravellingMerchant, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 368);
+        assert_eq!(crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant), Some(19));
     }
 
     #[test]

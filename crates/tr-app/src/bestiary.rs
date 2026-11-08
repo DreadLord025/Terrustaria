@@ -405,6 +405,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Clothier",
     },
     BestiaryEntryDef {
+        credit_id: "TravellingMerchant",
+        net_id: 368,
+        kind: NpcKind::TravellingMerchant,
+        variant: None,
+        quick_unlock: false,
+        name: "Travelling Merchant",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
