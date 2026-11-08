@@ -3487,40 +3487,91 @@ M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
 
 ## Traps & statues (M7-WIRE-2)
 
-`wiring.rs` gains the statue half of `HitWireSingle`'s case 105
-(`Wiring.cs:2125-2440`): the style decode (`num138 = frameX / 36 +
-(frameY / 54 % 3) * 55`), the 3×2 `SkipWire`, the spawn anchor
-`(num137·16 + 16, (num136 + 3)·16)` and the verbatim style → spawn map. The
-NPC styles run `CheckMech(30)`; the item styles `CheckMech(600)` plus the
-`Item.MechSpawn` group checks. The engine emits `StatueSpawn` requests; the
-app layer (`world_sim/wiring.rs`) runs the `MechSpawn` caps and constructs the
-entities.
+The wire-driven device effects landed in two layers: `tr-core/src/wiring.rs`
+ports every device arm of `HitWireSingle`/`HitSwitch` verbatim (`Wiring.cs`
+citations on each block) and emits typed requests; `tr-app/src/world_sim/
+wiring.rs` resolves them through the port's spawn engines. Landed: the statue
+device (case 105, `:2125-2478`, both spawn tables, the `flag6`/`flag7` gates,
+the mushroom swap 34, the teleporting statues 40/41, the mushroom statue 349
+`:2480-2508`, the boulder statue 531 `:1994-2013`), the traps (case 137,
+`:1760-1982`, all eleven variants), the cannons (209 `:1237-1343` → `WorldGen.
+ShootFromCannon :50586-50697`, 212 snowball `:1345-1420`), the fireworks
+(216/335/338), the explosives/mine/geyser (141/210/443, the latter two in
+`HitSwitch` too, `:288-296`), the toilets (497/15) and the volcano traps
+(593/594). The requests: `StatueSpawn::{Npc, Item, Teleport, Boulder}`,
+`TrapRequest::{Shot, Spear{count_kind}}` and `DeviceShot{kind, x, y, vx, vy,
+damage, knock_back, ai0, ai1}`.
 
 Deviations:
 
-- **The ported statue subset**: the Blue Slime statue (style 4 → NPC 1 →
-  `NpcKind::Slime`/Blue), the Demon Eye statue (style 35 → NPC 2) and the
-  Heart/Star/Bomb item statues (styles 37/2/17 → the C# item ids 58/184/166,
-  dropped as `ItemDrop`s with the pickup ids). The remaining ~50 styles map
-  to C# NPCs/items outside the port's content (the critters, the Eater of
-  Souls, the special teleporting/jar statues) — they emit nothing; the map
-  arms arrive with the NPC families (M4-NPC-1).
-- **The `MechSpawn` caps are verbatim**: `NPC.MechSpawn` (`NPC.cs:7420-7505`,
-  the rings 200/600 px, the caps 3/6/10, the same-type group merging — the
-  port's kinds map 1:1 to their C# ids so the groups only matter once those
-  NPCs land) and `Item.MechSpawn` (`Item.cs:49385-49405`, the rings 300/800
-  px) — implemented in `crates/tr-app/src/wiring_stub.rs` over the app's
-  entity lists.
-- **The statue-spawned loot gating**: `Npc.spawned_from_statue` carries
-  `NPC.SpawnedFromStatue` (`NPC.cs:6061`); the `NPCLoot`'s
-  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks
-  (`NPC.cs:78849`) gate the drops — the port's statue-spawned slimes drop
-  nothing until the AnyInteractions tracking lands (M4-NPC polish).
-- **The trap projectile emission** (the dart/spear/flame/boulder traps'
-  `Projectile.NewProjectile` calls, `Wiring.cs:1774-2000`) needs the
-  projectile families (M4-PROJ-2+) — their `CheckMech` cooldowns (200/90/300/
-  900) are already exercised by the queue; the emission arms are
-  passthroughs.
+- **The ported statue kinds**: the app spawns the statue NPC styles whose C#
+  id has a ported `NpcKind` — 1 BlueSlime, 2 DemonEye, 6 EaterofSouls,
+  21 Zombie, 24 FireImp, 42 Hornet, 49 CaveBat, 55 Goldfish, 58 Piranha,
+  65 Shark — at the verbatim bottom-center anchor (`NPC.NewNPC`'s
+  `Bottom = (X, Y)`, `NPC.cs:80770`). The rest (the critters 51-62, the
+  birds 74/297/298, the WallCreeper 164/165, the Bunny 46/540, the Crab 67,
+  the BlueJellyfish 63, the Mimic 85, the dragonflies, the macaws,
+  UndeadViking 167, Pigrons 170/171/180, Medusa 480, GraniteGolem 482, … )
+  emit their id and drop at the drain with one note; each kind's family
+  lands the arm.
+- **The projectile families that dropped** (requests emitted verbatim, the
+  app spawn drops them — `proj_data` has no row): the fireworks rockets
+  167-174 and 415-418 (aiStyle 34), the fountains 419-422 (aiStyle 73), the
+  cannonball 162 (aiStyle 2), the bunny 281 (aiStyle 49), the snowball 166
+  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153),
+  the boulder 99 (aiStyle 25) and the flame jet 187 (aiStyle 38). Landed
+  rows: 108/164 (the aiStyle-16 blast family, the explosives/mine), 178 and
+  601 (the cannon's aiStyle-1 ammo) and 980 (the venom dart, aiStyle 1).
+- **The cap/dedupe gates run app-side (decision D1)**: the spear's
+  proximity scan, `BunnyCannonCanFire` and the fountain's anchored-projectile
+  dedupe read the app's pools, so the engine emits the request with its roll
+  results and the app gates the spawn. Consequence: a blocked spawn still
+  consumes the engine's rolls (the C# evaluates its cap before its rolls) —
+  invisible outside the port's stand-in RNG stream, which is not byte-equal
+  to `Main.rand` anyway (ANALYSIS "Wiring engine (M7-WIRE-1)"). The cannon's
+  static/per-tile cooldowns are assigned before the app-side gate, as in the
+  C#, so a bunny-blocked shot still leaves them standing.
+- **The ceiling spiky ball's shared cap decision**: the C# evaluates the cap
+  once and spawns the projectile twice (in-case `:1961` and in the shared
+  tail `:1977-1981`); the port emits two identical `Spear` requests and the
+  drain applies one cap decision to both.
+- **The floor spiky ball's cap is a verbatim no-op (F1)**: the C#'s cap loop
+  counts `type == num95` with `num95` still 0 (`Wiring.cs:1815-1822`) —
+  `ProjectileID.None`, which no live slot can hold. The request carries
+  `count_kind = 0` and the cap never blocks.
+- **`Item.MechSpawn` filters by type** (`Item.cs:49385-49406`): the caps
+  travel with the request (`cap_ids` — the spawn id when empty, plus the
+  seasonal cap ids 58/{58,1734,1867}, 184/{184,1735,1868}, 166/{166} — F6)
+  and each id must pass on its own exact-type count. `NPC.MechSpawn`
+  (`:7420-7506`) carries the C#'s group table (birds, bunnies, ducks,
+  seagulls, turtles, goldfish, dragonflies) — the port's kinds map 1:1 to
+  their C# ids, so the groups bite only for the ids the port actually holds.
+- **The first-table anchor correction**: the WIRE-1 scaffold spawned style 35
+  at `num141 - 12`; the C# first table spawns at `(num140, num141)`
+  (`Wiring.cs:2270`) — corrected with a regression test.
+- **The spawn flags**: `spawned_from_statue` carries `NPC.SpawnedFromStatue`
+  (`NPC.cs:6061`) and gates the loot (`NPCLoot`'s
+  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks,
+  `NPC.cs:78849` — the port's statue-spawned NPCs drop nothing until the
+  AnyInteractions tracking lands). The C#'s other three flags
+  (`value = 0`, `npcSlots = 0`, `CanBeReplacedByOtherNPCs`) have no port
+  field yet.
+- **`PartyIsUp` and `getGoodWorld` are unmodelled**: style 9 always drops the
+  plain Bunny (46, `Wiring.cs:2303-2307`) and `NewNPC`'s 46→614/62→66
+  getGoodWorld remap never fires (`NPC.cs:80752-80762`).
+- **The traps' spec is now complete but 187 waits on aiStyle 38**: the trap
+  table (98/184/187/185/186/980 — `ProjectileID.cs:750/922/926/928/924/2514`;
+  the WIRE-1 const names 185 "TRAP_SPEAR"/980 "TRAP_SPIKY" were wrong
+  against the C# and are renamed) is emitted verbatim; the port's own names
+  in the earlier docs (dart/superdart/flame/spear/boulder/spiky) did not match
+  the C# table and are corrected in the code comments.
+- **The visual layer stays deferred**: `PoofOfSmoke` (the blocked-spawn puff),
+  `Animation.NewTemporaryAnimation` (the volcano traps, the mushroom swap)
+  and `SoundEngine.PlaySound(28, …)` have no port target, exactly as the
+  WIRE-1 burn-out poof and sounds were deferred.
+- **`HitSwitch`'s 132/411 lever arm** (the lever flip + `CheckMech(60)` + the
+  2×2 detonator lamp flip, `Wiring.cs:335-372`) is still unported — a WIRE-1
+  gap outside this row's scope.
 
 ## Falling blocks (M7-FALL-1)
 
