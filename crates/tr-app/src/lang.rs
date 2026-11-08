@@ -133,6 +133,19 @@ pub fn menu(i: usize) -> String {
     text(&format!("LegacyMenu.{i}"))
 }
 
+/// `Lang.tip[i].Value` — the tooltip rows; the key is `LegacyTooltip.{i}`
+/// (`Lang.cs:497`). The item hover text reads them through
+/// `MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-20800`).
+pub fn tip(i: usize) -> String {
+    text(&format!("LegacyTooltip.{i}"))
+}
+
+/// `Lang.inter[i].Value` — the interface rows (the tooltip's shop/upgrade
+/// lines); the key is `LegacyInterface.{i}` (`Lang.cs:485`).
+pub fn inter(i: usize) -> String {
+    text(&format!("LegacyInterface.{i}"))
+}
+
 /// `Lang.GetItemNameValue(id)` (`Lang.cs:489-498`): `ItemName.{const name}`,
 /// falling back to the bundled English name for ids the resources do not
 /// cover (the manager answers a missing key with the key itself).
@@ -195,5 +208,16 @@ mod tests {
         assert_ne!(item_name(2), "ItemName.DirtBlock");
         set_language(GameCulture::English);
         assert_eq!(menu(14), "Settings");
+    }
+
+    #[test]
+    fn tip_and_inter_keys_follow_the_c_sharp_prefixes() {
+        // `Lang.cs:497`/`:485` — `LegacyTooltip.{i}` / `LegacyInterface.{i}`.
+        // Without the shipped resources the manager answers the key itself
+        // (vanilla's unknown-key behaviour), which is what pins the format here.
+        assert_eq!(tip(2), text("LegacyTooltip.2"));
+        assert_eq!(inter(65), text("LegacyInterface.65"));
+        // A missing key falls back to the key text, not a crash.
+        assert_eq!(tip(9999), text("LegacyTooltip.9999"));
     }
 }

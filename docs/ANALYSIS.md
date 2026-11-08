@@ -6021,3 +6021,28 @@ Deviations and accepted changes:
   lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
+
+## Localized item tooltips (M6-LOCALIZE-wire)
+
+The "wire the localization core into the HUD/menus" row's item-hover slice:
+`lang.rs` grew the `Lang.tip`/`Lang.inter` accessors (the `LegacyTooltip.{i}` /
+`LegacyInterface.{i}` keys, `Lang.cs:497`/`:485` — `menu`/`item_name` were
+already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
+`MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
+computed from the port's own `ItemDef` values.
+
+Deliberate deviations and notes:
+
+- **The player-side layers are out** (the accessory/M3 layer): the C#'s
+  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
+  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
+  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
+  with a comment.
+- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
+  the damage row's gate is the plain `damage > 0` (the coin-type exception and
+  the ammo gate ride along when the fields land).
+- The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
+  copies) is unchanged — only the row list changed.
+- Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
+  resources the loader probes) the keys show through — vanilla's own
+  unknown-key behaviour.
