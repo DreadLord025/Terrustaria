@@ -53,7 +53,13 @@ pub struct Settings {
     /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle (`FrameSkipMode.cs:3-8`);
     /// default **2** (Subtle) — `static Main()` (`Main.cs:67204`).
     pub frame_skip: u8,
-    /// `Lighting.Mode`: 0 Color, 1 White, 2 Retro, 3 Trippy.
+    /// `Lighting.Mode` in the **port's internal** order (`LightMode.cs:3-9`'s
+    /// mirror, `tr-core/src/lighting/params.rs:12-17`): 0 Color, 1 White,
+    /// 2 Retro, 3 Trippy. The *persisted* value is the C# ordinal instead —
+    /// `LightMode` in the original is `{White=0, Retro=1, Trippy=2, Color=3}`
+    /// (`Terraria/Graphics/Light/LightMode.cs:3-9`), so `parse`/`to_json`
+    /// translate in both directions and every in-memory reader sees this port
+    /// order.
     pub light_mode: u8,
     /// `Main.qaStyle`: 0 auto, 1 high, 2 medium, 3 low.
     pub quality: u8,
@@ -304,7 +310,17 @@ impl Settings {
                         value.parse().unwrap_or(me.parallax_scroll).min(100)
                 }
                 "FrameSkipMode" => me.frame_skip = value.parse().unwrap_or(me.frame_skip).min(2),
-                "LightingMode" => me.light_mode = value.parse().unwrap_or(me.light_mode).min(3),
+                // `LoadSettings` casts the stored int to the enum unchecked —
+                // `Lighting.Mode = (LightMode)currentValue6` (`Main.cs:4403`),
+                // which would make a 9 an undefined mode. The port instead
+                // falls back to the default for anything outside the four C#
+                // members; a deliberate robustness deviation, recorded here
+                // (`LightMode.cs:3-9`).
+                "LightingMode" => {
+                    if let Some(v) = value.parse::<u8>().ok().and_then(light_mode_from_vanilla) {
+                        me.light_mode = v;
+                    }
+                }
                 "Quality" => me.quality = value.parse().unwrap_or(me.quality).min(3),
                 "BackgroundEnabled" => me.background = boolean(value),
                 "BloodAndGore" => me.blood = boolean(value),
@@ -506,7 +522,9 @@ impl Settings {
             self.gamepad_instructions,
             self.parallax_scroll,
             self.frame_skip,
-            self.light_mode,
+            // The stored byte is the C# ordinal, so Color (the port's 0) goes
+            // out as 3 (`LightMode.cs:3-9`).
+            light_mode_to_vanilla(self.light_mode),
             self.quality,
             self.background,
             self.blood,
@@ -552,6 +570,34 @@ impl Settings {
             self.flashy_effects_interface,
             self.minimap_frame,
         )
+    }
+}
+
+/// The stored `LightingMode` byte (`Terraria.Graphics.Light.LightMode`:
+/// White 0, Retro 1, Trippy 2, Color 3 — `LightMode.cs:3-9`) → the port's
+/// internal `LightMode` order (`Color` 0, `White` 1, `Retro` 2, `Trippy` 3,
+/// `tr-core/src/lighting/params.rs:12-17`). `None` for anything outside the
+/// four enum members, which is the robustness deviation noted on the
+/// `"LightingMode"` arm of `parse`.
+fn light_mode_from_vanilla(stored: u8) -> Option<u8> {
+    match stored {
+        0 => Some(1), // White
+        1 => Some(2), // Retro
+        2 => Some(3), // Trippy
+        3 => Some(0), // Color
+        _ => None,
+    }
+}
+
+/// The port `LightMode` byte → the stored `LightingMode` ordinal, the inverse
+/// of [`light_mode_from_vanilla`]. Anything outside the four port variants
+/// writes `Color` (3), the vanilla default (`Lighting.cs:96`).
+fn light_mode_to_vanilla(port: u8) -> u8 {
+    match port {
+        1 => 0, // White
+        2 => 1, // Retro
+        3 => 2, // Trippy
+        _ => 3, // Color
     }
 }
 
@@ -654,6 +700,8 @@ mod tests {
         s.hide_password = true;
         s.event_progress = 2;
         s.frame_skip = 2;
+        // The port's Trippy, written as the C# 2 and read back as 3 — the
+        // ordinal translation (`LightMode.cs:3-9` vs `params.rs:12-17`).
         s.light_mode = 3;
         s.quality = 1;
         s.background = false;
@@ -756,7 +804,11 @@ mod tests {
     fn unknown_keys_and_garbage_are_ignored() {
         let s = Settings::parse("{\n \"Nope\": true,\n \"AutoSave\": false,\n \"LightingMode\": 9\n}");
         assert!(!s.auto_save);
-        assert_eq!(s.light_mode, 3, "clamped to the four modes");
+        // Vanilla would cast 9 to an undefined mode (`Main.cs:4403`); the port
+        // keeps the default instead (see the `"LightingMode"` arm).
+        assert_eq!(s.light_mode, 0, "out of range keeps the default");
+    }
+
     }
 
     #[test]
