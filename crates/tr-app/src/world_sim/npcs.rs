@@ -5200,3 +5200,96 @@ mod crystal_death_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod cultist_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_cultist_bobs_and_regen_when_far() {
+        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob
+        // (velocity.Y = sin(2π·ai[0]/300)·0.5) and the +200 regen per 60
+        // ticks while the player stays 2000+ px.
+        let (mut app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = surface_world_fixture();
+        let mut n = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 3000;
+        // The player far away.
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let before = n.hp;
+        let mut rng = 7u64;
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp - before, 200, "the far regen (+200)");
+        let _ = app;
+    }
+
+    #[test]
+    fn the_cultist_dissolves_after_the_180_tick_ritual() {
+        // The ai[2] timer's 180-tick dissolve (`:39060-39066`): life 0.
+        let (_app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = surface_world_fixture();
+        let mut n = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..180 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 0, "the ritual's dissolve");
+    }
+
+    fn surface_world_fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+}
