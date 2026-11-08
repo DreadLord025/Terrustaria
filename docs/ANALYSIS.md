@@ -2887,6 +2887,14 @@ swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
 554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
 wave 7's tier-3 budget is Betsy's own HP bucket.
 
+## The Ancient Cultist (M4-EVENT-6)
+
+The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual
+dissolve, the sine-bob hover, the far-player regen and the two ritual
+projectile arms (the 3240-px line-of-sight gate, the 1080-px below
+gate). The pillar summons (Stardust 493 / Nebula 507 / Solar 517 with
+their shield strengths) and the boss bar ride the next slice.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
