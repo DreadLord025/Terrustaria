@@ -821,6 +821,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Eternia Crystal",
     },
     BestiaryEntryDef {
+        credit_id: "AncientCultist",
+        net_id: 422,
+        kind: NpcKind::AncientCultist,
+        variant: None,
+        quick_unlock: false,
+        name: "Ancient Cultist",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,

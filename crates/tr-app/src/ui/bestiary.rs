@@ -483,6 +483,7 @@ fn portrait_data(
         NpcKind::DD2WitherBeast => 101,  // NPC_568
         NpcKind::DD2Bartender => 102,    // NPC_550
         NpcKind::DD2EterniaCrystal => 103, // NPC_548
+        NpcKind::AncientCultist => 104,  // NPC_422
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -772,6 +773,13 @@ fn portrait_data(
                 .map(|s| s.height as f32)
                 .unwrap_or(40.0);
             (sheet_i, h, 40.0, h, white)
+        }
+        // The cultist: the 1-frame NPC_422 strip over the 130x270 frames.
+        (NpcKind::AncientCultist, _) => {
+            let h = lookups.bestiary_npc_sheets[104]
+                .map(|s| s.height as f32)
+                .unwrap_or(270.0);
+            (sheet_i, h, 130.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
