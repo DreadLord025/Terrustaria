@@ -5817,3 +5817,70 @@ Deliberate deviations and notes:
   every 5 ticks; `drawdata.rs` already ports the `tileFrame * 54` offset but
   `render/tiles.rs` passes the t=0 state) = TILE-DRAW-3; smart cursor
   (`Player.cs:17595-17614`'s strategy 7) = M7-SMARTCURSOR-1.
+## Ocean passes fidelity (M5-OCEAN)
+
+The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
+`470672a`→`c1759e8`): the vanilla beach geometry (P1), `Ocean Sand` +
+`Beaches` + `Gravitating Sand` (P2), the faithful `oceanCave` walker (P3),
+`Remove Water From Sand` + `Shell Piles` + the `Water Plants` seaweed arm
+(P4) and `Cactus, Palm Trees, & Coral` + the `AddTrees` beach palms (P5).
+Final pins: `SEED42_512 = 3862881231`, `DEFAULT_WORLD = 2822219158`
+(`world_hash.rs` provenance block has the per-phase history). Suites green
+(`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+Deviations and accepted changes:
+
+- **Reset-stand-in position.** Vanilla draws `leftBeachEnd`/`rightBeachStart`
+  in `Reset` (`WorldGen.cs:11415-11440`) before every pass; the port draws
+  them at the head of the terrain height-map step (the first consumer —
+  `plan biome spans` is later) from `pass_rng("Beaches")`, mirroring the
+  M5-BIOME spans-step stand-in. Dungeon side is fixed Right (M5-BIOME), so
+  the left side always adds `beachSandDungeonExtraWidth` (40) and the right
+  side takes the `beachSandJungleExtraWidth` (20) arm — the `−= 40` arm is
+  the dead `dungeonSide == Left` branch. The tenth-anniversary fixed 340 is
+  skipped (no seed framework).
+- **Terrain hybrid.** `TerrainPass`'s absolute beach band `[0.17, 0.23]·
+  maxTilesY` (`TerrainPass.cs:131-134`, `:193-201`) is not portable onto
+  the compact interior curve; the shelf holds the model's sea level flat
+  over the beach width and blends out over 30 columns. The compact t²·30
+  edge ramp retires (the seafloor profile is `TuneOceanDepth`'s curve).
+- **`tileSolid[192] = true` deferred.** `RemoveSurfaceWaterAboveSand`'s tail
+  mutation (`WorldGen.cs:16240`, `TileID.LeafBlock`) has no port
+  counterpart — the tile sets are generated statics (`tiledata/`); the owner
+  is `tools/GenTileData`.
+- **`drng` → `pass_rng`.** The ocean caves moved from the shared `drng` to
+  their own stream (the M5-BIOME phase-3/6 accepted-shift class); the later
+  `drng` consumers shift accordingly.
+- **512-wide degeneracy.** `range(0, 1)` returns 0 without a draw (.NET
+  `Next` semantics, world re-pinned once), and the ocean-zone widths on
+  sub-vanilla worlds behave as vanilla never sees them (vanilla min 4200) —
+  pinned, not valve'd. `leftBeachEnd > rightBeachStart` overlap on 512 is
+  accepted (the living-tree anchors order their span instead of panicking).
+- **Vanilla quirks ported verbatim.** The Shell Piles right branch's offset
+  arms write `shellStartXLeft` (`WorldGen.cs:16381`, `:16385`); the
+  `ShellPile` wobble clamps discard their result (`:10430-10431`); the
+  stalactite's `Next(3)` widening writes without the `badOceanCaveTiles`
+  check (`:76623-76628`); the `Cactus, Palm Trees, & Coral` middle zone's
+  unused `num5`/`num6` draws still burn; `PlaceTile(81)` places crystal on
+  liquid tiles (`:59460-59474`).
+- **Deferred with citations.** The `Sand Patches` pass (global sand patches,
+  M5-DESERT-structures); the `Water Plants` lily/cattail/bamboo arms
+  (out of ocean scope — their draws are deferred with them, so the
+  per-pass stream diverges from vanilla by exactly those draws); the
+  `Oasis` pass and its `GenVars.numOasis` writer (the CactusPalm oasis
+  block is dead in the port); the full `AddTrees` per-tile forest arms (the
+  compact forest model keeps its density — the beach palm arm is faithful);
+  the `PyrX/PyrY/numPyr` slots are published but unconsumed (the faithful
+  Pyramids pass is M5-DESERT-structures); `UnderwaterChests` is
+  M5-CHEST-gen (this task publishes `GenVars.ocean_cave_treasure` only).
+- **KillTile slice.** `GrowCheckSeaweed`'s dry-out arm uses `KillTile`'s
+  generation-time strip (inactive + type 0, frames 0); the item-drop /
+  `SquareTileFrame` / net arms do not exist in the port.
+- **Cactus arm.** `plant_cacti`'s compact desert scatter retires (the
+  faithful middle zone's `PlantCactus` covers the desert's cacti); the
+  pass re-declares `frame_important[80]` (the boot static the retired
+  scatter used to own).
+- **World re-rolls by design** at every phase — the per-phase pin history
+  lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
+  (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
+  `test_DW_4_3`-style vanilla-position tests for the ocean slots).

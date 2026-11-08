@@ -30,7 +30,7 @@ pub(crate) fn place_liquids(
     let lake_half = map.lake_half;
     let lake_level = map.lake_level;
     let sea_level = map.sea_level;
-    let beach = map.beach;
+    let (left_beach_end, right_beach_start) = (map.left_beach_end, map.right_beach_start);
     let avg_surface = layers.avg_surface;
     let hell_top = layers.hell_top;
     let surface = &mut map.heights;
@@ -93,20 +93,10 @@ pub(crate) fn place_liquids(
             }
         }
     }
-    // Ocean water at both shores.
-    for shore_x in (0..beach).chain(width - beach..width) {
-        if shore_x < 0 || shore_x >= width {
-            continue;
-        }
-        let top = surface[shore_x as usize];
-        for y in sea_level..top {
-            let i = world.index(shore_x, y);
-            if !world.tiles[i].active() {
-                world.tiles[i].liquid = 255;
-                world.tiles[i].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY);
-            }
-        }
-    }
+    // Ocean water at both shores — retired in M5-OCEAN phase 2: the
+    // faithful `Beaches` pass (`WorldGen.cs:14888`) carves the ocean prism
+    // and owns the water; the compact flood would double-place it inside
+    // the carved columns.
     // Lava puddles on cave floors.
     for _ in 0..700 {
         let x = rng.range(10, width - 10);
