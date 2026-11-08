@@ -14,6 +14,7 @@ use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
 
 /// Everything the surface-height pass computes that the later passes consume.
+#[derive(Clone)]
 pub(crate) struct SurfaceMap {
     /// Per-column surface row; the lake pass lowers its columns to the carved floor.
     pub(crate) heights: Vec<i32>,
@@ -24,12 +25,19 @@ pub(crate) struct SurfaceMap {
     pub(crate) lake_center: i32,
     pub(crate) lake_half: i32,
     pub(crate) lake_level: i32,
-    pub(crate) beach: i32,
+    /// The vanilla beach GenVars (`GenVars.cs:90-92`): the inland end of the
+    /// left beach and the inland start of the right one, drawn in `Reset`
+    /// (`WorldGen.cs:11415-11440`) — the port draws them at the head of the
+    /// terrain step (the first consumer) and every beach consumer reads them
+    /// from here.
+    pub(crate) left_beach_end: i32,
+    pub(crate) right_beach_start: i32,
     pub(crate) sea_level: i32,
 }
 
 /// Layer anchors derived from the finished surface: `world_surface`/`rock_layer`
 /// land on the world, the rest scopes the cave, ore and lava passes.
+#[derive(Clone, Copy)]
 pub(crate) struct Layers {
     pub(crate) avg_surface: f64,
     pub(crate) world_surface: f64,
@@ -53,8 +61,16 @@ pub(crate) struct Layers {
     pub(crate) rock_high: f64,
 }
 
-/// Shapes the per-column surface row before any tile is painted.
-pub(crate) fn surface_height_map(width: i32, height: i32, noise: &Noise) -> SurfaceMap {
+/// Shapes the per-column surface row before any tile is painted. The beach
+/// ends come from the Reset draws (`WorldGen.cs:11415-11440`, via the terrain
+/// step's GenVars).
+pub(crate) fn surface_height_map(
+    width: i32,
+    height: i32,
+    noise: &Noise,
+    left_beach_end: i32,
+    right_beach_start: i32,
+) -> SurfaceMap {
     // --- surface height map -------------------------------------------------
     let avg = height as f32 * 0.30;
     let spawn_center = width / 2;
@@ -137,26 +153,35 @@ pub(crate) fn surface_height_map(width: i32, height: i32, noise: &Noise) -> Surf
         surface[x as usize] = lake_level;
     }
 
-    // Ocean beaches at both edges: a sand ramp down from the sea level into deep water.
-    let beach = 140;
+    // Ocean beaches at both edges: the vanilla flat shelf. `TerrainPass`
+    // clamps the near-beach surface flat and featureless (`TerrainPass.cs:
+    // 131-134`'s beach band, `:84`'s `num2 = leftBeachEnd + FlatBeachPadding`
+    // feature suppression) and `Beaches` later carves the ocean prism below
+    // it (`WorldGen.cs:14888+`), anchoring the water line to the live surface.
+    // The model keeps its own interior curve, so the shelf is the model's sea
+    // level held flat over the beach width and blended out over 30 columns
+    // (deviation: compact interior, vanilla shelf structure — ANALYSIS
+    // "Ocean passes fidelity (M5-OCEAN)"); the old t²·30 ramp dip is gone,
+    // the seafloor profile is `Beaches`' `TuneOceanDepth` curve from P2 on.
     let sea_level = (avg as i32 + 4).clamp(90, height - 300);
-    let inner = beach + 30;
-    for (x, d) in (0..inner)
-        .map(|x| (x, x))
-        .chain((width - inner..width).map(|x| (x, width - 1 - x)))
-    {
-        if x < 0 || x >= width {
-            continue;
-        }
-        let t = 1.0 - d as f32 / inner as f32;
-        let ramp = sea_level + (t * t * 30.0) as i32;
-        if d < beach {
-            surface[x as usize] = ramp;
+    let right_beach_end = width - right_beach_start;
+    let shelf = |d: i32, beach_end: i32| -> f32 {
+        if d < beach_end {
+            1.0
         } else {
-            let k = (inner - d) as f32 / 30.0;
-            surface[x as usize] =
-                (surface[x as usize] as f32 * (1.0 - k) + ramp as f32 * k).round() as i32;
+            (((beach_end + 30) - d) as f32 / 30.0).clamp(0.0, 1.0)
         }
+    };
+    for x in 0..(left_beach_end + 30).min(width) {
+        let k = shelf(x, left_beach_end);
+        surface[x as usize] = (surface[x as usize] as f32 * (1.0 - k) + sea_level as f32 * k)
+            .round() as i32;
+    }
+    for x in (width - (right_beach_end + 30)).max(0)..width {
+        let d = width - 1 - x;
+        let k = shelf(d, right_beach_end);
+        surface[x as usize] = (surface[x as usize] as f32 * (1.0 - k) + sea_level as f32 * k)
+            .round() as i32;
     }
 
     SurfaceMap {
@@ -168,7 +193,8 @@ pub(crate) fn surface_height_map(width: i32, height: i32, noise: &Noise) -> Surf
         lake_center,
         lake_half,
         lake_level,
-        beach,
+        left_beach_end,
+        right_beach_start,
         sea_level,
     }
 }
@@ -183,7 +209,8 @@ pub(crate) fn fill_terrain(
 ) -> Layers {
     // --- terrain fill -------------------------------------------------------
     let surface = &map.heights;
-    let beach = map.beach;
+    let left_beach_end = map.left_beach_end;
+    let _right_beach_start = map.right_beach_start;
     let desert_enabled = map.desert_enabled;
     let desert_start = map.desert_start;
     let desert_end = map.desert_end;
@@ -226,9 +253,11 @@ pub(crate) fn fill_terrain(
             let desert = in_desert(x);
             if y >= top {
                 if y == top {
-                    tile.kind = if x < beach + 24 || x >= width - beach - 24 {
-                        TILE_SAND
-                    } else if x >= snow_start {
+                    // The sand-top rule inside the beach bands retired with
+                    // M5-OCEAN phase 2: the faithful `Ocean Sand` pass
+                    // (`WorldGen.cs:11580`) sandifies the tops itself (and
+                    // the `Beaches` carve re-shapes the whole prism).
+                    tile.kind = if x >= snow_start {
                         TILE_SNOW
                     } else if desert {
                         TILE_SAND
@@ -288,7 +317,7 @@ mod tests {
     fn fill_terrain_records_the_layer_quartet() {
         let mut world = World::new("test".into(), 400, 800);
         let noise = Noise { seed: 42 };
-        let map = surface_height_map(400, 800, &noise);
+        let map = surface_height_map(400, 800, &noise, 140, 800 - 140);
         let layers = fill_terrain(&mut world, 400, 800, &noise, &map);
 
         let raw_max = map.heights.iter().copied().max().unwrap_or(0) as f64;

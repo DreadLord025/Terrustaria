@@ -148,6 +148,10 @@ pub struct World {
     pub golem_hp_ratio: f32,
     pub golem_x: f32,
     pub golem_y: f32,
+    /// `NPC.unlockedSlimeRainbowSpawn` (`WorldItem.GetShimmered`'s 4986 arm,
+    /// `WorldItem.cs:1720-1735`) — a `Main`-global in the C#; a world field is
+    /// the port's standing-in (ANALYSIS "Shimmer transforms").
+    pub unlocked_slime_rainbow_spawn: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -250,6 +254,7 @@ impl World {
             spawn_meteor: false,
             golem_x: 0.0,
             golem_y: 0.0,
+            unlocked_slime_rainbow_spawn: false,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,

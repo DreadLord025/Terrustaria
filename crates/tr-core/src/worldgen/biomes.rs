@@ -54,6 +54,7 @@ pub(crate) const WALL_CRIMSON: u16 = 192;
 /// snow side's surface. The evil band retired with the shape-level
 /// `pass_evil` in phase 4 — the faithful pass draws its own centres
 /// (`evil::corruption_and_crimson`).
+#[derive(Clone)]
 pub(crate) struct BiomeSpans {
     pub(crate) jungle_start: i32,
     pub(crate) jungle_end: i32,
@@ -63,7 +64,8 @@ pub(crate) struct BiomeSpans {
 pub(crate) fn plan_spans(
     width: i32,
     surface: &[i32],
-    beach: i32,
+    left_beach_end: i32,
+    right_beach_start: i32,
     jungle_origin_x: i32,
 ) -> BiomeSpans {
     // The faithful jungle band: `JunglePass` (`JunglePass.cs:24-62`) spreads
@@ -75,13 +77,19 @@ pub(crate) fn plan_spans(
     // interim-alignment fallback; re-derived per M5-BIOME phase 3).
     let ws = width as f64 / 4200.0 * 1.5;
     let reach = (700.0 * ws) as i32;
-    let jungle_start = (jungle_origin_x - reach).max(beach + 40).max(20);
+    // The inland clamp rides the vanilla beach anchors (`GenVars.cs:90-92`):
+    // the jungle band starts past the left beach and the dungeon keeps the
+    // `dungeonBeachPadding` = 50 off the right beach (`GenVars.cs:452`,
+    // `WorldGen.cs:11443-11460`).
+    let jungle_start = (jungle_origin_x - reach)
+        .max(left_beach_end + 40)
+        .max(20);
     let jungle_end = (jungle_origin_x + reach)
         .min(width - 60)
         .max(jungle_start + 40);
     // The dungeon digs at the snow side (`DungeonCrawler`'s entrance spawns
     // at the far edge opposite the jungle).
-    let dungeon_x = (width - beach - 60).max(width / 2);
+    let dungeon_x = (right_beach_start - 50).max(width / 2);
     let _ = surface;
     BiomeSpans {
         jungle_start,
@@ -122,7 +130,7 @@ fn active_at(world: &World, x: i32, y: i32) -> bool {
 /// touches. Deviations recorded for ANALYSIS: the dungeon side is fixed
 /// right (the port has no dungeon-side roll — see the phase discovery D2),
 /// `GenVars.JungleX` is write-only in 1.4.5.8 and not modelled, and the
-/// beach clamp uses the port's fixed beach width.
+/// beach anchors (`GenVars.cs:90-92`) are the port's beach margins.
 pub(crate) fn pass_jungle(
     world: &mut World,
     jungle_origin_x: i32,
@@ -130,7 +138,8 @@ pub(crate) fn pass_jungle(
     rock_layer: f64,
     water_line: f64,
     lava_line: f64,
-    beach: i32,
+    left_beach_end: i32,
+    right_beach_start: i32,
     rng: &mut Rng,
 ) {
     // `this._worldScale = Main.maxTilesX / 4200.0 * 1.5` (`:22`).
@@ -206,8 +215,8 @@ pub(crate) fn pass_jungle(
     let num = rng.range((400.0 * ws) as i32, (600.0 * ws) as i32);
     let num2 = (25.0 * ws) as i32;
     let (clamp_lo, clamp_hi) = (
-        beach + num / 2 + num2,
-        (world.width - beach) - num / 2 - num2,
+        left_beach_end + num / 2 + num2,
+        right_beach_start - num / 2 - num2,
     );
     cx = if cx < clamp_lo {
         clamp_lo
@@ -1089,9 +1098,22 @@ mod tests {
     fn test_DW_3_1_jungle_pass_stage_ledger() {
         let (mut wa, ws_surf, rock) = flat_world(200, 512, 512);
         let mut wb = wa.clone();
-        let (water, lava, beach, origin, seed) = (300.0, 340.0, 140, 102, 0x4A55_4E47u64);
+        let (water, lava, origin, seed) = (300.0, 340.0, 102, 0x4A55_4E47u64);
+        // The beach anchors: the fixed margins the ledger replays (left 140,
+        // right 512−140 — the pre-beach-pass values).
+        let (left_beach_end, right_beach_start) = (140, 512 - 140);
         let mut jr = Rng(seed);
-        pass_jungle(&mut wa, origin, ws_surf, rock, water, lava, beach, &mut jr);
+        pass_jungle(
+            &mut wa,
+            origin,
+            ws_surf,
+            rock,
+            water,
+            lava,
+            left_beach_end,
+            right_beach_start,
+            &mut jr,
+        );
         // --- the transcription ---
         let mut rep = Rng(seed);
         let ws = 512 as f64 / 4200.0 * 1.5;
@@ -1170,8 +1192,8 @@ mod tests {
         let cy = zy / 3;
         let num = rep.range(scale(400.0), scale(600.0));
         let num2 = scale(25.0);
-        let lo = beach + num / 2 + num2;
-        let hi = (512 - beach) - num / 2 - num2;
+        let lo = left_beach_end + num / 2 + num2;
+        let hi = right_beach_start - num / 2 - num2;
         cx = if cx < lo {
             lo
         } else if cx > hi {
@@ -1466,6 +1488,7 @@ mod tests {
             300.0,
             340.0,
             140,
+            512 - 140,
             &mut Rng(0x5EED),
         );
         let count = |pred: &dyn Fn(&Tile) -> bool| world.tiles.iter().filter(|t| pred(t)).count();
@@ -1808,8 +1831,12 @@ mod tests {
         // The band (the `plan_spans` formula).
         let ws = world.width as f64 / 4200.0 * 1.5;
         let reach = (700.0 * ws) as i32;
-        let beach = 140;
-        let jungle_start = (origin - reach).max(beach + 40).max(20);
+        // The band (the `plan_spans` formula) over the Reset beach draws
+        // (`WorldGen.cs:11415-11440` — the terrain step's stand-in, replayed).
+        let mut brng = crate::worldgen::pipeline::Streams::new(opts.seed).pass_rng("Beaches");
+        let left_beach_end = brng.range(300, 340) + 40;
+        let _right_beach_start = world.width - (brng.range(300, 340) + 20);
+        let jungle_start = (origin - reach).max(left_beach_end + 40).max(20);
         let jungle_end = (origin + reach)
             .min(world.width - 60)
             .max(jungle_start + 40);

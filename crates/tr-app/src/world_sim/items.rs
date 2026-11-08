@@ -49,6 +49,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let inventory = &mut app.inventory;
     let audio = &mut app.audio;
     let mut voodoo: Option<(Vec2, u32)> = None;
+    // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
+    let mut shimmer_due: Vec<u32> = Vec::new();
     app.item_step.tick(dt.min(0.25), |step| {
         let player_center = player.as_ref().map(|p| Vec2::new(p.center().0, p.center().1));
         // `AchievementsHelper.NotifyItemPickup`'s registry handle.
@@ -92,7 +94,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 items.swap_remove(i);
                 continue;
             }
-            if drop.update(world, player_center, step) {
+            let collected = drop.update(world, player_center, step);
+            // `WorldItem.UpdateShimmer`'s 0.9 trigger (`WorldItem.cs:528-535`):
+            // the transform runs after the step's items borrow is released (the
+            // apply needs the app wholesale for the spawns and the world flags).
+            if drop.shimmer_transform_due() {
+                shimmer_due.push(i as u32);
+            }
+            if collected {
                 // The revenge pickup arm (`WorldItem.cs:1125-1200`): a
                 // nearby hostile NPC (lifeMax > 5, not statue-spawned) sucks
                 // 50-75% of a coin stack into `extraValue` while its
@@ -199,12 +208,24 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     if let Some((pos, stack)) = voodoo {
         crate::world_sim::npcs::voodoo_doll_lava_death(app, pos, stack);
     }
+    // The shimmer transforms apply in the list order (the C#'s single-item
+    // `GetShimmered` per tick; a step fires at most one per drop).
+    crate::shimmer::apply_due_transforms(app, &shimmer_due);
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
 /// `Item.NewItem` — `count` carries the C# stack (`Item.NewItem`'s `stack`
 /// argument; the pot/pile/herb loot rolls spawn several items at once).
 pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty: i32) {
+    spawn_item_drop_px(app, kind, count, Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX));
+}
+
+/// The pixel-position variant of [`spawn_item_drop`] — the spawn points that
+/// name a world position instead of a tile cell (`Item.RequestNewItem`'s
+/// `center`, e.g. the extractinator's cursor drop,
+/// `Player.DropItemFromExtractinator` `Player.cs:42081-42089`). The draws keep
+/// the `Item.NewItem` order: the velocity/phase first, the prefix last.
+pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2) {
     let r1 = rand01(&mut app.item_rng);
     let r2 = rand01(&mut app.item_rng);
     let r3 = rand01(&mut app.item_rng);
@@ -217,8 +238,8 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
         kind,
         count.max(1),
         prefix,
-        tx as f32 * TILE_PX + 1.0,
-        ty as f32 * TILE_PX,
+        pos.x + 1.0,
+        pos.y,
         (r1 * 2.0 - 1.0) * 1.4,
         -2.2 - r2 * 1.2,
         r3 * std::f32::consts::TAU,
@@ -230,6 +251,156 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
 }
 
 #[cfg(test)]
+mod shimmer_tests {
+    use super::*;
+    use tr_core::world::World;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::shimmer;
+
+    /// A 40x40 world with a stone floor at y = 20 and a shimmer pool on top of
+    /// it (y = 19), the player standing beside it.
+    fn shimmer_world() -> App {
+        let mut w = World::new("sh".into(), 40, 40);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        // The floor row 20 (solid) with the two-row shimmer pool 18-19 on top
+        // (a drop resting in the liquid has shimmer both in its box and in the
+        // tile above it — `CanShimmerAtPosition`'s `position.Y/16 - 1`,
+        // `WorldItem.cs:762`).
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            for y in 18..=19 {
+                let j = w.index(x, y);
+                w.tiles[j] = Tile::default();
+                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+                w.tiles[j].liquid = 255;
+            }
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 9.0 * TILE_PX;
+        player.y = 17.0 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(9.0 * TILE_PX, 17.0 * TILE_PX);
+        app
+    }
+
+    /// A drop resting on the pool's floor, the 14x14 box overlapping the
+    /// shimmer row (pos y = 19*16 + 2), parked at x = 30 tiles — outside the
+    /// 42 px pickup magnet of the player at x = 9 (`ItemUpdate`'s magnet,
+    /// `item.rs:176-188`) but inside the coin-luck 1000 px window.
+    fn resting_drop(kind: u16, count: u32) -> ItemDrop {
+        let mut d = ItemDrop::new(kind, count, 0, 30.0 * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        d.vel = Vec2::ZERO;
+        d
+    }
+
+    #[test]
+    fn a_drop_in_shimmer_transforms_on_the_ninetieth_tick() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(11, 3)); // Iron Ore → Tin Ore (the set)
+        // 90 ticks to cross 0.9 (`WorldItem.cs:528-535`).
+        // The ramp is the C#'s `+= 0.01f` accumulation, so the >0.9 crossing
+        // lands on the tick the accumulated f32 value passes 0.9 — the C# runs
+        // the same arithmetic (`WorldItem.cs:518-536`), so the tick count is
+        // identical there; the f32 undershoot at the 90th sum is the port's
+        // and the C#'s alike.
+        let mut ticks = 0;
+        while !app.items[0].shimmered && ticks < 120 {
+            update_items(&mut app, 1.0 / 60.0);
+            ticks += 1;
+        }
+        if std::env::var("SHIMMER_TRACE").is_ok() {
+            eprintln!("transformed after {ticks} ticks");
+        }
+        assert_eq!(ticks, 91, "the >0.9 crossing tick count");
+        let d = &app.items[0];
+        assert!(d.shimmered, "the transform fired");
+        assert_eq!(d.kind, 699); // Tin Ore
+        assert_eq!(d.count, 3); // the stack is kept
+    }
+
+    #[test]
+    fn the_ramp_decays_out_of_shimmer() {
+        let mut app = shimmer_world();
+        // Park the drop above the pool (y = 12), so it is dry.
+        app.items.push(ItemDrop::new(11, 1, 0, 30.0 * TILE_PX, 12.0 * TILE_PX, 0.0, 0.0, 0.0));
+        // In shimmer it ramps; the C#'s `shimmerWet` must be set for the ramp.
+        for _ in 0..3 {
+            let d = &mut app.items[0];
+            d.shimmer_wet = true;
+            d.shimmer_time = 0.5;
+        }
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items[0].shimmer_time < 0.5, "the dry tick decays");
+    }
+
+    #[test]
+    fn the_coin_merge_multiplies_and_airs_out() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(72, 4)); // Silver coins → x100
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        // The coin arm airs the drop out (`WorldItem.cs:1711-1712`).
+        assert!(app.items.is_empty(), "the coin drop vanished");
+        // The luck got the merged stack (4 * 100) within 1000 px of the player.
+        let luck = app.player.as_ref().unwrap().luck_state.coin_luck;
+        assert_eq!(luck, 400.0);
+    }
+
+    #[test]
+    fn a_decraftable_item_spawns_its_ingredients() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope x30 (recipe 62)
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        // The decraft spawns one item of 2 units (amount 2 x the 1-unit
+        // ingredient — `WorldItem.cs:1808-1823`'s maxStack chunking) and airs
+        // the source out (60 - 2*30).
+        let spawns: Vec<&ItemDrop> = app.items.iter().filter(|d| d.kind == 225).collect();
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].count, 2);
+        assert!(!app.items.iter().any(|d| d.kind == 3077), "source gone");
+    }
+
+    #[test]
+    fn a_non_transformable_item_never_transforms() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(2, 5)); // Dirt Block — no transform
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(!d.shimmered);
+        assert_eq!(d.count, 5);
+    }
+
+    #[test]
+    fn the_shimmered_item_floats_without_gravity() {
+        let mut app = shimmer_world();
+        let mut d = resting_drop(11, 3);
+        d.shimmered = true;
+        d.shimmer_wet = true;
+        d.vel = Vec2::ZERO;
+        app.items.push(d);
+        let before = app.items[0].pos.y;
+        update_items(&mut app, 1.0 / 60.0);
+        // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
+        assert!(app.items[0].pos.y < before, "the item rises");
+    }
+}
+
 mod lava_burn_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
