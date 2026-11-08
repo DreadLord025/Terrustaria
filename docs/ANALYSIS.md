@@ -1759,10 +1759,49 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
   password strings where vanilla shares one `Netplay.ServerPassword`. Host keeps
   the vanilla fixed listen port 7777 (`HostAndPlay`, `:52011`); the old custom
   port row is gone (`TR_HOST` still overrides for tests).
-* **`"HidePassword"` vs vanilla `"HidePasswords"`** (`Main.cs:4144` Put,
-  `:4422` Get): the port's config key drops the plural — pre-existing from the
-  settings-persistence milestone, kept so existing port configs still load
-  (a vanilla `config.json`'s `HidePasswords` entry is ignored by the port).
+* **M6-SETTINGS (config parity, 2026-11-09).** The settings layer now matches
+  the source on all four axes:
+  - **Defaults.** `Settings::default()` is the `static Main()` set:
+    `musicVolume`/`ambientVolume`/`soundVolume` `1f` (`Main.cs:66857-66859`),
+    `invasionProgressMode` `2` (`:67080`), `SettingPlayWhenUnfocused` `false`
+    (`:66512`), `FrameSkipMode` `Subtle` (`:67204`) — the port's earlier
+    `0.75`/`1`/`true`/`0` were plain parity breaks (the out-of-box screen
+    labels and the first-run audio levels differed).
+  - **Key names.** `to_json` writes the vanilla `SaveSettings` names —
+    `ShowItemText` (`Main.cs:4135`), `GraphicsQuality` (`:4130`),
+    `GoreVisualsAllowed` (`:4101`), `SettingsEnabled_MinersWobble` (`:4153`),
+    `SettingsEnabled_TilesSwayInWind` (`:4157`),
+    `GamepadDisableInstructionsDisplay` (`:4151`), `InvasionBarMode` (`:4096`),
+    `VolumeMusic`/`VolumeSound`/`VolumeAmbient` (`:4105-4107`),
+    `PlayWhenUnfocused` (`:4217`), `HidePasswords` (`:4144`) — and `parse`
+    keeps every pre-parity port spelling as an alias, so a port-written config
+    from before this pass still restores its values. The earlier
+    `"HidePassword"`-singular note is superseded: the port now writes the
+    vanilla plural and reads both spellings.
+  - **The `LightingMode` ordinal.** The C# enum is
+    `{White=0, Retro=1, Trippy=2, Color=3}`
+    (`Terraria/Graphics/Light/LightMode.cs:3-9`) while the port's internal
+    order is `{Color=0, White=1, Retro=2, Trippy=3}`
+    (`tr-core/src/lighting/params.rs:12-17`), so `parse`/`to_json` translate in
+    both directions and only the persisted byte is the vanilla ordinal
+    (vanilla casts the stored int unchecked, `Main.cs:4398-4403`; an
+    out-of-range byte keeps the default instead — a deliberate robustness
+    deviation).
+  - **Read-once.** `config.json` is read exactly once (`main.rs` →
+    `App::new(settings, …)` → `Menu::new(settings, …)`, the menu holding a
+    working clone); the four read sites the research listed (`main.rs`,
+    `App::new`, `Menu::new` and `CursorState::default`) collapse to one, and the
+    menu-close sync (`close_menu`/`park_menu` → `App.settings` +
+    `apply_settings`) still carries the edited values back.
+  - **Kept limitation:** a real vanilla `config.json`'s `MouseColor` /
+    `MouseBorderColor` dictionaries are multi-line (Newtonsoft
+    `Formatting.Indented`, `Preferences.cs:47-53`), which the port's line-based
+    parser cannot read; the port writes one-line dicts itself, so its own
+    round-trips work and a vanilla file's colours fall back to their defaults.
+  - **Kept port-wide behaviour:** a malformed boolean coerces to `false`
+    rather than vanilla's `Preferences.Get` keeping the field default
+    (`Preferences.cs:176-190`); changing that is a parser-wide change, not a
+    settings one, so it is recorded here instead.
 * **Stored without consumers yet** (visual-only, spec §9.1): the volume sliders
   (no audio engine reads the volumes), the six Effects toggles / smart-cursor
   flags / `FlashyEffects*` (no gameplay consumer), `resource_sets` (the HUD
