@@ -1,5 +1,10 @@
-//! The wiring tick (plan stage A4): the `Wiring.UpdateMech` cooldown queue and
-//! the teleport events' entity half (`Wiring.Teleport`, `Wiring.cs:3120-3178`).
+//! The wiring tick (plan stage A4): the `Wiring.UpdateMech` cooldown queue,
+//! the teleport events' entity half (`Wiring.Teleport`, `Wiring.cs:3120-3178`)
+//! and — since M7-WIRE-2 — the device effects' app half: the statue spawns,
+//! the trap emissions and the device shots.
+//!
+//! The engine half (`Wiring::update`, the frame decodes, the `CheckMech`
+//! gates and the roll order) lives in `tr-core/src/wiring.rs`.
 
 use glam::Vec2;
 
@@ -16,9 +21,11 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // false)` inside `DeActive`/`ReActive`), resolved through
     // `registry::tile_drop` exactly like the break path's object drops.
     let mut actuation_drops = Vec::new();
-    // The trap emissions (`HitWireSingle`'s case 137) drain into the spawn
-    // loop after the step.
+    // The trap emissions (`HitWireSingle`'s case 137) and the device shots
+    // (cannons/fireworks/explosives/mine/geyser/toilets) drain into the
+    // spawn loop after the step — their caps read the projectile pool.
     let mut trap_requests = Vec::new();
+    let mut device_shots = Vec::new();
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -26,49 +33,55 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // other pad. The `teleporting` re-entry flag and the MP section sync
         // are single-player no-ops.
         // `HitWireSingle`'s statue case (105): the engine parses the style,
-        // runs `CheckMech(30/600)` and emits the spawn request; the app runs
-        // the `MechSpawn` caps against its entity lists and constructs the
+        // runs `CheckMech(30/600/300/900)` and emits the spawn request; the app
+        // runs the `MechSpawn` caps against its entity lists and constructs the
         // ported kinds (`NPC.MechSpawn`, `NPC.cs:7420`; `Item.MechSpawn`,
         // `Item.cs:49385`).
         for spawn in app.wiring.take_statue_spawns() {
             match spawn {
-                tr_core::wiring::StatueSpawn::Npc { x, y, npc_id } => {
-                    // The C# NPC id → the ported kind (the Blue Slime 1 and
-                    // the Demon Eye 2; the rest arrive with M4-NPC-1's
-                    // families).
-                    // `NPC.MechSpawn`'s caps: 3 within 200 px, 6 within
-                    // 600 px, 10 global (`NPC.cs:7420-7505`) — the C# ids of
-                    // the ported kinds (Blue Slime 1, Demon Eye 2).
+                tr_core::wiring::StatueSpawn::Npc {
+                    x,
+                    y,
+                    npc_id,
+                    cap_ids,
+                } => {
+                    // `NPC.MechSpawn` (`NPC.cs:7420-7506`): the caps over the
+                    // app's npc list — 3 within 200 px, 6 within 600 px, 10
+                    // global, grouped by the C#'s type families. Every id in
+                    // `cap_ids` (the spawn id when empty) must pass.
+                    let caps: Vec<u16> = cap_ids.iter().map(|&c| c as u16).collect();
                     if !crate::wiring_stub::npc_mech_spawn(
-                        app.npcs.iter().map(|n| (n.x, n.y, npc_id as u16)),
+                        app.npcs.iter().map(|n| (n.x, n.y, n.kind.cs_id())),
+                        &caps,
+                        npc_id as u16,
                         x as f32,
                         y as f32,
                     ) {
                         continue;
                     }
-                    let spawned = match npc_id {
-                        1 => Npc::spawn_slime_variant(
-                            &app.world,
-                            (x / 16) as i32,
-                            crate::npc::SlimeVariant::Blue,
-                        ),
-                        2 => Npc::spawn_eye(&app.world, (x / 16) as i32).map(|mut n| {
-                            n.x = x as f32;
-                            n.y = y as f32;
-                            n
-                        }),
-                        _ => None,
-                    };
-                    if let Some(mut npc) = spawned {
+                    if let Some(mut npc) = statue_npc(npc_id, x, y) {
+                        // `Wiring.cs:2471-2477`: `value = 0`, `npcSlots = 0`,
+                        // `SpawnedFromStatue`, `CanBeReplacedByOtherNPCs` — the
+                        // port models the loot-gating flag; the other three have
+                        // no field yet (ANALYSIS note).
                         npc.spawned_from_statue = true;
                         app.npcs.push(npc);
                     }
                 }
-                tr_core::wiring::StatueSpawn::Item { x, y, item_id } => {
-                    // `Item.MechSpawn` (`Item.cs:49385-49405`): the same caps
-                    // over the dropped items of the same C# item id.
+                tr_core::wiring::StatueSpawn::Item {
+                    x,
+                    y,
+                    item_id,
+                    cap_ids,
+                } => {
+                    // `Item.MechSpawn` (`Item.cs:49385-49406`): the same caps
+                    // over the dropped items, rings 300/800 px, one exact type
+                    // per cap id (the seasonal ids ride along — F6).
+                    let caps: Vec<u16> = cap_ids.iter().map(|&c| c as u16).collect();
                     if !crate::wiring_stub::item_mech_spawn(
                         app.items.iter().map(|d| (d.pos.x, d.pos.y, d.kind)),
+                        &caps,
+                        item_id as u16,
                         x as f32,
                         y as f32,
                     ) {
@@ -88,6 +101,34 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         phase: 0.0,
                     });
                 }
+                tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
+                    // `Wiring.cs:2413-2440`/`:2442-2468`: the collection (first
+                    // 50 roster NPCs in index order), one roll from the core
+                    // stream when the collection is non-empty, and only the
+                    // rolled NPC moves — to `(x - width/2, y - height - 1)` with
+                    // the roll's style 14.
+                    let mut candidates = Vec::new();
+                    for (idx, n) in app.npcs.iter().enumerate() {
+                        if n.hp > 0 && roster.contains(&n.kind.cs_id()) {
+                            candidates.push(idx);
+                            if candidates.len() >= 50 {
+                                break;
+                            }
+                        }
+                    }
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                    let roll = app.wiring.rand_next(candidates.len() as i32) as usize;
+                    let npc = &mut app.npcs[candidates[roll]];
+                    let (w, h) = npc.size();
+                    npc.x = x as f32 - w * 0.5;
+                    npc.y = y as f32 - h - 1.0;
+                }
+                // The boulder statue's projectile 99 (aiStyle 25) has no ported
+                // family — dropped with the ANALYSIS note, like the other
+                // not-yet-ported projectile families.
+                tr_core::wiring::StatueSpawn::Boulder { .. } => {}
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
@@ -100,6 +141,8 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // proximity cap reads the pool, so the drain splits it from the
         // direct shots.
         trap_requests.extend(app.wiring.take_trap_requests());
+        // The device shots (cannons, fireworks, explosives/mine/geyser/toilet).
+        device_shots.extend(app.wiring.take_device_shots());
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
             let ay = (from.1 * 16.0) as i32 - 48;
@@ -142,18 +185,44 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         }
     });
     // The actuation drops spawn after the fixed step (see the drain comment
-    // above); the trap requests spawn right after (the spear's proximity
-    // cap reads the pool, so the drain splits it from the direct shots).
+    // above); the trap requests and the device shots spawn right after (their
+    // caps read the pool).
     for drop in actuation_drops {
         if let Some(id) = crate::registry::tile_drop(drop.tile_kind, 0) {
             crate::world_sim::items::spawn_item_drop(app, id, 1, drop.x, drop.y);
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
-    // the knockback 2f, `Wiring.cs:1990-1992`). The boulder 186 (aiStyle 37)
-    // and the flame jet 187 (aiStyle 38) have no ported families yet — their
-    // requests drop here until M4-PROJ ports those AIs.
+    // the knockback 2f, `Wiring.cs:1990-1992`). The flame jet 187 (aiStyle 38)
+    // requests drop until M4-PROJ ports that AI; the trap darts, the spiky
+    // ball 185 and the spear 186 (aiStyle 14) spawn through the pool. The
+    // ceiling −7 arm emits one identical `Spear` request twice: the C#
+    // evaluates its cap ONCE before both spawns, so identical requests share
+    // one cap decision (and therefore one pool scan).
+    let mut decided: Vec<tr_core::wiring::TrapRequest> = Vec::new();
+    let mut blocked: Vec<tr_core::wiring::TrapRequest> = Vec::new();
     for req in trap_requests {
+        let allow = match req {
+            tr_core::wiring::TrapRequest::Shot { .. } => true,
+            tr_core::wiring::TrapRequest::Spear { .. } => {
+                if blocked.contains(&req) {
+                    false
+                } else if decided.contains(&req) {
+                    true
+                } else {
+                    let allow = spear_cap_allows(app, &req);
+                    if allow {
+                        decided.push(req);
+                    } else {
+                        blocked.push(req);
+                    }
+                    allow
+                }
+            }
+        };
+        if !allow {
+            continue;
+        }
         match req {
             tr_core::wiring::TrapRequest::Shot {
                 x,
@@ -162,70 +231,507 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 vy,
                 kind,
                 damage,
-            } => {
-                if crate::projectile::proj_data(kind).is_some() {
-                    app.projectiles
-                        .spawn_with_data(kind, x, y, vx, vy, damage, 2.0);
-                }
-            }
+            } => spawn_device_kind(app, kind, x, y, vx, vy, damage, 2.0, 0.0, 0.0),
+            // The `count_kind` is the cap's counting type (F1: 0 on the
+            // floor), NOT the spawn kind — every arm of the family fires the
+            // spiky ball (185).
             tr_core::wiring::TrapRequest::Spear {
+                x, y, vx, vy, damage, ..
+            } => spawn_device_kind(
+                app,
+                crate::projectile::TRAP_SPIKY_BALL,
                 x,
                 y,
                 vx,
                 vy,
                 damage,
-            } => {
-                // `Wiring.cs:1825-1843`: the 1000-slot scan of the trap's own
-                // projectile kind — the 200 base count decrements by the
-                // distance rings 50/100/200/300/400/500/700/900/1200 px
-                // (−50/−15/−10/−8/−6/−5/−4/−3/−2, else −1). The C#'s `j *
-                // 18 + 8` center y is verbatim (including the 18).
-                let mut count = 200;
-                for p in app.projectiles.slots().iter().filter(|p| p.active) {
-                    if p.kind != crate::projectile::TRAP_SPEAR {
-                        continue;
-                    }
-                    let dx = (x - p.pos.x).abs();
-                    let dy = (y - p.pos.y).abs();
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    count -= if dist < 50.0 {
-                        50
-                    } else if dist < 100.0 {
-                        15
-                    } else if dist < 200.0 {
-                        10
-                    } else if dist < 300.0 {
-                        8
-                    } else if dist < 400.0 {
-                        6
-                    } else if dist < 500.0 {
-                        5
-                    } else if dist < 700.0 {
-                        4
-                    } else if dist < 900.0 {
-                        3
-                    } else if dist < 1200.0 {
-                        2
-                    } else {
-                        1
-                    };
-                }
-                if count > 0 {
-                    app.projectiles
-                        .spawn_with_data(crate::projectile::TRAP_SPEAR, x, y, vx, vy, damage, 2.0);
-                }
-            }
-            // `NewProjectile` with the kb 2f for the four special devices
-            // (`Wiring.cs:1990-1992`'s shared tail, `:3074-3092`). The app
-            // spawns the kinds it has the projectile table for; the land
-            // mine 164 / the tracer 654 / the boulder 99 / the bomb 108
-            // have no rows in `proj_data` yet — their requests drop here
-            // until M4-PROJ ports those families.
-            tr_core::wiring::TrapRequest::Geyser { .. }
-            | tr_core::wiring::TrapRequest::Mine { .. }
-            | tr_core::wiring::TrapRequest::Boulder { .. }
-            | tr_core::wiring::TrapRequest::ExplosiveLock { .. } => {}
+                2.0,
+                0.0,
+                0.0,
+            ),
         }
     }
-    app.wiring_step.cap_backlog();
+    // The device shots spawn after the fixed step (`NewProjectile`,
+    // `Wiring.cs:1413` snowball / `WorldGen.cs:62174` rocket / `:1522` cannon /
+    // `:1499` mine / `:3113` geyser / `:1504` toilet). The families whose
+    // aiStyle is not ported (the rockets 167+/415-418, the fountain 419-422,
+    // the cannonball 162, the bunny 281, the snowball 166, the geyser 654, the
+    // toilet 733) drop here with the ANALYSIS note; the explosive blast
+    // families (108/164/178/601) spawn through the pool.
+    for shot in device_shots {
+        // `Wiring.cs:1526-1539`: the fountain's dedupe — an active
+        // `aiStyle == 73` projectile with the same `ai[0]/ai[1]` anchor skips
+        // the shot. The scan reads the pool, so it lives here (decision D1:
+        // the roll already happened in the engine).
+        if (419..=422).contains(&shot.kind) && fountain_anchored(app, shot.ai0, shot.ai1) {
+            continue;
+        }
+        // `WorldGen.cs:50683-50685`: `BunnyCannonCanFire` refuses only the
+        // spawn — the cooldowns were already assigned in the engine.
+        if shot.kind == crate::projectile::CANNON_BUNNY && !bunny_cannon_can_fire(app) {
+            continue;
+        }
+        spawn_device_kind(
+            app,
+            shot.kind,
+            shot.x,
+            shot.y,
+            shot.vx,
+            shot.vy,
+            shot.damage,
+            shot.knock_back,
+            shot.ai0,
+            shot.ai1,
+        );
+    }
+}
+
+/// The C#'s `NPC.NewNPC` (`NPC.cs:80750-80780`): the entity is constructed at
+/// the request's anchor as its **bottom-center** (`nPC.Bottom = (X, Y)`), with
+/// `SetDefaults` standing in for the port's `Npc::new`. The statue-spawnable
+/// kinds map through their C# ids; the kinds without a port row drop (the C#
+/// would spawn them — the roster gap is the ANALYSIS subset note).
+fn statue_npc(npc_id: i16, x: i32, y: i32) -> Option<Npc> {
+    let kind = match npc_id {
+        1 => NpcKind::Slime,
+        2 => NpcKind::DemonEye,
+        6 => NpcKind::EaterOfSouls,
+        21 => NpcKind::Zombie,
+        24 => NpcKind::FireImp,
+        42 => NpcKind::Hornet,
+        49 => NpcKind::CaveBat,
+        55 => NpcKind::Goldfish,
+        58 => NpcKind::Piranha,
+        65 => NpcKind::Shark,
+        _ => return None,
+    };
+    let (w, h) = kind.size();
+    Some(Npc::new(kind, x as f32 - w * 0.5, y as f32 - h, 1, 0.0))
+}
+
+/// The spiky ball's proximity cap (`Wiring.cs:1814-1822`/`:1945-1953`): the
+/// 200 base count decrements by the distance rings measured from
+/// `(i*16+8, j*18+8)` — the 18 is verbatim — against the request's
+/// `count_kind` projectiles. 0 on the floor (F1: `ProjectileID.None`, which no
+/// live slot can hold — the cap is a no-op by construction), 185 on the
+/// ceiling.
+fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
+    let (x, y, count_kind) = match *req {
+        tr_core::wiring::TrapRequest::Spear {
+            x,
+            y,
+            count_kind,
+            ..
+        } => (x, y, count_kind),
+        tr_core::wiring::TrapRequest::Shot { .. } => return true,
+    };
+    let mut count = 200;
+    for p in app.projectiles.slots().iter().filter(|p| p.active) {
+        if p.kind != count_kind {
+            continue;
+        }
+        let dx = (x - p.pos.x).abs();
+        let dy = (y - p.pos.y).abs();
+        let dist = (dx * dx + dy * dy).sqrt();
+        count -= if dist < 50.0 {
+            50
+        } else if dist < 100.0 {
+            15
+        } else if dist < 200.0 {
+            10
+        } else if dist < 300.0 {
+            8
+        } else if dist < 400.0 {
+            6
+        } else if dist < 500.0 {
+            5
+        } else if dist < 700.0 {
+            4
+        } else if dist < 900.0 {
+            3
+        } else if dist < 1200.0 {
+            2
+        } else {
+            1
+        };
+    }
+    count > 0
+}
+
+/// `WorldGen.BunnyCannonCanFire` (`WorldGen.cs:50700-50747`): at least one free
+/// NPC slot (of the first 100) survives the live type-281 projectiles, and the
+/// bunnies never reach 4. The port's npc list holds only live NPCs, so the
+/// free-slot count is `100 - live` bounded by the list.
+fn bunny_cannon_can_fire(app: &App) -> bool {
+    let live = app.npcs.len().min(100);
+    let mut free = (100 - live) as i32;
+    let mut bunnies = 0;
+    for p in app.projectiles.slots().iter().filter(|p| p.active) {
+        if p.kind == crate::projectile::CANNON_BUNNY {
+            bunnies += 1;
+            if bunnies >= 4 {
+                return false;
+            }
+            free -= 1;
+            if free <= 0 {
+                return false;
+            }
+        }
+    }
+    free >= 1
+}
+
+/// The fountain's dedupe (`Wiring.cs:1531-1538`): an active projectile of the
+/// fountain family anchored at `(ai0, ai1)` blocks a new one.
+fn fountain_anchored(app: &App, ai0: f32, ai1: f32) -> bool {
+    app.projectiles
+        .slots()
+        .iter()
+        .filter(|p| p.active)
+        .any(|p| (419..=422).contains(&p.kind) && p.ai[0] == ai0 && p.ai[1] == ai1)
+}
+
+/// The shared spawn: the port's pool when the family has `ProjData`, a silent
+/// drop otherwise (the ANALYSIS note lists the missing aiStyle families).
+fn spawn_device_kind(
+    app: &mut App,
+    kind: u16,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+    knock_back: f32,
+    ai0: f32,
+    ai1: f32,
+) {
+    if crate::projectile::proj_data(kind).is_some() {
+        app.projectiles
+            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::world::World {
+        tr_core::world::World::new("t".into(), 64, 64)
+    }
+
+    /// The standard device rig: the device at (10, 20) with the given frame,
+    /// the wired switch at (8, 20) and the red wire line between them.
+    fn world_with_device(kind: u16, frame_x: i16, frame_y: i16) -> tr_core::world::World {
+        let mut w = world();
+        let i = w.index(10, 20);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let si = w.index(8, 20);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        for x in [8, 9, 10] {
+            w.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
+        }
+        w
+    }
+
+    fn app_with(kind: u16, frame_x: i16, frame_y: i16) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world_with_device(kind, frame_x, frame_y);
+        app
+    }
+
+    /// One trip plus one wiring tick: the trip accumulates the requests, the
+    /// tick drains them (the player's use path runs the trip).
+    fn trip_and_tick(app: &mut App) {
+        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
+        update_wiring(app, 1.0 / 60.0);
+    }
+
+    fn npc_of(kind: crate::npc::NpcKind, x: f32, y: f32) -> crate::npc::Npc {
+        let mut npc = crate::npc::Npc::new(kind, x, y, 1, 0.0);
+        npc.hp = npc.max_hp;
+        npc
+    }
+
+    #[test]
+    fn dw_4_1_the_new_data_rows_and_the_ai_spawn() {
+        // DW-4.1: the device families whose aiStyle is ported carry their
+        // verbatim `SetDefaults` slice, and `spawn_with_data_ai` writes the
+        // C#'s `ai0/ai1` arguments (the fireworks fountain's anchor).
+        let mine = crate::projectile::proj_data(crate::projectile::LANDMINE_BLAST).unwrap();
+        assert_eq!((mine.w, mine.h), (128.0, 128.0));
+        assert_eq!(mine.ai_style, 16);
+        assert_eq!(mine.time_left, 2);
+        let blast = crate::projectile::proj_data(crate::projectile::EXPLOSIVES_BLAST).unwrap();
+        assert_eq!((blast.w, blast.h), (260.0, 260.0));
+        assert!(blast.trap);
+        assert!(!blast.tile_collide);
+        let bomb = crate::projectile::proj_data(crate::projectile::CANNON_BOMB).unwrap();
+        assert_eq!(bomb.time_left, 2);
+        let explosive = crate::projectile::proj_data(crate::projectile::CANNON_EXPLOSIVE).unwrap();
+        assert_eq!(explosive.extra_updates, 30);
+        let venom = crate::projectile::proj_data(crate::projectile::TRAP_VENOM_DART).unwrap();
+        assert_eq!((venom.w, venom.h), (10.0, 10.0));
+        assert_eq!(venom.ai_style, 1);
+        // The renamed trap family keeps its verbatim values.
+        assert_eq!(crate::projectile::TRAP_SPEAR, 186);
+        assert_eq!(crate::projectile::TRAP_SPIKY_BALL, 185);
+        assert_eq!(crate::projectile::TRAP_VENOM_DART, 980);
+        let mut pool = crate::projectile::ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                crate::projectile::EXPLOSIVES_BLAST,
+                1.0,
+                2.0,
+                0.0,
+                0.0,
+                500,
+                10.0,
+                7.0,
+                9.0,
+            )
+            .expect("a free slot");
+        assert_eq!(pool.slots()[slot].ai[0], 7.0);
+        assert_eq!(pool.slots()[slot].ai[1], 9.0);
+        assert_eq!(pool.slots()[slot].damage, 500);
+    }
+
+    #[test]
+    fn dw_4_3_the_slime_statue_spawns_at_the_verbatim_bottom_center() {
+        // `Wiring.cs:2270` (`num140`, `num141` — the body's bottom edge) and
+        // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the ported kind
+        // lands with its top-left at the anchor minus half its box.
+        let mut app = app_with(105, 4 * 36, 0); // style 4 → the Blue Slime, y − 12
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 1, "the slime spawns");
+        let npc = &app.npcs[0];
+        let (w, h) = npc.kind.size();
+        let anchor_x = 10.0 * 16.0 + 16.0;
+        let anchor_y = (20.0 + 3.0) * 16.0 - 12.0;
+        assert!(
+            (npc.x - (anchor_x - w * 0.5)).abs() < 0.01,
+            "bottom-center x: {} vs {}",
+            npc.x,
+            anchor_x - w * 0.5
+        );
+        assert!(
+            (npc.y - (anchor_y - h)).abs() < 0.01,
+            "bottom-center y: {} vs {}",
+            npc.y,
+            anchor_y - h
+        );
+        assert!(npc.spawned_from_statue, "Wiring.cs:2475");
+    }
+
+    #[test]
+    fn dw_4_3_the_unrostered_statue_kinds_drop() {
+        // The roster gap: a style whose C# id has no ported kind emits its
+        // request and the app drops it (the ANALYSIS subset note) — no NPC,
+        // no panic.
+        let mut app = app_with(105, 66 * 36, 0); // style 66 → the Wraith (82)
+        trip_and_tick(&mut app);
+        assert!(app.npcs.is_empty(), "the unported kind drops");
+    }
+
+    #[test]
+    fn dw_4_3_the_item_caps_filter_by_type() {
+        // `Item.MechSpawn` (`Item.cs:49385-49406`) counts only the requested
+        // type: ten unrelated items must not block the heart statue.
+        let mut app = app_with(105, 37 * 36, 0); // the heart statue (item 58)
+        for i in 0..10 {
+            app.items.push(crate::item::ItemDrop {
+                kind: 999 + i,
+                count: 1,
+                shimmer_time: 0.0,
+                shimmered: false,
+                shimmer_pending: false,
+                shimmer_wet: false,
+                prefix: 0,
+                pos: Vec2::new(160.0, 320.0),
+                vel: Vec2::ZERO,
+                age: 0.0,
+                phase: 0.0,
+            });
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.items.len(), 11, "the heart drops despite the noise");
+        let heart = app.items.last().unwrap();
+        assert_eq!(heart.kind, 58, "the C# ItemID.Heart");
+        let anchor_y = (20.0 + 3.0) * 16.0 - 16.0;
+        assert!(
+            (heart.pos.y - anchor_y).abs() < 0.01,
+            "the item anchor: {} vs {}",
+            heart.pos.y,
+            anchor_y
+        );
+        // The 600-tick cooldown holds the second trip.
+        trip_and_tick(&mut app);
+        assert_eq!(app.items.len(), 11, "the 600-tick cooldown holds");
+    }
+
+    #[test]
+    fn dw_4_4_the_teleport_statue_moves_only_the_rolled_npc() {
+        // `Wiring.cs:2442-2468`: the roster collection (≤50, index order), the
+        // single roll from the core stream, and the move of the rolled NPC
+        // only — to `(x - w/2, y - h - 1)`.
+        // Roster B (`Wiring.cs:2442-2468`) is the town NPCs — the Nurse (18)
+        // and the Dryad (20) are ported.
+        let mut app = app_with(105, 41 * 36, 0);
+        app.npcs.push(npc_of(crate::npc::NpcKind::Nurse, 100.0, 100.0));
+        app.npcs.push(npc_of(crate::npc::NpcKind::Dryad, 200.0, 200.0));
+        // A dead roster NPC never collects.
+        let mut dead = npc_of(crate::npc::NpcKind::Nurse, 300.0, 300.0);
+        dead.hp = 0;
+        app.npcs.push(dead);
+        // The roll from the same seeded stream, computed independently.
+        let roll = {
+            let mut probe = tr_core::wiring::Wiring::new();
+            probe.seed_faulty_rng(5);
+            probe.rand_next(2)
+        };
+        app.wiring.seed_faulty_rng(5);
+        trip_and_tick(&mut app);
+        let picked = roll as usize;
+        let other = 1 - picked;
+        let other_original = if other == 0 { 100.0 } else { 200.0 };
+        assert_eq!(
+            app.npcs[other].x, other_original,
+            "the unpicked NPC stays put"
+        );
+        let anchor_x = 10.0 * 16.0 + 16.0;
+        let anchor_y = (20.0 + 3.0) * 16.0;
+        let moved = &app.npcs[picked];
+        let (w, h) = moved.kind.size();
+        assert!(
+            (moved.x - (anchor_x - w * 0.5)).abs() < 0.01,
+            "the moved NPC's x: {} vs {}",
+            moved.x,
+            anchor_x - w * 0.5
+        );
+        assert!(
+            (moved.y - (anchor_y - h - 1.0)).abs() < 0.01,
+            "the moved NPC's y: {} vs {}",
+            moved.y,
+            anchor_y - h - 1.0
+        );
+    }
+
+    #[test]
+    fn dw_4_4_an_empty_roster_rolls_and_moves_nothing() {
+        // The C# rolls only when the collection is non-empty — an empty
+        // roster (roster A holds no ported kind yet) is a no-op.
+        let mut app = app_with(105, 40 * 36, 0);
+        app.npcs.push(npc_of(crate::npc::NpcKind::Slime, 100.0, 100.0));
+        trip_and_tick(&mut app);
+        assert_eq!((app.npcs[0].x, app.npcs[0].y), (100.0, 100.0));
+    }
+
+    #[test]
+    fn dw_4_2_the_ceiling_spiky_ball_cap_counts_kind_185() {
+        // `Wiring.cs:1945-1953`: the ceiling arm's cap counts live SpikyBallTrap
+        // (185) projectiles within the rings; four near ones exhaust the 200
+        // base and block both identical requests.
+        let mut app = app_with(137, 18, -7 * 18);
+        for k in 0..4 {
+            app.projectiles
+                .spawn_with_data(
+                    crate::projectile::TRAP_SPIKY_BALL,
+                    168.0,
+                    296.0 + k as f32,
+                    0.0,
+                    0.0,
+                    40,
+                    2.0,
+                )
+                .expect("a free slot");
+        }
+        trip_and_tick(&mut app);
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
+            .count();
+        assert_eq!(live, 4, "both ceiling requests are blocked by the cap");
+    }
+
+    #[test]
+    fn dw_4_2_the_ceiling_spiky_ball_fires_twice_when_clear() {
+        // F2: with a clear pool the ceiling arm's two identical requests both
+        // spawn (the shared cap decision) — five live 185s after the drain.
+        let mut app = app_with(137, 18, -7 * 18);
+        trip_and_tick(&mut app);
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
+            .count();
+        assert_eq!(live, 2, "one cap decision, two spawns");
+    }
+
+    #[test]
+    fn dw_4_2_the_floor_spiky_ball_cap_never_blocks() {
+        // F1: the floor arm counts `ProjectileID.None` (0) — no live slot can
+        // hold kind 0, so the cap is a no-op and the shot lands.
+        let mut app = app_with(137, 18, 3 * 18);
+        trip_and_tick(&mut app);
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
+            .count();
+        assert_eq!(live, 1, "the floor cap never blocks");
+    }
+
+    #[test]
+    fn dw_4_2_the_bunny_gate_blocks_only_the_spawn() {
+        // `WorldGen.cs:50683-50685`: `BunnyCannonCanFire` refuses only the
+        // spawn — and with no ported bunny projectile family the request
+        // drops anyway; the gate itself must not panic or spawn.
+        let mut app = app_with(209, 72 + 18, 54); // the bunny cannon's firing cell
+        trip_and_tick(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            0,
+            "the bunny projectile has no ported family — dropped"
+        );
+    }
+
+    #[test]
+    fn dw_4_2_the_fountain_dedupe_blocks_the_anchor() {
+        // `Wiring.cs:1526-1539`: the dedupe reads the pool's active fountains
+        // for the same `ai[0]/ai[1]` anchor. The fountains (419-422) have no
+        // ported data, so today the request drops at the spawn anyway; this
+        // pins the drain's current behaviour and the predicate on an empty
+        // pool — the anchored-block path activates with the aiStyle-73 family.
+        let mut app = app_with(338, 0, 0);
+        assert!(!fountain_anchored(&app, 10.0, 20.0), "an empty pool anchors nothing");
+        trip_and_tick(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            0,
+            "the fountain family is unported — dropped"
+        );
+    }
+
+    /// The dedupe predicate over a bare pool (the helper reads `App`).
+    fn fountain_anchored_pool(pool: &crate::projectile::ProjectilePool, x: f32, y: f32) -> bool {
+        pool.slots()
+            .iter()
+            .filter(|p| p.active)
+            .any(|p| (419..=422).contains(&p.kind) && p.ai[0] == x && p.ai[1] == y)
+    }
 }

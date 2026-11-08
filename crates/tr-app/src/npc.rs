@@ -1016,6 +1016,46 @@ impl NpcKind {
         }
     }
 
+    /// The C# `NPCID` this kind ports — the statue spawns' ids, the
+    /// `MechSpawn` caps (`NPC.cs:7420`) and the teleporting statues' rosters
+    /// (`Wiring.cs:2424`/`:2452`) all speak C# ids. Rows arrive with the
+    /// kinds; `u16::MAX` marks a kind the caps can never match (the C#'s
+    /// `MechSpawn` counts by type, and no statue spawns an unmapped kind).
+    pub(crate) fn cs_id(self) -> u16 {
+        match self {
+            NpcKind::Slime => 1,
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 133,
+            NpcKind::Zombie => 21,
+            NpcKind::KingSlime => 50,
+            NpcKind::Guide => 22,
+            // The teleporting statues' rosters (`Wiring.cs:2424`/`:2452`) are the
+            // town NPCs — the port has most of them.
+            NpcKind::Merchant => 17,
+            NpcKind::Nurse => 18,
+            NpcKind::ArmsDealer => 19,
+            NpcKind::Dryad => 20,
+            NpcKind::Demolitionist => 38,
+            NpcKind::Clothier => 54,
+            NpcKind::Painter => 227,
+            NpcKind::WitchDoctor => 228,
+            NpcKind::Skeleton => 77,
+            NpcKind::UndeadMiner => 23,
+            NpcKind::CaveBat => 49,
+            NpcKind::JungleBat => 51,
+            NpcKind::Hellbat => 60,
+            NpcKind::VoodooDemon => 66,
+            NpcKind::EaterOfSouls => 6,
+            NpcKind::Hornet => 42,
+            NpcKind::MeteorHead => 5,
+            NpcKind::FireImp => 24,
+            NpcKind::Goldfish => 55,
+            NpcKind::Piranha => 58,
+            NpcKind::Shark => 65,
+            _ => u16::MAX,
+        }
+    }
+
     pub(crate) fn max_hp(self) -> i32 {
         match self {
             NpcKind::Slime => 25,         // NPC.cs:8572
