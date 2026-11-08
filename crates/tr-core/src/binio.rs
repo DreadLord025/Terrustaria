@@ -85,6 +85,12 @@ impl<'a> Reader<'a> {
         Some(self.u8()? != 0)
     }
 
+    /// The `.wld` `BitsByte`: one byte holding up to eight flags
+    /// (`Terraria.BitsByte`, `BitsByte.cs:7`), bit 0 first.
+    pub fn bits_byte(&mut self) -> Option<BitsByte> {
+        self.u8().map(BitsByte)
+    }
+
     /// .NET `BinaryReader.ReadString`: 7-bit length prefix + UTF-8 payload,
     /// decoded lossily (the `.wld` reader's behaviour).
     pub fn cs_string_lossy(&mut self) -> Option<String> {
@@ -185,6 +191,66 @@ impl Writer {
     pub fn f64(&mut self, v: f64) {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
+
+    /// Writes a [`BitsByte`] as its one backing byte
+    /// (`BinaryWriter.Write(BitsByte)` via the implicit byte conversion).
+    pub fn bits_byte(&mut self, bb: BitsByte) {
+        self.u8(bb.0);
+    }
+}
+
+/// One byte addressed as eight LSB-first flags — the port of `Terraria.BitsByte`
+/// (`BitsByte.cs:7-47`): `this[key]` is `value & (1 << key)`, so bit 0 is the
+/// first flag and bit 7 the last. The C# indexer accepts only 0..7; reads
+/// outside that range answer `false` (a byte has no such bit) and writes are
+/// dropped, matching the C# byte shift results.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct BitsByte(pub u8);
+
+impl BitsByte {
+    /// An all-clear byte.
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    /// `this[key]` (`BitsByte.cs:13-20`).
+    pub fn bit(self, key: usize) -> bool {
+        key < 8 && self.0 & (1 << key) != 0
+    }
+
+    /// `this[key] = value` (`BitsByte.cs:20-29`).
+    pub fn set(&mut self, key: usize, value: bool) {
+        if key >= 8 {
+            return;
+        }
+        if value {
+            self.0 |= 1 << key;
+        } else {
+            self.0 &= !(1 << key);
+        }
+    }
+
+    /// `ClearAll` (`BitsByte.cs:44`).
+    pub fn clear_all(&mut self) {
+        self.0 = 0;
+    }
+
+    /// `SetAll` (`BitsByte.cs:48`).
+    pub fn set_all(&mut self) {
+        self.0 = u8::MAX;
+    }
+}
+
+impl From<u8> for BitsByte {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<BitsByte> for u8 {
+    fn from(bb: BitsByte) -> Self {
+        bb.0
+    }
 }
 
 #[cfg(test)]
@@ -244,6 +310,50 @@ mod tests {
         assert_eq!(r.skip(1), Some(())); // pos 4 -> 5
         assert_eq!(r.skip(1), None); // the buffer is exhausted
         assert_eq!(r.pos(), 5);
+    }
+
+    /// DW-1.2: every byte value survives a write/read round trip through
+    /// `bits_byte`, and the accessors match the C# indexer bit-for-bit.
+    #[test]
+    fn bits_byte_round_trips_every_value() {
+        for value in 0..=u8::MAX {
+            let mut w = Writer::new();
+            w.bits_byte(BitsByte(value));
+            let buf = w.into_inner();
+            assert_eq!(buf, vec![value]);
+            let mut r = Reader::new(&buf);
+            assert_eq!(r.bits_byte(), Some(BitsByte(value)));
+        }
+    }
+
+    /// DW-1.2: bit order is LSB-first — bit `k` of the byte is flag `k`,
+    /// exactly as `BitsByte.this[key]` computes `value & (1 << key)`.
+    #[test]
+    fn bits_byte_accessors_are_lsb_first() {
+        for bit in 0..8usize {
+            let mut bb = BitsByte::new();
+            assert!(!bb.bit(bit));
+            bb.set(bit, true);
+            assert_eq!(u8::from(bb), 1 << bit);
+            assert!(bb.bit(bit));
+            for other in 0..8usize {
+                assert_eq!(bb.bit(other), other == bit);
+            }
+            bb.set(bit, false);
+            assert_eq!(u8::from(bb), 0);
+        }
+        let mut all = BitsByte::new();
+        all.set_all();
+        assert_eq!(u8::from(all), 0xFF);
+        assert!((0..8).all(|b| all.bit(b)));
+        all.clear_all();
+        assert_eq!(u8::from(all), 0);
+        assert!(!(0..8).any(|b| all.bit(b)));
+        // Out-of-range keys answer false and are dropped (the C# byte shift).
+        assert!(!BitsByte::new().bit(8));
+        let mut bb = BitsByte(0xFF);
+        bb.set(8, false);
+        assert_eq!(u8::from(bb), 0xFF);
     }
 
     #[test]
