@@ -12,6 +12,7 @@ pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod netglue;
+pub(crate) mod netmodules;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
@@ -358,6 +359,11 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// The `82` module cadence counter and the last ping send stamp (the
+    /// client's RTT diagnostic, `NetPingModule`).
+    pub(crate) net_module_beat: u32,
+    pub(crate) net_ping_at: Option<Instant>,
+    pub(crate) net_rtt_ms: u32,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -2171,6 +2177,9 @@ impl App {
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
+            net_module_beat: 0,
+            net_ping_at: None,
+            net_rtt_ms: 0,
             join_target,
             map: Some(world_map),
             map_grab: None,

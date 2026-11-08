@@ -65,6 +65,7 @@ pub mod id {
     pub const STATUS: u8 = 9; // MessageBuffer.cs:877-888 — load progress
     pub const PLAYER_ACTIVE: u8 = 14; // MessageBuffer.cs:1061-1088
     pub const TILE_BLOCK: u8 = 10; // NetMessage.cs:424-426 / MessageBuffer.cs:889-894
+    pub const NET_MODULE: u8 = 82; // NetPacket.cs:19-42 / MessageBuffer.cs:3243-3245
     pub const SECTION_RANGE: u8 = 20; // NetMessage.cs:543-644 / MessageBuffer.cs:1335-1443
     pub const PLAYER_HP: u8 = 16; // MessageBuffer.cs:1095-1112
     pub const PASSWORD_REQUEST: u8 = 37; // MessageBuffer.cs:2203-2216 — no body
@@ -1252,6 +1253,12 @@ pub enum C2s {
     /// `TrySyncingInput`/heartbeat sends, `Player.cs:6852-6916`,
     /// `Main.cs:64522-64529`).
     PlayerState(PlayerState),
+    /// `82` — a NetModule envelope: the module id plus the module's own body
+    /// (`NetPacket.cs:19-42`'s header; `netglue` dispatches by module id).
+    NetModule {
+        module: u16,
+        body: Vec<u8>,
+    },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1305,6 +1312,11 @@ pub enum S2c {
         hp: i16,
         max_hp: i16,
     },
+    /// `82` — a NetModule envelope (see `C2s::NetModule`).
+    NetModule {
+        module: u16,
+        body: Vec<u8>,
+    },
     /// `10 TileBlock` — one section's tile snapshot (the C#'s
     /// `SendSection`, `NetMessage.cs:2697-2712`).
     TileBlock(Box<TileBlock>),
@@ -1356,6 +1368,7 @@ impl C2s {
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::PlayerState(_) => id::PLAYER_STATE,
+            Self::NetModule { .. } => id::NET_MODULE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1396,6 +1409,7 @@ impl C2s {
             Self::PlayerState(ps) => ps.write_to(w),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::Pickup { drop } => w.u32(*drop),
+            Self::NetModule { module, body } => w.u16(*module).raw(body),
         };
         w.finish()
     }
@@ -1455,6 +1469,10 @@ impl C2s {
                 tile: r.u16()?,
             },
             id::INT_PICKUP => Self::Pickup { drop: r.u32()? },
+            id::NET_MODULE => Self::NetModule {
+                module: r.u16()?,
+                body: r.rest()?.to_vec(),
+            },
             _ => return None,
         })
     }
@@ -1472,6 +1490,7 @@ impl S2c {
             Self::Status { .. } => id::STATUS,
             Self::TileBlock(_) => id::TILE_BLOCK,
             Self::SectionRange(_) => id::SECTION_RANGE,
+            Self::NetModule { .. } => id::NET_MODULE,
             Self::WorldComplete => id::WORLD_COMPLETE,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
@@ -1493,6 +1512,12 @@ impl S2c {
         match self {
             Self::TileBlock(b) => return b.frame(),
             Self::SectionRange(r) => return r.frame(),
+            Self::NetModule { module, body } => {
+                return NetWriter::open(id::NET_MODULE)
+                    .u16(*module)
+                    .raw(body)
+                    .finish();
+            }
             _ => {}
         }
         let w = NetWriter::open(self.msg_id());
@@ -1535,7 +1560,7 @@ impl S2c {
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             // Returned early above; unreachable through the builder chain.
-            Self::TileBlock(_) | Self::SectionRange(_) => unreachable!(),
+            Self::TileBlock(_) | Self::SectionRange(_) | Self::NetModule { .. } => unreachable!(),
         };
         w.finish()
     }
@@ -1577,6 +1602,10 @@ impl S2c {
             }
             id::TILE_BLOCK => Self::TileBlock(Box::new(TileBlock::decode_from(r)?)),
             id::SECTION_RANGE => Self::SectionRange(Box::new(SectionRange::decode_from(r)?)),
+            id::NET_MODULE => Self::NetModule {
+                module: r.u16()?,
+                body: r.rest()?.to_vec(),
+            },
             id::WORLD_COMPLETE => Self::WorldComplete,
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
@@ -3027,6 +3056,10 @@ mod tests {
                 shimmer_time: 0.0,
             })),
             S2c::ItemDead { slot: 9 },
+            S2c::NetModule {
+                module: 1,
+                body: b"hello module".to_vec(),
+            },
             S2c::ItemOwner(Box::new(ItemOwner {
                 slot: 5,
                 reserved_for: 2,
