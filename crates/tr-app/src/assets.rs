@@ -228,6 +228,27 @@ pub fn load_world_images(
         "Extra_164",
         "Extra_169",
         "Extra_204",
+        // The M2-MOUNT-2 hover/flyer set (`Mount.cs:1163-2532`): Pigron, the
+        // Bee + its wing strip, the UFO + its glow, the Drill's three parts,
+        // CuteFishron, Witch Broom (Extra_113), Pirate Ship (166), Dark Mage
+        // Book (170), Lava Shark (172), Bat (274), Pixie (290/291).
+        "Mount_Pigron",
+        "Mount_Bee",
+        "Mount_BeeWings",
+        "Mount_UFO",
+        "Mount_UFOGlow",
+        "Mount_DrillRing",
+        "Mount_DrillSeat",
+        "Mount_DrillDiode",
+        "Mount_CuteFishron1",
+        "Mount_CuteFishron2",
+        "Extra_113",
+        "Extra_166",
+        "Extra_170",
+        "Extra_172",
+        "Extra_274",
+        "Extra_290",
+        "Extra_291",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -315,6 +336,7 @@ pub fn load_world_images(
         "NPC_2",
         "NPC_3",
         "NPC_50",
+        "NPC_368",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1501,6 +1523,7 @@ impl Lookups {
                 atlas.sheet("NPC_568").copied(),
                 atlas.sheet("NPC_550").copied(),
                 atlas.sheet("NPC_548").copied(),
+                atlas.sheet("NPC_368").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -498,6 +498,9 @@ pub(crate) struct App {
     /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
     /// `NetAmbienceModule` loopback hands to `FastRandom`).
     pub(crate) ambience_rng: u64,
+    /// The dawn/dusk event rolls' `Main.rand` cluster stream
+    /// (`Main.cs:65333-65352`'s blood moon, `:65421-65430`'s eclipse).
+    pub(crate) clock_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -1576,6 +1579,17 @@ impl App {
                     "pogo" | "pogo_stick" => Some(43),
                     "wofgoat" | "goat" => Some(47),
                     "queenslime" => Some(50),
+                    "pigron" => Some(2),
+                    "bee" => Some(5),
+                    "ufo" => Some(7),
+                    "drill" => Some(8),
+                    "cutefishron" => Some(12),
+                    "broom" | "witchbroom" => Some(23),
+                    "pirateship" => Some(44),
+                    "book" | "darkmagebook" => Some(48),
+                    "lavashark" => Some(49),
+                    "bat" => Some(56),
+                    "pixie" => Some(61),
                     _ => None,
                 });
                 p.pinned_mount = id;
@@ -2301,6 +2315,7 @@ impl App {
                 ambience
             },
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
+            clock_rng: world_seed ^ 0x1D_A9_17_50_E5_C1_0C,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,

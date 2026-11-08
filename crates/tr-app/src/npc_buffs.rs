@@ -167,6 +167,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Painter => &[],
         NpcKind::WitchDoctor => &[],
         NpcKind::Clothier => &[],
+        // `NPCID.cs:8247-8253`: the Travelling Merchant's `SpecificallyImmuneTo`
+        // row — the Confused debuff (31).
+        NpcKind::TravellingMerchant => &[31],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],

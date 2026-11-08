@@ -13,11 +13,16 @@ use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
 
-/// The player's epitaph: a DoT drain death uses its attribution's table text
-/// (`KillMe(PlayerDeathReason.ByOther(N))` — `Player.cs:19321-19331`,
-/// `:19362-19385`); every other death keeps the M2-DEATH-1 stub.
-fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
-    pending.map_or("was slain...", crate::death::death_text_for)
+/// The player's death message: a DoT drain death resolves its attribution's
+/// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
+/// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
+/// draws it from the item stream, the M4-LOOT convention, the first use in
+/// this path); every other death is the `DeathText.Slain` row.
+fn dot_death_text(pending: Option<DotDeath>, player_name: &str, roll: f32) -> String {
+    match pending {
+        Some(death) => crate::death::death_message(death, roll, player_name),
+        None => crate::death::slain_message(player_name),
+    }
 }
 
 /// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
@@ -137,6 +142,7 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::GoblinTinkerer => 6,
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
+        NpcKind::TravellingMerchant => 19,
         _ => return None,
     })
 }
@@ -180,6 +186,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -2073,12 +2080,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if player.hp <= 0 && !player.dead {
             let (dx, dy) = player.center();
             let boss_near = player.boss_hinders(&app.npcs);
-            let death_text = dot_death_text(player.dot_death).to_string();
+            // The `Main.rand.Next(n) + 1` variant roll rides the item
+            // stream (the M4-LOOT `Main.rand` stand-in) — one draw per
+            // death, before the player borrow is taken.
+            let roll = crate::app::rand01(&mut app.item_rng);
+            let death_text = dot_death_text(player.dot_death, &app.player_name, roll);
             player.dot_death = None;
             drop(player);
-            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
-            // color (`ChatColors.cs`); the ported monitor rides the App.
-            crate::chat::broadcast_death(&mut app.chat, &app.player_name, &death_text);
+            // `Player.KillMe`'s chat broadcast: the resolved message in
+            // the Death color (`ChatColors.cs`); the ported monitor rides
+            // the App.
+            crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
@@ -2506,12 +2518,19 @@ mod tests {
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // DW-1.3 — the death collection resolves the DoT table text when the
-        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and keeps
-        // the M2-DEATH-1 stub for any other death.
-        assert_eq!(dot_death_text(None), "was slain...");
-        assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
-        assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
+        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
+        // Slain row for any other death (`Lang.cs` CreateDeathMessage).
+        assert_eq!(dot_death_text(None, "Belsin", 0.0), "Belsin was slain...");
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Poison), "Belsin", 0.5),
+            "Belsin couldn't find the antidote."
+        );
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Burned), "Belsin", 0.0),
+            "Belsin couldn't put the fire out."
+        );
     }
 
     #[test]

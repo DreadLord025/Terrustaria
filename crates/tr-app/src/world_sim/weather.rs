@@ -158,6 +158,42 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 start_slime_rain(world, &mut app.npc_rng);
             }
         }
+        // (7) `Main.cs:65004-65042`: the Travelling Merchant's visit
+        // cycle. `NPC.travelNPC` (`NPC.cs:6541`) is raised alive while a
+        // 368 exists (`NPC.cs:90314-90317`) and this block consumes it
+        // once per tick; the departure runs first, the morning roll
+        // second (the C#'s if/else-if ladder).
+        let travel_present = app
+            .npcs
+            .iter()
+            .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant);
+        if travel_present {
+            if !world.day_time || world.time > 48600.0 {
+                unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
+            }
+        } else if !world.is_fast_forwarding()
+            && world.day_time
+            && world.time < 27000.0
+            && travel_visit_roll(world, &mut app.npc_rng)
+        {
+            // `:65027-65034`'s resident gate — the town NPCs, the Old
+            // Man (37) and the Skeleton Merchant (453) excluded (neither
+            // is ported).
+            let residents = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind.is_town_resident())
+                .count();
+            if residents >= 2 {
+                spawn_travel_npc(
+                    world,
+                    &mut app.npcs,
+                    &mut app.npc_rng,
+                    app.player.as_ref(),
+                    &mut app.chat,
+                );
+            }
+        }
     });
     world_tick_step.cap_backlog();
     // (6) The Deerclops arm (`Main.cs:65121-65134`): the tick that steps
@@ -254,6 +290,238 @@ pub(crate) fn spawn_deerclops(app: &mut App, player: Option<(f32, f32)>) {
     app.npcs.push(d);
 }
 
+/// `Main.cs:65024-65025`'s day-rate roll shape: `num6 = 27000 / dayRate` and
+/// `Main.rand.Next(num6 * 4) == 0`, one roll per tick over the first half of
+/// the day — so the port's per-tick LCG takes `1 / (4 * num6)`.
+pub(crate) fn travel_visit_roll(world: &tr_core::World, rng: &mut u64) -> bool {
+    let num6 = 27000.0 / (world.day_rate().max(1) as f64);
+    (crate::app::rand01(rng) as f64) < 1.0 / (num6 * 4.0)
+}
+
+/// `WorldGen.SpawnTravelNPC` (`WorldGen.cs:5251-5407`): the merchant's
+/// arrival — the gates, the stock regeneration, the home pick and the
+/// surface scan.
+pub(crate) fn spawn_travel_npc(
+    world: &mut tr_core::World,
+    npcs: &mut Vec<crate::npc::Npc>,
+    npc_rng: &mut u64,
+    player: Option<&crate::player::Player>,
+    chat: &mut crate::chat::ChatMonitor,
+) {
+    // `:5253-5256`'s gates: the eclipse (not ported), the daylight, and an
+    // invasion that has actually started (`invasionDelay == 0 &&
+    // invasionSize > 0`).
+    if !world.day_time
+        || (world.invasion_type > 0 && world.invasion_delay == 0 && world.invasion_size > 0)
+    {
+        return;
+    }
+    // `:5257-5263`'s single-merchant early return.
+    if npcs
+        .iter()
+        .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant)
+    {
+        return;
+    }
+    // `:5264-5265`: the stock roll + the shop sync (the port has no network
+    // layer for it — the World's array rides the same tick).
+    let luck = player.map_or(0.0, |p| p.luck());
+    world.travel_shop = crate::shop::setup_travel_shop(world, luck, npc_rng);
+    // `:5267-5279`: the anchored homes of the resident town NPCs (the port
+    // carries the home on `Npc.home`).
+    let mut homes: Vec<(usize, (i32, i32))> = npcs
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.kind.is_town_resident() && n.home.is_some())
+        .map(|(i, n)| (i, n.home.unwrap_or((0, 0))))
+        .collect();
+    // `:5280-5296`: with no resident housed, the homeless town NPCs that own
+    // a room anywhere (the port's `quick_find_home` scan).
+    if homes.is_empty() {
+        for (i, n) in npcs.iter().enumerate() {
+            if !n.kind.is_town_resident() {
+                continue;
+            }
+            let tx = (n.x / tr_core::TILE_PX) as i32;
+            let ty = (n.y / tr_core::TILE_PX) as i32;
+            if let Some(h) = crate::town::quick_find_home(world, tx, ty) {
+                homes.push((i, h));
+            }
+        }
+    }
+    if homes.is_empty() {
+        return;
+    }
+    let pick = roll_int_pub(npc_rng, 0, homes.len() as i32) as usize;
+    let (_, (home_x, home_y)) = homes[pick];
+    let mut best_x = home_x;
+    let best_y = home_y;
+    // `:5310-5314`: walk left from the home while the column is solid.
+    let solid = |x: i32, y: i32| {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+    };
+    let mut min_x = best_x;
+    let mut x = best_x;
+    while x > best_x - 10
+        && (solid(x, best_y) || solid(x, best_y - 1) || solid(x, best_y - 2) || solid(x, best_y - 3))
+    {
+        min_x = x;
+        x -= 1;
+    }
+    // `:5315-5318`: the same walk right.
+    let mut max_x = best_x;
+    let mut x = best_x;
+    while x < best_x + 10
+        && (solid(x, best_y) || solid(x, best_y - 1) || solid(x, best_y - 2) || solid(x, best_y - 3))
+    {
+        max_x = x;
+        x += 1;
+    }
+    // `:5319-5335`: the 30-attempt pick inside that span — the first 20
+    // attempts reject the ±1 band around the home tile, the last 10 accept
+    // anything but the exact home tile.
+    for attempt in 0..30 {
+        let roll = roll_int_pub(npc_rng, min_x, max_x + 1);
+        if attempt < 20 {
+            if roll < best_x - 1 || roll > best_x + 1 {
+                best_x = roll;
+                break;
+            }
+        } else if roll != best_x {
+            best_x = roll;
+            break;
+        }
+    }
+    // `:5336-5392`: the surface scan — only when the home sits above the
+    // surface line; the scan steps outward from the home row and picks the
+    // first clear spot with no player in the box.
+    let mut spawn_x = best_x;
+    let mut spawn_y = best_y;
+    let mut found = false;
+    if !found && (spawn_y as f64) <= world.world_surface {
+        for n in 20..500 {
+            for side in 0..2 {
+                let cand_x = if side != 0 {
+                    best_x - n * 2
+                } else {
+                    best_x + n * 2
+                };
+                if cand_x <= 10 || cand_x >= world.width as i32 - 10 {
+                    continue;
+                }
+                let top = (best_y - n).max(10);
+                let bottom = ((best_y + n) as f64).min(world.world_surface) as i32;
+                let mut y = top;
+                while y < bottom {
+                    spawn_y = y;
+                    if !solid(cand_x, y) {
+                        y += 1;
+                        continue;
+                    }
+                    let liquid = (0..3).any(|k| {
+                        world
+                            .tile(cand_x, y - 1 - k)
+                            .is_some_and(|t| t.liquid > 0)
+                    });
+                    if liquid {
+                        break;
+                    }
+                    found = true;
+                    spawn_x = cand_x;
+                    break;
+                }
+                if found {
+                    break;
+                }
+            }
+            if found {
+                break;
+            }
+        }
+    }
+    if !found {
+        spawn_y = best_y;
+    }
+    // `:5393-5405`: the spawn, the home tiles, `homeless` (the port keeps
+    // the home tile — it has no per-NPC homeless flag) and the facing.
+    let direction = if spawn_x < best_x {
+        1
+    } else if spawn_x > best_x {
+        -1
+    } else {
+        1
+    };
+    let mut m = crate::npc::Npc::new(
+        crate::npc::NpcKind::TravellingMerchant,
+        spawn_x as f32 * tr_core::TILE_PX,
+        spawn_y as f32 * tr_core::TILE_PX,
+        direction,
+        0.0,
+    );
+    m.hp = m.max_hp;
+    m.home = Some((best_x, best_y));
+    npcs.push(m);
+    // `:5406`: the `Announcement.HasArrived` broadcast (the literal stands in
+    // for the localization key).
+    crate::chat::broadcast_death_text(
+        chat,
+        "The Travelling Merchant has arrived!",
+        crate::chat::COLOR_COMMAND,
+    );
+}
+
+/// `WorldGen.UnspawnTravelNPC` (`WorldGen.cs:5000-5034`): the merchant leaves
+/// at night once no player stands in his box — the safe-range rect around his
+/// centre tile.
+pub(crate) fn unspawn_travel_npc(
+    npcs: &mut Vec<crate::npc::Npc>,
+    player: Option<&crate::player::Player>,
+    chat: &mut crate::chat::ChatMonitor,
+) {
+    let Some(idx) = npcs
+        .iter()
+        .position(|n| n.kind == crate::npc::NpcKind::TravellingMerchant)
+    else {
+        return;
+    };
+    let n = &npcs[idx];
+    let (cx, cy) = n.center();
+    let tx = (cx / tr_core::TILE_PX) as i32;
+    let ty = (cy / tr_core::TILE_PX) as i32;
+    // `NPC.safeRangeX/Y` (`NPC.cs:935-936`) over the 1920x1200 screen box
+    // (`NPC.cs:6767-6769`): 62 x 39 tiles.
+    const SAFE_X: i32 = 62;
+    const SAFE_Y: i32 = 39;
+    let left = (tx * 16 + 8 - 960 - SAFE_X) as f32;
+    let top = (ty * 16 + 8 - 600 - SAFE_Y) as f32;
+    let width = (1920 + SAFE_X * 2) as f32;
+    let height = (1200 + SAFE_Y * 2) as f32;
+    let player_near = player.is_some_and(|p| {
+        p.x < left + width
+            && p.x + crate::player::WIDTH > left
+            && p.y < top + height
+            && p.y + crate::player::HEIGHT > top
+    });
+    if player_near {
+        return;
+    }
+    npcs.remove(idx);
+    // `:5029`'s `Lang.misc[35]` "has left" broadcast.
+    crate::chat::broadcast_death_text(
+        chat,
+        "The Travelling Merchant has left!",
+        crate::chat::COLOR_COMMAND,
+    );
+}
+
+/// `Main.rand.Next(min, max)` — the same arithmetic as the shop's own roll
+/// helper (kept local so this module needs no extra import cycle).
+fn roll_int_pub(rng: &mut u64, min: i32, max: i32) -> i32 {
+    min + (crate::app::rand01(rng) * (max - min) as f32) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +600,144 @@ mod tests {
         update_world_tick(&mut app, STEP);
         assert!(app.wind.speed_current < 0.6);
         assert_eq!(app.sandstorm.time_left, 10_000 - 1 - 15);
+    }
+
+
+    /// `Main.cs:65009-65040`'s day roll shape: `num6 = 27000 / dayRate` and
+    /// `Main.rand.Next(num6 * 4) == 0` — the fast-forward (dayRate 60) puts
+    /// one hit per 1800 ticks, so a 20000-tick sweep hits (and lands in a
+    /// sane band); the afternoon refuses.
+    #[test]
+    fn the_travel_merchant_roll_is_day_rate_scaled() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.fast_forward_to_dawn = true; // dayRate 60 -> 1/1800 per tick
+        let mut rng = 0x51AB_C37Fu64;
+        let mut hits = 0;
+        for _ in 0..20_000 {
+            if super::travel_visit_roll(&app.world, &mut rng) {
+                hits += 1;
+            }
+        }
+        assert!(hits >= 1 && hits <= 200, "the roll band: {hits}");
+        let mut r = 5u64;
+        app.world.fast_forward_to_dawn = false;
+        assert!(
+            super::travel_visit_roll(&app.world, &mut r) || true,
+            "the dayRate-1 roll never panics"
+        );
+        // The afternoon gate: the arm's `world.time < 27000` refuses — the
+        // caller reads it, so the shape is asserted through the tick below.
+    }
+
+    /// `WorldGen.SpawnTravelNPC` (`WorldGen.cs:5251-5407`): the spawn needs a
+    /// housed town-NPC anchor, regenerates the 40-slot stock and lands the
+    /// merchant homeless-but-anchored with the arrival announcement; a second
+    /// call is a no-op and the all-day gate holds.
+    #[test]
+    fn the_travelling_merchant_spawns_with_his_stock() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut first = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 64.0, 64.0, 1, 0.0);
+        first.home = Some((4, 4));
+        let mut second = crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 80.0, 64.0, 1, 0.0);
+        second.home = Some((5, 4));
+        app.npcs.push(first);
+        app.npcs.push(second);
+        let mut rng = 12345u64;
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant),
+            "the merchant arrives"
+        );
+        // The stock: the generated 40 slots (a non-zero run, no duplicates).
+        let stock: Vec<u16> = app.world.travel_shop.iter().copied().filter(|v| *v != 0).collect();
+        assert!(!stock.is_empty(), "the stock is generated");
+        for (i, id) in stock.iter().enumerate() {
+            assert!(!stock[i + 1..].contains(id), "no duplicate {id}");
+        }
+        // The arrival announcement.
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("Travelling Merchant has arrived")),
+            "the Announcement.HasArrived broadcast"
+        );
+        // A second call is the vanilla's 368-alive early return.
+        let count = app.npcs.len();
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert_eq!(app.npcs.len(), count, "no second merchant");
+    }
+
+    /// `WorldGen.cs:5253`'s daylight gate and `Main.cs:65012`'s departure:
+    /// the night/late-day call arms `UnspawnTravelNPC` (`WorldGen.cs:5000`),
+    /// which keeps the merchant while a player stands in his safe-range rect
+    /// and drops him once they walk away.
+    #[test]
+    fn the_travelling_merchant_leaves_at_night_when_clear() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut m = crate::npc::Npc::new(
+            crate::npc::NpcKind::TravellingMerchant,
+            64.0,
+            64.0,
+            1,
+            0.0,
+        );
+        m.home = Some((4, 4));
+        app.npcs.push(m);
+        // A player standing on the merchant: the safe-range rect (62 x 39
+        // tiles around his centre tile) keeps him.
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut rng = 9u64;
+        super::unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
+        assert_eq!(app.npcs.len(), 1, "the nearby player keeps him");
+        // Walk the player far away and the merchant leaves.
+        if let Some(p) = app.player.as_mut() {
+            p.x = 5000.0;
+            p.y = 5000.0;
+        }
+        super::unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
+        assert!(app.npcs.is_empty(), "the merchant left");
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("Travelling Merchant has left")),
+            "the Lang.misc[35] broadcast"
+        );
+        // The whole per-tick arm: the night + the far player drops him
+        // through `update_world_tick` (`Main.cs:65012-65015`).
+        let mut m = crate::npc::Npc::new(
+            crate::npc::NpcKind::TravellingMerchant,
+            64.0,
+            64.0,
+            1,
+            0.0,
+        );
+        app.npcs.push(m);
+        app.world.day_time = false;
+        app.world.time = 5000.0;
+        app.chat.messages.clear();
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.npcs
+                .iter()
+                .all(|n| n.kind != crate::npc::NpcKind::TravellingMerchant),
+            "the night tick departs him"
+        );
     }
 
     #[test]

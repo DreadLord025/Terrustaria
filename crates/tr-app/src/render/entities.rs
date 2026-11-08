@@ -48,8 +48,8 @@ pub(crate) struct PlayerAssets {
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the M2-MOUNT-1 ground set.
-    pub(crate) mount_back: [Option<BgTex>; 12],
-    pub(crate) mount_front: [Option<BgTex>; 12],
+    pub(crate) mount_back: [Option<BgTex>; 23],
+    pub(crate) mount_front: [Option<BgTex>; 23],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -134,6 +134,8 @@ pub(crate) struct NpcAssets {
     pub(crate) painter: Option<BgTex>,
     pub(crate) witch_doctor: Option<BgTex>,
     pub(crate) clothier: Option<BgTex>,
+    /// `NPC_368.xnb` — the Travelling Merchant sheet.
+    pub(crate) travelling_merchant: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
@@ -269,6 +271,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         painter: sky_tex(atlas, "NPC_227", None),
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
+        travelling_merchant: sky_tex(atlas, "NPC_368", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
@@ -916,6 +919,13 @@ pub(crate) fn draw_npcs(
             NpcKind::Painter => humanoid_draw(assets.painter.as_ref(), 25, n, w, h),
             NpcKind::WitchDoctor => humanoid_draw(assets.witch_doctor.as_ref(), 26, n, w, h),
             NpcKind::Clothier => humanoid_draw(assets.clothier.as_ref(), 23, n, w, h),
+            NpcKind::TravellingMerchant => humanoid_draw(
+                assets.travelling_merchant.as_ref(),
+                26,
+                n,
+                w,
+                h,
+            ),
             // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
             NpcKind::EyeOfCthulhu => (
                 assets.eoc.as_ref(),
