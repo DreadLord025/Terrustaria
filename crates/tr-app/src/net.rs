@@ -67,19 +67,23 @@ pub mod id {
     pub const PASSWORD: u8 = 38; // MessageBuffer.cs:2218-2231
     pub const PLAYER_SPAWN: u8 = 12; // MessageBuffer.cs:908-930
     pub const WORLD_COMPLETE: u8 = 49; // MessageBuffer.cs:2448-2452 — world load done
+    pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
+    pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
+    pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
+    pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
+    pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
 
-    /// The ad-hoc event ids `netglue` still owns until M6-NET-2 ports the 1:1
-    /// entity messages. Kept out of the 1..162 range so the accept gate
-    /// (`GetData`, `MessageBuffer.cs:148-172`) rejects them before the slot is
-    /// fully in-world (State 10) — exactly what those messages need.
-    pub const INT_PLAYER: u8 = 200;
-    pub const INT_EDIT: u8 = 201;
-    pub const INT_PICKUP: u8 = 202;
-    pub const INT_JOINED: u8 = 203;
-    pub const INT_LEFT: u8 = 204;
-    pub const INT_TIME: u8 = 205;
-    pub const INT_NPCS: u8 = 206;
-    pub const INT_ITEMS: u8 = 207;
+    /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
+    /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
+    /// before the slot is fully in-world (State 10) — exactly what those
+    /// messages need. The entity snapshots left this block in M6-NET-2 (they
+    /// became the 1:1 `13/21/151/22/23`); the remaining ones have no C# body
+    /// of their own in the port's scope yet.
+    pub const INT_EDIT: u8 = 201; // tile edit request/echo
+    pub const INT_PICKUP: u8 = 202; // item pickup request (the client's `SyncItem`→151 stand-in)
+    pub const INT_JOINED: u8 = 203; // peer-join notice
+    pub const INT_LEFT: u8 = 204; // peer-leave notice
+    pub const INT_TIME: u8 = 205; // clock broadcast
 }
 
 // ===========================================================================
@@ -278,6 +282,12 @@ impl NetWriter {
         self.buf.extend_from_slice(b);
         self
     }
+    /// The 7-bit-encoded int on its own (`BinaryWriter`'s
+    /// `Write7BitEncodedInt` without a following payload).
+    pub fn u7(mut self, v: u32) -> Self {
+        write_u7(&mut self.buf, v);
+        self
+    }
 
     /// Closes the frame: backfills the length (`NetMessage.cs:1680-1684`).
     /// The length covers the whole packet, header included.
@@ -357,6 +367,10 @@ impl<'a> NetReader<'a> {
         let n = self.u32()? as usize;
         self.take(n).map(|s| s.to_vec())
     }
+    /// A standalone 7-bit-encoded int.
+    pub fn u7(&mut self) -> Option<u32> {
+        self.read_u7()
+    }
     fn read_u7(&mut self) -> Option<u32> {
         let mut v: u32 = 0;
         for shift in 0..5 {
@@ -412,7 +426,10 @@ fn read_frame(r: &mut impl Read) -> std::io::Result<Vec<u8>> {
 // Payload structs
 // ===========================================================================
 
-/// The internal (pre-M6-NET-2) remote-player snapshot.
+/// The render-facing remote-player snapshot. The wire fields arrive via
+/// `13 PlayerState`; `off_x/off_y` are the client-side smoothing accumulator
+/// (`Player.netOffset`'s port, `MessageBuffer.cs:1004-1008`) and never cross
+/// the wire.
 #[derive(Clone, Debug, Default)]
 pub struct PlayerNet {
     pub id: u32,
@@ -428,31 +445,323 @@ pub struct PlayerNet {
     pub on_ground: bool,
     pub leg_frame: u32,
     pub body_frame: u32,
+    /// `Player.netOffset` — the visual lag toward zero; drawn at
+    /// `x + off_x` (see `netglue::decay_net_offsets`).
+    pub off_x: f32,
+    pub off_y: f32,
 }
 
-#[derive(Clone, Debug)]
-pub struct NpcNet {
-    pub id: u32,
-    pub kind: u16,
+/// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
+/// BitsByte groups, the selected item, the full-float position and the
+/// conditional velocity/mount/potion/camera bodies. The port has no mounts,
+/// potions or camera-target sync, so those bits ride as flags with no bodies
+/// (deviation in `docs/ANALYSIS.md`); the trailing anim/hp fields are the
+/// port's two-client extension — the C# derives them from each peer's local
+/// simulation, which the port does not run for remote players.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlayerState {
+    pub player_id: u8,
+    /// bitsByte21: controlUp/Down/Left/Right/Jump/UseItem/direction==1/controlDash.
+    pub flags_a: BitsByte,
+    /// bitsByte22: pulley/pulley2/velocity!=0/vortexStealth/gravDir/shieldRaised/ghost/mount.
+    pub flags_b: BitsByte,
+    /// bitsByte23: hoveringUp/voidVault/sitting/downedDD2/petting/petSmall/potionReturn/hoveringDown.
+    pub flags_c: BitsByte,
+    /// bitsByte24: sleeping/autoReuse/controlDownHold/operatingEntity/controlUseTile/cameraTarget/lastUseSuccess/snapStone.
+    pub flags_d: BitsByte,
+    pub selected_item: u8,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    // ---- port extension: the render fields the C# derives locally ----
+    pub on_ground: bool,
+    pub leg_frame: u32,
+    pub body_frame: u32,
     pub hp: i32,
     pub max_hp: i32,
-    pub facing: i32,
-    pub on_ground: bool,
-    pub anim: f32,
-    pub hurt_cd: f32,
 }
 
-#[derive(Clone, Debug)]
-pub struct ItemNet {
-    pub id: u32,
-    pub item: u16,
-    pub count: u32,
+impl PlayerState {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut w = w
+            .u8(self.player_id)
+            .bitsbyte(self.flags_a)
+            .bitsbyte(self.flags_b)
+            .bitsbyte(self.flags_c)
+            .bitsbyte(self.flags_d)
+            .u8(self.selected_item)
+            .f32(self.x)
+            .f32(self.y);
+        // `velocity != Vector2.Zero` gate (`NetMessage.cs:491-495`).
+        if self.flags_b.get(2) {
+            w = w.f32(self.vx).f32(self.vy);
+        }
+        // The port's render extension (two-client only; see the struct doc).
+        w.bool(self.on_ground)
+            .u32(self.leg_frame)
+            .u32(self.body_frame)
+            .i32(self.hp)
+            .i32(self.max_hp)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let flags_a = r.bitsbyte()?;
+        let flags_b = r.bitsbyte()?;
+        let flags_c = r.bitsbyte()?;
+        let flags_d = r.bitsbyte()?;
+        let selected_item = r.u8()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let (vx, vy) = if flags_b.get(2) {
+            (r.f32()?, r.f32()?)
+        } else {
+            (0.0, 0.0)
+        };
+        let on_ground = r.bool()?;
+        let leg_frame = r.u32()?;
+        let body_frame = r.u32()?;
+        let hp = r.i32()?;
+        let max_hp = r.i32()?;
+        Some(Self {
+            player_id,
+            flags_a,
+            flags_b,
+            flags_c,
+            flags_d,
+            selected_item,
+            x,
+            y,
+            vx,
+            vy,
+            on_ground,
+            leg_frame,
+            body_frame,
+            hp,
+            max_hp,
+        })
+    }
+}
+
+/// `msg 23 NPCInfo`'s body (`NetMessage.cs:686-748`), adapted to the port's
+/// NPC shape: the slot index, the generation counter (bumped on a kind change
+/// so the client re-creates the slot, the C#'s `existing.generation !=
+/// generation` spawn test), the anchored position, the velocity, the two flag
+/// bytes and the width-switched life. The `ai[]`, `difficulty`,
+/// `statsAreScaledForThisManyPlayers`, `releaseOwner` and `SyncAnchor` fields
+/// have no port home (deviation in `docs/ANALYSIS.md`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcInfo {
+    /// The host's NPC slot index (`whoAmI`).
+    pub slot: u8,
+    /// Bumped on a kind change / fresh spawn → the client re-creates the slot.
+    pub generation: u8,
+    /// `spawnNeedsSyncing` — a full-create for a slot the client already has.
+    pub spawn: bool,
+    pub kind: i16,
     pub x: f32,
     pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    /// flags1 b0: `direction > 0`.
+    pub dir_right: bool,
+    /// flags1 b1: `directionY > 0`.
+    pub dir_y_down: bool,
+    /// flags1 b6: `spriteDirection > 0`.
+    pub sprite_right: bool,
+    /// flags1 b7: `life == lifeMax` → the life block is omitted.
+    pub life_full: bool,
+    pub hp: i32,
+}
+
+impl NpcInfo {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut flags1 = BitsByte::new();
+        flags1.set(0, self.dir_right);
+        flags1.set(1, self.dir_y_down);
+        flags1.set(6, self.sprite_right);
+        flags1.set(7, self.life_full);
+        let mut flags2 = BitsByte::new();
+        flags2.set(3, self.spawn);
+        let mut w = w
+            .u8(self.slot)
+            .u8(self.generation)
+            .f32(self.x)
+            .f32(self.y)
+            .f32(self.vx)
+            .f32(self.vy)
+            .u16(0) // `target`: the port has no NPC targeting sync yet
+            .bitsbyte(flags1)
+            .bitsbyte(flags2)
+            .i16(self.kind);
+        // The width-switched life block (`NetMessage.cs:734-751`), skipped
+        // when the NPC is at full health.
+        if !self.life_full {
+            let hp = self.hp.max(0);
+            if hp > 0x7FFF {
+                w = w.u8(4).i32(hp);
+            } else if hp > 0x7F {
+                w = w.u8(2).i16(hp as i16);
+            } else {
+                w = w.u8(1).i8(hp as i8);
+            }
+        }
+        w
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.u8()?;
+        let generation = r.u8()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let vx = r.f32()?;
+        let vy = r.f32()?;
+        let _target = r.u16()?;
+        let flags1 = r.bitsbyte()?;
+        let flags2 = r.bitsbyte()?;
+        let kind = r.i16()?;
+        let hp = if flags1.get(7) {
+            -1 // full health: the client keeps its local lifeMax
+        } else {
+            match r.u8()? {
+                2 => r.i16()? as i32,
+                4 => r.i32()?,
+                _ => r.i8()? as i32,
+            }
+        };
+        Some(Self {
+            slot,
+            generation,
+            spawn: flags2.get(3),
+            kind,
+            x,
+            y,
+            vx,
+            vy,
+            dir_right: flags1.get(0),
+            dir_y_down: flags1.get(1),
+            sprite_right: flags1.get(6),
+            life_full: flags1.get(7),
+            hp,
+        })
+    }
+}
+
+/// `msg 21 ItemDrop`'s body (`NetMessage.cs:646-669`): the slot, the
+/// position/velocity, the stack, the prefix, the flag byte and the type, plus
+/// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
+/// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
+/// `docs/ANALYSIS.md`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemState {
+    pub slot: i16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub stack: i16,
+    pub prefix: u8,
+    pub kind: i16,
+    pub shimmered: bool,
+    pub shimmer_time: f32,
+}
+
+impl ItemState {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut flags = BitsByte::new();
+        flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        let w = w
+            .i16(self.slot)
+            .f32(self.x)
+            .f32(self.y)
+            .f32(self.vx)
+            .f32(self.vy)
+            .i16(self.stack)
+            .u8(self.prefix)
+            .bitsbyte(flags)
+            .i16(self.kind);
+        if self.shimmered || self.shimmer_time > 0.0 {
+            w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        }
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.i16()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let vx = r.f32()?;
+        let vy = r.f32()?;
+        let stack = r.i16()?;
+        let prefix = r.u8()?;
+        let flags = r.bitsbyte()?;
+        let kind = r.i16()?;
+        let (shimmered, shimmer_time) = if flags.get(2) {
+            (r.bool()?, r.f32()?)
+        } else {
+            (false, 0.0)
+        };
+        Some(Self {
+            slot,
+            x,
+            y,
+            vx,
+            vy,
+            stack,
+            prefix,
+            kind,
+            shimmered,
+            shimmer_time,
+        })
+    }
+}
+
+/// `msg 22 ItemOwner`'s body (`NetMessage.cs:675-685`): the reservation.
+/// Server→client only; the varints are the C# 7-bit encodings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemOwner {
+    pub slot: i16,
+    /// `playerIndexTheItemIsReservedFor` (255 = none).
+    pub reserved_for: u8,
+    /// `timeToKeepReservation` in ticks.
+    pub hold: u32,
+    pub grab_delay_player: u8,
+    pub grab_delay: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl ItemOwner {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.i16(self.slot)
+            .u8(self.reserved_for)
+            .u7(self.hold)
+            .u8(self.grab_delay_player)
+            .u7(self.grab_delay)
+            .f32(self.x)
+            .f32(self.y)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.i16()?;
+        let reserved_for = r.u8()?;
+        let hold = r.u7()?;
+        let grab_delay_player = r.u8()?;
+        let grab_delay = r.u7()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        Some(Self {
+            slot,
+            reserved_for,
+            hold,
+            grab_delay_player,
+            grab_delay,
+            x,
+            y,
+        })
+    }
 }
 
 /// `msg 5 PlayerInventory`'s item body (`NetMessage.cs:199-222`): the slot
@@ -893,8 +1202,11 @@ pub enum C2s {
         hp: i16,
         max_hp: i16,
     },
-    // ---- internal (M6-NET-2 territory) ----
-    Player(PlayerNet),
+    /// `13 PlayerState` — this client's per-tick state (the C#'s
+    /// `TrySyncingInput`/heartbeat sends, `Player.cs:6852-6916`,
+    /// `Main.cs:64522-64529`).
+    PlayerState(PlayerState),
+    // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
         y: i32,
@@ -953,7 +1265,18 @@ pub enum S2c {
         hp: i16,
         max_hp: i16,
     },
-    // ---- internal (M6-NET-2 territory) ----
+    /// `23 NPCInfo` — one NPC's state (the C#'s per-NPC `SendData(23)`,
+    /// `NPC.cs:90613`).
+    NpcInfo(Box<NpcInfo>),
+    /// `21 ItemDrop` — one drop's state.
+    ItemState(Box<ItemState>),
+    /// `151` — the item slot is gone (`NetMessage.cs:96-99`'s air rewrite).
+    ItemDead {
+        slot: i16,
+    },
+    /// `22 ItemOwner` — the reservation announcement.
+    ItemOwner(Box<ItemOwner>),
+    // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
         name: String,
@@ -961,7 +1284,7 @@ pub enum S2c {
     Left {
         id: u32,
     },
-    Player(PlayerNet),
+    PlayerState(Box<PlayerState>),
     Time {
         time: f64,
         day: bool,
@@ -972,8 +1295,6 @@ pub enum S2c {
         kind: u8,
         tile: u16,
     },
-    Npcs(Vec<NpcNet>),
-    Items(Vec<ItemNet>),
 }
 
 impl C2s {
@@ -988,7 +1309,7 @@ impl C2s {
             Self::PlayerSpawn(_) => id::PLAYER_SPAWN,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
-            Self::Player(_) => id::INT_PLAYER,
+            Self::PlayerState(_) => id::PLAYER_STATE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1026,7 +1347,7 @@ impl C2s {
                 hp,
                 max_hp,
             } => w.u8(*player_id).i16(*hp).i16(*max_hp),
-            Self::Player(p) => encode_player(w, p),
+            Self::PlayerState(ps) => ps.write_to(w),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::Pickup { drop } => w.u32(*drop),
         };
@@ -1080,7 +1401,7 @@ impl C2s {
                 hp: r.i16()?,
                 max_hp: r.i16()?,
             },
-            id::INT_PLAYER => Self::Player(decode_player(r)?),
+            id::PLAYER_STATE => Self::PlayerState(PlayerState::read_from(r)?),
             id::INT_EDIT => Self::Edit {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -1107,13 +1428,15 @@ impl S2c {
             Self::WorldComplete => id::WORLD_COMPLETE,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
+            Self::NpcInfo(_) => id::NPC_INFO,
+            Self::ItemState(_) => id::ITEM_DROP,
+            Self::ItemDead { .. } => id::ITEM_DEAD,
+            Self::ItemOwner(_) => id::ITEM_OWNER,
             Self::Joined { .. } => id::INT_JOINED,
             Self::Left { .. } => id::INT_LEFT,
-            Self::Player(_) => id::INT_PLAYER,
+            Self::PlayerState(_) => id::PLAYER_STATE,
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
-            Self::Npcs(_) => id::INT_NPCS,
-            Self::Items(_) => id::INT_ITEMS,
         }
     }
 
@@ -1149,37 +1472,15 @@ impl S2c {
                 hp,
                 max_hp,
             } => w.u8(*player_id).i16(*hp).i16(*max_hp),
+            Self::NpcInfo(n) => n.write_to(w),
+            Self::ItemState(d) => d.write_to(w),
+            Self::ItemDead { slot } => w.i16(*slot),
+            Self::ItemOwner(o) => o.write_to(w),
             Self::Joined { id, name } => w.u32(*id).str(name),
             Self::Left { id } => w.u32(*id),
-            Self::Player(p) => encode_player(w, p),
+            Self::PlayerState(ps) => ps.write_to(w),
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
-            Self::Npcs(list) => {
-                let mut w = w.u8(list.len().min(255) as u8);
-                for n in list.iter().take(255) {
-                    w = w
-                        .u32(n.id)
-                        .u16(n.kind)
-                        .f32(n.x)
-                        .f32(n.y)
-                        .f32(n.vx)
-                        .f32(n.vy)
-                        .i32(n.hp)
-                        .i32(n.max_hp)
-                        .i32(n.facing)
-                        .bool(n.on_ground)
-                        .f32(n.anim)
-                        .f32(n.hurt_cd);
-                }
-                w
-            }
-            Self::Items(list) => {
-                let mut w = w.u16(list.len().min(1024) as u16);
-                for it in list.iter().take(1024) {
-                    w = w.u32(it.id).u16(it.item).u32(it.count).f32(it.x).f32(it.y);
-                }
-                w
-            }
         };
         w.finish()
     }
@@ -1240,7 +1541,11 @@ impl S2c {
                 name: r.str()?,
             },
             id::INT_LEFT => Self::Left { id: r.u32()? },
-            id::INT_PLAYER => Self::Player(decode_player(r)?),
+            id::PLAYER_STATE => Self::PlayerState(Box::new(PlayerState::read_from(r)?)),
+            id::NPC_INFO => Self::NpcInfo(Box::new(NpcInfo::read_from(r)?)),
+            id::ITEM_DROP => Self::ItemState(Box::new(ItemState::read_from(r)?)),
+            id::ITEM_DEAD => Self::ItemDead { slot: r.i16()? },
+            id::ITEM_OWNER => Self::ItemOwner(Box::new(ItemOwner::read_from(r)?)),
             id::INT_TIME => Self::Time {
                 time: r.f64()?,
                 day: r.bool()?,
@@ -1251,78 +1556,9 @@ impl S2c {
                 kind: r.u8()?,
                 tile: r.u16()?,
             },
-            id::INT_NPCS => {
-                let n = r.u8()? as usize;
-                let mut list = Vec::with_capacity(n);
-                for _ in 0..n {
-                    list.push(NpcNet {
-                        id: r.u32()?,
-                        kind: r.u16()?,
-                        x: r.f32()?,
-                        y: r.f32()?,
-                        vx: r.f32()?,
-                        vy: r.f32()?,
-                        hp: r.i32()?,
-                        max_hp: r.i32()?,
-                        facing: r.i32()?,
-                        on_ground: r.bool()?,
-                        anim: r.f32()?,
-                        hurt_cd: r.f32()?,
-                    });
-                }
-                Self::Npcs(list)
-            }
-            id::INT_ITEMS => {
-                let n = r.u16()? as usize;
-                let mut list = Vec::with_capacity(n);
-                for _ in 0..n {
-                    list.push(ItemNet {
-                        id: r.u32()?,
-                        item: r.u16()?,
-                        count: r.u32()?,
-                        x: r.f32()?,
-                        y: r.f32()?,
-                    });
-                }
-                Self::Items(list)
-            }
             _ => return None,
         })
     }
-}
-
-fn encode_player(w: NetWriter, p: &PlayerNet) -> NetWriter {
-    w.u32(p.id)
-        .str(&p.name)
-        .f32(p.x)
-        .f32(p.y)
-        .f32(p.vx)
-        .f32(p.vy)
-        .i32(p.hp)
-        .i32(p.max_hp)
-        .i32(p.facing)
-        .u16(p.selected)
-        .bool(p.on_ground)
-        .u32(p.leg_frame)
-        .u32(p.body_frame)
-}
-
-fn decode_player(r: &mut NetReader) -> Option<PlayerNet> {
-    Some(PlayerNet {
-        id: r.u32()?,
-        name: r.str()?,
-        x: r.f32()?,
-        y: r.f32()?,
-        vx: r.f32()?,
-        vy: r.f32()?,
-        hp: r.i32()?,
-        max_hp: r.i32()?,
-        facing: r.i32()?,
-        selected: r.u16()?,
-        on_ground: r.bool()?,
-        leg_frame: r.u32()?,
-        body_frame: r.u32()?,
-    })
 }
 
 // ===========================================================================
@@ -1913,7 +2149,7 @@ mod tests {
                 hp: 90,
                 max_hp: 200,
             },
-            C2s::Player(PlayerNet::default()),
+            C2s::PlayerState(PlayerState::default()),
             C2s::Edit {
                 x: 5,
                 y: 6,
@@ -2010,27 +2246,88 @@ mod tests {
                 name: "a".into(),
             },
             S2c::Left { id: 1 },
-            S2c::Npcs(vec![NpcNet {
-                id: 1,
-                kind: 2,
-                x: 3.0,
-                y: 4.0,
+            S2c::PlayerState(Box::new(PlayerState {
+                player_id: 1,
+                flags_a: BitsByte(0b0100_0000),
+                flags_b: BitsByte(0b0000_0100),
+                flags_c: BitsByte::new(),
+                flags_d: BitsByte::new(),
+                selected_item: 3,
+                x: 12.0,
+                y: 34.0,
+                vx: 0.5,
+                vy: -1.0,
+                on_ground: true,
+                leg_frame: 2,
+                body_frame: 7,
+                hp: 80,
+                max_hp: 100,
+            })),
+            S2c::NpcInfo(Box::new(NpcInfo {
+                slot: 3,
+                generation: 2,
+                spawn: false,
+                kind: 4,
+                x: 64.0,
+                y: 96.0,
                 vx: 0.0,
                 vy: 0.0,
-                hp: 10,
-                max_hp: 10,
-                facing: 1,
-                on_ground: true,
-                anim: 0.5,
-                hurt_cd: 0.0,
-            }]),
-            S2c::Items(vec![ItemNet {
-                id: 1,
-                item: 2,
-                count: 3,
-                x: 4.0,
-                y: 5.0,
-            }]),
+                dir_right: true,
+                dir_y_down: false,
+                sprite_right: true,
+                life_full: false,
+                hp: 40,
+            })),
+            // The life width switch: the > 127 and > 32767 arms.
+            S2c::NpcInfo(Box::new(NpcInfo {
+                slot: 4,
+                generation: 1,
+                spawn: true,
+                kind: -1,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                dir_right: false,
+                dir_y_down: true,
+                sprite_right: false,
+                life_full: false,
+                hp: 9000,
+            })),
+            S2c::ItemState(Box::new(ItemState {
+                slot: 5,
+                x: 16.0,
+                y: 32.0,
+                vx: 1.0,
+                vy: -2.0,
+                stack: 12,
+                prefix: 7,
+                kind: 42,
+                shimmered: true,
+                shimmer_time: 30.0,
+            })),
+            S2c::ItemState(Box::new(ItemState {
+                slot: 6,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                stack: 1,
+                prefix: 0,
+                kind: 1,
+                shimmered: false,
+                shimmer_time: 0.0,
+            })),
+            S2c::ItemDead { slot: 9 },
+            S2c::ItemOwner(Box::new(ItemOwner {
+                slot: 5,
+                reserved_for: 2,
+                hold: 15,
+                grab_delay_player: 255,
+                grab_delay: 100,
+                x: 16.0,
+                y: 32.0,
+            })),
         ];
         for msg in &msgs {
             let frame = msg.encode();

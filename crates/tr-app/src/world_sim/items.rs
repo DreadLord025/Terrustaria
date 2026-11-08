@@ -31,7 +31,15 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, it)| (it.center() - pc).length() < 26.0)
+            .filter(|(i, it)| {
+                (it.center() - pc).length() < 26.0
+                    // `22 ItemOwner` gate (`GrabItems`, `Player.cs:34905-34923`):
+                    // a drop reserved for another peer is not grabbable yet.
+                    && !app
+                        .net_reserved
+                        .get(&(*i as i16))
+                        .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255)
+            })
             .map(|(i, _)| i as u32)
             .collect();
         if let NetRole::Client(client) = &app.net {
@@ -401,6 +409,7 @@ mod shimmer_tests {
     }
 }
 
+#[cfg(test)]
 mod lava_burn_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;

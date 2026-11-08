@@ -6001,3 +6001,39 @@ Deviations and accepted changes:
   lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
+
+## Entity sync (M6-NET-2)
+
+The entity messages and the smoothing are 1:1 ports; the deviations:
+
+- **`13 PlayerState` carries the port's render extension.** The C# derives
+  each peer's animation frames and on-ground state from its local simulation
+  of that player (`Main.player[i].Update` runs on every peer); the port
+  simulates remote players nowhere, so the wire body appends
+  `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
+  (two-client compatibility only). The control BitsBytes ride as flags with
+  no port-side replay: each peer's input is local.
+- **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
+  (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
+  `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
+  the per-type `SyncAnchor` (position is sent raw). The `generation` byte
+  bumps on a kind change so the client re-creates the slot — the C#'s
+  `existing.generation != generation` spawn test. `hurt_cd` stays 0 on
+  clients (`28 NPCStrike` is not ported), so a networked NPC shows no hit
+  flash yet.
+- **The cadence is the port's tick, not the C#'s per-NPC `netSpam` gate.**
+  The host streams every live NPC at 10 Hz (the `netSpam` 30/5-tick per-NPC
+  gate and the section culling are the M6-NET-3 follow-ups); the player
+  cadence is change-driven + a 42-tick heartbeat (the C#'s 420 ticks at
+  60 Hz = 7 s). The client's despawn is a 200 ms staleness prune (the host
+  sends nothing when an NPC dies — the C# broadcasts life = 0 and keeps the
+  slot; the port has no inactive-slot state, so the slot is dropped).
+- **Item ids are host-Vec indices**, not the C#'s fixed 400 slots: a removal
+  shifts the higher indices, and the next tick's `21` diff re-announces them
+  (the fixed-slot scheme is M6-NET-5). `22 ItemOwner` is consumed by the
+  client's grab gate but not yet emitted by the host — the port's pickup
+  request validates and removes in one step, so no reservation window
+  exists yet.
+- **The peer slots are seeded at the world spawn** on first sight (the C#'s
+  `Main.player[i]` exists at the spawn before its first `13`), so the first
+  snapshot's lag accrues from there rather than from (0, 0).

@@ -961,11 +961,17 @@ pub(crate) fn draw_tiles(
         );
     }
     for rp in remote {
+        // The `netOffset` accumulator (the C#'s `LegacyPlayerRenderer.cs:304`:
+        // `drawPlayer.position + drawPlayer.netOffset`): the snapshot position
+        // plus the decaying visual lag. In single-player/hosting the offsets
+        // are zero, so the drawn pixels are unchanged.
         let mut p = Player::spawn(world);
-        p.x = rp.x;
-        p.y = rp.y;
-        p.prev_x = rp.x;
-        p.prev_y = rp.y;
+        let rx = rp.x + rp.off_x;
+        let ry = rp.y + rp.off_y;
+        p.x = rx;
+        p.y = ry;
+        p.prev_x = rx;
+        p.prev_y = ry;
         p.vx = rp.vx;
         p.vy = rp.vy;
         p.facing = rp.facing;

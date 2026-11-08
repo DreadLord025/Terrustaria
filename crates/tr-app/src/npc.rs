@@ -1,6 +1,7 @@
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
 
+use glam::Vec2;
 use tr_core::{TILE_PX, World};
 
 use crate::npc_ai::HoverParams;
@@ -1218,6 +1219,13 @@ pub struct Npc {
     /// (`NPC.cs:74019-74031`: `atan2(velocity.Y, velocity.X)`, `+ π` when
     /// `velocity.X < 0`).
     pub rotation: f32,
+    /// `NPC.netOffset` (`NPC.cs:6157`) — the client-side smoothing
+    /// accumulator for networked NPCs: on each `23 NPCInfo` the client adds
+    /// the visual lag here and snaps `x/y` to the wire value, then decays it
+    /// toward zero (`netglue::decay_net_offsets`, the C#'s
+    /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
+    /// and in single-player, so nothing single-player-rendered moves.
+    pub net_offset: Vec2,
     /// Accumulated daylight burn time (zombies only).
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
@@ -1633,6 +1641,7 @@ impl Npc {
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
+            net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
             home: None,
@@ -6010,6 +6019,20 @@ impl Npc {
             h ^= (self.slime as u32) << 9;
         }
         h
+    }
+
+    /// The C#'s `position += netOffset` draw wrapper (`Main.cs:22335`): a
+    /// copy with the smoothing accumulator added to the position, so the
+    /// render derives every anchor from the smoothed point. With a zero
+    /// accumulator (host / single-player) it is a plain clone.
+    pub fn offset_clone(&self) -> Npc {
+        if self.net_offset == Vec2::ZERO {
+            return self.clone();
+        }
+        let mut n = self.clone();
+        n.x += self.net_offset.x;
+        n.y += self.net_offset.y;
+        n
     }
 
     pub fn frame(&self) -> u32 {
