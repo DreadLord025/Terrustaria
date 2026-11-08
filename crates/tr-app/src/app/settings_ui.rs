@@ -44,7 +44,7 @@ impl App {
                 // the 50-key grid layer instead (Review Focus 6).
                 self.open_keyboard(
                     ui::keyboard::Request {
-                        label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                        label: ui::keyboard::enter_character_name(),
                         initial: String::new(),
                         allow_empty: true,
                         max_length: 20,
