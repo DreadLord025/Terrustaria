@@ -173,6 +173,12 @@ pub enum Interaction {
     /// The grandfather clock (tile 104, `Player.cs:32725-32759`): the time
     /// text.
     Clock,
+    /// The Extractinator (tiles 219/642): the held item is converted into an
+    /// output item that spawns at the cursor (`Player.cs:41665-41697`,
+    /// `ExtractinatorUse` `:42072-42079`). The roll itself lives in
+    /// [`crate::extract`]; this tag only answers "this tile is an extractinator"
+    /// the way the C# chain tests the `Main.tile[myX, myY].type` literals.
+    Extractinator,
 }
 
 /// `Terraria.DataStructures.PlacementHook` (`PlacementHook.cs:3-15`). The
@@ -318,6 +324,9 @@ pub const TABLE: &[TileObjectDef] = &[
     SAFE,
     DEFENDERS_FORGE,
     VOID_VAULT,
+    // The extractinators (M7-EXTRACT-1): the silt 219, the chlorophyte 642.
+    SILT_EXTRACTINATOR,
+    CHLOROPHYTE_EXTRACTINATOR,
 ];
 
 // -- piggy bank (tile 29) — `TileObjectData.cs:2801-2811` + Style2x1 --------
@@ -394,6 +403,42 @@ const VOID_VAULT: TileObjectDef = TileObjectDef {
     frame_important: true,
     interaction: Interaction::Bank(-5),
     ..base_def()
+};
+
+// -- silt extractinator (tile 219) / chlorophyte extractinator (tile 642) -----
+// M7-EXTRACT-1 — `TileObjectData.cs:4042-4045`:
+//     newTile.CopyFrom(TileObjectData.Style3x3);
+//     newTile.DrawYOffset = 2;
+//     addTile(219);                      // and the identical 642 at :4043-4045
+// `Style3x3` itself is `:4015-4031` (width 3, height 3, origin (1, 2),
+// AnchorBottom SolidTile|SolidWithTop|SolidSide over the width, custom
+// CanPlace, CoordinateHeights {16,16,16}, CoordinateWidth 16, Padding 2,
+// LavaDeath). No alternates, no hooks, `StyleHorizontal` stays false (the
+// module default `:1800`). Items: 997 Extractinator (`ItemID.cs:3677`) and
+// 5296 Chlorophyte Extractinator (`ItemID.cs:12275`); `Main.tileFrameImportant`
+// for both (`Main.cs:7401-7402`).
+//
+/// `Style3x3` + `DrawYOffset = 2`, the silt extractinator (tile 219, item 997).
+const SILT_EXTRACTINATOR: TileObjectDef = TileObjectDef {
+    kind: 219,
+    width: 3,
+    height: 3,
+    origin: Point16::new(1, 2),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    frame_important: true,
+    interaction: Interaction::Extractinator,
+    ..base_def()
+};
+
+/// `Style3x3` + `DrawYOffset = 2`, the chlorophyte extractinator (tile 642,
+/// item 5296) — the same def with the cheaper ×0.33 use time
+/// (`Player.cs:41673-41677`) applied by the app's extraction arm.
+const CHLOROPHYTE_EXTRACTINATOR: TileObjectDef = TileObjectDef {
+    kind: 642,
+    ..SILT_EXTRACTINATOR
 };
 
 /// `Main.tileAlch` (`Main.cs:7806-7808`): the three herb-stage tiles the legacy
@@ -3628,5 +3673,75 @@ mod tests {
         // 380 is deliberately NOT registered (`TileObjectData` has no entry;
         // vanilla routes it through the legacy case, `WorldGen.cs:60226`).
         assert!(def_for_tile(380).is_none());
+    }
+
+    #[test]
+    fn test_M7_EXTRACT_1_defs_registered_as_style_3x3() {
+        // M7-EXTRACT-1 — `TileObjectData.cs:4042-4045`: both extractinators are
+        // `Style3x3` + `DrawYOffset = 2` (origin (1, 2), SWTSS bottom anchor
+        // over the width, 16-px coordinate cells, frame-important), no
+        // alternates, `StyleHorizontal` false (the module default).
+        for kind in [219u16, 642] {
+            let def = def_for_tile(kind).unwrap();
+            assert_eq!((def.width, def.height), (3, 3));
+            assert_eq!(def.origin, Point16::new(1, 2));
+            assert_eq!(def.coordinate_heights, &[16, 16, 16]);
+            assert_eq!(def.coordinate_width, 16);
+            assert_eq!(def.coordinate_padding, 2);
+            assert!(def.frame_important);
+            assert!(!def.style_horizontal);
+            assert_eq!(def.alternates.len(), 0);
+            assert_eq!(def.interaction, Interaction::Extractinator);
+            assert_eq!(
+                def.anchor_bottom,
+                AnchorData::new(ANCHOR_SWTSS, 3, 0)
+            );
+        }
+        // The tiles were NOT registered before this task — the anonymous
+        // neighbours stay absent.
+        assert!(def_for_tile(220).is_none());
+    }
+
+    #[test]
+    fn test_M7_EXTRACT_1_placement_writes_the_3x3_frames() {
+        // The click at the bottom-centre writes the 3x3 object: every cell
+        // active with kind 219, frameX the column stride, frameY the row
+        // stride (`TileObject.Place`, `TileObject.cs:29-172`).
+        let mut w = world();
+        let def = def_for_tile(219).unwrap();
+        // Clicking x=10 with origin (1, 2) → the object spans x 9..11, y 17..19
+        // (the click is the bottom-centre cell, as in vanilla).
+        let inst = can_place(&w, 10, 19, def, 0, 1, None).expect("3x3 headroom");
+        assert_eq!((inst.x_coord, inst.y_coord), (9, 17));
+        assert!(place(&mut w, &inst));
+        for sub_y in 0..3 {
+            for sub_x in 0..3 {
+                let t = w.tile(9 + sub_x, 17 + sub_y).unwrap();
+                assert_eq!(t.kind, 219);
+                assert_eq!((t.frame_x, t.frame_y), ((18 * sub_x) as i16, (18 * sub_y) as i16));
+            }
+        }
+        // The origin decode is the registry-generalized one
+        // (`frameX/18 % width`, `frameY/18 % height`).
+        let at = object_tiles_at(&w, 11, 18).expect("a sub-tile decodes");
+        assert_eq!((at.origin.x, at.origin.y), (9, 17));
+    }
+
+    #[test]
+    fn test_M7_EXTRACT_1_anchors_refuse_open_air_and_kill_removes_all() {
+        let mut w = world();
+        let def = def_for_tile(642).unwrap();
+        // A floating click (no solid floor under the object) is refused.
+        assert!(can_place(&w, 10, 5, def, 0, 1, None).is_none());
+        // Placed on the floor, the kill cascade removes all nine cells
+        // (`KillTile`'s registry cascade, `edit::kill_tile`).
+        let inst = can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        assert!(place(&mut w, &inst));
+        assert!(crate::edit::kill_tile(&mut w, 11, 18, false).is_some());
+        for sub_y in 0..3 {
+            for sub_x in 0..3 {
+                assert!(!w.tile(9 + sub_x, 17 + sub_y).unwrap().active());
+            }
+        }
     }
 }

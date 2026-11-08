@@ -8,7 +8,6 @@ use winit::keyboard::KeyCode;
 
 use crate::achievements;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
-use crate::app::netglue::compressed_world;
 use crate::app::{App, NetRole, no_hud};
 use crate::chest;
 use crate::craft;
@@ -996,8 +995,7 @@ impl App {
                 }
             }
             Action::Host { port, password } => {
-                let map = compressed_world(&self.world);
-                match net::Server::start(port, password, map) {
+                match net::Server::start(port, password) {
                     Ok(server) => {
                         log::info!("hosting on {}", server.addr());
                         self.net = NetRole::Host(server);
@@ -1011,14 +1009,13 @@ impl App {
                     }
                 }
             }
-            Action::Join { addr, password } => match net::Client::connect(
-                &addr,
-                self.player_name.clone(),
-                password.clone(),
-            ) {
+            Action::Join { addr, password } => match net::Client::connect(&addr) {
                 Ok(client) => {
                     self.net = NetRole::Client(client);
                     self.join_target = Some((addr, password));
+                    self.net_state = net::client_state::NOT_CONNECTED;
+                    self.net_last_recv = std::time::Instant::now();
+                    self.net_dropped = false;
                 }
                 Err(e) => {
                     if let Some(m) = self.menu.as_mut() {

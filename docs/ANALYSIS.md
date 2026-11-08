@@ -5763,3 +5763,216 @@ M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
 items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
+
+## Multiplayer protocol core (M6-NET-1)
+
+The handshake and the wire frame are 1:1 ports; the deliberate deviations
+(all resolved in M6-NET-2/3, where noted):
+
+- **`15 WorldChunk` is a port-internal id** (dead in 1.4.5.8): the whole-world
+  zlib blob (`save::to_bytes` + flate2) streams as `[i32 index][i32 count][u32
+  len][bytes]` slices under the 65535-byte frame cap, announced by `9 Status`
+  and closed by `49 WorldComplete`. The C# streams `10 TileBlock` sections
+  instead (`NetMessage.cs:1895-2240` `CompressTileBlock`); M6-NET-3 replaces
+  the producer — the client install hook stays.
+- **`NetworkText` is literal-mode only** (mode byte 0 + the string,
+  `NetworkText.cs:65-70`). Keyed/format texts and the substitution list
+  (`:72-80`) are not ported; every kick/status string is a literal. The keys
+  themselves (`Lang.mp[1..5]`, the `Net.*` name keys) ride as English text
+  with the C# strings quoted in `netglue.rs`'s `TXT_*` constants.
+- **`5 PlayerInventory` is accepted and dropped server-side.** The server
+  keeps no peer-inventory state yet (the C# `Main.player[i].inventory`); the
+  storage lands with M6-NET-2's peer-state sync. The client's push order is
+  already the C# one (`MessageBuffer.cs:230-282`'s list, adapted to the
+  port's slot layout: 59 grid + 20 armour + 10 dye + 5 misc dyes + 5 misc
+  equips + 4×40 banks + trash).
+- **`7 WorldInfo` fields without a port home ride as defaults** with the C#
+  write order preserved: the 11 background styles, `ice/jungle BackStyle`,
+  the tree/cave backups, the 13 tree-top bytes, the 14 world-flag groups,
+  the ore tiers, the dungeon point, the spawn-point list and `lobbyId`
+  (0 without a social API). The port-sourced fields are time/day flags,
+  the moon phase/type, the world size, the spawn, the surface/rock layer,
+  the dial cooldowns and the hell back style; `generator_version` carries
+  `save::VERSION` (the closest marker) pending the generator-version home.
+- **The clock rides the internal `205 Time` broadcast** (host → clients at
+  10 Hz). The C# sends `7 WorldInfo` only at join
+  (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
+  flags; the exact 1:1 clock path is pinned in M6-NET-2.
+- **The name gate is the ported C# gate** (`MessageBuffer.cs:360-396`): empty,
+  `> Player.nameLen` (20, `Player.cs:57105`) or already taken by another slot
+  → the C# kick texts. The creative-mode mismatch checks
+  (`Net.PlayerIsCreativeAndWorldIsNotCreative`) have no port flags yet and
+  are deferred.
+- **`4 PlayerInfo` carries the 1:1 body** (skin/voice, hair, colours, the
+  three `BitsByte` groups, `NetMessage.cs:147-197`); only the name has a port
+  home (`App.player_name`), the rest is vanilla defaults until the character
+  milestone.
+- **The in-process join replaces the relaunch.** The old flow saved the world
+  blob and re-executed the binary with `TR_JOINED` (`netglue.rs`'s
+  `relaunch_into_world`, deleted here); the client now swaps `App.world` and
+  rebuilds the world-derived systems (`LiquidSystem`, `WorldMap`, the player
+  spawn) in place — the C#'s `WorldGen.clearWorld` arm
+  (`Netplay.cs:484-505`) has no port equivalent.
+- **The idle sweep is the C# shape, port-tuned**: reader threads stamp a
+  `last_seen` per slot and a frame-paced sweep drops peers idle for
+  [`net::IDLE_TIMEOUT`] (120 s), the C#'s `TimeOutTimer > 7200` ticks
+  (`Main.cs:64610-64618`).
+## Extractinator (M7-EXTRACT-1)
+
+`tr-core/src/extract.rs` ports `ExtractinatorHelper.RollExtractinatorDrop`
+(`ExtractinatorHelper.cs:5-525`) as an RNG-injected chain — the branch order is
+the roll order and the port keeps it a straight-line `else if` chain rather than
+a table, so no draw is reordered. `Player.PlaceThing_ItemInExtractinator`
+(`Player.cs:41665-41697`) is item data (the mode map `ItemID.cs:1321` and the
+`ItemTrader.ChlorophyteExtractinator` first-match table `ItemTrader.cs:82-108`);
+the tile side is `TileObjectData.cs:4042-4045` (`Style3x3`, `DrawYOffset = 2`)
+plus `Check3x3`'s bottom-support arm (`WorldGen.cs:53114-53158`).
+
+Deliberate deviations and notes:
+
+- **The loot engine is not used.** Vanilla rolls the plain `Main.rand` sequence
+  here, not `IItemDropRule`; forcing the table through `loot.rs`'s rule types
+  would reorder draws. The port keeps a separate cited function and rolls on
+  `app.item_rng` (the `Main.rand` seam, PORT_MAP's item-loot convention).
+- **The interaction is swing-anchored, not click-anchored.** The C# arm runs
+  inside `PlaceThing` (re-firing every `useTime` inside a held swing,
+  `Player.cs:39591`/`:41669`), so the port routes it through the same
+  `starting || inside_swing` cadence the tile/wall placement uses
+  (`world_sim/editing.rs`); the press-edge `interact_tile` falls through for the
+  new variant (the chest/shop/door seam is untouched — `interact_at` only gained
+  one registry arm). `ApplyItemTime`'s shape (`Player.cs:4406-4413`) makes the
+  swing and the action time the same value, ×0.33 on tile 642 (`:41673-41677` →
+  3 frames), which the apply mirrors.
+- **The drop spawns at the cursor pixel** (`DropItemFromExtractinator`,
+  `Player.cs:42081-42089`); the smart-cursor/gamepad player-centre branch
+  (`:42084-42087`) has no port mechanic yet — with smart cursor on, vanilla
+  spawns at the player centre and the port still spawns at the cursor.
+- **The input is consumed per action by the arm itself.** The C#'s generic
+  consumable path (`Player.cs:43280`) decrements one per swing-start while the
+  arm re-fires mid-swing; the port consumes one per extraction (the convention
+  `place_item_and_consume` already uses). The C# also never checks weapon-ness
+  in this arm, and the port's `item_gate_blocks` would refuse a `projectile`-set
+  item on the place route — the arm's own decrement keeps the behaviour right.
+- **Reach** is the plain `TileReachCheckSettings.Simple` region (5/3,
+  `Player.cs:32025-32030`): every extractinator input has `tileBoost = 0`
+  (verified in the C# `Item.SetDefaults` bodies), and the port has no
+  `blockRange` (builder-potion buff 107 / gizmo-pack 407).
+- **Item-data bug found (pre-existing, not fixed here):** `itemdata.rs:3465-3466`
+  carries 1.4.4-era melee-thrower data for 3347/3348 (`projectile: Some(610)`,
+  `consumable: false`) where the C# `Item.cs:30521-30549` has a consumable
+  placeable (useTime 10, createTile 404 / createWall 311). The extractinator
+  path is immune (the arm's own decrement), but the fossil items are wrong
+  elsewhere — regenerating `tools/GenItemData` is the fix.
+- **Out of scope:** the wired extractination (`Wiring.cs:2554-2584` —
+  `CheckMech` 60, `TryFindChestForExtractinator`'s 6×6 chest scan, the
+  first-non-air chest item, the wiring broad-cast drop) = M7-WIRE-2/3; the tile
+  animator (`Main.cs:18659-18678`: 10 frames for 219, 6 for 642, advancing
+  every 5 ticks; `drawdata.rs` already ports the `tileFrame * 54` offset but
+  `render/tiles.rs` passes the t=0 state) = TILE-DRAW-3; smart cursor
+  (`Player.cs:17595-17614`'s strategy 7) = M7-SMARTCURSOR-1.
+## Shimmer transforms (M7-SHIMMER-1)
+
+`tr-core/src/shimmer.rs` + `shimmer_tables.rs` port the transform data and the
+resolution order (`ShimmerTransforms.cs:88-111`, `ShimmerHelper.cs`);
+`tr-app/src/shimmer.rs` ports the whole chain (`WorldItem.cs:1691-1849`) with
+its branch order intact, and `world_sim/items.rs` + `item.rs` port
+`WorldItem.UpdateShimmer`'s ramp on the `ItemDrop` state.
+
+Deliberate deviations and notes:
+
+- **The crimson/corruption decraft variant is not ported.** The port's recipe
+  data (`recipes_gen.rs`/`craft.rs`) carries no `crimson`/`corruption` tags, so
+  `GetDecraftingRecipeIndex` (`ShimmerTransforms.cs:22-29`) falls back to the
+  plain `IsCrafted` index. The 15 variant pairs (`Recipe.cs`'s `crimson`/
+  `corruption` flags — extracted for the follow-up: e.g. 5092 creates the
+  corruption/crimson pair at recipe indices 90/91) need the generator to grow
+  the tags.
+- **`customShimmerResults` are absent** from the port's recipe data
+  (`Recipe.cs:176-183`) — the decraft spends the plain `requiredItem` list.
+- **`Item.makeNPC` has no port field**, so the release arm
+  (`WorldItem.cs:1747-1772`) never fires from real items: the override map
+  (`NPCID.cs:10470`), the ≤50 attempt budget and `shimmerTransparency = 1f` are
+  ported and unit-tested, but the item-side input and the NPC roster (676
+  Shimmer Slime / 677 shimmered town NPC / 681 Rainbow Slime) wait for
+  `GenItemData` + M4-NPC.
+- **The ramp's transform tick** follows the C#'s f32 `+= 0.01f` accumulation
+  and fires inside the same update (the port marks a pending flag and applies
+  after the fixed step, so the spawn/flag side-effects do not run mid-borrow).
+- **`unlocked_slime_rainbow_spawn` is a `World` field** standing in for the
+  C#'s `Main`-global (`NPC.unlockedSlimeRainbowSpawn`) — the save format does
+  not carry it yet.
+- **The shimmered item's dust/light arms** (`WorldItem.cs:459-482`: dust 309 at
+  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) are render
+  layer and skipped.
+- **Out:** the player's §7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
+  `ShimmerUnstuckHelper`'s unstuck — the helper is ported, the driver is not);
+  `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
+  table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
+  shimmer tile's rendering/animation.
+## Ocean passes fidelity (M5-OCEAN)
+
+The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
+`470672a`→`c1759e8`): the vanilla beach geometry (P1), `Ocean Sand` +
+`Beaches` + `Gravitating Sand` (P2), the faithful `oceanCave` walker (P3),
+`Remove Water From Sand` + `Shell Piles` + the `Water Plants` seaweed arm
+(P4) and `Cactus, Palm Trees, & Coral` + the `AddTrees` beach palms (P5).
+Final pins: `SEED42_512 = 3862881231`, `DEFAULT_WORLD = 2822219158`
+(`world_hash.rs` provenance block has the per-phase history). Suites green
+(`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+Deviations and accepted changes:
+
+- **Reset-stand-in position.** Vanilla draws `leftBeachEnd`/`rightBeachStart`
+  in `Reset` (`WorldGen.cs:11415-11440`) before every pass; the port draws
+  them at the head of the terrain height-map step (the first consumer —
+  `plan biome spans` is later) from `pass_rng("Beaches")`, mirroring the
+  M5-BIOME spans-step stand-in. Dungeon side is fixed Right (M5-BIOME), so
+  the left side always adds `beachSandDungeonExtraWidth` (40) and the right
+  side takes the `beachSandJungleExtraWidth` (20) arm — the `−= 40` arm is
+  the dead `dungeonSide == Left` branch. The tenth-anniversary fixed 340 is
+  skipped (no seed framework).
+- **Terrain hybrid.** `TerrainPass`'s absolute beach band `[0.17, 0.23]·
+  maxTilesY` (`TerrainPass.cs:131-134`, `:193-201`) is not portable onto
+  the compact interior curve; the shelf holds the model's sea level flat
+  over the beach width and blends out over 30 columns. The compact t²·30
+  edge ramp retires (the seafloor profile is `TuneOceanDepth`'s curve).
+- **`tileSolid[192] = true` deferred.** `RemoveSurfaceWaterAboveSand`'s tail
+  mutation (`WorldGen.cs:16240`, `TileID.LeafBlock`) has no port
+  counterpart — the tile sets are generated statics (`tiledata/`); the owner
+  is `tools/GenTileData`.
+- **`drng` → `pass_rng`.** The ocean caves moved from the shared `drng` to
+  their own stream (the M5-BIOME phase-3/6 accepted-shift class); the later
+  `drng` consumers shift accordingly.
+- **512-wide degeneracy.** `range(0, 1)` returns 0 without a draw (.NET
+  `Next` semantics, world re-pinned once), and the ocean-zone widths on
+  sub-vanilla worlds behave as vanilla never sees them (vanilla min 4200) —
+  pinned, not valve'd. `leftBeachEnd > rightBeachStart` overlap on 512 is
+  accepted (the living-tree anchors order their span instead of panicking).
+- **Vanilla quirks ported verbatim.** The Shell Piles right branch's offset
+  arms write `shellStartXLeft` (`WorldGen.cs:16381`, `:16385`); the
+  `ShellPile` wobble clamps discard their result (`:10430-10431`); the
+  stalactite's `Next(3)` widening writes without the `badOceanCaveTiles`
+  check (`:76623-76628`); the `Cactus, Palm Trees, & Coral` middle zone's
+  unused `num5`/`num6` draws still burn; `PlaceTile(81)` places crystal on
+  liquid tiles (`:59460-59474`).
+- **Deferred with citations.** The `Sand Patches` pass (global sand patches,
+  M5-DESERT-structures); the `Water Plants` lily/cattail/bamboo arms
+  (out of ocean scope — their draws are deferred with them, so the
+  per-pass stream diverges from vanilla by exactly those draws); the
+  `Oasis` pass and its `GenVars.numOasis` writer (the CactusPalm oasis
+  block is dead in the port); the full `AddTrees` per-tile forest arms (the
+  compact forest model keeps its density — the beach palm arm is faithful);
+  the `PyrX/PyrY/numPyr` slots are published but unconsumed (the faithful
+  Pyramids pass is M5-DESERT-structures); `UnderwaterChests` is
+  M5-CHEST-gen (this task publishes `GenVars.ocean_cave_treasure` only).
+- **KillTile slice.** `GrowCheckSeaweed`'s dry-out arm uses `KillTile`'s
+  generation-time strip (inactive + type 0, frames 0); the item-drop /
+  `SquareTileFrame` / net arms do not exist in the port.
+- **Cactus arm.** `plant_cacti`'s compact desert scatter retires (the
+  faithful middle zone's `PlantCactus` covers the desert's cacti); the
+  pass re-declares `frame_important[80]` (the boot static the retired
+  scatter used to own).
+- **World re-rolls by design** at every phase — the per-phase pin history
+  lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
+  (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
+  `test_DW_4_3`-style vanilla-position tests for the ocean slots).

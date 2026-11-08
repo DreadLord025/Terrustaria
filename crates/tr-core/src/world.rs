@@ -148,6 +148,10 @@ pub struct World {
     pub golem_hp_ratio: f32,
     pub golem_x: f32,
     pub golem_y: f32,
+    /// `NPC.unlockedSlimeRainbowSpawn` (`WorldItem.GetShimmered`'s 4986 arm,
+    /// `WorldItem.cs:1720-1735`) — a `Main`-global in the C#; a world field is
+    /// the port's standing-in (ANALYSIS "Shimmer transforms").
+    pub unlocked_slime_rainbow_spawn: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -168,6 +172,11 @@ pub struct World {
     /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
     /// corruption orb arms the morning invasion rolls.
     pub shadow_orb_smashed: bool,
+    /// `WorldGen.shadowOrbCount` (`WorldGen.cs:54293`): the shared
+    /// orb/heart/mana-crystal smash counter — the third break in a world
+    /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
+    /// summons the boss (`:54294-54321`).
+    pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
@@ -245,6 +254,7 @@ impl World {
             spawn_meteor: false,
             golem_x: 0.0,
             golem_y: 0.0,
+            unlocked_slime_rainbow_spawn: false,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
@@ -269,6 +279,7 @@ impl World {
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
+            shadow_orb_count: 0,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,

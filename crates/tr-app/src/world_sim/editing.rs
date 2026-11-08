@@ -800,7 +800,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
-        let used = if held_wall {
+        // The extractinator arm first (`PlaceThing`'s order, `Player.cs:39586-39597`:
+        // `PlaceThing_ItemInExtractinator` runs before the tile/wall routes). It
+        // consumes the tick on its own terms — `ApplyItemTime` makes the swing
+        // and the action time the SAME value (`Player.cs:4406-4413`, ×0.33 on
+        // tile 642), so the generic place-route timings below must not clobber
+        // it; `Some(secs)` is the applied action time.
+        let mut extracted_secs = None;
+        if !held_wall {
+            extracted_secs = crate::world_sim::extract::use_extractinator(app, tx, ty, world_pos);
+        }
+        let used = if extracted_secs.is_some() {
+            true
+        } else if held_wall {
             if can_place_wall(app, tx, ty) {
                 place_wall_item(app, tx, ty, registry::place_wall(held.kind).unwrap_or(1));
                 true
@@ -813,11 +825,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             false
         };
         if used {
-            if starting {
-                app.swing_max = swing_secs;
-                app.swing = app.swing_max;
+            if let Some(secs) = extracted_secs {
+                // `SetItemTime` (`Player.cs:4406-4413`): swing == item time ==
+                // useTime × multiplier (the extraction's own `ApplyItemTime`).
+                app.swing_max = secs;
+                app.swing = secs;
+                app.item_time = secs;
+            } else {
+                if starting {
+                    app.swing_max = swing_secs;
+                    app.swing = app.swing_max;
+                }
+                app.item_time = action_secs;
             }
-            app.item_time = action_secs;
         }
     }
 }
@@ -2316,6 +2336,14 @@ fn interaction_events(
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
+        // M7-EXTRACT-1: the extractinator is NOT a click-edge interaction in
+        // vanilla — `PlaceThing_ItemInExtractinator` runs inside the held-item
+        // swing (`Player.cs:39591`, `:41665`), so the press edge falls through
+        // to the place/swing block, whose `world_sim/extract.rs` arm owns the
+        // extraction (the held-item gate, the roll, the drop, the consumption).
+        // Returning `None` here keeps `interact_tile`'s "not consumed" answer
+        // and the chest/shop/door seam untouched.
+        edit::TileInteraction::Extractinator => return None,
     };
     let events = object_drops
         .iter()

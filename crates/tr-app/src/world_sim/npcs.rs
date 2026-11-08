@@ -1016,6 +1016,26 @@ fn invasion_spawn_pick(
     }
 }
 
+/// `NPC.ReleaseNPC` as the shimmer release uses it (`WorldItem.GetShimmered`'s
+/// makeNPC arm, `WorldItem.cs:1747-1772`): the spawn with
+/// `shimmerTransparency = 1f`. The C# releases through `ReleaseNPC`, which
+/// applies the spawn capsule; the port's release spawns through the generic
+/// `Npc::new` (the capsule's tile scan is the NPC roster's own spawn logic).
+/// Returns whether a drop-owning spawn happened (the roster only covers the 85
+/// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
+/// rainbow slime 681 wait for the M4-NPC roster).
+pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
+    let Some(kind) = NpcKind::from_u16(npc_type) else {
+        // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
+        // no model for the type — the arm's accounting still runs.
+        return false;
+    };
+    let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    npc.shimmer_transparency = 1.0;
+    app.npcs.push(npc);
+    true
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
@@ -1474,6 +1494,73 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
+    // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
+    // the shared counter's third break summons the Eater of Worlds (a
+    // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
+    // nearest player; the port polls the count delta (the flag edge is
+    // the edge — the sim resets it to 0 on the summon, exactly like the
+    // vanilla's `shadowOrbCount = 0`).
+    if app.world.shadow_orb_count >= 3 && !app.world.downed_eow {
+        app.world.shadow_orb_count = 0;
+        if let Some(p) = app.player.as_ref() {
+            let (px, py) = p.center();
+            let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+            let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+            // The crimson flag rides the orb frame — the port's worldgen
+            // places the corruption/crimson orbs per the chasm side; the
+            // port's spawn picks the corruption EoW (the crimson-Brain
+            // arm rides the flag, the detection lands with the wave event).
+            let mut head = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+            head.hp = head.max_hp;
+            head.worm_left = 65;
+            app.npcs.push(head);
+        }
+    }
+    // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
+    // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
+    // centre for the head/fist tethers; the BODY is invulnerable while
+    // the attached head (246) lives. The fists' deaths do not shield.
+    {
+        let body = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
+            .cloned();
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+            let head_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            if let Some(b) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
+            {
+                b.dont_take_damage = head_alive;
+            }
+        } else {
+            app.world.golem_present = false;
+            // NPC.cs:31141/19242/31372's golemBoss < 0 arm: the parts
+            // 9999-strike themselves (the no-interaction kill — the port's
+            // hp = 0; the kill credit is the documented deviation).
+            for n in app.npcs.iter_mut() {
+                if matches!(
+                    n.kind,
+                    NpcKind::GolemHead
+                        | NpcKind::GolemFistLeft
+                        | NpcKind::GolemFistRight
+                        | NpcKind::GolemHeadFree
+                ) {
+                    n.hp = 0;
+                }
+            }
+        }
+    }
     // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
     // block): the update pass set `wants_servant`, this pass resolves it —
     // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).

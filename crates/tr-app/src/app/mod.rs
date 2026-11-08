@@ -38,7 +38,6 @@ use winit::window::Window;
 
 use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
-use crate::app::netglue::compressed_world;
 use crate::assets;
 use crate::audio;
 use crate::banners;
@@ -312,6 +311,25 @@ pub(crate) struct App {
     /// Our id assigned by the host (0 while hosting).
     pub(crate) local_id: u32,
     pub(crate) net_timer: f32,
+    /// The client handshake state — `Netplay.Connection.State`
+    /// (`Netplay.cs:469-543`); stays at 0 while hosting.
+    pub(crate) net_state: i32,
+    /// The world-blob slice buffer while the host streams the world
+    /// (`15 WorldChunk`), assembled in order at `WorldComplete`.
+    pub(crate) net_chunks: Vec<Option<Vec<u8>>>,
+    /// The `7 WorldInfo` header, held until the blob completes the install.
+    pub(crate) net_info: Option<net::WorldInfo>,
+    /// The `9 Status` load-progress line (`Netplay.cs:526-540`'s StatusText).
+    pub(crate) net_status_text: String,
+    pub(crate) net_status_max: i32,
+    pub(crate) net_status_count: i32,
+    /// The last received frame stamp — the client-side `TimeOutTimer`
+    /// (`Main.cs:64540-64544`).
+    pub(crate) net_last_recv: Instant,
+    /// A disconnect ran inside `poll_net`'s dispatch: the swapped-out role
+    /// must not be restored afterwards (the `mem::replace` borrow dance has
+    /// no other way to say "the handlers changed the role").
+    pub(crate) net_dropped: bool,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -1768,7 +1786,7 @@ impl App {
         };
         let mut net_role = NetRole::Off;
         if let Some((addr, pw)) = join_target.as_ref() {
-            match net::Client::connect(addr, player_name.clone(), pw.clone()) {
+            match net::Client::connect(addr) {
                 Ok(c) => {
                     log::info!("joining {addr}");
                     net_role = NetRole::Client(c);
@@ -1777,7 +1795,7 @@ impl App {
             }
         }
         if let Some(port) = auto_host {
-            match net::Server::start(port, String::new(), compressed_world(&world)) {
+            match net::Server::start(port, String::new()) {
                 Ok(server) => {
                     log::info!("hosting on {}", server.addr());
                     net_role = NetRole::Host(server);
@@ -2059,6 +2077,14 @@ impl App {
             remote_players: HashMap::new(),
             local_id: 0,
             net_timer: 0.0,
+            net_state: net::client_state::NOT_CONNECTED,
+            net_chunks: Vec::new(),
+            net_info: None,
+            net_status_text: String::new(),
+            net_status_max: 0,
+            net_status_count: 0,
+            net_last_recv: Instant::now(),
+            net_dropped: false,
             join_target,
             map: Some(world_map),
             map_grab: None,
@@ -2721,6 +2747,12 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 ),
                 edit::TileInteraction::ClockRead { text } => {
                     log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
+                }
+                // M7-EXTRACT-1: the extractinator's item-anchored arm has no
+                // load-time meaning (no held item) — the dispatch only reports
+                // the tile kind.
+                edit::TileInteraction::Extractinator => {
+                    log::info!("TR_TOGGLE {},{} -> extractinator", op.x, op.y)
                 }
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
