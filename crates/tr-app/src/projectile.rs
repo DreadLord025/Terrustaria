@@ -98,6 +98,13 @@ pub const DD2_SPEAR_T3: u16 = 685;
 /// (`Projectile.cs:7263-7272`: 14x14, aiStyle 16, hostile, penetrate -1,
 /// ranged).
 pub const DD2_BOMB: u16 = 681;
+/// `ProjectileID.DD2SummonSkeleton`-family marker (673/674) — the Dark
+/// Mage's summon/heal casts (`Projectile.cs:7208-7220`: 10x10, aiStyle
+/// 133, alpha 255, tileCollide false, timeLeft 900).
+pub const DARK_MAGE_MARKER: u16 = 673;
+/// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
+/// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
+pub const DARK_MAGE_FLAME: u16 = 675;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -349,6 +356,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_SPEAR => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             DD2_SPEAR_T3 => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             DD2_BOMB => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The Dark Mage's casts (`Projectile.cs:7208-7230`): the summon
+            // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
+            // 255, tileCollide false, timeLeft 900) and the shadowflame
+            // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
+            DARK_MAGE_MARKER => (10.0, 10.0, 133, -1, 900, 0, false, false, false),
+            DARK_MAGE_FLAME => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {

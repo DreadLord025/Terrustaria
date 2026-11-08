@@ -472,6 +472,7 @@ fn portrait_data(
         NpcKind::DD2JavelinT3 => 96,         // NPC_563
         NpcKind::DD2SkeletonT1 => 97,        // NPC_566
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
+        NpcKind::DD2DarkMage => 99,       // NPC_564
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -720,6 +721,13 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(52.0);
             (sheet_i, h, 26.0, h, white)
+        }
+        // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
+        (NpcKind::DD2DarkMage, _) => {
+            let h = lookups.bestiary_npc_sheets[99]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 34.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

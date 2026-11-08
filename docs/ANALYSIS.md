@@ -2777,6 +2777,16 @@ aim at the player (the vanilla's `num10 = 6` speed — the bomb's own
 aiStyle-16 flight carries the arc). The walk rides the harness with
 the tiers' speeds and arc weights.
 
+## The Dark Mage (M4-EVENT-5h)
+
+The Old One's Army's caster (564): materializes in from the portal
+(60 ticks of `localAI[3]`), hovers with the slow damped approach, and
+runs the cast cycle on `ai[0]`'s negative rest / positive march: the
+summon (`ai[1] == 2` at 64 — the 673 marker + `RaiseGoblins`), the
+shadowflame (`ai[1] == 0` at 32 — the 675 at 40), the heal (`ai[1] == 1`
+at 40/48/56 — the 674 markers), then the pattern advance and the
+97/127/183 re-arm.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
