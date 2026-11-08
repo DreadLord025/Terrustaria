@@ -353,13 +353,13 @@ impl ApplicationHandler for App {
                             // before; Phase 2 feeds it the framework's hit id so
                             // the double-click a card produces is real.
                             let now = self.anim_time as f64 * 1000.0;
-                            // `hit: None` — no element ids yet (the framework
-                            // phase assigns them); the machine still tracks the
-                            // edges, and `clicks_disabled()` is the live gate.
-                            let hit: Option<u32> = None;
+                            // The element under the pointer — the framework's
+                            // `GetElementAt` (`UIElement.cs:324-352`), the id
+                            // the machine's `LastClicked` compares.
+                            let hit = self.front_hit();
                             if pressed {
                                 if !self.pointer.clicks_disabled() {
-                                    self.pointer.press(
+                                    self.pointer_event = self.pointer.press(
                                         now,
                                         crate::ui::pointer::PointerButton::Left,
                                         hit,
@@ -367,11 +367,9 @@ impl ApplicationHandler for App {
                                 }
                                 self.handle_front_click();
                             } else {
-                                self.pointer.release(
-                                    now,
-                                    crate::ui::pointer::PointerButton::Left,
-                                    hit,
-                                );
+                                self.pointer_event = self
+                                    .pointer
+                                    .release(now, crate::ui::pointer::PointerButton::Left, hit);
                             }
                             return;
                         }

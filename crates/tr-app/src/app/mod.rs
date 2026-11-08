@@ -391,6 +391,10 @@ pub(crate) struct App {
     /// The machine's clock in ms — `Main.TotalGameTime.TotalMilliseconds`'s
     /// analogue, derived from `anim_time` (1/60-pinned under `TR_SHOT`).
     pub(crate) pointer_ms: f64,
+    /// The last `PointerEvent` the machine produced on the front screens' event
+    /// path, read by `handle_front_click` and cleared there — the C#'s event
+    /// delegate delivery (`UserInterface.cs:55-70`) without a listener table.
+    pub(crate) pointer_event: Option<ui::pointer::PointerEvent>,
     pub(crate) mouse_pos: Vec2,
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
@@ -2183,6 +2187,7 @@ impl App {
             ui_right_press: false,
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
+            pointer_event: None,
             mouse_pos: if deterministic_pointer_park() {
                 Vec2::new(-64.0, -64.0)
             } else {

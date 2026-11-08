@@ -30,12 +30,16 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::select_hit;
 use super::cards::{button_sheet, draw_card_button, draw_inner_panel, fat_button_style, header_style};
 use super::char_select::{
-    button_label, list_content_height, resolved_layout, scrollbar_attaches, Layout, BACK,
+    button_label, list_content_height, scrollbar_attaches, Layout, BACK,
     BUTTON_DELETE, BUTTON_FAVORITE, BUTTON_PLAY, BUTTON_RENAME, CARD_BG_REST, CARD_BORDER_HOVER,
     CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH, CONTAINER_PANEL_BG, GRAY, NEW,
 };
+// `resolved_layout` is re-exported because `App::front_hit` (app/flow.rs)
+// builds the layout to resolve the element id under the pointer.
+pub use super::char_select::resolved_layout;
 use super::color;
 use super::hover_pair;
 use super::in_rect;
@@ -471,6 +475,9 @@ pub enum CardAction {
     DeleteBlocked,
     New,
     Back,
+    /// `OnLeftDoubleClick` → `PlayGame` (`UIWorldListItem.cs:69`/`:99`): the
+    /// second press of the same card inside 500 ms.
+    DoubleClickPlay(usize),
 }
 
 /// The screen's click table. `favorites` carries one flag per card — the
@@ -478,60 +485,103 @@ pub enum CardAction {
 /// `cards: usize` (the count is `favorites.len()`). Returns `(hovered card,
 /// action)`: a card body without a button is `(Some(i), None)`; `Back`/`New`
 /// come back without a card. The caller passes a [`resolved_layout`] so the
-/// attached-scrollbar card widths agree with the draw. Double-click play
-/// (`:69`, `:99`) is skipped — single click only (documented in the plan).
+/// attached-scrollbar card widths agree with the draw. A `double_click` press
+/// resolves to the card's `DoubleClickPlay` — `UIWorldListItem.cs:69`/`:99`'s
+/// `OnLeftDoubleClick += PlayGame`, which fires on the second press of the same
+/// element inside 500 ms and is the only double-click user in 1.4.5.8.
 ///
-/// Back/New are checked *before* the cards: `GetElementAt` walks the root's
-/// children in reverse append order (`UIElement.cs:324-334`) — New (`:85`),
-/// Back (`:77`), then the container with the list (`:56`) — so wherever the
-/// rects overlap (the last card's rows run under the fat buttons once the
-/// list scrolls, 6+ worlds) the click is theirs, not the card's. New and Back
-/// are disjoint, so their relative order is cosmetic.
-pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, Option<CardAction>) {
-    if in_rect(mouse, l.new) {
+/// The order is `ui::framework::get_element_at` (`UIElement.cs:324-352`): the
+/// elements are listed in the source's **append** order — the card bodies and
+/// their buttons (`UIWorldListItem.cs:94-158`), then Back (`:77`), then New
+/// (`:85`) — and the reverse walk makes the last-appended element take the
+/// click, so wherever the rects overlap (the last card's rows run under the fat
+/// buttons once the list scrolls, 6+ worlds) it is theirs, not the card's. New
+/// and Back are disjoint, so their relative order is cosmetic; inside a card
+/// the buttons are disjoint too, and they precede the body they sit on.
+pub fn card_hit(
+    l: &Layout,
+    favorites: &[bool],
+    mouse: Vec2,
+    double_click: bool,
+) -> (Option<usize>, Option<CardAction>) {
+    let Some(id) = hit_element(l, favorites, mouse) else {
+        return (None, None);
+    };
+    if id == select_hit::NEW {
         return (None, Some(CardAction::New)); // `NewWorldClick` (`:110-116`)
     }
-    if in_rect(mouse, l.back) {
+    if id == select_hit::BACK {
         return (None, Some(CardAction::Back)); // `GoBackClick` (`:118-122`)
     }
+    let card = ((id - select_hit::CARD_BASE) / select_hit::PARTS) as usize;
+    let part = (id - select_hit::CARD_BASE) % select_hit::PARTS;
+    if part == select_hit::PART_BODY {
+        if double_click {
+            return (Some(card), Some(CardAction::DoubleClickPlay(card)));
+        }
+        return (Some(card), None);
+    }
+    let action = match part {
+        select_hit::PART_PLAY => Some(CardAction::Play(card)),
+        select_hit::PART_FAVORITE => Some(CardAction::ToggleFavorite(card)),
+        select_hit::PART_RENAME => Some(CardAction::Rename(card)),
+        // The favourite-gated delete returns `DeleteBlocked` rather than
+        // nothing (Review Focus 4).
+        _ if favorites.get(card).copied().unwrap_or(false) => Some(CardAction::DeleteBlocked),
+        _ => Some(CardAction::Delete(card)),
+    };
+    (Some(card), action)
+}
+
+/// The screen's flat element list in the C#'s append order — the `UIList`'s
+/// `OverflowHidden` clips the rows past the list bottom, so a clipped row is
+/// not an element at all (the same gate the draw's `break` uses; a row
+/// straddling the edge stays hit, like the draw that still paints it).
+fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
+    let mut out = Vec::with_capacity(favorites.len() * select_hit::PARTS as usize + 2);
     for i in 0..favorites.len() {
-        // The `UIList`'s `OverflowHidden` clips rows past the list bottom, so
-        // a click below it never reaches a card — the same gate the draw's
-        // `break` uses (Task 3/4 review fix; a row straddling the edge stays
-        // hit, like the draw that still paints it).
         let row_top = l.list[1] + i as f32 * CARD_PITCH;
         if row_top >= l.list[1] + l.list[3] {
             break;
         }
         let c = card_layout(l.list, i, false);
-        if !in_rect(mouse, c.card) {
-            continue;
-        }
-        // The buttons are the card's clickable children; the favourite-gated
-        // delete returns `DeleteBlocked` rather than nothing (Review Focus 4).
-        let action = if in_rect(mouse, c.play) {
-            Some(CardAction::Play(i))
-        } else if in_rect(mouse, c.favorite) {
-            Some(CardAction::ToggleFavorite(i))
-        } else if in_rect(mouse, c.rename) {
-            Some(CardAction::Rename(i))
-        } else if in_rect(mouse, c.delete) {
-            Some(if favorites[i] {
-                CardAction::DeleteBlocked
-            } else {
-                CardAction::Delete(i)
-            })
-        } else {
-            None
-        };
-        return (Some(i), action);
+        // The body first: the buttons are the card's appended children
+        // (`UIWorldListItem.cs:94-158`), so the reverse walk tests them before
+        // the panel they sit on.
+        out.push(super::framework::Element::hit(
+            c.card,
+            select_hit::card_part(i, select_hit::PART_BODY),
+        ));
+        out.push(super::framework::Element::hit(
+            c.play,
+            select_hit::card_part(i, select_hit::PART_PLAY),
+        ));
+        out.push(super::framework::Element::hit(
+            c.favorite,
+            select_hit::card_part(i, select_hit::PART_FAVORITE),
+        ));
+        out.push(super::framework::Element::hit(
+            c.rename,
+            select_hit::card_part(i, select_hit::PART_RENAME),
+        ));
+        out.push(super::framework::Element::hit(
+            c.delete,
+            select_hit::card_part(i, select_hit::PART_DELETE),
+        ));
     }
-    (None, None)
+    out.push(super::framework::Element::hit(l.back, select_hit::BACK));
+    out.push(super::framework::Element::hit(l.new, select_hit::NEW));
+    out
+}
+
+/// The element under the pointer — `UIElement.GetElementAt` (`:324-352`).
+pub fn hit_element(l: &Layout, favorites: &[bool], mouse: Vec2) -> Option<u32> {
+    super::framework::get_element_at(&elements(l, favorites), mouse)
 }
 
 /// The flat form of [`card_hit`]: just the action, if any.
 pub fn hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> Option<CardAction> {
-    card_hit(l, favorites, mouse).1
+    card_hit(l, favorites, mouse, false).1
 }
 
 // --- Draw ------------------------------------------------------------------------
@@ -815,6 +865,10 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn center(r: [f32; 4]) -> Vec2 {
+        Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5)
+    }
     // Test-only pins: the attach branch's two knobs (the draw routes through
     // `resolved_layout`, which folds them in).
     use super::super::char_select::{attach_scrollbar, detached_list_width};
@@ -894,6 +948,36 @@ mod tests {
         assert_eq!(attach_scrollbar(l, false).list[2], 626.0);
         assert_eq!(resolved_layout(SCREEN, 100.0, 5).list[2], 626.0);
         assert_eq!(resolved_layout(SCREEN, 100.0, 6).list[2], 601.0);
+    }
+
+    #[test]
+    fn dw_2_3_a_double_click_on_a_card_body_yields_double_click_play() {
+        // `UIWorldListItem.cs:69`/`:99`: `OnLeftDoubleClick += PlayGame`. The
+        // single-click press of the same body stays a bare selection.
+        let l = resolved_layout(Vec2::new(1600.0, 900.0), 100.0, 7);
+        let favorites = [false; 7];
+        let c0 = card_layout(l.list, 0, false);
+        assert_eq!(card_hit(&l, &favorites, center(c0.card), false), (Some(0), None));
+        assert_eq!(
+            card_hit(&l, &favorites, center(c0.card), true),
+            (Some(0), Some(CardAction::DoubleClickPlay(0)))
+        );
+    }
+
+    #[test]
+    fn dw_2_3_the_fat_buttons_do_not_double_click_into_play() {
+        // The double-click arm is a card-body handler; a second press on `New`
+        // or `Back` stays that button's own action.
+        let l = resolved_layout(Vec2::new(1600.0, 900.0), 100.0, 7);
+        let favorites = [false; 7];
+        assert_eq!(
+            card_hit(&l, &favorites, center(l.new), true),
+            (None, Some(CardAction::New))
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, center(l.back), true),
+            (None, Some(CardAction::Back))
+        );
     }
 
     #[test]
@@ -1133,36 +1217,36 @@ mod tests {
         let c1 = card_layout(l.list, 1, false);
         let favorites = [false, true];
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.play)),
+            card_hit(&l, &favorites, center(c0.play), false),
             (Some(0), Some(CardAction::Play(0)))
         );
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.favorite)),
+            card_hit(&l, &favorites, center(c0.favorite), false),
             (Some(0), Some(CardAction::ToggleFavorite(0)))
         );
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.rename)),
+            card_hit(&l, &favorites, center(c0.rename), false),
             (Some(0), Some(CardAction::Rename(0)))
         );
         // Card 0 is not favourited -> the delete click routes to the confirm.
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.delete)),
+            card_hit(&l, &favorites, center(c0.delete), false),
             (Some(0), Some(CardAction::Delete(0)))
         );
         // Card 1 IS favourited -> `DeleteBlocked`, not `Delete` (Review Focus
         // 4: `:151-154` never subscribes the handler).
         assert_eq!(
-            card_hit(&l, &favorites, center(c1.delete)),
+            card_hit(&l, &favorites, center(c1.delete), false),
             (Some(1), Some(CardAction::DeleteBlocked))
         );
         // A card body away from every button: hovered, but no action.
         let body = Vec2::new(c0.name_pos[0] + 30.0, c0.card[1] + 8.0);
-        assert_eq!(card_hit(&l, &favorites, body), (Some(0), None));
+        assert_eq!(card_hit(&l, &favorites, body, false), (Some(0), None));
         // The fat buttons.
-        assert_eq!(card_hit(&l, &favorites, center(l.back)), (None, Some(CardAction::Back)));
-        assert_eq!(card_hit(&l, &favorites, center(l.new)), (None, Some(CardAction::New)));
+        assert_eq!(card_hit(&l, &favorites, center(l.back), false), (None, Some(CardAction::Back)));
+        assert_eq!(card_hit(&l, &favorites, center(l.new), false), (None, Some(CardAction::New)));
         // Off-screen: nothing.
-        assert_eq!(card_hit(&l, &favorites, Vec2::new(10.0, 10.0)), (None, None));
+        assert_eq!(card_hit(&l, &favorites, Vec2::new(10.0, 10.0), false), (None, None));
         // The flat form.
         assert_eq!(hit(&l, &favorites, center(c0.play)), Some(CardAction::Play(0)));
         assert_eq!(hit(&l, &favorites, Vec2::new(10.0, 10.0)), None);
@@ -1185,15 +1269,15 @@ mod tests {
         let p = Vec2::new(550.0, 815.0);
         assert!(in_rect(p, c5.rename));
         assert!(in_rect(p, l.back));
-        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::Back)));
+        assert_eq!(card_hit(&l, &favorites, p, false), (None, Some(CardAction::Back)));
         // Card 5's delete button and New share (1070, 815) — New wins.
         let p = Vec2::new(1070.0, 815.0);
         assert!(in_rect(p, c5.delete));
         assert!(in_rect(p, l.new));
-        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::New)));
+        assert_eq!(card_hit(&l, &favorites, p, false), (None, Some(CardAction::New)));
         // Just above the fat buttons the card still owns the click (a
         // hovered body, no button).
-        assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 800.0)), (Some(5), None));
+        assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 800.0), false), (Some(5), None));
     }
 
     #[test]
@@ -1207,11 +1291,11 @@ mod tests {
         assert_eq!(l.list[1] + l.list[3], 778.0);
         assert_eq!(card_layout(l.list, 6, false).card[1], 838.0, "the phantom row's top");
         assert!(!in_rect(Vec2::new(550.0, 860.0), l.back), "below Back too");
-        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0)), (None, None));
+        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0), false), (None, None));
         // Card 5 straddles the bottom (top 737 < 778) and stays hit — the
         // same rows the draw still paints.
         let favorites = [false; 6];
-        assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 777.0)), (Some(5), None));
+        assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 777.0), false), (Some(5), None));
     }
 
     #[test]

@@ -4,6 +4,7 @@
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod emotes;
+pub mod framework;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
@@ -20,6 +21,7 @@ pub mod pointer;
 pub mod resources;
 pub mod save_list;
 pub mod sliders;
+pub mod select_hit;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
