@@ -733,6 +733,91 @@ fn invasion_warning(app: &mut App) {
 /// `size <= 0` (`SetEventFlagCleared(ref downedGoblins, 0)` + the
 /// progression event 10), the march toward `spawnTileX` by
 /// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
+/// `NPC.cs`'s lunar-tower shield state (`ShieldStrengthTower*`) — the
+/// `WorldGen.cs:86688` raise, `NPC.cs:95247`'s reset and
+/// `ShieldStrengthTowerMax`'s post-Moon-Lord half. The spend side rides
+/// the towers' damage path (the pillar 493/507/517's own machines) — this
+/// driver owns the set/reset lifecycle and the `TowerActive*` liveness.
+pub(crate) fn update_tower_shields(app: &mut App) {
+    let w = &mut app.world;
+    // The reset: all four dead (`NPC.cs:95247-95251`).
+    if w.tower_active_solar == false
+        && w.tower_active_vortex == false
+        && w.tower_active_nebula == false
+        && w.tower_active_stardust == false
+    {
+        w.tower_shield_solar = 0;
+        w.tower_shield_vortex = 0;
+        w.tower_shield_nebula = 0;
+        w.tower_shield_stardust = 0;
+        w.lunar_shield_power_normal = 100;
+    }
+}
+
+/// The pillar-spawn's shield raise: `WorldGen.cs:86688`'s
+/// `ShieldStrengthTowerSolar = (...) = ShieldStrengthTowerMax` — the port's
+/// spawn arms (the tower kinds) call it once each.
+pub(crate) fn raise_tower_shield(world: &mut tr_core::World) {
+    world.tower_shield_solar = tower_shield_max(world);
+    world.tower_shield_vortex = tower_shield_max(world);
+    world.tower_shield_nebula = tower_shield_max(world);
+    world.tower_shield_stardust = tower_shield_max(world);
+    world.tower_active_solar = true;
+    world.tower_active_vortex = true;
+    world.tower_active_nebula = true;
+    world.tower_active_stardust = true;
+}
+
+/// `NPC.ShieldStrengthTowerMax` (`NPC.cs:6795-6806`): the normal power,
+/// halved while the Moon Lord is downed.
+pub(crate) fn tower_shield_max(world: &tr_core::World) -> i32 {
+    if world.downed_moon_lord {
+        world.lunar_shield_power_normal / 2
+    } else {
+        world.lunar_shield_power_normal
+    }
+}
+
+/// The shield's spend: a hit on a shielded tower drains
+/// `ShieldStrengthTower<Kind>` and the `629` damage-pulse fires
+/// (`NPC.cs:79288-79324`). Returns the drained tower's kind index
+/// (0 solar / 1 vortex / 2 nebula / 3 stardust) when the shield absorbed
+/// the hit, or `None` when the tower fights bare.
+pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize, dmg: i32) -> Option<i32> {
+    let strength = match tower {
+        0 => &mut world.tower_shield_solar,
+        1 => &mut world.tower_shield_vortex,
+        2 => &mut world.tower_shield_nebula,
+        _ => &mut world.tower_shield_stardust,
+    };
+    if *strength <= 0 {
+        return None;
+    }
+    *strength -= dmg;
+    if *strength <= 0 {
+        *strength = 0;
+        match tower {
+            0 => {
+                world.tower_active_solar = false;
+                world.downed_tower_solar = true;
+            }
+            1 => {
+                world.tower_active_vortex = false;
+                world.downed_tower_vortex = true;
+            }
+            2 => {
+                world.tower_active_nebula = false;
+                world.downed_tower_nebula = true;
+            }
+            _ => {
+                world.tower_active_stardust = false;
+                world.downed_tower_stardust = true;
+            }
+        }
+    }
+    Some(tower as i32)
+}
+
 pub(crate) fn update_invasion_state(app: &mut App) {
     // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
     // display timer decays per tick, the alpha ramps 0.05 toward it, and
@@ -5291,5 +5376,66 @@ mod cultist_tests {
         }
         w.compute_column_surface();
         w
+    }
+}
+
+#[cfg(test)]
+mod tower_shield_tests {
+    use super::*;
+
+    fn world_with_shields() -> tr_core::World {
+        let mut w = World::new("t".into(), 300, 200);
+        raise_tower_shield(&mut w);
+        w
+    }
+
+    #[test]
+    fn the_raise_sets_all_four_shields() {
+        // `WorldGen.cs:86688`: the spawn raises all four to the max.
+        let w = world_with_shields();
+        assert_eq!(w.tower_shield_solar, 100);
+        assert_eq!(w.tower_shield_vortex, 100);
+        assert_eq!(w.tower_shield_nebula, 100);
+        assert_eq!(w.tower_shield_stardust, 100);
+        assert!(w.tower_active_solar && w.tower_active_stardust);
+    }
+
+    #[test]
+    fn the_absorb_drains_and_flags_the_down() {
+        // `NPC.cs:79288-79324`'s spend: the hit drains the shield; a
+        // drained tower goes inactive + `downedTower*`.
+        let mut w = world_with_shields();
+        assert_eq!(tower_shield_absorb(&mut w, 0, 30), Some(0));
+        assert_eq!(w.tower_shield_solar, 70);
+        assert!(w.tower_active_solar, "the tower still fights");
+        assert_eq!(tower_shield_absorb(&mut w, 0, 70), Some(0));
+        assert!(!w.tower_active_solar, "the tower falls");
+        assert!(w.downed_tower_solar);
+        assert_eq!(tower_shield_absorb(&mut w, 0, 10), None, "the spent shield");
+    }
+
+    #[test]
+    fn the_moon_lord_halves_the_shield_max() {
+        // `NPC.cs:6795-6806`: `ShieldStrengthTowerMax` halves
+        // post-Moon-Lord.
+        let mut w = world_with_shields();
+        w.downed_moon_lord = true;
+        assert_eq!(tower_shield_max(&w), 50);
+    }
+
+    #[test]
+    fn the_reset_zeroes_when_all_towers_fall() {
+        // `NPC.cs:95247-95251`: the reset fires once every tower is down.
+        let mut w = world_with_shields();
+        w.tower_active_solar = false;
+        w.tower_active_vortex = false;
+        w.tower_active_nebula = false;
+        w.tower_active_stardust = false;
+        w.tower_shield_stardust = 40;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = w;
+        update_tower_shields(&mut app);
+        assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
+        assert_eq!(app.world.lunar_shield_power_normal, 100);
     }
 }
