@@ -6301,3 +6301,28 @@ several vanilla details are deliberately not carried:
 - **`alpha` on the whole NPC draw.** `Npc::alpha` (new) tints every NPC
   through `GetAlpha`'s `(255 - alpha)/255`; only the Golem family's
   spawn fades set it today.
+
+## The Deerclops' display (M4-BOSS-24)
+
+- **The sheet is a grid, not a column.** `DrawNPCDirect_Deerclops` decodes
+  `npc.frame` as a 5x5 cell index (`cell / 5` column, `cell % 5` row) over
+  the 1090x1200 sheet's 218x240 cells drawn 220x242 (`Utils.Frame`'s +2/+2
+  size offsets, `Main.cs:26338`). `Main.npcFrameCount[668] = 8` only feeds
+  `SetFrameSize` and the dead `DrawNPCDirect_DeerclopsLeg`; the live draw
+  never uses it. The C#'s `frame.Width = 180` write is vestigial.
+- **The flip is inverted vs the generic NPCs.** The vanilla passes
+  `npcSpriteEffect ^ FlipHorizontally`, cancelling the generic
+  `spriteDirection == 1` flip — the sheet faces RIGHT by default, so the
+  port flips on `facing < 0` (the generic path keeps `facing > 0`).
+- **The anchor.** The cell is drawn at the NPC's Bottom with the origin
+  (106, 238) (or (114, 238) flipped): the cell's centre sits 4 px against
+  the facing direction and its bottom 4 px below the hitbox — the
+  `origin.Y -= 4` sink of the vanilla's art.
+- **The damage/phase overlays not carried.** The `localAI[3]` red shake
+  copies and the ai[0]==7/8 purple ghosts (`Main.cs:26366-26404`) read
+  `Main.GlobalTimeWrappedHourly` — wall-clock, so they cannot ride the
+  port's deterministic frame cache. The port's `hurt_cd` tint covers the
+  flash; the sequence cells are the visible part.
+- **The step sounds.** `FindFrame` case 668 plays `SoundID.DeerclopsStep`
+  at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
+  audio access, so the cue rides the follow-up like the other NPC steps.
