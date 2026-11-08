@@ -264,6 +264,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Deerclops => &[],
         NpcKind::SkeletronHand => &[],
         NpcKind::WallOfFleshEye => &[],
+        NpcKind::PrimeCannon => &[],
+        NpcKind::PrimeSaw => &[],
+        NpcKind::PrimeVice => &[],
+        NpcKind::PrimeLaser => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

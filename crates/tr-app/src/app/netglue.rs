@@ -1294,6 +1294,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Deerclops
         | crate::npc::NpcKind::SkeletronHand
         | crate::npc::NpcKind::WallOfFleshEye
+        | crate::npc::NpcKind::PrimeCannon
+        | crate::npc::NpcKind::PrimeSaw
+        | crate::npc::NpcKind::PrimeVice
+        | crate::npc::NpcKind::PrimeLaser
         | crate::npc::NpcKind::Creeper => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

@@ -452,6 +452,10 @@ fn portrait_data(
         NpcKind::Deerclops => 75,            // NPC_668
         NpcKind::SkeletronHand => 76,        // NPC_36
         NpcKind::WallOfFleshEye => 77,       // NPC_114
+        NpcKind::PrimeCannon => 82,          // NPC_128
+        NpcKind::PrimeSaw => 83,             // NPC_129
+        NpcKind::PrimeVice => 84,            // NPC_130
+        NpcKind::PrimeLaser => 85,           // NPC_131
         NpcKind::BrainScrambler => 78,       // NPC_381
         NpcKind::RayGunner => 79,            // NPC_382
         NpcKind::ScutlixRider => 80,         // NPC_390
@@ -473,7 +477,7 @@ fn portrait_data(
         NpcKind::DD2JavelinT3 => 96,         // NPC_563
         NpcKind::DD2SkeletonT1 => 97,        // NPC_566
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
-        NpcKind::DD2DarkMage => 99,       // NPC_564
+        NpcKind::DD2DarkMage => 99,          // NPC_564
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -485,6 +489,10 @@ fn portrait_data(
         (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::SkeletronHand, _) => (sheet_i, 52.0, 52.0, 52.0, white),
         (NpcKind::WallOfFleshEye, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        (NpcKind::PrimeCannon, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeSaw, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeVice, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeLaser, _) => (sheet_i, 52.0, 52.0, 52.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
