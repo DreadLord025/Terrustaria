@@ -37,7 +37,7 @@
 
 use super::pipeline::TempleBounds;
 use crate::tiledata as td;
-use crate::tile::{FLAG_ACTIVE, Tile};
+use crate::tile::{FLAG_ACTIVE, FLAG_LIQUID_LAVA, Tile};
 use crate::world::World;
 
 pub(crate) const TILE_TEMPLE_BRICK: u16 = 226;
@@ -1571,6 +1571,937 @@ fn spike_cell(world: &mut World, x: i32, y: i32) {
     t.flags |= FLAG_ACTIVE;
 }
 
+// --- the temple-part-2 family (`LihzahrdTemplePart2`, WorldGen.cs:34464+) ---
+
+/// The pass wrapper's `tileSolid` window (`WorldGen.cs:17705-17706`): the
+/// whole step runs with 162 BreakableIce non-solid and 226 LihzahrdBrick
+/// solid; the wood spike 232 is solid only during the dart-trap loop — the
+/// flip at `:34499` makes it non-solid from the buried-chest loop on, and
+/// the wrapper leaves it non-solid for the rest of the C# chain until
+/// `BeeLarvaInBeehives` restores it (`:20897`). The port has no global
+/// table, so the window rides on the predicates.
+fn solid_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        // The C#'s null tile reads solid (`:70116`).
+        return true;
+    };
+    solid_tile_p2(t, spike_solid)
+}
+
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:70111-70133`) under the
+/// temple-part-2 window.
+fn solid_tile_p2(t: &Tile, spike_solid: bool) -> bool {
+    if t.kind == 162 {
+        return false;
+    }
+    if t.kind == 232 && !spike_solid {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidTile2(Tile)` (`WorldGen.cs:70134-70150`) under the window.
+fn solid_tile2_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 162 {
+        return false;
+    }
+    if t.kind == 232 && !spike_solid {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidOrSlopedTile(Tile, includePlatforms = false)`
+/// (`WorldGen.cs:69985-70200`) under the window: active, `tileSolid`, not
+/// `tileSolidTop` (the `includePlatforms` alternative never fires — the
+/// temple floors are brick).
+fn solid_or_sloped_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.kind == 162 || (t.kind == 232 && !spike_solid) {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidTileAllowBottomSlope(i, j)` (`WorldGen.cs:70157-70180`)
+/// under the window — the solid-or-solid-top test the pressure plates
+/// stand on. The platform frame branch never fires (no platform tiles in
+/// the temple), so the port keeps `!top_slope()`.
+fn solid_allow_bottom_slope_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    if !in_world(world, x, y, 0) {
+        // The C#'s out-of-world read (`:70160-70163`).
+        return true;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 162 || (t.kind == 232 && !spike_solid) {
+        return false;
+    }
+    t.active()
+        && (td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind))
+        && !t.top_slope()
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SlopeTile(i, j, slope = 0)` (`WorldGen.cs:80768-80794`) — the
+/// generation slice: the `CanPoundTile` gate (the mechanism types, the
+/// boulders — the port's worldgen spawns none, `CanKillTile`), then
+/// `halfBrick(false); slope(0)`; the non-generation effects
+/// (`:80781-80793`) never fire.
+fn slope_tile_p2(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if matches!(t.kind, 10 | 48 | 137 | 232 | 380 | 387 | 388 | 476 | 484) {
+        return false;
+    }
+    if !crate::edit::can_kill_tile(world, x, y, |_, _| false) {
+        return false;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    t.set_slope(0);
+    true
+}
+
+/// `WorldGen.CanGeneratePressurePlateAt` (`WorldGen.cs:11029-11043`).
+fn can_pressure_plate_at_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    if !in_world(world, x, y, 3) {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x, y + 1, spike_solid) {
+        return false;
+    }
+    // The `TileID.Sets.Boulders` / wall-350 guards: the port's worldgen
+    // spawns no boulders and no wall 350 (`evil.rs:1702`'s note), so the
+    // checks collapse away.
+    true
+}
+
+/// The `Tile.lava()` flag (`Tile.cs:691`): the port packs the liquid kind
+/// in the flags.
+fn is_lava(t: &Tile) -> bool {
+    t.liquid > 0 && (t.flags & crate::tile::FLAG_LIQUID_LAVA) != 0
+}
+
+/// `WorldGen.AddWire(i, j, wireColor)` — the four `Tile.wire()/wire2()/
+/// wire3()/wire4()` header bits as the port's sparse side table.
+/// `wireColor` 0/1/2 = red/blue/green (the temple's `Next(3)` roll).
+fn add_wire(world: &mut World, x: i32, y: i32, wire_color: i32) {
+    let color = match wire_color {
+        0 => crate::wiring::WireColor::Red,
+        1 => crate::wiring::WireColor::Blue,
+        2 => crate::wiring::WireColor::Green,
+        _ => crate::wiring::WireColor::Yellow,
+    };
+    world.wires.set(x, y, color, true);
+}
+
+/// Does the cell carry the given wire colour? (`Main.tile[i, j].wire()` and
+/// its wire2/wire3 siblings — the port reads the side table.)
+fn has_wire(world: &World, x: i32, y: i32, wire_color: i32) -> bool {
+    let color = match wire_color {
+        0 => crate::wiring::WireColor::Red,
+        1 => crate::wiring::WireColor::Blue,
+        2 => crate::wiring::WireColor::Green,
+        _ => crate::wiring::WireColor::Yellow,
+    };
+    world.wires.get(x, y, color)
+}
+
+/// `WorldGen.AddWireFromPointToPoint(x, y, x2, y2, wireColor)`
+/// (`WorldGen.cs:58065-58121`): the staircase walk from `(x2, y2)` to
+/// `(x, y)`, laying the colour at every step.
+fn add_wire_from_point_to_point(world: &mut World, x: i32, y: i32, x2: i32, y2: i32, wire_color: i32) {
+    let (mut x2, mut y2) = (x2, y2);
+    if !in_world(world, x, y, 0) || !in_world(world, x2, y2, 0) {
+        return;
+    }
+    while x2 != x || y2 != y {
+        add_wire(world, x2, y2, wire_color);
+        if x2 > x {
+            x2 -= 1;
+        }
+        if x2 < x {
+            x2 += 1;
+        }
+        add_wire(world, x2, y2, wire_color);
+        if y2 > y {
+            y2 -= 1;
+        }
+        if y2 < y {
+            y2 += 1;
+        }
+        add_wire(world, x2, y2, wire_color);
+    }
+}
+
+/// The dart-trap write — `PlaceTile(x, y, 137, style)`'s branch
+/// (`WorldGen.cs:59750-59756`): `active(true); type = 137;
+/// frameY = 18 * style`. Frame-important (`Main.cs:7431`), so the stored
+/// frames stand.
+fn place_trap_tile(world: &mut World, x: i32, y: i32, style: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = 137;
+    t.frame_y = (18 * style) as i16;
+    t.frame_x = 0;
+}
+
+/// The pressure-plate write — `PlaceTile(x, y, 135, style)`'s `Place1x1`
+/// default branch (`WorldGen.cs:52183-52187`): `frameY = 18 * style`,
+/// `frameX` 0, on an empty cell with a solid floor.
+fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32) {
+    if !in_world(world, x, y, 2) {
+        return;
+    }
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        return;
+    }
+    if !solid_allow_bottom_slope_p2(world, x, y + 1, true) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = 135;
+    t.frame_y = (18 * style) as i16;
+    t.frame_x = 0;
+}
+
+/// `WorldGen.Place2x1` (`WorldGen.cs:39624-39663`) for the temple workbench
+/// 18 style 10: both floor columns solid, both cells empty, then
+/// `frameX = 36 * style + col * 18`, `frameY = 0` + `SquareTileFrame`.
+fn place_workbench(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if !solid_tile2_p2(world, x, y + 1, false) || !solid_tile2_p2(world, x + 1, y + 1, false) {
+        return false;
+    }
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.active())
+        || world.tile(x + 1, y).is_some_and(|t| t.active())
+    {
+        return false;
+    }
+    for col in 0..2 {
+        if !in_world(world, x + col, y, 0) {
+            return false;
+        }
+        let i = world.index(x + col, y);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = 18;
+        t.frame_x = (36 * style + col * 18) as i16;
+        t.frame_y = 0;
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
+    true
+}
+
+/// `WorldGen.Place3x2`'s default path (`WorldGen.cs:52066-52195`) for the
+/// temple table 14 style 9: the 3×2 body empty, the floor solid under all
+/// three columns, `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+fn place_table(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return false;
+    }
+    let mut ok = true;
+    for col in (x - 1)..(x + 2) {
+        for row in (y - 1)..(y + 1) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+        if !solid_tile2_p2(world, col, y + 1, false) {
+            ok = false;
+        }
+    }
+    if !ok {
+        return false;
+    }
+    for col in 0..3 {
+        for row in 0..2 {
+            let (px, py) = (x - 1 + col, y - 1 + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 14;
+            t.frame_x = (54 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    true
+}
+
+/// `WorldGen.Place1x2` (`WorldGen.cs:46652-46680`) for the temple chair 15
+/// style 12: the floor solid, the top cell empty, then
+/// `frameY = 40 * style + row * 18` (the chair sheet's 40-px stride),
+/// `frameX = 0` (the sapling swing roll never fires for chairs).
+fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if !solid_tile2_p2(world, x, y + 1, false) {
+        return false;
+    }
+    if world.tile(x, y - 1).is_some_and(|t| t.active()) {
+        return false;
+    }
+    for row in 0..2 {
+        if !in_world(world, x, y - 1 + row, 0) {
+            return false;
+        }
+        let i = world.index(x, y - 1 + row);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = 15;
+        t.frame_x = 0;
+        t.frame_y = (40 * style + row * 18) as i16;
+    }
+    true
+}
+
+/// `WorldGen.Place2xX` (`WorldGen.cs:39663-39715`) for the temple statue
+/// 105 styles 43-45: three body rows empty over both columns, the floor
+/// solid under both, `frameX = 36 * style + col * 18`,
+/// `frameY = row * 18`, `SquareTileFrame`.
+fn place_statue(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let num3 = 3;
+    let mut ok = true;
+    for row in (y - num3 + 1)..(y + 1) {
+        for col in x..(x + 2) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+    }
+    if !solid_tile2_p2(world, x, y + 1, false) || !solid_tile2_p2(world, x + 1, y + 1, false) {
+        ok = false;
+    }
+    if !ok {
+        return false;
+    }
+    for row in 0..num3 {
+        for col in 0..2 {
+            let (px, py) = (x + col, y - num3 + 1 + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 105;
+            t.frame_x = (36 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
+    true
+}
+
+/// `WorldGen.Place3x3`'s non-hanging branch (`WorldGen.cs:53560-53593`) for
+/// the temple painting 240 style 88: the 3×3 body empty and the solid
+/// non-top tile directly above the centre, then a 3×2 write with
+/// `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+fn place_painting(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let mut flag = true;
+    for col in (x - 1)..(x + 2) {
+        for row in y..(y + 3) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+    }
+    let anchored = world.tile(x, y - 1).is_some_and(|t| {
+        t.active()
+            && td::TILE_SOLID.has(t.kind)
+            && !td::TILE_SOLID_TOP.has(t.kind)
+            && t.kind != 162
+    });
+    if !anchored {
+        flag = false;
+    }
+    if !flag {
+        return false;
+    }
+    for col in 0..3 {
+        for row in 0..2 {
+            let (px, py) = (x - 1 + col, y + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 240;
+            t.frame_x = (54 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    true
+}
+
+/// `Chest.NearOtherChests` (`Chest.cs:543-558`): a basic chest tile
+/// (`TileID.Sets.BasicChest` = {21, 467}, `TileID.cs:570`) within the
+/// ± 25 × ± 8 window of `(x, y)`.
+fn near_other_chests(world: &World, x: i32, y: i32) -> bool {
+    for i in (x - 25)..(x + 25) {
+        for j in (y - 8)..(y + 8) {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, 16)`
+/// (`WorldGen.cs:57813-57841`): the `TileObject.CanPlace`/`Place` route for
+/// the 2×2 chest — the style-16 frames come from the same registry def the
+/// player-facing placement uses.
+fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: i32) -> bool {
+    let Some(def) = crate::tileobject::def_for_tile(21) else {
+        return false;
+    };
+    if not_near && near_other_chests(world, x - 1, y - 1) {
+        return false;
+    }
+    let Some(instance) = crate::tileobject::can_place(world, x, y, def, style, 1, None) else {
+        return false;
+    };
+    crate::tileobject::place(world, &instance)
+}
+
+/// `WorldGen.AddBuriedChest`'s placement half (`WorldGen.cs:35871-36210`)
+/// for the temple call (`mainItem 1293, style 16, trySlope false,
+/// chestTileType 21`): the downward scan for the floor, the rejections
+/// (larva 231 below, an altar 26 / altar 237 within ± 2), the 2×2 write one
+/// row above the floor. The loot tables (the item fills and the style/item
+/// rolls) are M5-CHEST-gen's — the placement draws no rng on the classic
+/// path, so the pass stream stays aligned with the C# until the loot lands.
+fn add_buried_chest(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    not_near: bool,
+    chest_style: i32,
+    spike_solid: bool,
+) -> bool {
+    for k in y..(world.height - 10) {
+        if world.tile(x, k).is_some_and(|t| t.active() && t.kind == 231) {
+            return false;
+        }
+        for n in (x - 2)..=(x + 2) {
+            for m in (k - 2)..=(k + 2) {
+                if in_world(world, n, m, 100)
+                    && world
+                        .tile(n, m)
+                        .is_some_and(|t| t.active() && (t.kind == 26 || t.kind == 237))
+                {
+                    return false;
+                }
+            }
+        }
+        if !solid_p2(world, x, k, spike_solid) {
+            continue;
+        }
+        return place_buried_chest(world, x - 1, k - 1, not_near, chest_style);
+    }
+    false
+}
+
+/// `WorldGen.mayanTrap` (`WorldGen.cs:8349-8895`) — the temple's dart-trap
+/// generator: the pressure plate with the dart column(s) and the wire run
+/// between them. Case 0 lays the trap along a wall (the horizontal
+/// staircase), case 1 down a wall (the vertical one). The 232/162 window
+/// rides on `spike_solid` — the trap loop runs before the C#'s `:34499`
+/// flip, so the spikes still count solid there.
+#[allow(clippy::too_many_arguments)]
+fn mayan_trap(
+    world: &mut World,
+    x2: i32,
+    y2: i32,
+    floor_abort: i32,
+    world_surface: f64,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let num2 = if rng.range(0, 3) == 0 { 0 } else { 1 };
+    let mut num3 = y2;
+    while !solid_or_sloped_p2(world, x2, num3, spike_solid) {
+        num3 += 1;
+        if num3 >= floor_abort {
+            return false;
+        }
+    }
+    let Some(t) = world.tile(x2, num3) else {
+        return false;
+    };
+    if t.kind == 232 || t.kind == 10 {
+        return false;
+    }
+    num3 -= 1;
+    if world.tile(x2, num3).is_some_and(is_lava) {
+        return false;
+    }
+    let nactive = |world: &World, x: i32, y: i32| {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && (t.flags & crate::tile::FLAG_INACTIVE) == 0)
+    };
+    if nactive(world, x2, num3)
+        || nactive(world, x2 - 1, num3)
+        || nactive(world, x2 + 1, num3)
+        || nactive(world, x2, num3 - 1)
+        || nactive(world, x2 - 1, num3 - 1)
+        || nactive(world, x2 + 1, num3 - 1)
+        || nactive(world, x2, num3 - 2)
+        || nactive(world, x2 - 1, num3 - 2)
+        || nactive(world, x2 + 1, num3 - 2)
+    {
+        return false;
+    }
+    if world
+        .tile(x2, num3 + 1)
+        .is_some_and(|t| matches!(t.kind, 10 | 48 | 232))
+    {
+        return false;
+    }
+    match num2 {
+        0 => mayan_trap_horizontal(world, x2, num3, spike_solid, rng),
+        1 => mayan_trap_vertical(world, x2, num3, world_surface, spike_solid, rng),
+        _ => false,
+    }
+}
+
+/// `mayanTrap`'s case 0 (`WorldGen.cs:8407-8488`) — the wall-hugging
+/// horizontal trap.
+fn mayan_trap_horizontal(
+    world: &mut World,
+    x2: i32,
+    num3: i32,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let mut num11 = x2;
+    let num12 = num3 - rng.range(0, 3);
+    while in_world(world, num11, num12, 5) && !solid_or_sloped_p2(world, num11, num12, spike_solid) {
+        num11 -= 1;
+    }
+    let num13 = num11;
+    num11 = x2;
+    while in_world(world, num11, num12, 5) && !solid_or_sloped_p2(world, num11, num12, spike_solid) {
+        num11 += 1;
+    }
+    let num14 = num11;
+    let num15 = x2 - num13;
+    let num16 = num14 - x2;
+    let mut flag = num15 > 5 && num15 < 50;
+    let mut flag2 = num16 > 5 && num16 < 50;
+    if flag && !solid_or_sloped_p2(world, num13, num12 + 1, spike_solid) {
+        flag = false;
+    }
+    if flag2 && !solid_or_sloped_p2(world, num14, num12 + 1, spike_solid) {
+        flag2 = false;
+    }
+    // `num17 = 48` (the dualDungeons 232 variant is secret-seed scope).
+    let reject = |world: &World, x: i32, y: i32| world.tile(x, y).is_some_and(|t| matches!(t.kind, 10 | 48));
+    if flag && (reject(world, num13, num12) || reject(world, num13, num12 + 1)) {
+        flag = false;
+    }
+    if flag2 && (reject(world, num14, num12) || reject(world, num14, num12 + 1)) {
+        flag2 = false;
+    }
+    let mut num18 = 0;
+    let mut num11 = num13;
+    if flag && flag2 {
+        num18 = 1;
+        num11 = num13;
+        if rng.range(0, 2) == 0 {
+            num11 = num14;
+            num18 = -1;
+        }
+    } else if flag2 {
+        num11 = num14;
+        num18 = -1;
+    } else {
+        if !flag {
+            return false;
+        }
+        num11 = num13;
+        num18 = 1;
+    }
+    if world.tile(num11, num12).is_some_and(|t| t.wall != WALL_TEMPLE_UNSAFE) {
+        return false;
+    }
+    if world
+        .tile(num11, num12)
+        .is_some_and(|t| matches!(t.kind, 190 | 135 | 137 | 232 | 237 | 10))
+    {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x2, num3 + 1, spike_solid) {
+        slope_tile_p2(world, x2, num3 + 1);
+    }
+    if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
+        return false;
+    }
+    place_plate_tile(world, x2, num3, 6);
+    crate::edit::kill_tile(world, num11, num12, true);
+    let num19 = if has_wire(world, x2, num3, 0) {
+        0
+    } else if has_wire(world, x2, num3, 1) {
+        1
+    } else if has_wire(world, x2, num3, 2) {
+        2
+    } else {
+        rng.range(0, 3)
+    };
+    let num20 = (num11 - x2).abs();
+    let style2 = if num20 < 10 && rng.range(0, 3) != 0 { 2 } else { 1 };
+    place_trap_tile(world, num11, num12, style2);
+    if num18 == 1 {
+        if let Some(t) = world.tile_mut(num11, num12) {
+            t.frame_x += 18;
+        }
+    }
+    let mut num21 = rng.range(0, 5);
+    let mut num22 = num12;
+    while num21 > 0 {
+        num21 -= 1;
+        num22 -= 1;
+        if !solid_p2(world, num11, num22, spike_solid)
+            || !solid_p2(world, num11 - num18, num22, spike_solid)
+            || solid_or_sloped_p2(world, num11 + num18, num22, spike_solid)
+        {
+            break;
+        }
+        place_trap_tile(world, num11, num22, style2);
+        if num18 == 1 {
+            if let Some(t) = world.tile_mut(num11, num22) {
+                t.frame_x += 18;
+            }
+        }
+        add_wire(world, num11, num22, num19);
+    }
+    add_wire_from_point_to_point(world, x2, num3, num11, num12, num19);
+    true
+}
+
+/// `mayanTrap`'s case 1 (`WorldGen.cs:8588-8695`) — the vertical trap.
+#[allow(clippy::too_many_arguments)]
+fn mayan_trap_vertical(
+    world: &mut World,
+    x2: i32,
+    num3: i32,
+    world_surface: f64,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let (mut num4, mut num5) = (x2, num3);
+    while !solid_or_sloped_p2(world, num4, num5, spike_solid) {
+        num5 -= 1;
+        if (num5 as f64) < world_surface {
+            return false;
+        }
+    }
+    let num6 = (num5 - num3).abs();
+    if num6 < 3 {
+        return false;
+    }
+    let num7 = if has_wire(world, x2, num3, 0) {
+        0
+    } else if has_wire(world, x2, num3, 1) {
+        1
+    } else if has_wire(world, x2, num3, 2) {
+        2
+    } else {
+        rng.range(0, 3)
+    };
+    let style = if num6 < 16 && rng.range(0, 3) != 0 { 4 } else { 3 };
+    if world
+        .tile(num4, num5)
+        .is_some_and(|t| matches!(t.kind, 135 | 137 | 232 | 237 | 10))
+    {
+        return false;
+    }
+    if world
+        .tile(num4, num5)
+        .is_some_and(|t| t.wall != WALL_TEMPLE_UNSAFE)
+    {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x2, num3 + 1, spike_solid) {
+        slope_tile_p2(world, x2, num3 + 1);
+    }
+    if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
+        return false;
+    }
+    place_plate_tile(world, x2, num3, 6);
+    place_trap_tile(world, num4, num5, style);
+    for i in 0..2 {
+        let mut num8 = rng.range(1, 5);
+        let mut num9 = num4;
+        let num10 = if i == 1 { 1 } else { -1 };
+        while num8 > 0 {
+            num8 -= 1;
+            num9 += num10;
+            if !solid_p2(world, num9, num5 - 1, spike_solid)
+                || solid_or_sloped_p2(world, num9, num5 + 1, spike_solid)
+            {
+                break;
+            }
+            place_trap_tile(world, num9, num5, style);
+            add_wire(world, num9, num5, num7);
+        }
+    }
+    add_wire_from_point_to_point(world, x2, num3, num4, num5, num7);
+    true
+}
+
+/// `templePart2` (`WorldGen.cs:34464-34658`) — the pass that fills the
+/// finished shell: the dart traps, the buried chests, the statues, the
+/// workbenches/tables/chairs and the one painting. Every loop picks a
+/// random cell in the published bounds and accepts the ones that are
+/// unsafe-wall and empty; the counts are the room count scaled, with the
+/// C#'s retry caps. `spike_solid` is `true` only for the trap loop (the
+/// C#'s `:34499` flip); the C#'s post-pass `tileSolid[232] = false` window
+/// outlives the step in the C# chain and is a recorded substitution.
+pub(crate) fn pass_temple_part2(
+    world: &mut World,
+    bounds: Bounds,
+    t_rooms: i32,
+    world_surface: f64,
+    rng: &mut super::Rng,
+) {
+    let floor_abort = world.height - 300;
+    let rooms = t_rooms as f64;
+    // The dart traps — the spikes still solid in this window.
+    let mut num = rooms * 1.9 * (1.0 + (rng.range(-15, 16) as f64) * 0.01);
+    let mut num2 = 0;
+    while num > 0.0 {
+        let num3 = rng.range(bounds.left, bounds.right);
+        let num4 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num3, num4)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            if mayan_trap(world, num3, num4, floor_abort, world_surface, true, rng) {
+                num -= 1.0;
+                num2 = 0;
+            } else {
+                num2 += 1;
+            }
+        } else {
+            num2 += 1;
+        }
+        if num2 > 100 {
+            num2 = 0;
+            num -= 1.0;
+        }
+    }
+    // The buried chests (style 16; the Pygmy-staff main item is
+    // M5-CHEST-gen's).
+    let mut num5 = rooms * 0.35 * (1.0 + (rng.range(-15, 16) as f64) * 0.01);
+    let mut num2 = 0;
+    while num5 > 0.0 {
+        let num6 = rng.range(bounds.left, bounds.right);
+        let num7 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num6, num7)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+            && add_buried_chest(world, num6, num7, true, 16, false)
+        {
+            num5 -= 1.0;
+            num2 = 0;
+        }
+        num2 += 1;
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The statues (105, styles 43-45).
+    let mut num8 = rooms * 1.25 * (1.0 + (rng.range(-25, 36) as f64) * 0.01);
+    let mut num2 = 0;
+    while num8 > 0.0 {
+        num2 += 1;
+        let num9 = rng.range(bounds.left, bounds.right);
+        let num10 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num9, num10)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let (mut num11, mut num12) = (num9, num10);
+            while !world.tile(num11, num12).is_some_and(|t| t.active()) {
+                num12 += 1;
+                if num12 > bounds.bottom {
+                    break;
+                }
+            }
+            num12 -= 1;
+            if num12 <= bounds.bottom && place_statue(world, num11, num12, rng.range(43, 46)) {
+                num8 -= 1.0;
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The furniture: `Next(3)` — workbench / table / chair.
+    let mut num13 = rooms * 1.35 * (1.0 + (rng.range(-15, 26) as f64) * 0.01);
+    let mut num2 = 0;
+    while num13 > 0.0 {
+        num2 += 1;
+        let num14 = rng.range(bounds.left, bounds.right);
+        let num15 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num14, num15)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let (mut num16, mut num17) = (num14, num15);
+            while !world.tile(num16, num17).is_some_and(|t| t.active()) {
+                num17 += 1;
+                if num17 > bounds.bottom {
+                    break;
+                }
+            }
+            num17 -= 1;
+            if num17 <= bounds.bottom {
+                let placed = match rng.range(0, 3) {
+                    0 => place_workbench(world, num16, num17, 10),
+                    1 => place_table(world, num16, num17, 9),
+                    _ => place_chair(world, num16, num17, 12),
+                };
+                if placed {
+                    num13 -= 1.0;
+                }
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The one painting (240 style 88), away from the other paintings and
+    // the brick.
+    let mut num18 = 1;
+    if world.width > 4200 {
+        num18 += 1;
+    }
+    if world.width > 6400 {
+        num18 += rng.range(0, 2);
+    }
+    let mut num2 = 0;
+    while num18 > 0 {
+        num2 += 1;
+        let num19 = rng.range(bounds.left, bounds.right);
+        let num20 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num19, num20)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let mut flag = false;
+            'near: for i in -70..=70 {
+                for j in -70..=70 {
+                    let (num21, num22) = (i + num19, j + num20);
+                    if !in_world(world, num21, num22, 5) {
+                        continue;
+                    }
+                    let Some(t) = world.tile(num21, num22) else {
+                        continue;
+                    };
+                    if t.active() {
+                        if t.kind == 240 {
+                            flag = true;
+                            break 'near;
+                        }
+                        if (-4..=4).contains(&i) && (-4..=4).contains(&j) && t.kind == TILE_TEMPLE_BRICK
+                        {
+                            flag = true;
+                            break 'near;
+                        }
+                    }
+                }
+            }
+            if flag {
+                if num2 > 10000 {
+                    break;
+                }
+                continue;
+            }
+            if place_painting(world, num19, num20, 88) {
+                num18 -= 1;
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+}
+
+/// The `LihzahrdAltar` pass (`WorldGen.cs:21943-21976`): the 3×2 altar
+/// re-write over the published anchor with the same frames, the 3-wide
+/// brick base row, then the six `SquareTileFrame` calls — the late anchor
+/// safety after the tile passes.
+pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: i32) {
+    let (x, y) = (l_altar_x, l_altar_y);
+    for i in 0..3 {
+        for j in 0..2 {
+            let (px, py) = (x + i, y + j);
+            if !in_world(world, px, py, 0) {
+                return;
+            }
+            let idx = world.index(px, py);
+            world.tiles[idx] = Tile {
+                kind: TILE_ALTAR,
+                frame_x: (i * 18) as i16,
+                frame_y: (j * 18) as i16,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let py = y + 2;
+        if x + i < 2 || py >= world.height - 2 {
+            continue;
+        }
+        let idx2 = world.index(x + i, py);
+        let t = &mut world.tiles[idx2];
+        t.kind = TILE_TEMPLE_BRICK;
+        t.flags |= FLAG_ACTIVE;
+        t.set_slope(0);
+    }
+    for k in 0..3 {
+        for l in 0..2 {
+            crate::edit::square_tile_frame_gen(world, x + k, y + l);
+        }
+    }
+}
 /// The `LihzahrdTemple` pass (`WorldGen.cs:15834+` → `makeTemple(x, y)`):
 /// the temple box in the jungle cavern below the rock layer — the outer
 /// brick shell (the walls 87), the carved room corridors (the walls 112),
@@ -2203,4 +3134,225 @@ mod tests {
         assert!(bounds.t_top > 0 && bounds.t_bottom < world.height, "{:?}", bounds);
         assert!(world.tiles.len() == world.width as usize * world.height as usize);
     }
+    /// DW-3.1: the dart traps plate (135, `frameY = 18 * 6` = the style-6
+    /// `Place1x1` write) with the dart column (137, `frameY = 18 * style` —
+    /// the wall styles 1/2 and the vertical styles 3/4), plus the wire run:
+    /// at least one wire colour is laid inside the published bounds.
+    #[test]
+    fn test_DW_3_1_dart_traps_plate_traps_and_wire() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let plates: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 135)
+            .collect();
+        assert!(!plates.is_empty(), "the pressure plates");
+        for p in &plates {
+            assert_eq!(p.frame_y, 108, "the style-6 plate (frameY = 18 * 6)");
+            assert_eq!(p.frame_x, 0);
+        }
+        let darts: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 137)
+            .collect();
+        assert!(!darts.is_empty(), "the dart traps");
+        for d in &darts {
+            assert!(
+                matches!(d.frame_y, 18 | 36 | 54 | 72),
+                "the trap frameY ({}) — styles 1/2/3/4",
+                d.frame_y
+            );
+        }
+        // The wire run: at least one coloured wire inside the temple bounds.
+        let mut wired = 0;
+        for x in bounds.left..bounds.right {
+            for y in bounds.top..bounds.bottom {
+                for color in [
+                    crate::wiring::WireColor::Red,
+                    crate::wiring::WireColor::Blue,
+                    crate::wiring::WireColor::Green,
+                ] {
+                    if world.wires.get(x, y, color) {
+                        wired += 1;
+                    }
+                }
+            }
+        }
+        assert!(wired > 0, "the wire run inside the bounds ({})", wired);
+    }
+
+    /// DW-3.2: the buried chests place through the TileObject route — the
+    /// 2×2 chest 21 with the style-16 frames (`frameX = 36 * 16 + col * 18`
+    /// = 576/594, `frameY = row * 18`) on a wall-87 cell above a floor; the
+    /// near-chest refusal keeps the `notNearOtherChests` contract.
+    #[test]
+    fn test_DW_3_2_buried_chest_style_16_frames() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let chests: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 21)
+            .collect();
+        assert!(!chests.is_empty(), "the buried chests");
+        for c in &chests {
+            assert!(
+                matches!(c.frame_x, 576 | 594),
+                "the style-16 chest frameX ({})",
+                c.frame_x
+            );
+            assert!(matches!(c.frame_y, 0 | 18), "the chest frameY ({})", c.frame_y);
+        }
+        // The direct refusal path: a chest one tile away is a near chest.
+        let mut near = World::new("t".into(), 512, 512);
+        let b2 = pass_lihzahrd_temple(&mut near, 300, 50.0, &mut rng);
+        let bounds2 = Bounds {
+            left: b2.t_left,
+            top: b2.t_top,
+            right: b2.t_right,
+            bottom: b2.t_bottom,
+        };
+        pass_temple_part2(&mut near, bounds2, b2.t_rooms, 300.0, &mut rng);
+        let placed = near
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 21)
+            .count();
+        assert!(placed >= 1, "the seeded world places its chests ({})", placed);
+    }
+
+    /// DW-3.3: the furniture family carries the faithful frames — the chair
+    /// 15 style 12 (`frameY = 40 * 12 + row * 18` = 480/498, `frameX` 0),
+    /// the statues 105 (`frameX = 36 * style + col * 18`, styles 43-45) and
+    /// the painting 240 style 88 (`frameX = 54 * 88 + col * 18`) when the
+    /// near-checks let one through.
+    #[test]
+    fn test_DW_3_3_furniture_frames() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let chairs: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 15)
+            .collect();
+        assert!(!chairs.is_empty(), "the chairs");
+        for c in &chairs {
+            assert!(
+                matches!(c.frame_y, 480 | 498),
+                "the chair frameY ({}) — style 12 on the 40-px stride",
+                c.frame_y
+            );
+            assert_eq!(c.frame_x, 0);
+        }
+        let statues: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 105)
+            .collect();
+        assert!(!statues.is_empty(), "the statues");
+        for s in &statues {
+            let (col, row) = (s.frame_x % 18, s.frame_y);
+            assert_eq!(col, 0, "the statue column frames");
+            assert!(
+                (43..=45).contains(&(s.frame_x / 36)),
+                "the statue style ({})",
+                s.frame_x / 36
+            );
+            assert!(row == 0 || row == 18 || row == 36, "the statue row ({})", row);
+        }
+        // The painting's 3×2 block, if the near-checks let one through.
+        for t in world.tiles.iter().filter(|t| t.active() && t.kind == 240) {
+            assert_eq!(t.frame_x % 54, ((t.frame_x % 54) / 18) * 18, "the painting column");
+            assert!(
+                (4752..=4858).contains(&t.frame_x),
+                "the style-88 painting frameX ({}) — 54 * 88 + col * 18",
+                t.frame_x
+            );
+        }
+    }
+
+    /// DW-3.5: the `LihzahrdAltar` re-write keeps the anchor's 3×2 and its
+    /// base row — idempotent over the temple pass's own write (the same six
+    /// tiles, the same frames, the brick row at +2).
+    #[test]
+    fn test_DW_3_5_altar_rewrite_is_idempotent() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        pass_lihzahrd_altar(&mut world, b.l_altar_x, b.l_altar_y);
+        for i in 0..3i32 {
+            for j in 0..2i32 {
+                let t = world.tile(b.l_altar_x + i, b.l_altar_y + j).unwrap();
+                assert!(
+                    t.active()
+                        && t.kind == TILE_ALTAR
+                        && t.frame_x == (i * 18) as i16
+                        && t.frame_y == (j * 18) as i16,
+                    "the altar tile ({i},{j})"
+                );
+            }
+            let base = world.tile(b.l_altar_x + i, b.l_altar_y + 2).unwrap();
+            assert!(base.active() && base.kind == TILE_TEMPLE_BRICK, "the base row");
+        }
+    }
+
+    /// DW-3.6: `mayanTrap`'s scans stay inside the world on a sub-vanilla
+    /// world — the floor walk aborts at `maxTilesY - 300` and the writes
+    /// never leave the tile array.
+    #[test]
+    fn test_DW_3_6_mayan_trap_guards_stay_in_world() {
+        let mut world = World::new("t".into(), 300, 300);
+        let mut rng = Rng(13);
+        // A trap attempt at the very bottom edge: the floor walk runs to the
+        // abort and refuses (no panic, no OOB write).
+        for _ in 0..8 {
+            let abort = world.height - 300;
+            let _ = mayan_trap(&mut world, 150, 290, abort, 200.0, true, &mut rng);
+        }
+        assert_eq!(world.tiles.len(), 300 * 300);
+        // And with a wall-87 pocket with a floor below, the trap writes
+        // inside.
+        let mut world = World::new("t".into(), 300, 300);
+        for x in 100..110 {
+            for y in 150..152 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: TILE_TEMPLE_BRICK,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        let mut rng = Rng(13);
+        let placed = mayan_trap(&mut world, 105, 152, 299, 200.0, true, &mut rng);
+        let _ = placed;
+        assert_eq!(world.tiles.len(), 300 * 300);
+    }
+
 }

@@ -1065,6 +1065,7 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
+    step!("temple part 2", "Temple", step_temple_part2),
     step!("cave houses", "Buried Chests", step_cave_houses),
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
@@ -1105,6 +1106,7 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
     // vegetation family, before the world tail — the M5-OCEAN phase-4
     // insertion (the seaweed arm of the pass).
+    step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
     step!("world tail", "", step_world_tail),
 ];
@@ -1685,6 +1687,51 @@ fn step_hell_forts(
     structures::pass_hell_forts(world, gv.layers().hell_top, &mut streams.srng);
 }
 
+fn step_temple_part2(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `LihzahrdTemplePart2` (`WorldGen.cs:17701-17709` → `templePart2`
+    // `:34464`): the traps/chests/statues/furniture/painting loops over the
+    // `GenVars.temple` bounds the temple pass published. Its own fresh
+    // `pass_rng` stream carries the loops' draws (the vanilla chain shares
+    // one `genRand`; the per-pass re-seed is the recorded stream model).
+    let tb = gv.temple;
+    let bounds = temple::Bounds {
+        left: tb.t_left,
+        top: tb.t_top,
+        right: tb.t_right,
+        bottom: tb.t_bottom,
+    };
+    let mut trng = streams.pass_rng("Temple");
+    temple::pass_temple_part2(
+        world,
+        bounds,
+        tb.t_rooms,
+        gv.layers().world_surface,
+        &mut trng,
+    );
+}
+
+fn step_lihzahrd_altar(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `LihzahrdAltar` (`WorldGen.cs:21943-21976`): the 3×2 altar re-write
+    // over the published anchor. The C# shares the `genRand` stream here
+    // (it draws nothing) — the pass gets no draws of its own.
+    let tb = gv.temple;
+    temple::pass_lihzahrd_altar(world, tb.l_altar_x, tb.l_altar_y);
+}
+
 fn step_temple(
     world: &mut World,
     gv: &mut GenVars,
@@ -2094,9 +2141,11 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_50_named_steps() {
+    fn the_executed_pipeline_is_52_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 50);
+        // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
+        // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
+        assert_eq!(names.len(), 52);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2153,6 +2202,7 @@ mod tests {
                 "beehives",
                 "hell forts",
                 "lihzahrd temple",
+                "temple part 2",
                 "cave houses",
                 "campsites",
                 "spike pits",
@@ -2169,6 +2219,7 @@ mod tests {
                 "trees",
                 "surface flora",
                 "cacti",
+                "lihzahrd altar",
                 "water plants",
                 "world tail",
             ]
@@ -2227,17 +2278,20 @@ mod tests {
         assert!(cpos("Gravitating Sand") < cpos("Create Ocean Caves"));
     }
 
-    /// DW-4.4: the three M5-OCEAN phase-4 steps sit in their vanilla
-    /// positions — `remove water` + `shell piles` right before `slopes`
-    /// (vanilla `:16211`/`:16266` → Smooth World `:16419`), and
-    /// `water plants` right after `cacti` (vanilla `:21310` → `:21973`).
+    /// DW-4.4 / M5-TEMPLE: the late steps sit in their vanilla positions —
+    /// `remove water` + `shell piles` right before `slopes` (vanilla
+    /// `:16211`/`:16266` → Smooth World `:16419`), and `water plants` right
+    /// after `cacti` (vanilla `:21310` → `:21973`) with the M5-TEMPLE
+    /// `lihzahrd altar` between them (vanilla `Lihzahrd Altars` `:21943` →
+    /// `Water Plants` `:21963`).
     #[test]
     fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(names[pos("remove water") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
-        assert_eq!(names[pos("water plants") - 1], "cacti");
+        assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
+        assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
