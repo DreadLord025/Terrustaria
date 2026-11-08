@@ -906,6 +906,9 @@ fn invasion_spawn_pick(
     walker_alive: bool,
     saucer_alive: bool,
     progress_30: bool,
+    // The type-3 table's Dutchman window (`NPC.cs:1460-1468`): the
+    // invasion's drained fraction `(sizeStart - size) / sizeStart`.
+    progress_frac: f32,
 ) -> NpcKind {
     let hard_type = if invasion_type == 1 { Some(1) } else { None };
     // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
@@ -987,6 +990,12 @@ fn invasion_spawn_pick(
     // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
     // Deckhand.
     if invasion_type == 3 {
+        // The Dutchman (`NPC.cs:1460-1468`): the half-points window
+        // (the drained fraction in [0.5, 1)) spawns the ship — its four
+        // cannons fight for it.
+        if progress_frac >= 0.5 && progress_frac < 1.0 {
+            return NpcKind::FlyingDutchman;
+        }
         let r = crate::app::frame::rand01(rng);
         if r < 1.0 / 30.0 {
             return NpcKind::PirateCaptain;
@@ -1050,11 +1059,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             && app.npcs[i].kind != NpcKind::MartianSaucer
             && app.npcs[i].kind != NpcKind::MartianSaucerTurret
             && app.npcs[i].kind != NpcKind::MartianSaucerCannon
+            && app.npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && app.npcs[i].kind != NpcKind::FlyingDutchman
         {
+            continue;
+        }
+        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
+        // links have no port model — the count within the reach stands
+        // in: the ship's death rides it).
+        if app.npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = app.npcs[i].center();
+            let count = app
+                .npcs
+                .iter()
+                .filter(|m| {
+                    m.kind == NpcKind::FlyingDutchmanCannon
+                        && m.hp > 0
+                        && {
+                            let (mcx, mcy) = m.center();
+                            (mcx - scx).hypot(mcy - scy) < 1600.0
+                        }
+                })
+                .count() as i32;
+            app.npcs[i].crew_cannons = count;
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
             NpcKind::Scutlix
+        } else if app.npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
         } else {
             NpcKind::MartianSaucerCore
         };
@@ -1761,6 +1794,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.extend(new_carriers);
+    // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
+    // the payload's pirate spawns with the drop velocity (the vanilla's
+    // `±5 X` jitter + the ship's X, then the -8.01 Y launch).
+    let mut dutch_drops: Vec<Npc> = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::FlyingDutchman {
+            continue;
+        }
+        if let Some((kind, dx, dy)) = n.wants_dutchman_drop.take() {
+            let (pw, ph) = kind.size();
+            let mut p = Npc::new(kind, dx - pw * 0.5, dy - ph, 1, 0.0);
+            p.hp = p.max_hp;
+            let mut jitter = 0u64;
+            p.vx = (crate::app::rand01(&mut jitter) - 0.5) * 5.0 + n.vx;
+            p.vy = -8.01;
+            dutch_drops.push(p);
+        }
+    }
+    app.npcs.extend(dutch_drops);
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.
@@ -1802,6 +1854,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         for m in crew.iter_mut() {
             m.carrier_x = ccx;
             m.carrier_y = ccy;
+        }
+        spawned_crew.push(crew);
+    }
+    // The Dutchman's cannon crew (`AI_093`'s init arm): the 4 cannons
+    // 492 at the ship's centre + seat*40 - 150 with the seat `ai[1]`.
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::FlyingDutchman || !n.wants_dutchman_crew {
+            continue;
+        }
+        n.wants_dutchman_crew = false;
+        let (dw, dh) = n.size();
+        let dcx = n.x + dw * 0.5;
+        let dcy = n.y + dh * 0.5;
+        let mut crew = Vec::new();
+        for seat in 0..4 {
+            let mut c = Npc::new(
+                NpcKind::FlyingDutchmanCannon,
+                dcx + (seat as f32) * 40.0 - 150.0,
+                dcy,
+                seat as i32,
+                0.0,
+            );
+            c.hp = c.max_hp;
+            c.ai[1] = seat as f32;
+            c.carrier_x = dcx;
+            c.carrier_y = dcy;
+            crew.push(c);
         }
         spawned_crew.push(crew);
     }
@@ -2036,6 +2115,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 && (app.world.invasion_size_start - app.world.invasion_size) as f32
                     / app.world.invasion_size_start as f32
                     >= 0.3;
+            let progress_frac = if app.world.invasion_size_start > 0 {
+                (app.world.invasion_size_start - app.world.invasion_size) as f32
+                    / app.world.invasion_size_start as f32
+            } else {
+                0.0
+            };
             let kind = invasion_spawn_pick(
                 &mut app.item_rng,
                 app.world.hard_mode,
@@ -2044,6 +2129,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 walker_alive,
                 saucer_alive,
                 progress_30,
+                progress_frac,
             );
             invasion_pick = Some((kind, ix, iy));
         }
@@ -2588,7 +2674,7 @@ mod invasion_tests {
         // The table: the picks are always goblins.
         let mut rng = 7u64;
         for _ in 0..40 {
-            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false);
+            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0);
             assert!(matches!(
                 kind,
                 NpcKind::GoblinSorcerer
@@ -2603,7 +2689,7 @@ mod invasion_tests {
         let mut saw_summoner = false;
         for _ in 0..200 {
             if matches!(
-                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false),
+                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false, 0.0),
                 NpcKind::GoblinSummoner
             ) {
                 saw_summoner = true;
@@ -2615,7 +2701,7 @@ mod invasion_tests {
         for _ in 0..200 {
             assert!(
                 !matches!(
-                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false),
+                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false, 0.0),
                     NpcKind::GoblinSummoner
                 ),
                 "the alive summoner blocks the roll"
@@ -2822,7 +2908,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..60 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false),
+                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false, 0.0),
                     NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
                 ));
             }
@@ -2830,7 +2916,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..40 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false),
+                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0),
                     NpcKind::GoblinSorcerer
                         | NpcKind::GoblinThief
                         | NpcKind::GoblinPeon
@@ -2929,7 +3015,7 @@ mod pirate_invasion_tests {
         let mut rng = 11u64;
         for _ in 0..80 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
                 NpcKind::PirateDeckhand
                     | NpcKind::PirateCaptainsMate
                     | NpcKind::PirateArcher
@@ -2942,7 +3028,7 @@ mod pirate_invasion_tests {
         let mut saw_captain = false;
         for _ in 0..600 {
             if matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
                 NpcKind::PirateCaptain
             ) {
                 saw_captain = true;
@@ -3171,7 +3257,7 @@ mod martian_invasion_tests {
         let mut seen_drone = false;
         let mut seen_walker = false;
         for _ in 0..600 {
-            let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false);
+            let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false, 0.0);
             assert!(
                 matches!(
                     kind,
@@ -3200,7 +3286,7 @@ mod martian_invasion_tests {
         let mut seen_scrambler = false;
         let mut seen_rider = false;
         for _ in 0..1200 {
-            match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false) {
+            match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0) {
                 NpcKind::RayGunner => seen_ray = true,
                 NpcKind::BrainScrambler => seen_scrambler = true,
                 NpcKind::ScutlixRider => seen_rider = true,
@@ -3215,7 +3301,7 @@ mod martian_invasion_tests {
         let mut rng = 5u64;
         for _ in 0..200 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 4, true, false, false),
+                invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0),
                 NpcKind::GrayGrunt
                     | NpcKind::GigaZapper
                     | NpcKind::MartianOfficer
@@ -3937,5 +4023,146 @@ mod saucer_battery_tests {
         assert!(core.is_some() || app.world.invasion_type == 0);
         let _ = player;
         player.x += 0.0;
+    }
+}
+
+#[cfg(test)]
+mod dutchman_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_ship() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        let mut ship = Npc::new(NpcKind::FlyingDutchman, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        ship.hp = ship.max_hp;
+        app.npcs.push(ship);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        (app, player)
+    }
+
+    #[test]
+    fn the_ship_spawns_its_four_cannons() {
+        // `AI_093`'s init arm (`NPC.cs:38859-38872`): the 4 cannons 492
+        // at the ship's centre + seat*40 - 150.
+        let (mut app, _player) = app_with_ship();
+        let cannons = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::FlyingDutchmanCannon)
+            .count();
+        assert_eq!(cannons, 4, "the crew");
+        let seats: Vec<f32> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::FlyingDutchmanCannon)
+            .map(|n| n.ai[1])
+            .collect();
+        assert_eq!(seats, vec![0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn the_dead_crew_kills_the_ship() {
+        // The crew-alive loop (`NPC.cs:38874-38890`): all four cannons
+        // dead → the self-strike.
+        let (mut app, _player) = app_with_ship();
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::FlyingDutchmanCannon {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::FlyingDutchman));
+    }
+
+    #[test]
+    fn the_ship_drops_pirates_in_the_half_window() {
+        // `AI_093`'s Next(300) arm plus the table's Dutchman window: the
+        // drop spawns a pirate with the -8.01 launch. The machine's roll
+        // is 1/300 — the test forces the payload through the machine
+        // path by seeding many ticks.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(NpcKind::FlyingDutchman, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_scutlix = true; // the init latch (crew-less for this test)
+        n.crew_cannons = 4;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut drops = 0;
+        for _ in 0..2000 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_dutchman_drop.is_some() {
+                drops += 1;
+                let (kind, dx, dy) = n.wants_dutchman_drop.unwrap();
+                assert!(matches!(
+                    kind,
+                    NpcKind::PirateCaptainsMate
+                        | NpcKind::PirateCorsair
+                        | NpcKind::PirateArcher
+                        | NpcKind::PirateDeckhand
+                ));
+                // The drop point rides the ship's side.
+                let (cx, cy) = n.center();
+                assert!((dx - cx).abs() <= 140.0 + 1.0);
+                assert!((dy - cy).abs() <= 90.0 + 5.0);
+                n.wants_dutchman_drop = None;
+            }
+        }
+        assert!(drops > 0, "the ship drops pirates over time");
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_type3_table_spawns_the_dutchman_in_the_half_window() {
+        // `NPC.cs:1460-1468`: the half-points window spawns the ship;
+        // elsewhere the pirate table runs.
+        let mut rng = 21u64;
+        for _ in 0..200 {
+            assert_eq!(
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.75),
+                NpcKind::FlyingDutchman
+            );
+        }
+        let mut rng = 21u64;
+        for _ in 0..200 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.25),
+                NpcKind::PirateCaptain
+                    | NpcKind::PirateArcher
+                    | NpcKind::PirateCorsair
+                    | NpcKind::PirateCaptainsMate
+                    | NpcKind::PirateDeckhand
+            ));
+        }
     }
 }

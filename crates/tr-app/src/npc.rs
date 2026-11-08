@@ -141,6 +141,14 @@ pub enum NpcKind {
     /// `NPCID.MartianSaucerCannon` (394) — the saucer cannon
     /// (`NPC.cs:14025-14044`: 46×36, aiStyle 75, 3500 HP, def 20, dmg 60).
     MartianSaucerCannon,
+    /// `NPCID.FlyingDutchman` (491) — the pirate invasion's ship
+    /// (`NPC.cs:14632-14650`: 350×120, aiStyle 93, dmg 0, def 100, 50 HP,
+    /// dontTakeDamage, value 0; the crew's 4 cannons fight for it).
+    FlyingDutchman,
+    /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
+    /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
+    /// hide; rides the ship and fires the 240 shots).
+    FlyingDutchmanCannon,
     /// `NPCID.MartianSaucerCore` (395) — the saucer boss
     /// (`NPC.cs:14045-14060`: 120×90, aiStyle 76, dmg 80, 10000 HP,
     /// def 0, dontTakeDamage, npcSlots 6).
@@ -546,6 +554,8 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 90,
             NpcKind::MartianSaucerCannon => 91,
             NpcKind::MartianSaucerCore => 92,
+            NpcKind::FlyingDutchman => 93,
+            NpcKind::FlyingDutchmanCannon => 94,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -642,6 +652,8 @@ impl NpcKind {
             90 => NpcKind::MartianSaucerTurret,
             91 => NpcKind::MartianSaucerCannon,
             92 => NpcKind::MartianSaucerCore,
+            93 => NpcKind::FlyingDutchman,
+            94 => NpcKind::FlyingDutchmanCannon,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -840,6 +852,10 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => (40.0, 16.0),
             NpcKind::MartianSaucerCannon => (46.0, 36.0),
             NpcKind::MartianSaucerCore => (120.0, 90.0),
+            // The Dutchman 350x120 + its cannons 30x30 (`NPC.cs`'s cases
+            // 491/492).
+            NpcKind::FlyingDutchman => (350.0, 120.0),
+            NpcKind::FlyingDutchmanCannon => (30.0, 30.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1010,6 +1026,10 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 5000,
             NpcKind::MartianSaucerCannon => 3500,
             NpcKind::MartianSaucerCore => 10000,
+            // The Dutchman 50 (the ship's own bar), its cannons 2000
+            // (`NPC.cs`'s cases 491/492).
+            NpcKind::FlyingDutchman => 50,
+            NpcKind::FlyingDutchmanCannon => 2000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1127,6 +1147,9 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 60,
             NpcKind::MartianSaucerCannon => 60,
             NpcKind::MartianSaucerCore => 80,
+            // The Dutchman 0 (contactless), its cannons 30.
+            NpcKind::FlyingDutchman => 0,
+            NpcKind::FlyingDutchmanCannon => 30,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1314,6 +1337,19 @@ pub struct Npc {
     pub carrier_phase: f32,
     pub crew_turrets: i32,
     pub crew_cannons: i32,
+    /// The Dutchman's pirate-drop payload (`AI_093`'s `Next(300)` arm,
+    /// `NPC.cs:38868-38877`): the (kind, x, y) spawn the sim resolves
+    /// through `wants_sphere` — the drop's velocity rides the ship's.
+    pub wants_dutchman_drop: Option<(NpcKind, f32, f32)>,
+    /// The Dutchman's cannon-crew spawn request (`AI_093`'s init arm:
+    /// the 4 cannons 492 at the ship's centre, `NPC.cs:38859-38872`).
+    pub wants_dutchman_crew: bool,
+}
+
+/// The 2-D rotation helper for the Dutchman's drop offsets
+/// (`Vector2.RotatedBy`).
+pub(crate) fn rot(x: f32, y: f32, angle: f32) -> (f32, f32) {
+    (x * angle.cos() - y * angle.sin(), x * angle.sin() + y * angle.cos())
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -1674,6 +1710,8 @@ impl Npc {
             carrier_phase: 0.0,
             crew_turrets: 0,
             crew_cannons: 0,
+            wants_dutchman_drop: None,
+            wants_dutchman_crew: false,
         }
     }
 
@@ -1749,6 +1787,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The Dutchman family: kb 0 (cases 491/492).
+            NpcKind::FlyingDutchman => 0.0,
+            NpcKind::FlyingDutchmanCannon => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1891,6 +1932,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 20,
             NpcKind::MartianSaucerCannon => 20,
             NpcKind::MartianSaucerCore => 0,
+            // The Dutchman def 100, its cannons def 20.
+            NpcKind::FlyingDutchman => 100,
+            NpcKind::FlyingDutchmanCannon => 20,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2029,6 +2073,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The Dutchman family: value 0 (the loot rides the guns).
+            NpcKind::FlyingDutchman => 0.0,
+            NpcKind::FlyingDutchmanCannon => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2296,6 +2343,10 @@ impl Npc {
             NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
                 self.update_saucer_mount(world, rng)
             }
+            // The pirate ship: aiStyle 93's crew-carrier machine + its
+            // cannons' aiStyle-75 ride.
+            NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
+            NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2482,6 +2533,18 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 8;
+                }
+            }
+            // The Dutchman: the 1-frame ship strip; its cannons ride the
+            // 9-frame strip (`Main.npcFrameCount`).
+            NpcKind::FlyingDutchman => {
+                self.frame = 0;
+            }
+            NpcKind::FlyingDutchmanCannon => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
                 }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
@@ -4956,6 +5019,83 @@ impl Npc {
     /// Difficulty` run as the classic constants; `TargetClosest` folds to
     /// the single player; the off-world clamp keeps the position in the
     /// world box.
+    /// `AI`'s aiStyle-93 block (`NPC.cs:38858-38956`) — the Flying
+    /// Dutchman's machine: the crew carrier. The init spawns 4 cannons
+    /// 492 at `Centre + seat*40 - 150` (the seat `ai[1]`, the 60*seat
+    /// spawn delay folded out); the crew-alive loop kills the ship when
+    /// all four die (`flag99` → the self-strike); every 300 ticks a
+    /// pirate (213/215/214/212) drops off the ship's side with the
+    /// upward velocity; the flight holds the 350-450 ground-clearance
+    /// band (the ±4 Y ease toward the band), the X drift toward the
+    /// player, the rotation = velocity.X * 0.025.
+    ///
+    /// Deviations: the child index links (`Main.npc[ai[i]]`) ride the
+    /// pre-pass's crew count + the write-through; the dust spawns are
+    /// unmodelled; the cannons' stagger (the `60*seat` timeLeft) folds
+    /// out (the port spawns them at once).
+    fn update_flying_dutchman(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The init (`:38859-38872`).
+        if !self.wants_scutlix {
+            self.wants_scutlix = true; // the init latch
+            self.wants_dutchman_crew = true;
+        }
+        // The crew-alive loop (`:38874-38890`): all dead → the self-strike.
+        // While the init's spawn request is pending (the cannons come at
+        // the sim's resolve) the count still reads 0 — the ship lives.
+        if self.crew_cannons <= 0 && !self.wants_dutchman_crew {
+            self.hp = 0;
+            return;
+        }
+        // The pirate drop (`:38892-38902`).
+        if crate::app::rand01(rng) < 1.0 / 300.0 {
+            // The rotated side offset: (rand01-0.5)*(width-70) × ±20-height/2-20.
+            let jx = (crate::app::rand01(rng) - 0.5) * (350.0 - 70.0);
+            let jy = (crate::app::rand01(rng) - 0.5) * 20.0 - 120.0 / 2.0 - 20.0;
+            let (rx, ry) = rot(jx, jy, self.rotation);
+            let kind = match (crate::app::rand01(rng) * 4.0) as u32 {
+                0 => NpcKind::PirateCaptainsMate,
+                1 => NpcKind::PirateCorsair,
+                2 => NpcKind::PirateArcher,
+                _ => NpcKind::PirateDeckhand,
+            };
+            let (cx, cy) = self.center();
+            self.wants_dutchman_drop = Some((kind, cx + rx, cy + ry));
+        }
+        self.ai[0] = self.ai[0].max(0.0) + 1.0; // the crew-monitor tick (the port's counter)
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, _pcy) = player.center();
+        // The ground clearance 10 tiles ahead (`:38904-38922`).
+        let ahead = (cx / TILE_PX) as i32 + self.vx.signum() as i32 * 10;
+        let feet = ((self.y + h) / TILE_PX) as i32;
+        let clear = ground_clearance(world, ahead, feet);
+        let d = clear;
+        // The 350-450 band (`:38923-38942`).
+        if d < 350.0 {
+            let mut target = d - 350.0;
+            if target < -4.0 {
+                target = -4.0;
+            }
+            self.vy += (target - self.vy) * 0.05;
+        } else if d > 450.0 {
+            let mut target = d - 350.0;
+            if target > 4.0 {
+                target = 4.0;
+            }
+            self.vy += (target - self.vy) * 0.05;
+        } else {
+            self.vy *= 0.95;
+        }
+        // The X drift (`:38944-38947`).
+        if (pcx - cx).abs() >= 300.0 && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32) {
+            self.vx += self.facing as f32 * 0.06;
+        }
+        self.rotation = self.vx * 0.025;
+        // The flight (noGravity).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The init (`:36071-36092`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
@@ -6058,6 +6198,8 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 90,
             NpcKind::MartianSaucerCannon => 91,
             NpcKind::MartianSaucerCore => 92,
+            NpcKind::FlyingDutchman => 93,
+            NpcKind::FlyingDutchmanCannon => 94,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

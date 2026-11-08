@@ -2692,6 +2692,24 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Flying Dutchman (M4-EVENT-5a)
+
+The pirate invasion's ship (`NPC.cs:14632-14650`): 350×120, aiStyle 93,
+dmg 0, def 100, 50 own HP, dontTakeDamage. Its machine
+(`:38858-38956`): the init spawns 4 cannons 492 across its centre
+(`seat*40 - 150`); the crew-alive loop self-strikes when all four are
+down (the pending-crew gate keeps the ship alive through its spawn
+tick — the vanilla's `ai[i]` links point at the children immediately);
+every 300 ticks a pirate drops off the rotated side offset with the
+±5 X + -8.01 Y launch; the flight holds the 350-450 ground-clearance
+band ahead of the direction, the X drift engages past 300 px, and the
+rotation rides `velocity.X * 0.025`.
+
+The type-3 table's half-points window (`:1460-1468`) spawns the ship —
+the pirate invasion gains its boss-minion. The port's link model: the
+pre-pass counts the ship's live cannons and links the cannons' ride to
+the ship (the vanilla's `Main.npc[ai[i]]` indices have no port model).
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
