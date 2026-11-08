@@ -4841,7 +4841,13 @@ impl Npc {
         };
         self.x = self.carrier_x - w * 0.5 + ox;
         self.y = self.carrier_y - h * 0.5 + oy;
-        // The mounted timers mirror the core's.
+        // The mounted timers mirror the core's. A mount created by the
+        // core's own crew init starts with `carrier_timer = -1`; the
+        // pre-pass overwrites it on the first tick — seed it from the
+        // mount's own mirrored `ai[3]` so the very first tick is in step.
+        if self.carrier_timer < 0.0 {
+            self.carrier_timer = self.ai[3];
+        }
         self.ai[3] = self.carrier_timer;
         let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -4849,6 +4855,11 @@ impl Npc {
             NpcKind::MartianSaucerTurret => {
                 // The 280-420 window (`NPC.cs:35750-35894`).
                 let t = self.ai[3];
+                #[cfg(test)]
+                eprintln!(
+                    "[turret-dbg] t={} in_window={} core_open={} carrier={} side={}",
+                    t, (t >= 280.0 && t < 420.0), core_open, self.carrier_timer, side
+                );
                 let in_window = t >= 280.0 && t < 420.0;
                 if in_window {
                     if core_open && (t - 280.0) % 6.0 == 0.0 {
