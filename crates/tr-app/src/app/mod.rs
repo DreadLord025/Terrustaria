@@ -314,9 +314,10 @@ pub(crate) struct App {
     /// The client handshake state — `Netplay.Connection.State`
     /// (`Netplay.cs:469-543`); stays at 0 while hosting.
     pub(crate) net_state: i32,
-    /// The world-blob slice buffer while the host streams the world
-    /// (`15 WorldChunk`), assembled in order at `WorldComplete`.
-    pub(crate) net_chunks: Vec<Option<Vec<u8>>>,
+    /// The `10 TileBlock` sections buffered while the host streams the world,
+    /// applied in order at `WorldComplete` (the C#'s section stream,
+    /// `MessageBuffer.cs:812-841`).
+    pub(crate) net_pending_sections: Vec<net::TileBlock>,
     /// The `7 WorldInfo` header, held until the blob completes the install.
     pub(crate) net_info: Option<net::WorldInfo>,
     /// The `9 Status` load-progress line (`Netplay.cs:526-540`'s StatusText).
@@ -2109,7 +2110,7 @@ impl App {
             local_id: 0,
             net_timer: 0.0,
             net_state: net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,
