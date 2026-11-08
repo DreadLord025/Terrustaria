@@ -47,7 +47,7 @@ re-implement something that already exists, or to port the wrong file.
 | `GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` (the 643 register sites + the boss chains + the globals) + `NPCID.NetIdMap` | `tools/gen_loot.py` -> `crates/tr-app/src/loot_db_gen.rs` (`loot_db::database()`, 1421 net-id registrations, the `Cond` gates + `LootFlags`/`LootNpc` snapshots) + `world_sim/npcs.rs::spawn_loot` | done |
 
 | `GameContent/Luck.cs` (`RollLuck` `:5`, via `Player.RollLuck` `Player.cs:18188`) | `crates/tr-core/src/loot.rs` (`DropRng` bridge + `roll_luck`), consumed e.g. by `rain.rs::start_rain` | done (the engine + — M2-BUFF-6 — the value: `crates/tr-app/src/luck.rs` holds `LuckState` (`RecalculateLuck` `Player.cs:29137-29164`, the `:18107/:18840/:29172` decay timers, the torch scan `:17731-18088`, coin tiers `:18115-18153`, ladybug windows `NPC.cs:81566-81652`, the 257/120/383 buff arms); consumers pass `player.luck()`; the absent writers (shimmer coins, ladybug NPC, lantern night, gnome, pearl, mirror, accessories) stay neutral defaults — ANALYSIS "Luck value (M2-BUFF-6)") |
-| `BinaryReader`/`BinaryWriter` (the LE primitives behind the world/map IO) | `crates/tr-core/src/binio.rs` (`Reader`/`Writer`) | done |
+| `BinaryReader`/`BinaryWriter` (the LE primitives behind the world/map IO) | `crates/tr-core/src/binio.rs` (`Reader`/`Writer`, plus `read_trwld_header` — the shared `.trwld` header prefix reader the save listing uses) | done |
 
 ## Game / presentation (`crates/tr-app`)
 
