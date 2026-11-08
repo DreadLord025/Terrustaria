@@ -902,9 +902,17 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     if app.world.dd2_spawn_hold > 0 {
         app.world.dd2_spawn_hold -= 1;
     }
-    // The win-death: the crystal's own ai[0] counter rides the machine;
-    // the sim resolves it into the event-stop request (the DD2Event
-    // framework's slice).
+    // The win-death resolve (`AI`'s aiStyle-105 arm's
+    // `DD2Event.StopInvasion`): the event stops and the crystal goes.
+    if app.npcs.iter().any(|n| {
+        n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop
+    }) {
+        app.world.dd2_event_ongoing = false;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
+        });
+    }
 }
 
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
@@ -1457,6 +1465,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         })
         .collect();
     app.revenge_markers.extend(cached);
+    // The Old One's Army's tick (the spawn hold's decay + the crystal's
+    // 600-tick win-death resolve) rides before the death retain: the
+    // win-death zeroes the crystal's hp AND stops the event in one pass.
+    update_dd2_event(app, dt);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -2283,6 +2295,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npc_timer = 1.0 / 60.0;
 }
+
 
 /// The full NPC loot through the rule engine
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
@@ -5078,5 +5091,60 @@ mod dd2_wave_tests {
         app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
         report_invasion_kill(&mut app, NpcKind::Skeleton);
         assert_eq!(app.world.dd2_wave_kills, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod crystal_death_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_win_death_stops_the_army() {
+        // `AI`'s aiStyle-105 arm's win-death (`NPC.cs:40959-40966`):
+        // `ai[0] >= 600` → `DD2Event.StopInvasion` + `life = 0` — via
+        // update_dd2_event's resolve the event clears and the crystal goes.
+        let mut app = base_app();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.ai[0] = 599.0;
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.push(n);
+        app.player = Some(player);
+        // The sim's tick runs the machine (the 600 counter) and the
+        // event's tick resolves the request.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the event stops");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal is gone"
+        );
     }
 }

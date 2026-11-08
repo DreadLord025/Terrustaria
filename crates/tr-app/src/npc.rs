@@ -1569,6 +1569,11 @@ pub struct Npc {
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
     pub wants_martian_invasion: bool,
+    /// The crystal's win-death request (`ai[0] >= 600`'s
+    /// `DD2Event.StopInvasion`): the sim resolves it into the event's
+    /// stop (`dd2_event_ongoing` clear) — the `Box<Self>`-shaped
+    /// request pattern's cousin.
+    pub wants_event_stop: bool,
     /// The Scutlix rider's carrier spawn request (`AI_075`'s type-390
     /// `localAI[0]` 0 → 1 arm: the `NewNPC(..., 391, whoAmI)` — the sim
     /// resolves it after the tick).
@@ -1960,6 +1965,7 @@ impl Npc {
             swarm_done: false,
             wants_hostile_shot: Vec::new(),
             wants_martian_invasion: false,
+            wants_event_stop: false,
             wants_scutlix: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
@@ -6093,6 +6099,16 @@ impl Npc {
     fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
+        // The 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
+        // `:40959-40966`): `DD2Event.StopInvasion(); life = 0` — the
+        // ai[0] counter advances inside the phase (the `ai[1] == 1`
+        // entry) and the sim resolves the event's stop.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 600.0 {
+            self.wants_event_stop = true;
+            self.dont_take_damage = false;
+            self.hp = 0;
+        }
         let _ = (world, player);
     }
 

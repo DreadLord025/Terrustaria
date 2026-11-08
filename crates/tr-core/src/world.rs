@@ -203,6 +203,10 @@ pub struct World {
     /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
     /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
     pub dd2_spawn_hold: i32,
+    /// `DD2Event.LostThisRun` — the crystal's death (`NPC.cs`'s case-548
+    /// death-flag) sets it (`:79346`'s event-flag family); the weapon
+    /// rosters clear with the event's stop.
+    pub dd2_lost: bool,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -319,6 +323,7 @@ impl World {
             dd2_wave: 1,
             dd2_wave_kills: 0.0,
             dd2_spawn_hold: 300,
+            dd2_lost: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,

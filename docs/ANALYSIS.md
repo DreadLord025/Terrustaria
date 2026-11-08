@@ -2833,6 +2833,13 @@ consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
 advance — the hold's early refusal, the budget's pass → wave+1 with
 the 1800-tick break.
 
+## The crystal's win-death (M4-EVENT-5p)
+
+The event's end: the crystal's `ai[0] >= 600` arm fires
+`DD2Event.StopInvasion` + `life = 0` — the port's `wants_event_stop`,
+resolved by `update_dd2_event` before the death retain (the flag and the
+crystal go in one pass).
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
