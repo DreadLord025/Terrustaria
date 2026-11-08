@@ -2895,6 +2895,13 @@ projectile arms (the 3240-px line-of-sight gate, the 1080-px below
 gate). The pillar summons (Stardust 493 / Nebula 507 / Solar 517 with
 their shield strengths) and the boss bar ride the next slice.
 
+## The pillar shields (M4-EVENT-7)
+
+The Lunar towers' shield lifecycle on `World`: the raise
+(`ShieldStrengthTowerMax` = 100, / 2 post-Moon-Lord), the spend
+(per-tower drain, the downed flag) and the reset. The 629 pulse fires
+from the towers' hit path.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
