@@ -480,6 +480,9 @@ string[] wantedSets =
     // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),
     // so the emitted set is the complement (default-true emission, Program.cs:92-96).
     "CanBeClearedDuringGeneration",
+    // The `.wld` tile RLE batching gate (`SaveWorldTiles:1573`, `TileID.cs:484`):
+    // default-true minus 423/520/723/724, so the emitted set is near-complete.
+    "AllowsSaveCompressionBatching",
 ];
 foreach (var name in wantedSets)
 {

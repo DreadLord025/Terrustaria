@@ -256,3 +256,9 @@ pub static SET_CAN_BE_CLEARED_DURING_GENERATION: TileSet = TileSet(&[
     0xffffffffffffffff, 0xfffe7fffffffffff, 0xffffffffffec0fff, 0xfffffff1ffffffff, 
     0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffffffff, 
 ]);
+
+pub static SET_ALLOWS_SAVE_COMPRESSION_BATCHING: TileSet = TileSet(&[
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffff7fffffffff, 0xffffffffffffffff, 
+    0xfffffffffffffeff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffe7ffff, 
+]);
