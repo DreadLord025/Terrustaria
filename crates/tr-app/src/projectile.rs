@@ -53,6 +53,15 @@ pub const GOLEM_FIREBALL: u16 = 258;
 /// `ProjectileID.EyeBeam` (259) — the Golem's eye beams
 /// (`NPC.cs:31282`'s `num698`, `:31565`'s `num729`).
 pub const GOLEM_EYE_BEAM: u16 = 259;
+/// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
+/// (`NPC.cs:26628`'s `num412`).
+pub const EYE_LASER: u16 = 83;
+/// `ProjectileID.CursedFlameHostile` (96) — the Spazmatism's phase-1 spit
+/// (`NPC.cs:27223`'s `num451`).
+pub const CURSED_FLAME: u16 = 96;
+/// `ProjectileID.EyeFire` (101) — the Spazmatism's phase-2 spit
+/// (`NPC.cs:27519`'s `num467`).
+pub const EYE_FIRE: u16 = 101;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -165,6 +174,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `extraUpdates = 1`, `tileCollide = false`, `penetrate = -1`,
             // hostile, `timeLeft = 300` (the call sites' override).
             GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false),
+            // `Projectile.cs:1632-1645` — the EyeLaser: 4x4, aiStyle 1,
+            // penetrate 3, extraUpdates 2, timeLeft 600, hostile.
+            EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false),
+            // `Projectile.cs:1803-1815` — the CursedFlameHostile: 16x16,
+            // aiStyle 8, penetrate -1, hostile.
+            CURSED_FLAME => (16.0, 16.0, 8, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // `Projectile.cs:1885-1895` — the EyeFire: 6x6, aiStyle 23,
+            // penetrate -1, extraUpdates 3, hostile.
+            EYE_FIRE => (6.0, 6.0, 23, -1, TIME_LEFT_DEFAULT, 3, true, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
@@ -766,7 +784,11 @@ impl ProjectilePool {
         damage: i32,
         knock_back: f32,
     ) -> Option<usize> {
-        let slot = self.spawn(kind, 0, pos, vel, damage, knock_back, false)?;
+        // The vanilla's NewProjectile applies `SetDefaults` for hostile
+        // shots (the box/flight/penetrate/extraUpdates) — the port routes
+        // the data-carrying spawn, so the hostile kinds move like the
+        // player's (the pre-base spawn path left them inert).
+        let slot = self.spawn_with_data(kind, pos.x, pos.y, vel.x, vel.y, damage, knock_back)?;
         self.slots[slot].friendly = false;
         Some(slot)
     }
