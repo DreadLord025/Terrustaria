@@ -1401,17 +1401,24 @@ pub(crate) fn draw_npcs(
             // The swimmers: the 6/6/4-frame strips (`Main.npcFrameCount`
             // 55/58/65, `Main.cs:67082`) over the hitbox.
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
-                let (tex, frames) = match n.kind {
-                    NpcKind::Goldfish => (assets.goldfish.as_ref(), 6.0),
-                    NpcKind::Piranha => (assets.piranha.as_ref(), 6.0),
-                    _ => (assets.shark.as_ref(), 4.0),
+                // The swimmers: `Main.npcFrameCount` 55/58 = 6, 65 = 4
+                // (`Main.cs:67082`) — the sheets divide into 28-px rows
+                // (NPC_55/58's 38x168) and 48-px rows (NPC_65's 120x192),
+                // the frames wider than the boxes (38/100); the generic
+                // anchor centres each frame on the box's centre-X with its
+                // centre 4 px below the box's bottom (`Main.cs:25511-25516`).
+                let (tex, count) = match n.kind {
+                    NpcKind::Goldfish => (assets.goldfish.as_ref(), 6),
+                    NpcKind::Piranha => (assets.piranha.as_ref(), 6),
+                    _ => (assets.shark.as_ref(), 4),
                 };
-                let (bw, bh) = n.size();
+                let fh = tex.map_or(28.0, |t| t.h / count as f32);
+                let fw = tex.map_or(38.0, |t| t.w);
                 (
                     tex,
-                    tex.map_or(18.0, |t| t.h / frames),
-                    [bw + 4.0, bh + 2.0],
-                    [n.x - 2.0, n.y - 1.0],
+                    fh,
+                    [fw, fh],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
                 )
             }
             // The worms: the single-frame segments rotated along the chain
@@ -1544,6 +1551,9 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WanderingEye
                     | NpcKind::GolemFistLeft
                     | NpcKind::GolemFistRight
+                    | NpcKind::Goldfish
+                    | NpcKind::Piranha
+                    | NpcKind::Shark
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

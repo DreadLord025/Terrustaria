@@ -1658,6 +1658,11 @@ pub struct Npc {
     /// drives FindFrame case 246's +4/+2 rows and the beam volley's ±18
     /// vs ±30 side arm (`NPC.cs:72953-72959` / `:31305-31327`).
     pub head_turn: i32,
+    /// `NPC.wet`: the liquid-overlap flag the swimmer machine caches each
+    /// tick (`NPC.cs:90474`'s `CheckFacetedLiquid` write); `FindFrame`'s
+    /// swimmer cases read it for the wet flap vs the dry flop
+    /// (`NPC.cs:74181`/`:74654`).
+    pub wet: bool,
     /// The saucer family's write-through payload (the mounts read the
     /// core's live state): the core's `ai[3]` timer and `ai[0]` phase,
     /// and the crew counts within the link's reach (the turrets + the
@@ -2045,6 +2050,7 @@ impl Npc {
             wants_saucer_crew: false,
             alpha: 0,
             head_turn: 0,
+            wet: false,
             carrier_timer: -1.0,
             carrier_phase: 0.0,
             crew_turrets: 0,
@@ -3346,18 +3352,33 @@ impl Npc {
             // The swimmers: the plain flap cycles over `Main.npcFrameCount`
             // 55/58 = 6, 65 = 4 (`Main.cs:67082`).
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
-                let count = match self.kind {
-                    NpcKind::Shark => 4,
-                    _ => 6,
-                };
+                // `FindFrame`'s case 55/57/58 (`NPC.cs:74181-74226`) and
+                // case 65 (`:74654-74678`): the wet flap rides rows 0..3
+                // at the 6-tick bands; the goldfish/piranha flop shows
+                // rows 4/5 on land; the shark's case has no dry arm — the
+                // row holds (`:74657`'s `wet && type == 65` gate).
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= count {
-                        0
+                if self.wet {
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 3;
                     } else {
-                        self.frame + 1
-                    };
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.kind != NpcKind::Shark {
+                    // The beached flop rows 4/5 (`:74212-74220`).
+                    if self.frame_counter < 6.0 {
+                        self.frame = 4;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 5;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
                 }
             }
             // The worms: `Main.npcFrameCount` 7..15 = 1 (`Main.cs:67082`).
@@ -7665,7 +7686,8 @@ impl Npc {
             NpcKind::Piranha => crate::npc_ai::SwimParams::PIRANHA,
             _ => crate::npc_ai::SwimParams::GOLDFISH,
         };
-        if is_wet(world, self.x, self.y, w, h) {
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        if self.wet {
             let (pcx, pcy) = player.center();
             let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
             // `flag25` (`:23701-23707`): the kind gate + the player wet +
@@ -10352,6 +10374,47 @@ mod tests {
         p.find_frame();
         assert_eq!(p.frame, 2, "the goblin's walk row");
         assert_eq!(p.kind.humanoid_frame_count(), 16, "the peon's rows");
+    }
+
+
+    #[test]
+    fn the_swimmers_flap_wet_and_flop_dry() {
+        // `FindFrame`'s case 55/57/58 (`NPC.cs:74181-74226`) + case 65
+        // (`:74654-74678`): the wet flap rides rows 0..3 at the 6-tick
+        // bands; the goldfish/piranha flop shows rows 4/5 on land; the
+        // shark holds the last row when beached (its case has no dry arm).
+        let mut g = bare(NpcKind::Goldfish);
+        g.wet = true;
+        g.frame_counter = 0.0;
+        g.find_frame();
+        assert_eq!(g.frame, 0, "the flap start");
+        g.frame_counter = 7.0;
+        g.find_frame();
+        assert_eq!(g.frame, 1, "the second band");
+        g.frame_counter = 13.0;
+        g.find_frame();
+        assert_eq!(g.frame, 2, "the third band");
+        g.frame_counter = 19.0;
+        g.find_frame();
+        assert_eq!(g.frame, 3, "the fourth band");
+        // The dry flop: rows 4/5 (`:74212-74220`).
+        g.wet = false;
+        g.frame_counter = 0.0;
+        g.find_frame();
+        assert_eq!(g.frame, 4, "the dry flop row 4");
+        g.frame_counter = 7.0;
+        g.find_frame();
+        assert_eq!(g.frame, 5, "the dry flop row 5");
+        // The shark's dry arm holds the last wet row (no else branch).
+        let mut s = bare(NpcKind::Shark);
+        s.wet = true;
+        s.frame_counter = 7.0;
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the shark's wet band");
+        s.wet = false;
+        s.frame_counter = 0.0;
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the beached shark holds the row");
     }
 
 
