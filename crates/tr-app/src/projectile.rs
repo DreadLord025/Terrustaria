@@ -92,6 +92,12 @@ pub const PIRATE_ARROW: u16 = 180;
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
 pub const DUTCHMAN_SHELL: u16 = 240;
+/// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
+/// (`NPC.cs:44582`'s `TryMakingSpike`).
+pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
+/// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
+pub const SHADOW_HAND: u16 = 965;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -225,13 +231,39 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SAUCER_DEATHRAY => (30.0, 30.0, 79, -1, 240, 0, false, false, false),
             // `Projectile.cs:1816-1825` — the missile: 14x14, aiStyle 80
             // (the port's boomerang return stand-in), penetrate -1.
-            SAUCER_MISSILE => (14.0, 14.0, 80, -1, TIME_LEFT_DEFAULT, 0, false, false, false),
+            SAUCER_MISSILE => (
+                14.0,
+                14.0,
+                80,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+            ),
             // `Projectile.cs:1826-1837` — the laser: 5x5, aiStyle 1,
             // extraUpdates 1, timeLeft 600.
             SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false),
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
             SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false),
+            // `Projectile.cs:9270-9279` — the ice spike: 32x32, aiStyle 157
+            // (the sharp-tears family), tileCollide false, ignoreWater.
+            DEERCLOPS_ICE_SPIKE => (
+                32.0,
+                32.0,
+                157,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+            ),
+            // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
+            // 187, penetrate -1, tileCollide false, timeLeft 300.
+            SHADOW_HAND => (40.0, 40.0, 187, -1, 300, 0, false, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and

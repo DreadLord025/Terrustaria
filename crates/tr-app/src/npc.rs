@@ -2296,7 +2296,7 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => self.update_golem(world, player),
-            NpcKind::Deerclops => self.update_golem(world, player),
+            NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Deerclops => self.update_golem(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
@@ -2350,6 +2350,9 @@ impl Npc {
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
             NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
+            NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -4942,15 +4945,21 @@ impl Npc {
                 #[cfg(test)]
                 eprintln!(
                     "[turret-dbg] t={} in_window={} core_open={} carrier={} side={}",
-                    t, (t >= 280.0 && t < 420.0), core_open, self.carrier_timer, side
+                    t,
+                    (t >= 280.0 && t < 420.0),
+                    core_open,
+                    self.carrier_timer,
+                    side
                 );
                 let in_window = t >= 280.0 && t < 420.0;
                 if in_window {
                     if core_open && (t - 280.0) % 6.0 == 0.0 {
                         // The 449 ray at the aim (ai[2] = the rotation).
-                        let ang = self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let ang =
+                            self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
                         let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
-                        self.wants_hostile_shot.push((449u16, cx + vx, cy + vy, vx, vy, 35));
+                        self.wants_hostile_shot
+                            .push((449u16, cx + vx, cy + vy, vx, vy, 35));
                     }
                 }
                 // The aim rides the fire test's own update (the player
@@ -4966,14 +4975,8 @@ impl Npc {
                 if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
                     let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
                     let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
-                    self.wants_hostile_shot.push((
-                        448u16,
-                        cx + side * 36.0,
-                        cy + 8.0,
-                        vx,
-                        vy,
-                        50,
-                    ));
+                    self.wants_hostile_shot
+                        .push((448u16, cx + side * 36.0, cy + 8.0, vx, vy, 50));
                 }
             }
             _ => {
@@ -5012,7 +5015,10 @@ impl Npc {
                         ));
                     } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
                         let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
-                        let (vx, vy) = (-(roll * 2.0) * ang.cos() * 3.0 - 1.0, -ang.sin() * 3.0 - 3.0);
+                        let (vx, vy) = (
+                            -(roll * 2.0) * ang.cos() * 3.0 - 1.0,
+                            -ang.sin() * 3.0 - 3.0,
+                        );
                         self.wants_hostile_shot.push((
                             450u16,
                             cx - side * 45.0,
@@ -5537,6 +5543,220 @@ impl Npc {
     /// ai[2] = the beam volley; the fists' ai[0] = the state (0 follow /
     /// 1 wind-up / 2 dash), ai[1] = the contact cadence (60) then the
     /// wind-up (30). The caster_counter boots the body's one-shot init.
+    /// The Deerclops (`AI_123_Deerclops`, `NPC.cs:44017-44407` + the
+    /// helpers): the state machine over `ai[0]` — -1 the spawn walk, 0 the
+    /// walk + the attack selection, 1 the ice spikes forward, 2 the rubble
+    /// up, 3 the slow-debuff blizzard, 4 the spikes both sides, 5 the
+    /// shadow-hand burst, 6/7 the go-home, 8 the flee/die. `ai[1]` = the
+    /// per-state counter, `ai[2]/ai[3]` = the home tile (the port's
+    /// `home` field pair). The classic-only: the passive shadow hands
+    /// (the expert arm) fold out; the life ramp feeds only the speed
+    /// (`:44645`'s 3.5+1).
+    fn update_deerclops(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The damage gate (`:44024-44039`): the 30-tick ramp toward the
+        // target; `dontTakeDamage` while a target stays within 450px.
+        let near = (cx - pcx).hypot(cy - pcy) < 450.0;
+        self.swim_phase = (self.swim_phase + if near { 1.0 } else { -1.0 }).clamp(-10.0, 30.0);
+        self.dont_take_damage = self.swim_phase >= 30.0;
+        if self.ai[0] == -1.0 {
+            self.swim_phase = -10.0;
+        }
+        // The walk (`AI_123_Deerclops_Movement`, `:44643-44726`).
+        if self.ai[0] != 5.0 && self.ai[0] != 1.0 && self.ai[0] != 4.0 {
+            let speed_cap = 3.5 + 1.0 * (1.0 - self.hp as f32 / self.max_hp as f32);
+            let target_x = if self.ai[0] == -1.0 {
+                self.facing_move_right(5.35, pcx, cx);
+                cx + 5.0
+            } else {
+                pcx
+            };
+            let cap = if self.ai[0] == -1.0 { 5.35 } else { speed_cap };
+            let dx = target_x - cx;
+            let halt = dx.abs() < 80.0 || self.ai[0] == 6.0 || self.ai[0] == 7.0;
+            if !halt && player.hp > 0 {
+                self.vx = (self.vx * 3.0 + dx.clamp(-cap, cap)) / 4.0;
+                if self.on_ground && self.vy >= 0.0 {
+                    self.vy = -8.0; // the ledge hop
+                }
+            } else {
+                self.vx *= 0.9;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+            }
+            self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+            self.vy = (self.vy + 0.4).clamp(-8.0, 16.0);
+            if self.on_ground {
+                self.vy = 0.0;
+            }
+            self.x += self.vx;
+            self.y += self.vy;
+        }
+        // The attack selection + the states.
+        match self.ai[0] as i32 {
+            0 => {
+                // `:44141-44201`'s state-0 selection (the classic arms).
+                if self.on_ground && player.hp > 0 {
+                    self.ai[1] += 1.0;
+                    let dx = (pcx - cx).abs();
+                    let quiet = self.vx.abs() < 0.05;
+                    if quiet && self.ai[1] >= 90.0 && dx < 120.0 {
+                        self.ai[0] = 5.0; // the shadow-hand burst
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] >= 120.0 && dx > 100.0 {
+                        self.ai[0] = 3.0; // the slow-debuff blizzard
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] >= 240.0 && dx < 120.0 {
+                        self.ai[0] = 2.0; // the rubble up
+                        self.ai[1] = 0.0;
+                    }
+                } else {
+                    self.ai[1] = 0.0;
+                }
+            }
+            1 => {
+                // The ice spikes forward (`:44203-44217` + the helper).
+                self.ai[1] += 1.0;
+                if self.ai[1] == 36.0 {
+                    // The spread (`:44579`): the per-index angle
+                    // `whichOne * dir * 0.7 * (PI/4 / howMany)` — the
+                    // port's trace sits on the Y velocity's slope; the
+                    // forward row walks the direction's sign.
+                    for i in 0..20 {
+                        let x = cx + self.facing as f32 * (3 + i * 1) as f32 * 16.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 80.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            2 => {
+                // The rubble up (`:44242-44263`): the 18-dmg rocks.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 32.0 {
+                    for i in 0..20 {
+                        let spread = (crate::app::rand01(rng) - 0.5) * 2.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            cx,
+                            cy,
+                            spread * 6.0,
+                            -8.0 - crate::app::rand01(rng) * 8.0,
+                            18,
+                        ));
+                    }
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            3 => {
+                // The slow-debuff blizzard (`:44264-44307`).
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 {
+                    self.wants_hostile_shot.push((
+                        crate::projectile::DEERCLOPS_ICE_SPIKE,
+                        cx,
+                        cy - 40.0,
+                        0.0,
+                        0.0,
+                        0,
+                    ));
+                }
+                if self.ai[1] >= 60.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            4 => {
+                // The ice spikes both sides (`:44218-44233` + the helper).
+                self.ai[1] += 1.0;
+                if self.ai[1] == 56.0 {
+                    for i in 0..15 {
+                        let x = cx + (i as f32) * 16.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            cx - (i as f32) * 16.0,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 90.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            5 => {
+                // The shadow-hand burst (`:44374-44404`): the 6 hands of
+                // the 965 at 15 dmg, the 60-tick total.
+                self.ai[1] += 1.0;
+                if self.ai[1] == 30.0 {
+                    let face = self.facing as f32;
+                    for i in 0..6 {
+                        let ang =
+                            (i as f32 / 6.0) * std::f32::consts::TAU + self.facing_move_phase(rng);
+                        let spawn_x = cx + ang.cos() * 120.0;
+                        let spawn_y = cy + ang.sin() * 120.0;
+                        let to_x = (pcx - spawn_x) / 40.0;
+                        let to_y = (pcy - spawn_y) / 40.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::SHADOW_HAND,
+                            spawn_x,
+                            spawn_y,
+                            to_x * face * 0.7 + to_x * 0.3,
+                            to_y,
+                            15,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 60.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            _ => {
+                // The go-home/teleport/flee states hold the walk.
+                self.ai[1] += 1.0;
+            }
+        }
+    }
+
+    /// The state-0's forced-direction walk (`:44667-44672`): ai[0]==-1
+    /// walks at 5.35 rightward; the heading rides the sign of `target`.
+    fn facing_move_right(&self, cap: f32, target_x: f32, cx: f32) -> f32 {
+        let dir = if target_x >= cx { 1.0 } else { -1.0 };
+        cap * dir
+    }
+
+    /// The shadow-hand burst's angular jitter (`RandomizeInsanityShadowFor`'s
+    /// spin, `Projectile.cs:42434-42477`).
+    fn facing_move_phase(&self, rng: &mut u64) -> f32 {
+        (crate::app::rand01(rng) - 0.5) * 0.25
+    }
+
     fn update_golem(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -8428,6 +8648,68 @@ mod tests {
         let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
         assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
     }
+    #[test]
+    fn the_deerclops_state_machine_cycles() {
+        // `AI_123_Deerclops` (`NPC.cs:44017-44407`): the damage gate, the
+        // attack-selection states, the ice-spike/shadow-hand volleys.
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        player.max_hp = 200;
+        player.hp = player.max_hp;
+        let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 3u64;
+        // The damage gate (`:44024-44039`): the ramp only reaches 30
+        // after 30 ticks with a target in range — the fresh spawn starts
+        // at 0 (vulnerable); the spawn state -1 pins it at -10.
+        assert!(!d.dont_take_damage, "the fresh spawn is open");
+        for _ in 0..31 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        assert!(d.dont_take_damage, "the 450px ramp shields");
+        // Tick the state 0 selection: the quiet close-range stall fires
+        // the shadow-hand burst (state 5).
+        d.ai[1] = 200.0;
+        d.vx = 0.0;
+        d.on_ground = true;
+        d.update_deerclops(&w, &player, &mut rng);
+        assert_eq!(d.ai[0], 5.0, "the hand burst state");
+        for _ in 0..60 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
+        let hands = d.wants_hostile_shot.len();
+        assert!(hands >= 6, "the 6-shadow-hand burst ({hands})");
+        // The spike volley (state 1).
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        for _ in 0..40 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        let spikes: Vec<_> = d
+            .wants_hostile_shot
+            .iter()
+            .filter(|(kind, ..)| *kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .copied()
+            .collect();
+        assert!(
+            spikes.len() >= 20,
+            "the spike volley adds shots ({})",
+            spikes.len()
+        );
+        for (_, _, _, _, _, dmg) in spikes.iter() {
+            assert_eq!(*dmg, 13, "the spike damage");
+        }
+        // The life ramp: the speed cap rises as the hp falls.
+        let fast = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
+        assert_eq!(fast, 3.5, "the full-body speed");
+        d.hp = d.max_hp / 2;
+        let slow = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
+        assert!((slow - 4.0).abs() < 0.01, "the half-body speed");
+    }
+
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
