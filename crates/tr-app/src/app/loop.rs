@@ -227,7 +227,7 @@ impl ApplicationHandler for App {
                                     self.bestiary_open = false;
                                     self.bestiary_selected = None;
                                 } else if self.emotes.menu_open {
-                                    self.emotes.menu_open = false;
+                                    self.emotes.close();
                                 } else {
                                     self.inventory_open = !self.inventory_open;
                                 }
@@ -297,6 +297,20 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     let step = d.round() as i32;
+                    // `UIList.ScrollWheel` (`UIList.cs:107-114`): the emotes
+                    // wheel scrolls while it is open, clamped at the roster's
+                    // end (`UIScrollbar.cs:37-47`). The chest arm below needs
+                    // the inventory, so the wheel takes precedence here.
+                    if step != 0
+                        && self.menu.is_none()
+                        && self.front.is_none()
+                        && self.emotes.menu_open
+                    {
+                        let (sw, sh) = self.screen_size();
+                        let grid = crate::ui::emotes::grid_rect(Vec2::new(sw, sh));
+                        self.emotes
+                            .scroll_by(step, crate::ui::emotes::visible_rows(&grid));
+                    }
                     // `Main.DoScrollingInInventory`'s chest arm
                     // (`Main.cs:17435-17452`): the wheel scrolls the chest
                     // slot window while the inventory is open and the pointer
