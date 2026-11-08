@@ -476,6 +476,8 @@ fn portrait_data(
         NpcKind::DD2DarkMage => 99,       // NPC_564
         NpcKind::DD2Betsy => 100,        // NPC_551
         NpcKind::DD2WitherBeast => 101,  // NPC_568
+        NpcKind::DD2Bartender => 102,    // NPC_550
+        NpcKind::DD2EterniaCrystal => 103, // NPC_548
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -746,6 +748,20 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
+        }
+        // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
+        (NpcKind::DD2Bartender, _) => {
+            let h = lookups.bestiary_npc_sheets[102]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The crystal: the NPC_548 strip over the 40x40 frames.
+        (NpcKind::DD2EterniaCrystal, _) => {
+            let h = lookups.bestiary_npc_sheets[103]
+                .map(|s| s.height as f32)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

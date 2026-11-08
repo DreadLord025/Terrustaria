@@ -2809,6 +2809,15 @@ and the aura phase — the pulse counter, the ring dust at the 400-px
 radius, the 60-tick self-heal (`lifeMax / 20` capped to the missing
 hp). The 683 crystal shots ride the shooter block's slice.
 
+## The tavernkeeper + the etherian crystal (M4-EVENT-5m)
+
+The Old One's Army's entry: the tavernkeeper (a town NPC) and the
+Eternia Crystal (548) with its 180-tick spawn-in shield — the
+`localAI[0]` counter holds `dontTakeDamage` until the crystal opens,
+then the event's waves ride it. The summon arm (the crystal item over
+the stand, `SummonCrystal`'s frame-offset spawn) is the seam to
+`DD2Event`.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
