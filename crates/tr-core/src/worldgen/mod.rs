@@ -15,6 +15,7 @@
 
 mod biome_detail;
 mod biomes;
+pub mod dungeon;
 mod caves;
 mod config;
 pub mod evil;

@@ -180,6 +180,13 @@ pub(crate) struct NpcAssets {
     pub(crate) martian_shooters: Option<BgTex>,
     pub(crate) scutlix_rider: Option<BgTex>,
     pub(crate) scutlix: Option<BgTex>,
+    /// `NPC_392/393/394/395` — the saucer family (the shell 150x80 4
+    /// frames, the turret 40x16 18, the cannon 46x36 8, the core 120x90
+    /// 11).
+    pub(crate) saucer: Option<BgTex>,
+    pub(crate) saucer_turret: Option<BgTex>,
+    pub(crate) saucer_cannon: Option<BgTex>,
+    pub(crate) saucer_core: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -274,6 +281,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_shooters: sky_tex(atlas, "NPC_382", None),
         scutlix_rider: sky_tex(atlas, "NPC_390", None),
         scutlix: sky_tex(atlas, "NPC_391", None),
+        saucer: sky_tex(atlas, "NPC_392", None),
+        saucer_turret: sky_tex(atlas, "NPC_393", None),
+        saucer_cannon: sky_tex(atlas, "NPC_394", None),
+        saucer_core: sky_tex(atlas, "NPC_395", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -966,6 +977,33 @@ pub(crate) fn draw_npcs(
                 assets.scutlix.as_ref(),
                 assets.scutlix.as_ref().map_or(40.0, |t| t.h / 6.0),
                 [60.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The saucer family: the shell 4-frame (150x80), the turret
+            // 18-frame (40x16), the cannon 8-frame (46x36), the core
+            // 11-frame (120x90) strips.
+            NpcKind::MartianSaucer => (
+                assets.saucer.as_ref(),
+                assets.saucer.as_ref().map_or(80.0, |t| t.h / 4.0),
+                [150.0, 80.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerTurret => (
+                assets.saucer_turret.as_ref(),
+                assets.saucer_turret.as_ref().map_or(16.0, |t| t.h / 18.0),
+                [40.0, 16.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerCannon => (
+                assets.saucer_cannon.as_ref(),
+                assets.saucer_cannon.as_ref().map_or(36.0, |t| t.h / 8.0),
+                [46.0, 36.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianSaucerCore => (
+                assets.saucer_core.as_ref(),
+                assets.saucer_core.as_ref().map_or(90.0, |t| t.h / 11.0),
+                [120.0, 90.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (
