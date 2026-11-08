@@ -48,8 +48,8 @@ pub(crate) struct PlayerAssets {
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the M2-MOUNT-1 ground set.
-    pub(crate) mount_back: [Option<BgTex>; 12],
-    pub(crate) mount_front: [Option<BgTex>; 12],
+    pub(crate) mount_back: [Option<BgTex>; 23],
+    pub(crate) mount_front: [Option<BgTex>; 23],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw

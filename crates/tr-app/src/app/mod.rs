@@ -1575,6 +1575,17 @@ impl App {
                     "pogo" | "pogo_stick" => Some(43),
                     "wofgoat" | "goat" => Some(47),
                     "queenslime" => Some(50),
+                    "pigron" => Some(2),
+                    "bee" => Some(5),
+                    "ufo" => Some(7),
+                    "drill" => Some(8),
+                    "cutefishron" => Some(12),
+                    "broom" | "witchbroom" => Some(23),
+                    "pirateship" => Some(44),
+                    "book" | "darkmagebook" => Some(48),
+                    "lavashark" => Some(49),
+                    "bat" => Some(56),
+                    "pixie" => Some(61),
                     _ => None,
                 });
                 p.pinned_mount = id;
