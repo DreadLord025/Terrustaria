@@ -76,37 +76,22 @@ pub const SAUCER_MISSILE: u16 = 448;
 pub const SAUCER_LASER: u16 = 449;
 /// `ProjectileID.SaucerScrap` (450) — the shell's missiles.
 pub const SAUCER_SCRAP: u16 = 450;
-/// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
-pub const FLAME_ARROW: u16 = 2;
-/// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
-pub const MUSKET_BALL: u16 = 14;
-/// `ProjectileID.BrainScramblerShot` (436) — the martian shooter's ray
-/// (`Projectile.cs:5064-5070`: 10x10, aiStyle 1, hostile, ignoreWater).
+/// `ProjectileID.BrainScramblerShot` (436) — the martian ground shooter's
+/// ray (`Projectile.cs:5064-5070`: 10x10, aiStyle 1, hostile,
+/// ignoreWater).
 pub const SCRAMBLER_SHOT: u16 = 436;
 /// `ProjectileID.MartianRay` (438) — the Scutlix rider's ray
 /// (`Projectile.cs:5081-5089`: 8x8, aiStyle 1, hostile, alpha 255,
 /// extraUpdates 3, ignoreWater).
 pub const MARTIAN_RAY: u16 = 438;
-/// `ProjectileID.MartianSaucerLaser` (447) — the saucer's core shot
-/// (`Projectile.cs:5188-5198`: 30x30, aiStyle 79, hostile, penetrate -1,
-/// tileCollide false, timeLeft 240).
-pub const SAUCER_LASER: u16 = 447;
-/// `ProjectileID.MartianSaucerShell` (448) — the cannon's shell
-/// (`Projectile.cs:5199-5207`: 14x14, aiStyle 80, hostile, penetrate -1,
-/// tileCollide false).
-pub const SAUCER_SHELL: u16 = 448;
-/// `ProjectileID.MartianTurretRay` (449) — the turret's ray
-/// (`Projectile.cs:5208-5218`: 5x5, aiStyle 1, hostile, alpha 255,
-/// extraUpdates 1, timeLeft 600).
-pub const TURRET_RAY: u16 = 449;
-/// `ProjectileID.MartianMissile` (450) — the shell's missile
-/// (`Projectile.cs:5220-5229`: 14x14, aiStyle 14, hostile, penetrate -1,
-/// timeLeft 360).
-pub const MARTIAN_MISSILE: u16 = 450;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
 pub const DUTCHMAN_SHELL: u16 = 240;
+/// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
+pub const FLAME_ARROW: u16 = 2;
+/// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
+pub const MUSKET_BALL: u16 = 14;
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -271,13 +256,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
             DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
             // The martian family's guns + the Dutchman's cannon — the
-            // `SetDefaults` rows packed into the data shape.
+            // `SetDefaults` rows packed into the data shape (the saucer
+            // family's four consts ride the origin/main set).
             SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
-            SAUCER_LASER => (30.0, 30.0, 79, -1, 240, 0, false, false, false),
-            SAUCER_SHELL => (14.0, 14.0, 80, -1, TIME_LEFT_DEFAULT, 0, false, false, false),
-            TURRET_RAY => (5.0, 5.0, 1, 1, 600, 1, true, false, false),
-            MARTIAN_MISSILE => (14.0, 14.0, 14, -1, 360, 0, true, false, false),
             DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
