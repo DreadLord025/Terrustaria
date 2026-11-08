@@ -2748,6 +2748,19 @@ The DD2 framework (the crystal 548, the tavernkeep 550, the
 `DD2Event.EnemiesShouldChasePlayers` chase flag, the wave tiers' bosses
 — the Dark Mage 564, Betsy 551) is the next slice.
 
+## The DD2 support families (M4-EVENT-5e)
+
+The Old One's Army's second echelon: the kobold bombers (555-557, kb
+0.1, walk 0.88/1.12), the javelin throwers (561-563, 26×52, the spear
+projectiles 662/685 at the 82-tick cadence) and the etherian skeletons
+(566-567 with the materialize cycle — `localAI[3]`'s spawn-in counter,
+the alpha fade over the 110-tick run; the walk rides the harness while
+translucent).
+
+The families' walk arms ride the port's harness with the vanilla's
+per-kind speed rows; the bombers' bomb throw, the throwers' spears and
+the skeletons' fade render ride their own slices.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

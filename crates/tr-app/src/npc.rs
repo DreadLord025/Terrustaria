@@ -156,6 +156,30 @@ pub enum NpcKind {
     /// `NPCID.DD2GoblinT3` (554) — the tier-3 goblin (560 HP, dmg 70,
     /// def 28, the +0.02/+0.4 accel/speed).
     DD2GoblinT3,
+    /// `NPCID.DD2GoblinBomberT1` (555) — the kobold bomber (`NPC.cs`:
+    /// 18×40, aiStyle 107, dmg 26, def 16, 50 HP; the fuse death).
+    DD2GoblinBomberT1,
+    /// `NPCID.DD2GoblinBomberT2` (556) — the tier-2 bomber (200 HP,
+    /// dmg 55, def 26).
+    DD2GoblinBomberT2,
+    /// `NPCID.DD2GoblinBomberT3` (557) — the tier-3 bomber (700 HP,
+    /// dmg 75, def 34).
+    DD2GoblinBomberT3,
+    /// `NPCID.DD2JavelinstT1` (561) — the javelin thrower (`NPC.cs`:
+    /// 26×52, aiStyle 107, dmg 30, def 18, 60 HP).
+    DD2JavelinT1,
+    /// `NPCID.DD2JavelinstT2` (562) — the tier-2 javelin (300 HP,
+    /// dmg 60, def 28).
+    DD2JavelinT2,
+    /// `NPCID.DD2JavelinstT3` (563) — the tier-3 javelin (1000 HP,
+    /// dmg 80, def 38, the 685 spear).
+    DD2JavelinT3,
+    /// `NPCID.DD2SkeletonT1` (566) — the etherian skeleton (`NPC.cs`:
+    /// 18×40, aiStyle 107, dmg 18, def 12, 25 HP; materializes in).
+    DD2SkeletonT1,
+    /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
+    /// dmg 70, def 22).
+    DD2SkeletonT3,
     /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
     /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
@@ -570,6 +594,14 @@ impl NpcKind {
             NpcKind::DD2GoblinT1 => 95,
             NpcKind::DD2GoblinT2 => 96,
             NpcKind::DD2GoblinT3 => 97,
+            NpcKind::DD2GoblinBomberT1 => 98,
+            NpcKind::DD2GoblinBomberT2 => 99,
+            NpcKind::DD2GoblinBomberT3 => 100,
+            NpcKind::DD2JavelinT1 => 101,
+            NpcKind::DD2JavelinT2 => 102,
+            NpcKind::DD2JavelinT3 => 103,
+            NpcKind::DD2SkeletonT1 => 104,
+            NpcKind::DD2SkeletonT3 => 105,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -671,6 +703,14 @@ impl NpcKind {
             95 => NpcKind::DD2GoblinT1,
             96 => NpcKind::DD2GoblinT2,
             97 => NpcKind::DD2GoblinT3,
+            98 => NpcKind::DD2GoblinBomberT1,
+            99 => NpcKind::DD2GoblinBomberT2,
+            100 => NpcKind::DD2GoblinBomberT3,
+            101 => NpcKind::DD2JavelinT1,
+            102 => NpcKind::DD2JavelinT2,
+            103 => NpcKind::DD2JavelinT3,
+            104 => NpcKind::DD2SkeletonT1,
+            105 => NpcKind::DD2SkeletonT3,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -875,6 +915,11 @@ impl NpcKind {
             NpcKind::FlyingDutchmanCannon => (30.0, 30.0),
             // The DD2 goblins: 18x40 (`NPC.cs`'s cases 552-554).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (18.0, 40.0),
+            // The DD2 bombers: 18x40; the javelin throwers 26x52; the
+            // etherian skeletons 18x40 (`NPC.cs`'s 555-567 rows).
+            NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => (18.0, 40.0),
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (26.0, 52.0),
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => (18.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1053,6 +1098,16 @@ impl NpcKind {
             NpcKind::DD2GoblinT1 => 30,
             NpcKind::DD2GoblinT2 => 170,
             NpcKind::DD2GoblinT3 => 560,
+            // The support rows (`NPC.cs`): the bombers 50/200/700, the
+            // javelineers 60/300/1000, the skeletons 25/480.
+            NpcKind::DD2GoblinBomberT1 => 50,
+            NpcKind::DD2GoblinBomberT2 => 200,
+            NpcKind::DD2GoblinBomberT3 => 700,
+            NpcKind::DD2JavelinT1 => 60,
+            NpcKind::DD2JavelinT2 => 300,
+            NpcKind::DD2JavelinT3 => 1000,
+            NpcKind::DD2SkeletonT1 => 25,
+            NpcKind::DD2SkeletonT3 => 480,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1177,6 +1232,15 @@ impl NpcKind {
             NpcKind::DD2GoblinT1 => 18,
             NpcKind::DD2GoblinT2 => 46,
             NpcKind::DD2GoblinT3 => 70,
+            // The support's damage: 26/55/75, 30/60/80, 18/70.
+            NpcKind::DD2GoblinBomberT1 => 26,
+            NpcKind::DD2GoblinBomberT2 => 55,
+            NpcKind::DD2GoblinBomberT3 => 75,
+            NpcKind::DD2JavelinT1 => 30,
+            NpcKind::DD2JavelinT2 => 60,
+            NpcKind::DD2JavelinT3 => 80,
+            NpcKind::DD2SkeletonT1 => 18,
+            NpcKind::DD2SkeletonT3 => 70,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1851,6 +1915,11 @@ impl Npc {
             // The DD2 goblins: kb 0.2/0.2/0.15 (`NPC.cs`'s cases 552-554).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 => 0.2,
             NpcKind::DD2GoblinT3 => 0.15,
+            // The support's kb: the bombers 0.1, the javelineers 0.2, the
+            // skeletons 0.5 (`NPC.cs`'s rows).
+            NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => 0.1,
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => 0.2,
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -2000,6 +2069,15 @@ impl Npc {
             NpcKind::DD2GoblinT1 => 14,
             NpcKind::DD2GoblinT2 => 20,
             NpcKind::DD2GoblinT3 => 28,
+            // The support's defense: 16/26/34, 18/28/38, 12/22.
+            NpcKind::DD2GoblinBomberT1 => 16,
+            NpcKind::DD2GoblinBomberT2 => 26,
+            NpcKind::DD2GoblinBomberT3 => 34,
+            NpcKind::DD2JavelinT1 => 18,
+            NpcKind::DD2JavelinT2 => 28,
+            NpcKind::DD2JavelinT3 => 38,
+            NpcKind::DD2SkeletonT1 => 12,
+            NpcKind::DD2SkeletonT3 => 22,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2143,6 +2221,14 @@ impl Npc {
             NpcKind::FlyingDutchmanCannon => 0.0,
             // The DD2 goblins: value 0 (cases 552-554 set nothing).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => 0.0,
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2JavelinT1
+            | NpcKind::DD2JavelinT2
+            | NpcKind::DD2JavelinT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3 => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2418,6 +2504,18 @@ impl Npc {
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
                 self.update_dd2_goblin(world, player, dt)
             }
+            // The DD2 support families (`AI_107_ImprovedWalkers`'s arms):
+            // the bombers, the javelin throwers, the materializing
+            // skeletons.
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2JavelinT1
+            | NpcKind::DD2JavelinT2
+            | NpcKind::DD2JavelinT3 => self.update_dd2_goblin(world, player, dt),
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
+                self.update_dd2_skeleton(world, player)
+            }
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2617,6 +2715,23 @@ impl Npc {
             // The DD2 goblins: the 14-frame humanoid strip
             // (`Main.npcFrameCount` 552-554).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // The support families: the bombers/javelineers/skeletons ride
+            // the humanoid strips (the same accumulator; the skeletons'
+            // materialize cycle drives their own timer).
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2JavelinT1
+            | NpcKind::DD2JavelinT2
+            | NpcKind::DD2JavelinT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3 => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
@@ -5300,6 +5415,33 @@ impl Npc {
         let _ = dt;
     }
 
+    /// `AI_107_ImprovedWalkers`'s etherian-skeleton arm (`NPC.cs:63510-`)
+    /// — the MATERIALIZE cycle. `localAI[3]` (the port's `caster_counter`)
+    /// counts the spawn-in: the skeleton fades in over the 110-tick run
+    /// (the port's render-carrying counter) and the walk rides the
+    /// improved-walker harness once materialized; the arm's dust/fade is
+    /// the render follow-up.
+    fn update_dd2_skeleton(&mut self, world: &World, player: &Player) {
+        self.caster_counter += 1;
+        // The walk rides the harness (the vanilla walks the materializing
+        // skeleton too — the fade is cosmetic).
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The init (`:36071-36092`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
@@ -6762,6 +6904,14 @@ impl Npc {
             NpcKind::DD2GoblinT1 => 95,
             NpcKind::DD2GoblinT2 => 96,
             NpcKind::DD2GoblinT3 => 97,
+            NpcKind::DD2GoblinBomberT1 => 98,
+            NpcKind::DD2GoblinBomberT2 => 99,
+            NpcKind::DD2GoblinBomberT3 => 100,
+            NpcKind::DD2JavelinT1 => 101,
+            NpcKind::DD2JavelinT2 => 102,
+            NpcKind::DD2JavelinT3 => 103,
+            NpcKind::DD2SkeletonT1 => 104,
+            NpcKind::DD2SkeletonT3 => 105,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

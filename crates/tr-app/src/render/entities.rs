@@ -194,6 +194,9 @@ pub(crate) struct NpcAssets {
     /// `NPC_552/553/554` — the DD2 goblin attackers (14-frame strips of
     /// 18x40; the sheets are the shared humanoid shape).
     pub(crate) dd2_goblins: Option<BgTex>,
+    /// `NPC_555-567` — the DD2 support family (the bombers/javelineers'
+    /// humanoid strips + the skeletons' 14-frame materialize sheets).
+    pub(crate) dd2_support: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -295,6 +298,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dutchman: sky_tex(atlas, "NPC_491", None),
         dutchman_cannon: sky_tex(atlas, "NPC_492", None),
         dd2_goblins: sky_tex(atlas, "NPC_553", None),
+        dd2_support: sky_tex(atlas, "NPC_556", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1049,6 +1053,25 @@ pub(crate) fn draw_npcs(
                 assets.dd2_goblins.as_ref(),
                 assets.dd2_goblins.as_ref().map_or(40.0, |t| t.h / 14.0),
                 [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The support family: the bombers' 18x40 and the javelin
+            // throwers' 26x52 strips (the shared humanoid sheets), the
+            // skeletons' 18x40 strips.
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3 => (
+                assets.dd2_support.as_ref(),
+                assets.dd2_support.as_ref().map_or(40.0, |t| t.h / 14.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
+                assets.dd2_support.as_ref(),
+                assets.dd2_support.as_ref().map_or(52.0, |t| t.h / 14.0),
+                [26.0, 52.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (
