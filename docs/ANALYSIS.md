@@ -4997,8 +4997,12 @@ Deviations:
   pins 2109138558/948698174 are recorded in the commits). Screenshot
   determinism pair (seed 1, the altar room at `TR_CAM=1836,703`
   `TR_SHOT_FRAME=600` `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`): zoom 1.0
-  `b2600c92…` and zoom 2.0 `501baf30…` both reproduce byte-equal on the
-  repeat run; a zoom-2.0 frame-900 pair showed the known `TR_SHOT` harness
+  `8a75a259…` and zoom 2.0 `352859a2…`, each byte-equal on its repeat run
+  (taken from the merged `main` build); the worktree-built pair differed
+  from these by 900 px (max channel 9, the near-black altar-room corner) —
+  a cross-build f32-order delta in the render path, not a world-state or
+  determinism difference (the world hashes are pinned by the tests). A
+  zoom-2.0 frame-900 pair separately showed the known `TR_SHOT` harness
   timing sensitivity (the ANALYSIS harness note) in the HUD hotbar region
   only.
 
