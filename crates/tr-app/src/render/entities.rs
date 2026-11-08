@@ -1467,17 +1467,29 @@ pub(crate) fn draw_npcs(
                 let (bw, bh) = n.size();
                 (tex, fh, [bw + 4.0, bh], [n.x - 2.0, n.y - 2.0])
             }
-            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => (
-                match n.kind {
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                // The bats: `Main.npcFrameCount` 49/51/60/66 = 5
+                // (`Main.cs:67082`); NPC_49/51/60 are 44x160 (5 rows of
+                // 32), NPC_66 86x440 (5 rows of 88); the generic anchor
+                // centres each frame on the box's centre-X with its centre
+                // 4 px below the bottom (`Main.cs:25511-25516`) — the v1
+                // read the row height off the cave bat for EVERY kind and
+                // stretched a fixed 26x18 quad.
+                let t = match n.kind {
                     NpcKind::JungleBat => assets.jungle_bat.as_ref(),
                     NpcKind::Hellbat => assets.hellbat.as_ref(),
                     NpcKind::VoodooDemon => assets.voodoo_demon.as_ref(),
                     _ => assets.cave_bat.as_ref(),
-                },
-                assets.cave_bat.as_ref().map_or(18.0, |t| t.h / 5.0),
-                [26.0, 18.0],
-                [n.x - 12.0, n.y - 9.0],
-            ),
+                };
+                let fh = t.map_or(32.0, |t| t.h / 5.0);
+                let fw = t.map_or(44.0, |t| t.w);
+                (
+                    t,
+                    fh,
+                    [fw, fh],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                )
+            }
             NpcKind::KingSlime => (
                 assets.king_slime.as_ref(),
                 120.0,
@@ -1554,6 +1566,10 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Goldfish
                     | NpcKind::Piranha
                     | NpcKind::Shark
+                    | NpcKind::CaveBat
+                    | NpcKind::JungleBat
+                    | NpcKind::Hellbat
+                    | NpcKind::VoodooDemon
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

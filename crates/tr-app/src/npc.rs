@@ -3296,14 +3296,33 @@ impl Npc {
                 }
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                // `FindFrame`'s case 49 group (`NPC.cs:74824-74881`): the
+                // spriteDirection rides the velocity's sign, the tilt
+                // `rotation = velocity.X * 0.1`, and the flap advances
+                // every 6 ticks over `npcFrameCount - 1` rows — the
+                // Cave/Jungle/Hell bats' last row is reserved
+                // (`:74871-74873`'s `num292--`), the v1 cycled all 5 rows
+                // every 4 ticks.
+                self.facing = if self.vx > 0.0 {
+                    1
+                } else if self.vx < 0.0 {
+                    -1
+                } else {
+                    self.facing
+                };
+                self.rotation = self.vx * 0.1;
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 4.0 {
+                if self.frame_counter >= 6.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 5 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    self.frame += 1;
+                }
+                let cycle = if self.kind == NpcKind::VoodooDemon {
+                    5
+                } else {
+                    4
+                };
+                if self.frame >= cycle {
+                    self.frame = 0;
                 }
             }
             // The casters (`FindFrame`'s case 29/32/45 group,
@@ -10415,6 +10434,49 @@ mod tests {
         s.frame_counter = 0.0;
         s.find_frame();
         assert_eq!(s.frame, 1, "the beached shark holds the row");
+    }
+
+
+    #[test]
+    fn the_bats_flap_the_count_minus_one_cycle_and_tilt() {
+        // `FindFrame`'s case 49 group (`NPC.cs:74824-74881`): the flap
+        // advances every 6 ticks over `npcFrameCount - 1` rows for the
+        // Cave/Jungle/Hell bats (`:74871-74873`'s `num292--`), the full 5
+        // for the Voodoo Demon; the spriteDirection rides the velocity's
+        // sign and the tilt is `rotation = velocity.X * 0.1` (`:74858-74860`).
+        let mut b = bare(NpcKind::CaveBat);
+        b.vx = 2.0;
+        b.frame = 0;
+        b.frame_counter = 0.0;
+        for _ in 0..5 {
+            b.find_frame();
+        }
+        assert_eq!(b.frame, 0, "the 6-tick stride holds the row");
+        b.find_frame();
+        assert_eq!(b.frame, 1, "the sixth tick advances");
+        assert_eq!(b.rotation, 0.2, "the tilt rides vx*0.1");
+        assert_eq!(b.facing, 1, "the rightward flight faces right");
+        // The last row is reserved: 4 -> 0.
+        b.frame = 3;
+        b.frame_counter = 6.1;
+        b.find_frame();
+        assert_eq!(b.frame, 0, "the cave bat wraps at 4");
+        // The Voodoo Demon cycles all five rows (66 has no `num292--`).
+        let mut v = bare(NpcKind::VoodooDemon);
+        v.frame = 4;
+        v.frame_counter = 6.1;
+        v.find_frame();
+        assert_eq!(v.frame, 0, "the demon wraps at 5");
+        v.frame = 4;
+        v.frame_counter = 0.0;
+        v.find_frame();
+        assert_eq!(v.frame, 4, "the fifth row is live before the wrap");
+        // The leftward tilt.
+        let mut b2 = bare(NpcKind::CaveBat);
+        b2.vx = -2.0;
+        b2.find_frame();
+        assert_eq!(b2.rotation, -0.2, "the leftward tilt");
+        assert_eq!(b2.facing, -1, "the leftward flight faces left");
     }
 
 
