@@ -798,7 +798,10 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
-        let (w, _) = n.size();
+        // The width + the height: the Golem family's draw anchors the
+        // frame off the box's bottom edge (the vanilla's
+        // `position.Y + height + 4`, `Main.cs:25513`).
+        let (w, h) = n.size();
         let (tex, frame_h, size, pos) = match n.kind {
             NpcKind::Slime => (
                 assets.slime.as_ref(),
@@ -1159,27 +1162,49 @@ pub(crate) fn draw_npcs(
                 [34.0, 54.0],
                 [n.x - 8.0, n.y - 10.0],
             ),
-            // The Golem family (the v1 single-frame draws): the body
-            // 140x140, the heads 70x70, the fists 40x30 (the SetDefaults
-            // boxes; the sheets draw at the box size).
-            NpcKind::Golem => (
-                assets.golem.as_ref(),
-                assets.golem.as_ref().map_or(140.0, |t| t.h),
-                [140.0, 140.0],
-                [n.x, n.y],
-            ),
-            NpcKind::GolemHead | NpcKind::GolemHeadFree => (
-                if n.kind == NpcKind::GolemHead {
-                    assets.golem_head.as_ref()
+            // The Golem family: the multi-frame draws over the real
+            // sheets. `Main.npcFrameCount` 245 = 7 / 246 = 6 / 247 = 248
+            // = 1 / 249 = 2 (`Main.cs:67108`) — the sheets divide into
+            // rows of `t.h / count` (1218/7 = 174, 708/6 = 118, 276/2 =
+            // 138, 40/1 = 40) and `npc_frame_uv` selects the row the
+            // machines wrote (`FindFrame` cases 245/246/249). The
+            // generic draw anchor (`Main.cs:25511-25516`) centers the
+            // frame on the box's centre-X and puts the frame's centre
+            // 4 px below the box's bottom: `n.x + w/2 - frame.w/2`,
+            // `n.y + h + 4 - frame.h/2`.
+            NpcKind::Golem => {
+                let t = assets.golem.as_ref();
+                let fh = t.map_or(174.0, |t| t.h / 7.0);
+                (
+                    t,
+                    fh,
+                    [186.0, fh],
+                    [n.x + w * 0.5 - 93.0, n.y + h + 4.0 - fh * 0.5],
+                )
+            }
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => {
+                let (t, count) = if n.kind == NpcKind::GolemHead {
+                    (assets.golem_head.as_ref(), 6.0)
                 } else {
-                    assets.golem_head_free.as_ref()
-                },
-                70.0,
-                [70.0, 70.0],
-                [n.x, n.y],
-            ),
+                    (assets.golem_head_free.as_ref(), 2.0)
+                };
+                let fh = t.map_or(if count == 6.0 { 118.0 } else { 138.0 }, |t| t.h / count);
+                (
+                    t,
+                    fh,
+                    [112.0, fh],
+                    [n.x + w * 0.5 - 56.0, n.y + h + 4.0 - fh * 0.5],
+                )
+            }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
-                (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
+                let t = assets.golem_fist.as_ref();
+                let fh = t.map_or(40.0, |t| t.h);
+                (
+                    t,
+                    fh,
+                    [50.0, fh],
+                    [n.x + w * 0.5 - 25.0, n.y + h + 4.0 - fh * 0.5],
+                )
             }
             // The Deerclops: the 60x154 sheet (the v1 single-frame).
             NpcKind::Deerclops => (
@@ -1384,24 +1409,41 @@ pub(crate) fn draw_npcs(
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
+        // `NPC.GetAlpha`'s `(255 - alpha)/255` (`NPC.cs:93406-93412`)
+        // rides every NPC: the Golem family spawns at `alpha = 255` and
+        // fades in over 26 ticks (the others start at 0 — a no-op tint).
+        let fade = 1.0 - n.alpha as f32 / 255.0;
         let base = if n.kind == NpcKind::Slime {
             let k = n.slime.stats().color;
             [
-                c[0] * k[0] as f32 / 255.0,
-                c[1] * k[1] as f32 / 255.0,
-                c[2] * k[2] as f32 / 255.0,
-                k[3] as f32 / 255.0,
+                c[0] * k[0] as f32 / 255.0 * fade,
+                c[1] * k[1] as f32 / 255.0 * fade,
+                c[2] * k[2] as f32 / 255.0 * fade,
+                k[3] as f32 / 255.0 * fade,
             ]
         } else {
-            [c[0], c[1], c[2], 1.0]
+            [c[0] * fade, c[1] * fade, c[2] * fade, fade]
         };
         let tint = if n.hurt_cd > 0.0 {
-            [c[0].max(0.8), c[1].max(0.8), c[2].max(0.8), 1.0]
+            [
+                c[0].max(0.8) * fade,
+                c[1].max(0.8) * fade,
+                c[2].max(0.8) * fade,
+                fade,
+            ]
         } else {
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
-        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0 {
+        if n.rotation != 0.0
+            && matches!(
+                n.kind,
+                NpcKind::DemonEye
+                    | NpcKind::WanderingEye
+                    | NpcKind::GolemFistLeft
+                    | NpcKind::GolemFistRight
+            )
+        {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight

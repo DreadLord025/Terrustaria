@@ -52,7 +52,7 @@ use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
 use crate::menu;
 use crate::net;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::persist;
 use crate::player::{self, Player};
 use crate::projectile::ProjectilePool;
@@ -1651,7 +1651,26 @@ impl App {
         }
         if std::env::var_os("TR_BOSS").is_some() {
             if let Some(p) = &player {
-                if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
+                // `TR_BOSS=golem` places the Golem body for the family's
+                // deterministic shots (the parts ride the body's one-shot
+                // init); any other value (or a bare flag) keeps the King
+                // Slime. The body takes the `SetDefaults` alpha fade.
+                let boss = std::env::var("TR_BOSS").unwrap_or_default();
+                if boss == "golem" {
+                    let (bw, bh) = NpcKind::Golem.size();
+                    let mut g = Npc::new(
+                        NpcKind::Golem,
+                        p.x + 12.0 * TILE_PX,
+                        p.y + p.height - bh,
+                        1,
+                        0.0,
+                    );
+                    g.hp = g.max_hp;
+                    g.alpha = 255;
+                    npcs.push(g);
+                } else if let Some(n) =
+                    Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
+                {
                     npcs.push(n);
                 }
             }
