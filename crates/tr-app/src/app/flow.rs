@@ -1488,6 +1488,7 @@ pub(crate) mod front_flow_tests {
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
             ambience_rng: 1,
+            clock_rng: 7,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,

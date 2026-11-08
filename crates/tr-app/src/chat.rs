@@ -8,6 +8,7 @@
 //! name tag prefix rides the author byte).
 
 /// `ChatColors.cs` — the palette the ported messages use.
+pub const COLOR_WORLD: [u8; 3] = [50, 255, 130];
 pub const COLOR_DEATH: [u8; 3] = [255, 25, 25];
 pub const COLOR_SERVER_MESSAGE: [u8; 3] = [255, 240, 20];
 pub const COLOR_COMMAND: [u8; 3] = [250, 250, 0];
