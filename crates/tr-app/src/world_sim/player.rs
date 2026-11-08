@@ -111,6 +111,25 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 respawn_now = p.update_dead(input.jump, boss_near, false) || respawn_now;
             });
             if respawn_now {
+                // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
+                // a broken bed or an invalid room reverts the spawn to the
+                // world spawn (`SpawnX = -1` — the port clears `bed_spawn` and
+                // rewrites the spawn fields); `CheckSpawn`'s failure text
+                // rides the chat like the C#'s `Main.NewText`.
+                if let Some((bx, by)) = app.world.bed_spawn {
+                    if !crate::world_sim::editing::check_bed_spawn(
+                        &app.world,
+                        bx,
+                        by,
+                        &mut app.chat,
+                    ) {
+                        app.world.bed_spawn = None;
+                        p.spawn_x = app.world.spawn_x as f32 * tr_core::TILE_PX + 8.0
+                            - crate::player::WIDTH as f32 * 0.5;
+                        p.spawn_y = app.world.spawn_y as f32 * tr_core::TILE_PX
+                            - crate::player::HEIGHT as f32;
+                    }
+                }
                 p.revive();
                 app.npcs.clear();
                 app.npc_timer = 4.0;
@@ -228,7 +247,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.mount_cart();
         }
         app.player_step.tick(dt, |_| {
-            p.update_with_grapple(&app.world, input, grapple_for_tick);
+            // `player.itemAnimation > 0` for the sleeping state — the same
+            // gate the swing render uses (`self.swing > 0.0` with a held
+            // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
+            // stand-in (no `DangerThatPreventsOtherDangers` members yet).
+            let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
+            p.update_with_grapple(&app.world, input, grapple_for_tick, item_in_use, false);
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of
@@ -412,5 +436,85 @@ mod tests {
             }
         }
         unreachable!()
+    }
+
+    #[test]
+    fn the_revive_revalidates_the_bed_spawn() {
+        // DW-3.3 — `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
+        // an intact bed survives the revive, a destroyed one reverts the
+        // spawn to the world spawn and clears the port's `bed_spawn`.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("bed".into(), 64, 48);
+        {
+            let w = &mut app.world;
+            for x in 0..64 {
+                let i = w.index(x, 20);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            // A minimal valid NPC room around the bed (the wood frame +
+            // background walls — the room check needs the 60-tile interior).
+            for x in 14..=26 {
+                for y in 12..=20 {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 27;
+                    let border = x == 14 || x == 26 || y == 12 || y == 20;
+                    if border {
+                        w.tiles[i] = Tile {
+                            kind: 9,
+                            frame_x: -1,
+                            frame_y: -1,
+                            ..Default::default()
+                        };
+                        w.tiles[i].flags |= FLAG_ACTIVE;
+                    }
+                }
+            }
+            // The bed's bottom cell at (20, 19); the spawn cell (20, 20).
+            let bed = w.index(20, 19);
+            w.tiles[bed] = Tile {
+                kind: 79,
+                frame_y: 18,
+                ..Default::default()
+            };
+            w.tiles[bed].flags |= FLAG_ACTIVE;
+            w.bed_spawn = Some((20, 20));
+        }
+        // The load rebuild: `Player::spawn` reads the validated bed spawn
+        // (DW-3.2's sim-side arm).
+        app.player = Some(Player::spawn(&app.world));
+        let bed = app.world.index(20, 19);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.start_death(&app.world, false, false);
+        }
+        // The stepper caps the steps per call — feed the 600-tick respawn
+        // timer in frame-sized bites.
+        for _ in 0..700 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.dead, "the revive fired");
+            assert_eq!(p.spawn_x, 20.0 * tr_core::TILE_PX + 8.0 - 10.0);
+        }
+        assert_eq!(app.world.bed_spawn, Some((20, 20)), "the intact bed stays");
+        // The bed breaks — the next death reverts to the world spawn.
+        app.world.tiles[bed].flags &= !FLAG_ACTIVE;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.start_death(&app.world, false, false);
+        }
+        for _ in 0..700 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        let w_spawn = (app.world.spawn_x as f32 * tr_core::TILE_PX + 8.0
+            - crate::player::WIDTH as f32 * 0.5);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.spawn_x, w_spawn, "the broken bed reverts the spawn");
+        assert_eq!(app.world.bed_spawn, None);
     }
 }

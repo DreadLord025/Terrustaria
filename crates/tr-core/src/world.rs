@@ -88,6 +88,13 @@ pub struct World {
     pub eclipse: bool,
     /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub blood_moon: bool,
+    /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
+    /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
+    /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
+    /// (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks). The sim feeds it
+    /// per frame — `Main.UpdateWorld_Players` computes the counts before
+    /// `UpdateTime` reads them. Runtime-only, not saved.
+    pub all_players_asleep: bool,
     /// The downed-boss flags (`NPC.downed*` statics, `NPC.cs:6340-6380`):
     /// the world-persistent boss states. The save wire rides the .wld
     /// flags block (M6-SAVE's world sections).
@@ -123,6 +130,24 @@ pub struct World {
     /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
     /// flag 6, `NPC.cs:79346`'s case 245).
     pub downed_golem: bool,
+    /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
+    /// 25, `NPC.cs:79355`).
+    pub downed_deerclops: bool,
+    /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
+    /// head/fists/free-head tethers read it (the WoF write-through
+    /// shape).
+    pub golem_present: bool,
+    /// `WorldGen.spawnMeteor` (`WorldGen.cs:4208`): the pending meteorite
+    /// landing — the night bookend's `Next(50)` after the boss-2 downing
+    /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
+    /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
+    pub spawn_meteor: bool,
+    /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
+    /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
+    /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
+    pub golem_hp_ratio: f32,
+    pub golem_x: f32,
+    pub golem_y: f32,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -143,6 +168,11 @@ pub struct World {
     /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
     /// corruption orb arms the morning invasion rolls.
     pub shadow_orb_smashed: bool,
+    /// `WorldGen.shadowOrbCount` (`WorldGen.cs:54293`): the shared
+    /// orb/heart/mana-crystal smash counter — the third break in a world
+    /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
+    /// summons the boss (`:54294-54321`).
+    pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
@@ -214,6 +244,12 @@ impl World {
             brain_x: 0.0,
             brain_y: 0.0,
             downed_golem: false,
+            downed_deerclops: false,
+            golem_present: false,
+            golem_hp_ratio: 1.0,
+            spawn_meteor: false,
+            golem_x: 0.0,
+            golem_y: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
@@ -231,12 +267,14 @@ impl World {
             extras: std::collections::HashMap::new(),
             eclipse: false,
             blood_moon: false,
+            all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
+            shadow_orb_count: 0,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,
@@ -263,13 +301,23 @@ impl World {
         self.fast_forward_to_dawn || self.fast_forward_to_dusk
     }
 
-    /// `Main.UpdateTimeRate`'s fast-forward arm (`Main.cs:6199-6206`): 60 while a
-    /// dial is fast-forwarding, 1 otherwise. The sleeping/creative-power branches
-    /// are not ported.
+    /// `Main.UpdateTimeRate` (`Main.cs:6199-6224`): 60 while a dial is
+    /// fast-forwarding (`:6201-6205`), **×5 while every player is fully
+    /// asleep** (`:6209-6215` — the `SleepingPlayersCount ==
+    /// ActivePlayersCount && > 0` flag), 1 otherwise. The creative-power
+    /// branches (`:6216-6218` freeze → 0) stay with the creative powers.
     pub fn day_rate(&self) -> i32 {
         // `Main.cs:6200-6203`: `if (IsFastForwardingTime()) { dayRate = 60; return; }`
+        if self.is_fast_forwarding() {
+            return 60;
+        }
+        // `:6212-6215`: `if (!Main.gameMenu && flag) num *= 5` — the SP port
+        // has no gameMenu state here; the flag is the all-asleep input.
+        if self.all_players_asleep {
+            return 5;
+        }
         // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
-        if self.is_fast_forwarding() { 60 } else { 1 }
+        1
     }
 
     /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the

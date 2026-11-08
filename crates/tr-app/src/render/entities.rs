@@ -151,6 +151,7 @@ pub(crate) struct NpcAssets {
     pub(crate) golem_head: Option<BgTex>,
     pub(crate) golem_fist: Option<BgTex>,
     pub(crate) golem_head_free: Option<BgTex>,
+    pub(crate) deerclops: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -166,9 +167,19 @@ pub(crate) struct NpcAssets {
     pub(crate) snow_balla: Option<BgTex>,
     pub(crate) mystery_snowman: Option<BgTex>,
     /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
-    /// `NPC_520` — the Martian Walker (11 frames of 34x110).
+    /// `NPC_520` — the Martian Walker (8 frames of 34x110,
+    /// `Main.npcFrameCount[520]`), `NPC_399` — the Martian Probe (8 frames
+    /// of 42x72), `NPC_388` — the Martian Drone (2 frames of 40x30).
     pub(crate) martian_walkers: Option<BgTex>,
     pub(crate) martian_walker_big: Option<BgTex>,
+    pub(crate) martian_probe: Option<BgTex>,
+    pub(crate) martian_drone: Option<BgTex>,
+    /// `NPC_381/382` — the martian shooter strips (9 frames of 18x40),
+    /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
+    /// the Scutlix carrier (6 frames of 60x40).
+    pub(crate) martian_shooters: Option<BgTex>,
+    pub(crate) scutlix_rider: Option<BgTex>,
+    pub(crate) scutlix: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -242,6 +253,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         golem_head: sky_tex(atlas, "NPC_246", None),
         golem_fist: sky_tex(atlas, "NPC_247", None),
         golem_head_free: sky_tex(atlas, "NPC_249", None),
+        deerclops: sky_tex(atlas, "NPC_668", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -257,6 +269,11 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         mystery_snowman: sky_tex(atlas, "NPC_145", None),
         martian_walkers: sky_tex(atlas, "NPC_383", None),
         martian_walker_big: sky_tex(atlas, "NPC_520", None),
+        martian_probe: sky_tex(atlas, "NPC_399", None),
+        martian_drone: sky_tex(atlas, "NPC_388", None),
+        martian_shooters: sky_tex(atlas, "NPC_382", None),
+        scutlix_rider: sky_tex(atlas, "NPC_390", None),
+        scutlix: sky_tex(atlas, "NPC_391", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -397,13 +414,32 @@ pub(crate) fn draw_player(
     let head_armor = registry::get(head_kind).map_or(-1, |d| d.head_slot);
     let body_armor = registry::get(body_kind).map_or(-1, |d| d.body_slot);
     let leg_armor = registry::get(legs_kind).map_or(-1, |d| d.leg_slot);
-    // `PlayerDrawSet.cs:343-347` + `GetSittingOffsetInfo`
-    // (`PlayerSittingHelper.cs:14-31`): the sitting body draws shifted up by
-    // the seat adjustment (-4 px; the index-0 posOffset is zero). The
-    // sliced-leg sit pose is the render follow-up.
-    let sit_shift = if player.sitting { -4.0 } else { 0.0 };
+    // `PlayerDrawSet.cs:318-347`: the seated/sleeping draw inputs — the
+    // seat posOffset (`GetSittingOffsetInfo`, stack index 0 in SP) with the
+    // torso drop, and the sleep base offset (`GetSleepingOffsetInfo`'s
+    // `SetOffsetbyBed` value mirrored to the facing).
+    let (seat_pos_offset, seat_y_offset) = if player.sitting {
+        (
+            [player.seat_pos_offset.0, player.seat_pos_offset.1],
+            player.seat_y_offset,
+        )
+    } else {
+        ([0.0, 0.0], 0)
+    };
+    let (sleep_pos_offset, full_rotation) = if player.sleeping {
+        let off = super::player_layers::bed_visual_offset(player.sleeping_style);
+        (
+            [off[0] * player.facing as f32, off[1]],
+            player.full_rotation,
+        )
+    } else {
+        ([0.0, 0.0], 0.0)
+    };
     let state = PlayerCompositeState {
-        origin: [player.x - 10.0, player.y - 10.0 + sit_shift],
+        origin: [
+            player.x - 10.0 + seat_pos_offset[0] + sleep_pos_offset[0],
+            player.y - 10.0 + seat_pos_offset[1] + sleep_pos_offset[1],
+        ],
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,
@@ -454,8 +490,23 @@ pub(crate) fn draw_player(
         c_body: player.c_body,
         c_legs: player.c_legs,
         c_mount: player.c_mount,
+        sitting: player.sitting,
+        seat_y_offset,
+        sleeping: player.sleeping,
+        full_rotation,
     };
-    push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
+    let mut layers = assemble_layers(&state, assets);
+    // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
+    // sleeping pose rotates the whole set around `fullRotationOrigin`
+    // (`PlayerSleepingHelper.cs:74` sets it to the hitbox centre).
+    if state.sleeping && state.full_rotation != 0.0 {
+        let pivot = [
+            player.x + player.full_rotation_origin.0,
+            player.y + player.full_rotation_origin.1 + player.gfx_off_y,
+        ];
+        super::player_layers::apply_player_rotation(&mut layers, pivot, state.full_rotation);
+    }
+    push_layers(r, &layers, camera, zoom, screen)
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
@@ -870,7 +921,8 @@ pub(crate) fn draw_npcs(
                 )
             }
             // The martians: the 9-frame strips over the 18x40 frames (the
-            // walker's 11-frame 34x110 sheet rides NPC_520).
+            // walker's 8-frame 34x110 sheet rides NPC_520 —
+            // `Main.npcFrameCount[520]` = 8).
             NpcKind::MartianOfficer
             | NpcKind::GrayGrunt
             | NpcKind::MartianEngineer
@@ -880,9 +932,45 @@ pub(crate) fn draw_npcs(
                 [18.0, 40.0],
                 [n.x, n.y],
             ),
+            // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
+            NpcKind::MartianProbe => (
+                assets.martian_probe.as_ref(),
+                assets.martian_probe.as_ref().map_or(72.0, |t| t.h / 8.0),
+                [42.0, 72.0],
+                [n.x, n.y],
+            ),
+            // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
+            NpcKind::MartianDrone => (
+                assets.martian_drone.as_ref(),
+                assets.martian_drone.as_ref().map_or(30.0, |t| t.h / 2.0),
+                [40.0, 30.0],
+                [n.x, n.y],
+            ),
+            // The shooters: the 9-frame NPC_382 strip over the 18x40
+            // frames (the 181/382 sheets are the shared humanoid shape).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => (
+                assets.martian_shooters.as_ref(),
+                assets.martian_shooters.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+            NpcKind::ScutlixRider => (
+                assets.scutlix_rider.as_ref(),
+                assets.scutlix_rider.as_ref().map_or(40.0, |t| t.h / 5.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+            NpcKind::Scutlix => (
+                assets.scutlix.as_ref(),
+                assets.scutlix.as_ref().map_or(40.0, |t| t.h / 6.0),
+                [60.0, 40.0],
+                [n.x, n.y],
+            ),
             NpcKind::MartianWalker => (
                 assets.martian_walker_big.as_ref(),
-                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 11.0),
+                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 8.0),
                 [34.0, 110.0],
                 [n.x, n.y],
             ),
@@ -990,6 +1078,13 @@ pub(crate) fn draw_npcs(
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
                 (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
             }
+            // The Deerclops: the 60x154 sheet (the v1 single-frame).
+            NpcKind::Deerclops => (
+                assets.deerclops.as_ref(),
+                assets.deerclops.as_ref().map_or(154.0, |t| t.h),
+                [60.0, 154.0],
+                [n.x, n.y],
+            ),
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon

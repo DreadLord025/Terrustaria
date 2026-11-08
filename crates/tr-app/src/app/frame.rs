@@ -109,6 +109,14 @@ impl App {
         if !self.follow_player {
             self.pan_camera(dt);
         }
+        // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the per-frame
+        // sleeping counts land before `UpdateTime` reads them — SP the
+        // all-asleep flag is the local player being fully asleep
+        // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
+        self.world.all_players_asleep = self
+            .player
+            .as_ref()
+            .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
         if !time_frozen() {
             // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
             // `:1441`): the powers' multiplier folds into the clock tick

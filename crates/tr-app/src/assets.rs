@@ -292,6 +292,7 @@ pub fn load_world_images(
         "NPC_246",
         "NPC_247",
         "NPC_249",
+        "NPC_668",
         "NPC_105",
         "NPC_107",
         "NPC_8",
@@ -712,6 +713,9 @@ fn load_misc_png(_dir: &Path, name: &str) -> Result<AtlasImage> {
 /// One glyph of a ReLogic `DynamicSpriteFont`, in screen pixels.
 #[derive(Clone, Copy, Debug)]
 pub struct FontGlyph {
+    /// uv inside the font array layer, already inset by the half texel the
+    /// main-atlas path applies in the shader (the font layers carry their own
+    /// 8192 px texel grid).
     pub uv: [f32; 4],
     pub w: f32,
     pub h: f32,
@@ -719,10 +723,13 @@ pub struct FontGlyph {
     pub pad: [f32; 2],
     /// `Kerning`: (left bearing, advance - z, z).
     pub kerning: [f32; 3],
+    /// 1-based layer into the font texture array (`FontAtlas::rects`); the
+    /// instance field feeds the shader's texture selector.
+    pub layer: u32,
 }
 
-/// A decoded `DynamicSpriteFont` bound to the atlas (`DynamicSpriteFont.DrawString`
-/// walks these metrics exactly).
+/// A decoded `DynamicSpriteFont` bound to the font texture array
+/// (`DynamicSpriteFont.DrawString` walks these metrics exactly).
 #[derive(Clone, Debug, Default)]
 pub struct UiFont {
     pub glyphs: HashMap<char, FontGlyph>,
@@ -739,61 +746,113 @@ impl UiFont {
     }
 }
 
-/// Decodes `Fonts/Mouse_Text`, `Fonts/Item_Stack` and `Fonts/Death_Text` from the retail
-/// content and returns their page textures as atlas images plus the raw metrics.
-pub fn load_fonts() -> (
-    Vec<AtlasImage>,
-    Option<(String, tr_content::DynamicSpriteFont)>,
-    Option<(String, tr_content::DynamicSpriteFont)>,
-    Option<(String, tr_content::DynamicSpriteFont)>,
-) {
-    let mut images = Vec::new();
-    let Some(images_dir) = content_images_dir() else {
-        return (images, None, None, None);
-    };
-    let fonts_dir = images_dir.parent().map(|p| p.join("Fonts"));
-    let mut ui = None;
-    let mut item = None;
-    let mut death = None;
-    if let Some(dir) = fonts_dir {
-        for (name, slot) in [("Mouse_Text", 0), ("Item_Stack", 1), ("Death_Text", 2)] {
-            let path = dir.join(format!("{name}.xnb"));
-            match tr_content::load_font(&path) {
-                Ok(font) => {
-                    let sheet = format!("Font_{name}");
-                    for (page, pg) in font.pages.iter().enumerate() {
-                        images.push(AtlasImage {
-                            name: format!("{sheet}_{page}"),
-                            width: pg.texture.width,
-                            height: pg.texture.height,
-                            rgba: pg.texture.pixels.clone(),
-                            layout: SheetLayout::Raw,
-                        });
-                    }
-                    log::info!(
-                        "font {name}: {} glyphs, line spacing {}",
-                        font.pages.first().map_or(0, |p| p.glyphs.len()),
-                        font.line_spacing
-                    );
-                    match slot {
-                        0 => ui = Some((sheet, font)),
-                        1 => item = Some((sheet, font)),
-                        _ => death = Some((sheet, font)),
-                    }
-                }
-                Err(e) => log::warn!("font {name}: {e:#}"),
-            }
-        }
-    }
-    (images, ui, item, death)
+/// The decoded retail fonts (`AssetInitializer.cs:89-93` requests the same
+/// five) plus the packed BC2 page array they upload into. `atlas` is `None`
+/// only when every font failed to decode (PNG-only fallback).
+pub struct LoadedFonts {
+    pub atlas: Option<tr_render::FontAtlas>,
+    /// `Fonts/Mouse_Text` for UI labels and item names (`FontAssets.MouseText`).
+    pub ui: Option<UiFont>,
+    /// `Fonts/Item_Stack` for stack counts and slot numbers (`FontAssets.ItemStack`).
+    pub item: Option<UiFont>,
+    /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
+    pub death: Option<UiFont>,
+    /// `Fonts/Combat_Text`/`Combat_Crit`: damage numbers (`FontAssets.CombatText`).
+    pub combat_text: Option<UiFont>,
+    pub combat_crit: Option<UiFont>,
 }
 
-/// Binds a decoded font to its atlas page UVs.
+/// The font array's layer edge (`font_atlas::FontAtlas`'s `LAYER_SIZE`).
+const FONT_LAYER_SIZE: f32 = 8192.0;
+
+/// Decodes the five retail fonts and packs their pages into the BC2 font
+/// texture array. Every 1.4.5.8 font ships ~160 pages / 38 636 glyphs (Latin,
+/// Cyrillic, Greek, CJK, Kana, full Hangul), so this is where the localized
+/// strings become renderable text.
+pub fn load_fonts() -> LoadedFonts {
+    let names = ["Mouse_Text", "Item_Stack", "Death_Text", "Combat_Text", "Combat_Crit"];
+    let Some(fonts_dir) = content_dir().map(|p| p.join("Fonts")) else {
+        log::warn!("no Content/Fonts directory; text falls back to the bitmap font");
+        return LoadedFonts {
+            atlas: None,
+            ui: None,
+            item: None,
+            death: None,
+            combat_text: None,
+            combat_crit: None,
+        };
+    };
+
+    let mut decoded: Vec<(String, tr_content::DynamicSpriteFont)> = Vec::new();
+    for name in names {
+        let path = fonts_dir.join(format!("{name}.xnb"));
+        match tr_content::load_font(&path) {
+            Ok(font) => {
+                log::info!(
+                    "font {name}: {} pages, {} glyphs, line spacing {}",
+                    font.pages.len(),
+                    font.pages.iter().map(|p| p.glyphs.len()).sum::<usize>(),
+                    font.line_spacing
+                );
+                decoded.push((name.to_string(), font));
+            }
+            Err(e) => log::warn!("font {name}: {e:#}"),
+        }
+    }
+    if decoded.is_empty() {
+        return LoadedFonts {
+            atlas: None,
+            ui: None,
+            item: None,
+            death: None,
+            combat_text: None,
+            combat_crit: None,
+        };
+    }
+
+    // Concatenate the pages in the font order above (`FontAtlas::build`
+    // sorts for packing but returns rects in input order), then bind each
+    // font's glyphs to its pages' rects.
+    let mut pages = Vec::new();
+    for (_, font) in &decoded {
+        for pg in &font.pages {
+            pages.push(tr_render::FontPageData {
+                width: pg.width,
+                height: pg.height,
+                blocks: pg.mip0.clone(),
+            });
+        }
+    }
+    let font_atlas = tr_render::FontAtlas::build(pages);
+    let mut rect_cursor = 0usize;
+    let mut bound = Vec::new();
+    for (_, font) in &decoded {
+        bound.push((build_ui_font(&font_atlas, font, rect_cursor), font));
+        rect_cursor += font.pages.len();
+    }
+    let mut slots = bound.into_iter();
+    let [ui, item, death, combat_text, combat_crit] = std::array::from_fn(|_| {
+        slots.next().and_then(|(f, _)| f)
+    });
+    LoadedFonts {
+        atlas: Some(font_atlas),
+        ui,
+        item,
+        death,
+        combat_text,
+        combat_crit,
+    }
+}
+
+/// Binds a decoded font to the font array page rects: every glyph's uv comes
+/// from its page's `PageRect` (`rect_cursor` = the font's first page index in
+/// the concatenated page list).
 pub fn build_ui_font(
-    atlas: &tr_render::Atlas,
-    sheet: &str,
+    font_atlas: &tr_render::FontAtlas,
     font: &tr_content::DynamicSpriteFont,
+    rect_cursor: usize,
 ) -> Option<UiFont> {
+    let half_texel = 0.5 / FONT_LAYER_SIZE;
     let mut out = UiFont {
         line_spacing: font.line_spacing as f32,
         spacing: font.spacing,
@@ -801,24 +860,20 @@ pub fn build_ui_font(
         glyphs: HashMap::new(),
     };
     for (page, pg) in font.pages.iter().enumerate() {
-        let rect = atlas.sheet(&format!("{sheet}_{page}"))?;
+        let rect = *font_atlas.rects.get(rect_cursor + page)?;
         for g in &pg.glyphs {
             let [sx, sy, w, h] = g.src;
+            let u0 = rect.uv[0] + sx as f32 / FONT_LAYER_SIZE;
+            let v0 = rect.uv[1] + sy as f32 / FONT_LAYER_SIZE;
             out.glyphs.insert(
                 g.ch,
                 FontGlyph {
-                    uv: uv_rect(
-                        rect,
-                        (atlas.width, atlas.height),
-                        sx,
-                        sy,
-                        w as u32,
-                        h as u32,
-                    ),
+                    uv: [u0 + half_texel, v0 + half_texel, u0 + w as f32 / FONT_LAYER_SIZE - half_texel, v0 + h as f32 / FONT_LAYER_SIZE - half_texel],
                     w: w as f32,
                     h: h as f32,
                     pad: [g.pad[0] as f32, g.pad[1] as f32],
                     kerning: g.kerning,
+                    layer: rect.layer,
                 },
             );
         }
@@ -1000,6 +1055,10 @@ pub struct Lookups {
     pub item_font: Option<UiFont>,
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death_font: Option<UiFont>,
+    /// `Fonts/Combat_Text`/`Combat_Crit`: the damage-number fonts
+    /// (`FontAssets.CombatText`, drawn by `PopupText` once that lands).
+    pub combat_text_font: Option<UiFont>,
+    pub combat_crit_font: Option<UiFont>,
     /// `Logo` (menu title) as UV plus native size.
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
@@ -1220,6 +1279,8 @@ impl Lookups {
         ui_font: Option<UiFont>,
         item_font: Option<UiFont>,
         death_font: Option<UiFont>,
+        combat_text_font: Option<UiFont>,
+        combat_crit_font: Option<UiFont>,
     ) -> Self {
         let mut me = Self {
             tiles: vec![None; tr_core::tiledata::TILE_COUNT],
@@ -1248,6 +1309,8 @@ impl Lookups {
             ui_font,
             item_font,
             death_font,
+            combat_text_font,
+            combat_crit_font,
             logo: atlas.sheet("Logo").map(|r| {
                 (
                     uv_rect(r, (atlas.width, atlas.height), 0, 0, r.width, r.height),
@@ -1387,6 +1450,13 @@ impl Lookups {
                 atlas.sheet("NPC_246").copied(),
                 atlas.sheet("NPC_247").copied(),
                 atlas.sheet("NPC_249").copied(),
+                atlas.sheet("NPC_668").copied(),
+                atlas.sheet("NPC_399").copied(),
+                atlas.sheet("NPC_388").copied(),
+                atlas.sheet("NPC_381").copied(),
+                atlas.sheet("NPC_382").copied(),
+                atlas.sheet("NPC_390").copied(),
+                atlas.sheet("NPC_391").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
@@ -2030,6 +2100,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             );
             Box::new((atlas, lookups))
         })
@@ -2083,6 +2155,8 @@ mod tests {
             &atlas,
             [(0u16, "Tiles_0".to_string())].into_iter(),
             std::iter::empty(),
+            None,
+            None,
             None,
             None,
             None,

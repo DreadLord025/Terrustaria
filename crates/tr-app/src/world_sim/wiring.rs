@@ -211,6 +211,16 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         .spawn_with_data(crate::projectile::TRAP_SPEAR, x, y, vx, vy, damage, 2.0);
                 }
             }
+            // `NewProjectile` with the kb 2f for the four special devices
+            // (`Wiring.cs:1990-1992`'s shared tail, `:3074-3092`). The app
+            // spawns the kinds it has the projectile table for; the land
+            // mine 164 / the tracer 654 / the boulder 99 / the bomb 108
+            // have no rows in `proj_data` yet — their requests drop here
+            // until M4-PROJ ports those families.
+            tr_core::wiring::TrapRequest::Geyser { .. }
+            | tr_core::wiring::TrapRequest::Mine { .. }
+            | tr_core::wiring::TrapRequest::Boulder { .. }
+            | tr_core::wiring::TrapRequest::ExplosiveLock { .. } => {}
         }
     }
     app.wiring_step.cap_backlog();

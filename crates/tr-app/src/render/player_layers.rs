@@ -226,6 +226,20 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) c_body: u32,
     pub(crate) c_legs: u32,
     pub(crate) c_mount: u32,
+    /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
+    /// legs re-slice and the torso drop switch on it.
+    pub(crate) sitting: bool,
+    /// `GetSittingOffsetInfo`'s `seatAdjustment` (`PlayerSittingHelper.cs:
+    /// 23-24`): `-4 + (int)offsetForSeat.Y` — the torso/head drop
+    /// (`PlayerDrawSet.cs:345`'s `torsoOffset`, consumed by the torso
+    /// sandwich `LegacyPlayerRenderer.cs:205-225` and the composite sites
+    /// `PlayerDrawLayers.cs:1216,1266`).
+    pub(crate) seat_y_offset: i32,
+    /// `PlayerSleepingHelper.isSleeping` (`:13`) — arms the pose rotation.
+    pub(crate) sleeping: bool,
+    /// `Player.fullRotation` (`PlayerSleepingHelper.cs:73`): `PI/2 *
+    /// (-direction)` while asleep.
+    pub(crate) full_rotation: f32,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -399,6 +413,122 @@ fn push_part(
     }
 }
 
+/// `PlayerSleepingHelper.SetOffsetbyBed` (`PlayerSleepingHelper.cs:226-279`),
+/// verbatim: the per-bed-style visual offset of the bed base, keyed by
+/// `frameY / 36`; unlisted styles take the default.
+pub(crate) fn bed_visual_offset(bed_style: u32) -> [f32; 2] {
+    match bed_style {
+        8 => [-11.0, 1.0],
+        10 => [-9.0, -1.0],
+        11 => [-11.0, 1.0],
+        13 => [-11.0, -3.0],
+        15 | 16 | 17 => [-7.0, -3.0],
+        18 => [-9.0, -3.0],
+        19 => [-3.0, -1.0],
+        20 => [-9.0, -5.0],
+        21 => [-9.0, 5.0],
+        22 => [-7.0, 1.0],
+        23 => [-5.0, -1.0],
+        24 | 25 => [-7.0, 1.0],
+        27 => [-9.0, 3.0],
+        28 => [-9.0, 5.0],
+        29 => [-11.0, -1.0],
+        30 => [-9.0, 3.0],
+        31 => [-7.0, 5.0],
+        32 => [-7.0, -1.0],
+        34 | 35 | 36 | 37 => [-13.0, 1.0],
+        38 => [-11.0, -3.0],
+        _ => [-9.0, 1.0],
+    }
+}
+
+/// `DrawSittingLegs`' slice geometry (`PlayerDrawLayers.cs:1545-1554`,
+/// `:1672-1695`) for one leg texture: three strips of the standing legs cell
+/// (row 0 while seated) — the bottom block (cell rows 46..56, 10 px) fanned
+/// `+4 px` along the facing plus two 2-px knee slices (44..46 at +2,
+/// 42..44 at +0) — all dropped `num2` = 42 px below the sheet anchor with
+/// the pre-shift `(+2·direction, +2)`, the `-2` lift and the seat drop.
+/// Returns `(x_offset, y_offset, cell_y, cell_h)` per strip in draw order
+/// (bottom block first, knee slices over it).
+pub(crate) fn sitting_leg_strips(seat_y_offset: f32) -> [(f32, f32, f32, f32); 3] {
+    // The C# constants: `num = 2, num2 = 42, num3 = 2, num4 = 2, num5 = 0`.
+    let (num, num2, num3, num4) = (2.0f32, 42.0f32, 2i32, 2.0f32);
+    let mut out = [(0.0f32, 0.0f32, 0.0f32, 0.0f32); 3];
+    for (i, num10) in (0..=num3).rev().enumerate() {
+        let n = num10 as f32;
+        // `position = vector + (num, 2) * (direction, 1)`, then
+        // `.X += direction * num4 * num10`, `.Y += num2 + num5`.
+        let x_off = num + num4 * n;
+        let y_off = -2.0 + seat_y_offset + 2.0 + num2 + 0.0;
+        // `value.Y += num10 * 2 + num2; value.Height -= num2 + num10 * 2;
+        //  if (num10 != num3) value.Height = 2`.
+        let cell_y = n * 2.0 + num2;
+        let cell_h = if num10 != num3 {
+            2.0
+        } else {
+            56.0 - num2 - n * 2.0
+        };
+        out[i] = (x_off, y_off, cell_y, cell_h);
+    }
+    out
+}
+
+/// One leg texture's seated draw (`DrawSittingLegs`' call sites: the leg
+/// skin `PlayerDrawLayers.cs:1154-1157`/`:1266-1270`, the leggings
+/// `:1427-1455` and the shoes `:1719-1721`): three re-sliced strips at the
+/// sheet anchor with the X fan along the facing.
+fn push_sitting_legs(
+    out: &mut Vec<LayerSprite>,
+    part: PlayerPart,
+    tex: Option<BgTex>,
+    s: &PlayerCompositeState,
+    color: [f32; 4],
+) {
+    let Some(tex) = tex else { return };
+    let anchor = part_pos(s, 0.0, [0.0, 0.0], 0.0);
+    for (x_off, y_off, cell_y, cell_h) in sitting_leg_strips(s.seat_y_offset as f32) {
+        out.push(LayerSprite {
+            part,
+            pos: [anchor[0] + x_off * s.facing, anchor[1] + y_off],
+            size: [40.0, cell_h],
+            uv: player_leg_strip_uv(&tex, s.leg_frame, cell_y, cell_h),
+            color,
+            rotation: 0.0,
+            dye: 0,
+        });
+    }
+}
+
+/// The strip sub-rect of one 40x56 cell row: `[y0, y0 + h)` in cell pixels.
+fn player_leg_strip_uv(tex: &BgTex, row: u32, cell_y: f32, cell_h: f32) -> [f32; 4] {
+    let full = player_frame_uv(tex, row);
+    let dv = full[3] - full[1];
+    let v0 = full[1] + dv * (cell_y / 56.0);
+    [full[0], v0, full[2], v0 + dv * (cell_h / 56.0)]
+}
+
+/// `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
+/// sleeping pose rotates every sprite's position around the player's
+/// `fullRotationOrigin` and adds the rotation to each sprite's own. (The
+/// `ignorePlayerRotation` opt-outs — the mount strip `Mount.cs:6059` and the
+/// beheaded halo — are unreachable while asleep: the sleep dismounts and
+/// there is no halo.)
+pub(crate) fn apply_player_rotation(sprites: &mut [LayerSprite], pivot: [f32; 2], rotation: f32) {
+    if rotation == 0.0 {
+        return;
+    }
+    let (sin, cos) = rotation.sin_cos();
+    for sp in sprites.iter_mut() {
+        let dx = sp.pos[0] - pivot[0];
+        let dy = sp.pos[1] - pivot[1];
+        sp.pos = [
+            pivot[0] + dx * cos - dy * sin,
+            pivot[1] + dx * sin + dy * cos,
+        ];
+        sp.rotation += rotation;
+    }
+}
+
 /// `DrawPlayer_12_Skin_Composite` → `13_Leggings` → `14_Shoes` →
 /// `17_TorsoComposite` → `21_Head` (`LegacyPlayerRenderer.cs:195-215`): the
 /// body parts in original order. The composite torso/arm sprites take the
@@ -406,7 +536,15 @@ fn push_part(
 pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
     let mut out = Vec::with_capacity(12);
     let flip = s.facing < 0.0;
-    let shift = headgear_composite_shift(s.body_frame);
+    // `PlayerDrawSet.cs:343-347`: while seated the torso sandwich layers
+    // (torso, back arm, head — `LegacyPlayerRenderer.cs:183-225`) ride
+    // `torsoOffset = seatYOffset`; the legs re-slice carries its own drop.
+    let seat_drop = if s.sitting {
+        s.seat_y_offset as f32
+    } else {
+        0.0
+    };
+    let shift = headgear_composite_shift(s.body_frame) + seat_drop;
     // 12_Skin_Composite: torso skin, leg skin, back-arm stack.
     push_part(
         &mut out,
@@ -422,15 +560,27 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         0.0,
         tint(s.light, SKIN),
     );
-    push_part(
-        &mut out,
-        PlayerPart::LegsSkin,
-        a.legs,
-        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
-        0.0,
-        tint(s.light, SKIN),
-    );
+    // `DrawPlayer_12_Skin`'s bottom-skin block (`PlayerDrawLayers.cs:1150-1157`):
+    // seated the leg-skin piece goes through `DrawSittingLegs`.
+    if s.sitting {
+        push_sitting_legs(
+            &mut out,
+            PlayerPart::LegsSkin,
+            a.legs,
+            s,
+            tint(s.light, SKIN),
+        );
+    } else {
+        push_part(
+            &mut out,
+            PlayerPart::LegsSkin,
+            a.legs,
+            |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+            part_pos(s, 0.0, [0.0, 0.0], 0.0),
+            0.0,
+            tint(s.light, SKIN),
+        );
+    }
     // `UpdateCompositeArm` (`PlayerDrawSet.cs:2246`): the back arm switches to
     // the composite column (8, stretch row) and rotation when enabled.
     let (back_cell, back_rotation) = update_composite_arm(s.back_arm, s.body_frame, true);
@@ -499,29 +649,47 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     }
     // 13_Leggings / 14_Shoes ride the leg frame without the shift. `legs > 0`
     // draws the armor legs texture over the skin (`PlayerDrawLayers.cs:1498`),
-    // tinted `colorArmorLegs` (white with empty dye slots).
-    push_part(
-        &mut out,
-        PlayerPart::Pants,
-        if s.leg_armor >= 0 {
-            a.armor_legs.get(s.leg_armor as usize).copied().flatten()
-        } else {
-            a.pants
-        },
-        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
-        0.0,
-        tint(s.light, if s.leg_armor >= 0 { ARMOR_WHITE } else { PANTS }),
-    );
-    push_part(
-        &mut out,
-        PlayerPart::Shoes,
-        a.shoes,
-        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
-        0.0,
-        tint(s.light, SHOES),
-    );
+    // tinted `colorArmorLegs` (white with empty dye slots). Seated, both go
+    // through `DrawSittingLegs` (`:1427-1455`, `:1719-1721` — the armor
+    // overrides for legs 106/143/226/217 etc. stay with the armor sets).
+    let legs_tex = if s.leg_armor >= 0 {
+        a.armor_legs.get(s.leg_armor as usize).copied().flatten()
+    } else {
+        a.pants
+    };
+    let legs_tint = tint(s.light, if s.leg_armor >= 0 { ARMOR_WHITE } else { PANTS });
+    if s.sitting {
+        push_sitting_legs(&mut out, PlayerPart::Pants, legs_tex, s, legs_tint);
+    } else {
+        push_part(
+            &mut out,
+            PlayerPart::Pants,
+            legs_tex,
+            |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+            part_pos(s, 0.0, [0.0, 0.0], 0.0),
+            0.0,
+            legs_tint,
+        );
+    }
+    if s.sitting {
+        push_sitting_legs(
+            &mut out,
+            PlayerPart::Shoes,
+            a.shoes,
+            s,
+            tint(s.light, SHOES),
+        );
+    } else {
+        push_part(
+            &mut out,
+            PlayerPart::Shoes,
+            a.shoes,
+            |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+            part_pos(s, 0.0, [0.0, 0.0], 0.0),
+            0.0,
+            tint(s.light, SHOES),
+        );
+    }
     // 17_TorsoComposite: the shirt over the (already drawn) skin torso, or the
     // composite armor torso cell (`PlayerDrawLayers.cs:1952-1958`, `!flag`
     // draws the shirt instead).
@@ -554,13 +722,15 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
             },
         ),
     );
-    // 21_Head: head, eye whites, eyes, hair.
+    // 21_Head: head, eye whites, eyes, hair — the whole block sits inside
+    // the torso sandwich (`LegacyPlayerRenderer.cs:205-225`), so the seated
+    // drop rides along.
     push_part(
         &mut out,
         PlayerPart::Head,
         a.head,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
+        part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, SKIN),
     );
@@ -569,7 +739,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::EyeWhites,
         a.eye_whites,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
+        part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, EYE_WHITE),
     );
@@ -578,7 +748,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Eyes,
         a.eyes,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
+        part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, EYES),
     );
@@ -591,7 +761,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Hair,
         if s.head_armor >= 0 { None } else { a.hair },
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
+        part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, HAIR),
     );
@@ -600,7 +770,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Helmet,
         a.armor_head.get(s.head_armor as usize).copied().flatten(),
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        part_pos(s, 0.0, [0.0, 0.0], 0.0),
+        part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, ARMOR_WHITE),
     );
@@ -1432,6 +1602,10 @@ mod tests {
             c_body: 0,
             c_legs: 0,
             c_mount: 0,
+            sitting: false,
+            seat_y_offset: 0,
+            sleeping: false,
+            full_rotation: 0.0,
         }
     }
 
@@ -1852,5 +2026,132 @@ mod tests {
         });
         assert!(mount_layer(&s, &a, false).is_none(), "no back sheet");
         assert!(mount_layer(&s, &a, true).is_some(), "the front strip draws");
+    }
+
+    #[test]
+    fn the_seated_legs_draw_three_resliced_strips() {
+        // DW-2.1 — `DrawSittingLegs` (`PlayerDrawLayers.cs:1545-1554`,
+        // `:1672-1695`): each leg texture becomes three strips of the
+        // standing cell — the 10-px bottom block (cell rows 46..56) fanned
+        // +4 px along the facing over two 2-px knee slices (44..46 at +2,
+        // 42..44 at +0) — dropped 42 px below the sheet anchor.
+        let a = fixture();
+        let mut s = state();
+        s.sitting = true;
+        s.seat_y_offset = -4;
+        let base_y = s.origin[1] + s.gfx_off_y;
+        for facing in [1.0, -1.0] {
+            s.facing = facing;
+            let out = body_layers(&s, &a);
+            let pants: Vec<_> = out
+                .iter()
+                .filter(|sp| sp.part == PlayerPart::Pants)
+                .collect();
+            assert_eq!(pants.len(), 3, "three strips per leg texture");
+            // Draw order: bottom block (num10 = 2) first, knee slices over.
+            let expect = [
+                (2.0 + 2.0 * 2.0, 10.0),
+                (2.0 + 2.0 * 1.0, 2.0),
+                (2.0 + 2.0 * 0.0, 2.0),
+            ];
+            for (sp, (x_fan, cell_h)) in pants.iter().zip(expect) {
+                assert_eq!(sp.size, [40.0, cell_h]);
+                assert!((sp.pos[0] - (s.origin[0] + x_fan * facing)).abs() < 1e-4);
+                assert!((sp.pos[1] - (base_y + 42.0 + s.seat_y_offset as f32)).abs() < 1e-4);
+            }
+            // The v-spans track the cell sub-rects: the 10-px block spans
+            // five times a 2-px slice, and the block sits lowest in the cell
+            // (the largest v).
+            let v = |sp: &LayerSprite| sp.uv[3] - sp.uv[1];
+            assert!((v(pants[0]) - v(pants[1]) * 5.0).abs() < 1e-6);
+            assert!(pants[0].uv[1] > pants[1].uv[1]);
+            assert!(pants[1].uv[1] > pants[2].uv[1]);
+        }
+    }
+
+    #[test]
+    fn the_seat_drop_shifts_the_torso_sandwich_only() {
+        // DW-2.2 — `PlayerDrawSet.cs:343-347` + the sandwich
+        // (`LegacyPlayerRenderer.cs:183-225`): the torso skin, the back arm
+        // and the head drop by `seatAdjustment`; the front arm does not.
+        let a = fixture();
+        let mut s = state();
+        s.sitting = true;
+        s.seat_y_offset = -4;
+        let out = body_layers(&s, &a);
+        let drop = |part: PlayerPart| -> f32 {
+            let plain = body_layers(&state(), &a);
+            let y = |v: &[LayerSprite]| v.iter().find(|sp| sp.part == part).unwrap().pos[1];
+            y(&out) - y(&plain)
+        };
+        assert!((drop(PlayerPart::TorsoSkin) - (-4.0)).abs() < 1e-4);
+        assert!((drop(PlayerPart::BackArmSkin) - (-4.0)).abs() < 1e-4);
+        assert!((drop(PlayerPart::Head) - (-4.0)).abs() < 1e-4);
+        // The front arm draws in `28_ArmOverItemComposite` — outside the
+        // sandwich (`LegacyPlayerRenderer.cs:205-225` ends before it).
+        let arm_y = |sitting: bool, seat: i32| {
+            let mut st = state();
+            st.sitting = sitting;
+            st.seat_y_offset = seat;
+            front_arm_layers(&st, &a)
+                .iter()
+                .find(|sp| sp.part == PlayerPart::FrontArmSkin)
+                .unwrap()
+                .pos[1]
+        };
+        assert!((arm_y(true, -4) - arm_y(false, 0)).abs() < 1e-4);
+        // The bench's `seatDownOffset` (0, -1) gives `seatAdjustment` -5
+        // (`PlayerSittingHelper.cs:23-24`): `-4 + (int)(-1)`.
+        let mut s = state();
+        s.sitting = true;
+        s.seat_y_offset = -5;
+        let out = body_layers(&s, &a);
+        let torso = out
+            .iter()
+            .find(|sp| sp.part == PlayerPart::TorsoSkin)
+            .unwrap();
+        assert!((torso.pos[1] - (s.origin[1] + s.gfx_off_y - 5.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_bed_offset_table_is_verbatim() {
+        // DW-2.3 — `SetOffsetbyBed` (`PlayerSleepingHelper.cs:226-279`).
+        assert_eq!(bed_visual_offset(0), [-9.0, 1.0], "the default arm");
+        assert_eq!(bed_visual_offset(8), [-11.0, 1.0]);
+        assert_eq!(bed_visual_offset(13), [-11.0, -3.0]);
+        assert_eq!(bed_visual_offset(16), [-7.0, -3.0]);
+        assert_eq!(bed_visual_offset(19), [-3.0, -1.0]);
+        assert_eq!(bed_visual_offset(21), [-9.0, 5.0]);
+        assert_eq!(bed_visual_offset(24), [-7.0, 1.0]);
+        assert_eq!(bed_visual_offset(36), [-13.0, 1.0]);
+        assert_eq!(bed_visual_offset(38), [-11.0, -3.0]);
+        assert_eq!(bed_visual_offset(999), [-9.0, 1.0], "unlisted → default");
+    }
+
+    #[test]
+    fn the_sleep_rotation_spins_the_set_around_the_pivot() {
+        // DW-2.3 — `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:
+        // 4092-4119`): every sprite's position rotates around the pivot and
+        // its own rotation gains the full rotation.
+        let mut sprites = vec![LayerSprite {
+            part: PlayerPart::TorsoSkin,
+            pos: [110.0, 210.0],
+            size: [40.0, 56.0],
+            uv: [0.0, 0.0, 1.0, 1.0],
+            color: [1.0; 4],
+            rotation: 0.0,
+            dye: 0,
+        }];
+        let pivot = [100.0, 200.0];
+        let rot = std::f32::consts::FRAC_PI_2;
+        apply_player_rotation(&mut sprites, pivot, rot);
+        let sp = &sprites[0];
+        // (10, 10) rotated 90° → (-10, 10) around the pivot.
+        assert!((sp.pos[0] - (pivot[0] - 10.0)).abs() < 1e-4);
+        assert!((sp.pos[1] - (pivot[1] + 10.0)).abs() < 1e-4);
+        assert!((sp.rotation - rot).abs() < 1e-6);
+        // The zero rotation pass is a no-op (the standing player).
+        apply_player_rotation(&mut sprites, pivot, 0.0);
+        assert!((sprites[0].rotation - rot).abs() < 1e-6);
     }
 }

@@ -105,6 +105,9 @@ pub(crate) struct App {
     pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
+    /// The packed BC2 font pages the renderer uploads (`loop`'s
+    /// `SpriteRenderer::new`); `None` without the retail fonts.
+    pub(crate) font_atlas: Option<tr_render::FontAtlas>,
     pub(crate) lookups: assets::Lookups,
     pub(crate) clouds: Vec<CloudSprite>,
     pub(crate) sky: SkyAssets,
@@ -610,6 +613,79 @@ fn parse_tr_dye(list: &str) -> [u16; 10] {
 /// The `TR_DMOUNT=<kind>` pin parse (`App.equip.misc_dyes[3]`); garbage → 0.
 fn parse_tr_dmount(s: &str) -> u16 {
     s.trim().parse().unwrap_or(0)
+}
+
+/// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and
+/// snaps the player on through the real interaction decode, so the
+/// screenshots/tests exercise the live sitting/sleeping pose (the sim's
+/// re-validation holds it; nothing wakes in a headless capture).
+fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, mode: &str) {
+    let put = |world: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16| {
+        let i = world.index(x, y);
+        world.tiles[i] = tr_core::tile::Tile {
+            kind,
+            frame_x: fx,
+            frame_y: fy,
+            ..Default::default()
+        };
+        world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    };
+    // `Player::spawn` seeds the header's spawn row and the fixed step drops
+    // the feet onto the surface below. The pin builds its own stage — a flat
+    // dirt ledge eight tiles right of the spawn with three air rows over it
+    // — so the furniture/snap scene never fights the terrain (trees, bushes
+    // and slopes would otherwise draw over or block the pose).
+    let sx = world.spawn_x + 8;
+    let mut ground = world.spawn_y;
+    for _ in 0..400 {
+        if world
+            .tile(sx, ground)
+            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind))
+        {
+            break;
+        }
+        ground += 1;
+    }
+    let sy = ground;
+    for col in sx - 1..=sx + 4 {
+        put(world, col, sy, 1, 0, 0); // the dirt floor
+        for y in (sy - 3)..sy {
+            let i = world.index(col, y);
+            world.tiles[i] = tr_core::tile::Tile::default(); // the clearance
+        }
+    }
+    match mode {
+        // The left-facing chair (15): the top cell carries `frameY = 0`, the
+        // bottom `frameY = 18` (the 40-px style stride's second row).
+        "sit" => {
+            put(world, sx, sy - 2, 15, 0, 0);
+            put(world, sx, sy - 1, 15, 0, 18);
+            if let Some((seat_x, seat_y, dir, off)) =
+                edit::sitting_target_info(world, sx, sy - 1, 1)
+            {
+                if let Some(p) = p.as_deref_mut() {
+                    p.sit_down(world, seat_x, seat_y, dir, off);
+                }
+            }
+        }
+        // The unflipped style-0 bed (79): columns `frameX 0/18/36/54`, the
+        // bottom row `frameY = 18` (the 36-px style stride).
+        "sleep" => {
+            for (dx, fx) in [0i16, 18, 36, 54].iter().enumerate() {
+                put(world, sx + dx as i32, sy - 2, 79, *fx, 0);
+                put(world, sx + dx as i32, sy - 1, 79, *fx, 18);
+            }
+            if let Some((ax, ay, dir, style)) = edit::sleeping_target_info(world, sx, sy - 1) {
+                if let Some(p) = p.as_deref_mut() {
+                    p.sleep_down(world, ax, ay, dir, style);
+                }
+            }
+        }
+        _ => {}
+    }
+    // The pin writes tiles after the render chunks were built — the
+    // revision bump is what `apply_edit` uses to rebuild them.
+    world.revision = world.revision.wrapping_add(1);
 }
 
 /// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
@@ -1279,6 +1355,7 @@ impl App {
         world: World,
         world_path: PathBuf,
         atlas: Atlas,
+        font_atlas: Option<tr_render::FontAtlas>,
         lookups: assets::Lookups,
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
@@ -1291,7 +1368,11 @@ impl App {
         let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
         let mut player = player_enabled.then(|| Player::spawn(&world));
         let mut npcs = Vec::new();
-        if let Some(p) = &player {
+        // `TR_POSE` keeps the capture scene empty — a contact-damage NPC
+        // would knock the pinned player off the furniture.
+        let spawn_npcs = std::env::var_os("TR_POSE").is_none();
+        if spawn_npcs && player.is_some() {
+            let p = player.as_ref().unwrap();
             let xt = (p.x / TILE_PX) as i32;
             for (i, dx) in [-20, 16, 26].iter().enumerate() {
                 let spawned = if world.day_time {
@@ -1449,6 +1530,15 @@ impl App {
                 });
                 p.pinned_mount = id;
             }
+        }
+        // `TR_POSE=sit|sleep` pins the furniture pose for screenshots/tests:
+        // the furniture tiles are written beside the spawn and the player is
+        // snapped on through the real decode — the sim's own re-validation
+        // then holds the pose (no input reaches the headless capture). The
+        // tile writes run without a player too (`TR_NOPLAYER` + `TR_POSE`
+        // verifies the furniture draw itself).
+        if let Ok(v) = std::env::var("TR_POSE") {
+            apply_pose_pin(&mut world, player.as_mut(), v.trim());
         }
         // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
         // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
@@ -1716,6 +1806,11 @@ impl App {
                 .unwrap_or(1);
             ty.map(|ty| (ty, seed))
         });
+        // The chests roll their loot here — before the struct literal moves
+        // `world` (`AddBuriedChest`'s stock inline with the placement, the
+        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
+        // chest merges in (its anchor is already stocked — the roll skips).
+        let world_chests = crate::chest_gen::generate_world_chests(&world);
         let mut app = App {
             window: None,
             gpu: None,
@@ -1730,6 +1825,7 @@ impl App {
             filter_driver: crate::app::filters::FilterDriver::new(),
             world,
             atlas: Some(atlas),
+            font_atlas,
             lookups,
             clouds,
             sky,
@@ -1926,7 +2022,10 @@ impl App {
             crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
-            world_chests: tr_chest_store,
+            // The load-time loot roll (the hoist above); the `TR_CHEST`
+            // store's own chests stay (its anchor gets double-stocked in
+            // vanilla too — the fixture stock wins the first slots).
+            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2607,6 +2706,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::ChairSit { .. } => {
                     log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
                 }
+                edit::TileInteraction::BedSleep { .. } => {
+                    log::info!("TR_TOGGLE -> bed sleep (no player at load)")
+                }
                 edit::TileInteraction::BedInteract { set_spawn, .. } => log::info!(
                     "TR_TOGGLE {},{} -> bed ({})",
                     op.x,
@@ -2636,11 +2738,17 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
 pub(crate) fn build_atlas(
     world: &World,
     assets_dir: &Path,
-) -> Result<(Atlas, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
     tile_ids.insert(7); // copper ore
+    // `TR_POSE=sit|sleep` writes the chair/bed beside the spawn after the
+    // usage scan — the pose pin's sheets ride along.
+    if std::env::var_os("TR_POSE").is_some() {
+        tile_ids.insert(15); // chair
+        tile_ids.insert(79); // bed
+    }
     log::info!(
         "world uses {} tile types and {} wall types",
         tile_ids.len(),
@@ -2649,8 +2757,7 @@ pub(crate) fn build_atlas(
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let (font_images, ui_font_meta, item_font_meta, death_font_meta) = assets::load_fonts();
-    images.extend(font_images);
+    let fonts = assets::load_fonts();
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -2673,15 +2780,6 @@ pub(crate) fn build_atlas(
         log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
     }
 
-    let ui_font = ui_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let item_font = item_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let death_font = death_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
     let lookups = assets::Lookups::build(
         &atlas,
         tile_ids
@@ -2690,9 +2788,11 @@ pub(crate) fn build_atlas(
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
-        ui_font,
-        item_font,
-        death_font,
+        fonts.ui,
+        fonts.item,
+        fonts.death,
+        fonts.combat_text,
+        fonts.combat_crit,
     );
 
     let atlas_stats = (
@@ -2701,7 +2801,7 @@ pub(crate) fn build_atlas(
         atlas.memory_bytes(),
         atlas.sheets.len(),
     );
-    Ok((atlas, lookups, atlas_stats))
+    Ok((atlas, fonts.atlas, lookups, atlas_stats))
 }
 
 /// The world-dump diagnostics: `TR_DUMP_TILES` prints the raw tile grid and
