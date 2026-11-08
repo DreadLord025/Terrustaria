@@ -1707,6 +1707,33 @@ impl App {
                 }
             }
         }
+        // `TR_NPC=<kind>[,<kind>…]`: the humanoid-walker verification hook —
+        // the kinds stand beside the player so the draw's rows ride each
+        // sheet's `Main.npcFrameCount` (the town 21-26, the goblins 16/21,
+        // the cave walkers 15, the zombie's single frame).
+        if let Ok(v) = std::env::var("TR_NPC") {
+            if let Some(p) = &player {
+                for name in v.split(',').map(|s| s.trim()) {
+                    let kind = match name {
+                        "guide" => NpcKind::Guide,
+                        "zombie" => NpcKind::Zombie,
+                        "skeleton" => NpcKind::Skeleton,
+                        "peon" => NpcKind::GoblinPeon,
+                        "thief" => NpcKind::GoblinThief,
+                        "warrior" => NpcKind::GoblinWarrior,
+                        "archer" => NpcKind::GoblinArcher,
+                        "tinkerer" => NpcKind::GoblinTinkerer,
+                        "merchant" => NpcKind::Merchant,
+                        _ => continue,
+                    };
+                    let (kw, kh) = kind.size();
+                    let mut n =
+                        Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
+                    n.hp = n.max_hp;
+                    npcs.push(n);
+                }
+            }
+        }
         let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
         // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
         let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
