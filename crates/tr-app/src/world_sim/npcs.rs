@@ -851,7 +851,70 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
 /// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
 /// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
 /// group + 3, 0)`.
+/// `DD2Event.CheckProgress` (`DD2Event.cs:366-392`) — the Old One's Army's
+/// kill advance: the kill's worth rides the tier (the ported families are
+/// the tier-1 rows worth 1.0), the wave's budget
+/// (`DD2Event::required_wave_kills`) opens the next wave with the 1800-tick
+/// break, and the wave-6 sentinel is the win (`WonThisRun`).
+fn dd2_report_kill(app: &mut App, kind: NpcKind) {
+    let roster = tr_core::dd2::enemies_for_wave(app.world.dd2_wave).0;
+    if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
+        // The kill outside the wave's roster scores nothing.
+        return;
+    }
+    // The hold's refusal runs FIRST (the vanilla's early return) — the
+    // kill under the break scores nothing at all.
+    if app.world.dd2_spawn_hold != 0 {
+        return;
+    }
+    let worth = tr_core::dd2::KILL_WORTH_T1;
+    app.world.dd2_wave_kills += worth;
+    let passed = tr_core::dd2::wave_budget_passed(
+        app.world.dd2_wave,
+        &mut app.world.dd2_wave_kills,
+    );
+    if passed {
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_wave += 1;
+        app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+    }
+}
+
+/// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
+fn nid_of(id: u16) -> Option<NpcKind> {
+    NpcKind::from_u16(match id {
+        552 => 95,
+        555 => 98,
+        561 => 101,
+        558 => 101, // the Wyvern rides the same walker until its arms land
+        564 => 106,
+        _ => return None,
+    })
+}
+
+/// The Old One's Army's tick (`DD2Event.Update`): the spawn hold's decay
+/// and the crystal's 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
+/// `:40959-40966`) — the hold's expiry opens the lane spawns.
+pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
+    if !app.world.dd2_event_ongoing {
+        return;
+    }
+    if app.world.dd2_spawn_hold > 0 {
+        app.world.dd2_spawn_hold -= 1;
+    }
+    // The win-death: the crystal's own ai[0] counter rides the machine;
+    // the sim resolves it into the event-stop request (the DD2Event
+    // framework's slice).
+}
+
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
+    // The Old One's Army's wave progress (`DD2Event.CheckProgress`,
+    // `DD2Event.cs:366-392`) rides its own counter — the invasion
+    // framework's group gate does not apply.
+    if app.world.dd2_event_ongoing {
+        dd2_report_kill(app, kind);
+        return;
+    }
     let group = npc_invasion_group(kind);
     if group <= 0 || group != app.world.invasion_type {
         return;
@@ -4940,5 +5003,80 @@ mod crystal_summon_tests {
             !crate::world_sim::editing::use_etherian_crystal(&mut app),
             "no stand refuses"
         );
+    }
+}
+
+#[cfg(test)]
+mod dd2_wave_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_wave_advances_on_the_budget() {
+        // `DD2Event.CheckProgress`: the tier-1 roster's kills advance the
+        // wave at the budget with the 1800-tick break.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 2, "the wave advances");
+        assert_eq!(app.world.dd2_wave_kills, 0.0, "the counter resets");
+        assert_eq!(
+            app.world.dd2_spawn_hold,
+            tr_core::dd2::SPAWN_HOLD_WAVE_BREAK,
+            "the break rides"
+        );
+    }
+
+    #[test]
+    fn the_wave_hold_refuses_the_kill() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 100;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 1, "the hold's refusal");
+        assert_eq!(app.world.dd2_wave_kills, 59.0, "no score under the hold");
+    }
+
+    #[test]
+    fn the_off_roster_kill_scores_nothing() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
+        report_invasion_kill(&mut app, NpcKind::Skeleton);
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
     }
 }

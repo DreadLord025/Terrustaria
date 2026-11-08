@@ -198,6 +198,11 @@ pub struct World {
     pub dd2_event_ongoing: bool,
     /// `NPC.waveNumber` — the Old One's Army's wave (1-3 tiers).
     pub dd2_wave: i32,
+    /// `NPC.waveKills` — the current wave's kill count.
+    pub dd2_wave_kills: f32,
+    /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
+    /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
+    pub dd2_spawn_hold: i32,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -312,6 +317,8 @@ impl World {
             downed_martians: false,
             dd2_event_ongoing: false,
             dd2_wave: 1,
+            dd2_wave_kills: 0.0,
+            dd2_spawn_hold: 300,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
