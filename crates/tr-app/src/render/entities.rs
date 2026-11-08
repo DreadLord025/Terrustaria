@@ -203,6 +203,8 @@ pub(crate) struct NpcAssets {
     pub(crate) dark_mage: Option<BgTex>,
     /// `NPC_551` — Betsy (11-frame dragon strip of 190x90).
     pub(crate) betsy: Option<BgTex>,
+    /// `NPC_568` — the Wither Beast (14-frame humanoid strip of 18x40).
+    pub(crate) wither_beast: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -309,6 +311,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dd2_support: sky_tex(atlas, "NPC_556", None),
         dark_mage: sky_tex(atlas, "NPC_564", None),
         betsy: sky_tex(atlas, "NPC_551", None),
+        wither_beast: sky_tex(atlas, "NPC_568", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1087,6 +1090,13 @@ pub(crate) fn draw_npcs(
                 assets.betsy.as_ref(),
                 assets.betsy.as_ref().map_or(90.0, |t| t.h / 11.0),
                 [190.0, 90.0],
+                [n.x, n.y],
+            ),
+            // The WitherBeast: the 14-frame NPC_568 strip over the 18x40 frames.
+            NpcKind::DD2WitherBeast => (
+                assets.wither_beast.as_ref(),
+                assets.wither_beast.as_ref().map_or(40.0, |t| t.h / 14.0),
+                [18.0, 40.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (

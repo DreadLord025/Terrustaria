@@ -475,6 +475,7 @@ fn portrait_data(
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
         NpcKind::DD2DarkMage => 99,       // NPC_564
         NpcKind::DD2Betsy => 100,        // NPC_551
+        NpcKind::DD2WitherBeast => 101,  // NPC_568
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -738,6 +739,13 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 11.0)
                 .unwrap_or(90.0);
             (sheet_i, h, 190.0, h, white)
+        }
+        // The WitherBeast: the 14-frame NPC_568 strip over the 18x40 frames.
+        (NpcKind::DD2WitherBeast, _) => {
+            let h = lookups.bestiary_npc_sheets[101]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

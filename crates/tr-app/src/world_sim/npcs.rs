@@ -4788,4 +4788,23 @@ mod dd2_goblin_tests {
         }
         assert!(saw_volley, "the volley fires");
     }
+    #[test]
+    fn the_wither_beast_pulses_and_self_heals() {
+        // `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`):
+        // the aura phase's 60-tick self-heal (`lifeMax / 20` capped to the
+        // missing hp) and the walk through the harness.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2WitherBeast, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = 300; // the wounded beast (500 max)
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 325, "the 60-tick heal (25 = 500/20)");
+    }
 }

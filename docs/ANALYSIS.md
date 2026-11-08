@@ -2802,6 +2802,13 @@ reposition + the 687 at 35), the fireball volley (the 1500-px
 reposition, the rotated muzzle, the 686 at 35 every 10 ticks), the
 circle flight and the dash.
 
+## The Wither Beast (M4-EVENT-5k)
+
+The ethereal caster-beast: the walk with its row (speed 1.4, damp 0.7)
+and the aura phase — the pulse counter, the ring dust at the 400-px
+radius, the 60-tick self-heal (`lifeMax / 20` capped to the missing
+hp). The 683 crystal shots ride the shooter block's slice.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

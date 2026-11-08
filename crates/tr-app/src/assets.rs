@@ -1490,6 +1490,7 @@ impl Lookups {
                 atlas.sheet("NPC_567").copied(),
                 atlas.sheet("NPC_564").copied(),
                 atlas.sheet("NPC_551").copied(),
+                atlas.sheet("NPC_568").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

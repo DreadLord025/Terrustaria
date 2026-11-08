@@ -1372,6 +1372,7 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2SkeletonT3
         | crate::npc::NpcKind::DD2DarkMage
         | crate::npc::NpcKind::DD2Betsy
+        | crate::npc::NpcKind::DD2WitherBeast
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

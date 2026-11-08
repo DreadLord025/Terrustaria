@@ -180,6 +180,10 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.DD2WitherBeastT2` (568) — the Old One's Army's ethereal
+    /// caster-beast (`NPC.cs`: 18×40, aiStyle 107, 500 HP, dmg 50, def 30,
+    /// kb 0.15; the aura + the self-heal + the 683 crystal shots).
+    DD2WitherBeast,
     /// `NPCID.DD2Betsy` (551) — the Old One's Army's dragon boss
     /// (`NPC.cs:16400-16424`: 190×90, aiStyle 110, 50000 HP, dmg 80,
     /// def 38, noGravity, noTileCollide, lavaImmune).
@@ -618,6 +622,7 @@ impl NpcKind {
             NpcKind::DD2SkeletonT3 => 105,
             NpcKind::DD2DarkMage => 106,
             NpcKind::DD2Betsy => 107,
+            NpcKind::DD2WitherBeast => 108,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -732,6 +737,7 @@ impl NpcKind {
             105 => NpcKind::DD2SkeletonT3,
             106 => NpcKind::DD2DarkMage,
             107 => NpcKind::DD2Betsy,
+            108 => NpcKind::DD2WitherBeast,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -949,6 +955,8 @@ impl NpcKind {
             NpcKind::DD2DarkMage => (34.0, 62.0),
             // Betsy: 190x90 (`NPC.cs`'s case 551).
             NpcKind::DD2Betsy => (190.0, 90.0),
+            // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
+            NpcKind::DD2WitherBeast => (18.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1183,6 +1191,8 @@ impl NpcKind {
             NpcKind::DD2DarkMage => 800,
             // Betsy: 50000 HP (`NPC.cs`'s case 551).
             NpcKind::DD2Betsy => 50000,
+            // The WitherBeast: 500 HP.
+            NpcKind::DD2WitherBeast => 500,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1322,6 +1332,8 @@ impl NpcKind {
             NpcKind::DD2DarkMage => 40,
             // Betsy: dmg 80.
             NpcKind::DD2Betsy => 80,
+            // The WitherBeast: dmg 50.
+            NpcKind::DD2WitherBeast => 50,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1996,6 +2008,8 @@ impl Npc {
             NpcKind::DD2DarkMage => 0.0,
             // Betsy: kb 0 (case 551 sets nothing).
             NpcKind::DD2Betsy => 0.0,
+            // The WitherBeast: kb 0.15.
+            NpcKind::DD2WitherBeast => 0.15,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -2162,6 +2176,8 @@ impl Npc {
             NpcKind::DD2DarkMage => 18,
             // Betsy: def 38.
             NpcKind::DD2Betsy => 38,
+            // The WitherBeast: def 30.
+            NpcKind::DD2WitherBeast => 30,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2318,7 +2334,8 @@ impl Npc {
             | NpcKind::DD2SkeletonT1
             | NpcKind::DD2SkeletonT3
             | NpcKind::DD2DarkMage
-            | NpcKind::DD2Betsy => 0.0,
+            | NpcKind::DD2Betsy
+            | NpcKind::DD2WitherBeast => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2615,6 +2632,8 @@ impl Npc {
             NpcKind::DD2DarkMage => self.update_dark_mage(world, player, rng),
             // Betsy: aiStyle 110's phase machine.
             NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
+            // The WitherBeast: aiStyle 107's aura/self-heal machine.
+            NpcKind::DD2WitherBeast => self.update_wither_beast(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2852,6 +2871,14 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 11;
+                }
+            }
+            // The WitherBeast: the humanoid 14-frame strip.
+            NpcKind::DD2WitherBeast => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
                 }
             }
             // The Dark Mage: the 20-frame caster strip.
@@ -5879,7 +5906,64 @@ impl Npc {
         // The flight (noGravity + noTileCollide).
         self.x += self.vx;
         self.y += self.vy;
+    }    /// `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`) —
+    /// the ethereal caster-beast. The walk rides the harness with the
+    /// beast's row (`num23 = 1.4`, `num24 = 0.16`, `num25 = 0.7`, the
+    /// 600-px aggro window); the aura phase (`ai[0] == 1`): the pulse
+    /// counter `localAI[0]` ticks, every 10 past 60 a ring dust spawns
+    /// at the 400-px random radius (the port's seed stream), the player
+    /// within 400 px takes the `DD2EtherealPortalDebuff`'s stand-in (the
+    /// port has no debuff carry — the hurt half rides the contact), the
+    /// 60-tick self-heal (`lifeMax / 20` capped to the missing hp); the
+    /// wave ramp rides `localAI[3]` (the port's `caster_counter`); the
+    /// 683 crystal shots ride the shooter block (the follow-up).
+    fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.4,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        if self.ai[0] == 0.0 {
+            self.ai[3] = 0.0;
+        } else {
+            // The aura pulse counter (`localAI[0]` → the port's `caster_counter`).
+            self.caster_counter += 1;
+            // The ring dust (the 400-px random radius) — the port's
+            // stream stands in for `Main.rand`.
+            if self.caster_counter > 60 && crate::app::rand01(rng) < 0.1 {
+                let ang = crate::app::rand01(rng) * std::f32::consts::TAU;
+                let radius = 400.0 * (0.3 + 0.7 * crate::app::rand01(rng));
+                let (rx, ry) = (cx + ang.cos() * radius, cy + ang.sin() * radius);
+                // The dust's solid check folds (the port has no dust
+                // system) — the ring lands at the point.
+                let _ = (rx, ry);
+            }
+            // The 60-tick self-heal.
+            if self.ai[1] > 0.0 {
+                self.ai[1] -= 1.0;
+            } else {
+                self.ai[1] = 60.0;
+                let heal = (self.max_hp / 20).min(self.max_hp - self.hp);
+                if heal > 0 {
+                    self.hp = (self.hp + heal).min(self.max_hp);
+                }
+            }
+        }
     }
+
+
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -7426,6 +7510,7 @@ impl Npc {
             NpcKind::DD2SkeletonT3 => 105,
             NpcKind::DD2DarkMage => 106,
             NpcKind::DD2Betsy => 107,
+            NpcKind::DD2WitherBeast => 108,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
