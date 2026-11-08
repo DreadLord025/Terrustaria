@@ -1500,6 +1500,8 @@ pub struct Npc {
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
     pub wants_leech: bool,
+    /// The Prime's 4-limb spawn request (the `aiStyle 32` one-shot init).
+    pub wants_limbs: bool,
     /// The WoF's Hungry init request (`localAI[0]` 1 → 2's 11 spawns).
     pub wants_hungry: bool,
     /// The AI's per-tick contact-damage override (the Hungry's
@@ -1925,6 +1927,7 @@ impl Npc {
             worm_left: 0,
             worm_inited: false,
             wants_leech: false,
+            wants_limbs: false,
             wants_hungry: false,
             damage_override: None,
             wof_bottom_target: -1.0,
@@ -5810,8 +5813,8 @@ impl Npc {
                     2 => pick = 3,
                     4 | 6 => pick = 5,
                     _ => pick = 3, // the C# default for 5+ → 6 lands as the
-                    // next attack family; the port folds 5's pick as 3
-                    // (the fireball) until it lands.
+                                   // next attack family; the port folds 5's pick as 3
+                                   // (the fireball) until it lands.
                 }
                 if self.ai[3] >= 7.0 {
                     self.ai[3] = 0.0;
@@ -5968,7 +5971,8 @@ impl Npc {
         // The flight (noGravity + noTileCollide).
         self.x += self.vx;
         self.y += self.vy;
-    }    /// `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`) —
+    }
+    /// `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`) —
     /// the ethereal caster-beast. The walk rides the harness with the
     /// beast's row (`num23 = 1.4`, `num24 = 0.16`, `num25 = 0.7`, the
     /// 600-px aggro window); the aura phase (`ai[0] == 1`): the pulse
@@ -6024,7 +6028,6 @@ impl Npc {
             }
         }
     }
-
 
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
@@ -6317,51 +6320,82 @@ impl Npc {
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
     /// x 9), the decel (the 40 ticks x0.98). The 4 limbs = the follow-ups.
+    /// The Prime's head (`aiStyle 32`, `NPC.cs:27626-27942`): the
+    /// 600-tick hover → the 400-tick enraged charge (`defense/damage x2`,
+    /// the spin, the straight-at-the-player speed 2 classic) → the
+    /// repeat; the day-rage (`damage/defense 9999`, the 8-32 chase) and
+    /// the dead-player despawn (`EncourageDespawn(500)`). The four limbs
+    /// spawn once on the first tick (the port's `wants_limbs` flag).
     fn update_prime(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let hover_y = pcy - 280.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.12;
-            if self.vx.abs() > 9.0 {
-                self.vx = 9.0 * self.vx.signum();
+        let dist = (pcx - cx).hypot(pcy - cy);
+        // The state selection (`:27662-27676`).
+        if player.hp <= 0 || dist > 6000.0 {
+            self.ai[1] = 3.0;
+        } else if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+            self.ai[1] = 2.0;
+        }
+        // The limb spawn (the one-shot).
+        if self.caster_counter == 0 && self.cast_windup == 0 {
+            self.caster_counter = 1;
+            self.wants_limbs = true;
+        }
+        if self.ai[1] == 0.0 {
+            // The hover (`:27677-27764`): the Y steer to `player.Y` in
+            // the ±200/±500 bands, the X steer to ±100, the 0.1/2 caps,
+            // the 0.98 friction; the 600-tick cycle flips to the rage.
+            self.ai[2] += 1.0;
+            let target_y = if pcy > cy + 200.0 {
+                pcy - 500.0
+            } else if pcy < cy - 200.0 {
+                pcy - 200.0
+            } else {
+                pcy
+            };
+            self.vy += (target_y - cy).signum() * 0.1;
+            self.vy = self.vy.clamp(-2.0, 2.0);
+            let target_x = if pcx > cx + 100.0 {
+                cx + 100.0
+            } else if pcx < cx - 100.0 {
+                cx - 100.0
+            } else {
+                cx
+            };
+            self.vx += (target_x - cx).signum() * 0.1;
+            self.vx = self.vx.clamp(-8.0, 8.0);
+            self.vx *= 0.98;
+            if self.ai[2] >= 600.0 {
+                self.ai[1] = 1.0;
+                self.ai[2] = 0.0;
             }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.12;
-            if self.vy.abs() > 9.0 {
-                self.vy = 9.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
+        } else if self.ai[1] == 1.0 {
+            // The enraged charge (`:27765-27859`): the straight line at
+            // the classic 2, the 400-tick duration.
+            self.ai[2] += 1.0;
             let dx = pcx - cx;
             let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 9.0;
-            self.vy = dy / d * 9.0;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            self.vx = dx / d * 2.0;
+            self.vy = dy / d * 2.0;
+            if self.ai[2] >= 400.0 {
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
             }
+        } else if self.ai[1] == 2.0 {
+            // The day-rage (`:27860-27892`): the 8-32 chase.
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
+            self.vx = dx / d * speed;
+            self.vy = dy / d * speed;
+        } else {
+            // The despawn drift (`:27893-27941`).
+            self.vy += 0.1;
+            self.vx *= 0.95;
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.x += self.vx;
@@ -9668,18 +9702,28 @@ mod tests {
         // velocity 9) → the decel.
         let mut w = ground_air();
         w.day_time = false;
+        // The aiStyle-32 head (`NPC.cs:27626-27942`): the ai[1] state
+        // machine (0 hover / 1 enraged charge / 2 day-rage / 3 despawn).
         let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         pr.hp = pr.max_hp;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
+        for _ in 0..600 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
-        assert!(pr.cast_windup == 1, "the charge phase armed");
-        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(pr.ai[1], 1.0, "the enraged charge phase armed");
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64); // the charge tick
         let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
-        assert!((speed - 9.0).abs() < 0.1, "the charge speed ({speed})");
+        assert!(
+            (speed - 2.0).abs() < 0.2,
+            "the classic charge speed ({speed})"
+        );
+        // The 400-tick charge falls back to the hover.
+        for _ in 0..400 {
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(pr.ai[1], 0.0, "the hover resumes");
     }
 
     #[test]
