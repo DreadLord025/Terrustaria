@@ -133,6 +133,10 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// The Skeletron head's centre (`NPC.cs:21930`'s spawn point + the
+    /// hands' tether reads) — the skeletron_x/y pair.
+    pub skeletron_x: f32,
+    pub skeletron_y: f32,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -259,6 +263,8 @@ impl World {
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
             golem_x: 0.0,
+            skeletron_x: 0.0,
+            skeletron_y: 0.0,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
