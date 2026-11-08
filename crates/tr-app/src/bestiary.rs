@@ -669,6 +669,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Martian Saucer Core",
     },
     BestiaryEntryDef {
+        credit_id: "FlyingDutchman",
+        net_id: 491,
+        kind: NpcKind::FlyingDutchman,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Dutchman",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingDutchmanCannon",
+        net_id: 492,
+        kind: NpcKind::FlyingDutchmanCannon,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Dutchman Cannon",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,

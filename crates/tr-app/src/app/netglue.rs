@@ -969,6 +969,8 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::MartianSaucerTurret
         | crate::npc::NpcKind::MartianSaucerCannon
         | crate::npc::NpcKind::MartianSaucerCore
+        | crate::npc::NpcKind::FlyingDutchman
+        | crate::npc::NpcKind::FlyingDutchmanCannon
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

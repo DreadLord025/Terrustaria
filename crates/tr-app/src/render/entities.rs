@@ -187,6 +187,10 @@ pub(crate) struct NpcAssets {
     pub(crate) saucer_turret: Option<BgTex>,
     pub(crate) saucer_cannon: Option<BgTex>,
     pub(crate) saucer_core: Option<BgTex>,
+    /// `NPC_491` — the Flying Dutchman (1 frame of 350x120), `NPC_492` —
+    /// its cannons (9 frames of 30x30).
+    pub(crate) dutchman: Option<BgTex>,
+    pub(crate) dutchman_cannon: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -285,6 +289,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         saucer_turret: sky_tex(atlas, "NPC_393", None),
         saucer_cannon: sky_tex(atlas, "NPC_394", None),
         saucer_core: sky_tex(atlas, "NPC_395", None),
+        dutchman: sky_tex(atlas, "NPC_491", None),
+        dutchman_cannon: sky_tex(atlas, "NPC_492", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1004,6 +1010,20 @@ pub(crate) fn draw_npcs(
                 assets.saucer_core.as_ref(),
                 assets.saucer_core.as_ref().map_or(90.0, |t| t.h / 11.0),
                 [120.0, 90.0],
+                [n.x, n.y],
+            ),
+            // The Dutchman: the 1-frame ship strip + the cannons'
+            // 9-frame strip.
+            NpcKind::FlyingDutchman => (
+                assets.dutchman.as_ref(),
+                assets.dutchman.as_ref().map_or(120.0, |t| t.h),
+                [350.0, 120.0],
+                [n.x, n.y],
+            ),
+            NpcKind::FlyingDutchmanCannon => (
+                assets.dutchman_cannon.as_ref(),
+                assets.dutchman_cannon.as_ref().map_or(30.0, |t| t.h / 9.0),
+                [30.0, 30.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (
