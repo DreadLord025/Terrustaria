@@ -1360,6 +1360,14 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2GoblinT1
         | crate::npc::NpcKind::DD2GoblinT2
         | crate::npc::NpcKind::DD2GoblinT3
+        | crate::npc::NpcKind::DD2GoblinBomberT1
+        | crate::npc::NpcKind::DD2GoblinBomberT2
+        | crate::npc::NpcKind::DD2GoblinBomberT3
+        | crate::npc::NpcKind::DD2JavelinT1
+        | crate::npc::NpcKind::DD2JavelinT2
+        | crate::npc::NpcKind::DD2JavelinT3
+        | crate::npc::NpcKind::DD2SkeletonT1
+        | crate::npc::NpcKind::DD2SkeletonT3
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

@@ -463,6 +463,14 @@ fn portrait_data(
         NpcKind::DD2GoblinT1 => 88,    // NPC_552
         NpcKind::DD2GoblinT2 => 89,    // NPC_553
         NpcKind::DD2GoblinT3 => 90,    // NPC_554
+        NpcKind::DD2GoblinBomberT1 => 91, // NPC_555
+        NpcKind::DD2GoblinBomberT2 => 92, // NPC_556
+        NpcKind::DD2GoblinBomberT3 => 93, // NPC_557
+        NpcKind::DD2JavelinT1 => 94,  // NPC_561
+        NpcKind::DD2JavelinT2 => 95,  // NPC_562
+        NpcKind::DD2JavelinT3 => 96,  // NPC_563
+        NpcKind::DD2SkeletonT1 => 97, // NPC_566
+        NpcKind::DD2SkeletonT3 => 98, // NPC_567
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -689,6 +697,27 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
+        }
+        // The support family: the bombers'/skeletons' 18x40 and the
+        // javelin throwers' 26x52 strips.
+        (
+            NpcKind::DD2GoblinBomberT1
+                | NpcKind::DD2GoblinBomberT2
+                | NpcKind::DD2GoblinBomberT3
+                | NpcKind::DD2SkeletonT1
+                | NpcKind::DD2SkeletonT3,
+            _
+        ) => {
+            let h = lookups.bestiary_npc_sheets[91]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[94]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 26.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

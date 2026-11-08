@@ -2748,6 +2748,35 @@ The DD2 framework (the crystal 548, the tavernkeep 550, the
 `DD2Event.EnemiesShouldChasePlayers` chase flag, the wave tiers' bosses
 — the Dark Mage 564, Betsy 551) is the next slice.
 
+## The DD2 support families (M4-EVENT-5e)
+
+The Old One's Army's second echelon: the kobold bombers (555-557, kb
+0.1, walk 0.88/1.12), the javelin throwers (561-563, 26×52, the spear
+projectiles 662/685 at the 82-tick cadence) and the etherian skeletons
+(566-567 with the materialize cycle — `localAI[3]`'s spawn-in counter,
+the alpha fade over the 110-tick run; the walk rides the harness while
+translucent).
+
+The families' walk arms ride the port's harness with the vanilla's
+per-kind speed rows; the bombers' bomb throw, the throwers' spears and
+the skeletons' fade render ride their own slices.
+
+## The DD2 weapons (M4-EVENT-5f)
+
+The javelin throwers' arm: the 82-tick cadence throws the 662 spear
+(the tier-3's 685) at the classic 30/60/80 damages from the centre -
+14, the ballistic aim at the player. The walk rides the harness with
+the vanilla's fast row (speed 8, accel × 3). The 681 bomb's row joins
+the pool's data set — the bomber's throw arm rides it when it lands.
+
+## The kobold bombers (M4-EVENT-5g)
+
+The bomber's lob: the 18-tick cadence throws the 681 bomb at the
+tiered classic damages (20/30/40) from the centre - 14, the ballistic
+aim at the player (the vanilla's `num10 = 6` speed — the bomb's own
+aiStyle-16 flight carries the arc). The walk rides the harness with
+the tiers' speeds and arc weights.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -6138,3 +6167,45 @@ Deliberate deviations and notes:
   resources the loader probes) the keys show through — vanilla's own
   unknown-key behaviour.
 
+
+## The Golem family's display (M4-BOSS-19b)
+
+The port draws the Golem family over the extracted sheets' real rows, but
+several vanilla details are deliberately not carried:
+
+- **The 1-px flight row.** `FindFrame` case 245's flight arm writes
+  `frame.Y = 1` (`NPC.cs:72938`) — a literal pixel into a field whose unit
+  is the row height (174 px for 245). The port tracks rows, so the flight
+  draws row 0: a 1-px vertical offset exists in vanilla and is not
+  reproduced.
+- **The glow passes.** The C# draws `TextureAssets.Golem[1..3]` and
+  `Extra[106/107]` over the body/head/free-head (the eye glows, the
+  `Main.cs:25729-25768` arms) — those textures have no port entries; the
+  base sheets only.
+- **The head's `timeLeft = 300`** on the volley beams (`NPC.cs:31326`)
+  rides the projectile pool's timed-spawn arm only for the Destroyer
+  laser kind; the Golem beams take the pool default.
+- **The cadences that consume `Main.rand`.** The head's volley trigger
+  (`60 + Next(600)`, `:31273`) and the free head's barrage
+  (`100 + Next(4800)`, `:31506`) fold to flat averages (300 / 1500) —
+  the RNG stream discipline shared with the other folded cadences.
+- **The fists' `collideX/collideY` dash exit** (`NPC.cs:19445`): the
+  port's sim carries no per-NPC tile-collision flags, so the dash ends
+  on the 700-px anchor distance only.
+- **The fist's state 3** (the `ai[0] == 3` hover, `:19450-19503`): no
+  port code sets `ai[0] = 3` for the fists — the arm is dead in the
+  vanilla AI itself and is not carried.
+- **`GetMyBalance`** (`NPC.cs:18485`): 1.0 for the solo unscaled player;
+  the multiplayer/good-world multipliers (the +3, the `*2` outside the
+  temple/jungle) stay off like the other difficulty branches.
+- **The head's tether** (`aiStyle 46`) converges under a ±7 velocity
+  clamp where the C# snaps the raw delta inside 100 px
+  (`NPC.cs:31148-31160`) — the anchor holds within the clamp.
+- **The anchor's freshness.** The C# parts read `Main.npc[golemBoss]`
+  live (the body's lower slot updates first in the same tick); the port's
+  pre-pass hoist feeds the head/fists the body's end-of-previous-tick
+  centre/velocity — the ratio is exact (damage lands outside the NPC
+  pass), the tether carries the one-tick shape.
+- **`alpha` on the whole NPC draw.** `Npc::alpha` (new) tints every NPC
+  through `GetAlpha`'s `(255 - alpha)/255`; only the Golem family's
+  spawn fades set it today.
