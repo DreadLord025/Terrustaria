@@ -47,7 +47,22 @@ impl ApplicationHandler for App {
 
         let gpu = pollster::block_on(Gpu::new(window.clone())).expect("gpu init");
         let atlas = self.atlas.as_ref().expect("atlas");
-        let mut renderer = SpriteRenderer::new(&gpu, atlas, 8);
+        // The BC2 font pages upload only when the adapter has the BC feature;
+        // without it the built-in bitmap font takes over (GL debug path).
+        let font_atlas = if gpu
+            .features
+            .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+        {
+            self.font_atlas.as_ref()
+        } else {
+            if self.font_atlas.is_some() {
+                log::warn!(
+                    "adapter lacks TEXTURE_COMPRESSION_BC; text falls back to the bitmap font"
+                );
+            }
+            None
+        };
+        let mut renderer = SpriteRenderer::new(&gpu, atlas, 8, font_atlas);
         // The dye pass table is static vanilla data (`DyeInitializer`'s
         // binding constants, deduped in `dye::dye_params`) — one upload at
         // startup, like the C# `Load()` bakes the shader parameters once.

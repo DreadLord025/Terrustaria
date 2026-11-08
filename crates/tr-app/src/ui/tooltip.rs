@@ -177,9 +177,12 @@ pub fn draw_item_tooltip(
     if item.count == 0 {
         return;
     }
-    // `Main.cs:20358-20360`: every line starts white, line 0 takes the name colour.
-    let mut lines: Vec<(&'static str, [f32; 4])> =
-        vec![(item.name, item_name_color(registry::rare(item.kind)))];
+    // `Main.cs:20358-20360`: every line starts white, line 0 takes the name
+    // colour. `Lang.GetItemNameValue` — the localized `ItemName.{const}` row.
+    let mut lines: Vec<(String, [f32; 4])> = vec![(
+        crate::lang::item_name(item.kind),
+        item_name_color(registry::rare(item.kind)),
+    )];
     if registry::is_weapon(item.kind) {
         for line in [
             "0 melee damage",
@@ -187,7 +190,7 @@ pub fn draw_item_tooltip(
             "0% critical strike chance",
             "0 use time",
         ] {
-            lines.push((line, [1.0, 1.0, 1.0, 1.0]));
+            lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
         }
     }
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.

@@ -71,9 +71,11 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // `Main.cs:64899`'s `statLifeMax >= 120` scan, folded to the port's one
     // player (`Main.player[i].statLifeMax`).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
-    // The Deerclops's midnight-crossing sample (`Main.cs:65121`'s `num4`):
-    // the time BEFORE this tick's advance.
+    // The crossing samples: the Deerclops's midnight (`Main.cs:65121`'s
+    // `num4 < 16200 && time >= 16200`) and the night bookend's dusk
+    // (`Main.cs:65230`'s `UpdateTime_StartDay` at 32400).
     let night_pre = app.world.time < 16200.0;
+    let dusk_pre = app.world.time < 32400.0;
     let mut night_raining = false;
     let App {
         world_tick_step,
@@ -170,6 +172,26 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             let at = app.player.as_ref().map(|p| p.center());
             crate::world_sim::weather::spawn_deerclops(app, at);
         }
+    }
+    // The meteorite trio (`Main.cs:65230`'s night bookend roll +
+    // `:65490-65501`'s dusk resolution): the flag raises on the dusk
+    // crossing (the `Next(50)` after the boss-2 downing), the resolution
+    // lands the ore at the 16200 morning boundary (the fn self-gates on
+    // the tick's time).
+    if !app.world.spawn_meteor {
+        let dusk = dusk_pre && app.world.time >= 32400.0;
+        if dusk {
+            let mut r = app.npc_rng;
+            if tr_core::worldgen::meteor::night_roll(&mut r, app.world.downed_eow) {
+                app.world.spawn_meteor = true;
+            }
+            app.npc_rng = r;
+        }
+    } else {
+        let now = app.world.time;
+        let mut r = app.npc_rng;
+        tr_core::worldgen::meteor::resolve(&mut app.world, now, &mut r);
+        app.npc_rng = r;
     }
 }
 
@@ -556,5 +578,25 @@ mod tests {
         d.hp = 0;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_deerclops, "the death flag");
+    }
+    #[test]
+    fn the_meteor_roll_and_boss_death_flag() {
+        // The night roll (`Main.cs:65230`) gates on the boss-2 downing;
+        // the orb-boss death arms the flag (the guaranteed first, the
+        // `NPC.cs:79450-79456` arm).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.downed_eow = false;
+        let mut rng = 1u64;
+        assert!(!tr_core::worldgen::meteor::night_roll(
+            &mut rng,
+            app.world.downed_eow
+        ));
+        let mut hits = 0;
+        for _ in 0..2000 {
+            if tr_core::worldgen::meteor::night_roll(&mut rng, true) {
+                hits += 1;
+            }
+        }
+        assert!(hits > 10 && hits < 70, "the 1/50 rate ({hits})");
     }
 }

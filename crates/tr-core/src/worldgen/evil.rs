@@ -17,12 +17,12 @@
 
 use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUD};
 use super::noise::Rng;
-use super::tile_runner::{tile_runner, TileRunnerOpts};
+use super::tile_runner::{TileRunnerOpts, tile_runner};
 use super::{
     TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GRASS, TILE_HARDENED_SAND, TILE_ICE, TILE_SAND,
     TILE_SANDSTONE, TILE_SNOW, TILE_STONE,
 };
-use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_INACTIVE};
+use crate::tile::{FLAG_ACTIVE, FLAG_INACTIVE, LiquidKind, Tile};
 use crate::tiledata::{
     SET_CAN_BE_CLEARED_DURING_GENERATION, SET_CRACKED_BRICKS, SET_GRASS, TILE_SOLID, TILE_SOLID_TOP,
 };
@@ -57,7 +57,7 @@ const TILE_CORRUPT_JUNGLE_GRASS: u16 = 661;
 /// `TileID.CrimsonJungleGrass` = 662.
 const TILE_CRIMSON_JUNGLE_GRASS: u16 = 662;
 /// `TileID.ShadowOrb` = 31 — the 2x2 orb / crimson heart.
-const TILE_SHADOW_ORB: u16 = 31;
+pub const TILE_SHADOW_ORB: u16 = 31;
 /// `TileID.DemonAltar` = 26.
 const TILE_DEMON_ALTAR: u16 = 26;
 
@@ -1626,7 +1626,7 @@ fn crim_place_hearts(world: &mut World, rng: &mut Rng, hearts: &[(i32, i32)]) {
 /// `WorldGen.AddShadowOrb` (`WorldGen.cs:32095-32132`) — no RNG: the bounds
 /// guard, the abort when any of the 2x2 already holds an orb, then the 2x2
 /// tile 31 with frames `0/18` (+36 on `frameX` for a crimson heart).
-fn add_shadow_orb(world: &mut World, x: i32, y: i32, crimson_heart: bool) {
+pub fn add_shadow_orb(world: &mut World, x: i32, y: i32, crimson_heart: bool) {
     if x < 10 || x > world.width - 10 || y < 10 || y > world.height - 10 {
         return;
     }
