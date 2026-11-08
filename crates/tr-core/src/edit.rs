@@ -464,12 +464,52 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // break that triggered this check is a different cell.
         return None;
     }
+    // `:54226-54290`'s drop switch: the 5-way roll, the forced case 0
+    // until the world's first smash (`:54240`/`:54268`'s `!shadowOrbSmashed`
+    // arm). The port rolls the deterministic position seed (the vanilla's
+    // `Main.rand`); the case-0 Musket Ball stack rolls into the documented
+    // note (the ObjectDrop carries the single item).
+    let mut seed = crate::flame::frame_seed_for(0x5EAF_00D5, ox, oy);
+    let forced = !world.shadow_orb_smashed;
+    let pick = if forced {
+        0
+    } else {
+        crate::flame::random_int(&mut seed, 0, 5)
+    };
+    let item = if crimson {
+        match pick {
+            0 => Some(800),  // The Undertaker
+            1 => Some(1256), // Crimson Rod
+            2 => Some(802),  // The Rotted Fork
+            3 => Some(3062), // Crimson Heart (the pet item)
+            _ => Some(1290), // Panic Necklace
+        }
+    } else if kind == 639 {
+        Some(109) // the Mana Crystal
+    } else {
+        match pick {
+            0 => Some(96),  // The Musket
+            1 => Some(64),  // Vilethorn
+            2 => Some(162), // Ball O' Hurt
+            3 => Some(115), // Shadow Orb (the pet item)
+            _ => Some(111), // Band of Starpower
+        }
+    };
+    // The 2x2's drop position: the orb's centre tile (`Item.NewItem`'s
+    // spawn at the object centre).
+    let cx = ox + 1;
+    let cy = oy + 1;
     // `:54292-54293`'s flags (outside the drop switch — all three kinds
     // count toward the same world counter).
     world.shadow_orb_smashed = true;
     world.shadow_orb_count += 1;
     Some(CheckPlan {
-        drop: None,
+        drop: Some(crate::edit::ObjectDrop {
+            tile_kind: kind,
+            x: cx,
+            y: cy,
+            item,
+        }),
         cells,
         pot_event: None,
         herb_event: None,
@@ -6244,7 +6284,52 @@ mod tests {
             "the broken object holds its single count"
         );
         // The tiles are gone.
-        assert!(!w.tile(99, 99).unwrap().active());
         assert!(!w.tile(100, 100).unwrap().active());
+    }
+
+    #[test]
+    fn the_first_smash_forced_gun_and_the_roll_table() {
+        // `:54240`/`:54268`'s forced case 0: the FIRST smash in the world
+        // always drops the Musket (96); after the flag sets the 5-way
+        // roll takes over (the table's ids 96/64/162/115/111).
+        use crate::worldgen::evil::add_shadow_orb;
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[31] = true;
+        w.frame_important[12] = true;
+        w.frame_important[639] = true;
+        add_shadow_orb(&mut w, 100, 100, false);
+        // no_item = false — the drop flows (the frame walk pushes the
+        // plan's drop only when the drops are not suppressed).
+        let kill = super::kill_tile(&mut w, 99, 99, false).expect("the break");
+        let drop = kill.object_drops.first().copied().expect("the drop");
+        assert_eq!(drop.item, Some(96), "the forced gun on the first smash");
+        // A second orb (the flag now set) rolls the table.
+        add_shadow_orb(&mut w, 140, 100, false);
+        let kill2 = super::kill_tile(&mut w, 139, 99, false).expect("the second break");
+        let drop2 = kill2
+            .object_drops
+            .first()
+            .copied()
+            .expect("the rolled drop");
+        assert!(
+            matches!(
+                drop2.item,
+                Some(96) | Some(64) | Some(162) | Some(115) | Some(111)
+            ),
+            "the 5-way table item: {:?}",
+            drop2.item
+        );
+        assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
     }
 }

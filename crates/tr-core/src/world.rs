@@ -148,6 +148,12 @@ pub struct World {
     pub golem_hp_ratio: f32,
     pub golem_x: f32,
     pub golem_y: f32,
+    /// The body's `velocity.X` — the fists' tether anchor folds it in
+    /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
+    /// (0, -9 * scale)`, `NPC.cs:19261-19265`) — the WoF write-through
+    /// shape. The head's tether (`aiStyle 46`, `:31148-31160`) does NOT
+    /// carry the term.
+    pub golem_vx: f32,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -250,6 +256,7 @@ impl World {
             spawn_meteor: false,
             golem_x: 0.0,
             golem_y: 0.0,
+            golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
