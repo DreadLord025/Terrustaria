@@ -258,7 +258,8 @@ referenced here exist in the catalog.
 
 **Tasks:** M1.4-BG-18-screen-filters (filters/monoliths), M1.4-BG-19-ambient-skies
 (creature skies), M1.4-BG-20-ambience-emitters, M1.4-BG-21-sundial (sundial/moondial
-fast-forward), M1.4-WEATHER-1-wind-gusts, M1.4-WEATHER-2-sandstorm,
+fast-forward), M1.4-BG-23 (blood-moon/eclipse rolls + the dial-cooldown
+force-reset), M1.4-WEATHER-1-wind-gusts, M1.4-WEATHER-2-sandstorm,
 M1.4-BG-22-dayrate-consumers (the 60 Hz world tick).
 
 ## 6. World generation
