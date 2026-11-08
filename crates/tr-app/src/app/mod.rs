@@ -1747,6 +1747,10 @@ impl App {
                         "goldfish" => NpcKind::Goldfish,
                         "piranha" => NpcKind::Piranha,
                         "shark" => NpcKind::Shark,
+                        "cavebat" => NpcKind::CaveBat,
+                        "junglebat" => NpcKind::JungleBat,
+                        "hellbat" => NpcKind::Hellbat,
+                        "voodoodemon" => NpcKind::VoodooDemon,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
