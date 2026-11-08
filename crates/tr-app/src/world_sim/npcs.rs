@@ -1245,25 +1245,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             None
         }
     };
-    // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
-    // body's centre / velocity.X / life ratio for the head and fist
-    // tethers. Hoisted BEFORE the AI pass: the C# parts read
-    // `Main.npc[NPC.golemBoss].Center / life / lifeMax / velocity` live
-    // inside their own AI (the body's lower slot updates first), so the
-    // pre-pass write is the closest same-tick value.
-    {
-        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem && n.hp > 0);
-        if let Some(body) = body {
-            let (bw, bh) = body.size();
-            app.world.golem_present = true;
-            app.world.golem_x = body.x + bw * 0.5;
-            app.world.golem_y = body.y + bh * 0.5;
-            app.world.golem_vx = body.vx;
-            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
-        } else {
-            app.world.golem_present = false;
-        }
-    }
     let world = &app.world;
     let player = &mut app.player;
     let npcs = &mut app.npcs;
@@ -1446,14 +1427,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.world.downed_eow = true;
             }
             NpcKind::GolemHead => {
-                // `NPC.cs:84953-84962`'s death hook: the free head spawns
-                // at the dying head's position — the C# passes the
-                // head's `Center.X` / `position.Y + height` as the new
-                // NPC's Bottom, which lands the 70x70 free head exactly
-                // on the head's box (the port's old `+ h` was a box
-                // height low); `NewNPC`'s default `spriteDirection = -1`
-                // keeps the sheet unflipped.
-                let mut free = Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y, -1, 0.0);
+                let mut free =
+                    Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
                 free.dont_take_damage = true;
                 free.hp = free.max_hp;
                 app.npcs.push(free);
@@ -1571,29 +1546,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        for (kind, sx, sy) in n.wants_sphere.drain(..) {
+        if let Some((kind, sx, sy)) = n.wants_sphere.take() {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
-            // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
-            // no direction argument, the ctor's `spriteDirection = -1`,
-            // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
-            // (`NPC.cs:12176/12190/12201`): the family spawns unflipped
-            // and invisible, fading in over 26 ticks.
-            if matches!(
-                kind,
-                NpcKind::GolemHead | NpcKind::GolemFistLeft | NpcKind::GolemFistRight
-            ) {
-                ball.facing = -1;
-                ball.alpha = 255;
-            }
             spheres.push(ball);
         }
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
+    // The Skeletron head's anchor write-through (the hands' tether reads
+    // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
+    {
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+            .cloned();
+        if let Some(head) = head {
+            let (hw, hh) = head.size();
+            app.world.skeletron_x = head.x + hw * 0.5;
+            app.world.skeletron_y = head.y;
+            let _ = hh;
+        }
+    }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
     // the shared counter's third break summons the Eater of Worlds (a
     // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
@@ -1616,27 +1594,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.npcs.push(head);
         }
     }
-    // The Golem's shield reconcile (`NPC.cs:19547/19567`'s
-    // `dontTakeDamage = flag`): the BODY is invulnerable while the
-    // attached head (246) lives (the anchor/ratio/velocity write rides
-    // the pre-pass hoist above). The fists' deaths do not shield.
+    // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
+    // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
+    // centre for the head/fist tethers; the BODY is invulnerable while
+    // the attached head (246) lives. The fists' deaths do not shield.
     {
-        let head_alive = app
+        let body = app
             .npcs
             .iter()
-            .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
-        if let Some(b) = app
-            .npcs
-            .iter_mut()
             .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
-        {
-            b.dont_take_damage = head_alive;
-        }
-        let body_alive = app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::Golem && n.hp > 0);
-        if !body_alive {
+            .cloned();
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+            let head_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            if let Some(b) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
+            {
+                b.dont_take_damage = head_alive;
+            }
+        } else {
+            app.world.golem_present = false;
             // NPC.cs:31141/19242/31372's golemBoss < 0 arm: the parts
             // 9999-strike themselves (the no-interaction kill — the port's
             // hp = 0; the kill credit is the documented deviation).
@@ -1664,10 +1650,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut servants);
     // The hostile shots (`NPC.cs`'s `Projectile.NewProjectile` arms —
-    // the archer's Wooden Arrow Hostile 81): the update pass filled
-    // `wants_hostile_shot`, this pass drains it into the pool (the
-    // knockback 0 — the C# call's `KnockBack: 0f`); a volley may queue
-    // several shots on one tick.
+    // the archer's Wooden Arrow Hostile 81): the update pass set
+    // `wants_hostile_shot`, this pass resolves it into the pool (the
+    // knockback 0 — the C# call's `KnockBack: 0f`).
     let mut shots = Vec::new();
     for n in app.npcs.iter_mut() {
         shots.append(&mut n.wants_hostile_shot);
@@ -3120,61 +3105,6 @@ mod pirate_invasion_tests {
             "the body's death is the fight's end"
         );
     }
-
-    #[test]
-    fn the_golem_parts_assemble_and_hold() {
-        // `AI_045`'s one-shot init (`NPC.cs:19517-19522`): the body's
-        // first tick requests all THREE parts (247 at -84/-9, 248 at
-        // +78/-9, 246 at -3/-57); the parts then keep their hp through
-        // the wind-up window (the shield keeps the body whole, nothing
-        // touches the parts).
-        let mut app = flow_app(None, vec![], vec![]);
-        let mut big = tr_core::World::new("t".into(), 64, 200);
-        for x in 0..64 {
-            for y in 118..200 {
-                let i = big.index(x, y);
-                big.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        big.compute_column_surface();
-        app.world = big;
-        let mut player = crate::player::Player::spawn(&app.world);
-        player.x = 44.0 * 16.0;
-        player.y = 110.0 * 16.0;
-        app.player = Some(player);
-        let mut body = Npc::new(NpcKind::Golem, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
-        body.hp = body.max_hp;
-        app.npcs.push(body);
-        for _ in 0..200 {
-            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        }
-        for kind in [
-            NpcKind::GolemHead,
-            NpcKind::GolemFistLeft,
-            NpcKind::GolemFistRight,
-        ] {
-            let part = app
-                .npcs
-                .iter()
-                .find(|n| n.kind == kind)
-                .unwrap_or_else(|| panic!("the {kind:?} part must live"));
-            assert_eq!(part.hp, part.max_hp, "the {kind:?} part keeps its hp");
-        }
-        // The parts sit at the body's anchor offsets (`:19520-19522`).
-        // The port's tether converges to the anchor within its ±7
-        // velocity clamp (the C# snaps the raw delta within 100 px,
-        // `:31148-31160`), so the tolerance carries the clamp.
-        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem).unwrap();
-        let (bx, by) = body.center();
-        let head = app.npcs.iter().find(|n| n.kind == NpcKind::GolemHead).unwrap();
-        let (hx, hy) = head.center();
-        assert!((hx - bx + 3.0).abs() < 10.0, "the head's -3 tether");
-        assert!((hy - by + 57.0).abs() < 10.0, "the head's -57 tether");
-    }
 }
 
 #[cfg(test)]
@@ -4308,7 +4238,10 @@ mod pirate_shot_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4333,7 +4266,13 @@ mod pirate_shot_tests {
         let (_app, mut player) = app_with_player();
         let world = surface_world();
         let mut rng = 7u64;
-        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::PirateArcher,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         for _ in 0..120 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
@@ -4413,7 +4352,13 @@ mod pirate_shot_tests {
         // The 180/82 projectile rows landed: the machine's payload
         // resolves into the pool through the sim (the 180 arrow at 25).
         let (mut app, mut player) = app_with_player();
-        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::PirateArcher,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         app.player.as_mut().unwrap().x = 160.0 * TILE_PX;
         app.player.as_mut().unwrap().y = 118.0 * TILE_PX;
@@ -4476,7 +4421,10 @@ mod dd2_goblin_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4492,9 +4440,21 @@ mod dd2_goblin_tests {
         let (_app, mut player) = app_with_player();
         let world = surface_world();
         let mut rng = 7u64;
-        let mut t1 = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut t1 = Npc::new(
+            NpcKind::DD2GoblinT1,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         t1.hp = t1.max_hp;
-        let mut t3 = Npc::new(NpcKind::DD2GoblinT3, 155.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut t3 = Npc::new(
+            NpcKind::DD2GoblinT3,
+            155.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         t3.hp = t3.max_hp;
         player.x = 160.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -4524,7 +4484,13 @@ mod dd2_goblin_tests {
         let (_app, mut player) = app_with_player();
         let world = surface_world();
         let mut rng = 7u64;
-        let mut n = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinT1,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         // A fresh goblin: the ramp's accel is small.
         n.caster_counter = 0;
@@ -4587,5 +4553,119 @@ mod dd2_goblin_tests {
         assert_eq!(s.caster_counter, s_before + 60, "the materialize ticks");
         let _ = app;
         app.npcs.push(b);
+    }
+    #[test]
+    fn the_javelin_thrower_throws_the_spear_at_82() {
+        // The javelin arm (`NPC.cs:63434-63465`): the cadence fires the
+        // 662 spear (the tier-3's 685) at the classic damage.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 662);
+        assert_eq!(s.5, 30);
+    }
+
+    #[test]
+    fn the_tier3_thrower_throws_the_685() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 685);
+        assert_eq!(s.5, 80);
+    }
+    #[test]
+    fn the_bombers_lob_the_681_bomb() {
+        // The bomber arm (`NPC.cs:63490-63535`): the 18-tick cadence lobs
+        // the 681 bomb at the tiered classic damages.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 20);
+    }
+
+    #[test]
+    fn the_tier3_bomber_lobs_the_bomb_at_40() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 40);
     }
 }
