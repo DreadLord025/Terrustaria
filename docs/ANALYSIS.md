@@ -2825,6 +2825,14 @@ The Old One's Army's entry point: the crystal item over the stand runs
 consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
 `dd2_wave` carry the event's seam.
 
+## The Old One's Army's waves (M4-EVENT-5o)
+
+`tr-core/src/dd2.rs` ports the wave engine: the rosters (552/555/561/
+558/564 by wave) with the lane rates (90→40), the budgets (60/80/100/
+120/140, the wave-5 cap, the wave-6 win sentinel) and `CheckProgress`'s
+advance — the hold's early refusal, the budget's pass → wave+1 with
+the 1800-tick break.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -6267,6 +6275,37 @@ Deliberate deviations and notes:
   unknown-key behaviour.
 
 
+## Tile sections (M6-NET-3)
+
+The `10`/`20` codecs and the section flow are 1:1 ports; the deviations:
+
+- **`frame_important` rides the wire.** The C# reads its global
+  `Main.tileFrameImportant[]` table on both sides of `10`/`20`; the port's
+  table is per-world (`World::frame_important`) and the reader thread has no
+  world, so the flag rides in a previously-unused bit (`10`'s `b4` bit 0,
+  `20`'s third flag byte bit 4). Two-client only.
+- **`wall_frame` is the one added byte** in `10`'s payload (after the wall
+  low byte): the C# covers it through `CopyFrom` inside a run, the port needs
+  it on the wire so a section's walls render identically.
+- **The chest/sign/tile-entity tail of `CompressTileBlock` is not ported**
+  (`NetMessage.cs:2208-2230`): the port's chests are world chests synced by
+  the item stream and its signs/tile-entities have no sync path yet — the
+  section stream covers tiles, walls, liquids, the four wire colours, paint
+  and the invisible/fullbright quad.
+- **The deflate stream is wire-compatible, not byte-identical**: the port
+  uses flate2's raw deflate (a .NET `DeflateStream` peer decodes it), while
+  byte-for-byte equality would need .NET's encoder internals.
+- **The NPC/chest pushes inside `SendSection` ride the cadence tick**: the
+  C# streams `23` for the section's town NPCs and the chest contents inline
+  (`NetMessage.cs:2715-2753`); the port's 10 Hz tick covers both within a
+  tick of the section arriving.
+- **The per-NPC `netSpam` gate and the section culling of `23` are not
+  ported** (all live NPCs stream each tick); the client's despawn is a 200 ms
+  staleness prune rather than the C#'s life-to-0 broadcast.
+- **`20 SectionRange` replicates the 1x1 edit**: the C# widens door/object
+  edits to their frame group (`SendTileSquare(-1, x, y, 2)`); the port's
+  multi-tile objects arrive as per-tile edits, so the widening waits for the
+  door/object sync. `changeType` rides 0 (no switch family yet).
 ## The Golem family's display (M4-BOSS-19b)
 
 The port draws the Golem family over the extracted sheets' real rows, but
@@ -6333,3 +6372,29 @@ several vanilla details are deliberately not carried:
 - **The step sounds.** `FindFrame` case 668 plays `SoundID.DeerclopsStep`
   at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
   audio access, so the cue rides the follow-up like the other NPC steps.
+
+<<<<<<< HEAD
+## The humanoid walkers' display (M4-NPC-3c)
+
+- **The zombie never animates.** `FindFrame` has no case 9 and
+  `npcFrameCount[9] = 1`: the vanilla zombie's sprite is the single 30x48
+  NPC_9 frame, its walk expressed purely in the body motion. The port's
+  v1 ran the case-3 group's walker (the 0/1/2 band cycle) on it — rows
+  1/2 did not exist in the sheet.
+- **The town NPCs and goblins are not 3-frame walkers.** They belong to
+  `FindFrame`'s humanoid-group arm (`NPC.cs:68547-69587`), which walks
+  rows 2..npcFrameCount-1: 26 rows for the Guide/Witch Doctor, 25 for
+  the Merchant/Arms Dealer/Demolitionist/Painter/Tinkerer, 23 for the
+  Nurse/Clothier, 21 for the Dryad and the Goblin Archer, 16 for the
+  other three goblins, 15 for the cave walkers. The v1's 3-frame machine
+  showed the idle rows while walking.
+- **The sit/talk/attack zones are the follow-up.** The group's
+  `ai[0]` 2/3/4/5/6/7/11/18/19/23 arms (the sit, the talking, the
+  downed, the shop-attack cycles over `AttackFrameCount`) ride the town
+  AI states the port does not model; the default (idle/walk) arm is
+  what the port draws.
+- **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
+  and their widths differ per town NPC (40/46/48/50/52/56) — the draw
+  takes each sheet's real frame instead of a stretched 38x48.
+=======
+>>>>>>> origin/main

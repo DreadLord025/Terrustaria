@@ -314,9 +314,10 @@ pub(crate) struct App {
     /// The client handshake state — `Netplay.Connection.State`
     /// (`Netplay.cs:469-543`); stays at 0 while hosting.
     pub(crate) net_state: i32,
-    /// The world-blob slice buffer while the host streams the world
-    /// (`15 WorldChunk`), assembled in order at `WorldComplete`.
-    pub(crate) net_chunks: Vec<Option<Vec<u8>>>,
+    /// The `10 TileBlock` sections buffered while the host streams the world,
+    /// applied in order at `WorldComplete` (the C#'s section stream,
+    /// `MessageBuffer.cs:812-841`).
+    pub(crate) net_pending_sections: Vec<net::TileBlock>,
     /// The `7 WorldInfo` header, held until the blob completes the install.
     pub(crate) net_info: Option<net::WorldInfo>,
     /// The `9 Status` load-progress line (`Netplay.cs:526-540`'s StatusText).
@@ -1717,6 +1718,33 @@ impl App {
                 }
             }
         }
+        // `TR_NPC=<kind>[,<kind>…]`: the humanoid-walker verification hook —
+        // the kinds stand beside the player so the draw's rows ride each
+        // sheet's `Main.npcFrameCount` (the town 21-26, the goblins 16/21,
+        // the cave walkers 15, the zombie's single frame).
+        if let Ok(v) = std::env::var("TR_NPC") {
+            if let Some(p) = &player {
+                for name in v.split(',').map(|s| s.trim()) {
+                    let kind = match name {
+                        "guide" => NpcKind::Guide,
+                        "zombie" => NpcKind::Zombie,
+                        "skeleton" => NpcKind::Skeleton,
+                        "peon" => NpcKind::GoblinPeon,
+                        "thief" => NpcKind::GoblinThief,
+                        "warrior" => NpcKind::GoblinWarrior,
+                        "archer" => NpcKind::GoblinArcher,
+                        "tinkerer" => NpcKind::GoblinTinkerer,
+                        "merchant" => NpcKind::Merchant,
+                        _ => continue,
+                    };
+                    let (kw, kh) = kind.size();
+                    let mut n =
+                        Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
+                    n.hp = n.max_hp;
+                    npcs.push(n);
+                }
+            }
+        }
         let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
         // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
         let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
@@ -2163,7 +2191,7 @@ impl App {
             local_id: 0,
             net_timer: 0.0,
             net_state: net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,

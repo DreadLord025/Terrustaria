@@ -1390,7 +1390,7 @@ pub(crate) mod front_flow_tests {
             local_id: 0,
             net_timer: 0.0,
             net_state: crate::net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,
