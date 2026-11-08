@@ -4464,4 +4464,43 @@ mod dd2_goblin_tests {
         app.player = Some(player.clone());
         (app, player)
     }
+    #[test]
+    fn the_dd2_support_walks_and_the_skeletons_materialize() {
+        // The support rows (`NPC.cs`'s 555-567): the bombers (50/200/700
+        // HP) and the throwers (60/300/1000) march through the harness;
+        // the etherian skeletons ride the materialize cycle — their
+        // `localAI[3]` (the port's `caster_counter`) counts the spawn-in.
+        let (mut app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut b = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        b.hp = b.max_hp;
+        let mut s = Npc::new(
+            NpcKind::DD2SkeletonT1,
+            155.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        s.hp = s.max_hp;
+        let s_before = s.caster_counter;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (b_x, _) = b.center();
+        for _ in 0..60 {
+            b.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            s.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (b_end, _) = b.center();
+        assert!((b_end - b_x).abs() > 10.0, "the bomber walked");
+        assert_eq!(s.caster_counter, s_before + 60, "the materialize ticks");
+        let _ = app;
+        app.npcs.push(b);
+    }
 }
