@@ -152,6 +152,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 1315 && held.count > 0 && use_pirate_map(app) {
             return;
         }
+        // `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`):
+        // the Etherian Crystal 3828 over the Eternia Crystal Stand 466 —
+        // the gates (`no ongoing event`, `no crystal`, `no moon events`,
+        // the 3828 in the inventory, `WouldFailSpawningHere`'s refusal),
+        // the consume, then `DD2Event.SummonCrystal` (the frame offset's
+        // spawn point, `StartInvasion`).
+        if held.kind == 3828 && held.count > 0 && use_etherian_crystal(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' pre-hardmode summons
         // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
@@ -5461,6 +5470,18 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     if app.world.invasion_type != 0 {
         return false;
     }
+    /// `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`) — the
+    /// Etherian Crystal (3828) placed over the Eternia Crystal Stand (466)
+    /// starts the Old One's Army. The gates verbatim: no ongoing event, no
+    /// crystal alive, no pumpkin/snow moon, the 3828 in the inventory, the
+    /// stand's frame (`frameX/18*16`, `frameY/18*16` — the 3x3 stand
+    /// anchor) gives the spawn point (+40, +64), then `ConsumeItem` and
+    /// `DD2Event.SummonCrystal` (`StartInvasion` + the crystal NPC at the
+    /// point + the starter-crystal drops).
+    ///
+    /// Deviations: `WouldFailSpawningHere` folds to the stand-tile check
+    /// (the port has no lane machinery — the DD2Event framework's slice);
+    /// `DropStarterCrystals`' per-player drops ride the item-drop pass.
     let qualified = app
         .player
         .as_ref()
@@ -5491,3 +5512,53 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     app.mine_timer = 0.0;
     true
 }
+    pub fn use_etherian_crystal(app: &mut App) -> bool {
+        if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
+            return false;
+        }
+        let crystal_alive = app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::DD2EterniaCrystal);
+        if crystal_alive {
+            return false;
+        }
+        // The stand tile under the cursor.
+        let m = app.mouse_pos;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
+        let tx = (world_pos.x / TILE_PX).floor() as i32;
+        let ty = (world_pos.y / TILE_PX).floor() as i32;
+        let tile = app.world.tile(tx, ty);
+        let is_stand = tile.is_some_and(|t| t.active() && t.kind == 466);
+        if !is_stand {
+            return false;
+        }
+        let (fx, fy) = tile.map(|t| (t.frame_x as i32, t.frame_y as i32)).unwrap_or((0, 0));
+        let (sx, sy) = (tx * 16 - fx / 18 * 16 + 40, ty * 16 - fy / 18 * 16 + 64);
+        // The consume.
+        app.inventory[app.selected].count =
+            app.inventory[app.selected].count.saturating_sub(1);
+        if app.inventory[app.selected].count == 0 {
+            app.inventory[app.selected].kind = 0;
+        }
+        // The crystal + the event start.
+        let mut crystal = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            sx as f32 - 20.0,
+            sy as f32 - 20.0,
+            1,
+            0.0,
+        );
+        crystal.hp = crystal.max_hp;
+        app.npcs.push(crystal);
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        let held = app.inventory[app.selected];
+        app.swing_max = crate::item::use_animation_secs(held.kind);
+        app.swing = app.swing_max;
+        app.attack_cd = app.swing_max;
+        true
+    }
+

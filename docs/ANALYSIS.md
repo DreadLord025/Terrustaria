@@ -2818,6 +2818,13 @@ then the event's waves ride it. The summon arm (the crystal item over
 the stand, `SummonCrystal`'s frame-offset spawn) is the seam to
 `DD2Event`.
 
+## The crystal summon (M4-EVENT-5n)
+
+The Old One's Army's entry point: the crystal item over the stand runs
+`SummonCrystal` — the gates, the frame math's spawn point, the
+consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
+`dd2_wave` carry the event's seam.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

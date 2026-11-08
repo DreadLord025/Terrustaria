@@ -193,6 +193,11 @@ pub struct World {
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
+    /// raises it, the win/loss clears it.
+    pub dd2_event_ongoing: bool,
+    /// `NPC.waveNumber` — the Old One's Army's wave (1-3 tiers).
+    pub dd2_wave: i32,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -305,6 +310,8 @@ impl World {
             downed_frost: false,
             downed_pirates: false,
             downed_martians: false,
+            dd2_event_ongoing: false,
+            dd2_wave: 1,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,

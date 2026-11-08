@@ -4852,3 +4852,93 @@ mod dd2_goblin_tests {
         assert!(!n.dont_take_damage, "the crystal opens at 180");
     }
 }
+
+#[cfg(test)]
+mod crystal_summon_tests {
+    use super::*;
+
+    fn base_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The stand at tile (150, 119) with a centered frame.
+        let i = w.index(150, 119);
+        w.tiles[i].kind = 466;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_on_the_stand_starts_the_army() {
+        // `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`):
+        // the 3828 over the stand 466 summons the crystal + starts the
+        // event; the item consumes.
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        // The cursor over the stand.
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.world.dd2_event_ongoing;
+        assert!(!before);
+        assert!(crate::world_sim::editing::use_etherian_crystal(&mut app));
+        assert!(
+            app.world.dd2_event_ongoing,
+            "the event raised the ongoing flag"
+        );
+        assert_eq!(app.world.dd2_wave, 1, "the first wave");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal spawned"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the item consumed");
+    }
+
+    #[test]
+    fn the_crystal_refuses_without_the_stand_and_while_active() {
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.world.dd2_event_ongoing = true;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "the active event refuses"
+        );
+        app.world.dd2_event_ongoing = false;
+        // Remove the stand.
+        let i = app.world.index(150, 119);
+        app.world.tiles[i].kind = 1;
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "no stand refuses"
+        );
+    }
+}
