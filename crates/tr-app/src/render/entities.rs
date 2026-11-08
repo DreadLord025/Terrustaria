@@ -778,7 +778,17 @@ pub(crate) fn draw_npcs(
 ) -> u32 {
     let white = r.white_uv();
     let mut quads = 0;
-    for n in npcs {
+    for npc in npcs {
+        // The C# wraps the whole NPC draw with `position += netOffset`
+        // (`Main.cs:22335`, restored at `:22450`) — the port clones the NPC
+        // and adds the accumulator to its position, which every arm derives
+        // its anchor from. Zero on the host / single-player.
+        let n_owned = npc.offset_clone();
+        let n: &Npc = if npc.net_offset == Vec2::ZERO {
+            npc
+        } else {
+            &n_owned
+        };
         let (cx, cy) = n.center();
         let tx = (cx / TILE_PX) as i32;
         let ty = (cy / TILE_PX) as i32;

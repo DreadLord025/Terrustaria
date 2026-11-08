@@ -330,6 +330,33 @@ pub(crate) struct App {
     /// must not be restored afterwards (the `mem::replace` borrow dance has
     /// no other way to say "the handlers changed the role").
     pub(crate) net_dropped: bool,
+    /// The client's NPC slots keyed by the host's slot index (the `23`
+    /// store — the C#'s `Main.npc[]` on a client). Rebuilt into `npcs` in
+    /// slot order for the render.
+    pub(crate) net_npcs: HashMap<u32, crate::npc::Npc>,
+    /// The slots seen in the current `poll_net` batch: the `23` despawn diff.
+    pub(crate) net_npc_seen: Vec<u32>,
+    /// When each `23` slot was last heard from — a slot silent past
+    /// `NPC_STALE` is despawned (the host sends nothing when an NPC dies).
+    pub(crate) net_npcs_seen_at: HashMap<u32, Instant>,
+    /// Set when the npc store changed and `self.npcs` must be rebuilt.
+    pub(crate) net_npcs_dirty: bool,
+    /// The host's per-slot NPC bookkeeping: `(kind, generation)` — the
+    /// generation bumps on a kind change so the client recreates the slot
+    /// (`MessageBuffer.cs:1602-1613`'s test).
+    pub(crate) net_npc_gen: HashMap<u32, (i16, u32)>,
+    /// The client's item drops keyed by the host slot index (the `21` store).
+    pub(crate) net_items: HashMap<i16, crate::item::ItemDrop>,
+    /// Set when the item store changed and `self.items` must be rebuilt.
+    pub(crate) net_items_dirty: bool,
+    /// The host's last-sent `21` state per slot — the change-detection diff.
+    pub(crate) net_item_last: HashMap<i16, net::ItemState>,
+    /// The client's `22 ItemOwner` reservations: slot → (reserver, hold ticks).
+    pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
+    /// The client's last-sent `13 PlayerState` — the change-driven send test.
+    pub(crate) net_ps_last: net::PlayerState,
+    /// The heartbeat counter for the `13` cadence (`net_tick` calls).
+    pub(crate) net_beat: u32,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -583,6 +610,10 @@ pub(crate) struct WorldFrameKey {
     pub(crate) light_generation: u64,
     /// Waterfall animation frames + visible-list revision (0 when none visible).
     pub(crate) waterfall: u64,
+    /// Remote peers' smoothed positions/animations and the NPC smoothing
+    /// accumulators: the networked entities drawn inside the cached world
+    /// range. Zero in single-player (the offsets are zero and no peers).
+    pub(crate) net_key: u32,
     pub(crate) world_revision: u64,
 }
 
@@ -2085,6 +2116,17 @@ impl App {
             net_status_count: 0,
             net_last_recv: Instant::now(),
             net_dropped: false,
+            net_npcs: HashMap::new(),
+            net_npc_seen: Vec::new(),
+            net_npcs_seen_at: HashMap::new(),
+            net_npcs_dirty: false,
+            net_npc_gen: HashMap::new(),
+            net_items: HashMap::new(),
+            net_items_dirty: false,
+            net_item_last: HashMap::new(),
+            net_reserved: HashMap::new(),
+            net_ps_last: net::PlayerState::default(),
+            net_beat: 0,
             join_target,
             map: Some(world_map),
             map_grab: None,

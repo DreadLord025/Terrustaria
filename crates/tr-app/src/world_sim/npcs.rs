@@ -1073,12 +1073,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .npcs
                 .iter()
                 .filter(|m| {
-                    m.kind == NpcKind::FlyingDutchmanCannon
-                        && m.hp > 0
-                        && {
-                            let (mcx, mcy) = m.center();
-                            (mcx - scx).hypot(mcy - scy) < 1600.0
-                        }
+                    m.kind == NpcKind::FlyingDutchmanCannon && m.hp > 0 && {
+                        let (mcx, mcy) = m.center();
+                        (mcx - scx).hypot(mcy - scy) < 1600.0
+                    }
                 })
                 .count() as i32;
             app.npcs[i].crew_cannons = count;
@@ -1646,7 +1644,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
         #[cfg(test)]
-        eprintln!("[spawn-dbg] pool slots active: {}", app.projectiles.slots().iter().filter(|p| p.active).count());
+        eprintln!(
+            "[spawn-dbg] pool slots active: {}",
+            app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
         // The AI_037 arm's `timeLeft = 300` override rides the laser.
         let time_left = if kind == crate::projectile::DESTROYER_LASER {
             300
@@ -1890,14 +1891,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {
-        if n.wants_minion {
-            n.wants_minion = false;
-            if minions < 4 {
-                let xt = ((n.x / TILE_PX) as i32 + n.facing * 2).clamp(2, app.world.width - 3);
-                if let Some(m) = Npc::spawn_slime(&app.world, xt) {
-                    spawned.push(m);
-                    minions += 1;
-                }
+        if !n.wants_minion {
+            continue;
+        }
+        n.wants_minion = false;
+        // The King Slime's batch (`AI_015` `:44233-44247`): the 5 %-damage
+        // arm spawns `rand(1, 4)` (1-3) Blue Slimes, the death arm 4-7; the
+        // port's `wants_minion_batch` carries the count for the resolution.
+        let batch = n.wants_minion_batch.max(1);
+        n.wants_minion_batch = 0;
+        for k in 0..batch {
+            if minions >= 8 {
+                break;
+            }
+            let xt =
+                ((n.x / TILE_PX) as i32 + n.facing * (2 + k as i32)).clamp(2, app.world.width - 3);
+            if let Some(m) = Npc::spawn_slime(&app.world, xt) {
+                spawned.push(m);
+                minions += 1;
             }
         }
     }
@@ -3928,7 +3939,10 @@ mod saucer_battery_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4050,7 +4064,10 @@ mod saucer_battery_tests {
             }
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MartianSaucerCore);
+        let core = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerCore);
         // The crew removal retires the mounts too; the core survives until
         // the bridge lands (its own follow-up slice).
         assert!(core.is_some() || app.world.invasion_type == 0);
@@ -4071,7 +4088,10 @@ mod dutchman_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4141,7 +4161,11 @@ mod dutchman_tests {
         let mut rng = 3u64;
         let mut drops = 0;
         for _ in 0..2000 {
-            if let Some(n) = app.npcs.iter_mut().find(|n| n.kind == NpcKind::FlyingDutchman) {
+            if let Some(n) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::FlyingDutchman)
+            {
                 n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
                 if let Some((kind, dx, dy)) = n.wants_dutchman_drop {
                     assert!(matches!(
