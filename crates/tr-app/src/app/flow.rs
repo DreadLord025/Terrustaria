@@ -915,6 +915,13 @@ impl App {
     /// `FavoriteButtonClick`'s `UpdateOrder` (`UICharacterListItem.cs:280-282`
     /// / `UIWorldListItem.cs:455-458`).
     pub(crate) fn handle_front_click(&mut self) {
+        // `UserInterface.Update`'s click gate (`UserInterface.cs:214-218`): the
+        // press that lands inside the 200 ms window after a screen switch is
+        // dropped, exactly as the C# skips `HandleClick` while
+        // `_clickDisabledTimeRemaining > 0` (`:203-204`).
+        if self.pointer.clicks_disabled() {
+            return;
+        }
         // `FrontScreen` stopped being `Copy` when the keyboard variant grew a
         // payload — the snapshot clones instead of moving out of `self`.
         let Some(front) = self.front.clone() else {
@@ -1420,6 +1427,8 @@ pub(crate) mod front_flow_tests {
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            pointer: ui::pointer::PointerState::default(),
+            pointer_ms: 0.0,
             mouse_pos: Vec2::ZERO,
             cursor: ui::cursor::CursorState::default(),
             os_cursor_hidden: None,

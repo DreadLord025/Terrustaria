@@ -346,8 +346,32 @@ impl ApplicationHandler for App {
                             // held flag rides along for the creation screen's
                             // HSL drags (`Main.mouseLeft`, `Main.cs:51101`).
                             self.front_mouse_down = pressed;
+                            // `UserInterface.HandleClick` (`:230-255`)'s front
+                            // path: the machine owns the press/release →
+                            // click/`DoubleClick` edges. The existing single-click
+                            // dispatch keeps firing on the press, exactly as
+                            // before; Phase 2 feeds it the framework's hit id so
+                            // the double-click a card produces is real.
+                            let now = self.anim_time as f64 * 1000.0;
+                            // `hit: None` — no element ids yet (the framework
+                            // phase assigns them); the machine still tracks the
+                            // edges, and `clicks_disabled()` is the live gate.
+                            let hit: Option<u32> = None;
                             if pressed {
+                                if !self.pointer.clicks_disabled() {
+                                    self.pointer.press(
+                                        now,
+                                        crate::ui::pointer::PointerButton::Left,
+                                        hit,
+                                    );
+                                }
                                 self.handle_front_click();
+                            } else {
+                                self.pointer.release(
+                                    now,
+                                    crate::ui::pointer::PointerButton::Left,
+                                    hit,
+                                );
                             }
                             return;
                         }

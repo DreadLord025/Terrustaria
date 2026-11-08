@@ -16,6 +16,7 @@ pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
 pub mod panel;
+pub mod pointer;
 pub mod resources;
 pub mod save_list;
 pub mod sliders;
