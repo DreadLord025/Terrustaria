@@ -15,6 +15,7 @@ use tr_render::SpriteRenderer;
 use tr_core::bestiary::{KillTracker, UnlockState};
 
 use super::push_whole;
+use super::uistate::{self, Style};
 use super::text;
 use crate::assets::{self, Lookups};
 use crate::npc::{NpcKind, SlimeVariant};
@@ -45,11 +46,33 @@ pub const BUTTON_RECT: [f32; 4] = [498.0, 278.0, 30.0, 30.0];
 /// shared overlay treatment of the other full-screen UI).
 const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 
-/// `BuildPage`'s outer container: width 0.875 (max 900 px), top 180,
-/// height -220 (`UIBestiaryTest.cs:71-79`).
+/// `BuildPage`'s outer container (`UIBestiaryTest.cs:71-79`), resolved through
+/// the layout pass (`UIElement.cs:306-322`) instead of by hand:
+///
+/// ```text
+/// Width  (0, 0.875)   MaxWidth 900   MinWidth 700   (`:71-73`)
+/// Top    180          Height (-220, 1)              HAlign 0.5   (`:74-77`)
+/// ```
+///
+/// `800 + Utils.ToInt(true) * 100` is the C#'s 900/700 pair (`:69`), the
+/// non-zero/zero-style modes' widths. The container's **height** is the source's
+/// `screenH − 220` — the previous hand-written rect subtracted the 180 top a
+/// second time (`screenH − 400`, 180 px short at the bottom); the layout pass is
+/// the faithful form, so the panel now ends at `screenH − 40`.
 pub fn panel_rect(screen: Vec2) -> [f32; 4] {
-    let w = ((screen.x * 0.875).min(900.0)).max(560.0);
-    [screen.x * 0.5 - w * 0.5, 180.0, w, screen.y - 220.0 - 180.0]
+    uistate::resolve(
+        [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
+        Style::px(0.0),        // `Left` unset (`StyleDimension.Empty`)
+        Style::px(180.0),      // `Top.Set(180f, 0f)` (`:74`)
+        Style::new(0.0, 0.875), // `Width.Set(0f, 0.875f)` (`:71`)
+        Style::new(-220.0, 1.0), // `Height.Set(-220f, 1f)` (`:76`)
+        0.5,                            // `HAlign = 0.5f` (`:77`)
+        0.0,                            // `VAlign` unset
+        700.0,                          // `MinWidth` (`:73`)
+        0.0,                            // `MinHeight` unset
+        900.0,                          // `MaxWidth` (`:72`)
+        [0.0; 4],                       // the container carries no padding
+    )
 }
 
 /// The `Back` panel — `MakeExitButton` (`:364-380`): 50 px tall, bottom
@@ -961,6 +984,25 @@ fn draw_sheet_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dw_3_1_panel_rect_is_the_c_sharp_container() {
+        // `UIBestiaryTest.cs:71-79` at the 1600x900 reference: width 0.875*1600
+        // capped to 900, centred; Top 180; Height = screenH - 220 = 680, so the
+        // panel ends at 860 (screenH - 40).
+        let p = panel_rect(Vec2::new(1600.0, 900.0));
+        assert_eq!(p, [350.0, 180.0, 900.0, 680.0]);
+        // 1280x720: the same cap, height 720 - 220 = 500.
+        let p = panel_rect(Vec2::new(1280.0, 720.0));
+        assert_eq!(p, [190.0, 180.0, 900.0, 500.0]);
+        // A narrow screen clamps to `MinWidth` 700 (`:73`, 600 + 100) — not the
+        // old hand-written 560 floor.
+        let p = panel_rect(Vec2::new(640.0, 480.0));
+        assert_eq!(p[2], 700.0);
+        // The Back panel still sits inside the container.
+        let back = back_rect(&p);
+        assert!(back[1] + back[3] <= p[1] + p[3]);
+    }
 
     #[test]
     fn the_grid_indexes_match_the_layout() {
