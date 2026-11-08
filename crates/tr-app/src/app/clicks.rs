@@ -292,7 +292,9 @@ impl App {
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
             self.inventory_open = false;
-            self.emotes.menu_open = true;
+            // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
+            // with its scroll at 0 (`EmoteSystem::open`).
+            self.emotes.open();
             self.ui_left_press = false;
             return;
         }
@@ -303,12 +305,12 @@ impl App {
             let screen = Vec2::new(sw, sh);
             if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
                 self.emotes.new_bubble(id);
-                self.emotes.menu_open = false;
+                self.emotes.close();
                 self.ui_left_press = false;
                 return;
             }
             if ui::bestiary::back_hit(screen, self.mouse_pos) {
-                self.emotes.menu_open = false;
+                self.emotes.close();
                 self.ui_left_press = false;
             }
         }

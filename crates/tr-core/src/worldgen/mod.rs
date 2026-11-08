@@ -527,9 +527,11 @@ mod tests {
 
     #[test]
     fn the_temple_buries_in_the_jungle_cavern() {
-        // The 4200-world carries the temple: the Lihzahrd brick (226) box,
-        // the altar (237), the dart traps (137) and the temple walls
-        // (87/112).
+        // The 4200-world carries the temple (M5-TEMPLE): the Lihzahrd brick
+        // (226) shell, the 3×2 altar (237), the Lihzahrd door (10), the
+        // wooden spikes (232) and the unsafe walls (87). The dart traps
+        // (137) arrive with `LihzahrdTemplePart2` (the next phase); the
+        // faithful `makeTemple` writes no safe wall 112 (only read back).
         let w = generate(&GenOptions {
             seed: 88,
             ..Default::default()
@@ -543,9 +545,9 @@ mod tests {
         let walls = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
         assert!(count(226) > 800, "the temple brick ({})", count(226));
         assert!(count(237) == 6, "the altar tiles ({})", count(237));
-        assert!(count(137) >= 3, "the dart traps ({})", count(137));
+        assert_eq!(count(10), 3, "the Lihzahrd door ({})", count(10));
+        assert!(count(232) >= 5, "the spikes ({})", count(232));
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
-        assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
     }
 
     #[test]

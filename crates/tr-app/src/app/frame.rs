@@ -251,6 +251,12 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
+            // `UserInterface.Update`'s lockout countdown
+            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+            // state-change gate decays with the frame step, deterministic under
+            // `TR_SHOT` (dt pinned to 1/60 above).
+            self.pointer_ms = self.anim_time as f64 * 1000.0;
+            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
