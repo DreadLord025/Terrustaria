@@ -113,7 +113,7 @@ pub(crate) fn pass_fragile_ice(world: &mut World, snow_start: i32, rng: &mut Rng
 /// verbatim. `growth.rs`'s `empty_tile_check` only exempts the ignore kind
 /// itself, which is the wrong semantics for the underground trees
 /// (the phase discovery Gap 2; the Decision-#13 local-slice precedent).
-fn empty_tile_check(
+pub(crate) fn empty_tile_check(
     world: &World,
     start_x: i32,
     end_x: i32,

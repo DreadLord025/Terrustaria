@@ -1889,7 +1889,8 @@ fn step_trees(
     _pass_config: &ConfigSection,
 ) {
     let map = gv.map();
-    surface::plant_trees(world, &mut streams.rng, &map.heights);
+    let world_surface = gv.layers().world_surface as i32;
+    surface::plant_trees(world, &mut streams.rng, &map.heights, world_surface);
 }
 
 fn step_surface_flora(
@@ -1951,8 +1952,12 @@ fn step_cacti(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let (width, map) = (world.width, gv.map());
-    surface::plant_cacti(world, &mut streams.rng, map, width);
+    // The faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) —
+    // the three zones, the beach palms/coral/shells, the middle cactus, the
+    // sea oats — replacing the compact desert-only cactus scatter (the
+    // faithful middle zone's `PlantCactus` covers the desert's cacti).
+    let layers = *gv.layers();
+    ocean::cactus_palm_trees_and_coral(world, &layers, &mut streams.pass_rng("Cactus, Palm Trees, & Coral"));
 }
 
 fn step_world_tail(
@@ -2022,6 +2027,17 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[186] = true;
     world.frame_important[187] = true;
     world.frame_important[380] = true;
+    // The ocean tiles the ocean passes write — the palm trunk 323, the
+    // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
+    // (`Main.cs:7376`) and the oasis plants 530 (`:7385`) are all
+    // style-driven, not auto-framed, so the framer keeps their stored frames.
+    world.frame_important[323] = true;
+    world.frame_important[81] = true;
+    world.frame_important[324] = true;
+    world.frame_important[495] = true;
+    world.frame_important[529] = true;
+    world.frame_important[530] = true;
+    world.frame_important[549] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the

@@ -22,6 +22,7 @@
 use crate::tiledata as td;
 use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
 use crate::world::World;
+use super::biome_detail::empty_tile_check;
 use super::noise::Rng;
 use super::pipeline::GenVars;
 use super::terrain::Layers;
@@ -1189,6 +1190,702 @@ fn grow_check_seaweed(world: &mut World, layers: &Layers, x: i32, y: i32, rng: &
     }
 }
 
+/// `// --- Cactus, Palm Trees, & Coral ---------------------------------------------
+
+/// `WorldGen.cactusWaterWidth`/`Height`/`Limit` (`WorldGen.cs:4312-4316`,
+/// values `:86930-86932`) — the middle zone's cactus-vs-palm water box.
+const CACTUS_WATER_WIDTH: i32 = 50;
+const CACTUS_WATER_HEIGHT: i32 = 25;
+const CACTUS_WATER_LIMIT: i32 = 25;
+/// `TileID.Cactus` = 80, `TileID.Coral` = 81, `TileID.BeachPiles` = 324,
+/// `TileID.SeaOats` = 529, `TileID.OasisPlants` = 530, `TileID.PalmTree` = 323.
+const TILE_CACTUS: u16 = 80;
+const TILE_CORAL: u16 = 81;
+const TILE_BEACH_PILES: u16 = 324;
+const TILE_SEA_OATS: u16 = 529;
+const TILE_OASIS_PLANTS: u16 = 530;
+const TILE_PALM: u16 = 323;
+/// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the zone margins
+/// and the sea-oat/oasis excision band.
+pub(crate) const ZONE_MARGIN: i32 = 380;
+/// The sand family the palm ground test accepts (`WorldGen.cs:27148`).
+const PALM_SOIL: [u16; 4] = [53, 234, 116, 112];
+/// `WallID.Sets.AllowsPlantsToGrow` (`WallID.cs:97`) — `DefaultTreeWallTest`.
+const ALLOWS_PLANTS: [u16; 27] = [
+    0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317, 63, 64, 65, 66, 67, 68, 69, 81, 70, 264, 268, 265, 74, 80,
+];
+
+#[inline]
+fn default_tree_wall_test(wall: u16) -> bool {
+    ALLOWS_PLANTS.contains(&wall)
+}
+
+/// `RollRandomSeaShellStyle` (`WorldGen.cs:45170-45187`): the 5 seashell
+/// styles on tile 324 — `Next(2)`, then `Next(10)==0 → 2`, `Next(10)==0 → 3`,
+/// `Next(50)==0 → 4` (nested `if`s, so the later rolls re-roll earlier).
+fn roll_random_sea_shell_style(rng: &mut Rng) -> i32 {
+    let mut result = rng.range(0, 2);
+    if rng.chance(10) {
+        result = 2;
+    }
+    if rng.chance(10) {
+        result = 3;
+    }
+    if rng.chance(50) {
+        result = 4;
+    }
+    result
+}
+
+/// `WorldGen.SolidTileAllowBottomSlope` (`WorldGen.cs:70167-70180`): out of
+/// world is solid, active + (solid or solidTop), not top-slope/platform,
+/// not half brick, not wired-inactive.
+#[inline]
+fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return true;
+    }
+    let t = &world.tiles[world.index(x, y)];
+    t.active()
+        && ((t.kind as usize) < td::TILE_COUNT
+            && (td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind)))
+        && !t.top_slope()
+        && !t.half_brick()
+}
+
+/// `WorldGen.SolidTile2(Tile)` (`WorldGen.cs:70134-70148`): active, solid,
+/// no slope, no half brick (no solidTop arm).
+#[inline]
+fn solid_tile_2(t: &Tile) -> bool {
+    t.active()
+        && (t.kind as usize) < td::TILE_COUNT
+        && td::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+}
+
+/// `WorldGen.SeaOatWaterCheck` (`WorldGen.cs:58253-58296`): the water-sum
+/// probe — the beach band uses the widened 65/25 box with the inverted
+/// verdict, the inland band the 45/20 box.
+fn sea_oat_water_check(world: &World, x: i32, y: i32) -> bool {
+    let (mut num, mut num2, num3) = (45i32, 20i32, 20i32);
+    let (mut num5, mut num6) = (46i32, 0u32);
+    let beach = x <= ZONE_MARGIN || x >= world.width - ZONE_MARGIN;
+    if beach {
+        num = 65;
+        num2 += 5;
+    }
+    for i in x - num..=x + num {
+        for j in y - num2..=y + num2 {
+            if i < 0 || j < 0 || i >= world.width || j >= world.height {
+                continue;
+            }
+            let idx = world.index(i, j);
+            if !solid_tile(&world.tiles[idx]) && world.tiles[idx].liquid > 0 {
+                num6 += world.tiles[idx].liquid as u32;
+                let d = (i - x).abs();
+                if d < num5 {
+                    num5 = d;
+                }
+            }
+        }
+    }
+    if num6 / 255 >= num3 as u32 {
+        return !beach;
+    }
+    beach
+}
+
+/// `WorldGen.OasisPlantWaterCheck` (`WorldGen.cs:47506-47536`): the 45/20
+/// water sum, with the `x <= beachDistance` skip quirk (the beach columns
+/// count no water and fail the check by construction).
+fn oasis_plant_water_check(world: &World, x: i32, y: i32) -> bool {
+    let (num, num2, num3) = (45i32, 20i32, 20u32);
+    let mut num4 = 0u32;
+    for i in x - num..=x + num {
+        if x <= ZONE_MARGIN || x >= world.width - ZONE_MARGIN {
+            continue;
+        }
+        for j in y - num2..=y + num2 {
+            if i < 0 || j < 0 || i >= world.width || j >= world.height {
+                continue;
+            }
+            let idx = world.index(i, j);
+            if !solid_tile(&world.tiles[idx]) {
+                num4 += world.tiles[idx].liquid as u32;
+            }
+        }
+    }
+    num4 / 255 >= num3
+}
+
+/// `WorldGen.PlaceTile(81, …)`'s 1x1 coral slice (`WorldGen.cs:59431-59446`
+/// guards + the generic active/type/frame write): the tile above must be
+/// inactive, the tile below solid with no half brick or slope.
+fn place_coral(world: &mut World, x: i32, y: i32) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return false;
+    }
+    let above = world.index(x, y - 1);
+    if world.tiles[above].active() {
+        return false;
+    }
+    let below = world.index(x, y + 1);
+    if y + 1 >= world.height
+        || !world.tiles[below].active()
+        || !solid_tile_2(&world.tiles[below])
+        || world.tiles[below].slope() != 0
+    {
+        return false;
+    }
+    let idx = world.index(x, y);
+    let t = &mut world.tiles[idx];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = TILE_CORAL;
+    t.frame_x = 0;
+    t.frame_y = 0;
+    t.set_slope(0);
+    true
+}
+
+/// `WorldGen.PlaceTile(324, …, style)`'s Place1x1 slice
+/// (`WorldGen.cs:45204-45215` via `:60133-60140`): the ground must be solid
+/// (or a table — none exist in the port's gen), then frameX re-rolls the
+/// shell style and frameY takes the passed style.
+fn place_beach_piles(world: &mut World, x: i32, y: i32, style: i32, rng: &mut Rng) {
+    if x < 0 || y < 0 || x >= world.width || y + 1 >= world.height {
+        return;
+    }
+    let below = world.index(x, y + 1);
+    if !solid_tile_2(&world.tiles[below]) {
+        return;
+    }
+    let idx = world.index(x, y);
+    let t = &mut world.tiles[idx];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = TILE_BEACH_PILES;
+    t.frame_x = (22 * roll_random_sea_shell_style(rng)) as i16;
+    t.frame_y = (22 * style) as i16;
+}
+
+/// `WorldGen.PlantSeaOat` (`WorldGen.cs:58299-58330`).
+fn plant_sea_oat(world: &mut World, x: i32, y: i32, rng: &mut Rng) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y + 1 >= world.height {
+        return false;
+    }
+    let idx = world.index(x, y);
+    let here = &world.tiles[idx];
+    if here.wall > 0 || here.active() || here.liquid > 0 {
+        return false;
+    }
+    let below = world.index(x, y + 1);
+    if !solid_tile_allow_bottom_slope(world, x, y + 1)
+        || !PALM_SOIL.contains(&world.tiles[below].kind)
+    {
+        return false;
+    }
+    if !sea_oat_water_check(world, x, y) {
+        return false;
+    }
+    let t = &mut world.tiles[idx];
+    t.flags |= FLAG_ACTIVE;
+    t.set_slope(0);
+    t.flags &= !FLAG_HALF_BRICK;
+    t.kind = TILE_SEA_OATS;
+    t.frame_x = (rng.range(0, 5) * 18) as i16;
+    t.frame_y = 0;
+    true
+}
+
+/// `WorldGen.GrowSeaOat` (`WorldGen.cs:58342-58352`).
+fn grow_sea_oat(t: &mut Tile) {
+    if t.frame_x < 180 {
+        t.frame_x += 90;
+    }
+}
+
+/// `WorldGen.PlaceOasisPlant` (`WorldGen.cs:47538-47600`): the 3x2 plant —
+/// `Next(9)` for the frame column first (before the bounds gate), the
+/// occupancy scan, the water check, and the KillTile strip across the box.
+fn place_oasis_plant(world: &mut World, x: i32, y: i32, kind: u16, rng: &mut Rng) {
+    let num = rng.range(0, 9);
+    let num2 = 0i32;
+    if x < ZONE_MARGIN || x > world.width - ZONE_MARGIN || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in x - 1..x + 2 {
+        for j in y - 1..y + 1 {
+            let idx = world.index(i, j);
+            if world.tiles[idx].active() && world.tiles[idx].kind != TILE_SEA_OATS {
+                flag = false;
+            }
+            if world.tiles[idx].liquid > 0 {
+                flag = false;
+            }
+        }
+        let below = world.index(i, y + 1);
+        if !solid_tile(&world.tiles[below]) || !PALM_SOIL.contains(&world.tiles[below].kind) {
+            flag = false;
+        }
+    }
+    if !flag || !oasis_plant_water_check(world, x, y) {
+        return;
+    }
+    for k in x - 1..x + 2 {
+        for l in y - 1..y + 1 {
+            let idx = world.index(k, l);
+            if world.tiles[idx].active() {
+                let t = &mut world.tiles[idx];
+                t.flags &= !FLAG_ACTIVE;
+                t.kind = 0;
+                t.frame_x = 0;
+                t.frame_y = 0;
+            }
+        }
+    }
+    let num3 = (54 * num) as i16;
+    let num4 = (36 * num2) as i16;
+    for k in x - 1..x + 2 {
+        let idx = world.index(k, y - 1);
+        let t = &mut world.tiles[idx];
+        t.flags |= FLAG_ACTIVE;
+        t.frame_y = num4;
+        t.frame_x = num3 + (k - (x - 1)) as i16 * 18;
+        t.kind = kind;
+    }
+}
+
+/// `WorldGen.GrowPalmTree` (`WorldGen.cs:27116-27202`): the palm trunk on
+/// tile 323 — the ground/slope/water/wall guards, the 2x1 ground clear box
+/// and the trunk clearance box (`EmptyTileCheck(…, 20)` — saplings allowed),
+/// then the frame table (base 66, trunk 22·Next(0,3), top 22·Next(4,7),
+/// frameY the lean walk). `RangeFrame`/`NetMessage` do not exist in the port.
+pub(crate) fn grow_palm_tree(
+    world: &mut World,
+    i: i32,
+    y: i32,
+    addon: i32,
+    ignore_walls: bool,
+    rng: &mut Rng,
+) -> bool {
+    if i < 0 || y < 0 || i >= world.width || y >= world.height {
+        return false;
+    }
+    let mut num = y;
+    // The 20-walk (`:27124-27128`).
+    while world.tile(i, num).is_some_and(|t| t.active() && t.kind == 20) {
+        num += 1;
+        if num >= world.height {
+            return false;
+        }
+    }
+    // The guards (`:27139-27151`).
+    {
+        let tile = &world.tiles[world.index(i, num)];
+        let tile2 = &world.tiles[world.index(i, num - 1)];
+        if !tile.active() || tile.half_brick() || tile.slope() != 0 {
+            return false;
+        }
+        if (!ignore_walls && !default_tree_wall_test(tile2.wall)) || tile2.liquid != 0 {
+            return false;
+        }
+        if !PALM_SOIL.contains(&tile.kind) {
+            return false;
+        }
+    }
+    let num2 = 20 + addon;
+    if !empty_tile_check(world, i, i, num - 2, num - 1, 20) {
+        return false;
+    }
+    if !empty_tile_check(world, i - 1, i + 1, num - num2, num - 3, 20) {
+        return false;
+    }
+    let num3 = rng.range(10, 21) + addon;
+    let num4 = rng.range(-8, 9) * 2;
+    let mut num5: i16 = 0;
+    for j in 0..num3 {
+        let idx = world.index(i, num - 1 - j);
+        if j == 0 {
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = TILE_PALM;
+            t.frame_x = 66;
+            t.frame_y = 0;
+        } else if j == num3 - 1 {
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = TILE_PALM;
+            t.frame_x = (22 * rng.range(4, 7)) as i16;
+            t.frame_y = num5;
+        } else {
+            // The lean walk (`:27182-27194`): the frame-fraction gates, the
+            // `|| true` tail makes the last arm an unconditional step.
+            if num5 as i32 != num4 {
+                let num6 = j as f64 / num3 as f64;
+                let stepped = if num6 < 0.25 {
+                    false
+                } else if num6 < 0.5 {
+                    rng.chance(13)
+                } else if num6 < 0.7 {
+                    rng.chance(9)
+                } else if num6 < 0.95 {
+                    rng.chance(5)
+                } else {
+                    true
+                };
+                if stepped {
+                    num5 += (num4.signum() * 2) as i16;
+                }
+            }
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = TILE_PALM;
+            t.frame_x = (22 * rng.range(0, 3)) as i16;
+            t.frame_y = num5;
+        }
+    }
+    true
+}
+
+/// `TryGrowingTreeByType(323, …)` (`WorldGen.cs:30343-30353`).
+#[inline]
+fn try_growing_palm(world: &mut World, x: i32, y: i32, rng: &mut Rng) -> bool {
+    grow_palm_tree(world, x, y, 0, false, rng)
+}
+
+/// `WorldGen.GrowCactus` (`WorldGen.cs:56575-56813`) — the full port. The
+/// `SquareTileFrame`/`NetMessage` arms do not exist in the port (the later
+/// framing pass owns them).
+pub(crate) fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut Rng) {
+    if j <= 0 || i < 0 || j >= world.height || i >= world.width {
+        return;
+    }
+    let mut num = i;
+    let mut num2 = j;
+    let (tile_kind, tile_notactive, tile_half, tile_slope, above_liquid) = {
+        let t = &world.tiles[world.index(i, j)];
+        let t2 = &world.tiles[world.index(i, j - 1)];
+        (
+            t.kind,
+            !t.active(),
+            t.half_brick(),
+            t.slope() != 0,
+            t2.liquid > 0,
+        )
+    };
+    if tile_notactive
+        || tile_half
+        || tile_slope
+        || (tile_kind != TILE_CACTUS && !PALM_SOIL.contains(&tile_kind))
+        || above_liquid
+    {
+        return;
+    }
+    // The water box (`:56604-56616`).
+    let mut sum = 0u32;
+    for k in (i - CACTUS_WATER_WIDTH)..(i + CACTUS_WATER_WIDTH) {
+        for l in (j - CACTUS_WATER_HEIGHT)..(j + CACTUS_WATER_HEIGHT) {
+            if k >= 0 && l >= 0 && k < world.width && l < world.height {
+                sum += world.tiles[world.index(k, l)].liquid as u32;
+            }
+        }
+    }
+    if sum / 255 > CACTUS_WATER_LIMIT as u32 {
+        return;
+    }
+    // Tile 80 is style-driven — the retired scatter declared its boot static,
+    // so the pass keeps it (sizing the table on raw test worlds).
+    if world.frame_important.len() <= TILE_CACTUS as usize {
+        world.frame_important.resize(td::TILE_COUNT, false);
+    }
+    world.frame_important[TILE_CACTUS as usize] = true;
+    if PALM_SOIL.contains(&tile_kind) {
+        // The sand arm (`:56619-56668`): the neighbours-above clear, the
+        // 13x5 census, the 1-in-2 slope flatten and the tile-80 plant.
+        let above = world.index(i, j - 1);
+        let left_above = world.index(i - 1, j - 1);
+        let right_above = world.index(i + 1, j - 1);
+        if world.tiles[above].active()
+            || world.tiles[left_above].active()
+            || world.tiles[right_above].active()
+        {
+            return;
+        }
+        let mut num4 = 0;
+        let mut num5 = 0;
+        'census: for m in (i - 6)..=(i + 6) {
+            for n in (j - 3)..=(j + 1) {
+                if m < 0 || n < 0 || m >= world.width || n >= world.height {
+                    continue;
+                }
+                let idx = world.index(m, n);
+                if !world.tiles[idx].active() {
+                    continue;
+                }
+                if world.tiles[idx].kind == TILE_CACTUS {
+                    num4 += 1;
+                    if num4 >= 4 {
+                        return;
+                    }
+                }
+                if PALM_SOIL.contains(&world.tiles[idx].kind) {
+                    num5 += 1;
+                    if num5 > 10 {
+                        break 'census;
+                    }
+                }
+            }
+            if num5 > 10 {
+                break;
+            }
+        }
+        if num5 > 10 {
+            if rng.chance(2) {
+                let idx = world.index(i, j);
+                world.tiles[idx].set_slope(0);
+            }
+            let idx = world.index(i, j - 1);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = TILE_CACTUS;
+        }
+    } else {
+        // The cactus arm (`:56669-56813`): the walk up the column, the
+        // branch scans, the density gate and the three growth writes.
+        if tile_kind != TILE_CACTUS {
+            return;
+        }
+        while world.tile(num, num2).is_some_and(|t| t.active() && t.kind == TILE_CACTUS) {
+            num2 += 1;
+            if num2 >= world.height {
+                return;
+            }
+            let cur = world.index(num, num2);
+            if !(world.tiles[cur].active() && world.tiles[cur].kind == TILE_CACTUS) {
+                let l1 = world.index(num - 1, num2);
+                let l2 = world.index(num - 1, num2 - 1);
+                if world.tiles[l1].active()
+                    && world.tiles[l1].kind == TILE_CACTUS
+                    && world.tiles[l2].active()
+                    && world.tiles[l2].kind == TILE_CACTUS
+                    && num >= i
+                {
+                    num -= 1;
+                }
+                let r1 = world.index(num + 1, num2);
+                let r2 = world.index(num + 1, num2 - 1);
+                if world.tiles[r1].active()
+                    && world.tiles[r1].kind == TILE_CACTUS
+                    && world.tiles[r2].active()
+                    && world.tiles[r2].kind == TILE_CACTUS
+                    && num <= i
+                {
+                    num += 1;
+                }
+            }
+        }
+        let num6 = num2 - 1 - j;
+        let num7 = i - num;
+        num = i - num7;
+        num2 = j;
+        let num8 = 11 - num6;
+        let mut num9 = 0;
+        for num10 in (num - 2)..=(num + 2) {
+            for num11 in (num2 - num8)..=(num2 + num6) {
+                if num10 < 0 || num11 < 0 || num10 >= world.width || num11 >= world.height {
+                    continue;
+                }
+                let idx = world.index(num10, num11);
+                if world.tiles[idx].active() && world.tiles[idx].kind == TILE_CACTUS {
+                    num9 += 1;
+                }
+            }
+        }
+        if num9 >= rng.range(11, 13) {
+            return;
+        }
+        num = i;
+        num2 = j;
+        if num7 == 0 {
+            if num6 == 0 {
+                let idx = world.index(num, num2 - 1);
+                if !world.tiles[idx].active() {
+                    let t = &mut world.tiles[idx];
+                    t.flags |= FLAG_ACTIVE;
+                    t.kind = TILE_CACTUS;
+                }
+                return;
+            }
+            let (mut flag, mut flag2) = (false, false);
+            {
+                let here = world.index(num, num2 - 1);
+                if world.tiles[here].active() && world.tiles[here].kind == TILE_CACTUS {
+                    let left = [(-1, 0), (-2, 1), (-1, -1), (-1, 1), (-2, 0)];
+                    if left
+                        .iter()
+                        .all(|&(dx, dy)| !world.tile(num + dx, num2 + dy).is_some_and(|t| t.active()))
+                    {
+                        flag = true;
+                    }
+                    let right = [(1, 0), (2, 1), (1, -1), (1, 1), (2, 0)];
+                    if right
+                        .iter()
+                        .all(|&(dx, dy)| !world.tile(num + dx, num2 + dy).is_some_and(|t| t.active()))
+                    {
+                        flag2 = true;
+                    }
+                }
+            }
+            let num12 = rng.range(0, 3);
+            if num12 == 0 && flag {
+                let idx = world.index(num - 1, num2);
+                let t = &mut world.tiles[idx];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_CACTUS;
+            } else if num12 == 1 && flag2 {
+                let idx = world.index(num + 1, num2);
+                let t = &mut world.tiles[idx];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_CACTUS;
+            } else if num6 < rng.range(2, 8) {
+                let l = world.index(num - 1, num2 - 1);
+                let r = world.index(num + 1, num2 - 1);
+                let up = world.index(num, num2 - 1);
+                let l_ok = !world.tiles[l].active() || world.tiles[l].kind != TILE_CACTUS;
+                let r_ok = !world.tiles[r].active() || world.tiles[r].kind != TILE_CACTUS;
+                if l_ok && r_ok && !world.tiles[up].active() {
+                    let t = &mut world.tiles[up];
+                    t.flags |= FLAG_ACTIVE;
+                    t.kind = TILE_CACTUS;
+                }
+            }
+        } else {
+            let up = world.index(num, num2 - 1);
+            let up2 = world.index(num, num2 - 2);
+            let lean = world.index(num + num7, num2 - 1);
+            let anchor = world.index(num - num7, num2 - 1);
+            if !world.tiles[up].active()
+                && !world.tiles[up2].active()
+                && !world.tiles[lean].active()
+                && world.tiles[anchor].active()
+                && world.tiles[anchor].kind == TILE_CACTUS
+            {
+                let t = &mut world.tiles[up];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_CACTUS;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlantCactus` (`WorldGen.cs:54160-54168`).
+fn plant_cactus(world: &mut World, i: i32, j: i32, rng: &mut Rng) {
+    grow_cactus(world, i, j, rng);
+    for _ in 0..150 {
+        let x = rng.range(i - 1, i + 2);
+        let y = rng.range(j - 10, j + 2);
+        grow_cactus(world, x, y, rng);
+    }
+}
+
+/// `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310-21518`): the three
+/// zones' depth and shallow arms. The oasis block (`:21326-21363`) is dead
+/// in the port — `GenVars.numOasis` has no writer (the Oasis pass
+/// `WorldGen.cs:16243` is deferred to M5-DESERT-structures), so its per-tile
+/// draws never run. The middle (cactus) zone keeps the faithful water box
+/// and the 1-in-4 palm, with `PlantCactus` growing the cactus.
+pub(crate) fn cactus_palm_trees_and_coral(world: &mut World, layers: &Layers, rng: &mut Rng) {
+    let (num2, max_x, max_y) = (400i32, world.width, world.height);
+    let num = 8; // remix 2 — no remix seed yet
+    let num3 = rng.range(3, 13);
+    let num4 = rng.range(3, 13);
+    let _num5 = rng.range(2, 6);
+    let _num6 = rng.range(2, 6);
+    let num7 = 380;
+    let num13 = layers.world_surface - 1.0;
+    for n in 0..3 {
+        let (num11, num12, flag, max_value) = match n {
+            0 => (5, num7, false, num3),
+            1 => (num2, max_x - num2, true, num),
+            _ => (max_x - num7, max_x - 5, false, num4),
+        };
+        for num14 in num11..num12 {
+            if rng.range(0, max_value) == 0 {
+                // The depth arm (`:21397-21492`).
+                for num15 in 0..(num13 as i32) {
+                    let idx = world.index(num14, num15);
+                    let tile_ok = world.tiles[idx].active()
+                        && (world.tiles[idx].kind == 53
+                            || world.tiles[idx].kind == 112
+                            || world.tiles[idx].kind == 234);
+                    if !tile_ok {
+                        continue;
+                    }
+                    let above = world.index(num14, num15 - 1);
+                    if world.tiles[above].active() || world.tiles[above].wall != 0 {
+                        continue;
+                    }
+                    if flag {
+                        // The middle zone: the 50/25/25 water box.
+                        let mut sum = 0u32;
+                        for k in (num14 - CACTUS_WATER_WIDTH)..(num14 + CACTUS_WATER_WIDTH) {
+                            for l in (num15 - CACTUS_WATER_HEIGHT)..(num15 + CACTUS_WATER_HEIGHT) {
+                                if k >= 0 && l >= 0 && k < max_x && l < max_y {
+                                    sum += world.tiles[world.index(k, l)].liquid as u32;
+                                }
+                            }
+                        }
+                        if sum / 255 > CACTUS_WATER_LIMIT as u32 {
+                            if rng.chance(4) {
+                                try_growing_palm(world, num14, num15, rng);
+                            }
+                        } else {
+                            plant_cactus(world, num14, num15, rng);
+                        }
+                    } else {
+                        // The beach zones (`:21476-21492`).
+                        let w2 = world.index(num14, num15 - 2);
+                        let w3 = world.index(num14, num15 - 3);
+                        let w4 = world.index(num14, num15 - 4);
+                        if world.tiles[w2].liquid == 255
+                            && world.tiles[w3].liquid == 255
+                            && world.tiles[w4].liquid == 255
+                        {
+                            if rng.chance(2) {
+                                place_coral(world, num14, num15 - 1);
+                            } else {
+                                let style = roll_random_sea_shell_style(rng);
+                                place_beach_piles(world, num14, num15 - 1, style, rng);
+                            }
+                            break;
+                        }
+                        if world.tiles[w2].liquid == 0 && (num15 as f64) < layers.world_surface {
+                            let style = roll_random_sea_shell_style(rng);
+                            place_beach_piles(world, num14, num15 - 1, style, rng);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // The shallow arm (`:21498-21515`).
+                for num22 in 0..(num13 as i32) {
+                    if plant_sea_oat(world, num14, num22, rng) {
+                        if rng.chance(2) {
+                            let idx = world.index(num14, num22);
+                            grow_sea_oat(&mut world.tiles[idx]);
+                        }
+                        if rng.chance(2) {
+                            let idx = world.index(num14, num22);
+                            grow_sea_oat(&mut world.tiles[idx]);
+                        }
+                    }
+                    place_oasis_plant(world, num14, num22, TILE_OASIS_PLANTS, rng);
+                }
+            }
+        }
+    }
+}
 /// `KillTile`'s generation-time strip (`WorldGen.cs:63517`, the
 /// `isGeneratingOrLoadingWorld → noItem` path): the tile goes inactive with
 /// its type cleared. The item-drop / frame / net arms do not exist in the
@@ -1743,4 +2440,154 @@ mod tests {
         assert!(seaweed > 0, "the seafloor grows seaweed ({seaweed})");
     }
 
+    /// The beach test world: a sand shore with water above the ground rows.
+    fn beach_world(w: i32, h: i32) -> World {
+        let mut world = World::new("bw".into(), w, h);
+        for x in 0..w {
+            for y in 60..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            for y in 20..60 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        world
+    }
+
+    /// DW-5.1: the palm arm of the pass — `GrowPalmTree` grows tile 323 with
+    /// the vanilla frames (base 66, trunk 22·0-2, top 22·4-6) and the lean
+    /// frameY, and the guards reject a non-sand ground.
+    #[test]
+    fn grow_palm_tree_plants_the_trunk() {
+        // Air above the ground — the `tile2.liquid != 0` guard rejects a
+        // wet base (`WorldGen.cs:27141-27143`), so the shore world's water
+        // is not what a palm base sits on.
+        let mut world = World::new("pt".into(), 200, 300);
+        for y in 60..300 {
+            let i = world.index(100, y);
+            world.tiles[i].kind = TILE_SAND;
+            world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let ok = grow_palm_tree(&mut world, 100, 60, 0, false, &mut Rng(0x5EED));
+        assert!(ok, "the palm grows on flat beach sand");
+        let palms = world.tiles.iter().filter(|t| t.kind == TILE_PALM).count();
+        assert!(palms >= 8, "the trunk column is 323 ({palms})");
+        let base = world.tile(100, 59).unwrap();
+        assert!(base.active() && base.kind == TILE_PALM, "the base tile");
+        assert_eq!(base.frame_x, 66, "the base frame");
+        // A non-sand ground is rejected.
+        let mut stone = World::new("st".into(), 200, 300);
+        for x in 0..200 {
+            for y in 60..300 {
+                let i = stone.index(x, y);
+                stone.tiles[i].kind = 1;
+                stone.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let rejected = grow_palm_tree(&mut stone, 100, 60, 0, false, &mut Rng(0x5EED));
+        assert!(!rejected, "the stone ground is rejected");
+    }
+
+    /// DW-5.2: the depth arm's beach zones — coral 81 on the water-lined
+    /// shore and seashells 324 above it, over the pass's left band.
+    #[test]
+    fn cactus_palm_beach_zones_place_coral_and_shells() {
+        let mut world = World::new("cz".into(), 1000, 300);
+        for x in 0..1000 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            for y in 36..40 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        let layers = cave_layers();
+        let (mut coral, mut shells, mut sand_top) = (0, 0, 0);
+        for seed in 0..12u64 {
+            let mut w = world.clone();
+            cactus_palm_trees_and_coral(&mut w, &layers, &mut Rng(seed));
+            for (i, t) in w.tiles.iter().enumerate() {
+                if !t.active() {
+                    continue;
+                }
+                let x = (i as i32) % 1000;
+                if x < 5 || x >= 380 {
+                    continue;
+                }
+                match t.kind {
+                    81 => coral += 1,
+                    324 => shells += 1,
+                    53 => sand_top += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert!(coral + shells > 0, "the beach gets coral ({coral}) / shells ({shells})");
+        assert!(sand_top > 1000, "the shore stays sand ({sand_top})");
+    }
+
+    /// DW-5.3: the sea-oat arm — tile 529 grows on dry sand beside water, and
+    /// `GrowSeaOat` advances the style frames by 90 up to the 180 cap.
+    #[test]
+    fn sea_oats_grow_on_dry_sand() {
+        // Dry air above the sand with a small water strip nearby: the beach
+        // band's verdict needs fewer than 20 water tiles in the 65/25 box.
+        let mut world = World::new("so".into(), 1000, 300);
+        for x in 0..1000 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 100..102 {
+            for y in 20..40 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        let mut any = false;
+        for seed in 0..12u64 {
+            let mut w = world.clone();
+            let layers = cave_layers();
+            cactus_palm_trees_and_coral(&mut w, &layers, &mut Rng(seed));
+            if w.tiles.iter().any(|t| t.kind == TILE_SEA_OATS) {
+                any = true;
+                break;
+            }
+        }
+        assert!(any, "the pass plants sea oats");
+        let mut t = Tile::default();
+        t.frame_x = 0;
+        grow_sea_oat(&mut t);
+        assert_eq!(t.frame_x, 90);
+        grow_sea_oat(&mut t);
+        assert_eq!(t.frame_x, 180);
+        grow_sea_oat(&mut t);
+        assert_eq!(t.frame_x, 180, "the cap holds");
+    }
+
+    /// DW-5.4: the middle zone's cactus — `GrowCactus` plants tile 80 on the
+    /// sand and `PlantCactus` scatters the retries.
+    #[test]
+    fn cactus_grows_on_sand() {
+        let mut world = World::new("cg".into(), 300, 300);
+        for x in 0..300 {
+            for y in 60..300 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        world.frame_important = vec![false; 300 * 300];
+        plant_cactus(&mut world, 150, 60, &mut Rng(0x5EED));
+        let cactus = world.tiles.iter().filter(|t| t.kind == TILE_CACTUS).count();
+        assert!(cactus > 0, "PlantCactus grows a cactus ({cactus})");
+    }
 }
