@@ -7,6 +7,7 @@ use glam::Vec2;
 
 use crate::app::App;
 use crate::biome::is_snow_biome;
+use tr_core::TILE_PX;
 
 /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
 /// per-tick velocity regardless of frame rate. The visual ramps scale by
@@ -35,6 +36,16 @@ fn thunder_inputs(app: &App) -> crate::rain::ThunderInputs {
         above_rock_layer: (app.scene_metrics.tile_center.1 as f64) < app.world.rock_layer,
         graveyard_intensity: app.scene_state.graveyard_visual_intensity,
         shimmer_alpha: app.scene_state.shimmer_alpha,
+        // `Main.thunderSkipSound` (`Main.cs:58759`): only the unported
+        // `ParticleOrchestrator.cs:1043` sets it true, so the port pins it.
+        thunder_skip_sound: false,
+        // The thunder strike's position inputs (`Main.cs:58752-58764`):
+        // the scene centre and `Main.worldSurface * 16`.
+        scene_center: [
+            app.scene_metrics.center[0],
+            app.scene_metrics.center[1],
+        ],
+        world_surface_px: app.world.world_surface as f32 * TILE_PX,
     }
 }
 
@@ -88,7 +99,11 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     } = app;
     world_tick_step.tick(dt, |_| {
         // (1) `Main.cs:58739`: `currentDayRateIteration == 0` — thunder once.
-        rain.thunder_step(weather);
+        // M6-AUDIO-1: the strike returns its cue and position
+        // (`Main.cs:58752-58761`), played here against the current listener.
+        if let Some(strike) = rain.thunder_step(weather) {
+            app.audio.play_at(strike.cue, strike.x, strike.y, 1.0);
+        }
         // (2) `Main.cs:17228-17231` + `:58830-58950`: the wind walk, once per
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
         let day_rate = world.day_rate();
