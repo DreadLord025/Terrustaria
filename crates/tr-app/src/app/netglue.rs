@@ -14,13 +14,14 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::{TILE_PX, World, save};
+use tr_core::{save, World, TILE_PX};
 
+use crate::app::netmodules::ModuleBody;
 use crate::app::{App, LiquidSystem, NetRole};
 use crate::item;
 use crate::map;
 use crate::menu;
-use crate::net::{self, C2s, S2c, id, slot_state};
+use crate::net::{self, id, slot_state, C2s, S2c};
 use crate::player;
 use crate::world_sim::editing::apply_edit;
 
@@ -352,6 +353,11 @@ impl App {
                     change_type: 0,
                     records: vec![rec],
                 })));
+            }
+            // `case 82` — a NetModule envelope (`NetManager.Read`'s dispatch,
+            // `NetManager.cs:48-64`).
+            C2s::NetModule { module, body } => {
+                self.host_module(server, id, module, &body);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -921,6 +927,10 @@ impl App {
                 apply_edit(&mut self.world, x, y, kind, tile);
                 self.world_key = None;
             }
+            // `case 82` — a NetModule envelope.
+            S2c::NetModule { module, body } => {
+                self.client_module(module, &body);
+            }
             // `case 23` — one NPC's state. The client keeps a slot-keyed
             // store (`net_npcs`) and recreates a slot only on a kind change or
             // the spawn flag (the C#'s `generation`/`spawnNeedsSyncing` test,
@@ -1283,10 +1293,27 @@ impl App {
             body_frame: p.body_frame,
             ..Default::default()
         };
+        // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
+        // (type, seed) pairs leave the store before the role borrow.
+        let ambience_spawns = self.take_unsent_ambience();
+        // The `82` module cadence (the 1 Hz ping on a client).
+        self.net_module_tick();
         match &self.net {
             NetRole::Host(server) => {
                 // The host's own snapshot, as `13 PlayerState`.
                 server.broadcast(&S2c::PlayerState(Box::new(self.player_state_of(&me))));
+                for (ty, seed) in ambience_spawns {
+                    let body = crate::app::netmodules::AmbienceSpawn {
+                        player: 0,
+                        seed,
+                        kind: crate::app::netmodules::sky_entity_type_byte(ty),
+                    }
+                    .encode();
+                    server.broadcast(&S2c::NetModule {
+                        module: crate::app::netmodules::module_id::AMBIENCE,
+                        body,
+                    });
+                }
                 // Newly approached sections stream before the cadence batch
                 // (the C#'s per-tick CheckSection).
                 for (id, sx, sy) in self.pending_sections(server) {
@@ -2381,5 +2408,79 @@ mod handshake_tests {
         let mut r = net::NetReader::new(&frame[3..]);
         let back = SectionRange::decode_from(&mut r).expect("section range");
         assert_eq!(back, range);
+    }
+
+    /// The `82` envelope rides a module body through the real socket.
+    #[test]
+    fn a_chat_message_relays_through_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        // The client's chat submit rides the module (`ChatHelper
+        // .SendChatMessageFromClient`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NetModule {
+                module: crate::app::netmodules::module_id::TEXT,
+                body: crate::app::netmodules::ChatMessage {
+                    command: String::new(),
+                    text: "hello from the client".into(),
+                }
+                .encode(),
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host ran the line through its chat and relayed it; both sides
+        // show the line.
+        assert!(
+            host_app
+                .chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("hello from the client")),
+            "the host logged the line"
+        );
+        assert!(
+            client_app
+                .chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("hello from the client")),
+            "the client received the relayed line"
+        );
+    }
+
+    #[test]
+    fn the_ping_module_measures_an_rtt() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The client's 1 Hz ping cadence.
+        pump(&mut host_app, &mut client_app, 40);
+        assert!(
+            client_app.net_rtt_ms < 10_000,
+            "the ping echo came back: rtt {} ms",
+            client_app.net_rtt_ms
+        );
+    }
+
+    #[test]
+    fn the_ambience_module_relays_a_spawn() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host force-spawns a sky entity; the module relay must land it on
+        // the client (`AmbienceServer.SpawnForPlayer`).
+        // The forced spawn is consumed by the ambience update (the frame's
+        // ambience step), so run one step before the pump picks it up.
+        {
+            let mut amb = std::mem::take(&mut host_app.ambience);
+            let mut rng = host_app.ambience_rng;
+            amb.forced_spawn_for_tests(crate::ambience::SkyEntityType::Wyvern, -1, 12345);
+            amb.update(1.0 / 60.0, &host_app.ambience_ctx(), &mut rng);
+            host_app.ambience_rng = rng;
+            host_app.ambience = amb;
+        }
+        pump(&mut host_app, &mut client_app, 25);
+        assert!(
+            !client_app.ambience.entities.is_empty(),
+            "the client spawned the relayed entity: {}",
+            client_app.ambience.entities.len()
+        );
     }
 }

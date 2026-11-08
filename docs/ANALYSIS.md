@@ -6387,8 +6387,34 @@ several vanilla details are deliberately not carried:
   at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
   audio access, so the cue rides the follow-up like the other NPC steps.
 
-<<<<<<< HEAD
-## The humanoid walkers' display (M4-NPC-3c)
+
+## NetModules (M6-NET-4)
+
+The envelope and the ported bodies are 1:1; the deviations:
+
+- **The chat relay broadcasts to everyone including the sender.** The C#'s
+  `ChatHelper.BroadcastChatMessageAs` does the same; the port's host also
+  runs the sender's line through its own `ChatMonitor::send` locally, so the
+  author's slot rides only for the line's colour (player chat is one colour
+  in the port until the team/chat channels land).
+- **The Ping module echoes back to the sender.** The C# skips the sender
+  (`ignoreClient = userId`) because its diagnostics UI counts bytes, not
+  round trips; the port measures an RTT for the client (`net_rtt_ms`), which
+  the C# does not need.
+- **`SkyEntity` grew `net_seed`/`net_sent`** so the host can relay the exact
+  spawn; the `SkyKind` → `SkyEntityType` mapping is the port's declaration
+  order until the C#'s `SkyEntityType.cs` values are pinned.
+- **The NetText module's keyed/format `NetworkText` modes are not resolved**:
+  a non-zero mode byte keeps the raw text (the substitution list is skipped).
+- **The unmapped module ids ride reserved** (0 Liquid, 4 Bestiary, 5/7
+  CreativeUnlocks+Report, 6/10 CreativePowers+Permissions, 8
+  TeleportPylon): their bodies land with the systems' multiplayer passes
+  (the creative registry's per-player split, the pylon system, the
+  npc-netId → credit-id table). Unknown ids are silently ignored exactly as
+  `NetManager.Read` does.
+- **The `82` envelope is not whitelisted in the accept gate**, matching the
+  C#: a pre-`IN_WORLD` slot's module message is booted
+  (`MessageBuffer.cs:161`'s whitelist does not contain 82).## The humanoid walkers' display (M4-NPC-3c)
 
 - **The zombie never animates.** `FindFrame` has no case 9 and
   `npcFrameCount[9] = 1`: the vanilla zombie's sprite is the single 30x48
@@ -6410,5 +6436,5 @@ several vanilla details are deliberately not carried:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
-=======
->>>>>>> origin/main
+
+

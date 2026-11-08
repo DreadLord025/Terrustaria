@@ -120,6 +120,11 @@ pub(crate) struct SkyEntity {
     pub is_active: bool,
     /// Extra per-kind state (`EOCSkyEntity`'s machine, magnet groups).
     pub state: EntityState,
+    /// The spawn seed, relayed to clients by the `82` ambience module
+    /// (`NetAmbienceModule`).
+    pub net_seed: i32,
+    /// Whether this spawn has been broadcast to the clients already.
+    pub net_sent: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -442,6 +447,9 @@ impl SkyEntity {
 /// `AmbienceServer` scheduler (`AmbienceServer.cs:9-203`). The C# "Ambience"
 /// sky activation flag collapses into "the entity list is non-empty".
 pub(crate) struct Ambience {
+    /// The seed of the last `spawn` call — stamped onto the entities it
+    /// creates so the net tick can relay them (`NetAmbienceModule`).
+    spawn_seed: i32,
     /// `AmbientSky._entities` (`:1320`, a `SlotVector<SkyEntity>(500)` — the
     /// live set is what matters; spawn order is kept).
     pub(crate) entities: Vec<SkyEntity>,
@@ -472,6 +480,7 @@ impl Ambience {
     pub(crate) fn new() -> Self {
         Self {
             entities: Vec::new(),
+        spawn_seed: 0,
             frame_counter: 0,
             updates_until_next_attempt: 0,
             forced_spawns: Vec::new(),
@@ -681,6 +690,9 @@ impl Ambience {
             // silently ignored, exactly as the original does.
             return;
         }
+        // The relayed seed: the host stamps every entity it creates and the
+        // net tick broadcasts the unsent ones.
+        self.spawn_seed = seed;
         let mut random = FastRandom::new(seed as u64);
         match ty {
             AirBalloon => self.entities.push(spawn_air_balloon(&mut random, ctx)),
@@ -821,6 +833,8 @@ fn base_fading(fade_in: f32, fade_out: f32, brightness: f32, framing_speed: i32)
         fade_out,
         is_active: true,
         state: EntityState::Plain,
+        net_seed: 0,
+        net_sent: false,
     }
 }
 
