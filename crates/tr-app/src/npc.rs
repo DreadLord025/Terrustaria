@@ -1312,7 +1312,10 @@ pub struct Npc {
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
     /// into the pool (the `wants_sphere` shape).
-    pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
+    /// The hostile-shot requests (the `Projectile.NewProjectile` arms): the
+    /// (kind, x, y, vx, vy, damage) payloads the sim resolves into the pool
+    /// (the `wants_sphere` shape; the Vec = a per-tick volley).
+    pub wants_hostile_shot: Vec<(u16, f32, f32, f32, f32, i32)>,
     /// The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm:
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
@@ -1700,7 +1703,7 @@ impl Npc {
             defense_override: None,
             dont_take_damage: false,
             swarm_done: false,
-            wants_hostile_shot: None,
+            wants_hostile_shot: Vec::new(),
             wants_martian_invasion: false,
             wants_scutlix: false,
             carrier_x: -1.0,
@@ -4677,11 +4680,7 @@ impl Npc {
         // The octant table (the vanilla's `ai[2]` 1..5 rows).
         let octant = |dx: f32, dy: f32| -> f32 {
             if dy.abs() > dx.abs() * 2.0 {
-                if dy > 0.0 {
-                    1.0
-                } else {
-                    5.0
-                }
+                if dy > 0.0 { 1.0 } else { 5.0 }
             } else if dx.abs() > dy.abs() * 2.0 {
                 3.0
             } else if dy > 0.0 {
@@ -4718,14 +4717,8 @@ impl Npc {
                 };
                 let inv = speed / len;
                 // The spawn: the centre + y 6, the velocity at the aim.
-                self.wants_hostile_shot = Some((
-                    proj,
-                    cx,
-                    cy + 6.0,
-                    ax * inv,
-                    ay * inv,
-                    dmg,
-                ));
+                self.wants_hostile_shot
+                    .push((proj, cx, cy + 6.0, ax * inv, ay * inv, dmg));
                 self.ai[2] = octant(ax, ay);
             }
         } else {
@@ -4807,9 +4800,7 @@ impl Npc {
         if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
             let (px, py) = (pcx - cx, pcy - cy);
             if (px * px + py * py).sqrt() < 700.0 {
-                if self.ai[1] == 60.0
-                    && (px > 0.0) == (self.facing == 1)
-                {
+                if self.ai[1] == 60.0 && (px > 0.0) == (self.facing == 1) {
                     // The fire (`:35700-35724`): the 438 ray, 30 damage,
                     // 7 speed, from the centre - UnitY * 4, the aim
                     // ±50 ×(0.8..1.2).
@@ -4822,7 +4813,8 @@ impl Npc {
                     ay *= 0.8 + 0.4 * crate::app::rand01(rng);
                     let len = (ax * ax + ay * ay).sqrt().max(0.001);
                     let inv = 7.0 / len;
-                    self.wants_hostile_shot = Some((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
+                    self.wants_hostile_shot
+                        .push((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
                 } else {
                     // The idle aim (`:35727-35749`): the octant + the X
                     // damp.
@@ -4926,7 +4918,7 @@ impl Npc {
                         // The 449 ray at the aim (ai[2] = the rotation).
                         let ang = self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
                         let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
-                        self.wants_hostile_shot = Some((449u16, cx + vx, cy + vy, vx, vy, 35));
+                        self.wants_hostile_shot.push((449u16, cx + vx, cy + vy, vx, vy, 35));
                     }
                 }
                 // The aim rides the fire test's own update (the player
@@ -4942,7 +4934,7 @@ impl Npc {
                 if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
                     let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
                     let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
-                    self.wants_hostile_shot = Some((
+                    self.wants_hostile_shot.push((
                         448u16,
                         cx + side * 36.0,
                         cy + 8.0,
@@ -4958,7 +4950,7 @@ impl Npc {
                 let t = self.ai[3];
                 let core_phase0 = self.carrier_phase == 0.0;
                 if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
-                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 50));
+                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 50));
                 }
                 // The windows: the core's gun phase (2) opens them always;
                 // else the 280-400 and 440-580 bands.
@@ -4978,7 +4970,7 @@ impl Npc {
                     if self.crew_turrets > 0 && roll < 1.0 / wide {
                         let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
                         let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             450u16,
                             cx - side * 55.0,
                             cy + 35.0,
@@ -4989,7 +4981,7 @@ impl Npc {
                     } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
                         let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
                         let (vx, vy) = (-(roll * 2.0) * ang.cos() * 3.0 - 1.0, -ang.sin() * 3.0 - 3.0);
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             450u16,
                             cx - side * 45.0,
                             cy - 20.0,
@@ -5279,7 +5271,7 @@ impl Npc {
                     self.ai[2] = if pcx > cx { 1.0 } else { -1.0 };
                     // The 447 projectile at (center, center) with the
                     // owner stub (whoAmI + 1) — the port's hostile pool.
-                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 80));
+                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 80));
                 }
             }
             if self.ai[3] >= 3600.0 {
@@ -5607,7 +5599,7 @@ impl Npc {
                     } else {
                         0.0
                     };
-                    self.wants_hostile_shot = Some((
+                    self.wants_hostile_shot.push((
                         crate::projectile::GOLEM_FIREBALL,
                         cx + ox,
                         cy + 10.0 * scale,
@@ -5630,7 +5622,7 @@ impl Npc {
                             let vd = (vx * vx + vy * vy).sqrt().max(0.001);
                             vx = vx / vd * 11.0;
                             vy = vy / vd * 11.0;
-                            self.wants_hostile_shot = Some((
+                            self.wants_hostile_shot.push((
                                 crate::projectile::GOLEM_EYE_BEAM,
                                 cx + sx + vx * 3.0,
                                 cy - 22.0 * scale + vy * 3.0,
@@ -5731,7 +5723,7 @@ impl Npc {
                 self.ai[1] += 1.0;
                 if self.ai[1] >= 300.0 {
                     self.ai[1] = 0.0;
-                    self.wants_hostile_shot = Some((
+                    self.wants_hostile_shot.push((
                         crate::projectile::GOLEM_FIREBALL,
                         cx,
                         cy - 10.0,
@@ -5768,7 +5760,7 @@ impl Npc {
                         let vd = (vx * vx + vy * vy).sqrt().max(0.001);
                         vx = vx / vd * sp;
                         vy = vy / vd * sp;
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             crate::projectile::GOLEM_EYE_BEAM,
                             cx + sx + vx * 3.0,
                             cy - 50.0 + vy * 3.0,
@@ -5914,7 +5906,7 @@ impl Npc {
                         dx += crate::app::rand01(rng) * 81.0 - 40.0;
                         dy += crate::app::rand01(rng) * 81.0 - 40.0;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             crate::projectile::WOODEN_ARROW_HOSTILE,
                             cx,
                             cy,
@@ -8203,7 +8195,7 @@ mod tests {
         let mut fired = None;
         for _ in 0..301 {
             head.update_golem(&w, &player);
-            if let Some(p) = head.wants_hostile_shot.take() {
+            if let Some(p) = head.wants_hostile_shot.pop() {
                 fired = Some(p);
                 break;
             }
@@ -8217,7 +8209,7 @@ mod tests {
         let mut beam = 0;
         for _ in 0..700 {
             head.update_golem(&w, &player);
-            while let Some(p) = head.wants_hostile_shot.take() {
+            while let Some(p) = head.wants_hostile_shot.pop() {
                 if p.0 == crate::projectile::GOLEM_EYE_BEAM && p.5 == 28 {
                     beam += 1;
                 }
@@ -8379,7 +8371,7 @@ mod tests {
         free.ai[2] = 1500.0;
         let mut beam = None;
         free.update_golem(&w, &player);
-        if let Some(p) = free.wants_hostile_shot.take() {
+        if let Some(p) = free.wants_hostile_shot.pop() {
             beam = Some(p);
         }
         let (kind, _, _, vx, vy, dmg) = beam.expect("the volley fires");
@@ -8387,13 +8379,15 @@ mod tests {
         assert_eq!(dmg, 24, "the full-body damage");
         let sp = (vx * vx + vy * vy).sqrt();
         assert!((sp - 11.0).abs() < 0.5, "the 11 speed ({sp})");
-        // The mortally wounded body: 29 dmg at 12.25.
+        // The mortally wounded body: 29 dmg at 12.25. Clear the volley's
+        // leftovers first (the Vec holds the first round's spare).
+        free.wants_hostile_shot.clear();
         w.golem_hp_ratio = 0.05;
         free.ai[2] = 1500.0;
         let mut beam2 = None;
         free.update_golem(&w, &player);
         for _ in 0..3 {
-            if let Some(p) = free.wants_hostile_shot.take() {
+            if let Some(p) = free.wants_hostile_shot.pop() {
                 beam2 = Some(p);
             }
         }
@@ -8426,8 +8420,8 @@ mod tests {
             for _ in 0..90 {
                 a.update_archer(&w, &mut player, &mut rng);
             }
-            assert!(a.wants_hostile_shot.is_some(), "the midpoint fires");
-            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.take().unwrap();
+            assert!(!a.wants_hostile_shot.is_empty(), "the midpoint fires");
+            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.pop().unwrap();
             assert_eq!(kind, crate::projectile::WOODEN_ARROW_HOSTILE);
             assert_eq!(dmg, 11);
             let sp = (vx * vx + vy * vy).sqrt();

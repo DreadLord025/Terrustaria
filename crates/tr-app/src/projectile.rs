@@ -53,10 +53,46 @@ pub const GOLEM_FIREBALL: u16 = 258;
 /// `ProjectileID.EyeBeam` (259) — the Golem's eye beams
 /// (`NPC.cs:31282`'s `num698`, `:31565`'s `num729`).
 pub const GOLEM_EYE_BEAM: u16 = 259;
+/// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
+/// (`NPC.cs:26628`'s `num412`).
+pub const EYE_LASER: u16 = 83;
+/// `ProjectileID.CursedFlameHostile` (96) — the Spazmatism's phase-1 spit
+/// (`NPC.cs:27223`'s `num451`).
+pub const CURSED_FLAME: u16 = 96;
+/// `ProjectileID.EyeFire` (101) — the Spazmatism's phase-2 spit
+/// (`NPC.cs:27519`'s `num467`).
+pub const EYE_FIRE: u16 = 101;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
 pub const MUSKET_BALL: u16 = 14;
+/// `ProjectileID.BrainScramblerShot` (436) — the martian shooter's ray
+/// (`Projectile.cs:5064-5070`: 10x10, aiStyle 1, hostile, ignoreWater).
+pub const SCRAMBLER_SHOT: u16 = 436;
+/// `ProjectileID.MartianRay` (438) — the Scutlix rider's ray
+/// (`Projectile.cs:5081-5089`: 8x8, aiStyle 1, hostile, alpha 255,
+/// extraUpdates 3, ignoreWater).
+pub const MARTIAN_RAY: u16 = 438;
+/// `ProjectileID.MartianSaucerLaser` (447) — the saucer's core shot
+/// (`Projectile.cs:5188-5198`: 30x30, aiStyle 79, hostile, penetrate -1,
+/// tileCollide false, timeLeft 240).
+pub const SAUCER_LASER: u16 = 447;
+/// `ProjectileID.MartianSaucerShell` (448) — the cannon's shell
+/// (`Projectile.cs:5199-5207`: 14x14, aiStyle 80, hostile, penetrate -1,
+/// tileCollide false).
+pub const SAUCER_SHELL: u16 = 448;
+/// `ProjectileID.MartianTurretRay` (449) — the turret's ray
+/// (`Projectile.cs:5208-5218`: 5x5, aiStyle 1, hostile, alpha 255,
+/// extraUpdates 1, timeLeft 600).
+pub const TURRET_RAY: u16 = 449;
+/// `ProjectileID.MartianMissile` (450) — the shell's missile
+/// (`Projectile.cs:5220-5229`: 14x14, aiStyle 14, hostile, penetrate -1,
+/// timeLeft 360).
+pub const MARTIAN_MISSILE: u16 = 450;
+/// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
+/// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
+/// penetrate -1, alpha 255).
+pub const DUTCHMAN_SHELL: u16 = 240;
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -165,6 +201,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `extraUpdates = 1`, `tileCollide = false`, `penetrate = -1`,
             // hostile, `timeLeft = 300` (the call sites' override).
             GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false),
+            // `Projectile.cs:1632-1645` — the EyeLaser: 4x4, aiStyle 1,
+            // penetrate 3, extraUpdates 2, timeLeft 600, hostile.
+            EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false),
+            // `Projectile.cs:1803-1815` — the CursedFlameHostile: 16x16,
+            // aiStyle 8, penetrate -1, hostile.
+            CURSED_FLAME => (16.0, 16.0, 8, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // `Projectile.cs:1885-1895` — the EyeFire: 6x6, aiStyle 23,
+            // penetrate -1, extraUpdates 3, hostile.
+            EYE_FIRE => (6.0, 6.0, 23, -1, TIME_LEFT_DEFAULT, 3, true, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
@@ -192,6 +237,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
             BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
             DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
+            // The martian family's guns + the Dutchman's cannon — the
+            // `SetDefaults` rows packed into the data shape.
+            SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            SAUCER_LASER => (30.0, 30.0, 79, -1, 240, 0, false, false, false),
+            SAUCER_SHELL => (14.0, 14.0, 80, -1, TIME_LEFT_DEFAULT, 0, false, false, false),
+            TURRET_RAY => (5.0, 5.0, 1, 1, 600, 1, true, false, false),
+            MARTIAN_MISSILE => (14.0, 14.0, 14, -1, 360, 0, true, false, false),
+            DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {
@@ -766,7 +820,11 @@ impl ProjectilePool {
         damage: i32,
         knock_back: f32,
     ) -> Option<usize> {
-        let slot = self.spawn(kind, 0, pos, vel, damage, knock_back, false)?;
+        // The vanilla's NewProjectile applies `SetDefaults` for hostile
+        // shots (the box/flight/penetrate/extraUpdates) — the port routes
+        // the data-carrying spawn, so the hostile kinds move like the
+        // player's (the pre-base spawn path left them inert).
+        let slot = self.spawn_with_data(kind, pos.x, pos.y, vel.x, vel.y, damage, knock_back)?;
         self.slots[slot].friendly = false;
         Some(slot)
     }
