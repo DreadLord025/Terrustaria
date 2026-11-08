@@ -895,7 +895,7 @@ falling blocks, M7-INTERACT-1 doors/beds/sitting, M5-SPREAD-1/2 (worldgen side).
 - **Hidden:** ocean quest check `X < 380 || > maxTilesX−380` with >1000 water; catch
   selection XOR corruption/crimson `Next(2)`.
 
-**Tasks:** M7-FISH-1 fishing engine, M7-FISH-2 drop rules & quest fish.
+**Tasks:** ✅ M7-FISH-1 fishing engine (done 2026-11-05: the power/bite/pond/attempt math), ✅ M7-FISH-2 drop rules & quest fish — done 2026-11-08 (`M7-FISH-2-drop-rules`): the `FishDropRuleList` machinery (conditions/rarities/`Attempt`/`TryGetItemDropType`), the full vanilla table (158 rules in `Populate()` order incl. the 42 quest-fish rows + 10 remix), `PrepareFishingContext`'s zone rolls, `FishingCheck_RollEnemySpawns` and the lava fallback; 19 tests. Remaining: the bobber projectile's flight (aiStyle 61) and the chum-bucket projectile ride the pole family.
 
 ## 22. Mounts, hooks & riding
 
