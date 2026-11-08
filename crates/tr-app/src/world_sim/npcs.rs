@@ -1645,6 +1645,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         shots.append(&mut n.wants_hostile_shot);
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
+        #[cfg(test)]
+        eprintln!("[spawn-dbg] pool slots active: {}", app.projectiles.slots().iter().filter(|p| p.active).count());
         // The AI_037 arm's `timeLeft = 300` override rides the laser.
         let time_left = if kind == crate::projectile::DESTROYER_LASER {
             300
@@ -1664,6 +1666,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.projectiles
                 .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
         }
+        #[cfg(test)]
+        eprintln!(
+            "[after-dbg] spawn kind={} active_now={}",
+            kind,
+            app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
     }
     // The WoF's spawn requests + the World state the Hungry reads
     // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI

@@ -183,15 +183,106 @@ pub fn draw_item_tooltip(
         crate::lang::item_name(item.kind),
         item_name_color(registry::rare(item.kind)),
     )];
-    if registry::is_weapon(item.kind) {
-        for line in [
-            "0 melee damage",
-            "0 knockback",
-            "0% critical strike chance",
-            "0 use time",
-        ] {
-            lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+    // `Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-20800`) —
+    // the stat rows, through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`).
+    // The player-side layers the C# folds in (the weapon-damage multiplier, the
+    // crit bonuses, `minionKB`, the quiver x1.1) are the accessory layer and out
+    // of this pass; the values are the item def's own.
+    let Some(d) = registry::get(item.kind) else {
+        return;
+    };
+    if d.damage > 0 {
+        // Damage (`:20677-20700`) — the class suffix (melee tip[2], ranged
+        // tip[3], magic tip[4], summon tip[53], else tip[55]).
+        let suffix = match d.class {
+            registry::DamageClass::Melee => 2,
+            registry::DamageClass::Ranged => 3,
+            registry::DamageClass::Magic => 4,
+            registry::DamageClass::Summon => 53,
+            _ => 55,
+        };
+        lines.push((
+            format!("{}{}", d.damage, crate::lang::tip(suffix)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+        // Crit (`:20702-20715`) — the melee/ranged/magic classes only.
+        if matches!(
+            d.class,
+            registry::DamageClass::Melee | registry::DamageClass::Ranged | registry::DamageClass::Magic
+        ) {
+            lines.push((
+                format!("{}{}", d.crit, crate::lang::tip(5)),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
         }
+        // Use time (`:20717-20747`) — the `useAnimation` tiers behind
+        // `useStyle != 0`.
+        if d.use_style != 0 {
+            let tier = if d.use_animation <= 8 {
+                6
+            } else if d.use_animation <= 20 {
+                7
+            } else if d.use_animation <= 25 {
+                8
+            } else if d.use_animation <= 30 {
+                9
+            } else if d.use_animation <= 35 {
+                10
+            } else if d.use_animation <= 45 {
+                11
+            } else if d.use_animation <= 55 {
+                12
+            } else {
+                13
+            };
+            lines.push((crate::lang::tip(tier), [1.0, 1.0, 1.0, 1.0]));
+        }
+        // Knockback (`:20753-20798`) — the nine word tiers.
+        let kb = if d.knock_back == 0.0 {
+            14
+        } else if d.knock_back <= 1.5 {
+            15
+        } else if d.knock_back <= 3.0 {
+            16
+        } else if d.knock_back <= 4.0 {
+            17
+        } else if d.knock_back <= 6.0 {
+            18
+        } else if d.knock_back <= 7.0 {
+            19
+        } else if d.knock_back <= 9.0 {
+            20
+        } else if d.knock_back <= 11.0 {
+            21
+        } else {
+            22
+        };
+        lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // The tool rows (`:20819-20864`) — each behind its own value gate.
+    if d.defense > 0 {
+        lines.push((
+            format!("{}{}", d.defense, crate::lang::tip(25)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if d.pick > 0 {
+        lines.push((
+            format!("{}{}", d.pick, crate::lang::tip(26)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if d.axe > 0 {
+        lines.push((
+            format!("{}{}", d.axe * 5, crate::lang::tip(27)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if d.hammer > 0 {
+        lines.push((
+            format!("{}{}", d.hammer, crate::lang::tip(28)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
     }
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.
     let lh = line_height(lookups);
@@ -324,5 +415,119 @@ mod tests {
         let inv: [ItemSlot; INV] =
         std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         assert_eq!(hovered_slot(Vec2::new(2.0, 2.0), false, 0, &[1.0; HOTBAR], &inv), None);
+    }
+
+    /// The stat lines `item_tooltip_lines` builds for an item kind, in the
+    /// C#'s order (`Main.cs:20631-20800`).
+    fn stat_lines(kind: u16) -> Vec<String> {
+        let Some(d) = registry::get(kind) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if d.damage > 0 {
+            let suffix = match d.class {
+                registry::DamageClass::Melee => 2,
+                registry::DamageClass::Ranged => 3,
+                registry::DamageClass::Magic => 4,
+                registry::DamageClass::Summon => 53,
+                _ => 55,
+            };
+            out.push(format!("{}{}", d.damage, crate::lang::tip(suffix)));
+            if matches!(
+                d.class,
+                registry::DamageClass::Melee
+                    | registry::DamageClass::Ranged
+                    | registry::DamageClass::Magic
+            ) {
+                out.push(format!("{}{}", d.crit, crate::lang::tip(5)));
+            }
+            if d.use_style != 0 {
+                let tier = if d.use_animation <= 8 {
+                    6
+                } else if d.use_animation <= 20 {
+                    7
+                } else if d.use_animation <= 25 {
+                    8
+                } else if d.use_animation <= 30 {
+                    9
+                } else if d.use_animation <= 35 {
+                    10
+                } else if d.use_animation <= 45 {
+                    11
+                } else if d.use_animation <= 55 {
+                    12
+                } else {
+                    13
+                };
+                out.push(crate::lang::tip(tier));
+            }
+            let kb = if d.knock_back == 0.0 {
+            14
+        } else if d.knock_back <= 1.5 {
+            15
+        } else if d.knock_back <= 3.0 {
+            16
+        } else if d.knock_back <= 4.0 {
+            17
+        } else if d.knock_back <= 6.0 {
+            18
+        } else if d.knock_back <= 7.0 {
+            19
+        } else if d.knock_back <= 9.0 {
+            20
+        } else if d.knock_back <= 11.0 {
+            21
+        } else {
+            22
+        };
+        out.push(crate::lang::tip(kb));
+        }
+        if d.defense > 0 {
+            out.push(format!("{}{}", d.defense, crate::lang::tip(25)));
+        }
+        if d.pick > 0 {
+            out.push(format!("{}{}", d.pick, crate::lang::tip(26)));
+        }
+        if d.axe > 0 {
+            out.push(format!("{}{}", d.axe * 5, crate::lang::tip(27)));
+        }
+        if d.hammer > 0 {
+            out.push(format!("{}{}", d.hammer, crate::lang::tip(28)));
+        }
+        out
+    }
+
+    #[test]
+    fn a_copper_shortsword_shows_damage_crit_use_time_and_a_knockback_word() {
+        // The Copper Shortsword (item 1907? — any registered sword) — the
+        // first row carries the damage and its class suffix through
+        // `LegacyTooltip.2` (melee), the crit row `LegacyTooltip.5`, then the
+        // use-time tier and the knockback word.
+        // The Iron Shortsword (6): melee, damage 8, crit 0, useAnimation 12,
+        // knockBack 4 (`itemdata.rs`).
+        let lines = stat_lines(6);
+        assert_eq!(lines.len(), 4, "damage + crit + use time + knockback: {lines:?}");
+        assert_eq!(lines[0], format!("8{}", crate::lang::tip(2))); // melee suffix
+        assert_eq!(lines[1], format!("0{}", crate::lang::tip(5))); // crit
+        assert_eq!(lines[2], crate::lang::tip(7)); // useAnimation 12 -> the <=20 tier
+        assert_eq!(lines[3], crate::lang::tip(17)); // knockBack 4 -> the <=4 word (`Main.cs:20769-20772`)
+    }
+
+    #[test]
+    fn a_tool_shows_its_pick_axe_hammer_rows() {
+        // A pickaxe (pick > 0, axe 0) shows the pick row only.
+        // The Iron Pickaxe (1): pick 43, axe 0 — the pick row shows, the axe
+        // row does not (`itemdata.rs`).
+        let lines = stat_lines(1);
+        assert!(
+            lines.iter().any(|l| l.contains(&crate::lang::tip(26))),
+            "{lines:?}"
+        );
+        assert!(!lines.iter().any(|l| l.contains(&crate::lang::tip(27))));
+    }
+
+    #[test]
+    fn a_plain_block_has_no_stat_rows() {
+        assert!(stat_lines(2).is_empty());
     }
 }
