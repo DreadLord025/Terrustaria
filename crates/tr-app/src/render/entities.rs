@@ -1464,18 +1464,27 @@ pub(crate) fn draw_npcs(
                 )
             }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
-                let tex = match n.kind {
-                    NpcKind::Hornet => assets.hornet.as_ref(),
-                    NpcKind::MeteorHead => assets.meteor_head.as_ref(),
-                    _ => assets.eater_of_souls.as_ref(),
+                // The hovers: `FindFrame`'s case 6 (`NPC.cs`, the 8-tick
+                // advance over `Main.npcFrameCount` — 6 = 2, 42 = 3, 23 =
+                // 2, `Main.cs:67082`) matches the port's machine; the
+                // sheets' frames are NPC_6 42x80, NPC_42 48x40, NPC_23
+                // 26x28 — wider than the boxes (30/34/22) — so the generic
+                // anchor centres each frame on the box's centre-X with its
+                // centre 4 px below the bottom (`Main.cs:25511-25516`); the
+                // v1 stretched the art to the box+4 shape.
+                let (tex, count) = match n.kind {
+                    NpcKind::Hornet => (assets.hornet.as_ref(), 3),
+                    NpcKind::MeteorHead => (assets.meteor_head.as_ref(), 2),
+                    _ => (assets.eater_of_souls.as_ref(), 2),
                 };
-                let frames = match n.kind {
-                    NpcKind::Hornet => 3.0,
-                    _ => 2.0,
-                };
-                let fh = tex.map_or(30.0, |t| t.h / frames);
-                let (bw, bh) = n.size();
-                (tex, fh, [bw + 4.0, bh], [n.x - 2.0, n.y - 2.0])
+                let fh = tex.map_or(80.0, |t| t.h / count as f32);
+                let fw = tex.map_or(42.0, |t| t.w);
+                (
+                    tex,
+                    fh,
+                    [fw, fh],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                )
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // The bats: `Main.npcFrameCount` 49/51/60/66 = 5
