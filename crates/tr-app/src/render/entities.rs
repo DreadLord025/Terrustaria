@@ -1445,12 +1445,22 @@ pub(crate) fn draw_npcs(
                     NpcKind::EaterOfWorldsBody => assets.eow_body.as_ref(),
                     _ => assets.eow_tail.as_ref(),
                 };
-                let (bw, bh) = n.size();
+                // The worms are single-frame (`Main.npcFrameCount` 7..15
+                // = 1, `Main.cs:67082`): the sheets' frames — NPC_7/8/9
+                // 30x48, NPC_10/11/12 18x30, NPC_13/14/15 46x90 — are
+                // wider and taller than the segment boxes (22/14/38); the
+                // generic anchor centres each frame on the box's centre-X
+                // with its centre 4 px below the bottom
+                // (`Main.cs:25511-25516`) — the v1 stretched every segment
+                // to the box+4 shape. The segments' chain rotation
+                // (`atan2 + 1.57`) rides the draw's rotation branch below.
+                let fh = tex.map_or(48.0, |t| t.h);
+                let fw = tex.map_or(30.0, |t| t.w);
                 (
                     tex,
-                    tex.map_or(bh, |t| t.h),
-                    [bw + 4.0, bh + 4.0],
-                    [n.x - 2.0, n.y - 2.0],
+                    fh,
+                    [fw, fh],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
                 )
             }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
@@ -1570,6 +1580,15 @@ pub(crate) fn draw_npcs(
                     | NpcKind::JungleBat
                     | NpcKind::Hellbat
                     | NpcKind::VoodooDemon
+                    | NpcKind::DevourerHead
+                    | NpcKind::DevourerBody
+                    | NpcKind::DevourerTail
+                    | NpcKind::GiantWormHead
+                    | NpcKind::GiantWormBody
+                    | NpcKind::GiantWormTail
+                    | NpcKind::EaterOfWorldsHead
+                    | NpcKind::EaterOfWorldsBody
+                    | NpcKind::EaterOfWorldsTail
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
