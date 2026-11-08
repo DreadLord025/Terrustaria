@@ -2840,6 +2840,13 @@ The event's end: the crystal's `ai[0] >= 600` arm fires
 resolved by `update_dd2_event` before the death retain (the flag and the
 crystal go in one pass).
 
+## The DD2 tiers (M4-EVENT-5q)
+
+The tier-2/tier-3 rosters and budgets (`Difficulty_2/3_*`): the tiers
+swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
+554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
+wave 7's tier-3 budget is Betsy's own HP bucket.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
