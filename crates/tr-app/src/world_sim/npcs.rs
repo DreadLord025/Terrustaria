@@ -1016,6 +1016,26 @@ fn invasion_spawn_pick(
     }
 }
 
+/// `NPC.ReleaseNPC` as the shimmer release uses it (`WorldItem.GetShimmered`'s
+/// makeNPC arm, `WorldItem.cs:1747-1772`): the spawn with
+/// `shimmerTransparency = 1f`. The C# releases through `ReleaseNPC`, which
+/// applies the spawn capsule; the port's release spawns through the generic
+/// `Npc::new` (the capsule's tile scan is the NPC roster's own spawn logic).
+/// Returns whether a drop-owning spawn happened (the roster only covers the 85
+/// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
+/// rainbow slime 681 wait for the M4-NPC roster).
+pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
+    let Some(kind) = NpcKind::from_u16(npc_type) else {
+        // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
+        // no model for the type — the arm's accounting still runs.
+        return false;
+    };
+    let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    npc.shimmer_transparency = 1.0;
+    app.npcs.push(npc);
+    true
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's

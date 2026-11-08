@@ -132,6 +132,19 @@ const PICKUP_DELAY: f32 = 0.35;
 pub struct ItemDrop {
     pub kind: u16,
     pub count: u32,
+    /// `WorldItem.shimmerTime` (`WorldItem.cs:34`) — the 0..1 ramp while the
+    /// drop rests in shimmer liquid; the transform fires above 0.9.
+    pub shimmer_time: f32,
+    /// `WorldItem.shimmered` (`WorldItem.cs:32`) — the item has transformed at
+    /// least once (it floats in the liquid afterwards).
+    pub shimmered: bool,
+    /// The ramp crossed 0.9 during the last [`Self::update`] — the transform
+    /// fires that same tick (`WorldItem.cs:531-534` sets `shimmerTime = 0.9f`
+    /// and calls `GetShimmered` inside `UpdateShimmer`).
+    pub shimmer_pending: bool,
+    /// `Entity.shimmerWet` (`Entity.cs:28`) — the drop's box overlaps shimmer
+    /// liquid this tick.
+    pub shimmer_wet: bool,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
@@ -157,6 +170,10 @@ impl ItemDrop {
         Self {
             kind,
             count,
+            shimmer_time: 0.0,
+            shimmered: false,
+            shimmer_pending: false,
+            shimmer_wet: false,
             prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
@@ -169,10 +186,75 @@ impl ItemDrop {
         self.pos + Vec2::splat(SIZE * 0.5)
     }
 
+    /// `WorldItem.CanShimmerAtPosition` (`WorldItem.cs:756-768`): the tile
+    /// above the drop's center (the C# reads `Center.X / 16` and
+    /// `position.Y / 16 - 1`) is shimmer liquid.
+    pub fn over_shimmer(&self, world: &World) -> bool {
+        let tx = (self.center().x / tr_core::TILE_PX) as i32;
+        let ty = (self.pos.y / tr_core::TILE_PX) as i32 - 1;
+        world.tile(tx, ty)
+            .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
+    }
+
+    /// The drop's 14x14 box overlapping shimmer liquid this tick — the port's
+    /// stand-in for the C#'s `Collision.shimmer` flag that
+    /// `WorldItem.Update`'s wet half sets (`WorldItem.cs:868-877`).
+    fn box_in_shimmer(&self, world: &World) -> bool {
+        let x0 = (self.pos.x / tr_core::TILE_PX) as i32;
+        let x1 = ((self.pos.x + SIZE) / tr_core::TILE_PX) as i32;
+        let y0 = (self.pos.y / tr_core::TILE_PX) as i32;
+        let y1 = ((self.pos.y + SIZE) / tr_core::TILE_PX) as i32;
+        for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                if world
+                    .tile(tx, ty)
+                    .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether the last [`Self::update`]'s `UpdateShimmer` armed the transform
+    /// (`WorldItem.cs:528-535` — the C# caps the ramp at 0.9 and fires for the
+    /// local player's drops; the port is SP-only, so the fire is unconditional
+    /// here and the client re-own branch is out).
+    pub fn shimmer_transform_due(&self) -> bool {
+        self.shimmer_pending && !self.shimmered
+    }
+
+    /// `WorldItem.UpdateShimmer` (`WorldItem.cs:455-546`): the shimmered
+    /// physics (no gravity, the 0.05 rise over shimmer), the ramp ±0.01 and the
+    /// 0.9 trigger check. The dust/light arms are render-layer notes.
+    fn update_shimmer(&mut self, world: &World, dt: f32) {
+        if self.shimmered {
+            // `:457-508` — gravity is zero for the transformed item; the rise
+            // applies over shimmer liquid (or already shimmerWet), floor -4.
+            let over = self.shimmer_wet || self.over_shimmer(world);
+            if over && self.vel.y > -4.0 {
+                self.vel.y -= 0.05;
+            } else if !over {
+                self.vel.y *= 0.9;
+            }
+        }
+        if self.shimmer_wet && !self.shimmered && self.over_shimmer(world) {
+            self.shimmer_time = (self.shimmer_time + 0.01).min(1.0);
+            // `:518-536` — the crossing is checked inside the same update, so
+            // the value is capped at 0.9 and the transform fires this tick.
+            self.shimmer_pending = self.shimmer_time > 0.9;
+        } else if self.shimmer_time > 0.0 && !self.shimmered {
+            self.shimmer_pending = false;
+            self.shimmer_time = (self.shimmer_time - 0.01).max(0.0);
+        }
+    }
+
     /// One fixed 60 Hz step of gravity, collision and the pickup magnet.
     /// Returns true when the drop was collected by `player`.
     pub fn update(&mut self, world: &World, player_center: Option<Vec2>, dt: f32) -> bool {
         self.age += dt;
+        self.shimmer_wet = self.box_in_shimmer(world);
         if let Some(pc) = player_center {
             let d = pc - self.center();
             let dist = d.length();
@@ -183,6 +265,13 @@ impl ItemDrop {
                 self.pos += self.vel;
                 return dist < 10.0;
             }
+        }
+        self.update_shimmer(world, dt);
+        if self.shimmered {
+            // `WorldItem.cs:457-508` — the transformed item does not fall.
+            self.pos += self.vel;
+            self.shimmer_time = 1.0;
+            return false;
         }
         self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
         let nx = self.pos.x + self.vel.x;

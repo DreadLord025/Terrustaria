@@ -5817,3 +5817,43 @@ Deliberate deviations and notes:
   every 5 ticks; `drawdata.rs` already ports the `tileFrame * 54` offset but
   `render/tiles.rs` passes the t=0 state) = TILE-DRAW-3; smart cursor
   (`Player.cs:17595-17614`'s strategy 7) = M7-SMARTCURSOR-1.
+
+## Shimmer transforms (M7-SHIMMER-1)
+
+`tr-core/src/shimmer.rs` + `shimmer_tables.rs` port the transform data and the
+resolution order (`ShimmerTransforms.cs:88-111`, `ShimmerHelper.cs`);
+`tr-app/src/shimmer.rs` ports the whole chain (`WorldItem.cs:1691-1849`) with
+its branch order intact, and `world_sim/items.rs` + `item.rs` port
+`WorldItem.UpdateShimmer`'s ramp on the `ItemDrop` state.
+
+Deliberate deviations and notes:
+
+- **The crimson/corruption decraft variant is not ported.** The port's recipe
+  data (`recipes_gen.rs`/`craft.rs`) carries no `crimson`/`corruption` tags, so
+  `GetDecraftingRecipeIndex` (`ShimmerTransforms.cs:22-29`) falls back to the
+  plain `IsCrafted` index. The 15 variant pairs (`Recipe.cs`'s `crimson`/
+  `corruption` flags — extracted for the follow-up: e.g. 5092 creates the
+  corruption/crimson pair at recipe indices 90/91) need the generator to grow
+  the tags.
+- **`customShimmerResults` are absent** from the port's recipe data
+  (`Recipe.cs:176-183`) — the decraft spends the plain `requiredItem` list.
+- **`Item.makeNPC` has no port field**, so the release arm
+  (`WorldItem.cs:1747-1772`) never fires from real items: the override map
+  (`NPCID.cs:10470`), the ≤50 attempt budget and `shimmerTransparency = 1f` are
+  ported and unit-tested, but the item-side input and the NPC roster (676
+  Shimmer Slime / 677 shimmered town NPC / 681 Rainbow Slime) wait for
+  `GenItemData` + M4-NPC.
+- **The ramp's transform tick** follows the C#'s f32 `+= 0.01f` accumulation
+  and fires inside the same update (the port marks a pending flag and applies
+  after the fixed step, so the spawn/flag side-effects do not run mid-borrow).
+- **`unlocked_slime_rainbow_spawn` is a `World` field** standing in for the
+  C#'s `Main`-global (`NPC.unlockedSlimeRainbowSpawn`) — the save format does
+  not carry it yet.
+- **The shimmered item's dust/light arms** (`WorldItem.cs:459-482`: dust 309 at
+  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) are render
+  layer and skipped.
+- **Out:** the player's §7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
+  `ShimmerUnstuckHelper`'s unstuck — the helper is ported, the driver is not);
+  `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
+  table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
+  shimmer tile's rendering/animation.

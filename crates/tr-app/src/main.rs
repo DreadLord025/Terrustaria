@@ -57,6 +57,7 @@ mod render;
 mod spawner;
 mod settings;
 mod shop;
+mod shimmer;
 mod sound;
 mod test_world_helpers;
 mod town;
