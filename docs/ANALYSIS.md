@@ -2647,6 +2647,31 @@ The type-4 table is complete but for the Saucer 395 family: the
 `num8` arm ports the RayGunner (<2) / the BrainScrambler (==2) / the
 Drone (>=4), and the num6 >= 6 arm's `Next(2)` split ports the Rider.
 
+## The Martian Saucer (M4-EVENT-4e)
+
+The type-4 event's boss: the 395 Core (dmg 80, 10000 HP, aiStyle 76,
+dontTakeDamage) plus its crew — the 392 Shell (150×80), the 393 Turrets
+(40×16, 5000 HP) and the 394 Cannons (46×36, 3500 HP), all aiStyle-75
+mounts. The core's init spawns the crew at its centre with the seat
+`ai[1]`; the mounts ride the core (the shell at UnitY+2, the turrets at
+UnitY+29 ± UnitX·60, the cannons at UnitY−13 ± UnitX·49) through the
+pre-pass write-through link.
+
+`ai[0]`'s states: the ±1/−2 despawn rides (the player out of the 5600-px
+window), the 600-tick SCAN cycle (the six step bands — approach,
+dive, park, brake — with the ground-clearance reads easing the dive,
+the 20/260/279/439 force-jumps on the approach bands), the vulnerable
+WOBBLE (150 ticks of the rotation ramp — the classic-only gate the
+shell's bridge drives), the GUN (the 3600-tick cycle: the 60-tick
+firing window per 120 fires the 447 projectile at 80 damage; the
+8·ai[2] dash in the window, the 16-lerp outside), and the phase-3
+death ride (`StrikeNPCNoInteraction(9999)` → the port's hp=0).
+
+The type-4 table is now complete — every kind in `NPC.cs:1487-1540`
+ports. The shell's missile battery and the core phase bridge (the
+`flag80` classic/expert split) are the follow-ups: until they land,
+the core stays in the scan/gun loop and is killed by damage.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

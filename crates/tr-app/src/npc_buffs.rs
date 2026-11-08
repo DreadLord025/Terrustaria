@@ -231,7 +231,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::BrainScrambler
         | NpcKind::RayGunner
         | NpcKind::ScutlixRider
-        | NpcKind::Scutlix => &[],
+        | NpcKind::Scutlix
+        | NpcKind::MartianSaucer
+        | NpcKind::MartianSaucerTurret
+        | NpcKind::MartianSaucerCannon
+        | NpcKind::MartianSaucerCore => &[],
         // The pirates: no `DebuffImmunitySets` rows.
         NpcKind::PirateDeckhand
         | NpcKind::PirateCaptainsMate

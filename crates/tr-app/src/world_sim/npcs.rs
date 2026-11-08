@@ -938,9 +938,9 @@ fn invasion_spawn_pick(
         let num6 = (crate::app::frame::rand01(rng) * 7.0) as u32;
         let flag6 = progress_30 && !saucer_alive;
         if crate::app::frame::rand01(rng) * 45.0 < 1.0 && flag6 {
-            // The Saucer 395: unported — the roll consumed, the hit maps
-            // to the ground fallback (documented).
-            return NpcKind::GrayGrunt;
+            // The Saucer 395: the core spawns its crew (the machine's
+            // init arm).
+            return NpcKind::MartianSaucerCore;
         }
         if num6 >= 6 {
             if crate::app::frame::rand01(rng) * 20.0 < 1.0 && flag6 {
@@ -948,6 +948,9 @@ fn invasion_spawn_pick(
                 // (the machine's init arm).
                 return NpcKind::ScutlixRider;
             }
+            // The Saucer 395's num6 >= 6 arm (`Next(45)` + the gate) lands
+            // the core as well — the roll consumes where the vanilla's
+            // short-circuit reaches it.
             // `Next(2)`: 0 → the Rider 390, 1 → the Engineer 386.
             return if crate::app::frame::rand01(rng) * 2.0 < 1.0 {
                 NpcKind::ScutlixRider
@@ -1023,18 +1026,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // live in the same pass), and a rider whose carrier died falls with
     // it (the retire lands before the retain pass below).
     for i in 0..app.npcs.len() {
-        if app.npcs[i].kind != NpcKind::ScutlixRider {
+        if app.npcs[i].kind != NpcKind::ScutlixRider
+            && app.npcs[i].kind != NpcKind::MartianSaucer
+            && app.npcs[i].kind != NpcKind::MartianSaucerTurret
+            && app.npcs[i].kind != NpcKind::MartianSaucerCannon
+        {
             continue;
         }
+        let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
+            NpcKind::Scutlix
+        } else {
+            NpcKind::MartianSaucerCore
+        };
         let (rcx, rcy) = app.npcs[i].center();
         let mut best: Option<(usize, f32)> = None;
         for (j, m) in app.npcs.iter().enumerate() {
-            if m.kind != NpcKind::Scutlix || m.hp <= 0 {
+            if m.kind != link_kind || m.hp <= 0 {
                 continue;
             }
             let (mcx, mcy) = m.center();
             let d = (mcx - rcx).hypot(mcy - rcy);
-            if d < 800.0 && best.is_none_or(|(_, bd)| d < bd) {
+            if d < 1600.0 && best.is_none_or(|(_, bd)| d < bd) {
                 best = Some((j, d));
             }
         }
@@ -1045,11 +1057,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_y = mcy;
             }
             None => {
+                // The Scutlix rider falls with its carrier; the saucer
+                // mounts (the shell/guns) fall with the core.
                 if app.npcs[i].carrier_x >= 0.0 {
-                    // The carrier just died: the rider falls.
                     app.npcs[i].carrier_x = -1.0;
                     app.npcs[i].carrier_y = -1.0;
                     app.npcs[i].hp = 0;
+                } else if app.npcs[i].kind == NpcKind::ScutlixRider {
+                    // Never linked yet — the machine's init spawns.
                 }
             }
         }
@@ -1633,6 +1648,53 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.extend(new_carriers);
+    // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
+    // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
+    // port's link rides the write-through) with the seat `ai[1]`.
+    let mut spawned_crew: Vec<Vec<Npc>> = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::MartianSaucerCore || !n.wants_saucer_crew {
+            continue;
+        }
+        n.wants_saucer_crew = false;
+        let (cw, ch) = n.size();
+        let ccx = n.x + cw * 0.5;
+        let ccy = n.y + ch * 0.5;
+        let mut crew = Vec::new();
+        for seat in 0..2 {
+            let mut t = Npc::new(
+                NpcKind::MartianSaucerTurret,
+                ccx + (seat as f32) * 300.0 - 150.0,
+                ccy,
+                seat as i32,
+                0.0,
+            );
+            t.hp = t.max_hp;
+            t.ai[1] = seat as f32;
+            crew.push(t);
+            let mut c = Npc::new(
+                NpcKind::MartianSaucerCannon,
+                ccx + (seat as f32) * 300.0 - 150.0,
+                ccy,
+                seat as i32,
+                0.0,
+            );
+            c.hp = c.max_hp;
+            c.ai[1] = seat as f32;
+            crew.push(c);
+        }
+        let mut shell = Npc::new(NpcKind::MartianSaucer, ccx, ccy, 0, 0.0);
+        shell.hp = shell.max_hp;
+        crew.push(shell);
+        for m in crew.iter_mut() {
+            m.carrier_x = ccx;
+            m.carrier_y = ccy;
+        }
+        spawned_crew.push(crew);
+    }
+    for crew in spawned_crew {
+        app.npcs.extend(crew);
+    }
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
@@ -3009,6 +3071,7 @@ mod martian_invasion_tests {
                         | NpcKind::RayGunner
                         | NpcKind::BrainScrambler
                         | NpcKind::ScutlixRider
+                        | NpcKind::MartianSaucerCore
                 ),
                 "the unported kinds never surface: {kind:?}"
             );
@@ -3048,6 +3111,7 @@ mod martian_invasion_tests {
                     | NpcKind::RayGunner
                     | NpcKind::BrainScrambler
                     | NpcKind::ScutlixRider
+                    | NpcKind::MartianSaucerCore
             ));
         }
     }
@@ -3452,5 +3516,170 @@ mod rider_tests {
         let shot = n.wants_hostile_shot.expect("the ray fires");
         assert_eq!(shot.0, 438);
         assert_eq!(shot.5, 30);
+    }
+}
+
+#[cfg(test)]
+mod saucer_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_core_spawns_its_crew_and_the_mounts_ride() {
+        // `AI`'s aiStyle-76 init arm (`NPC.cs:36071-36092`): the 4 guns +
+        // the shell spawn at the core's centre; the mounts ride their
+        // seat offsets (the turret UnitY + 29 ± X 60, the cannon
+        // UnitY - 13 ± X 49, the shell UnitY + 2).
+        let (mut app, mut player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let turrets = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MartianSaucerTurret)
+            .count();
+        let cannons = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MartianSaucerCannon)
+            .count();
+        let shells = app.npcs.iter().filter(|n| n.kind == NpcKind::MartianSaucer).count();
+        assert_eq!((turrets, cannons, shells), (2, 2, 1), "the crew");
+        // Tick 2: the ride.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerCore)
+            .unwrap();
+        let (ccx, ccy) = core.center();
+        for n in app.npcs.iter().filter(|n| {
+            n.kind == NpcKind::MartianSaucerTurret
+                || n.kind == NpcKind::MartianSaucerCannon
+                || n.kind == NpcKind::MartianSaucer
+        }) {
+            let (ncx, ncy) = n.center();
+            assert!((ncx - ccx).abs() < 70.0, "the mount rides the core's X");
+            assert!(
+                (ncy - ccy).abs() < 45.0,
+                "the mount rides the core's Y: {}",
+                (ncy - ccy).abs()
+            );
+        }
+        let _ = player;
+        player.x += 0.0;
+    }
+
+    #[test]
+    fn the_core_scan_cycle_walks_its_steps() {
+        // The 600-tick scan (`NPC.cs:36149-36372`): `ai[3]` marches
+        // through the six bands; the velocity keeps the core aloft.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut steps = std::collections::HashSet::new();
+        for _ in 0..700 {
+            let before = n.ai[3];
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            let step = |t: f32| -> u32 {
+                if t >= 580.0 {
+                    0
+                } else if t >= 440.0 {
+                    5
+                } else if t >= 420.0 {
+                    4
+                } else if t >= 280.0 {
+                    3
+                } else if t >= 260.0 {
+                    2
+                } else if t >= 20.0 {
+                    1
+                } else {
+                    0
+                }
+            };
+            if step(before) != step(n.ai[3]) || n.ai[3] < before {
+                steps.insert(step(n.ai[3]));
+            }
+        }
+        assert!(steps.len() >= 3, "the scan walks several steps: {steps:?}");
+    }
+
+    #[test]
+    fn the_core_gun_fires_the_447_in_the_window() {
+        // The gun phase (`NPC.cs:36408-36500`): the firing window opens
+        // at `ai[3] % 120 >= 60` and fires the 447 projectile (80 dmg).
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        // Force the gun phase.
+        n.ai[0] = 2.0;
+        n.ai[3] = 55.0;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut shot = None;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the 447 fires in the window");
+        assert_eq!(s.0, 447);
+        assert_eq!(s.5, 80);
+    }
+
+    #[test]
+    fn the_mounts_fall_with_the_core() {
+        // The crew's mounts die with the core (the link's retire).
+        let (mut app, _player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerTurret));
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerCore {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerCore));
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerTurret));
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
     }
 }

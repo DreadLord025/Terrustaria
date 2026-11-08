@@ -454,6 +454,10 @@ fn portrait_data(
         NpcKind::RayGunner => 79,      // NPC_382
         NpcKind::ScutlixRider => 80,   // NPC_390
         NpcKind::Scutlix => 81,        // NPC_391
+        NpcKind::MartianSaucer => 82, // NPC_392
+        NpcKind::MartianSaucerTurret => 83, // NPC_393
+        NpcKind::MartianSaucerCannon => 84, // NPC_394
+        NpcKind::MartianSaucerCore => 85, // NPC_395
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -633,6 +637,32 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 60.0, h, white)
+        }
+        // The saucer family: the shell 4-frame, the turret 18-frame, the
+        // cannon 8-frame, the core 11-frame strips.
+        (NpcKind::MartianSaucer, _) => {
+            let h = lookups.bestiary_npc_sheets[82]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(80.0);
+            (sheet_i, h, 150.0, h, white)
+        }
+        (NpcKind::MartianSaucerTurret, _) => {
+            let h = lookups.bestiary_npc_sheets[83]
+                .map(|s| s.height as f32 / 18.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::MartianSaucerCannon, _) => {
+            let h = lookups.bestiary_npc_sheets[84]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MartianSaucerCore, _) => {
+            let h = lookups.bestiary_npc_sheets[85]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 120.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
