@@ -2773,6 +2773,25 @@ impl Npc {
         self.contact(player);
     }
 
+    /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
+    /// wind-up + slam sequence the ai[0]==1/4 states play.
+    const DEERCLOPS_ATTACK_1: [u32; 12] =
+        [12, 13, 14, 13, 14, 13, 14, 13, 14, 15, 16, 17];
+    /// `_deerclopsAttack2Frames` (`:95282-95284`): the 13-frame rubble
+    /// sequence of the ai[0]==2 state.
+    const DEERCLOPS_ATTACK_2: [u32; 13] =
+        [12, 15, 16, 17, 17, 17, 17, 13, 18, 18, 18, 18, 12];
+    /// `_deerclopsAttack3Frames` (`:95287-95290`): the 16-frame
+    /// blizzard/shadow-hand sequence of the ai[0]==3/5/7/8 states.
+    const DEERCLOPS_ATTACK_3: [u32; 16] =
+        [19, 20, 21, 22, 21, 22, 21, 22, 23, 24, 23, 24, 23, 24, 20, 19];
+
+    /// `NPC.FindFrame_FromSequence` (`NPC.cs:77372-77380`): the sequence
+    /// frame index clamps to the array's last entry past the end.
+    fn seq_cell(seq: &[u32], i: usize) -> u32 {
+        seq[i.min(seq.len() - 1)]
+    }
+
     /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
     /// frame height unit) cancels out because frames are tracked as row indices;
     /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
@@ -3335,10 +3354,46 @@ impl Npc {
                 self.frame = 0;
             }
             NpcKind::Deerclops => {
-                // The v1: the single-frame draw (the aiStyle-123 stomp
-                // machine lands with the full port).
-                self.frame_counter = 0.0;
-                self.frame = 0;
+                // `FindFrame`'s case 668 (`NPC.cs:66779-66841`): the
+                // frame selects a cell of the 5x5 grid (0..24) that
+                // `DrawNPCDirect_Deerclops` decodes (`cell / 5` column,
+                // `cell % 5` row). The attacks ride the C#'s three
+                // sequences at `(int)ai[1] / 4` (`FindFrame_FromSequence`
+                // clamps past the end, `:77372-77380`); the walk is the
+                // idle/air/2..11 cycle (`frameCounter += |vx|`, the 150
+                // wrap). The C#'s `frame.Width = 180` write is vestigial
+                // (this type's draw builds its own rect); the step
+                // sounds at the 4/9 rows ride the audio pass and are the
+                // follow-up.
+                let cell = match self.ai[0] as i32 {
+                    1 | 4 => {
+                        Self::seq_cell(&Self::DEERCLOPS_ATTACK_1, (self.ai[1] as i32 / 4) as usize)
+                    }
+                    2 => Self::seq_cell(&Self::DEERCLOPS_ATTACK_2, (self.ai[1] as i32 / 4) as usize),
+                    3 | 5 | 7 | 8 => {
+                        Self::seq_cell(&Self::DEERCLOPS_ATTACK_3, (self.ai[1] as i32 / 4) as usize)
+                    }
+                    _ => {
+                        // The walk (`:66817-66838`): the air frame while
+                        // the hop's velocity is live (the C#'s
+                        // `velocity.Y > 0 || localAI[0] == 1` — the
+                        // machine's hop drives both), the idle at
+                        // `vx == 0`, the 2..11 stride otherwise.
+                        if self.vy != 0.0 {
+                            1
+                        } else if self.vx == 0.0 {
+                            self.frame_counter = 0.0;
+                            0
+                        } else {
+                            self.frame_counter += self.vx.abs();
+                            if self.frame_counter >= 150.0 {
+                                self.frame_counter = 0.0;
+                            }
+                            2 + (self.frame_counter / 15.0) as u32
+                        }
+                    }
+                };
+                self.frame = cell;
             }
             NpcKind::Golem => {
                 // `FindFrame`'s case 245 (`NPC.cs:72898-72930`): the
@@ -10224,6 +10279,69 @@ mod tests {
         let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
         assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
     }
+    #[test]
+    fn the_deerclops_grid_cells_select_by_state() {
+        // `FindFrame`'s case 668 (`NPC.cs:66779-66841`): the 5x5 grid
+        // cell — the attacks' sequences at `ai[1] / 4`, the walk's
+        // idle/air/2..11 cycle.
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        // The walk: the idle row at rest, the air row in the hop, the
+        // 2..11 stride while moving (the 150-wrap cycle).
+        d.vx = 0.0;
+        d.vy = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 0, "the idle cell");
+        d.vy = -8.0;
+        d.find_frame();
+        assert_eq!(d.frame, 1, "the air cell");
+        d.vy = 0.0;
+        d.vx = 2.0;
+        d.frame_counter = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 2, "the stride start");
+        d.frame_counter = 100.0;
+        d.find_frame();
+        assert_eq!(d.frame, 8, "the mid-stride (2 + 100/15)");
+        d.frame_counter = 141.0;
+        d.find_frame();
+        assert_eq!(d.frame, 11, "the stride end (141 + 2 -> 143/15)");
+        d.frame_counter = 160.0;
+        d.find_frame();
+        assert_eq!(d.frame, 2, "the 150 wrap restarts");
+        // The attack sequences: state 1 plays the attack-1 ramp
+        // (12, 13, 14, 13, 14, ...) at the 4-tick stride; state 2 the
+        // rubble (12, 15, 16, 17, ...); state 3 the blizzard (19, 20,
+        // 21, 22, ...).
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 12, "the attack-1 first cell");
+        d.ai[1] = 4.0;
+        d.find_frame();
+        assert_eq!(d.frame, 13, "the attack-1 second cell");
+        d.ai[1] = 40.0;
+        d.find_frame();
+        assert_eq!(d.frame, 16, "the attack-1 tenth cell");
+        d.ai[1] = 44.0;
+        d.find_frame();
+        assert_eq!(d.frame, 17, "past the end clamps to the last");
+        d.ai[0] = 2.0;
+        d.ai[1] = 4.0;
+        d.find_frame();
+        assert_eq!(d.frame, 15, "the attack-2 second cell");
+        d.ai[0] = 3.0;
+        d.ai[1] = 8.0;
+        d.find_frame();
+        assert_eq!(d.frame, 21, "the attack-3 third cell");
+    }
+
+    #[test]
+
     #[test]
     fn the_deerclops_state_machine_cycles() {
         // `AI_123_Deerclops` (`NPC.cs:44017-44407`): the damage gate, the
