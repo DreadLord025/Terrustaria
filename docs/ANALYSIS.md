@@ -1548,6 +1548,46 @@ and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
 
+### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
+
+The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall
+loops, M1.4-BG-20) and the rain/wind music-pool loops were already in main, so this task
+ported the remaining three and verified the fourth:
+
+* **Blizzard loops** (`SceneState.cs:189-253`). The two tracked global loops resume on
+  `ZoneRain && ZoneSnow` — the raw zone pair, not the `UseStormEffects`-gated visual — and
+  cross-fade through `_blizzardSoundVolume` (`MoveTowards ±0.01` per `SceneState.Update`,
+  so it lives on the port's `SceneState` beside the other fades, not on a tick) split
+  `min(1, cloudAlpha*2) * outsideWeatherEffectIntensity`. `audio.rs::set_ambient_loop` is
+  the `ActiveSound.DetermineIntendedVolume` engine half: global → no attenuation,
+  `clamp(Style.Volume × Volume × ambientVolume)`, `SoundID.cs:1598-1599`'s 0.5/1 style
+  volumes. The sink is created on the first non-zero volume and then kept (muted at 0) —
+  the C# `SlotId` policy.
+* **Thunder strike** (`Main.cs:58747-58766`). The cue plays from the weather tick with the
+  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream. Two
+  documented gaps: the `case 43` re-roll-on-playing loop has no port model (no per-slot
+  instance bookkeeping), and the pitch jitter is consumed but not applied (the rodio
+  sources have no pitch control — the same gap as the BG-20 liquid loops).
+* **Critter sounds** (`NPC.cs:92244-92340`) and **liquid-change sounds**
+  (`WorldGen.cs:4632-4650`) land as pure, tested tables. Their call sites need the critter
+  NPC kinds (M4-NPC — the roster has none today) and the liquid merge pass
+  (`Liquid.CreateLiquidMergeTile`, `Liquid.cs:1324` — `tr-core/liquid.rs` ports the settle
+  but not the merge tiles), so they run constants-off with citations, the M6-MUSIC-1
+  pattern.
+
+Deviations (deliberate):
+
+* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
+  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
+  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
+  map to (a sink never dies in the port).
+* The thunder/pitch and critter rolls come from the owning system's stream (the
+  WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand` the C# draws.
+* `FocusHelper.UpdateBackgroundThunder`'s unfocused half and `StopAmbientSounds`
+  (`Main.cs:11040-11045`) stay as BG-20 pinned them (the port always claims focus).
+* The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
+  the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,

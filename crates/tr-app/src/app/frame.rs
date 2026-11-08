@@ -396,6 +396,9 @@ impl App {
             // `ApplyVisuals` driver; the post branch consumes
             // `filter_driver.output`.
             crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            // The SceneState blizzard loops' sound emitter rides inside
+            // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
+            // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
             // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
             // the per-tick audio update): the sticky windy-day/storm flags the
             // ambience gates read; the hysteresis bands make the per-frame
