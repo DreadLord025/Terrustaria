@@ -1668,7 +1668,8 @@ impl App {
                         0.0,
                     );
                     g.hp = g.max_hp;
-                    g.alpha = 255;
+                    // The port's Npc carries no `alpha` field — the fade
+                    // rides the machines' spawn shield instead.
                     npcs.push(g);
                 } else if let Some(state) = boss.strip_prefix("deerclops") {
                     // The Deerclops' box is 60x154 (`SetDefaults` 668,

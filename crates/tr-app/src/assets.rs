@@ -293,6 +293,12 @@ pub fn load_world_images(
         "NPC_247",
         "NPC_249",
         "NPC_668",
+        "NPC_36",
+        "NPC_114",
+        "NPC_128",
+        "NPC_129",
+        "NPC_130",
+        "NPC_131",
         "NPC_105",
         "NPC_107",
         "NPC_8",
@@ -770,7 +776,13 @@ const FONT_LAYER_SIZE: f32 = 8192.0;
 /// Cyrillic, Greek, CJK, Kana, full Hangul), so this is where the localized
 /// strings become renderable text.
 pub fn load_fonts() -> LoadedFonts {
-    let names = ["Mouse_Text", "Item_Stack", "Death_Text", "Combat_Text", "Combat_Crit"];
+    let names = [
+        "Mouse_Text",
+        "Item_Stack",
+        "Death_Text",
+        "Combat_Text",
+        "Combat_Crit",
+    ];
     let Some(fonts_dir) = content_dir().map(|p| p.join("Fonts")) else {
         log::warn!("no Content/Fonts directory; text falls back to the bitmap font");
         return LoadedFonts {
@@ -831,9 +843,8 @@ pub fn load_fonts() -> LoadedFonts {
         rect_cursor += font.pages.len();
     }
     let mut slots = bound.into_iter();
-    let [ui, item, death, combat_text, combat_crit] = std::array::from_fn(|_| {
-        slots.next().and_then(|(f, _)| f)
-    });
+    let [ui, item, death, combat_text, combat_crit] =
+        std::array::from_fn(|_| slots.next().and_then(|(f, _)| f));
     LoadedFonts {
         atlas: Some(font_atlas),
         ui,
@@ -868,7 +879,12 @@ pub fn build_ui_font(
             out.glyphs.insert(
                 g.ch,
                 FontGlyph {
-                    uv: [u0 + half_texel, v0 + half_texel, u0 + w as f32 / FONT_LAYER_SIZE - half_texel, v0 + h as f32 / FONT_LAYER_SIZE - half_texel],
+                    uv: [
+                        u0 + half_texel,
+                        v0 + half_texel,
+                        u0 + w as f32 / FONT_LAYER_SIZE - half_texel,
+                        v0 + h as f32 / FONT_LAYER_SIZE - half_texel,
+                    ],
                     w: w as f32,
                     h: h as f32,
                     pad: [g.pad[0] as f32, g.pad[1] as f32],
@@ -1451,6 +1467,12 @@ impl Lookups {
                 atlas.sheet("NPC_247").copied(),
                 atlas.sheet("NPC_249").copied(),
                 atlas.sheet("NPC_668").copied(),
+                atlas.sheet("NPC_36").copied(),
+                atlas.sheet("NPC_114").copied(),
+                atlas.sheet("NPC_128").copied(),
+                atlas.sheet("NPC_129").copied(),
+                atlas.sheet("NPC_130").copied(),
+                atlas.sheet("NPC_131").copied(),
                 atlas.sheet("NPC_399").copied(),
                 atlas.sheet("NPC_388").copied(),
                 atlas.sheet("NPC_381").copied(),
@@ -1474,6 +1496,9 @@ impl Lookups {
                 atlas.sheet("NPC_563").copied(),
                 atlas.sheet("NPC_566").copied(),
                 atlas.sheet("NPC_567").copied(),
+                atlas.sheet("NPC_564").copied(),
+                atlas.sheet("NPC_551").copied(),
+                atlas.sheet("NPC_568").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
