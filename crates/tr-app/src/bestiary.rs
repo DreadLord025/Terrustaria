@@ -773,6 +773,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Etherian Skeleton Captain",
     },
     BestiaryEntryDef {
+        credit_id: "DD2DarkMageT1",
+        net_id: 564,
+        kind: NpcKind::DD2DarkMage,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mage",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,

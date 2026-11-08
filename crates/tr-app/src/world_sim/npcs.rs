@@ -4702,4 +4702,43 @@ mod dd2_goblin_tests {
         assert_eq!(s.0, 681);
         assert_eq!(s.5, 40);
     }
+    #[test]
+    fn the_dark_mage_materializes_then_casts() {
+        // `AI_109_DarkMage` (`NPC.cs:65791+`): the materialize runs
+        // 60 ticks of `localAI[3]` (the port's caster_counter), then the
+        // cast cycle fires the shadowflame 675 (40 dmg) / the summon
+        // marker 673 in their ai[0] windows.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2DarkMage, 145.0 * TILE_PX, 1500.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The materialize.
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.caster_counter, 60, "the materialize ran");
+        // The re-arm + the cast cycle: arm the shadowflame phase.
+        n.ai[1] = 0.0;
+        n.ai[0] = 97.0;
+        let mut saw_flame = false;
+        let mut saw_summon = false;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 675 {
+                    saw_flame = true;
+                }
+                if s.0 == 673 {
+                    saw_summon = true;
+                }
+            }
+            if saw_flame || saw_summon {
+                break;
+            }
+        }
+        assert!(saw_flame || saw_summon, "the mage cast");
+    }
 }

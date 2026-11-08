@@ -180,6 +180,10 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.DD2DarkMageT1` (564) — the Old One's Army caster (`NPC.cs`
+    /// `:16445-16466`: 34×62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
+    /// noGravity, lavaImmune; the summon/heal/shadowflame casts).
+    DD2DarkMage,
     /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
     /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
@@ -602,6 +606,7 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 103,
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -711,6 +716,7 @@ impl NpcKind {
             103 => NpcKind::DD2JavelinT3,
             104 => NpcKind::DD2SkeletonT1,
             105 => NpcKind::DD2SkeletonT3,
+            106 => NpcKind::DD2DarkMage,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -920,6 +926,8 @@ impl NpcKind {
             NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => (18.0, 40.0),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (26.0, 52.0),
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => (18.0, 40.0),
+            // The Dark Mage: 34x62 (`NPC.cs`'s case 564).
+            NpcKind::DD2DarkMage => (34.0, 62.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1108,6 +1116,8 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 1000,
             NpcKind::DD2SkeletonT1 => 25,
             NpcKind::DD2SkeletonT3 => 480,
+            // The Dark Mage: 800 HP.
+            NpcKind::DD2DarkMage => 800,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1241,6 +1251,8 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 80,
             NpcKind::DD2SkeletonT1 => 18,
             NpcKind::DD2SkeletonT3 => 70,
+            // The Dark Mage: dmg 40.
+            NpcKind::DD2DarkMage => 40,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1920,6 +1932,8 @@ impl Npc {
             NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => 0.1,
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => 0.2,
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
+            // The Dark Mage: kb 0 (case 564 sets nothing).
+            NpcKind::DD2DarkMage => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -2000,6 +2014,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
+            _ => 0.4,
         }
     }
 
@@ -2078,6 +2093,8 @@ impl Npc {
             NpcKind::DD2JavelinT3 => 38,
             NpcKind::DD2SkeletonT1 => 12,
             NpcKind::DD2SkeletonT3 => 22,
+            // The Dark Mage: def 18.
+            NpcKind::DD2DarkMage => 18,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2228,7 +2245,8 @@ impl Npc {
             | NpcKind::DD2JavelinT2
             | NpcKind::DD2JavelinT3
             | NpcKind::DD2SkeletonT1
-            | NpcKind::DD2SkeletonT3 => 0.0,
+            | NpcKind::DD2SkeletonT3
+            | NpcKind::DD2DarkMage => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2519,6 +2537,8 @@ impl Npc {
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
                 self.update_dd2_skeleton(world, player)
             }
+            // The Dark Mage: aiStyle 109's cast machine.
+            NpcKind::DD2DarkMage => self.update_dark_mage(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2739,6 +2759,14 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // The Dark Mage: the 20-frame caster strip.
+            NpcKind::DD2DarkMage => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 20;
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -5478,6 +5506,95 @@ impl Npc {
         }
     }
 
+    /// `AI_109_DarkMage` (`NPC.cs:65791-66000`) — the Old One's Army's
+    /// caster. The materialize cycle rides `localAI[3]` (the port's
+    /// `caster_counter`: 60 ticks of fade-in from the portal) — the
+    /// vanilla's alpha fade is render-side; the CAST machine rides
+    /// `ai[0]`'s negative/positive cycle: the spawn request
+    /// (`ai[1] == 2` at `ai[0] == 64` fires the 673 summon marker +
+    /// `DD2Event.RaiseGoblins`), the shadowflame (`ai[1] == 0` at
+    /// `ai[0] == 32`: the 675 at 40 damage toward the player), the heal
+    /// (`ai[1] == 1` at `ai[0] == 40/48/56`: the 674 markers under the
+    /// target), and the re-arm (`ai[0] <= 0` → `ai[1]++` wrapped, the
+    /// −20/−120 rest). The flight: the hover toward the player with the
+    /// slow damp (0.5/0.1 speeds, the 0.96 damping), the rotation = vx
+    /// × 0.04.
+    ///
+    /// Deviations: `DD2Event.RaiseGoblins`/`CanRaiseGoblinsHere` ride the
+    /// DD2 framework (the summon request rides `wants_sphere`); the
+    /// `GetAttackDamage_ScaledByDifficulty` runs classic; the portal
+    /// sound/dust arms are unmodelled.
+    fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The materialize: `localAI[3]` counts to 60.
+        if self.caster_counter < 60 {
+            self.caster_counter += 1;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The hover (`:65950`'s tail): the slow approach with the damp.
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+        self.vx += (dx / d * 2.0 - self.vx) * 0.1;
+        self.vy += (dy / d * 2.0 - self.vy) * 0.1;
+        self.vx *= 0.96;
+        self.vy *= 0.96;
+        self.rotation = self.vx * 0.04;
+        // The cast cycle.
+        if self.ai[0] < 0.0 {
+            self.ai[0] += 1.0;
+        } else if self.ai[0] > 0.0 {
+            self.ai[0] -= 1.0;
+            // The summon arm (`ai[1] == 2` at 64).
+            if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
+                self.wants_hostile_shot
+                    .push((673u16, cx + self.facing as f32 * 24.0, cy - 40.0, 0.0, 0.0, 0));
+                // `DD2Event.RaiseGoblins` — the port's summon request.
+                self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy));
+            }
+            // The shadowflame (`ai[1] == 0` at 32).
+            if self.ai[1] == 0.0 && self.ai[0] == 32.0 {
+                let (sx, sy) = (cx + self.facing as f32 * 10.0, cy - 16.0);
+                let (fx, fy) = (pcx - sx, pcy - sy);
+                let fd = (fx * fx + fy * fy).sqrt().max(1.0);
+                let inv = 14.0 / fd;
+                self.wants_hostile_shot
+                    .push((675u16, sx, sy, fx * inv, fy * inv, 40));
+            }
+            // The heal arm (`ai[1] == 1` at 40/48/56): the markers under
+            // the target (the port places them at the vertical scan).
+            if self.ai[1] == 1.0 && matches!(self.ai[0], 40.0 | 48.0 | 56.0) {
+                self.wants_hostile_shot
+                    .push((674u16, cx + self.facing as f32 * 240.0, cy, 0.0, 0.0, 0));
+            }
+            if self.ai[0] <= 0.0 {
+                let prior = self.ai[1];
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 3.0 {
+                    self.ai[1] = 0.0;
+                }
+                self.ai[0] = -120.0;
+                if prior == 0.0 {
+                    self.ai[0] = -20.0;
+                }
+            }
+        }
+        // The re-arm (the vanilla's `ai[0] == 0 && localAI[3] >= 60`
+        // gate — the cast pattern picks per the roster state): with the
+        // materialize done and the rest elapsed the mage rearms.
+        if self.ai[0] == 0.0 && self.caster_counter >= 60 {
+            match self.ai[1] as u32 {
+                0 => self.ai[0] = 97.0,
+                1 => self.ai[0] = 127.0,
+                _ => self.ai[0] = 183.0,
+            }
+        }
+        // The flight.
+        self.x += self.vx;
+        self.y += self.vy;
+        let _ = rng;
+    }
+
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -7010,6 +7127,7 @@ impl Npc {
             NpcKind::DD2JavelinT3 => 103,
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
