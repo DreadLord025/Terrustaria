@@ -1744,6 +1744,9 @@ impl App {
                         "archer" => NpcKind::GoblinArcher,
                         "tinkerer" => NpcKind::GoblinTinkerer,
                         "merchant" => NpcKind::Merchant,
+                        "goldfish" => NpcKind::Goldfish,
+                        "piranha" => NpcKind::Piranha,
+                        "shark" => NpcKind::Shark,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
