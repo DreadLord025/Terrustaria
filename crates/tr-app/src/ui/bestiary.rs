@@ -460,6 +460,9 @@ fn portrait_data(
         NpcKind::MartianSaucerCore => 85, // NPC_395
         NpcKind::FlyingDutchman => 86,    // NPC_491
         NpcKind::FlyingDutchmanCannon => 87, // NPC_492
+        NpcKind::DD2GoblinT1 => 88,    // NPC_552
+        NpcKind::DD2GoblinT2 => 89,    // NPC_553
+        NpcKind::DD2GoblinT3 => 90,    // NPC_554
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -678,6 +681,14 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
+        }
+        // The DD2 goblins: the 14-frame NPC_552-554 strips over the 18x40
+        // frames.
+        (NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[88]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

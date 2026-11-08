@@ -145,6 +145,16 @@ pub enum NpcKind {
     /// (`NPC.cs:14632-14650`: 350×120, aiStyle 93, dmg 0, def 100, 50 HP,
     /// dontTakeDamage, value 0; the crew's 4 cannons fight for it).
     FlyingDutchman,
+    /// `NPCID.DD2GoblinT1` (552) — the Old One's Army goblin
+    /// (`NPC.cs:13891-13906`: 18×40, aiStyle 107, dmg 18, def 14, 30 HP,
+    /// kb 0.2, value 0, npcSlots 0, lavaImmune).
+    DD2GoblinT1,
+    /// `NPCID.DD2GoblinT2` (553) — the tier-2 goblin (170 HP, dmg 46,
+    /// def 20, the +0.01/+0.2 accel/speed).
+    DD2GoblinT2,
+    /// `NPCID.DD2GoblinT3` (554) — the tier-3 goblin (560 HP, dmg 70,
+    /// def 28, the +0.02/+0.4 accel/speed).
+    DD2GoblinT3,
     /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
     /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
@@ -556,6 +566,9 @@ impl NpcKind {
             NpcKind::MartianSaucerCore => 92,
             NpcKind::FlyingDutchman => 93,
             NpcKind::FlyingDutchmanCannon => 94,
+            NpcKind::DD2GoblinT1 => 95,
+            NpcKind::DD2GoblinT2 => 96,
+            NpcKind::DD2GoblinT3 => 97,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -654,6 +667,9 @@ impl NpcKind {
             92 => NpcKind::MartianSaucerCore,
             93 => NpcKind::FlyingDutchman,
             94 => NpcKind::FlyingDutchmanCannon,
+            95 => NpcKind::DD2GoblinT1,
+            96 => NpcKind::DD2GoblinT2,
+            97 => NpcKind::DD2GoblinT3,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -856,6 +872,8 @@ impl NpcKind {
             // 491/492).
             NpcKind::FlyingDutchman => (350.0, 120.0),
             NpcKind::FlyingDutchmanCannon => (30.0, 30.0),
+            // The DD2 goblins: 18x40 (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (18.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1030,6 +1048,10 @@ impl NpcKind {
             // (`NPC.cs`'s cases 491/492).
             NpcKind::FlyingDutchman => 50,
             NpcKind::FlyingDutchmanCannon => 2000,
+            // The DD2 goblins: 30/170/560 HP (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 30,
+            NpcKind::DD2GoblinT2 => 170,
+            NpcKind::DD2GoblinT3 => 560,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1150,6 +1172,10 @@ impl NpcKind {
             // The Dutchman 0 (contactless), its cannons 30.
             NpcKind::FlyingDutchman => 0,
             NpcKind::FlyingDutchmanCannon => 30,
+            // The DD2 goblins: 18/46/70 dmg (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 18,
+            NpcKind::DD2GoblinT2 => 46,
+            NpcKind::DD2GoblinT3 => 70,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1793,6 +1819,9 @@ impl Npc {
             // The Dutchman family: kb 0 (cases 491/492).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
+            // The DD2 goblins: kb 0.2/0.2/0.15 (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 => 0.2,
+            NpcKind::DD2GoblinT3 => 0.15,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1938,6 +1967,10 @@ impl Npc {
             // The Dutchman def 100, its cannons def 20.
             NpcKind::FlyingDutchman => 100,
             NpcKind::FlyingDutchmanCannon => 20,
+            // The DD2 goblins: 14/20/28 def (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 14,
+            NpcKind::DD2GoblinT2 => 20,
+            NpcKind::DD2GoblinT3 => 28,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2079,6 +2112,8 @@ impl Npc {
             // The Dutchman family: value 0 (the loot rides the guns).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
+            // The DD2 goblins: value 0 (cases 552-554 set nothing).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2350,6 +2385,10 @@ impl Npc {
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
             NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
+            // The DD2 goblins: aiStyle 107's improved walker.
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                self.update_dd2_goblin(world, player, dt)
+            }
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2544,6 +2583,15 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 8;
+                }
+            }
+            // The DD2 goblins: the 14-frame humanoid strip
+            // (`Main.npcFrameCount` 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -5156,6 +5204,52 @@ impl Npc {
         self.y += self.vy;
     }
 
+    /// `AI_107_ImprovedWalkers`'s DD2-goblin arm (`NPC.cs:63123-63145`) —
+    /// the Old One's Army attacker. The walk rides the improved walker
+    /// (the harness `num23` speed 1 + `num24` accel 0.07 + `num25` damp
+    /// 0.8 + the 30-pixel hop/jump frame); the tiers add (553: +0.01/+0.2;
+    /// 554: +0.02/+0.4); the wave acceleration rides `localAI[3]`'s ramp
+    /// (the port's `caster_counter`): below 60 the accel is
+    /// `0.01 + localAI[3]/60 * 0.05`. The scream/aggro arms
+    /// (`SoundID.DD2_GoblinScream`, `DD2Event.EnemiesShouldChasePlayers`)
+    /// ride the DD2Event framework — constants-off until it lands, so the
+    /// goblins walk toward the player through the walker harness.
+    fn update_dd2_goblin(&mut self, world: &World, player: &Player, dt: f32) {
+        let (pcx, pcy) = player.center();
+        // The wave-ramp: the port's `caster_counter` = `localAI[3]`.
+        let wave_accel = if self.caster_counter >= 60 {
+            self.caster_counter as f32
+        } else {
+            0.01 + self.caster_counter as f32 / 60.0 * 0.05
+        };
+        let (speed_add, accel_add) = match self.kind {
+            NpcKind::DD2GoblinT2 => (0.2, 0.01),
+            NpcKind::DD2GoblinT3 => (0.4, 0.02),
+            _ => (0.0, 0.0),
+        };
+        // The walker harness (the port's step; the accel rides the wave
+        // ramp + the tier's add).
+        let params = crate::npc_ai::WalkerParams {
+            speed: 1.0 + speed_add,
+            jump: -6.2,
+            aggro_x: 80.0 * TILE_PX,
+            aggro_y: 40.0 * TILE_PX,
+        };
+        crate::npc_ai::walker_step(self, world, pcx, pcy, params, GRAVITY, MAX_FALL);
+        // The DD2 accel overlay: the harness' own velocity bending stands
+        // in for the vanilla's `num24` (the accel ramp + the tier add);
+        // the vanilla applies it before the step — the port applies the
+        // ramp after and folds it into the drift.
+        let accel_el = (0.07 + accel_add + wave_accel).min(0.12);
+        let drift = if self.vx.abs() > params.speed {
+            -accel_el * self.vx.signum()
+        } else {
+            0.0
+        };
+        self.vx += drift;
+        let _ = dt;
+    }
+
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The init (`:36071-36092`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
@@ -6474,6 +6568,9 @@ impl Npc {
             NpcKind::MartianSaucerCore => 92,
             NpcKind::FlyingDutchman => 93,
             NpcKind::FlyingDutchmanCannon => 94,
+            NpcKind::DD2GoblinT1 => 95,
+            NpcKind::DD2GoblinT2 => 96,
+            NpcKind::DD2GoblinT3 => 97,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

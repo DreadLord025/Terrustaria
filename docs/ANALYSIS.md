@@ -2735,6 +2735,19 @@ the 240 shell: 100 damage, 15 speed, no jitter, on the rolling
 count, the port's `cast_windup`). The barrage resets the shot counter.
 The 240 shell rides the Dutchman's data row.
 
+## The DD2 goblins (M4-EVENT-5d)
+
+The Old One's Army attackers (`NPC.cs`'s 552-554): the improved-walker
+harness with the tiers' adds and the wave acceleration — the
+`localAI[3]` ramp (below 60 the accel element is
+`0.01 + localAI[3]/60*0.05`, past 60 it holds at the value) mirrors the
+DD2 event's escalating pressure. The port's `caster_counter` stands in
+for `localAI[3]` (the counter ticks with the Wave).
+
+The DD2 framework (the crystal 548, the tavernkeep 550, the
+`DD2Event.EnemiesShouldChasePlayers` chase flag, the wave tiers' bosses
+— the Dark Mage 564, Betsy 551) is the next slice.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

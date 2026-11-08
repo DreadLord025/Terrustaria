@@ -191,6 +191,9 @@ pub(crate) struct NpcAssets {
     /// its cannons (9 frames of 30x30).
     pub(crate) dutchman: Option<BgTex>,
     pub(crate) dutchman_cannon: Option<BgTex>,
+    /// `NPC_552/553/554` — the DD2 goblin attackers (14-frame strips of
+    /// 18x40; the sheets are the shared humanoid shape).
+    pub(crate) dd2_goblins: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -291,6 +294,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         saucer_core: sky_tex(atlas, "NPC_395", None),
         dutchman: sky_tex(atlas, "NPC_491", None),
         dutchman_cannon: sky_tex(atlas, "NPC_492", None),
+        dd2_goblins: sky_tex(atlas, "NPC_553", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1024,6 +1028,14 @@ pub(crate) fn draw_npcs(
                 assets.dutchman_cannon.as_ref(),
                 assets.dutchman_cannon.as_ref().map_or(30.0, |t| t.h / 9.0),
                 [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            // The DD2 goblins: the 14-frame NPC_552-554 strips over the
+            // 18x40 frames (the sheets are the shared humanoid shape).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (
+                assets.dd2_goblins.as_ref(),
+                assets.dd2_goblins.as_ref().map_or(40.0, |t| t.h / 14.0),
+                [18.0, 40.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (

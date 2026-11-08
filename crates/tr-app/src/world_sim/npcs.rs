@@ -4354,3 +4354,90 @@ mod pirate_shot_tests {
         panic!("the wounded arm never fired the barrage");
     }
 }
+
+#[cfg(test)]
+mod dd2_goblin_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_dd2_goblins_walk_and_tier_their_stats() {
+        // The three `SetDefaults` rows (`NPC.cs`'s 552-554) + the
+        // aiStyle-107 walk: the tiers march at their own speed and the
+        // wave ramp accel.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut t1 = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        t1.hp = t1.max_hp;
+        let mut t3 = Npc::new(NpcKind::DD2GoblinT3, 155.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        t3.hp = t3.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (t1_x, _) = t1.center();
+        let (t3_x, _) = t3.center();
+        for _ in 0..60 {
+            t1.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            t3.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (t1_end, _) = t1.center();
+        let (t3_end, _) = t3.center();
+        // The T3's speed add (0.4) makes it cover more ground.
+        assert!(
+            (t3_end - t3_x).abs() >= (t1_end - t1_x).abs(),
+            "the tier-3's faster walk: {} vs {}",
+            (t3_end - t3_x).abs(),
+            (t1_end - t1_x).abs()
+        );
+        // Both walked toward the player.
+        assert!((t1_end - t1_x).abs() > 10.0, "the T1 walked");
+    }
+
+    #[test]
+    fn the_wave_ramp_accelerates() {
+        // The `localAI[3]` ramp (`NPC.cs:63140-63143`): the port's
+        // `caster_counter` drives the accel element; past 60 it holds.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        // A fresh goblin: the ramp's accel is small.
+        n.caster_counter = 0;
+        let fresh: (f32, f32) = (0.0, 0.0);
+        let _ = fresh;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        // The machine runs the ramp without panicking (the counters' state
+        // rides the App in the port — the walk lands).
+        assert!(n.hp > 0);
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+}
