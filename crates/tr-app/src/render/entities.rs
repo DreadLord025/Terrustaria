@@ -134,6 +134,8 @@ pub(crate) struct NpcAssets {
     pub(crate) painter: Option<BgTex>,
     pub(crate) witch_doctor: Option<BgTex>,
     pub(crate) clothier: Option<BgTex>,
+    /// `NPC_368.xnb` — the Travelling Merchant sheet.
+    pub(crate) travelling_merchant: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
@@ -269,6 +271,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         painter: sky_tex(atlas, "NPC_227", None),
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
+        travelling_merchant: sky_tex(atlas, "NPC_368", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
@@ -944,6 +947,13 @@ pub(crate) fn draw_npcs(
             // The Clothier: the same humanoid shape over NPC_54.
             NpcKind::Clothier => (
                 assets.clothier.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Travelling Merchant: the same humanoid shape over NPC_368.
+            NpcKind::TravellingMerchant => (
+                assets.travelling_merchant.as_ref(),
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],

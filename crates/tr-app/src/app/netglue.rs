@@ -1272,6 +1272,7 @@ fn npc_seed(
         | crate::npc::NpcKind::Painter
         | crate::npc::NpcKind::WitchDoctor
         | crate::npc::NpcKind::Clothier
+        | crate::npc::NpcKind::TravellingMerchant
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
