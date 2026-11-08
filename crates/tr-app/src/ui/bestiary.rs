@@ -458,6 +458,8 @@ fn portrait_data(
         NpcKind::MartianSaucerTurret => 83, // NPC_393
         NpcKind::MartianSaucerCannon => 84, // NPC_394
         NpcKind::MartianSaucerCore => 85, // NPC_395
+        NpcKind::FlyingDutchman => 86,    // NPC_491
+        NpcKind::FlyingDutchmanCannon => 87, // NPC_492
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -663,6 +665,19 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 11.0)
                 .unwrap_or(90.0);
             (sheet_i, h, 120.0, h, white)
+        }
+        // The Dutchman: the 1-frame ship strip + the cannons' 9-frame.
+        (NpcKind::FlyingDutchman, _) => {
+            let h = lookups.bestiary_npc_sheets[86]
+                .map(|s| s.height as f32)
+                .unwrap_or(120.0);
+            (sheet_i, h, 350.0, h, white)
+        }
+        (NpcKind::FlyingDutchmanCannon, _) => {
+            let h = lookups.bestiary_npc_sheets[87]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

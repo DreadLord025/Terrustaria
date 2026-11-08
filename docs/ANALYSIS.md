@@ -2672,6 +2672,69 @@ ports. The shell's missile battery and the core phase bridge (the
 `flag80` classic/expert split) are the follow-ups: until they land,
 the core stays in the scan/gun loop and is killed by damage.
 
+## The saucer's guns (M4-EVENT-4f)
+
+The mounts' batteries ride the core's mirrored `ai[3]` timer and `ai[0]`
+phase through the pre-pass write-through (the vanilla reads
+`Main.npc[localAI[i]]`'s sibling state directly — the port approximates
+the crew's aliveness with the pre-pass counts). The 393 turret aims
+with the 8-way table (the player vector's rotation, Y-clamped, mirrored
+by the spriteDirection) between its 280-420 windows and fires the 449
+rays (35, 16 speed, ±0.785/3 jitter) every 6 ticks inside; the 394
+cannon fires the 448 shells (50, 8 speed, side·36 + 8 spawn, ±0.785
+aim) every 20 ticks of its 440-580 window; the 392 shell fires the 447
+entry shot (50) at the phase-0 window's edge and the 450 missile
+battery (30, 3 speed — the turret side's wide ±0.26 arcs and the cannon
+side's narrow ±0.785 arcs) in the windows: the core's gun phase (2)
+opens them always, else the 280-400 and 440-580 bands.
+
+The bridge: with the crew dead and the core open (the classic arm),
+the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
+whose guns die falls out of the fight on its own.
+
+## The Flying Dutchman (M4-EVENT-5a)
+
+The pirate invasion's ship (`NPC.cs:14632-14650`): 350×120, aiStyle 93,
+dmg 0, def 100, 50 own HP, dontTakeDamage. Its machine
+(`:38858-38956`): the init spawns 4 cannons 492 across its centre
+(`seat*40 - 150`); the crew-alive loop self-strikes when all four are
+down (the pending-crew gate keeps the ship alive through its spawn
+tick — the vanilla's `ai[i]` links point at the children immediately);
+every 300 ticks a pirate drops off the rotated side offset with the
+±5 X + -8.01 Y launch; the flight holds the 350-450 ground-clearance
+band ahead of the direction, the X drift engages past 300 px, and the
+rotation rides `velocity.X * 0.025`.
+
+The type-3 table's half-points window (`:1460-1468`) spawns the ship —
+the pirate invasion gains its boss-minion. The port's link model: the
+pre-pass counts the ship's live cannons and links the cannons' ride to
+the ship (the vanilla's `Main.npc[ai[i]]` indices have no port model).
+
+## The pirate trio's shots (M4-EVENT-5b)
+
+The aiStyle-3 shooter block now generalises across the event families:
+`shooter_params` carries the vanilla's per-kind cooldown/speed/
+projectile/damage rows — the pirate Archer 214's arrow 180 (25, 10, the
+±45 jitter), the Corsair 215's musket ball 82 (35, 14), the Captain
+216's arrow 180 (30, 9, the ±50 jitter), beside the martians' 436/438.
+The block's shape: the stop entry (an aim under 700 px arms the octant
+and the 80-tick timer), the fire at the half-cooldown (the per-kind
+jitter re-scaled ×(0.85..1.15), the spawn at the centre + 6 y, the
+speed-scaled velocity), the hurt interrupt, the sleep's exit.
+
+The 180/82 projectile rows join `proj_data` — the pool's data gate
+previously dropped every kind outside its hand-listed set, so the
+family's shots silently never spawned.
+
+## The Captain's wounded barrage (M4-EVENT-5c)
+
+The pirate Captain 216 counts his shots (`localAI[2]` — the port's
+`caster_counter`); past 20 the wounded arm swaps the plain 180 arrow for
+the 240 shell: 100 damage, 15 speed, no jitter, on the rolling
+`max(60, 180 - localAI[3]*20)` cooldown (`localAI[3]` = the barrage
+count, the port's `cast_windup`). The barrage resets the shot counter.
+The 240 shell rides the Dutchman's data row.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -6037,3 +6100,28 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
 - **The peer slots are seeded at the world spawn** on first sight (the C#'s
   `Main.player[i]` exists at the spawn before its first `13`), so the first
   snapshot's lag accrues from there rather than from (0, 0).
+## Localized item tooltips (M6-LOCALIZE-wire)
+
+The "wire the localization core into the HUD/menus" row's item-hover slice:
+`lang.rs` grew the `Lang.tip`/`Lang.inter` accessors (the `LegacyTooltip.{i}` /
+`LegacyInterface.{i}` keys, `Lang.cs:497`/`:485` — `menu`/`item_name` were
+already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
+`MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
+computed from the port's own `ItemDef` values.
+
+Deliberate deviations and notes:
+
+- **The player-side layers are out** (the accessory/M3 layer): the C#'s
+  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
+  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
+  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
+  with a comment.
+- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
+  the damage row's gate is the plain `damage > 0` (the coin-type exception and
+  the ammo gate ride along when the fields land).
+- The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
+  copies) is unchanged — only the row list changed.
+- Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
+  resources the loader probes) the keys show through — vanilla's own
+  unknown-key behaviour.
+

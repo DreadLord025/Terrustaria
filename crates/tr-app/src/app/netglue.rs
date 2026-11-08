@@ -1355,6 +1355,8 @@ fn npc_seed(
         | crate::npc::NpcKind::MartianSaucerTurret
         | crate::npc::NpcKind::MartianSaucerCannon
         | crate::npc::NpcKind::MartianSaucerCore
+        | crate::npc::NpcKind::FlyingDutchman
+        | crate::npc::NpcKind::FlyingDutchmanCannon
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

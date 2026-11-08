@@ -142,6 +142,14 @@ pub enum NpcKind {
     /// `NPCID.MartianSaucerCannon` (394) — the saucer cannon
     /// (`NPC.cs:14025-14044`: 46×36, aiStyle 75, 3500 HP, def 20, dmg 60).
     MartianSaucerCannon,
+    /// `NPCID.FlyingDutchman` (491) — the pirate invasion's ship
+    /// (`NPC.cs:14632-14650`: 350×120, aiStyle 93, dmg 0, def 100, 50 HP,
+    /// dontTakeDamage, value 0; the crew's 4 cannons fight for it).
+    FlyingDutchman,
+    /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
+    /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
+    /// hide; rides the ship and fires the 240 shots).
+    FlyingDutchmanCannon,
     /// `NPCID.MartianSaucerCore` (395) — the saucer boss
     /// (`NPC.cs:14045-14060`: 120×90, aiStyle 76, dmg 80, 10000 HP,
     /// def 0, dontTakeDamage, npcSlots 6).
@@ -547,6 +555,8 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 90,
             NpcKind::MartianSaucerCannon => 91,
             NpcKind::MartianSaucerCore => 92,
+            NpcKind::FlyingDutchman => 93,
+            NpcKind::FlyingDutchmanCannon => 94,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -643,6 +653,8 @@ impl NpcKind {
             90 => NpcKind::MartianSaucerTurret,
             91 => NpcKind::MartianSaucerCannon,
             92 => NpcKind::MartianSaucerCore,
+            93 => NpcKind::FlyingDutchman,
+            94 => NpcKind::FlyingDutchmanCannon,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -841,6 +853,10 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => (40.0, 16.0),
             NpcKind::MartianSaucerCannon => (46.0, 36.0),
             NpcKind::MartianSaucerCore => (120.0, 90.0),
+            // The Dutchman 350x120 + its cannons 30x30 (`NPC.cs`'s cases
+            // 491/492).
+            NpcKind::FlyingDutchman => (350.0, 120.0),
+            NpcKind::FlyingDutchmanCannon => (30.0, 30.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1011,6 +1027,10 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 5000,
             NpcKind::MartianSaucerCannon => 3500,
             NpcKind::MartianSaucerCore => 10000,
+            // The Dutchman 50 (the ship's own bar), its cannons 2000
+            // (`NPC.cs`'s cases 491/492).
+            NpcKind::FlyingDutchman => 50,
+            NpcKind::FlyingDutchmanCannon => 2000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1128,6 +1148,9 @@ impl NpcKind {
             NpcKind::MartianSaucerTurret => 60,
             NpcKind::MartianSaucerCannon => 60,
             NpcKind::MartianSaucerCore => 80,
+            // The Dutchman 0 (contactless), its cannons 30.
+            NpcKind::FlyingDutchman => 0,
+            NpcKind::FlyingDutchmanCannon => 30,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1297,7 +1320,10 @@ pub struct Npc {
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
     /// into the pool (the `wants_sphere` shape).
-    pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
+    /// The hostile-shot requests (the `Projectile.NewProjectile` arms): the
+    /// (kind, x, y, vx, vy, damage) payloads the sim resolves into the pool
+    /// (the `wants_sphere` shape; the Vec = a per-tick volley).
+    pub wants_hostile_shot: Vec<(u16, f32, f32, f32, f32, i32)>,
     /// The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm:
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
@@ -1313,6 +1339,28 @@ pub struct Npc {
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
+    /// The saucer family's write-through payload (the mounts read the
+    /// core's live state): the core's `ai[3]` timer and `ai[0]` phase,
+    /// and the crew counts within the link's reach (the turrets + the
+    /// cannons — the mounts' own `Main.npc[]` siblings have no port
+    /// model).
+    pub carrier_timer: f32,
+    pub carrier_phase: f32,
+    pub crew_turrets: i32,
+    pub crew_cannons: i32,
+    /// The Dutchman's pirate-drop payload (`AI_093`'s `Next(300)` arm,
+    /// `NPC.cs:38868-38877`): the (kind, x, y) spawn the sim resolves
+    /// through `wants_sphere` — the drop's velocity rides the ship's.
+    pub wants_dutchman_drop: Option<(NpcKind, f32, f32)>,
+    /// The Dutchman's cannon-crew spawn request (`AI_093`'s init arm:
+    /// the 4 cannons 492 at the ship's centre, `NPC.cs:38859-38872`).
+    pub wants_dutchman_crew: bool,
+}
+
+/// The 2-D rotation helper for the Dutchman's drop offsets
+/// (`Vector2.RotatedBy`).
+pub(crate) fn rot(x: f32, y: f32, angle: f32) -> (f32, f32) {
+    (x * angle.cos() - y * angle.sin(), x * angle.sin() + y * angle.cos())
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -1664,12 +1712,18 @@ impl Npc {
             defense_override: None,
             dont_take_damage: false,
             swarm_done: false,
-            wants_hostile_shot: None,
+            wants_hostile_shot: Vec::new(),
             wants_martian_invasion: false,
             wants_scutlix: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
             wants_saucer_crew: false,
+            carrier_timer: -1.0,
+            carrier_phase: 0.0,
+            crew_turrets: 0,
+            crew_cannons: 0,
+            wants_dutchman_drop: None,
+            wants_dutchman_crew: false,
         }
     }
 
@@ -1745,6 +1799,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The Dutchman family: kb 0 (cases 491/492).
+            NpcKind::FlyingDutchman => 0.0,
+            NpcKind::FlyingDutchmanCannon => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1887,6 +1944,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 20,
             NpcKind::MartianSaucerCannon => 20,
             NpcKind::MartianSaucerCore => 0,
+            // The Dutchman def 100, its cannons def 20.
+            NpcKind::FlyingDutchman => 100,
+            NpcKind::FlyingDutchmanCannon => 20,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2025,6 +2085,9 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The Dutchman family: value 0 (the loot rides the guns).
+            NpcKind::FlyingDutchman => 0.0,
+            NpcKind::FlyingDutchmanCannon => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2242,7 +2305,7 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => self.update_golem(world, player),
-            NpcKind::Deerclops => self.update_golem(world, player),
+            NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Deerclops => self.update_golem(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
@@ -2290,16 +2353,28 @@ impl Npc {
             // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
             NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
-                self.update_saucer_mount(world)
+                self.update_saucer_mount(world, rng)
             }
+            // The pirate ship: aiStyle 93's crew-carrier machine + its
+            // cannons' aiStyle-75 ride.
+            NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
+            NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
+            NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
-            NpcKind::PirateDeckhand
-            | NpcKind::PirateCaptainsMate
-            | NpcKind::PirateArcher
+            NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => {
+                self.update_skeleton(world, player, dt)
+            }
+            // The pirate shooters: the aiStyle-3 shooter block (the stop
+            // entry's 80-tick timer, the per-kind projectile/speed/damage,
+            // the fire at the half-cooldown) — the Archer's arrows, the
+            // Corsair's musket balls, the Captain's wounded barrage.
+            NpcKind::PirateArcher
             | NpcKind::PirateCorsair
-            | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
+            | NpcKind::PirateCaptain => self.update_martian_shooter(world, player, rng),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -2478,6 +2553,18 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 8;
+                }
+            }
+            // The Dutchman: the 1-frame ship strip; its cannons ride the
+            // 9-frame strip (`Main.npcFrameCount`).
+            NpcKind::FlyingDutchman => {
+                self.frame = 0;
+            }
+            NpcKind::FlyingDutchmanCannon => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
                 }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
@@ -4589,6 +4676,22 @@ impl Npc {
         }
     }
 
+    /// The per-kind table (`NPC.cs:59100-59500`'s rows): the fire cooldown
+    /// `num162`, the shot speed `num164`, the projectile `num170` and its
+    /// damage `num169` — the pirate trio rides it (the Archer 214's arrow
+    /// 180 at 25/10, the Corsair 215's musket ball 82 at 35/14, the Captain
+    /// 216's arrow 180 at 30/9 with the ±50 jitter), the martians too.
+    fn shooter_params(kind: NpcKind) -> (u32, f32, u16, i32) {
+        match kind {
+            NpcKind::PirateArcher => (50, 10.0, 180, 25),
+            NpcKind::PirateCorsair => (90, 14.0, 82, 35),
+            NpcKind::PirateCaptain => (60, 9.0, 180, 30),
+            NpcKind::RayGunner => (80, 7.0, 438, 30),
+            NpcKind::BrainScrambler => (80, 11.0, 436, 24),
+            _ => (80, 11.0, 436, 24),
+        }
+    }
+
     /// `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`) for the
     /// BrainScrambler 381 / the RayGunner 382. The walk rides the walker
     /// (the per-type speed folds); the stop-and-fire cycle: the
@@ -4603,6 +4706,7 @@ impl Npc {
     /// walker's (the per-type 5/0.25/0.7 table folds like the other
     /// aiStyle-3 families).
     fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (mut cooldown, speed, proj, dmg) = Self::shooter_params(self.kind);
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -4610,11 +4714,7 @@ impl Npc {
         // The octant table (the vanilla's `ai[2]` 1..5 rows).
         let octant = |dx: f32, dy: f32| -> f32 {
             if dy.abs() > dx.abs() * 2.0 {
-                if dy > 0.0 {
-                    1.0
-                } else {
-                    5.0
-                }
+                if dy > 0.0 { 1.0 } else { 5.0 }
             } else if dx.abs() > dy.abs() * 2.0 {
                 3.0
             } else if dy > 0.0 {
@@ -4632,34 +4732,45 @@ impl Npc {
             self.ai[2] = 0.0;
         }
         if self.ai[2] > 0.0 {
-            if self.ai[1] == 40.0 {
-                // The fire (`:59204-59602`'s 381/382 arm).
+            // The fire (`:59204-59602`): at the half-cooldown the aim
+            // carries the per-kind jitter (±100×0.4 for the martians'
+            // rays, ±50 for the Captain's arrow) re-scaled ×(0.85..1.15);
+            // the spawn is the centre + 6 y, the velocity at the speed.
+            // The Captain's WOUNDED arm (`:59170-59235` + `:59603-59606`):
+            // `localAI[2]` counts the shots (the port's `caster_counter`),
+            // past 20 the barrage fires the 240 shell (100 dmg, 15 speed,
+            // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
+            // cooldown (the port's `cast_windup` as `localAI[3]`).
+            let captain_wounded = self.kind == NpcKind::PirateCaptain
+                && self.caster_counter >= 20;
+            if self.ai[1] * 2.0 >= cooldown as f32 {
                 let mut ax = dx;
                 let mut ay = dy;
-                // The ±100 × 0.4 jitter + the 0.85..1.15 scale.
-                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
-                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                let (jit, jit_scale) = if captain_wounded {
+                    (0.0, 0.0)
+                } else if self.kind == NpcKind::PirateCaptain {
+                    (50.0, 1.0)
+                } else {
+                    (100.0, 0.4)
+                };
+                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
+                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
                 ax *= 0.85 + 0.3 * crate::app::rand01(rng);
                 ay *= 0.85 + 0.3 * crate::app::rand01(rng);
                 let len = (ax * ax + ay * ay).sqrt().max(0.001);
-                // The speed: 11 (381) / 7 (382); the projectile 436 dmg 24
-                // (381) / 438 dmg 30 (382).
-                let (proj, dmg, speed) = if self.kind == NpcKind::RayGunner {
-                    (438u16, 30, 7.0)
+                let shot_speed = if captain_wounded { 15.0 } else { speed };
+                let (shot_proj, shot_dmg) = if captain_wounded {
+                    (240u16, 100)
                 } else {
-                    (436u16, 24, 11.0)
+                    (proj, dmg)
                 };
-                let inv = speed / len;
-                // The spawn: the centre + y 6, the velocity at the aim.
-                self.wants_hostile_shot = Some((
-                    proj,
-                    cx,
-                    cy + 6.0,
-                    ax * inv,
-                    ay * inv,
-                    dmg,
-                ));
+                let inv = shot_speed / len;
+                self.wants_hostile_shot
+                    .push((shot_proj, cx, cy + 6.0, ax * inv, ay * inv, shot_dmg));
                 self.ai[2] = octant(ax, ay);
+                if self.kind == NpcKind::PirateCaptain {
+                    self.caster_counter += 1;
+                }
             }
         } else {
             // The aggression/stop entry (`:59630-59697`): grounded +
@@ -4678,6 +4789,18 @@ impl Npc {
                 }
                 let _ = (&mut ax, &mut ay);
             }
+        }
+        // The Captain's rolling cooldown (`:59174-59179`): wounded, the
+        // timer is `max(60, 180 - the barrage count * 20)`.
+        if self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20 {
+            let cd = (60).max(180 - self.cast_windup * 20);
+            cooldown = cd as u32;
+        }
+        // The barrage's counter reset: after the 240 shell leaves the
+        // vanilla's `localAI[2] = 0` (`:59523`).
+        if self.kind == NpcKind::PirateCaptain && self.caster_counter > 20 && self.ai[2] == 0.0 {
+            self.cast_windup += 1;
+            self.caster_counter = 0;
         }
         // The sleep's exit (`:59618-59623`).
         if self.ai[1] <= 0.0 {
@@ -4740,9 +4863,7 @@ impl Npc {
         if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
             let (px, py) = (pcx - cx, pcy - cy);
             if (px * px + py * py).sqrt() < 700.0 {
-                if self.ai[1] == 60.0
-                    && (px > 0.0) == (self.facing == 1)
-                {
+                if self.ai[1] == 60.0 && (px > 0.0) == (self.facing == 1) {
                     // The fire (`:35700-35724`): the 438 ray, 30 damage,
                     // 7 speed, from the centre - UnitY * 4, the aim
                     // ±50 ×(0.8..1.2).
@@ -4755,7 +4876,8 @@ impl Npc {
                     ay *= 0.8 + 0.4 * crate::app::rand01(rng);
                     let len = (ax * ax + ay * ay).sqrt().max(0.001);
                     let inv = 7.0 / len;
-                    self.wants_hostile_shot = Some((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
+                    self.wants_hostile_shot
+                        .push((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
                 } else {
                     // The idle aim (`:35727-35749`): the octant + the X
                     // damp.
@@ -4815,25 +4937,28 @@ impl Npc {
         }
     }
 
-    /// `AI()`'s aiStyle-75 arms for the saucer family (`NPC.cs:35530-35612`
-    /// + `:35921-36060`): the mounts ride the core. The core's spawn arm
-    /// hands each child its `ai[0]` (the core link) and its `ai[1]` (the
-    /// seat index); the mounts' function is the ride: the position centres
-    /// on the core with the family offset (the shell `UnitY * 2`, the
-    /// turret `UnitY * 29 ± UnitX * 60`, the cannon `UnitY * -13 ± UnitX
-    /// * 49`), the velocity zeroes, the direction and spriteDirection
-    /// mirror the core's. The shell's missile battery + the core phase
-    /// bridge (`:35921-36060`) is the follow-up — the port rides only.
+    /// `AI`'s aiStyle-75 arms for the saucer family (`NPC.cs:35616-36060`)
+    /// — the mounts ride the core (the seat offsets) and run their
+    /// batteries off the core's mirrored `ai[3]` timer and `ai[0]` phase
+    /// (the pre-pass write-through): the 393 TURRET's 8-way aim + the 449
+    /// rays (35 dmg, 16 speed, the ±0.785/3 jitter, every 6 ticks in the
+    /// 280-420 window), the 394 CANNON's 448 shells (50 dmg, 8 speed, the
+    /// ±0.785 aim, the side·36 + 8 spawn, every 20 ticks in the 440-580
+    /// window), and the 392 SHELL's 447 core-shot (50 dmg at the phase-0
+    /// window's entry) + the 450 missile battery (30 dmg, 3 speed, four
+    /// emitters gated by the crew's aliveness) + the phase bridge (the
+    /// crew dead + the core open → the core's `ai[0]` = 3, the classic
+    /// arm).
     ///
-    /// The link: the pre-pass write-through on `carrier_x/y` (the core's
-    /// centre) — the vanilla's `Main.npc[ai[0]]` index has no port model.
-    fn update_saucer_mount(&mut self, _world: &World) {
+    /// Deviations: `GetAttackDamage_ForProjectiles` runs as the classic
+    /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
+    /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
+    /// expert-mode bridge arm is constants-off (no difficulty flags).
+    fn update_saucer_mount(&mut self, _world: &World, rng: &mut u64) {
         if self.carrier_x < 0.0 {
             return;
         }
         let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        // The seat offsets: `ai[1]` selects the side.
         let side = if self.ai[1] == 1.0 { 1.0 } else { -1.0 };
         let (ox, oy) = match self.kind {
             NpcKind::MartianSaucer => (0.0, 2.0),
@@ -4842,9 +4967,109 @@ impl Npc {
         };
         self.x = self.carrier_x - w * 0.5 + ox;
         self.y = self.carrier_y - h * 0.5 + oy;
-        // The direction mirror: the core's `direction` rides the
-        // write-through's side (the mount's own `facing`).
-        let _ = (cx, cy);
+        // The mounted timers mirror the core's. A mount created by the
+        // core's own crew init starts with `carrier_timer = -1`; the
+        // pre-pass overwrites it on the first tick — seed it from the
+        // mount's own mirrored `ai[3]` so the very first tick is in step.
+        if self.carrier_timer < 0.0 {
+            self.carrier_timer = self.ai[3];
+        }
+        self.ai[3] = self.carrier_timer;
+        let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        match self.kind {
+            NpcKind::MartianSaucerTurret => {
+                // The 280-420 window (`NPC.cs:35750-35894`).
+                let t = self.ai[3];
+                #[cfg(test)]
+                eprintln!(
+                    "[turret-dbg] t={} in_window={} core_open={} carrier={} side={}",
+                    t,
+                    (t >= 280.0 && t < 420.0),
+                    core_open,
+                    self.carrier_timer,
+                    side
+                );
+                let in_window = t >= 280.0 && t < 420.0;
+                if in_window {
+                    if core_open && (t - 280.0) % 6.0 == 0.0 {
+                        // The 449 ray at the aim (ai[2] = the rotation).
+                        let ang =
+                            self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
+                        self.wants_hostile_shot
+                            .push((449u16, cx + vx, cy + vy, vx, vy, 35));
+                    }
+                }
+                // The aim rides the fire test's own update (the player
+                // vector's rotation, Y-clamped) — ported as the closest
+                // octant-equivalent: the machine's `ai[2]` counts toward
+                // the player when the window is closed.
+                let _ = core_open;
+            }
+            NpcKind::MartianSaucerCannon => {
+                // The 440-580 window (`NPC.cs:35820-35858`).
+                let t = self.ai[3];
+                let in_window = t >= 440.0 && t < 580.0;
+                if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
+                    let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                    let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
+                    self.wants_hostile_shot
+                        .push((448u16, cx + side * 36.0, cy + 8.0, vx, vy, 50));
+                }
+            }
+            _ => {
+                // The shell (`NPC.cs:35895-36060`): the phase-0 window's
+                // 447 entry shot + the 450 missile battery.
+                let t = self.ai[3];
+                let core_phase0 = self.carrier_phase == 0.0;
+                if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
+                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 50));
+                }
+                // The windows: the core's gun phase (2) opens them always;
+                // else the 280-400 and 440-580 bands.
+                let (fire_window, wide, narrow) = if self.carrier_phase == 2.0 {
+                    (true, 120.0, 120.0)
+                } else if t >= 280.0 && t < 400.0 {
+                    (true, 60.0, 90.0)
+                } else if t >= 440.0 && t < 580.0 {
+                    (true, 90.0, 60.0)
+                } else {
+                    (false, 1000.0, 1000.0)
+                };
+                if fire_window && core_open {
+                    let dmg = 30;
+                    let roll = crate::app::rand01(rng);
+                    // The turret emitters (the wide arcs).
+                    if self.crew_turrets > 0 && roll < 1.0 / wide {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
+                        self.wants_hostile_shot.push((
+                            450u16,
+                            cx - side * 55.0,
+                            cy + 35.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                        let (vx, vy) = (
+                            -(roll * 2.0) * ang.cos() * 3.0 - 1.0,
+                            -ang.sin() * 3.0 - 3.0,
+                        );
+                        self.wants_hostile_shot.push((
+                            450u16,
+                            cx - side * 45.0,
+                            cy - 20.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36520`) — the Martian
@@ -4863,6 +5088,83 @@ impl Npc {
     /// Difficulty` run as the classic constants; `TargetClosest` folds to
     /// the single player; the off-world clamp keeps the position in the
     /// world box.
+    /// `AI`'s aiStyle-93 block (`NPC.cs:38858-38956`) — the Flying
+    /// Dutchman's machine: the crew carrier. The init spawns 4 cannons
+    /// 492 at `Centre + seat*40 - 150` (the seat `ai[1]`, the 60*seat
+    /// spawn delay folded out); the crew-alive loop kills the ship when
+    /// all four die (`flag99` → the self-strike); every 300 ticks a
+    /// pirate (213/215/214/212) drops off the ship's side with the
+    /// upward velocity; the flight holds the 350-450 ground-clearance
+    /// band (the ±4 Y ease toward the band), the X drift toward the
+    /// player, the rotation = velocity.X * 0.025.
+    ///
+    /// Deviations: the child index links (`Main.npc[ai[i]]`) ride the
+    /// pre-pass's crew count + the write-through; the dust spawns are
+    /// unmodelled; the cannons' stagger (the `60*seat` timeLeft) folds
+    /// out (the port spawns them at once).
+    fn update_flying_dutchman(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The init (`:38859-38872`).
+        if !self.wants_scutlix {
+            self.wants_scutlix = true; // the init latch
+            self.wants_dutchman_crew = true;
+        }
+        // The crew-alive loop (`:38874-38890`): all dead → the self-strike.
+        // While the init's spawn request is pending (the cannons come at
+        // the sim's resolve) the count still reads 0 — the ship lives.
+        if self.crew_cannons <= 0 && !self.wants_dutchman_crew {
+            self.hp = 0;
+            return;
+        }
+        // The pirate drop (`:38892-38902`).
+        if crate::app::rand01(rng) < 1.0 / 300.0 {
+            // The rotated side offset: (rand01-0.5)*(width-70) × ±20-height/2-20.
+            let jx = (crate::app::rand01(rng) - 0.5) * (350.0 - 70.0);
+            let jy = (crate::app::rand01(rng) - 0.5) * 20.0 - 120.0 / 2.0 - 20.0;
+            let (rx, ry) = rot(jx, jy, self.rotation);
+            let kind = match (crate::app::rand01(rng) * 4.0) as u32 {
+                0 => NpcKind::PirateCaptainsMate,
+                1 => NpcKind::PirateCorsair,
+                2 => NpcKind::PirateArcher,
+                _ => NpcKind::PirateDeckhand,
+            };
+            let (cx, cy) = self.center();
+            self.wants_dutchman_drop = Some((kind, cx + rx, cy + ry));
+        }
+        self.ai[0] = self.ai[0].max(0.0) + 1.0; // the crew-monitor tick (the port's counter)
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, _pcy) = player.center();
+        // The ground clearance 10 tiles ahead (`:38904-38922`).
+        let ahead = (cx / TILE_PX) as i32 + self.vx.signum() as i32 * 10;
+        let feet = ((self.y + h) / TILE_PX) as i32;
+        let clear = ground_clearance(world, ahead, feet);
+        let d = clear;
+        // The 350-450 band (`:38923-38942`).
+        if d < 350.0 {
+            let mut target = d - 350.0;
+            if target < -4.0 {
+                target = -4.0;
+            }
+            self.vy += (target - self.vy) * 0.05;
+        } else if d > 450.0 {
+            let mut target = d - 350.0;
+            if target > 4.0 {
+                target = 4.0;
+            }
+            self.vy += (target - self.vy) * 0.05;
+        } else {
+            self.vy *= 0.95;
+        }
+        // The X drift (`:38944-38947`).
+        if (pcx - cx).abs() >= 300.0 && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32) {
+            self.vx += self.facing as f32 * 0.06;
+        }
+        self.rotation = self.vx * 0.025;
+        // The flight (noGravity).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The init (`:36071-36092`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
@@ -5046,7 +5348,7 @@ impl Npc {
                     self.ai[2] = if pcx > cx { 1.0 } else { -1.0 };
                     // The 447 projectile at (center, center) with the
                     // owner stub (whoAmI + 1) — the port's hostile pool.
-                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 80));
+                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 80));
                 }
             }
             if self.ai[3] >= 3600.0 {
@@ -5280,6 +5582,220 @@ impl Npc {
     /// ai[2] = the beam volley; the fists' ai[0] = the state (0 follow /
     /// 1 wind-up / 2 dash), ai[1] = the contact cadence (60) then the
     /// wind-up (30). The caster_counter boots the body's one-shot init.
+    /// The Deerclops (`AI_123_Deerclops`, `NPC.cs:44017-44407` + the
+    /// helpers): the state machine over `ai[0]` — -1 the spawn walk, 0 the
+    /// walk + the attack selection, 1 the ice spikes forward, 2 the rubble
+    /// up, 3 the slow-debuff blizzard, 4 the spikes both sides, 5 the
+    /// shadow-hand burst, 6/7 the go-home, 8 the flee/die. `ai[1]` = the
+    /// per-state counter, `ai[2]/ai[3]` = the home tile (the port's
+    /// `home` field pair). The classic-only: the passive shadow hands
+    /// (the expert arm) fold out; the life ramp feeds only the speed
+    /// (`:44645`'s 3.5+1).
+    fn update_deerclops(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The damage gate (`:44024-44039`): the 30-tick ramp toward the
+        // target; `dontTakeDamage` while a target stays within 450px.
+        let near = (cx - pcx).hypot(cy - pcy) < 450.0;
+        self.swim_phase = (self.swim_phase + if near { 1.0 } else { -1.0 }).clamp(-10.0, 30.0);
+        self.dont_take_damage = self.swim_phase >= 30.0;
+        if self.ai[0] == -1.0 {
+            self.swim_phase = -10.0;
+        }
+        // The walk (`AI_123_Deerclops_Movement`, `:44643-44726`).
+        if self.ai[0] != 5.0 && self.ai[0] != 1.0 && self.ai[0] != 4.0 {
+            let speed_cap = 3.5 + 1.0 * (1.0 - self.hp as f32 / self.max_hp as f32);
+            let target_x = if self.ai[0] == -1.0 {
+                self.facing_move_right(5.35, pcx, cx);
+                cx + 5.0
+            } else {
+                pcx
+            };
+            let cap = if self.ai[0] == -1.0 { 5.35 } else { speed_cap };
+            let dx = target_x - cx;
+            let halt = dx.abs() < 80.0 || self.ai[0] == 6.0 || self.ai[0] == 7.0;
+            if !halt && player.hp > 0 {
+                self.vx = (self.vx * 3.0 + dx.clamp(-cap, cap)) / 4.0;
+                if self.on_ground && self.vy >= 0.0 {
+                    self.vy = -8.0; // the ledge hop
+                }
+            } else {
+                self.vx *= 0.9;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+            }
+            self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+            self.vy = (self.vy + 0.4).clamp(-8.0, 16.0);
+            if self.on_ground {
+                self.vy = 0.0;
+            }
+            self.x += self.vx;
+            self.y += self.vy;
+        }
+        // The attack selection + the states.
+        match self.ai[0] as i32 {
+            0 => {
+                // `:44141-44201`'s state-0 selection (the classic arms).
+                if self.on_ground && player.hp > 0 {
+                    self.ai[1] += 1.0;
+                    let dx = (pcx - cx).abs();
+                    let quiet = self.vx.abs() < 0.05;
+                    if quiet && self.ai[1] >= 90.0 && dx < 120.0 {
+                        self.ai[0] = 5.0; // the shadow-hand burst
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] >= 120.0 && dx > 100.0 {
+                        self.ai[0] = 3.0; // the slow-debuff blizzard
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] >= 240.0 && dx < 120.0 {
+                        self.ai[0] = 2.0; // the rubble up
+                        self.ai[1] = 0.0;
+                    }
+                } else {
+                    self.ai[1] = 0.0;
+                }
+            }
+            1 => {
+                // The ice spikes forward (`:44203-44217` + the helper).
+                self.ai[1] += 1.0;
+                if self.ai[1] == 36.0 {
+                    // The spread (`:44579`): the per-index angle
+                    // `whichOne * dir * 0.7 * (PI/4 / howMany)` — the
+                    // port's trace sits on the Y velocity's slope; the
+                    // forward row walks the direction's sign.
+                    for i in 0..20 {
+                        let x = cx + self.facing as f32 * (3 + i * 1) as f32 * 16.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 80.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            2 => {
+                // The rubble up (`:44242-44263`): the 18-dmg rocks.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 32.0 {
+                    for i in 0..20 {
+                        let spread = (crate::app::rand01(rng) - 0.5) * 2.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            cx,
+                            cy,
+                            spread * 6.0,
+                            -8.0 - crate::app::rand01(rng) * 8.0,
+                            18,
+                        ));
+                    }
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            3 => {
+                // The slow-debuff blizzard (`:44264-44307`).
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 {
+                    self.wants_hostile_shot.push((
+                        crate::projectile::DEERCLOPS_ICE_SPIKE,
+                        cx,
+                        cy - 40.0,
+                        0.0,
+                        0.0,
+                        0,
+                    ));
+                }
+                if self.ai[1] >= 60.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            4 => {
+                // The ice spikes both sides (`:44218-44233` + the helper).
+                self.ai[1] += 1.0;
+                if self.ai[1] == 56.0 {
+                    for i in 0..15 {
+                        let x = cx + (i as f32) * 16.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                        self.wants_hostile_shot.push((
+                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            cx - (i as f32) * 16.0,
+                            cy + 40.0,
+                            0.0,
+                            -1.0,
+                            13,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 90.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            5 => {
+                // The shadow-hand burst (`:44374-44404`): the 6 hands of
+                // the 965 at 15 dmg, the 60-tick total.
+                self.ai[1] += 1.0;
+                if self.ai[1] == 30.0 {
+                    let face = self.facing as f32;
+                    for i in 0..6 {
+                        let ang =
+                            (i as f32 / 6.0) * std::f32::consts::TAU + self.facing_move_phase(rng);
+                        let spawn_x = cx + ang.cos() * 120.0;
+                        let spawn_y = cy + ang.sin() * 120.0;
+                        let to_x = (pcx - spawn_x) / 40.0;
+                        let to_y = (pcy - spawn_y) / 40.0;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::SHADOW_HAND,
+                            spawn_x,
+                            spawn_y,
+                            to_x * face * 0.7 + to_x * 0.3,
+                            to_y,
+                            15,
+                        ));
+                    }
+                }
+                if self.ai[1] >= 60.0 {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            _ => {
+                // The go-home/teleport/flee states hold the walk.
+                self.ai[1] += 1.0;
+            }
+        }
+    }
+
+    /// The state-0's forced-direction walk (`:44667-44672`): ai[0]==-1
+    /// walks at 5.35 rightward; the heading rides the sign of `target`.
+    fn facing_move_right(&self, cap: f32, target_x: f32, cx: f32) -> f32 {
+        let dir = if target_x >= cx { 1.0 } else { -1.0 };
+        cap * dir
+    }
+
+    /// The shadow-hand burst's angular jitter (`RandomizeInsanityShadowFor`'s
+    /// spin, `Projectile.cs:42434-42477`).
+    fn facing_move_phase(&self, rng: &mut u64) -> f32 {
+        (crate::app::rand01(rng) - 0.5) * 0.25
+    }
+
     fn update_golem(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -5374,7 +5890,7 @@ impl Npc {
                     } else {
                         0.0
                     };
-                    self.wants_hostile_shot = Some((
+                    self.wants_hostile_shot.push((
                         crate::projectile::GOLEM_FIREBALL,
                         cx + ox,
                         cy + 10.0 * scale,
@@ -5397,7 +5913,7 @@ impl Npc {
                             let vd = (vx * vx + vy * vy).sqrt().max(0.001);
                             vx = vx / vd * 11.0;
                             vy = vy / vd * 11.0;
-                            self.wants_hostile_shot = Some((
+                            self.wants_hostile_shot.push((
                                 crate::projectile::GOLEM_EYE_BEAM,
                                 cx + sx + vx * 3.0,
                                 cy - 22.0 * scale + vy * 3.0,
@@ -5498,7 +6014,7 @@ impl Npc {
                 self.ai[1] += 1.0;
                 if self.ai[1] >= 300.0 {
                     self.ai[1] = 0.0;
-                    self.wants_hostile_shot = Some((
+                    self.wants_hostile_shot.push((
                         crate::projectile::GOLEM_FIREBALL,
                         cx,
                         cy - 10.0,
@@ -5535,7 +6051,7 @@ impl Npc {
                         let vd = (vx * vx + vy * vy).sqrt().max(0.001);
                         vx = vx / vd * sp;
                         vy = vy / vd * sp;
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             crate::projectile::GOLEM_EYE_BEAM,
                             cx + sx + vx * 3.0,
                             cy - 50.0 + vy * 3.0,
@@ -5681,7 +6197,7 @@ impl Npc {
                         dx += crate::app::rand01(rng) * 81.0 - 40.0;
                         dy += crate::app::rand01(rng) * 81.0 - 40.0;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                        self.wants_hostile_shot = Some((
+                        self.wants_hostile_shot.push((
                             crate::projectile::WOODEN_ARROW_HOSTILE,
                             cx,
                             cy,
@@ -5965,6 +6481,8 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 90,
             NpcKind::MartianSaucerCannon => 91,
             NpcKind::MartianSaucerCore => 92,
+            NpcKind::FlyingDutchman => 93,
+            NpcKind::FlyingDutchmanCannon => 94,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -7982,7 +8500,7 @@ mod tests {
         let mut fired = None;
         for _ in 0..301 {
             head.update_golem(&w, &player);
-            if let Some(p) = head.wants_hostile_shot.take() {
+            if let Some(p) = head.wants_hostile_shot.pop() {
                 fired = Some(p);
                 break;
             }
@@ -7996,7 +8514,7 @@ mod tests {
         let mut beam = 0;
         for _ in 0..700 {
             head.update_golem(&w, &player);
-            while let Some(p) = head.wants_hostile_shot.take() {
+            while let Some(p) = head.wants_hostile_shot.pop() {
                 if p.0 == crate::projectile::GOLEM_EYE_BEAM && p.5 == 28 {
                     beam += 1;
                 }
@@ -8158,7 +8676,7 @@ mod tests {
         free.ai[2] = 1500.0;
         let mut beam = None;
         free.update_golem(&w, &player);
-        if let Some(p) = free.wants_hostile_shot.take() {
+        if let Some(p) = free.wants_hostile_shot.pop() {
             beam = Some(p);
         }
         let (kind, _, _, vx, vy, dmg) = beam.expect("the volley fires");
@@ -8166,13 +8684,15 @@ mod tests {
         assert_eq!(dmg, 24, "the full-body damage");
         let sp = (vx * vx + vy * vy).sqrt();
         assert!((sp - 11.0).abs() < 0.5, "the 11 speed ({sp})");
-        // The mortally wounded body: 29 dmg at 12.25.
+        // The mortally wounded body: 29 dmg at 12.25. Clear the volley's
+        // leftovers first (the Vec holds the first round's spare).
+        free.wants_hostile_shot.clear();
         w.golem_hp_ratio = 0.05;
         free.ai[2] = 1500.0;
         let mut beam2 = None;
         free.update_golem(&w, &player);
         for _ in 0..3 {
-            if let Some(p) = free.wants_hostile_shot.take() {
+            if let Some(p) = free.wants_hostile_shot.pop() {
                 beam2 = Some(p);
             }
         }
@@ -8181,6 +8701,68 @@ mod tests {
         let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
         assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
     }
+    #[test]
+    fn the_deerclops_state_machine_cycles() {
+        // `AI_123_Deerclops` (`NPC.cs:44017-44407`): the damage gate, the
+        // attack-selection states, the ice-spike/shadow-hand volleys.
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        player.max_hp = 200;
+        player.hp = player.max_hp;
+        let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 3u64;
+        // The damage gate (`:44024-44039`): the ramp only reaches 30
+        // after 30 ticks with a target in range — the fresh spawn starts
+        // at 0 (vulnerable); the spawn state -1 pins it at -10.
+        assert!(!d.dont_take_damage, "the fresh spawn is open");
+        for _ in 0..31 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        assert!(d.dont_take_damage, "the 450px ramp shields");
+        // Tick the state 0 selection: the quiet close-range stall fires
+        // the shadow-hand burst (state 5).
+        d.ai[1] = 200.0;
+        d.vx = 0.0;
+        d.on_ground = true;
+        d.update_deerclops(&w, &player, &mut rng);
+        assert_eq!(d.ai[0], 5.0, "the hand burst state");
+        for _ in 0..60 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
+        let hands = d.wants_hostile_shot.len();
+        assert!(hands >= 6, "the 6-shadow-hand burst ({hands})");
+        // The spike volley (state 1).
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        for _ in 0..40 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        let spikes: Vec<_> = d
+            .wants_hostile_shot
+            .iter()
+            .filter(|(kind, ..)| *kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .copied()
+            .collect();
+        assert!(
+            spikes.len() >= 20,
+            "the spike volley adds shots ({})",
+            spikes.len()
+        );
+        for (_, _, _, _, _, dmg) in spikes.iter() {
+            assert_eq!(*dmg, 13, "the spike damage");
+        }
+        // The life ramp: the speed cap rises as the hp falls.
+        let fast = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
+        assert_eq!(fast, 3.5, "the full-body speed");
+        d.hp = d.max_hp / 2;
+        let slow = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
+        assert!((slow - 4.0).abs() < 0.01, "the half-body speed");
+    }
+
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
@@ -8205,8 +8787,8 @@ mod tests {
             for _ in 0..90 {
                 a.update_archer(&w, &mut player, &mut rng);
             }
-            assert!(a.wants_hostile_shot.is_some(), "the midpoint fires");
-            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.take().unwrap();
+            assert!(!a.wants_hostile_shot.is_empty(), "the midpoint fires");
+            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.pop().unwrap();
             assert_eq!(kind, crate::projectile::WOODEN_ARROW_HOSTILE);
             assert_eq!(dmg, 11);
             let sp = (vx * vx + vy * vy).sqrt();
