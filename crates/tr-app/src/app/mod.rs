@@ -314,9 +314,10 @@ pub(crate) struct App {
     /// The client handshake state — `Netplay.Connection.State`
     /// (`Netplay.cs:469-543`); stays at 0 while hosting.
     pub(crate) net_state: i32,
-    /// The world-blob slice buffer while the host streams the world
-    /// (`15 WorldChunk`), assembled in order at `WorldComplete`.
-    pub(crate) net_chunks: Vec<Option<Vec<u8>>>,
+    /// The `10 TileBlock` sections buffered while the host streams the world,
+    /// applied in order at `WorldComplete` (the C#'s section stream,
+    /// `MessageBuffer.cs:812-841`).
+    pub(crate) net_pending_sections: Vec<net::TileBlock>,
     /// The `7 WorldInfo` header, held until the blob completes the install.
     pub(crate) net_info: Option<net::WorldInfo>,
     /// The `9 Status` load-progress line (`Netplay.cs:526-540`'s StatusText).
@@ -497,6 +498,9 @@ pub(crate) struct App {
     /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
     /// `NetAmbienceModule` loopback hands to `FastRandom`).
     pub(crate) ambience_rng: u64,
+    /// The dawn/dusk event rolls' `Main.rand` cluster stream
+    /// (`Main.cs:65333-65352`'s blood moon, `:65421-65430`'s eclipse).
+    pub(crate) clock_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -1575,6 +1579,17 @@ impl App {
                     "pogo" | "pogo_stick" => Some(43),
                     "wofgoat" | "goat" => Some(47),
                     "queenslime" => Some(50),
+                    "pigron" => Some(2),
+                    "bee" => Some(5),
+                    "ufo" => Some(7),
+                    "drill" => Some(8),
+                    "cutefishron" => Some(12),
+                    "broom" | "witchbroom" => Some(23),
+                    "pirateship" => Some(44),
+                    "book" | "darkmagebook" => Some(48),
+                    "lavashark" => Some(49),
+                    "bat" => Some(56),
+                    "pixie" => Some(61),
                     _ => None,
                 });
                 p.pinned_mount = id;
@@ -1653,8 +1668,10 @@ impl App {
             if let Some(p) = &player {
                 // `TR_BOSS=golem` places the Golem body for the family's
                 // deterministic shots (the parts ride the body's one-shot
-                // init); any other value (or a bare flag) keeps the King
-                // Slime. The body takes the `SetDefaults` alpha fade.
+                // init); `TR_BOSS=deerclops` places the Deerclops beside
+                // the player on the ground; any other value (or a bare
+                // flag) keeps the King Slime. The Golem body takes the
+                // `SetDefaults` alpha fade.
                 let boss = std::env::var("TR_BOSS").unwrap_or_default();
                 if boss == "golem" {
                     let (bw, bh) = NpcKind::Golem.size();
@@ -1669,6 +1686,27 @@ impl App {
                     // The port's Npc carries no `alpha` field — the fade
                     // rides the machines' spawn shield instead.
                     npcs.push(g);
+                } else if let Some(state) = boss.strip_prefix("deerclops") {
+                    // The Deerclops' box is 60x154 (`SetDefaults` 668,
+                    // `NPC.cs:17451-17452`) — the shot hook stands it on
+                    // the ground beside the player; the optional
+                    // `deerclops,<ai0>` suffix pins an attack state so the
+                    // spells' sequences are capturable (the fight's
+                    // walk sends the boss off the terrain otherwise).
+                    let (bw, bh) = NpcKind::Deerclops.size();
+                    let mut d = Npc::new(
+                        NpcKind::Deerclops,
+                        p.x + 8.0 * TILE_PX,
+                        p.y + p.height - bh,
+                        1,
+                        0.0,
+                    );
+                    d.hp = d.max_hp;
+                    if let Ok(s) = state.trim_start_matches(',').parse::<i32>() {
+                        d.ai[0] = s as f32;
+                        d.ai[1] = 12.0;
+                    }
+                    npcs.push(d);
                 } else if let Some(n) =
                     Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
                 {
@@ -1679,6 +1717,33 @@ impl App {
         if let Ok(v) = std::env::var("TR_SLIME_AT") {
             for x in v.split(',').filter_map(|s| s.trim().parse::<i32>().ok()) {
                 if let Some(n) = Npc::spawn_slime(&world, x) {
+                    npcs.push(n);
+                }
+            }
+        }
+        // `TR_NPC=<kind>[,<kind>…]`: the humanoid-walker verification hook —
+        // the kinds stand beside the player so the draw's rows ride each
+        // sheet's `Main.npcFrameCount` (the town 21-26, the goblins 16/21,
+        // the cave walkers 15, the zombie's single frame).
+        if let Ok(v) = std::env::var("TR_NPC") {
+            if let Some(p) = &player {
+                for name in v.split(',').map(|s| s.trim()) {
+                    let kind = match name {
+                        "guide" => NpcKind::Guide,
+                        "zombie" => NpcKind::Zombie,
+                        "skeleton" => NpcKind::Skeleton,
+                        "peon" => NpcKind::GoblinPeon,
+                        "thief" => NpcKind::GoblinThief,
+                        "warrior" => NpcKind::GoblinWarrior,
+                        "archer" => NpcKind::GoblinArcher,
+                        "tinkerer" => NpcKind::GoblinTinkerer,
+                        "merchant" => NpcKind::Merchant,
+                        _ => continue,
+                    };
+                    let (kw, kh) = kind.size();
+                    let mut n =
+                        Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
+                    n.hp = n.max_hp;
                     npcs.push(n);
                 }
             }
@@ -2129,7 +2194,7 @@ impl App {
             local_id: 0,
             net_timer: 0.0,
             net_state: net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,
@@ -2250,6 +2315,7 @@ impl App {
                 ambience
             },
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
+            clock_rng: world_seed ^ 0x1D_A9_17_50_E5_C1_0C,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,

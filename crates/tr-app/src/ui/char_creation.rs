@@ -324,7 +324,14 @@ pub const DIFFICULTY_IDS: [u8; 4] = [3, 0, 1, 2];
 /// The difficulty row titles (`MakeInfoMenu`, `UICharacterCreation.cs:889-910`):
 /// `Lang.menu[26]` "Classic", `[25]` "Mediumcore", `[24]` "Hardcore"
 /// (the `LegacyMenu` localization), and `UI.Creative` "Journey".
-pub const DIFFICULTY_TITLES: [&str; 4] = ["Journey", "Classic", "Mediumcore", "Hardcore"];
+pub fn difficulty_titles(k: usize) -> String {
+    match k {
+        0 => crate::lang::text("UI.Creative"),       // `UI.Creative` "Journey" (`:910`)
+        1 => crate::lang::menu(26),                  // `Lang.menu[26]` "Classic" (`:889`)
+        2 => crate::lang::menu(25),                  // `Lang.menu[25]` "Mediumcore" (`:896`)
+        _ => crate::lang::menu(24),                  // `Lang.menu[24]` "Hardcore" (`:903`)
+    }
+}
 
 /// The difficulty row colours (`:889-910`): `Color.Cyan`, `Main.mcColor`,
 /// `Main.hcColor`, `Main.creativeModeColor`.
@@ -338,19 +345,25 @@ pub const DIFFICULTY_COLORS: [[u8; 4]; 4] = [
 /// The difficulty descriptions, in `UpdateDifficultyDescription`'s
 /// difficulty order 0..=3 (`:946-965`): `Lang.menu[31/30/29]` and
 /// `UI.CreativeDescriptionPlayer`.
-pub const DIFFICULTY_DESCRIPTIONS: [&str; 4] = [
-    "Classic characters drop money on death.",
-    "Mediumcore characters drop items on death.",
-    "Hardcore characters die for good.",
-    "Journey characters start with extra equipment. Can only be played on Journey worlds.",
-];
+pub fn difficulty_descriptions(k: usize) -> String {
+    match k {
+        1 => crate::lang::menu(30),                          // `Lang.menu[30]` (`:956`)
+        2 => crate::lang::menu(29),                          // `Lang.menu[29]` (`:959`)
+        3 => crate::lang::text("UI.CreativeDescriptionPlayer"), // `:962`
+        _ => crate::lang::menu(31),                          // `Lang.menu[31]` (`:953`)
+    }
+}
 
 /// The name plate's title and empty-value strings (`MakeInfoMenu`, `:858`):
 /// `UI.WorldCreationName` "Name:" and `UI.PlayerEmptyName` = `{$Net.EmptyName}`
 /// = "Empty name." (the JSON's resolved value), drawn Gray
 /// (`UICharacterNameButton.cs`'s `SetContents`).
-pub const NAME_TITLE: &str = "Name:";
-pub const NAME_EMPTY: &str = "Empty name.";
+pub fn name_title() -> String {
+    crate::lang::text("UI.WorldCreationName")
+}
+pub fn name_empty() -> String {
+    crate::lang::text("UI.PlayerEmptyName")
+}
 
 // --- Layout -------------------------------------------------------------------
 
@@ -1292,29 +1305,29 @@ pub enum HoverTarget {
 
 /// `UICharacterCreation.Draw`'s tooltip strings (`:1880-1979`), from the
 /// `en-US` localization (`UI.CopyColorToClipboard` etc.).
-pub fn tooltip_for(hovered: HoverTarget) -> Option<&'static str> {
+pub fn tooltip_for(hovered: HoverTarget) -> Option<String> {
     Some(match hovered {
-        HoverTarget::CopyHex => "Copy color code to clipboard",           // `:1880-1883`
-        HoverTarget::PasteHex => "Paste color code from clipboard",       // `:1884-1887`
-        HoverTarget::RandomizeColor => "Randomize color",                 // `:1888-1891`
-        HoverTarget::CopyTemplate => "Copy player template to clipboard", // `:1892-1895`
-        HoverTarget::PasteTemplate => "Paste player template from clipboard", // `:1896-1899`
-        HoverTarget::RandomizePlayer => "Randomize player",               // `:1900-1903`
-        HoverTarget::VoicePitch => "Change voice pitch",                  // `:1924-1927`
-        HoverTarget::VoicePrev => "Select previous voice type",           // `:1928-1932`
-        HoverTarget::VoiceNext => "Select next voice type",               // `:1933-1935`
-        HoverTarget::VoicePlay => "Play selected voice",                  // `:1936-1939`
+        HoverTarget::CopyHex => crate::lang::text("UI.CopyColorToClipboard"),       // `:1880-1883`
+        HoverTarget::PasteHex => crate::lang::text("UI.PasteColorFromClipboard"),   // `:1884-1887`
+        HoverTarget::RandomizeColor => crate::lang::text("UI.RandomizeColor"),      // `:1888-1891`
+        HoverTarget::CopyTemplate => crate::lang::text("UI.CopyPlayerToClipboard"), // `:1892-1895`
+        HoverTarget::PasteTemplate => crate::lang::text("UI.PastePlayerFromClipboard"), // `:1896-1899`
+        HoverTarget::RandomizePlayer => crate::lang::text("UI.RandomizePlayer"),    // `:1900-1903`
+        HoverTarget::VoicePitch => crate::lang::text("UI.PlayerCreateVoicePitch"),  // `:1924-1927`
+        HoverTarget::VoicePrev => crate::lang::text("UI.PlayerCreateVoicePrev"),    // `:1928-1932`
+        HoverTarget::VoiceNext => crate::lang::text("UI.PlayerCreateVoiceNext"),    // `:1933-1935`
+        HoverTarget::VoicePlay => crate::lang::text("UI.PlayerCreateVoicePlay"),    // `:1936-1939`
         // The categories (`:1940-1979`): `UI.PlayerCreateCategory*`.
-        HoverTarget::Category(0) => "Info",
-        HoverTarget::Category(1) => "Style",
-        HoverTarget::Category(2) => "Hairstyle",
-        HoverTarget::Category(3) => "Hair",
-        HoverTarget::Category(4) => "Eyes",
-        HoverTarget::Category(5) => "Skin ", // the JSON carries a trailing space
-        HoverTarget::Category(6) => "Shirt ",
-        HoverTarget::Category(7) => "Undershirt",
-        HoverTarget::Category(8) => "Pants",
-        HoverTarget::Category(9) => "Shoes",
+        HoverTarget::Category(0) => crate::lang::text("UI.PlayerCreateCategoryInfo"),
+        HoverTarget::Category(1) => crate::lang::text("UI.PlayerCreateCategoryBodyStyle"),
+        HoverTarget::Category(2) => crate::lang::text("UI.PlayerCreateCategoryHairStyle"),
+        HoverTarget::Category(3) => crate::lang::text("UI.PlayerCreateCategoryHairColor"),
+        HoverTarget::Category(4) => crate::lang::text("UI.PlayerCreateCategoryEyeColor"),
+        HoverTarget::Category(5) => crate::lang::text("UI.PlayerCreateCategorySkinColor"),
+        HoverTarget::Category(6) => crate::lang::text("UI.PlayerCreateCategoryShirtColor"),
+        HoverTarget::Category(7) => crate::lang::text("UI.PlayerCreateCategoryUndershirtColor"),
+        HoverTarget::Category(8) => crate::lang::text("UI.PlayerCreateCategoryPantsColor"),
+        HoverTarget::Category(9) => crate::lang::text("UI.PlayerCreateCategoryShoesColor"),
         HoverTarget::Category(_) => return None,
     })
 }
@@ -1544,8 +1557,8 @@ pub fn draw(
         lookups,
         l.back,
         &fat_button_style(),
-        "Back",
-        mouse_text_width(r, lookups, "Back"),
+        &crate::lang::text("UI.Back"),
+        mouse_text_width(r, lookups, &crate::lang::text("UI.Back")),
         in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
@@ -1553,15 +1566,15 @@ pub fn draw(
         lookups,
         l.create,
         &fat_button_style(),
-        "Create",
-        mouse_text_width(r, lookups, "Create"),
+        &crate::lang::text("UI.Create"),
+        mouse_text_width(r, lookups, &crate::lang::text("UI.Create")),
         in_rect(mouse, l.create),
     );
 
     // The hover tooltip (`:1980-1993`): the hovered element's string at the
     // cursor + (16, 16), clamped to the screen the way `:1984-1991` does.
     if let Some(text) = hover_tooltip(&l, state.category, mouse) {
-        let w = hud_text_width(r, lookups, text, 1.0);
+        let w = hud_text_width(r, lookups, &text, 1.0);
         let mut x = mouse.x + 16.0;
         let mut y = mouse.y + 16.0;
         if y > screen.y - 30.0 {
@@ -1570,13 +1583,13 @@ pub fn draw(
         if x > screen.x - w {
             x = screen.x - 460.0;
         }
-        border_string(r, lookups, x, y, [1.0; 4], text);
+        border_string(r, lookups, x, y, [1.0; 4], &text);
     }
 }
 
 /// `UICharacterCreation.Draw`'s tooltip resolution (`:1880-1979`) over the
 /// port's live elements.
-fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<&'static str> {
+fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<String> {
     for id in CATEGORY_IDS {
         if in_rect(mouse, l.categories[id]) {
             return tooltip_for(HoverTarget::Category(id));
@@ -1637,13 +1650,13 @@ fn draw_info_menu(
     if name_hover {
         draw_spliced_base(r, lookups, lookups.cc_panel_border, l.info_name, [1.0; 4]);
     }
-    let title_w = mouse_text_width(r, lookups, NAME_TITLE);
+    let title_w = mouse_text_width(r, lookups, &name_title());
     let cy = l.info_name[1] + l.info_name[3] * 0.5;
-    border_string(r, lookups, l.info_name[0] + 10.0, cy - 8.0, [1.0; 4], NAME_TITLE);
+    border_string(r, lookups, l.info_name[0] + 10.0, cy - 8.0, [1.0; 4], &name_title());
     let (value, tint) = if state.draft.name.is_empty() {
-        (NAME_EMPTY, color::tint([128, 128, 128, 255])) // Gray (`SetContents`)
+        (name_empty(), color::tint([128, 128, 128, 255])) // Gray (`SetContents`)
     } else {
-        (state.draft.name.as_str(), [1.0; 4])
+        (state.draft.name.clone(), [1.0; 4])
     };
     border_string(
         r,
@@ -1651,7 +1664,7 @@ fn draw_info_menu(
         l.info_name[0] + 10.0 + title_w + 20.0,
         cy - 8.0,
         tint,
-        value,
+        &value,
     );
 
     // The four difficulty fills (`UIDifficultyButton.DrawSelf`,
@@ -1681,8 +1694,8 @@ fn draw_info_menu(
         }
         // The row's title `UIText` (`UIDifficultyButton.cs:38-44`): 0.9 scale,
         // `Top 5`, centred.
-        let title = DIFFICULTY_TITLES[k];
-        let w = hud_text_width(r, lookups, title, 0.9);
+        let title = difficulty_titles(k);
+        let w = hud_text_width(r, lookups, &title, 0.9);
         hud_text(
             r,
             lookups,
@@ -1690,7 +1703,7 @@ fn draw_info_menu(
             rect[1] + 5.0,
             0.9,
             [1.0; 4],
-            title,
+            &title,
         );
     }
 
@@ -1705,7 +1718,7 @@ fn draw_info_menu(
         l.info_highlight,
         color::tint(color::mul([211, 211, 211, 255], 0.7)),
     );
-    let desc = DIFFICULTY_DESCRIPTIONS[(state.draft.difficulty % 4) as usize];
+    let desc = difficulty_descriptions((state.draft.difficulty % 4) as usize);
     hud_text(
         r,
         lookups,
@@ -1713,7 +1726,7 @@ fn draw_info_menu(
         l.info_highlight[1] + (l.info_highlight[3] - 14.0) * 0.5,
         1.0,
         [1.0; 4],
-        desc,
+        &desc,
     );
 }
 
@@ -2304,25 +2317,25 @@ mod tests {
 
     #[test]
     fn tooltip_table_mirrors_the_draw_chain() {
-        assert_eq!(tooltip_for(HoverTarget::Category(0)), Some("Info"));
-        assert_eq!(tooltip_for(HoverTarget::Category(1)), Some("Style"));
-        assert_eq!(tooltip_for(HoverTarget::Category(2)), Some("Hairstyle"));
-        assert_eq!(tooltip_for(HoverTarget::Category(3)), Some("Hair"));
-        assert_eq!(tooltip_for(HoverTarget::Category(4)), Some("Eyes"));
-        assert_eq!(tooltip_for(HoverTarget::Category(5)), Some("Skin "));
-        assert_eq!(tooltip_for(HoverTarget::Category(6)), Some("Shirt "));
-        assert_eq!(tooltip_for(HoverTarget::Category(7)), Some("Undershirt"));
-        assert_eq!(tooltip_for(HoverTarget::Category(8)), Some("Pants"));
-        assert_eq!(tooltip_for(HoverTarget::Category(9)), Some("Shoes"));
+        assert_eq!(tooltip_for(HoverTarget::Category(0)), Some(crate::lang::text("UI.PlayerCreateCategoryInfo")));
+        assert_eq!(tooltip_for(HoverTarget::Category(1)), Some(crate::lang::text("UI.PlayerCreateCategoryBodyStyle")));
+        assert_eq!(tooltip_for(HoverTarget::Category(2)), Some(crate::lang::text("UI.PlayerCreateCategoryHairStyle")));
+        assert_eq!(tooltip_for(HoverTarget::Category(3)), Some(crate::lang::text("UI.PlayerCreateCategoryHairColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(4)), Some(crate::lang::text("UI.PlayerCreateCategoryEyeColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(5)), Some(crate::lang::text("UI.PlayerCreateCategorySkinColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(6)), Some(crate::lang::text("UI.PlayerCreateCategoryShirtColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(7)), Some(crate::lang::text("UI.PlayerCreateCategoryUndershirtColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(8)), Some(crate::lang::text("UI.PlayerCreateCategoryPantsColor")));
+        assert_eq!(tooltip_for(HoverTarget::Category(9)), Some(crate::lang::text("UI.PlayerCreateCategoryShoesColor")));
         assert_eq!(
             tooltip_for(HoverTarget::CopyHex),
-            Some("Copy color code to clipboard")
+            Some(crate::lang::text("UI.CopyColorToClipboard"))
         );
         assert_eq!(
             tooltip_for(HoverTarget::PasteHex),
-            Some("Paste color code from clipboard")
+            Some(crate::lang::text("UI.PasteColorFromClipboard"))
         );
-        assert_eq!(tooltip_for(HoverTarget::RandomizeColor), Some("Randomize color"));
+        assert_eq!(tooltip_for(HoverTarget::RandomizeColor), Some(crate::lang::text("UI.RandomizeColor")));
     }
 
     #[test]
@@ -2409,9 +2422,15 @@ mod tests {
         assert_eq!(DIFFICULTY_COLORS[1], uistate::MC_COLOR);
         assert_eq!(DIFFICULTY_COLORS[2], uistate::HC_COLOR);
         assert_eq!(DIFFICULTY_COLORS[3], uistate::CREATIVE_MODE_COLOR);
-        assert_eq!(DIFFICULTY_DESCRIPTIONS[0], "Classic characters drop money on death.");
-        assert_eq!(DIFFICULTY_DESCRIPTIONS[2], "Hardcore characters die for good.");
-        assert!(DIFFICULTY_DESCRIPTIONS[3].starts_with("Journey characters"));
+        assert_eq!(
+            difficulty_descriptions(0),
+            "Classic characters drop money on death."
+        );
+        assert_eq!(
+            difficulty_descriptions(2),
+            "Hardcore characters die for good."
+        );
+        assert!(difficulty_descriptions(3).starts_with("Journey characters"));
     }
 
     #[test]

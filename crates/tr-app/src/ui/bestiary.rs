@@ -452,6 +452,10 @@ fn portrait_data(
         NpcKind::Deerclops => 75,            // NPC_668
         NpcKind::SkeletronHand => 76,        // NPC_36
         NpcKind::WallOfFleshEye => 77,       // NPC_114
+        NpcKind::PrimeCannon => 82,          // NPC_128
+        NpcKind::PrimeSaw => 83,             // NPC_129
+        NpcKind::PrimeVice => 84,            // NPC_130
+        NpcKind::PrimeLaser => 85,           // NPC_131
         NpcKind::BrainScrambler => 78,       // NPC_381
         NpcKind::RayGunner => 79,            // NPC_382
         NpcKind::ScutlixRider => 80,         // NPC_390
@@ -474,6 +478,10 @@ fn portrait_data(
         NpcKind::DD2SkeletonT1 => 97,        // NPC_566
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
         NpcKind::DD2DarkMage => 99,       // NPC_564
+        NpcKind::DD2Betsy => 100,        // NPC_551
+        NpcKind::DD2WitherBeast => 101,  // NPC_568
+        NpcKind::DD2Bartender => 102,    // NPC_550
+        NpcKind::DD2EterniaCrystal => 103, // NPC_548
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -485,6 +493,10 @@ fn portrait_data(
         (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::SkeletronHand, _) => (sheet_i, 52.0, 52.0, 52.0, white),
         (NpcKind::WallOfFleshEye, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        (NpcKind::PrimeCannon, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeSaw, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeVice, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeLaser, _) => (sheet_i, 52.0, 52.0, 52.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
@@ -730,6 +742,34 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(62.0);
             (sheet_i, h, 34.0, h, white)
+        }
+        // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
+        (NpcKind::DD2Betsy, _) => {
+            let h = lookups.bestiary_npc_sheets[100]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 190.0, h, white)
+        }
+        // The WitherBeast: the 14-frame NPC_568 strip over the 18x40 frames.
+        (NpcKind::DD2WitherBeast, _) => {
+            let h = lookups.bestiary_npc_sheets[101]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
+        (NpcKind::DD2Bartender, _) => {
+            let h = lookups.bestiary_npc_sheets[102]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The crystal: the NPC_548 strip over the 40x40 frames.
+        (NpcKind::DD2EterniaCrystal, _) => {
+            let h = lookups.bestiary_npc_sheets[103]
+                .map(|s| s.height as f32)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

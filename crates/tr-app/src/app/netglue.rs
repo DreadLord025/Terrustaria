@@ -270,8 +270,7 @@ impl App {
                     }
                     log::info!("slot {id} spawn request {sx},{sy}");
                     server.set_state(id, slot_state::SPAWN_REQUESTED);
-                    let blob = compressed_world(&self.world);
-                    server.send_world(id, &blob);
+                    self.host_stream_sections(server, id, sx, sy);
                 }
             }
             // `case 12` — the player spawned in: the slot is complete and the
@@ -342,7 +341,17 @@ impl App {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
                 apply_edit(&mut self.world, x, y, kind, tile);
                 self.world_key = None;
-                server.broadcast(&S2c::Edit { x, y, kind, tile });
+                // The replicated change: the applied tile read back as a
+                // `20 SectionRange` (`SendTileSquare` on the host).
+                let rec = self.tile_record_at(x, y);
+                server.broadcast(&S2c::SectionRange(Box::new(net::SectionRange {
+                    x: x as i16,
+                    y: y as i16,
+                    w: 1,
+                    h: 1,
+                    change_type: 0,
+                    records: vec![rec],
+                })));
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -369,6 +378,274 @@ impl App {
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
     /// the peers, the peers learn the newcomer.
+
+    /// Streams the world to a spawning client as `10 TileBlock` sections —
+    /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
+    /// and 3 tall around the spawn, announced by one `9 Status`, streamed
+    /// row-major, closed by `49`. The NPC/item state follows on the regular
+    /// cadence tick (the C#'s `SendSection` pushes them inline).
+    fn host_stream_sections(&mut self, server: &net::Server, id: u32, cx: i32, cy: i32) {
+        let (w, h) = (self.world.width, self.world.height);
+        let (gx, gy) = (net::sections_x(w), net::sections_y(h));
+        let sx0 = (net::section_x(cx) - 2).clamp(0, gx - 1);
+        let sy0 = (net::section_y(cy) - 1).clamp(0, gy - 1);
+        let sx1 = (net::section_x(cx) + 2).clamp(0, gx - 1);
+        let sy1 = (net::section_y(cy) + 1).clamp(0, gy - 1);
+        let count = (sx1 - sx0 + 1) * (sy1 - sy0 + 1);
+        server.ensure_sections(id, w, h);
+        server.send(
+            id,
+            &S2c::Status {
+                text: "Receiving tile data".into(),
+                max: count,
+            },
+        );
+        for sy in sy0..=sy1 {
+            for sx in sx0..=sx1 {
+                server.mark_section_sent(id, sx, sy);
+                let block = self.tile_block_at(sx, sy);
+                server.send(id, &S2c::TileBlock(Box::new(block)));
+            }
+        }
+        server.send(id, &S2c::WorldComplete);
+    }
+
+    /// The move-driven section catch-up (the C#'s per-tick
+    /// `RemoteClient.CheckSection`, `RemoteClient.cs:126-188`): the sections
+    /// each remote peer lacks, collected without borrowing `self` mutably
+    /// (the send pass runs inside the `net_tick` match).
+    fn pending_sections(&self, server: &net::Server) -> Vec<(u32, i32, i32)> {
+        let (w, h) = (self.world.width, self.world.height);
+        let (gx, gy) = (net::sections_x(w), net::sections_y(h));
+        let mut out = Vec::new();
+        for (id, p) in &self.remote_players {
+            server.ensure_sections(*id, w, h);
+            let psx = net::section_x(p.x as i32 / tr_core::TILE_PX as i32).clamp(0, gx - 1);
+            let psy = net::section_y(p.y as i32 / tr_core::TILE_PX as i32).clamp(0, gy - 1);
+            for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
+                for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
+                    if !server.is_section_sent(*id, sx, sy) {
+                        out.push((*id, sx, sy));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Builds the `10 TileBlock` body for one section (clamped to the world).
+    fn tile_block_at(&self, sx: i32, sy: i32) -> net::TileBlock {
+        let (w, h) = (self.world.width, self.world.height);
+        let x0 = (sx * net::SECTION_W).clamp(0, w);
+        let y0 = (sy * net::SECTION_H).clamp(0, h);
+        let bw = (net::SECTION_W).min(w - x0).max(0);
+        let bh = (net::SECTION_H).min(h - y0).max(0);
+        let mut records = Vec::with_capacity((bw * bh) as usize);
+        for ty in y0..y0 + bh {
+            for tx in x0..x0 + bw {
+                records.push(self.tile_record_at(tx, ty));
+            }
+        }
+        net::TileBlock {
+            x: x0,
+            y: y0,
+            w: bw as i16,
+            h: bh as i16,
+            records,
+        }
+    }
+
+    /// Extracts one tile's sync record — the C#'s compressor fields
+    /// (`NetMessage.cs:1952-2168`) read out of the port's storage.
+    fn tile_record_at(&self, x: i32, y: i32) -> net::TileRecord {
+        let Some(t) = self.world.tile(x, y) else {
+            return net::TileRecord {
+                active: false,
+                kind: 0,
+                frame_important: false,
+                frame_x: 0,
+                frame_y: 0,
+                wall: 0,
+                wall_frame: 0,
+                liquid: 0,
+                liquid_kind: 0,
+                half_brick: false,
+                slope: 0,
+                actuator: false,
+                inactive: false,
+                paint: 0,
+                wall_paint: 0,
+                wires: 0,
+                invisible_block: false,
+                invisible_wall: false,
+                fullbright_block: false,
+                fullbright_wall: false,
+            };
+        };
+        let idx = self.world.index(x, y);
+        let extras = self.world.extras_at(idx);
+        let frame_important = self
+            .world
+            .frame_important
+            .get(t.kind as usize)
+            .copied()
+            .unwrap_or(false);
+        net::TileRecord {
+            active: t.active(),
+            kind: t.kind,
+            frame_important,
+            frame_x: if frame_important { t.frame_x } else { 0 },
+            frame_y: if frame_important { t.frame_y } else { 0 },
+            wall: t.wall,
+            wall_frame: t.wall_frame,
+            liquid: t.liquid,
+            liquid_kind: match t.liquid_kind() {
+                tr_core::tile::LiquidKind::Water => 0,
+                tr_core::tile::LiquidKind::Lava => 1,
+                tr_core::tile::LiquidKind::Honey => 2,
+                tr_core::tile::LiquidKind::Shimmer => 3,
+            },
+            half_brick: t.half_brick(),
+            slope: t.slope(),
+            actuator: t.flags & tr_core::tile::FLAG_ACTUATOR != 0,
+            inactive: t.flags & tr_core::tile::FLAG_INACTIVE != 0,
+            paint: t.paint(),
+            wall_paint: extras & 0x1F,
+            wires: {
+                let mut b = 0u8;
+                if self.world.wires.get(x, y, tr_core::wiring::WireColor::Red) {
+                    b |= 1;
+                }
+                if self.world.wires.get(x, y, tr_core::wiring::WireColor::Blue) {
+                    b |= 2;
+                }
+                if self
+                    .world
+                    .wires
+                    .get(x, y, tr_core::wiring::WireColor::Green)
+                {
+                    b |= 4;
+                }
+                if self
+                    .world
+                    .wires
+                    .get(x, y, tr_core::wiring::WireColor::Yellow)
+                {
+                    b |= 8;
+                }
+                b
+            },
+            invisible_block: extras & 0x20 != 0,
+            invisible_wall: extras & 0x40 != 0,
+            fullbright_block: t.flags & tr_core::tile::FLAG_FULLBRIGHT != 0,
+            fullbright_wall: extras & 0x80 != 0,
+        }
+    }
+
+    /// Applies a `10 TileBlock` into a world: direct tile writes (the C#'s
+    /// `DecompressTileBlock_Inner` calls no KillTile/PlaceTile) plus the wire
+    /// table and the sparse extras byte, with one revision bump for the whole
+    /// rectangle so the light and world-range caches invalidate.
+    fn apply_tile_block(world: &mut World, block: &net::TileBlock) {
+        let (w, h) = (block.w as i32, block.h as i32);
+        let mut i = 0usize;
+        for ty in 0..h {
+            for tx in 0..w {
+                let Some(rec) = block.records.get(i) else {
+                    return;
+                };
+                i += 1;
+                let (x, y) = (block.x + tx, block.y + ty);
+                Self::apply_tile_record(world, x, y, rec);
+            }
+        }
+    }
+
+    /// Applies a `20 SectionRange` into the live world.
+    fn apply_section_range(&mut self, range: &net::SectionRange) {
+        let (w, h) = (range.w as i32, range.h as i32);
+        let mut i = 0usize;
+        for ty in 0..h {
+            for tx in 0..w {
+                let Some(rec) = range.records.get(i) else {
+                    return;
+                };
+                i += 1;
+                Self::apply_tile_record(
+                    &mut self.world,
+                    range.x as i32 + tx,
+                    range.y as i32 + ty,
+                    rec,
+                );
+            }
+        }
+        self.world.revision = self.world.revision.wrapping_add(1);
+        self.world_key = None;
+    }
+
+    /// One record into one tile, mirroring `read_record`'s field order.
+    #[allow(clippy::too_many_lines)]
+    fn apply_tile_record(world: &mut World, x: i32, y: i32, rec: &net::TileRecord) {
+        if !world.in_bounds(x, y) {
+            return;
+        }
+        let idx = world.index(x, y);
+        let t = &mut world.tiles[idx];
+        t.kind = rec.kind;
+        t.wall = rec.wall;
+        t.wall_frame = rec.wall_frame;
+        t.frame_x = if rec.frame_important { rec.frame_x } else { -1 };
+        t.frame_y = if rec.frame_important { rec.frame_y } else { -1 };
+        t.liquid = rec.liquid;
+        t.set_liquid_kind(match rec.liquid_kind {
+            1 => tr_core::tile::LiquidKind::Lava,
+            2 => tr_core::tile::LiquidKind::Honey,
+            3 => tr_core::tile::LiquidKind::Shimmer,
+            _ => tr_core::tile::LiquidKind::Water,
+        });
+        let mut flags = 0u8;
+        if rec.active {
+            flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if rec.half_brick {
+            flags |= tr_core::tile::FLAG_HALF_BRICK;
+        }
+        if rec.actuator {
+            flags |= tr_core::tile::FLAG_ACTUATOR;
+        }
+        if rec.inactive {
+            flags |= tr_core::tile::FLAG_INACTIVE;
+        }
+        if rec.fullbright_block {
+            flags |= tr_core::tile::FLAG_FULLBRIGHT;
+        }
+        t.flags = flags;
+        t.meta = (rec.slope & 0x07) | ((rec.paint & 0x1F) << 3);
+        // The sparse extras byte: wall paint + the invisible/fullbright quad.
+        let mut extras = rec.wall_paint & 0x1F;
+        if rec.invisible_block {
+            extras |= 0x20;
+        }
+        if rec.invisible_wall {
+            extras |= 0x40;
+        }
+        if rec.fullbright_wall {
+            extras |= 0x80;
+        }
+        if extras != 0 {
+            world.set_extras_at(idx, extras);
+        }
+        // The wire side-table bits.
+        for (bit, color) in [
+            (1u8, tr_core::wiring::WireColor::Red),
+            (2, tr_core::wiring::WireColor::Blue),
+            (4, tr_core::wiring::WireColor::Green),
+            (8, tr_core::wiring::WireColor::Yellow),
+        ] {
+            world.wires.set(x, y, color, rec.wires & bit != 0);
+        }
+    }
+
     fn host_slot_join_complete(&mut self, server: &net::Server, id: u32, _s: net::PlayerSpawn) {
         // The port's `SyncOnePlayer` (`NetMessage.cs:2885-2946`) sends the
         // joining peer everyone's state; the host's own snapshot leads.
@@ -475,20 +752,28 @@ impl App {
                     m.connecting = true;
                 }
             }
-            // `15 WorldChunk` — one slice of the blob; indexed so a reorder
-            // cannot corrupt the install.
-            S2c::WorldChunk { index, total, data } => {
-                let index = index.max(0) as usize;
-                let total = total.max(1) as usize;
-                if self.net_chunks.len() < total {
-                    self.net_chunks.resize(total, None);
-                }
-                if index < total {
-                    self.net_chunks[index] = Some(data);
+            // `case 10` — one section's tile snapshot. Before the world is
+            // installed (while `49` is pending) the sections buffer and are
+            // applied in one pass at the install (`MessageBuffer.cs:812-841`);
+            // after it — the move-driven catch-up — each block applies
+            // straight into the live world.
+            S2c::TileBlock(block) => {
+                if self.net_state >= net::client_state::IN_WORLD {
+                    Self::apply_tile_block(&mut self.world, &block);
+                    self.world.revision = self.world.revision.wrapping_add(1);
+                    self.world_key = None;
+                } else {
+                    self.net_pending_sections.push(*block);
                 }
                 if self.net_status_max > 0 {
                     self.net_status_count += 1;
                 }
+            }
+            // `case 20` — a rectangle of tile changes; applied straight into
+            // the tiles (the C#'s reader writes the fields, no
+            // KillTile/PlaceTile, `NetMessage.cs:2240-2458`).
+            S2c::SectionRange(range) => {
+                self.apply_section_range(&range);
             }
             // `case 49` — the world stream is done (`MessageBuffer.cs:2448-2452`):
             // install in place (the port's `Player.Spawn(SpawningIntoWorld)`)
@@ -496,9 +781,8 @@ impl App {
             // the server slot (`MessageBuffer.cs:925-929`).
             S2c::WorldComplete => {
                 if self.net_state == net::client_state::SPAWN_REQUESTED {
-                    let blob: Vec<u8> = self.net_chunks.drain(..).flatten().flatten().collect();
-                    self.net_chunks.clear();
-                    if self.client_install_world(&blob) {
+                    let sections = std::mem::take(&mut self.net_pending_sections);
+                    if self.client_install_world(sections) {
                         let (sx, sy) = (self.world.spawn_x as i16, self.world.spawn_y as i16);
                         self.net_state = net::client_state::IN_WORLD;
                         client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
@@ -511,7 +795,7 @@ impl App {
                             spawn_context: 0,
                         }));
                     } else {
-                        self.net_disconnect("the world failed to decode");
+                        self.net_disconnect("the world failed to install");
                     }
                 }
             }
@@ -830,31 +1114,59 @@ impl App {
     /// The in-process world install: every world-derived system rebuilds here
     /// without touching the renderer (the C# `WorldGen.clearWorld` +
     /// `Main.Map.Load` arm of `Netplay.cs:484-505`).
-    fn client_install_world(&mut self, blob: &[u8]) -> bool {
-        let Some(world) = decompressed_world(blob) else {
-            log::warn!("received a world that failed to decode");
+    /// The C#'s `WorldGen.clearWorld` arm (`Netplay.cs:484-505`): the client
+    /// builds the empty world from the `7 WorldInfo` header and applies the
+    /// streamed sections into it. Returns false only when the header is
+    /// missing (the client cannot size the world without it).
+    fn client_install_world(&mut self, sections: Vec<net::TileBlock>) -> bool {
+        let Some(info) = self.net_info.clone() else {
+            log::warn!("no WorldInfo header: cannot install the world");
             return false;
         };
-        // The stream must match the `7 WorldInfo` header the client accepted.
-        if let Some(info) = self.net_info.as_ref() {
-            if info.max_tiles_x as i32 != world.width || info.max_tiles_y as i32 != world.height {
-                log::warn!(
-                    "world size mismatch: header {}x{}, stream {}x{}",
-                    info.max_tiles_x,
-                    info.max_tiles_y,
-                    world.width,
-                    world.height
-                );
+        let mut world = World::new(
+            info.world_name.clone(),
+            info.max_tiles_x as i32,
+            info.max_tiles_y as i32,
+        );
+        world.spawn_x = info.spawn_tile_x as i32;
+        world.spawn_y = info.spawn_tile_y as i32;
+        world.time = info.time as f64;
+        world.day_time = info.day_time;
+        world.moon_phase = info.moon_phase;
+        world.moon_type = info.moon_type;
+        world.blood_moon = info.blood_moon;
+        world.sundial_cooldown = info.sundial_cooldown;
+        world.moondial_cooldown = info.moondial_cooldown;
+        if info.world_surface > 0 {
+            world.world_surface = info.world_surface as f64;
+        }
+        if info.rock_layer > 0 {
+            world.rock_layer = info.rock_layer as f64;
+        }
+        // The sections fill the world; the stream must cover the whole grid.
+        let want = net::sections_x(world.width) * net::sections_y(world.height);
+        let mut seen: std::collections::HashSet<(i32, i32)> = Default::default();
+        for block in &sections {
+            seen.insert((net::section_x(block.x), net::section_y(block.y)));
+            Self::apply_tile_block(&mut world, block);
+        }
+        let (gx, gy) = (net::sections_x(world.width), net::sections_y(world.height));
+        for sy in 0..gy {
+            for sx in 0..gx {
+                if !seen.contains(&(sx, sy)) {
+                    log::warn!("section {sx},{sy} missing from the world stream");
+                }
             }
         }
+        let _ = want;
         self.world = world;
         self.liquids = LiquidSystem::new(&self.world);
         self.map = Some(map::WorldMap::new(&self.world));
         self.npcs.clear();
         self.items.clear();
         self.world_key = None;
-        self.net_chunks.clear();
         self.net_info = None;
+        self.net_pending_sections.clear();
         if self.player.is_some() {
             // `FindSpawn` + `Player.Spawn(SpawningIntoWorld)` — the port's
             // spawn is the world header's spawn tile (`Player.cs:594`).
@@ -931,7 +1243,6 @@ impl App {
         log::warn!("disconnected: {reason}");
         self.net_dropped = true;
         self.net_state = net::client_state::NOT_CONNECTED;
-        self.net_chunks.clear();
         self.remote_players.clear();
         self.local_id = 0;
         if self.menu.is_none() {
@@ -976,6 +1287,13 @@ impl App {
             NetRole::Host(server) => {
                 // The host's own snapshot, as `13 PlayerState`.
                 server.broadcast(&S2c::PlayerState(Box::new(self.player_state_of(&me))));
+                // Newly approached sections stream before the cadence batch
+                // (the C#'s per-tick CheckSection).
+                for (id, sx, sy) in self.pending_sections(server) {
+                    server.mark_section_sent(id, sx, sy);
+                    let block = self.tile_block_at(sx, sy);
+                    server.send(id, &S2c::TileBlock(Box::new(block)));
+                }
                 // `23 NPCInfo` — one message per live NPC, the C#'s per-NPC
                 // `SendData(23, -1, -1, null, whoAmI)` (`NPC.cs:90613`). The
                 // port sends the whole live set each cadence tick (the C#'
@@ -1197,10 +1515,32 @@ impl App {
         }
     }
 
-    /// Client: asks the host to apply an edit (the host echoes it back to everyone).
+    /// The replicated tile change: the host broadcasts a `20 SectionRange`
+    /// of the edited tiles (`SendTileSquare`, `NetMessage.cs:2627-2630`), the
+    /// client asks for one. The edit kinds (0 kill tile, 1 place, 2/3 wall)
+    /// already mutated the local world, so the record is read back out.
     pub(crate) fn request_edit(&self, x: i32, y: i32, kind: u8, tile: u16) {
+        // The port replicates the 1x1 edit (multi-tile objects arrive as
+        // per-tile edits; the C#'s `SendTileSquare(-1, x, y, 2)` door
+        // widening stays with the door sync).
+        let _ = (kind, tile);
+        let (w, h) = (1, 1);
+        let mut records = Vec::with_capacity((w * h) as usize);
+        for dy in 0..h {
+            for dx in 0..w {
+                records.push(self.tile_record_at(x + dx, y + dy));
+            }
+        }
+        let range = net::SectionRange {
+            x: x as i16,
+            y: y as i16,
+            w: w as u8,
+            h: h as u8,
+            change_type: 0,
+            records,
+        };
         match &self.net {
-            NetRole::Host(server) => server.broadcast(&S2c::Edit { x, y, kind, tile }),
+            NetRole::Host(server) => server.broadcast(&S2c::SectionRange(Box::new(range))),
             NetRole::Client(client) => client.send(&C2s::Edit { x, y, kind, tile }),
             NetRole::Off => {}
         }
@@ -1294,6 +1634,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Deerclops
         | crate::npc::NpcKind::SkeletronHand
         | crate::npc::NpcKind::WallOfFleshEye
+        | crate::npc::NpcKind::PrimeCannon
+        | crate::npc::NpcKind::PrimeSaw
+        | crate::npc::NpcKind::PrimeVice
+        | crate::npc::NpcKind::PrimeLaser
         | crate::npc::NpcKind::Creeper => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -1371,6 +1715,10 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2SkeletonT1
         | crate::npc::NpcKind::DD2SkeletonT3
         | crate::npc::NpcKind::DD2DarkMage
+        | crate::npc::NpcKind::DD2Betsy
+        | crate::npc::NpcKind::DD2WitherBeast
+        | crate::npc::NpcKind::DD2Bartender
+        | crate::npc::NpcKind::DD2EterniaCrystal
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher
@@ -1598,7 +1946,11 @@ mod handshake_tests {
     fn the_world_blob_round_trips() {
         let (mut host_app, mut client_app) = connect_pair("", "");
         // Put a mark in the host world the install must reproduce.
-        host_app.world.tiles[3 * host_app.world.width as usize + 4].kind = 7;
+        let mark = 3 * host_app.world.width as usize + 4;
+        host_app.world.tiles[mark].kind = 7;
+        // The codec only carries a kind for active tiles (as the C# does), so
+        // the marker must be a real tile.
+        host_app.world.tiles[mark].flags |= tr_core::tile::FLAG_ACTIVE;
         drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
         assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
         let at = |w: &tr_core::World| w.tiles[3 * w.width as usize + 4].kind;
@@ -1814,5 +2166,219 @@ mod handshake_tests {
         let peer = client_app.remote_players.get(&0).expect("host peer stored");
         assert!((peer.x - 42.0).abs() < 0.01);
         assert_eq!(peer.leg_frame, 5);
+    }
+
+    /// A pair whose host world spans 5x4 sections (900x600) with the spawn at
+    /// section (0,0): the join box covers 3x2 of them, so the latch and the
+    /// move-driven catch-up have unlatched sections to work with. The markers
+    /// are seeded before the stream so the sections carry them.
+    fn big_world_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        (host_app, client_app)
+    }
+
+    /// Marks a tile as a real active tile.
+    fn mark(world: &mut tr_core::World, x: i32, y: i32, kind: u16) {
+        let i = world.index(x, y);
+        world.tiles[i].kind = kind;
+        world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_join_streams_the_spawn_sections() {
+        // The markers ride in the join box: the 5x3 box around section (0,0)
+        // clips to 3x2 for this world, so sections (0,0)..(2,1).
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        mark(&mut host_app.world, 10, 12, 7);
+        mark(&mut host_app.world, 210, 20, 8);
+        mark(&mut host_app.world, 450, 260, 9);
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        let at = |w: &tr_core::World, x: i32, y: i32| w.tile(x, y).map_or(0, |t| t.kind);
+        assert_eq!(at(&client_app.world, 10, 12), 7, "section (0,0)");
+        assert_eq!(at(&client_app.world, 210, 20), 8, "section (1,0)");
+        assert_eq!(at(&client_app.world, 450, 260), 9, "section (2,1)");
+        // Outside the box, nothing has streamed yet.
+        assert_eq!(
+            at(&client_app.world, 850, 550),
+            0,
+            "section (4,3) is not joined"
+        );
+        // The latched sections read back as sent, the far ones not.
+        if let NetRole::Host(server) = &host_app.net {
+            assert!(server.is_section_sent(1, 0, 0));
+            assert!(server.is_section_sent(1, 2, 1));
+            assert!(!server.is_section_sent(1, 4, 3));
+        }
+    }
+
+    #[test]
+    fn a_moved_peer_streams_the_sections_it_approaches() {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        // A marker in the far section (850,550) the join box did not cover.
+        mark(&mut host_app.world, 850, 550, 9);
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            client_app.world.tile(850, 550).map_or(0, |t| t.kind),
+            0,
+            "the unjoined section is not there yet"
+        );
+        // Move the peer into that section: the next cadence tick streams it.
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the client peer")
+            .x = 860.0 * tr_core::TILE_PX;
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the client peer")
+            .y = 560.0 * tr_core::TILE_PX;
+        pump(&mut host_app, &mut client_app, 25);
+        assert_eq!(
+            client_app.world.tile(850, 550).map_or(0, |t| t.kind),
+            9,
+            "the approached section streamed"
+        );
+        if let NetRole::Host(server) = &host_app.net {
+            assert!(server.is_section_sent(1, 4, 3));
+        }
+    }
+
+    #[test]
+    fn a_tile_edit_replicates_as_a_section_range() {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        mark(&mut host_app.world, 50, 60, 5);
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.world.tile(50, 60).map_or(0, |t| t.kind), 5);
+        // The host edits the tile (the real flow: `editing.rs` mutates the
+        // world, then asks for the replication) and the client receives the
+        // `20` body.
+        crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5);
+        host_app.request_edit(50, 60, 0, 5);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            client_app.world.tile(50, 60).map_or(0, |t| t.kind),
+            0,
+            "the removal replicated"
+        );
+    }
+
+    #[test]
+    fn a_client_edit_request_reaches_the_host() {
+        let (mut host_app, mut client_app) = big_world_pair();
+        mark(&mut client_app.world, 60, 60, 6);
+        // The client asks the host to apply a wall break at (60, 60).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Edit {
+                x: 60,
+                y: 60,
+                kind: 2,
+                tile: 1,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        // The host applied `break_wall` (kind 2) — its wall is gone.
+        assert_eq!(host_app.world.tile(60, 60).map_or(0, |t| t.wall), 0);
+        // And rebroadcast the tile as a `20`, so the client matches.
+        assert_eq!(client_app.world.tile(60, 60).map_or(0, |t| t.wall), 0);
+    }
+
+    #[test]
+    fn the_tile_codec_round_trips_runs_and_widths() {
+        use net::{SectionRange, TileBlock, TileRecord};
+        fn rec(kind: u16, wall: u16) -> TileRecord {
+            TileRecord {
+                active: true,
+                kind,
+                frame_important: false,
+                frame_x: 0,
+                frame_y: 0,
+                wall,
+                wall_frame: 0,
+                liquid: 0,
+                liquid_kind: 0,
+                half_brick: false,
+                slope: 0,
+                actuator: false,
+                inactive: false,
+                paint: 0,
+                wall_paint: 0,
+                wires: 0,
+                invisible_block: false,
+                invisible_wall: false,
+                fullbright_block: false,
+                fullbright_wall: false,
+            }
+        }
+        // A run of 300 identical tiles crosses the 1-byte repeat boundary;
+        // mixed walls exercise the 1/2-byte wall width switch; the last record
+        // is frame-important so the 4-byte frame pair rides.
+        let mut records = Vec::new();
+        for _ in 0..300 {
+            records.push(rec(0, 0));
+        }
+        records.push(rec(1, 1));
+        records.push(rec(2, 300));
+        records.push(TileRecord {
+            frame_important: true,
+            frame_x: 17,
+            frame_y: -3,
+            ..rec(6, 0)
+        });
+        let block = TileBlock {
+            x: 12,
+            y: 34,
+            w: records.len() as i16,
+            h: 1,
+            records,
+        };
+        let frame = block.frame();
+        assert!(frame.len() >= 3 && frame.len() <= net::MAX_PACKET);
+        assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), frame.len() as u16);
+        assert_eq!(frame[2], net::id::TILE_BLOCK);
+        let mut r = net::NetReader::new(&frame[3..]);
+        let back = TileBlock::decode_from(&mut r).expect("tile block");
+        assert_eq!(back, block, "the RLE run and the width switches round-trip");
+
+        // `20` round-trips the same records (its width/height are u8s on the
+        // wire — `NetMessage.cs:619-620` — so the rect fits in 255).
+        let mut recs = block.records.clone();
+        recs.resize(400, block.records[0]);
+        let range = SectionRange {
+            x: -5,
+            y: 7,
+            w: 200,
+            h: 2,
+            change_type: 0,
+            records: recs,
+        };
+        let frame = range.frame();
+        let mut r = net::NetReader::new(&frame[3..]);
+        let back = SectionRange::decode_from(&mut r).expect("section range");
+        assert_eq!(back, range);
     }
 }

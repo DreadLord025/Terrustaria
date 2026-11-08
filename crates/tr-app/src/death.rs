@@ -45,9 +45,11 @@ fn drop_gems(app: &mut App, x: f32, y: f32) {
 /// difficulty is classic), keeping the remainder. The port's coins live in
 /// `App.coins` (a copper total), so the dropped half is split greedily into
 /// platinum/gold/silver/copper stacks.
-/// `Main.ValueToCoins` (`Main.cs:55220-55262`): the copper total → the
-/// "1 platinum 2 gold 50 silver 10 copper" string, the zero denominations
-/// skipped (the en literals stand in for the `Currency.*` keys).
+/// `Main.ValueToCoins` (`Main.cs:55220-55264`): the copper total → the
+/// "1 platinum 2 gold 50 silver 10 copper" string from the localized
+/// `Currency.*` names (`.ToLower()` like the C#), the zero denominations
+/// skipped, the trailing space stripped — and an empty purse returns ""
+/// (the C# prints no copper at 0).
 pub fn value_to_coins(value: u64) -> String {
     let mut num = value;
     let mut platinum = 0u64;
@@ -68,18 +70,34 @@ pub fn value_to_coins(value: u64) -> String {
     let copper = num;
     let mut text = String::new();
     if platinum > 0 {
-        text += &format!("{} platinum ", platinum);
+        text += &format!(
+            "{} {} ",
+            platinum,
+            crate::lang::text("Currency.Platinum").to_lowercase()
+        );
     }
     if gold > 0 {
-        text += &format!("{} gold ", gold);
+        text += &format!(
+            "{} {} ",
+            gold,
+            crate::lang::text("Currency.Gold").to_lowercase()
+        );
     }
     if silver > 0 {
-        text += &format!("{} silver ", silver);
+        text += &format!(
+            "{} {} ",
+            silver,
+            crate::lang::text("Currency.Silver").to_lowercase()
+        );
     }
-    if copper > 0 || text.is_empty() {
-        text += &format!("{} copper", copper);
+    if copper > 0 {
+        text += &format!(
+            "{} {} ",
+            copper,
+            crate::lang::text("Currency.Copper").to_lowercase()
+        );
     }
-    text
+    text.trim_end().to_string()
 }
 
 pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
@@ -225,26 +243,49 @@ pub fn tick_tomb_falls(app: &mut App, dt: f32) {
     app.tomb_falls.retain(|t| t.alive);
 }
 
-/// The DoT death texts — one minimal-English line per [`DotDeath`] variant,
-/// standing in for the vanilla localization table (the decompile carries only
-/// the `DeathText.*` keys, `Lang.cs:1073-1126` `CreateDeathMessage` switch;
-/// full localization is a separate task). Non-DoT deaths keep the M2-DEATH-1
-/// stub text at the call site.
-pub fn death_text_for(death: DotDeath) -> &'static str {
+/// `Lang.cs:1045-1127` `CreateDeathMessage`'s `other` switch — the
+/// `PlayerDeathReason.ByOther(N)` → `DeathText.<base>` row family and its
+/// variant count, per DoT attribution. The `Main.rand.Next(n) + 1` variant
+/// roll the C# rides is passed in (`death_message`).
+pub fn death_text_key(death: DotDeath) -> (&'static str, u32) {
     match death {
-        // The bare-predicate style matches the M2-DEATH-1 stub ("was slain...").
-        DotDeath::Suffocation => "has suffocated.",
-        DotDeath::Burned => "was burned.",
-        DotDeath::Poison => "was poisoned.",
-        DotDeath::Electrified => "was electrocuted.",
-        DotDeath::Tongued => "was licked.",
-        DotDeath::VampireSunlight => "was burned by the sun.",
-        DotDeath::ChlorophyteSpore => "was spored.",
+        DotDeath::Suffocation => ("DeathText.Suffocated", 2),
+        DotDeath::Burned => ("DeathText.Burned", 4),
+        DotDeath::Poison => ("DeathText.Poisoned", 1),
+        DotDeath::Electrified => ("DeathText.Electrocuted", 4),
+        DotDeath::Tongued => ("DeathText.WasLicked", 2),
+        DotDeath::VampireSunlight => ("DeathText.VampireBurningInDaylight", 6),
+        DotDeath::ChlorophyteSpore => ("DeathText.Spored", 1),
     }
 }
 
+/// `PlayerDeathReason.GetDeathText`: the `DeathText.{base}_{variant}` row
+/// formatted with the dead player's name (the key rows carry `{0}`).
+/// `roll` is the C# `Main.rand.Next(variants)` — the caller draws it from its
+/// own stream (the port's split-stream model; documented in ANALYSIS).
+pub fn death_message(death: DotDeath, roll: f32, player_name: &str) -> String {
+    let (base, variants) = death_text_key(death);
+    // The single-variant rows (`DeathText.Poisoned`, `Slain`, `Spored`) carry
+    // no `_N` suffix; the families append the rolled index.
+    let key = if variants <= 1 {
+        base.to_string()
+    } else {
+        let variant = (roll.max(0.0) * variants as f32) as usize % variants as usize + 1;
+        format!("{base}_{variant}")
+    };
+    crate::lang::text_args(&key, &[player_name.to_string()])
+}
+
+/// `DeathText.Slain` — the non-attributed death row (`Lang.cs:1045`'s
+/// `case 4`), formatted with the player name.
+pub fn slain_message(player_name: &str) -> String {
+    crate::lang::text_args("DeathText.Slain", &[player_name.to_string()])
+}
+
 /// The death entry point: the drops at the death spot plus the falling
-/// tombstone. `death_text` is the epitaph (`PlayerDeathReason.ToString()`).
+/// tombstone. `death_text` is the fully-resolved message (the C# NetworkText
+/// already carries the player name inside — `"{0} was slain..."`), so no name
+/// is prepended here.
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     drop_gems(app, x, y);
     // `KillMe`'s softcore arm (`Player.cs:38931-38936`): `lostCoins =
@@ -253,7 +294,7 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     let lost = drop_coins(app, x, y);
     app.lost_coins = lost;
     app.lost_coin_string = value_to_coins(lost);
-    app.death_text = format!("{} {death_text}", app.player_name);
+    app.death_text = death_text.to_string();
     let mut tomb = roll_tombstone(&mut app.item_rng, app.coins);
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
@@ -265,21 +306,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn death_text_for_matches_the_by_other_table() {
+    fn death_text_key_matches_the_by_other_table() {
         // DW-1.2/DW-1.3 — Lang.cs:1073-1126: the ByOther(N) switch both drain
-        // lanes feed (`Player.cs:19321-19331,19362-19385`). The string bodies
-        // are the minimal-EN stand-ins (the decompile carries only the
-        // DeathText.* keys — ANALYSIS entry, Phase 4).
-        assert_eq!(death_text_for(DotDeath::Suffocation), "has suffocated."); // 7
-        assert_eq!(death_text_for(DotDeath::Burned), "was burned."); // 8
-        assert_eq!(death_text_for(DotDeath::Poison), "was poisoned."); // 9
-        assert_eq!(death_text_for(DotDeath::Electrified), "was electrocuted."); // 10
-        assert_eq!(death_text_for(DotDeath::Tongued), "was licked."); // 12
+        // lanes feed (`Player.cs:19321-19331,19362-19385`); the variant counts
+        // are the `Main.rand.Next(n) + 1` families.
+        assert_eq!(death_text_key(DotDeath::Suffocation), ("DeathText.Suffocated", 2)); // 7
+        assert_eq!(death_text_key(DotDeath::Burned), ("DeathText.Burned", 4)); // 8
+        assert_eq!(death_text_key(DotDeath::Poison), ("DeathText.Poisoned", 1)); // 9
+        assert_eq!(death_text_key(DotDeath::Electrified), ("DeathText.Electrocuted", 4)); // 10
+        assert_eq!(death_text_key(DotDeath::Tongued), ("DeathText.WasLicked", 2)); // 12
         assert_eq!(
-            death_text_for(DotDeath::VampireSunlight),
-            "was burned by the sun."
+            death_text_key(DotDeath::VampireSunlight),
+            ("DeathText.VampireBurningInDaylight", 6)
         ); // 22
-        assert_eq!(death_text_for(DotDeath::ChlorophyteSpore), "was spored."); // 23
+        assert_eq!(death_text_key(DotDeath::ChlorophyteSpore), ("DeathText.Spored", 1)); // 23
+    }
+
+    #[test]
+    fn death_message_picks_the_variant_and_formats_the_name() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // roll 0.0 and 0.999 both stay inside the 2-variant family.
+        assert_eq!(death_message(DotDeath::Suffocation, 0.0, "Bob"), "Bob couldn't breathe.");
+        assert_eq!(death_message(DotDeath::Suffocation, 0.99, "Bob"), "Bob was buried alive.");
+        // A single-variant family ignores the roll.
+        assert_eq!(
+            death_message(DotDeath::Poison, 0.5, "Bob"),
+            "Bob couldn't find the antidote."
+        );
+        assert_eq!(slain_message("Bob"), "Bob was slain...");
     }
 
     #[test]
@@ -345,14 +400,15 @@ mod revenge_tests {
 
     #[test]
     fn value_to_coins_skips_the_zero_denominations() {
-        // `Main.ValueToCoins` (`Main.cs:55220-55262`): the greedy split, the
-        // zero tiers skipped, the bare copper still prints.
-        assert_eq!(value_to_coins(0), "0 copper");
-        assert_eq!(value_to_coins(10), "10 copper");
-        assert_eq!(value_to_coins(150), "1 silver 50 copper");
-        assert_eq!(value_to_coins(10_050), "1 gold 50 copper");
-        assert_eq!(value_to_coins(1_010_050), "1 platinum 1 gold 50 copper");
-        assert_eq!(value_to_coins(2_000_000), "2 platinum ");
+        // `Main.ValueToCoins` (`Main.cs:55220-55264`): the greedy split, the
+        // zero tiers skipped, the trailing space stripped, and the empty
+        // purse returns "" (the C# prints no copper at 0).
+        assert_eq!(value_to_coins(0), "");
+        assert_eq!(value_to_coins(10), format!("10 {}", crate::lang::text("Currency.Copper").to_lowercase()));
+        assert_eq!(value_to_coins(150), format!("1 {} 50 {}", crate::lang::text("Currency.Silver").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
+        assert_eq!(value_to_coins(10_050), format!("1 {} 50 {}", crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
+        assert_eq!(value_to_coins(1_010_050), format!("1 {} 1 {} 50 {}", crate::lang::text("Currency.Platinum").to_lowercase(), crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
+        assert_eq!(value_to_coins(2_000_000), format!("2 {}", crate::lang::text("Currency.Platinum").to_lowercase()));
     }
 
     #[test]
@@ -364,7 +420,7 @@ mod revenge_tests {
         app.player_name = "Tester".into();
         app.coins = 10_050; // 1 gold 50 silver 50 copper → drops 5025
         let before = app.coins;
-        on_player_death(&mut app, 100.0, 100.0, "was slain.");
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         assert!(app.lost_coins > 0 && app.lost_coins < before);
         assert_eq!(app.lost_coins, before - app.coins, "the purse halves");
         assert_eq!(
@@ -372,7 +428,7 @@ mod revenge_tests {
             value_to_coins(app.lost_coins),
             "the string mirrors the total"
         );
-        assert_eq!(app.death_text, "Tester was slain.");
+        assert_eq!(app.death_text, "Tester was slain...");
         // The coin items landed on the ground (the drop pass).
         assert!(app
             .items
@@ -387,10 +443,10 @@ mod revenge_tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.player_name = "Tester".into();
         app.coins = 0;
-        on_player_death(&mut app, 100.0, 100.0, "was slain.");
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         assert_eq!(app.lost_coins, 0);
-        assert_eq!(app.lost_coin_string, "0 copper");
-        assert_eq!(app.death_text, "Tester was slain.");
+        assert_eq!(app.lost_coin_string, "");
+        assert_eq!(app.death_text, "Tester was slain...");
     }
 }
 
