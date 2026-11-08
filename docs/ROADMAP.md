@@ -1552,7 +1552,7 @@ silently dropped before this) [18] |
 | Task | Branch | Scope |
 | --- | --- | --- |
 | REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
-| REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly |
+| ✅ REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly — done 2026-11-09: the shared Xorshift64 core (crates/tr-core/src/rng.rs) carrying both draw conventions byte-exactly (noise.rs re-exports it as Rng; wind.rs, temple.rs's next_double and menu::random_name route through it); the pre-refactor streams replayed verbatim in rng.rs's tests; FastRandom/LCG cores out of scope |
 | REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio |
 | REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further Tile packing (12→8-10 B) stays deferred |
@@ -1706,7 +1706,7 @@ silently dropped before this) [18] |
 | Task | Branch | Scope |
 | --- | --- | --- |
 | REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
-| REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly |
+| ✅ REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly — done 2026-11-09: the shared Xorshift64 core (crates/tr-core/src/rng.rs) carrying both draw conventions byte-exactly (noise.rs re-exports it as Rng; wind.rs, temple.rs's next_double and menu::random_name route through it); the pre-refactor streams replayed verbatim in rng.rs's tests; FastRandom/LCG cores out of scope |
 | REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio |
 | REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further Tile packing (12→8-10 B) stays deferred |
