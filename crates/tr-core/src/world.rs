@@ -133,6 +133,15 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// The Skeletron Prime head's centre + the present flag (the limbs'
+    /// tether reads — the WoF write-through shape).
+    pub prime_present: bool,
+    pub prime_x: f32,
+    pub prime_y: f32,
+    /// The Skeletron head's centre (`NPC.cs:21930`'s spawn point + the
+    /// hands' tether reads) — the skeletron_x/y pair.
+    pub skeletron_x: f32,
+    pub skeletron_y: f32,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -184,6 +193,16 @@ pub struct World {
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
+    /// raises it, the win/loss clears it.
+    pub dd2_event_ongoing: bool,
+    /// `NPC.waveNumber` — the Old One's Army's wave (1-3 tiers).
+    pub dd2_wave: i32,
+    /// `NPC.waveKills` — the current wave's kill count.
+    pub dd2_wave_kills: f32,
+    /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
+    /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
+    pub dd2_spawn_hold: i32,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -259,6 +278,11 @@ impl World {
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
             golem_x: 0.0,
+            skeletron_x: 0.0,
+            prime_present: false,
+            prime_x: 0.0,
+            prime_y: 0.0,
+            skeletron_y: 0.0,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
@@ -291,6 +315,10 @@ impl World {
             downed_frost: false,
             downed_pirates: false,
             downed_martians: false,
+            dd2_event_ongoing: false,
+            dd2_wave: 1,
+            dd2_wave_kills: 0.0,
+            dd2_spawn_hold: 300,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,

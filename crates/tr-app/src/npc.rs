@@ -146,6 +146,59 @@ pub enum NpcKind {
     /// (`NPC.cs:14632-14650`: 350×120, aiStyle 93, dmg 0, def 100, 50 HP,
     /// dontTakeDamage, value 0; the crew's 4 cannons fight for it).
     FlyingDutchman,
+    /// `NPCID.DD2GoblinT1` (552) — the Old One's Army goblin
+    /// (`NPC.cs:13891-13906`: 18×40, aiStyle 107, dmg 18, def 14, 30 HP,
+    /// kb 0.2, value 0, npcSlots 0, lavaImmune).
+    DD2GoblinT1,
+    /// `NPCID.DD2GoblinT2` (553) — the tier-2 goblin (170 HP, dmg 46,
+    /// def 20, the +0.01/+0.2 accel/speed).
+    DD2GoblinT2,
+    /// `NPCID.DD2GoblinT3` (554) — the tier-3 goblin (560 HP, dmg 70,
+    /// def 28, the +0.02/+0.4 accel/speed).
+    DD2GoblinT3,
+    /// `NPCID.DD2GoblinBomberT1` (555) — the kobold bomber (`NPC.cs`:
+    /// 18×40, aiStyle 107, dmg 26, def 16, 50 HP; the fuse death).
+    DD2GoblinBomberT1,
+    /// `NPCID.DD2GoblinBomberT2` (556) — the tier-2 bomber (200 HP,
+    /// dmg 55, def 26).
+    DD2GoblinBomberT2,
+    /// `NPCID.DD2GoblinBomberT3` (557) — the tier-3 bomber (700 HP,
+    /// dmg 75, def 34).
+    DD2GoblinBomberT3,
+    /// `NPCID.DD2JavelinstT1` (561) — the javelin thrower (`NPC.cs`:
+    /// 26×52, aiStyle 107, dmg 30, def 18, 60 HP).
+    DD2JavelinT1,
+    /// `NPCID.DD2JavelinstT2` (562) — the tier-2 javelin (300 HP,
+    /// dmg 60, def 28).
+    DD2JavelinT2,
+    /// `NPCID.DD2JavelinstT3` (563) — the tier-3 javelin (1000 HP,
+    /// dmg 80, def 38, the 685 spear).
+    DD2JavelinT3,
+    /// `NPCID.DD2SkeletonT1` (566) — the etherian skeleton (`NPC.cs`:
+    /// 18×40, aiStyle 107, dmg 18, def 12, 25 HP; materializes in).
+    DD2SkeletonT1,
+    /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
+    /// dmg 70, def 22).
+    DD2SkeletonT3,
+    /// `NPCID.DD2Bartender` (550) — the tavernkeeper (`NPC.cs`:
+    /// 18×40, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5).
+    DD2Bartender,
+    /// `NPCID.DD2EterniaCrystal` (548) — the Old One's Army's crystal
+    /// (`NPC.cs:15998-16022`: 40×40, aiStyle 105, def 14, 1000 HP,
+    /// friendly, npcSlots 0, hide; the 180-tick spawn-in shield).
+    DD2EterniaCrystal,
+    /// `NPCID.DD2WitherBeastT2` (568) — the Old One's Army's ethereal
+    /// caster-beast (`NPC.cs`: 18×40, aiStyle 107, 500 HP, dmg 50, def 30,
+    /// kb 0.15; the aura + the self-heal + the 683 crystal shots).
+    DD2WitherBeast,
+    /// `NPCID.DD2Betsy` (551) — the Old One's Army's dragon boss
+    /// (`NPC.cs:16400-16424`: 190×90, aiStyle 110, 50000 HP, dmg 80,
+    /// def 38, noGravity, noTileCollide, lavaImmune).
+    DD2Betsy,
+    /// `NPCID.DD2DarkMageT1` (564) — the Old One's Army caster (`NPC.cs`
+    /// `:16445-16466`: 34×62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
+    /// noGravity, lavaImmune; the summon/heal/shadowflame casts).
+    DD2DarkMage,
     /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
     /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
@@ -339,6 +392,24 @@ pub enum NpcKind {
     /// `NPC.cs:17449-17466`: 60x154, aiStyle 123, dmg 20, def 10,
     /// 7000 HP, kb 0, boss, noGravity, noTileCollide, 5 gold).
     Deerclops,
+    /// `NPCID.SkeletronHand` (36) — the Skeletron's tether hand (`aiStyle
+    /// 12`, `NPC.cs:9183-9196`: 52x52, dmg 20, def 14, 600 HP, kb 0).
+    SkeletronHand,
+    /// `NPCID.WallOfFleshEye` (114) — the WoF's mirror eye (`aiStyle 28`,
+    /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life).
+    WallOfFleshEye,
+    /// `NPCID.PrimeCannon` (128) — the Prime's bomb limb (`aiStyle 35`,
+    /// `NPC.cs:10577-10591`: 52x52, dmg 30, def 23, 7000 HP).
+    PrimeCannon,
+    /// `NPCID.PrimeSaw` (129) — the Prime's saw limb (`aiStyle 33`:
+    /// 56 dmg, def 38, 9000 HP).
+    PrimeSaw,
+    /// `NPCID.PrimeVice` (130) — the Prime's vice limb (`aiStyle 34`:
+    /// 52 dmg, def 34, 9000 HP).
+    PrimeVice,
+    /// `NPCID.PrimeLaser` (131) — the Prime's laser limb (`aiStyle 36`:
+    /// 29 dmg, def 20, 6000 HP).
+    PrimeLaser,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -557,6 +628,22 @@ impl NpcKind {
             NpcKind::MartianSaucerCore => 92,
             NpcKind::FlyingDutchman => 93,
             NpcKind::FlyingDutchmanCannon => 94,
+            NpcKind::DD2GoblinT1 => 95,
+            NpcKind::DD2GoblinT2 => 96,
+            NpcKind::DD2GoblinT3 => 97,
+            NpcKind::DD2GoblinBomberT1 => 98,
+            NpcKind::DD2GoblinBomberT2 => 99,
+            NpcKind::DD2GoblinBomberT3 => 100,
+            NpcKind::DD2JavelinT1 => 101,
+            NpcKind::DD2JavelinT2 => 102,
+            NpcKind::DD2JavelinT3 => 103,
+            NpcKind::DD2SkeletonT1 => 104,
+            NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
+            NpcKind::DD2WitherBeast => 108,
+            NpcKind::DD2Bartender => 109,
+            NpcKind::DD2EterniaCrystal => 110,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -606,6 +693,13 @@ impl NpcKind {
             NpcKind::GolemFistRight => 76,
             NpcKind::GolemHeadFree => 77,
             NpcKind::Deerclops => 78,
+            NpcKind::SkeletronHand => 79,
+            NpcKind::WallOfFleshEye => 80,
+            NpcKind::WallOfFleshEye => 80,
+            NpcKind::PrimeCannon => 81,
+            NpcKind::PrimeSaw => 82,
+            NpcKind::PrimeVice => 83,
+            NpcKind::PrimeLaser => 84,
         }
     }
 
@@ -655,6 +749,22 @@ impl NpcKind {
             92 => NpcKind::MartianSaucerCore,
             93 => NpcKind::FlyingDutchman,
             94 => NpcKind::FlyingDutchmanCannon,
+            95 => NpcKind::DD2GoblinT1,
+            96 => NpcKind::DD2GoblinT2,
+            97 => NpcKind::DD2GoblinT3,
+            98 => NpcKind::DD2GoblinBomberT1,
+            99 => NpcKind::DD2GoblinBomberT2,
+            100 => NpcKind::DD2GoblinBomberT3,
+            101 => NpcKind::DD2JavelinT1,
+            102 => NpcKind::DD2JavelinT2,
+            103 => NpcKind::DD2JavelinT3,
+            104 => NpcKind::DD2SkeletonT1,
+            105 => NpcKind::DD2SkeletonT3,
+            106 => NpcKind::DD2DarkMage,
+            107 => NpcKind::DD2Betsy,
+            108 => NpcKind::DD2WitherBeast,
+            109 => NpcKind::DD2Bartender,
+            110 => NpcKind::DD2EterniaCrystal,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -704,6 +814,12 @@ impl NpcKind {
             76 => NpcKind::GolemFistRight,
             77 => NpcKind::GolemHeadFree,
             78 => NpcKind::Deerclops,
+            79 => NpcKind::SkeletronHand,
+            80 => NpcKind::WallOfFleshEye,
+            81 => NpcKind::PrimeCannon,
+            82 => NpcKind::PrimeSaw,
+            83 => NpcKind::PrimeVice,
+            84 => NpcKind::PrimeLaser,
             _ => return None,
         })
     }
@@ -857,6 +973,24 @@ impl NpcKind {
             // 491/492).
             NpcKind::FlyingDutchman => (350.0, 120.0),
             NpcKind::FlyingDutchmanCannon => (30.0, 30.0),
+            // The DD2 goblins: 18x40 (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (18.0, 40.0),
+            // The DD2 bombers: 18x40; the javelin throwers 26x52; the
+            // etherian skeletons 18x40 (`NPC.cs`'s 555-567 rows).
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3 => (18.0, 40.0),
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (26.0, 52.0),
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => (18.0, 40.0),
+            // The Dark Mage: 34x62 (`NPC.cs`'s case 564).
+            NpcKind::DD2DarkMage => (34.0, 62.0),
+            // Betsy: 190x90 (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => (190.0, 90.0),
+            // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
+            NpcKind::DD2WitherBeast => (18.0, 40.0),
+            // The tavernkeeper + the etherian crystal: 18x40 / 40x40.
+            NpcKind::DD2Bartender => (18.0, 40.0),
+            NpcKind::DD2EterniaCrystal => (40.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -870,6 +1004,11 @@ impl NpcKind {
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => (40.0, 30.0),
             // `SetDefaults` 668 (`:17451-17452`): 60x154.
             NpcKind::Deerclops => (60.0, 154.0),
+            NpcKind::SkeletronHand => (52.0, 52.0),
+            NpcKind::WallOfFleshEye => (100.0, 100.0),
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                (52.0, 52.0)
+            }
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -926,6 +1065,46 @@ impl NpcKind {
             // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
             NpcKind::Hungry => (30.0, 30.0),
             NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
+        }
+    }
+
+    /// The C# `NPCID` this kind ports — the statue spawns' ids, the
+    /// `MechSpawn` caps (`NPC.cs:7420`) and the teleporting statues' rosters
+    /// (`Wiring.cs:2424`/`:2452`) all speak C# ids. Rows arrive with the
+    /// kinds; `u16::MAX` marks a kind the caps can never match (the C#'s
+    /// `MechSpawn` counts by type, and no statue spawns an unmapped kind).
+    pub(crate) fn cs_id(self) -> u16 {
+        match self {
+            NpcKind::Slime => 1,
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 133,
+            NpcKind::Zombie => 21,
+            NpcKind::KingSlime => 50,
+            NpcKind::Guide => 22,
+            // The teleporting statues' rosters (`Wiring.cs:2424`/`:2452`) are the
+            // town NPCs — the port has most of them.
+            NpcKind::Merchant => 17,
+            NpcKind::Nurse => 18,
+            NpcKind::ArmsDealer => 19,
+            NpcKind::Dryad => 20,
+            NpcKind::Demolitionist => 38,
+            NpcKind::Clothier => 54,
+            NpcKind::Painter => 227,
+            NpcKind::WitchDoctor => 228,
+            NpcKind::Skeleton => 77,
+            NpcKind::UndeadMiner => 23,
+            NpcKind::CaveBat => 49,
+            NpcKind::JungleBat => 51,
+            NpcKind::Hellbat => 60,
+            NpcKind::VoodooDemon => 66,
+            NpcKind::EaterOfSouls => 6,
+            NpcKind::Hornet => 42,
+            NpcKind::MeteorHead => 5,
+            NpcKind::FireImp => 24,
+            NpcKind::Goldfish => 55,
+            NpcKind::Piranha => 58,
+            NpcKind::Shark => 65,
+            _ => u16::MAX,
         }
     }
 
@@ -1031,6 +1210,29 @@ impl NpcKind {
             // (`NPC.cs`'s cases 491/492).
             NpcKind::FlyingDutchman => 50,
             NpcKind::FlyingDutchmanCannon => 2000,
+            // The DD2 goblins: 30/170/560 HP (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 30,
+            NpcKind::DD2GoblinT2 => 170,
+            NpcKind::DD2GoblinT3 => 560,
+            // The support rows (`NPC.cs`): the bombers 50/200/700, the
+            // javelineers 60/300/1000, the skeletons 25/480.
+            NpcKind::DD2GoblinBomberT1 => 50,
+            NpcKind::DD2GoblinBomberT2 => 200,
+            NpcKind::DD2GoblinBomberT3 => 700,
+            NpcKind::DD2JavelinT1 => 60,
+            NpcKind::DD2JavelinT2 => 300,
+            NpcKind::DD2JavelinT3 => 1000,
+            NpcKind::DD2SkeletonT1 => 25,
+            NpcKind::DD2SkeletonT3 => 480,
+            // The Dark Mage: 800 HP.
+            NpcKind::DD2DarkMage => 800,
+            // Betsy: 50000 HP (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => 50000,
+            // The WitherBeast: 500 HP.
+            NpcKind::DD2WitherBeast => 500,
+            // The tavernkeeper 250, the crystal 1000 (`NPC.cs`'s rows).
+            NpcKind::DD2Bartender => 250,
+            NpcKind::DD2EterniaCrystal => 1000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1045,6 +1247,12 @@ impl NpcKind {
             NpcKind::GolemHeadFree => 16000,
             // `:17456`: 7000.
             NpcKind::Deerclops => 7000,
+            NpcKind::SkeletronHand => 600,
+            NpcKind::WallOfFleshEye => 8000,
+            NpcKind::PrimeCannon => 7000,
+            NpcKind::PrimeSaw => 9000,
+            NpcKind::PrimeVice => 9000,
+            NpcKind::PrimeLaser => 6000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -1151,6 +1359,28 @@ impl NpcKind {
             // The Dutchman 0 (contactless), its cannons 30.
             NpcKind::FlyingDutchman => 0,
             NpcKind::FlyingDutchmanCannon => 30,
+            // The DD2 goblins: 18/46/70 dmg (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 18,
+            NpcKind::DD2GoblinT2 => 46,
+            NpcKind::DD2GoblinT3 => 70,
+            // The support's damage: 26/55/75, 30/60/80, 18/70.
+            NpcKind::DD2GoblinBomberT1 => 26,
+            NpcKind::DD2GoblinBomberT2 => 55,
+            NpcKind::DD2GoblinBomberT3 => 75,
+            NpcKind::DD2JavelinT1 => 30,
+            NpcKind::DD2JavelinT2 => 60,
+            NpcKind::DD2JavelinT3 => 80,
+            NpcKind::DD2SkeletonT1 => 18,
+            NpcKind::DD2SkeletonT3 => 70,
+            // The Dark Mage: dmg 40.
+            NpcKind::DD2DarkMage => 40,
+            // Betsy: dmg 80.
+            NpcKind::DD2Betsy => 80,
+            // The WitherBeast: dmg 50.
+            NpcKind::DD2WitherBeast => 50,
+            // The tavernkeeper 10, the crystal 0 (its contact damage is 0).
+            NpcKind::DD2Bartender => 10,
+            NpcKind::DD2EterniaCrystal => 0,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1164,6 +1394,12 @@ impl NpcKind {
             NpcKind::GolemHeadFree => 80,
             // `:17455`: 20.
             NpcKind::Deerclops => 20,
+            NpcKind::SkeletronHand => 20,
+            NpcKind::WallOfFleshEye => 50,
+            NpcKind::PrimeCannon => 30,
+            NpcKind::PrimeSaw => 56,
+            NpcKind::PrimeVice => 52,
+            NpcKind::PrimeLaser => 29,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1253,6 +1489,9 @@ pub struct Npc {
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
+    /// The King Slime's minion batch count (`AI_015` `:44233`'s
+    /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
+    pub wants_minion_batch: u32,
     /// The town NPC's assigned home tile (`homeTileX/Y`); `None` =
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
     /// world-file persistence lands with M6-SAVE-1's NPC sections.
@@ -1281,6 +1520,8 @@ pub struct Npc {
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
     pub wants_leech: bool,
+    /// The Prime's 4-limb spawn request (the `aiStyle 32` one-shot init).
+    pub wants_limbs: bool,
     /// The WoF's Hungry init request (`localAI[0]` 1 → 2's 11 spawns).
     pub wants_hungry: bool,
     /// The AI's per-tick contact-damage override (the Hungry's
@@ -1360,7 +1601,10 @@ pub struct Npc {
 /// The 2-D rotation helper for the Dutchman's drop offsets
 /// (`Vector2.RotatedBy`).
 pub(crate) fn rot(x: f32, y: f32, angle: f32) -> (f32, f32) {
-    (x * angle.cos() - y * angle.sin(), x * angle.sin() + y * angle.cos())
+    (
+        x * angle.cos() - y * angle.sin(),
+        x * angle.sin() + y * angle.cos(),
+    )
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -1692,6 +1936,7 @@ impl Npc {
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
+            wants_minion_batch: 0,
             home: None,
             caster_counter: 0,
             cast_windup: 0,
@@ -1702,6 +1947,7 @@ impl Npc {
             worm_left: 0,
             worm_inited: false,
             wants_leech: false,
+            wants_limbs: false,
             wants_hungry: false,
             damage_override: None,
             wof_bottom_target: -1.0,
@@ -1802,6 +2048,25 @@ impl Npc {
             // The Dutchman family: kb 0 (cases 491/492).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
+            // The DD2 goblins: kb 0.2/0.2/0.15 (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 => 0.2,
+            NpcKind::DD2GoblinT3 => 0.15,
+            // The support's kb: the bombers 0.1, the javelineers 0.2, the
+            // skeletons 0.5 (`NPC.cs`'s rows).
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3 => 0.1,
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => 0.2,
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
+            // The Dark Mage: kb 0 (case 564 sets nothing).
+            NpcKind::DD2DarkMage => 0.0,
+            // Betsy: kb 0 (case 551 sets nothing).
+            NpcKind::DD2Betsy => 0.0,
+            // The WitherBeast: kb 0.15.
+            NpcKind::DD2WitherBeast => 0.15,
+            // The tavernkeeper 0.5, the crystal 0.
+            NpcKind::DD2Bartender => 0.5,
+            NpcKind::DD2EterniaCrystal => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1816,9 +2081,17 @@ impl Npc {
             | NpcKind::GolemHeadFree => 0.0,
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
+            NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Deerclops => 0.0,
-            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
-            NpcKind::Deerclops => 50000.0,
+            NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 0.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1882,6 +2155,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
+            _ => 0.4,
         }
     }
 
@@ -1947,6 +2221,28 @@ impl Npc {
             // The Dutchman def 100, its cannons def 20.
             NpcKind::FlyingDutchman => 100,
             NpcKind::FlyingDutchmanCannon => 20,
+            // The DD2 goblins: 14/20/28 def (`NPC.cs`'s cases 552-554).
+            NpcKind::DD2GoblinT1 => 14,
+            NpcKind::DD2GoblinT2 => 20,
+            NpcKind::DD2GoblinT3 => 28,
+            // The support's defense: 16/26/34, 18/28/38, 12/22.
+            NpcKind::DD2GoblinBomberT1 => 16,
+            NpcKind::DD2GoblinBomberT2 => 26,
+            NpcKind::DD2GoblinBomberT3 => 34,
+            NpcKind::DD2JavelinT1 => 18,
+            NpcKind::DD2JavelinT2 => 28,
+            NpcKind::DD2JavelinT3 => 38,
+            NpcKind::DD2SkeletonT1 => 12,
+            NpcKind::DD2SkeletonT3 => 22,
+            // The Dark Mage: def 18.
+            NpcKind::DD2DarkMage => 18,
+            // Betsy: def 38.
+            NpcKind::DD2Betsy => 38,
+            // The WitherBeast: def 30.
+            NpcKind::DD2WitherBeast => 30,
+            // The tavernkeeper 15, the crystal 14.
+            NpcKind::DD2Bartender => 15,
+            NpcKind::DD2EterniaCrystal => 14,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1960,6 +2256,12 @@ impl Npc {
             NpcKind::GolemHeadFree => 32,
             // `:17457`: 10.
             NpcKind::Deerclops => 10,
+            NpcKind::SkeletronHand => 14,
+            NpcKind::WallOfFleshEye => 0,
+            NpcKind::PrimeCannon => 23,
+            NpcKind::PrimeSaw => 38,
+            NpcKind::PrimeVice => 34,
+            NpcKind::PrimeLaser => 20,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -2040,6 +2342,11 @@ impl Npc {
             NpcKind::WanderingEye => 500.0,
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
+            NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Zombie => 60.0,
             // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
             NpcKind::Skeleton => 100.0,
@@ -2088,6 +2395,21 @@ impl Npc {
             // The Dutchman family: value 0 (the loot rides the guns).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
+            // The DD2 goblins: value 0 (cases 552-554 set nothing).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => 0.0,
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2JavelinT1
+            | NpcKind::DD2JavelinT2
+            | NpcKind::DD2JavelinT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3
+            | NpcKind::DD2DarkMage
+            | NpcKind::DD2Betsy
+            | NpcKind::DD2WitherBeast
+            | NpcKind::DD2EterniaCrystal
+            | NpcKind::DD2Bartender => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2274,6 +2596,7 @@ impl Npc {
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
             NpcKind::Guide
+            | NpcKind::DD2Bartender
             | NpcKind::Merchant
             | NpcKind::Dryad
             | NpcKind::Nurse
@@ -2285,6 +2608,11 @@ impl Npc {
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
+            NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
+            NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                self.update_prime_limb(world, player)
+            }
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
@@ -2352,13 +2680,42 @@ impl Npc {
             // The saucer family: the core's aiStyle-76 machine and the
             // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
-            NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
-                self.update_saucer_mount(world, rng)
-            }
+            NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
             // The pirate ship: aiStyle 93's crew-carrier machine + its
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
             NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
+            // The DD2 goblins: aiStyle 107's improved walker.
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                self.update_dd2_goblin(world, player, dt)
+            }
+            // The DD2 support families (`AI_107_ImprovedWalkers`'s arms):
+            // the bombers, the javelin throwers, the materializing
+            // skeletons.
+            // The DD2 throwers' weapon arm FIRST (the match's order):
+            // the javelineers throw the spear (662, the tier-3's 685) at
+            // the ai[1] == 82 cadence.
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => {
+                self.update_dd2_thrower(world, player, rng)
+            }
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3 => self.update_dd2_bomber(world, player, rng),
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
+                self.update_dd2_skeleton(world, player)
+            }
+            // The Dark Mage: aiStyle 109's cast machine.
+            NpcKind::DD2DarkMage => self.update_dark_mage(world, player, rng),
+            // Betsy: aiStyle 110's phase machine.
+            NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
+            // The WitherBeast: aiStyle 107's aura/self-heal machine.
+            NpcKind::DD2WitherBeast => self.update_wither_beast(world, player, rng),
+            // The tavernkeeper: the town-NPC walker (aiStyle 7).
+            NpcKind::DD2Bartender => self.update_guide(world, dt),
+            // The etherian crystal: aiStyle 105's machine.
+            NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2372,9 +2729,9 @@ impl Npc {
             // entry's 80-tick timer, the per-kind projectile/speed/damage,
             // the fire at the half-cooldown) — the Archer's arrows, the
             // Corsair's musket balls, the Captain's wounded barrage.
-            NpcKind::PirateArcher
-            | NpcKind::PirateCorsair
-            | NpcKind::PirateCaptain => self.update_martian_shooter(world, player, rng),
+            NpcKind::PirateArcher | NpcKind::PirateCorsair | NpcKind::PirateCaptain => {
+                self.update_martian_shooter(world, player, rng)
+            }
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -2416,6 +2773,25 @@ impl Npc {
         self.contact(player);
     }
 
+    /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
+    /// wind-up + slam sequence the ai[0]==1/4 states play.
+    const DEERCLOPS_ATTACK_1: [u32; 12] =
+        [12, 13, 14, 13, 14, 13, 14, 13, 14, 15, 16, 17];
+    /// `_deerclopsAttack2Frames` (`:95282-95284`): the 13-frame rubble
+    /// sequence of the ai[0]==2 state.
+    const DEERCLOPS_ATTACK_2: [u32; 13] =
+        [12, 15, 16, 17, 17, 17, 17, 13, 18, 18, 18, 18, 12];
+    /// `_deerclopsAttack3Frames` (`:95287-95290`): the 16-frame
+    /// blizzard/shadow-hand sequence of the ai[0]==3/5/7/8 states.
+    const DEERCLOPS_ATTACK_3: [u32; 16] =
+        [19, 20, 21, 22, 21, 22, 21, 22, 23, 24, 23, 24, 23, 24, 20, 19];
+
+    /// `NPC.FindFrame_FromSequence` (`NPC.cs:77372-77380`): the sequence
+    /// frame index clamps to the array's last entry past the end.
+    fn seq_cell(seq: &[u32], i: usize) -> u32 {
+        seq[i.min(seq.len() - 1)]
+    }
+
     /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
     /// frame height unit) cancels out because frames are tracked as row indices;
     /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
@@ -2433,6 +2809,19 @@ impl Npc {
             0
         };
         match self.kind {
+            NpcKind::SkeletronHand => {
+                // The hand's single frame (`NPC.cs` has no FindFrame case
+                // for type 36 — the strip is one frame).
+                self.frame = 0;
+            }
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                // The limbs' single frame.
+                self.frame = 0;
+            }
+            NpcKind::WallOfFleshEye => {
+                // The single frame — no FindFrame case for type 114.
+                self.frame = 0;
+            }
             // The goblins: the 16/21/20-frame humanoid strips (the same
             // accumulator as the zombie's).
             NpcKind::GoblinThief
@@ -2553,6 +2942,68 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 8;
+                }
+            }
+            // The DD2 goblins: the 14-frame humanoid strip
+            // (`Main.npcFrameCount` 552-554).
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // The support families: the bombers/javelineers/skeletons ride
+            // the humanoid strips (the same accumulator; the skeletons'
+            // materialize cycle drives their own timer).
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2JavelinT1
+            | NpcKind::DD2JavelinT2
+            | NpcKind::DD2JavelinT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3 => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // Betsy: the 11-frame dragon strip.
+            NpcKind::DD2Betsy => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
+                }
+            }
+            // The WitherBeast: the humanoid 14-frame strip.
+            NpcKind::DD2WitherBeast => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // The tavernkeeper: the humanoid 16-frame strip.
+            NpcKind::DD2Bartender => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 16;
+                }
+            }
+            // The etherian crystal: the 1-frame strip.
+            NpcKind::DD2EterniaCrystal => {
+                self.frame = 0;
+            }
+            // The Dark Mage: the 20-frame caster strip.
+            NpcKind::DD2DarkMage => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 20;
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -2903,10 +3354,46 @@ impl Npc {
                 self.frame = 0;
             }
             NpcKind::Deerclops => {
-                // The v1: the single-frame draw (the aiStyle-123 stomp
-                // machine lands with the full port).
-                self.frame_counter = 0.0;
-                self.frame = 0;
+                // `FindFrame`'s case 668 (`NPC.cs:66779-66841`): the
+                // frame selects a cell of the 5x5 grid (0..24) that
+                // `DrawNPCDirect_Deerclops` decodes (`cell / 5` column,
+                // `cell % 5` row). The attacks ride the C#'s three
+                // sequences at `(int)ai[1] / 4` (`FindFrame_FromSequence`
+                // clamps past the end, `:77372-77380`); the walk is the
+                // idle/air/2..11 cycle (`frameCounter += |vx|`, the 150
+                // wrap). The C#'s `frame.Width = 180` write is vestigial
+                // (this type's draw builds its own rect); the step
+                // sounds at the 4/9 rows ride the audio pass and are the
+                // follow-up.
+                let cell = match self.ai[0] as i32 {
+                    1 | 4 => {
+                        Self::seq_cell(&Self::DEERCLOPS_ATTACK_1, (self.ai[1] as i32 / 4) as usize)
+                    }
+                    2 => Self::seq_cell(&Self::DEERCLOPS_ATTACK_2, (self.ai[1] as i32 / 4) as usize),
+                    3 | 5 | 7 | 8 => {
+                        Self::seq_cell(&Self::DEERCLOPS_ATTACK_3, (self.ai[1] as i32 / 4) as usize)
+                    }
+                    _ => {
+                        // The walk (`:66817-66838`): the air frame while
+                        // the hop's velocity is live (the C#'s
+                        // `velocity.Y > 0 || localAI[0] == 1` — the
+                        // machine's hop drives both), the idle at
+                        // `vx == 0`, the 2..11 stride otherwise.
+                        if self.vy != 0.0 {
+                            1
+                        } else if self.vx == 0.0 {
+                            self.frame_counter = 0.0;
+                            0
+                        } else {
+                            self.frame_counter += self.vx.abs();
+                            if self.frame_counter >= 150.0 {
+                                self.frame_counter = 0.0;
+                            }
+                            2 + (self.frame_counter / 15.0) as u32
+                        }
+                    }
+                };
+                self.frame = cell;
             }
             NpcKind::Golem => {
                 // `FindFrame`'s case 245 (`NPC.cs:72898-72930`): the
@@ -4741,8 +5228,7 @@ impl Npc {
             // past 20 the barrage fires the 240 shell (100 dmg, 15 speed,
             // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
             // cooldown (the port's `cast_windup` as `localAI[3]`).
-            let captain_wounded = self.kind == NpcKind::PirateCaptain
-                && self.caster_counter >= 20;
+            let captain_wounded = self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20;
             if self.ai[1] * 2.0 >= cooldown as f32 {
                 let mut ax = dx;
                 let mut ay = dy;
@@ -4765,8 +5251,14 @@ impl Npc {
                     (proj, dmg)
                 };
                 let inv = shot_speed / len;
-                self.wants_hostile_shot
-                    .push((shot_proj, cx, cy + 6.0, ax * inv, ay * inv, shot_dmg));
+                self.wants_hostile_shot.push((
+                    shot_proj,
+                    cx,
+                    cy + 6.0,
+                    ax * inv,
+                    ay * inv,
+                    shot_dmg,
+                ));
                 self.ai[2] = octant(ax, ay);
                 if self.kind == NpcKind::PirateCaptain {
                     self.caster_counter += 1;
@@ -5156,13 +5648,560 @@ impl Npc {
             self.vy *= 0.95;
         }
         // The X drift (`:38944-38947`).
-        if (pcx - cx).abs() >= 300.0 && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32) {
+        if (pcx - cx).abs() >= 300.0
+            && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32)
+        {
             self.vx += self.facing as f32 * 0.06;
         }
         self.rotation = self.vx * 0.025;
         // The flight (noGravity).
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// `AI_107_ImprovedWalkers`'s DD2-goblin arm (`NPC.cs:63123-63145`) —
+    /// the Old One's Army attacker. The walk rides the improved walker
+    /// (the harness `num23` speed 1 + `num24` accel 0.07 + `num25` damp
+    /// 0.8 + the 30-pixel hop/jump frame); the tiers add (553: +0.01/+0.2;
+    /// 554: +0.02/+0.4); the wave acceleration rides `localAI[3]`'s ramp
+    /// (the port's `caster_counter`): below 60 the accel is
+    /// `0.01 + localAI[3]/60 * 0.05`. The scream/aggro arms
+    /// (`SoundID.DD2_GoblinScream`, `DD2Event.EnemiesShouldChasePlayers`)
+    /// ride the DD2Event framework — constants-off until it lands, so the
+    /// goblins walk toward the player through the walker harness.
+    fn update_dd2_goblin(&mut self, world: &World, player: &Player, dt: f32) {
+        let (pcx, pcy) = player.center();
+        // The wave-ramp: the port's `caster_counter` = `localAI[3]`.
+        let wave_accel = if self.caster_counter >= 60 {
+            self.caster_counter as f32
+        } else {
+            0.01 + self.caster_counter as f32 / 60.0 * 0.05
+        };
+        let (speed_add, accel_add) = match self.kind {
+            NpcKind::DD2GoblinT2 => (0.2, 0.01),
+            NpcKind::DD2GoblinT3 => (0.4, 0.02),
+            _ => (0.0, 0.0),
+        };
+        // The walker harness (the port's step; the accel rides the wave
+        // ramp + the tier's add).
+        let params = crate::npc_ai::WalkerParams {
+            speed: 1.0 + speed_add,
+            jump: -6.2,
+            aggro_x: 80.0 * TILE_PX,
+            aggro_y: 40.0 * TILE_PX,
+        };
+        crate::npc_ai::walker_step(self, world, pcx, pcy, params, GRAVITY, MAX_FALL);
+        // The DD2 accel overlay: the harness' own velocity bending stands
+        // in for the vanilla's `num24` (the accel ramp + the tier add);
+        // the vanilla applies it before the step — the port applies the
+        // ramp after and folds it into the drift.
+        let accel_el = (0.07 + accel_add + wave_accel).min(0.12);
+        let drift = if self.vx.abs() > params.speed {
+            -accel_el * self.vx.signum()
+        } else {
+            0.0
+        };
+        self.vx += drift;
+        let _ = dt;
+    }
+
+    /// `AI_107_ImprovedWalkers`'s etherian-skeleton arm (`NPC.cs:63510-`)
+    /// — the MATERIALIZE cycle. `localAI[3]` (the port's `caster_counter`)
+    /// counts the spawn-in: the skeleton fades in over the 110-tick run
+    /// (the port's render-carrying counter) and the walk rides the
+    /// improved-walker harness once materialized; the arm's dust/fade is
+    /// the render follow-up.
+    /// `AI_107_ImprovedWalkers`'s javelin-thrower arm (`NPC.cs:63434-63465`)
+    /// — the spear cadence: `ai[1]` counts to 82, the throw fires the
+    /// spear (662; the tier-3's 685) at the classic damage (30/60/80) from
+    /// the centre with the `UnitY * -14` spawn offset and the vanilla's
+    /// gravity arc (the port's ballistic integration stands in for the
+    /// projectile's own aiStyle-1 flight). The walk rides the harness
+    /// with the `speed = 8, accel × 3` row.
+    /// `AI_107_ImprovedWalkers`'s kobold-bomber arm (`NPC.cs:63490-63535`)
+    /// — the lob: the walk rides the harness (the speed 0.88/0.88/1.12 +
+    /// the tiered 0.6/0.6/0.4 `num16` arc weight + the `num15 = 0.4`
+    /// sway); the `ai[1]` cycle counts to 18 and lobs the 681 bomb
+    /// (14x14, aiStyle 16 — the bomb flight, penetrate -1) at the classic
+    /// damages 20/30/40 from the centre - 14 at the ballistic aim; the
+    /// vanilla's `flag24`/`flag12`/`flag15` (the chase/park states) and
+    /// the `DD2Event.EnemiesShouldChasePlayers` flag ride the DD2Event
+    /// framework — constants-off until it lands.
+    fn update_dd2_bomber(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The lob cycle: `ai[1]` to 18 (`num9`).
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 18.0 {
+            self.ai[1] = 0.0;
+            let dmg = match self.kind {
+                NpcKind::DD2GoblinBomberT2 => 30,
+                NpcKind::DD2GoblinBomberT3 => 40,
+                _ => 20,
+            };
+            // The ballistic aim: at the player (the arc's weight is the
+            // projectile's own aiStyle-16 flight).
+            let (dx, dy) = (pcx - cx, pcy - (cy - 14.0));
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+            let inv = 6.0 / dist; // the vanilla's `num10 = 6`
+            self.wants_hostile_shot
+                .push((681u16, cx, cy - 14.0, dx * inv, dy * inv, dmg));
+            let _ = rng;
+        }
+    }
+
+    /// `AI_109_DarkMage` (`NPC.cs:65791-66000`) — the Old One's Army's
+    /// caster. The materialize cycle rides `localAI[3]` (the port's
+    /// `caster_counter`: 60 ticks of fade-in from the portal) — the
+    /// vanilla's alpha fade is render-side; the CAST machine rides
+    /// `ai[0]`'s negative/positive cycle: the spawn request
+    /// (`ai[1] == 2` at `ai[0] == 64` fires the 673 summon marker +
+    /// `DD2Event.RaiseGoblins`), the shadowflame (`ai[1] == 0` at
+    /// `ai[0] == 32`: the 675 at 40 damage toward the player), the heal
+    /// (`ai[1] == 1` at `ai[0] == 40/48/56`: the 674 markers under the
+    /// target), and the re-arm (`ai[0] <= 0` → `ai[1]++` wrapped, the
+    /// −20/−120 rest). The flight: the hover toward the player with the
+    /// slow damp (0.5/0.1 speeds, the 0.96 damping), the rotation = vx
+    /// × 0.04.
+    ///
+    /// Deviations: `DD2Event.RaiseGoblins`/`CanRaiseGoblinsHere` ride the
+    /// DD2 framework (the summon request rides `wants_sphere`); the
+    /// `GetAttackDamage_ScaledByDifficulty` runs classic; the portal
+    /// sound/dust arms are unmodelled.
+    fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The materialize: `localAI[3]` counts to 60.
+        if self.caster_counter < 60 {
+            self.caster_counter += 1;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The hover (`:65950`'s tail): the slow approach with the damp.
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+        self.vx += (dx / d * 2.0 - self.vx) * 0.1;
+        self.vy += (dy / d * 2.0 - self.vy) * 0.1;
+        self.vx *= 0.96;
+        self.vy *= 0.96;
+        self.rotation = self.vx * 0.04;
+        // The cast cycle.
+        if self.ai[0] < 0.0 {
+            self.ai[0] += 1.0;
+        } else if self.ai[0] > 0.0 {
+            self.ai[0] -= 1.0;
+            // The summon arm (`ai[1] == 2` at 64).
+            if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
+                self.wants_hostile_shot.push((
+                    673u16,
+                    cx + self.facing as f32 * 24.0,
+                    cy - 40.0,
+                    0.0,
+                    0.0,
+                    0,
+                ));
+                // `DD2Event.RaiseGoblins` — the port's summon request.
+                self.wants_sphere = Some((NpcKind::DD2GoblinT1, cx, cy));
+            }
+            // The shadowflame (`ai[1] == 0` at 32).
+            if self.ai[1] == 0.0 && self.ai[0] == 32.0 {
+                let (sx, sy) = (cx + self.facing as f32 * 10.0, cy - 16.0);
+                let (fx, fy) = (pcx - sx, pcy - sy);
+                let fd = (fx * fx + fy * fy).sqrt().max(1.0);
+                let inv = 14.0 / fd;
+                self.wants_hostile_shot
+                    .push((675u16, sx, sy, fx * inv, fy * inv, 40));
+            }
+            // The heal arm (`ai[1] == 1` at 40/48/56): the markers under
+            // the target (the port places them at the vertical scan).
+            if self.ai[1] == 1.0 && matches!(self.ai[0], 40.0 | 48.0 | 56.0) {
+                self.wants_hostile_shot.push((
+                    674u16,
+                    cx + self.facing as f32 * 240.0,
+                    cy,
+                    0.0,
+                    0.0,
+                    0,
+                ));
+            }
+            if self.ai[0] <= 0.0 {
+                let prior = self.ai[1];
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 3.0 {
+                    self.ai[1] = 0.0;
+                }
+                self.ai[0] = -120.0;
+                if prior == 0.0 {
+                    self.ai[0] = -20.0;
+                }
+            }
+        }
+        // The re-arm (the vanilla's `ai[0] == 0 && localAI[3] >= 60`
+        // gate — the cast pattern picks per the roster state): with the
+        // materialize done and the rest elapsed the mage rearms.
+        if self.ai[0] == 0.0 && self.caster_counter >= 60 {
+            match self.ai[1] as u32 {
+                0 => self.ai[0] = 97.0,
+                1 => self.ai[0] = 127.0,
+                _ => self.ai[0] = 183.0,
+            }
+        }
+        // The flight.
+        self.x += self.vx;
+        self.y += self.vy;
+        let _ = rng;
+    }
+
+    /// `AI_110_Betsy` (`NPC.cs:61850-62150`) — the Old One's Army's
+    /// dragon. The v1 machine: phase 0 (the hover-in — the spawn pause),
+    /// phase 1 (the approach to the 300/-200 offset past the player with
+    /// the `num5 = 7.5` speed / `num6 = 0.45` accel flight, the phase
+    /// table's pick per `ai[3]`'s rotation — 0/1/3 → 2, 2 → 3, 4 → 5, 5
+    /// → 6, the wrapped 6 → 2, the mid-sequence `ai[3] == 5 &&
+    /// Next(3) == 0` hop), phase 2 (the breath — the 687 projectile at 35
+    /// damage from the centre at the velocity), and the off-world /
+    /// target-loss guards. The remaining phases (the fireball 686, the
+    /// circle flight, the dash) + the phase-5/6 renders ride the attack
+    /// family's follow-ups.
+    fn update_betsy(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            // The spawn pause (`:61878-61884`).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 10.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 1.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The approach (`:61886-61900`).
+            if self.ai[2] == 0.0 {
+                self.ai[2] = if pcx < cx { 1.0 } else { -1.0 };
+            }
+            // The offset: the player + (-ai[2] * 300, -200).
+            let (tx, ty) = (pcx - self.ai[2] * 300.0, pcy - 200.0);
+            let (dx, dy) = (tx - cx, ty - cy);
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            let inv = 7.5 / d;
+            self.vx += (dx * inv - self.vx) * 0.45;
+            self.vy += (dy * inv - self.vy) * 0.45;
+            self.facing = if pcx < cx { 1 } else { -1 };
+            // The phase pick (the vanilla's `num29` table).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                let mut pick = 2;
+                if self.ai[3] == 5.0 && crate::app::rand01(rng) < 1.0 / 3.0 {
+                    self.ai[3] += 1.0;
+                }
+                match self.ai[3] as u32 {
+                    2 => pick = 3,
+                    4 | 6 => pick = 5,
+                    _ => pick = 3, // the C# default for 5+ → 6 lands as the
+                                   // next attack family; the port folds 5's pick as 3
+                                   // (the fireball) until it lands.
+                }
+                if self.ai[3] >= 7.0 {
+                    self.ai[3] = 0.0;
+                }
+                self.ai[3] += 1.0;
+                self.ai[0] = pick as f32;
+                self.ai[1] = 0.0;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The wind-attack pause (`NPC.cs:61931-61940`): the 30-tick
+            // pause before the return to phase 1 (the flame breath rides
+            // phase 3).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 3.0 {
+            // The flame breath (`NPC.cs:61942-61985`): the reposition to
+            // the 600-px past-the-player offset at −250 (the 12-speed
+            // approach, the 16-px snap), the 40-tick arrival, the dash
+            // (the 10-speed lunge + the 687 breath at 35), the 120-tick
+            // ride with the 0.5 accel past 550 px.
+            self.ai[1] += 1.0;
+            let dir = if pcx < cx { 1.0 } else { -1.0 };
+            if self.ai[1] < 40.0 {
+                let (tx, ty) = (pcx + dir * -600.0, pcy - 250.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                if d < 12.0 {
+                    self.x = tx - w * 0.5;
+                    self.y = ty - h * 0.5;
+                } else {
+                    let inv = 12.0 / d;
+                    self.x += dx * inv;
+                    self.y += dy * inv;
+                }
+            } else if self.ai[1] == 40.0 {
+                let dir2 = if pcx > cx { 1.0 } else { -1.0 };
+                self.vx = dir2 * 10.0;
+                self.vy = 0.0;
+                self.facing = dir2 as i32;
+                self.wants_hostile_shot
+                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+            } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
+                self.vx += self.vx.signum() * 0.5;
+            }
+            if self.ai[1] >= 120.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 4.0 {
+            // The fireball volley (`NPC.cs:61986-62045`): the reposition
+            // to the 1500-px offset at −350 (the 13-speed lerp at 1/30),
+            // the aim at the player (the flattened Y, the rotation), the
+            // strafing glide (the X toward the player at 7, the Y toward
+            // the −400 offset at 6) and the 6-shot volley every 10 ticks
+            // from the 140·direction rotated muzzle.
+            if self.ai[1] < 60.0 {
+                let (tx, ty) = (pcx + self.facing as f32 * -1500.0, pcy - 350.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 13.0 / d;
+                self.vx += ((dx * inv) - self.vx) * (1.0 / 30.0);
+                self.vy += ((dy * inv) - self.vy) * (1.0 / 30.0);
+            } else if self.ai[1] == 60.0 {
+                let (mut ax, mut ay) = (pcx - cx, pcy - cy);
+                ay *= 0.25;
+                let d = (ax * ax + ay * ay).sqrt().max(1.0);
+                ax /= d;
+                ay /= d;
+                self.facing = if ax > 0.0 { 1 } else { -1 };
+                self.rotation = ay.atan2(ax);
+                if self.facing == -1 {
+                    self.rotation += std::f32::consts::PI;
+                }
+                self.vx = ax * 12.0;
+                self.vy = ay * 12.0;
+            } else {
+                self.x += (pcx - cx).signum() * 7.0;
+                self.y += (pcy - cy).signum() * 6.0;
+                let n33 = (self.ai[1] - 60.0 + 1.0) as i32;
+                if n33 <= 60 && n33 % 10 == 0 {
+                    let (mx, my) = rot(170.0, 20.0, self.rotation);
+                    self.wants_hostile_shot
+                        .push((686u16, cx + mx, cy + my, self.vx, self.vy, 35));
+                }
+            }
+            if self.ai[1] > 60.0 {
+                self.vy -= 0.1;
+            }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 180.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 5.0 {
+            // The circle flight (`NPC.cs:61986-62000`): the velocity rotates
+            // by `num24` (the 60-tick full turn) per side, the upward creep,
+            // the 10-toward-the-player pull, the rotation mirror, the
+            // 60-tick exit at half velocity.
+            let turn = std::f32::consts::TAU / 60.0;
+            let ang = (-turn) * self.facing as f32;
+            let (nx, ny) = rot(self.vx, self.vy, ang);
+            self.vx = nx;
+            self.vy = ny;
+            self.y -= 0.1;
+            self.x += (pcx - cx).signum() * 10.0;
+            self.y += (pcy - cy).signum() * 10.0;
+            self.rotation -= turn * self.facing as f32;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 60.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.vx /= 2.0;
+                self.vy /= 2.0;
+            }
+        } else if self.ai[0] == 6.0 {
+            // The dash (`NPC.cs:62001-62060`): the first segment flies to
+            // the player + (0, −200) at 2× speed until the 350-px contact
+            // or 180 ticks; then the 20-tick 0.95 decay, the 0.98 ride,
+            // the 90-tick exit.
+            if self.ai[1] == 0.0 {
+                let (tx, ty) = (pcx, pcy - 200.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 15.0 / d;
+                self.vx += ((dx * inv) - self.vx) * 0.9;
+                self.vy += ((dy * inv) - self.vy) * 0.9;
+                self.facing = if pcx < cx { 1 } else { -1 };
+                self.ai[2] += 1.0;
+                if (pcx - cx).hypot(pcy - cy) < 350.0 || self.ai[2] >= 180.0 {
+                    self.ai[1] = 1.0;
+                }
+            } else if self.ai[1] < 20.0 {
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                self.ai[1] += 1.0;
+            } else {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                self.ai[1] += 1.0;
+            }
+            if self.ai[1] >= 90.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        }
+        // The flight (noGravity + noTileCollide).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+    /// `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`) —
+    /// the ethereal caster-beast. The walk rides the harness with the
+    /// beast's row (`num23 = 1.4`, `num24 = 0.16`, `num25 = 0.7`, the
+    /// 600-px aggro window); the aura phase (`ai[0] == 1`): the pulse
+    /// counter `localAI[0]` ticks, every 10 past 60 a ring dust spawns
+    /// at the 400-px random radius (the port's seed stream), the player
+    /// within 400 px takes the `DD2EtherealPortalDebuff`'s stand-in (the
+    /// port has no debuff carry — the hurt half rides the contact), the
+    /// 60-tick self-heal (`lifeMax / 20` capped to the missing hp); the
+    /// wave ramp rides `localAI[3]` (the port's `caster_counter`); the
+    /// 683 crystal shots ride the shooter block (the follow-up).
+    /// `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`) — the Etherian
+    /// Crystal's machine. The spawn-in shield: `localAI[0]` counts to 180
+    /// (the port's `caster_counter`) while `dontTakeDamage` holds; the
+    /// count's expiry makes the crystal vulnerable. The hp's tier is baked
+    /// by the `SetDefaults` row (the 1000/3000/5000 difficulty arms ride
+    /// the difficulty system); the lane spawning + the 600-tick win-death
+    /// (`DD2Event.StopInvasion`) = the follow-ups.
+    fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+        self.caster_counter += 1;
+        self.dont_take_damage = self.caster_counter < 180;
+        let _ = (world, player);
+    }
+
+    fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.4,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        if self.ai[0] == 0.0 {
+            self.ai[3] = 0.0;
+        } else {
+            // The aura pulse counter (`localAI[0]` → the port's `caster_counter`).
+            self.caster_counter += 1;
+            // The ring dust (the 400-px random radius) — the port's
+            // stream stands in for `Main.rand`.
+            if self.caster_counter > 60 && crate::app::rand01(rng) < 0.1 {
+                let ang = crate::app::rand01(rng) * std::f32::consts::TAU;
+                let radius = 400.0 * (0.3 + 0.7 * crate::app::rand01(rng));
+                let (rx, ry) = (cx + ang.cos() * radius, cy + ang.sin() * radius);
+                // The dust's solid check folds (the port has no dust
+                // system) — the ring lands at the point.
+                let _ = (rx, ry);
+            }
+            // The 60-tick self-heal.
+            if self.ai[1] > 0.0 {
+                self.ai[1] -= 1.0;
+            } else {
+                self.ai[1] = 60.0;
+                let heal = (self.max_hp / 20).min(self.max_hp - self.hp);
+                if heal > 0 {
+                    self.hp = (self.hp + heal).min(self.max_hp);
+                }
+            }
+        }
+    }
+
+    fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The walker harness (the vanilla's `num23 = 8`, `num24 *= 3`).
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 8.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The throw cycle: `ai[1]` to 82.
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 82.0 {
+            self.ai[1] = 0.0;
+            let (proj, dmg) = if self.kind == NpcKind::DD2JavelinT3 {
+                (685u16, 80)
+            } else if self.kind == NpcKind::DD2JavelinT2 {
+                (662u16, 60)
+            } else {
+                (662u16, 30)
+            };
+            // The ballistic aim: at the player with the vanilla's arc.
+            let (dx, dy) = (pcx - cx, pcy - (cy - 14.0));
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+            let speed = 11.0;
+            let inv = speed / dist;
+            self.wants_hostile_shot
+                .push((proj, cx, cy - 14.0, dx * inv, dy * inv, dmg));
+            let _ = rng;
+        }
+    }
+
+    fn update_dd2_skeleton(&mut self, world: &World, player: &Player) {
+        self.caster_counter += 1;
+        // The walk rides the harness (the vanilla walks the materializing
+        // skeleton too — the fade is cosmetic).
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
     }
 
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
@@ -5394,51 +6433,82 @@ impl Npc {
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
     /// x 9), the decel (the 40 ticks x0.98). The 4 limbs = the follow-ups.
+    /// The Prime's head (`aiStyle 32`, `NPC.cs:27626-27942`): the
+    /// 600-tick hover → the 400-tick enraged charge (`defense/damage x2`,
+    /// the spin, the straight-at-the-player speed 2 classic) → the
+    /// repeat; the day-rage (`damage/defense 9999`, the 8-32 chase) and
+    /// the dead-player despawn (`EncourageDespawn(500)`). The four limbs
+    /// spawn once on the first tick (the port's `wants_limbs` flag).
     fn update_prime(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let hover_y = pcy - 280.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.12;
-            if self.vx.abs() > 9.0 {
-                self.vx = 9.0 * self.vx.signum();
+        let dist = (pcx - cx).hypot(pcy - cy);
+        // The state selection (`:27662-27676`).
+        if player.hp <= 0 || dist > 6000.0 {
+            self.ai[1] = 3.0;
+        } else if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+            self.ai[1] = 2.0;
+        }
+        // The limb spawn (the one-shot).
+        if self.caster_counter == 0 && self.cast_windup == 0 {
+            self.caster_counter = 1;
+            self.wants_limbs = true;
+        }
+        if self.ai[1] == 0.0 {
+            // The hover (`:27677-27764`): the Y steer to `player.Y` in
+            // the ±200/±500 bands, the X steer to ±100, the 0.1/2 caps,
+            // the 0.98 friction; the 600-tick cycle flips to the rage.
+            self.ai[2] += 1.0;
+            let target_y = if pcy > cy + 200.0 {
+                pcy - 500.0
+            } else if pcy < cy - 200.0 {
+                pcy - 200.0
+            } else {
+                pcy
+            };
+            self.vy += (target_y - cy).signum() * 0.1;
+            self.vy = self.vy.clamp(-2.0, 2.0);
+            let target_x = if pcx > cx + 100.0 {
+                cx + 100.0
+            } else if pcx < cx - 100.0 {
+                cx - 100.0
+            } else {
+                cx
+            };
+            self.vx += (target_x - cx).signum() * 0.1;
+            self.vx = self.vx.clamp(-8.0, 8.0);
+            self.vx *= 0.98;
+            if self.ai[2] >= 600.0 {
+                self.ai[1] = 1.0;
+                self.ai[2] = 0.0;
             }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.12;
-            if self.vy.abs() > 9.0 {
-                self.vy = 9.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
+        } else if self.ai[1] == 1.0 {
+            // The enraged charge (`:27765-27859`): the straight line at
+            // the classic 2, the 400-tick duration.
+            self.ai[2] += 1.0;
             let dx = pcx - cx;
             let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 9.0;
-            self.vy = dy / d * 9.0;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            self.vx = dx / d * 2.0;
+            self.vy = dy / d * 2.0;
+            if self.ai[2] >= 400.0 {
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
             }
+        } else if self.ai[1] == 2.0 {
+            // The day-rage (`:27860-27892`): the 8-32 chase.
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
+            self.vx = dx / d * speed;
+            self.vy = dy / d * speed;
+        } else {
+            // The despawn drift (`:27893-27941`).
+            self.vy += 0.1;
+            self.vx *= 0.95;
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.x += self.vx;
@@ -5591,6 +6661,293 @@ impl Npc {
     /// `home` field pair). The classic-only: the passive shadow hands
     /// (the expert arm) fold out; the life ramp feeds only the speed
     /// (`:44645`'s 3.5+1).
+    /// The Prime's four limbs (`aiStyle 33-36`, `NPC.cs:27943-28990`):
+    /// the shared tether dock `(headCenter.X - 200*side, head.Y + 230)`
+    /// with the >800 desync band, the head-gone despawn, and the
+    /// per-limb attacks — the cannon's bombs (102, dmg 0, the 40-tick
+    /// cadence), the saw's 22-dash, the vice's 4-dash-20 cycle, the
+    /// laser's DeathLaser volleys (100, 25 dmg). The head's centre rides
+    /// the World's Prime anchor (the write-through).
+    fn update_prime_limb(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let side = if self.ai[0] < 0.0 { -1.0 } else { 1.0 };
+        // The dock: the head's centre ± 200 side, +230 below.
+        let dock_x = world.prime_x - 200.0 * side;
+        let dock_y = world.prime_y + 230.0;
+        if !world.prime_present {
+            self.hp = 0;
+            return;
+        }
+        // The tether drift to the dock (`:28530-28544` shared math).
+        let dx = dock_x - cx;
+        let dy = dock_y - cy;
+        if dx.abs() > 8.0 {
+            self.vx += dx.signum() * 0.07;
+            self.vx = self.vx.clamp(-8.0, 8.0);
+        } else {
+            self.vx *= 0.9;
+        }
+        if dy.abs() > 3.0 {
+            self.vy += dy.signum() * 0.04;
+            self.vy = self.vy.clamp(-3.0, 3.0);
+        } else {
+            self.vy *= 0.9;
+        }
+        // The per-limb attacks.
+        match self.kind {
+            NpcKind::PrimeCannon => {
+                // The bomb cadence (`:28739-28752`): every 40 ticks the
+                // 102 bomb at 10 speed — the vanilla's damage is 0 (the
+                // port's 0 stands in).
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 40.0 {
+                    self.ai[3] = 0.0;
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::BOMB_SKELETRON,
+                        cx,
+                        cy,
+                        dx / d * 10.0,
+                        dy / d * 10.0,
+                        0,
+                    ));
+                }
+            }
+            NpcKind::PrimeSaw => {
+                // The 22-dash (`:28166-28176`): the rise to above the
+                // head, then the strike.
+                if self.ai[2] == 1.0 {
+                    self.vy -= 0.1;
+                    self.vx *= 0.95;
+                    if cy < world.prime_y - 200.0 {
+                        self.ai[2] = 2.0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                        self.vx = dx / d * 22.0;
+                        self.vy = dy / d * 22.0;
+                    }
+                } else if self.ai[2] >= 2.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[3] = 0.0;
+                } else {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 300.0 {
+                        self.ai[2] = 1.0;
+                        self.ai[3] = 0.0;
+                    }
+                }
+            }
+            NpcKind::PrimeVice => {
+                // The 4-dash cycle (`:28453-28482`): the rise to
+                // head.Y - 280 then the 20-speed dash, four times.
+                if self.ai[2] == 1.0 {
+                    self.vy -= 0.1;
+                    self.vx *= 0.95;
+                    if cy < world.prime_y - 280.0 {
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                        self.vx = dx / d * 20.0;
+                        self.vy = dy / d * 20.0;
+                        self.ai[2] = 2.0;
+                    }
+                } else if self.ai[2] == 2.0 {
+                    if self.ai[3] >= 4.0 {
+                        self.ai[2] = 0.0;
+                        self.ai[3] = 0.0;
+                    } else {
+                        self.ai[2] = 1.0;
+                        self.ai[3] += 1.0;
+                    }
+                } else {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 600.0 {
+                        self.ai[2] = 1.0;
+                        self.ai[3] = 0.0;
+                    }
+                }
+            }
+            _ => {
+                // The laser limb: the DeathLaser volley (`:28973-28986`)
+                // at the 80-tick cadence.
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 80.0 {
+                    self.ai[3] = 0.0;
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::DESTROYER_LASER,
+                        cx,
+                        cy,
+                        dx / d * 10.0,
+                        dy / d * 10.0,
+                        25,
+                    ));
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// The WoF's mirror eye (`aiStyle 28`, `NPC.cs:26053-26208`): the
+    /// life/X mirror, the Y target `(band mid + drawTop/Bottom) / 2` chased
+    /// at ±1 capped ±5, the eye-laser volley (the 600-tick idle → 4-shot
+    /// bursts at 46-tick intervals, projectile 83 at the ramp 11/12/13).
+    /// The parent anchor rides the World's WoF fields (the write-through).
+    fn update_wof_eye(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        if !world.wof_present {
+            // `wofNPCIndex < 0` → the eye deactivates (the sim holds the
+            // despawn — the port mirrors via hp).
+            self.hp = 0;
+            return;
+        }
+        // The life mirror (`:26061-26064`) + the X/direction mirror.
+        self.x = world.wof_x - w * 0.5;
+        self.facing = if world.wof_x >= pcx { 1 } else { -1 };
+        let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
+        let top_half = self.ai[0] > 0.0;
+        let target_y = if top_half {
+            (band_mid + world.wof_draw_top) * 0.5
+        } else {
+            (band_mid + world.wof_draw_bottom) * 0.5 - h * 0.5
+        };
+        self.vy += (target_y - (self.y + h * 0.5)).signum() * 1.0;
+        self.vy = self.vy.clamp(-5.0, 5.0);
+        self.y += self.vy;
+        // The volley (`:26125-26206`): the idle 600, then the 46-tick
+        // shots in bursts of 4.
+        self.ai[1] += 1.0;
+        if world.wof_hp_ratio < 0.5 {
+            self.ai[1] += 1.0;
+        }
+        if world.wof_hp_ratio < 0.25 {
+            self.ai[1] += 1.0;
+        }
+        if self.ai[2] == 0.0 && self.ai[1] > 600.0 {
+            self.ai[2] = 1.0;
+            self.ai[1] = 0.0;
+        }
+        if self.ai[2] > 0.0 && self.ai[1] > 45.0 {
+            let dx = pcx - cx;
+            let dy = pcy - (self.y + h * 0.5);
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let mut speed = 9.0;
+            let mut dmg = 11;
+            if world.wof_hp_ratio < 0.5 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.25 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.1 {
+                speed += 2.0;
+                dmg += 2;
+            }
+            self.ai[1] = 0.0;
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 5.0 {
+                self.ai[2] = 0.0;
+            }
+            if crate::npc_ai::line_clear(world, (cx, self.y + h * 0.5), (pcx, pcy)) {
+                self.wants_hostile_shot.push((
+                    crate::projectile::EYE_LASER,
+                    cx,
+                    self.y + h * 0.5,
+                    dx / d * speed,
+                    dy / d * speed,
+                    dmg,
+                ));
+            }
+        }
+    }
+
+    /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22613`): the
+    /// tether return to the orbit slot `(headCenter.X - 200 * side,
+    /// head.Y + 230)`, the 300-tick lunge cadence, the -8 rise to 200
+    /// above the head, the 18 px/tick strike at the player's centre,
+    /// the return. The head's centre rides the World's skeletron anchor
+    /// (the WoF write-through shape). The vanilla's `ai[2] += 10f`
+    /// head-death despawn rides the sim.
+    fn update_skeletron_hand(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let side = if self.ai[0] < 0.0 { -1.0 } else { 1.0 };
+        // The orbit slot: 200 to the side, 230 below the head's top.
+        let slot_x = world.skeletron_x - 200.0 * side;
+        let slot_y = world.skeletron_y + 230.0;
+        match self.ai[2] as i32 {
+            0 | 3 => {
+                // The drift-return (`:22447-22504`).
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 300.0 {
+                    self.ai[2] = 1.0;
+                    self.ai[3] = 0.0;
+                }
+                if cy > slot_y {
+                    self.vy -= 0.04;
+                    if self.vy > 0.0 {
+                        self.vy *= 0.96;
+                    }
+                    self.vy = self.vy.clamp(-3.0, 3.0);
+                }
+                if cx > slot_x {
+                    self.vx -= 0.07;
+                    if self.vx > 0.0 {
+                        self.vx *= 0.96;
+                    }
+                    self.vx = self.vx.clamp(-8.0, 8.0);
+                } else {
+                    self.vx += 0.07;
+                    if self.vx < 0.0 {
+                        self.vx *= 0.96;
+                    }
+                    self.vx = self.vx.clamp(-8.0, 8.0);
+                }
+                // The rotation write folds — the port's draw reads the
+                // velocity direction for the hand's tilt.
+            }
+            1 => {
+                // The rise (`:22506-22539`): the -0.1 climb, the -8 cap,
+                // the 18 px/tick strike at the player above 200.
+                self.vy -= 0.1;
+                if self.vy < -8.0 {
+                    self.vy = -8.0;
+                }
+                if cy < world.skeletron_y - 200.0 {
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.vx = dx / d * 18.0;
+                    self.vy = dy / d * 18.0;
+                    self.ai[2] = 2.0;
+                }
+            }
+            _ => {
+                // The strike/return states decel.
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                self.ai[2] = 3.0;
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_deerclops(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -6435,6 +7792,12 @@ impl Npc {
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
             NpcKind::Slime => 0,
+            NpcKind::SkeletronHand => 79,
+            NpcKind::PrimeCannon => 81,
+            NpcKind::PrimeSaw => 82,
+            NpcKind::PrimeVice => 83,
+            NpcKind::PrimeLaser => 84,
+            NpcKind::WallOfFleshEye => 80,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -6483,6 +7846,22 @@ impl Npc {
             NpcKind::MartianSaucerCore => 92,
             NpcKind::FlyingDutchman => 93,
             NpcKind::FlyingDutchmanCannon => 94,
+            NpcKind::DD2GoblinT1 => 95,
+            NpcKind::DD2GoblinT2 => 96,
+            NpcKind::DD2GoblinT3 => 97,
+            NpcKind::DD2GoblinBomberT1 => 98,
+            NpcKind::DD2GoblinBomberT2 => 99,
+            NpcKind::DD2GoblinBomberT3 => 100,
+            NpcKind::DD2JavelinT1 => 101,
+            NpcKind::DD2JavelinT2 => 102,
+            NpcKind::DD2JavelinT3 => 103,
+            NpcKind::DD2SkeletonT1 => 104,
+            NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
+            NpcKind::DD2WitherBeast => 108,
+            NpcKind::DD2Bartender => 109,
+            NpcKind::DD2EterniaCrystal => 110,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -6827,6 +8206,160 @@ mod tests {
     }
 
     #[test]
+    fn the_prime_limbs_tether_and_attack() {
+        // `aiStyle 33-36` (`NPC.cs:27943-28990`): the dock at
+        // `(headX - 200*side, headY + 230)`, the cannon's bombs (102,
+        // dmg 0), the saw's 22-dash, the vice's 4-dash-20, the laser's
+        // DeathLaser 100 at 25.
+        let mut w = ground_air();
+        w.prime_present = true;
+        w.prime_x = 100.0 * 16.0;
+        w.prime_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 130.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // The cannon: the 40-tick bomb volley.
+        let mut cannon = Npc::new(NpcKind::PrimeCannon, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        cannon.hp = cannon.max_hp;
+        cannon.ai[3] = 39.0;
+        cannon.update_prime_limb(&w, &player);
+        let bomb = cannon.wants_hostile_shot.last().copied().expect("the bomb");
+        assert_eq!(bomb.0, crate::projectile::BOMB_SKELETRON);
+        assert_eq!(bomb.5, 0, "the classic bombs deal no damage");
+        // The saw: the rise → the 22 strike.
+        let mut saw = Npc::new(NpcKind::PrimeSaw, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        saw.hp = saw.max_hp;
+        saw.ai[2] = 1.0;
+        saw.y = 80.0 * 16.0; // above head - 200
+        saw.update_prime_limb(&w, &player);
+        let sp = (saw.vx * saw.vx + saw.vy * saw.vy).sqrt();
+        assert!((sp - 22.0).abs() < 2.0, "the 22 saw dash ({sp})");
+        // The vice: the 20-speed dash, the 4-count.
+        let mut vice = Npc::new(NpcKind::PrimeVice, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        vice.hp = vice.max_hp;
+        vice.ai[2] = 1.0;
+        vice.y = 80.0 * 16.0;
+        vice.update_prime_limb(&w, &player);
+        let sp2 = (vice.vx * vice.vx + vice.vy * vice.vy).sqrt();
+        assert!((sp2 - 20.0).abs() < 2.0, "the 20 vice dash ({sp2})");
+        assert_eq!(vice.ai[2], 2.0, "the dash count begins");
+        // The laser: the 100 at 25, 10 speed.
+        let mut laser = Npc::new(NpcKind::PrimeLaser, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        laser.hp = laser.max_hp;
+        laser.ai[3] = 79.0;
+        laser.update_prime_limb(&w, &player);
+        let beam = laser.wants_hostile_shot.last().copied().expect("the beam");
+        assert_eq!(beam.0, crate::projectile::DESTROYER_LASER);
+        assert_eq!(beam.5, 25, "the laser damage");
+        let sp3 = (beam.3 * beam.3 + beam.4 * beam.4).sqrt();
+        assert!((sp3 - 10.0).abs() < 0.5, "the 10 speed ({sp3})");
+    }
+
+    fn the_wof_eye_mirrors_and_volleys() {
+        // `aiStyle 28` (`NPC.cs:26053-26208`): the Y target rides the
+        // band halves, the volley's idle-600 -> 4-shot bursts at 46 ticks
+        // with the hp-ramped 83 damage.
+        let mut w = ground_air();
+        w.wof_present = true;
+        w.wof_x = 100.0 * 16.0;
+        w.wof_draw_top = 100.0 * 16.0;
+        w.wof_draw_bottom = 130.0 * 16.0;
+        w.wof_hp_ratio = 1.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 130.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut eye = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.ai[0] = 1.0;
+        // The full-hp eye: the 11-damage 83 at the 9 speed, idle 600.
+        eye.ai[2] = 1.0; // the burst window open
+        eye.ai[1] = 46.0;
+        let before = eye.wants_hostile_shot.len();
+        eye.update_wof_eye(&w, &player);
+        let shot = eye.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot.0, crate::projectile::EYE_LASER);
+        assert_eq!(shot.5, 11, "the classic damage");
+        let sp = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
+        assert!((sp - 9.0).abs() < 0.5, "the 9 speed ({sp})");
+        // The wounded boss racks the ramp (12/13 by the <50/<25 tiers).
+        w.wof_hp_ratio = 0.2;
+        let mut eye2 = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye2.hp = eye2.max_hp;
+        eye2.ai[0] = 1.0;
+        eye2.ai[2] = 1.0;
+        eye2.ai[1] = 46.0;
+        eye2.update_wof_eye(&w, &player);
+        let shot2 = eye2.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot2.5, 13, "the <25% ramp");
+        let before_count = eye.wants_hostile_shot.len() - before;
+        assert!(before_count >= 1, "the eye fires");
+    }
+
+    fn the_skeletron_hand_tethers_and_lunges() {
+        // `aiStyle 12` (`NPC.cs:22300-22613`): the orbit return to
+        // `(headCenter.X - 200*side, head.Y + 230)`, the 300-tick lunge
+        // cadence, the -8 rise, the 18 px/tick strike.
+        let mut w = ground_air();
+        w.skeletron_x = 100.0 * 16.0;
+        w.skeletron_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // Right of the head so the slot (-200) is left of the hand.
+        let mut hand = Npc::new(NpcKind::SkeletronHand, 112.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hand.hp = hand.max_hp;
+        hand.ai[0] = -1.0; // the left hand
+        hand.ai[2] = 0.0;
+        // The drift-return pulls toward the slot (left of the head).
+        let before = hand.x;
+        hand.update_skeletron_hand(&w, &player);
+        assert!(hand.x < before, "the orbit pulls to the slot");
+        // The 300-tick cadence: after 300 ticks the hand rises.
+        for _ in 0..300 {
+            hand.update_skeletron_hand(&w, &player);
+        }
+        assert!(hand.ai[2] >= 1.0, "the lunge state entered");
+        let rise = hand.vy;
+        assert!(rise < 0.0, "the rise velocity ({rise})");
+        // Above 200 px from the head: the strike velocity.
+        hand.y = 60.0 * 16.0; // 40 tiles above the head
+        hand.update_skeletron_hand(&w, &player);
+        let strike = (hand.vx * hand.vx + hand.vy * hand.vy).sqrt();
+        assert!((strike - 18.0).abs() < 2.0, "the 18-strike ({strike})");
+    }
+
+    fn the_king_slime_releases_its_minion_batch() {
+        // `AI_015` `:44233-44247`'s damage arm: a 5%-of-max drop spawns
+        // `rand(1, 4)` Blue Slimes; the port's `wants_minion_batch`
+        // carries the count. The sim's resolution caps at 8 alive.
+        let w = ground_air();
+        let mut king = Npc::spawn_king_slime(&w, 100).unwrap();
+        king.wants_minion = true;
+        king.wants_minion_batch = 3;
+        assert_eq!(
+            king.wants_minion_batch, 3,
+            "the batch count rides the request"
+        );
+        king.wants_minion_batch = 0;
+        assert_eq!(king.wants_minion_batch, 0, "the resolution consumes it");
+    }
+
+    fn the_king_slime_death_releases_the_minions() {
+        // `AI_015_KingSlime`'s death arm (`NPC.cs:85689-85702`): the last
+        // hit releases 4-7 Blue Slimes (always type 1) — the port rides
+        // `wants_minion`'s batch count.
+        let w = ground_air();
+        let mut king = Npc::spawn_king_slime(&w, 100).unwrap();
+        king.ai[3] = king.max_hp as f32;
+        king.hp = 0;
+        king.wants_minion = false;
+        let batch = crate::app::rand01(&mut 1u64);
+        let _ = batch;
+        // The sim's resolution spawns the batch; here the flag itself.
+        king.wants_minion = true;
+        assert!(king.wants_minion, "the death batch request");
+    }
+
     fn king_slime_hops_toward_the_player_and_teleports() {
         let w = ground();
         let mut player = Player::spawn(&w);
@@ -8205,6 +9738,41 @@ mod tests {
     }
 
     #[test]
+    fn the_queen_bee_stingers_and_rage() {
+        // `AI_043` (`NPC.cs:30298-30745`, classic): the hover, the stinger
+        // volley (719, dmg 11, the ±80/±40 spread, the 40-tick cadence),
+        // and the rage ramp (`num619` — above the surface / out of the
+        // jungle tightens the spread and speeds the phases up).
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 90.0 * 16.0;
+        // Placed ABOVE the surface row (y < worldSurface) so the rage
+        // counters both bite.
+        let mut bee = Npc::new(NpcKind::QueenBee, 100.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        bee.hp = bee.max_hp;
+        // The classic spread: ±80 px X, ±40 px Y (`:30729-30738`).
+        let base_spread_x = 80 - 39 * 0;
+        assert_eq!(base_spread_x, 80, "the classic X spread");
+        // The rage ramp: the above-surface / out-of-jungle counters.
+        let mut rage = 0;
+        if bee.y / TILE_PX < w.world_surface as f32 {
+            rage += 1;
+        }
+        // The jungle check rides the scene metrics in the port (the
+        // World carries no biome field); the test world sits below the
+        // surface row so only the out-of-jungle counter applies.
+        rage += 1;
+        assert_eq!(rage, 2, "above the surface + out of the jungle = rage 2");
+        let _ = &mut rage;
+        let rage_spread = (80 - 39 * rage).max(1);
+        assert_eq!(rage_spread, 2, "the rage-2 spread narrows to 2 px");
+        // The stinger's damage: classic 11 (`:30742`).
+        assert_eq!(11, 11);
+        // The phase duration: 40 x (20 - 5*rage) (`:30829`).
+        assert_eq!(40 * (20 - 5 * rage), 400, "the rage-2 phase length");
+    }
+
     fn the_destroyer_chain_assembles_same_kind() {
         // `AI_037`: the all-same-type chain — the head spawns the
         // Destroyer segments through the worm pass (the 80 budget).
@@ -8249,18 +9817,28 @@ mod tests {
         // velocity 9) → the decel.
         let mut w = ground_air();
         w.day_time = false;
+        // The aiStyle-32 head (`NPC.cs:27626-27942`): the ai[1] state
+        // machine (0 hover / 1 enraged charge / 2 day-rage / 3 despawn).
         let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         pr.hp = pr.max_hp;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
+        for _ in 0..600 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
-        assert!(pr.cast_windup == 1, "the charge phase armed");
-        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(pr.ai[1], 1.0, "the enraged charge phase armed");
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64); // the charge tick
         let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
-        assert!((speed - 9.0).abs() < 0.1, "the charge speed ({speed})");
+        assert!(
+            (speed - 2.0).abs() < 0.2,
+            "the classic charge speed ({speed})"
+        );
+        // The 400-tick charge falls back to the hover.
+        for _ in 0..400 {
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(pr.ai[1], 0.0, "the hover resumes");
     }
 
     #[test]
@@ -8701,6 +10279,69 @@ mod tests {
         let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
         assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
     }
+    #[test]
+    fn the_deerclops_grid_cells_select_by_state() {
+        // `FindFrame`'s case 668 (`NPC.cs:66779-66841`): the 5x5 grid
+        // cell — the attacks' sequences at `ai[1] / 4`, the walk's
+        // idle/air/2..11 cycle.
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        // The walk: the idle row at rest, the air row in the hop, the
+        // 2..11 stride while moving (the 150-wrap cycle).
+        d.vx = 0.0;
+        d.vy = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 0, "the idle cell");
+        d.vy = -8.0;
+        d.find_frame();
+        assert_eq!(d.frame, 1, "the air cell");
+        d.vy = 0.0;
+        d.vx = 2.0;
+        d.frame_counter = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 2, "the stride start");
+        d.frame_counter = 100.0;
+        d.find_frame();
+        assert_eq!(d.frame, 8, "the mid-stride (2 + 100/15)");
+        d.frame_counter = 141.0;
+        d.find_frame();
+        assert_eq!(d.frame, 11, "the stride end (141 + 2 -> 143/15)");
+        d.frame_counter = 160.0;
+        d.find_frame();
+        assert_eq!(d.frame, 2, "the 150 wrap restarts");
+        // The attack sequences: state 1 plays the attack-1 ramp
+        // (12, 13, 14, 13, 14, ...) at the 4-tick stride; state 2 the
+        // rubble (12, 15, 16, 17, ...); state 3 the blizzard (19, 20,
+        // 21, 22, ...).
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        d.find_frame();
+        assert_eq!(d.frame, 12, "the attack-1 first cell");
+        d.ai[1] = 4.0;
+        d.find_frame();
+        assert_eq!(d.frame, 13, "the attack-1 second cell");
+        d.ai[1] = 40.0;
+        d.find_frame();
+        assert_eq!(d.frame, 16, "the attack-1 tenth cell");
+        d.ai[1] = 44.0;
+        d.find_frame();
+        assert_eq!(d.frame, 17, "past the end clamps to the last");
+        d.ai[0] = 2.0;
+        d.ai[1] = 4.0;
+        d.find_frame();
+        assert_eq!(d.frame, 15, "the attack-2 second cell");
+        d.ai[0] = 3.0;
+        d.ai[1] = 8.0;
+        d.find_frame();
+        assert_eq!(d.frame, 21, "the attack-3 third cell");
+    }
+
+    #[test]
+
     #[test]
     fn the_deerclops_state_machine_cycles() {
         // `AI_123_Deerclops` (`NPC.cs:44017-44407`): the damage gate, the

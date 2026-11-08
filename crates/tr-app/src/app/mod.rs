@@ -52,7 +52,7 @@ use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
 use crate::menu;
 use crate::net;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::persist;
 use crate::player::{self, Player};
 use crate::projectile::ProjectilePool;
@@ -1652,7 +1652,50 @@ impl App {
         }
         if std::env::var_os("TR_BOSS").is_some() {
             if let Some(p) = &player {
-                if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
+                // `TR_BOSS=golem` places the Golem body for the family's
+                // deterministic shots (the parts ride the body's one-shot
+                // init); `TR_BOSS=deerclops` places the Deerclops beside
+                // the player on the ground; any other value (or a bare
+                // flag) keeps the King Slime. The Golem body takes the
+                // `SetDefaults` alpha fade.
+                let boss = std::env::var("TR_BOSS").unwrap_or_default();
+                if boss == "golem" {
+                    let (bw, bh) = NpcKind::Golem.size();
+                    let mut g = Npc::new(
+                        NpcKind::Golem,
+                        p.x + 12.0 * TILE_PX,
+                        p.y + p.height - bh,
+                        1,
+                        0.0,
+                    );
+                    g.hp = g.max_hp;
+                    // The port's Npc carries no `alpha` field — the fade
+                    // rides the machines' spawn shield instead.
+                    npcs.push(g);
+                } else if let Some(state) = boss.strip_prefix("deerclops") {
+                    // The Deerclops' box is 60x154 (`SetDefaults` 668,
+                    // `NPC.cs:17451-17452`) — the shot hook stands it on
+                    // the ground beside the player; the optional
+                    // `deerclops,<ai0>` suffix pins an attack state so the
+                    // spells' sequences are capturable (the fight's
+                    // walk sends the boss off the terrain otherwise).
+                    let (bw, bh) = NpcKind::Deerclops.size();
+                    let mut d = Npc::new(
+                        NpcKind::Deerclops,
+                        p.x + 8.0 * TILE_PX,
+                        p.y + p.height - bh,
+                        1,
+                        0.0,
+                    );
+                    d.hp = d.max_hp;
+                    if let Ok(s) = state.trim_start_matches(',').parse::<i32>() {
+                        d.ai[0] = s as f32;
+                        d.ai[1] = 12.0;
+                    }
+                    npcs.push(d);
+                } else if let Some(n) =
+                    Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
+                {
                     npcs.push(n);
                 }
             }
