@@ -1919,6 +1919,76 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` — the ghosted Master-difficulty bunny preview.
 
+## UIElement framework (M7-UI-1, 2026-11-08)
+
+The framework halves of `UIElement`/`UserInterface` that the screens cannot live
+without — the pointer machine (`ui/pointer.rs`) and the flat hit order
+(`ui/framework.rs`, `ui/select_hit.rs`) — landed on branch `M7-UI-1-uielement`
+with the layout pass unchanged in `ui/uistate.rs`. The screen-model ruling stays:
+an immediate port, no retained tree, no `UserInterface` object. Card double-click
+play is the feature it buys, and it is **routing only**: the port has no per-card
+selection state and its play path closes the front flow rather than loading the
+entry (spec §9.4), so a double-click resolves to the same flow a Play button
+click does.
+
+Corrected deviations (both were geometry the layout pass would have got right):
+
+* **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
+  `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
+  `UIBestiaryTest.cs:71-79` is `Top 180` + `Height.Set(-220f, 1f)` = `screenH − 220`
+  tall (bottom at `screenH − 40`), `MaxWidth 900`, `MinWidth 700`
+  (`600 + Utils.ToInt(true) * 100`). The container is now `uistate::resolve`'d
+  verbatim; the old numbers stayed because nothing pinned the absolute bottom in
+  a test.
+* **The emotes wheel borrowed the bestiary panel.** `ui/emotes.rs` reused
+  `bestiary::panel_rect` and a 44 px / 8-column grid, while `UIEmotesMenu.cs`
+  has its own 590-wide container (`Top 120 / Height −120` in game,
+  `Top 220 / −220` in the menu) and `EmotesGroupListItem.cs:15`/`:25` specify
+  36 px cells at `maxEmotesPerRow = 14`. The wheel now owns its container and
+  grid, and its scroll offset moved from standing still to `UIList.ScrollWheel`
+  (`UIList.cs:107-114`) with `UIScrollbar`'s clamp (`:37-47`), reset on each open
+  (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
+  — the port keeps one flat roster — and the menu-side container split is
+  unimplemented (the wheel is reachable only in-game).
+
+Open gaps (deliberately out, each with its reason):
+
+* **Event bubbling** (`UIElement.cs:414-546`: every mouse event fires the
+  element's handler and then the *parent's*) — a no-op on flat screens; the port's
+  click tables return one action.
+* **`MouseOver`/`MouseOut` edges** — hover is draw-derived (`in_rect` at draw
+  time) and the colour swaps are `ui::hover_pair`; the edge itself has no ported
+  consumer, and the sound 12 it drives is a recorded deviation.
+* **`OverflowHidden`** (`:47`, `:222-237`, 6 users: `UIList`,
+  `UIBestiaryEntryButton`, `UIBestiaryNPCEntryPortrait`, `UIResourcePack`,
+  `AWorkshopPublishInfoState`) — the select screens' clipped rows already emulate
+  the clip by omitting the row from the element list.
+* **`UIList`/`UIScrollbar` behaviour** (`UIList.cs:107-128`, `UIScrollbar.cs:37-143`):
+  the draw-only helpers exist in `ui/panel.rs`, but there is no `view_position`,
+  no drag and no handle geometry; the char/world select bars draw at a hard-coded
+  ratio and the emotes wheel's scroll is a plain row offset.
+* **`IsElementUnderMouse`/`MouseCaptured`** (`UserInterface.cs:113-124`, `:349-356`)
+  — only the minimap's hover mirrors the mine/place suppression today.
+* **`OnActivate`/`OnDeactivate` for the remaining screens** —
+  `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
+  `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
+  `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
+  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
+  enter direction only (`enter_front`), not on the leave direction the C#'s
+  `SetState(null)` also resets.
+* **Snap points / gamepad** (already recorded as out of scope) and
+  `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
+
+Screenshot baselines (deterministic double-run pairs, SHA256, 1600x900):
+`TR_CHEST` `d4ba148e…` (also byte-identical to the pre-phase HEAD build taken in
+the same session), `TR_BESTIARY=0` `faf45d9e…` (new — the panel's bottom moved),
+`TR_EMOTES` `9d00f7b0…` (new — the wheel's box and cell pitch moved), `TR_UI=charsel`
+`39b1f697…` and `TR_UI=worldsel` `077087ab…` (both need `TR_NAME` — the session
+name falls back to `menu::random_name()`, `app/mod.rs:1830`, so an unpinned pair
+differs in the card name's pixels). The absolute HUD hash is environment-dependent:
+two sessions produced `c4980496…` and `d4ba148e…` for the *same* code, so a
+cross-session comparison must re-take the baseline beside the run.
+
 ## Architecture refactor (2026-11-01)
 
 The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`,
