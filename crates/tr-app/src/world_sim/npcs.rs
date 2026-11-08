@@ -13,11 +13,16 @@ use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
 
-/// The player's epitaph: a DoT drain death uses its attribution's table text
-/// (`KillMe(PlayerDeathReason.ByOther(N))` — `Player.cs:19321-19331`,
-/// `:19362-19385`); every other death keeps the M2-DEATH-1 stub.
-fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
-    pending.map_or("was slain...", crate::death::death_text_for)
+/// The player's death message: a DoT drain death resolves its attribution's
+/// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
+/// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
+/// draws it from the item stream, the M4-LOOT convention, the first use in
+/// this path); every other death is the `DeathText.Slain` row.
+fn dot_death_text(pending: Option<DotDeath>, player_name: &str, roll: f32) -> String {
+    match pending {
+        Some(death) => crate::death::death_message(death, roll, player_name),
+        None => crate::death::slain_message(player_name),
+    }
 }
 
 /// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
@@ -137,6 +142,7 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::GoblinTinkerer => 6,
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
+        NpcKind::TravellingMerchant => 19,
         _ => return None,
     })
 }
@@ -180,6 +186,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -851,7 +858,78 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
 /// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
 /// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
 /// group + 3, 0)`.
+/// `DD2Event.CheckProgress` (`DD2Event.cs:366-392`) — the Old One's Army's
+/// kill advance: the kill's worth rides the tier (the ported families are
+/// the tier-1 rows worth 1.0), the wave's budget
+/// (`DD2Event::required_wave_kills`) opens the next wave with the 1800-tick
+/// break, and the wave-6 sentinel is the win (`WonThisRun`).
+fn dd2_report_kill(app: &mut App, kind: NpcKind) {
+    let roster = tr_core::dd2::enemies_for_wave(app.world.dd2_wave).0;
+    if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
+        // The kill outside the wave's roster scores nothing.
+        return;
+    }
+    // The hold's refusal runs FIRST (the vanilla's early return) — the
+    // kill under the break scores nothing at all.
+    if app.world.dd2_spawn_hold != 0 {
+        return;
+    }
+    let worth = tr_core::dd2::KILL_WORTH_T1;
+    app.world.dd2_wave_kills += worth;
+    let passed = tr_core::dd2::wave_budget_passed(
+        app.world.dd2_wave,
+        &mut app.world.dd2_wave_kills,
+    );
+    if passed {
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_wave += 1;
+        app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+    }
+}
+
+/// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
+fn nid_of(id: u16) -> Option<NpcKind> {
+    NpcKind::from_u16(match id {
+        552 => 95,
+        555 => 98,
+        561 => 101,
+        558 => 101, // the Wyvern rides the same walker until its arms land
+        564 => 106,
+        _ => return None,
+    })
+}
+
+/// The Old One's Army's tick (`DD2Event.Update`): the spawn hold's decay
+/// and the crystal's 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
+/// `:40959-40966`) — the hold's expiry opens the lane spawns.
+pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
+    if !app.world.dd2_event_ongoing {
+        return;
+    }
+    if app.world.dd2_spawn_hold > 0 {
+        app.world.dd2_spawn_hold -= 1;
+    }
+    // The win-death resolve (`AI`'s aiStyle-105 arm's
+    // `DD2Event.StopInvasion`): the event stops and the crystal goes.
+    if app.npcs.iter().any(|n| {
+        n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop
+    }) {
+        app.world.dd2_event_ongoing = false;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
+        });
+    }
+}
+
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
+    // The Old One's Army's wave progress (`DD2Event.CheckProgress`,
+    // `DD2Event.cs:366-392`) rides its own counter — the invasion
+    // framework's group gate does not apply.
+    if app.world.dd2_event_ongoing {
+        dd2_report_kill(app, kind);
+        return;
+    }
     let group = npc_invasion_group(kind);
     if group <= 0 || group != app.world.invasion_type {
         return;
@@ -1245,6 +1323,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             None
         }
     };
+    // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
+    // body's centre / velocity.X / life ratio for the head and fist
+    // tethers. Hoisted BEFORE the AI pass: the C# parts read
+    // `Main.npc[NPC.golemBoss].Center / life / lifeMax / velocity` live
+    // inside their own AI (the body's lower slot updates first), so the
+    // pre-pass write is the closest same-tick value (the post-pass write
+    // below fed the parts a 1-tick stale ratio).
+    {
+        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem && n.hp > 0);
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_vx = body.vx;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+        } else {
+            app.world.golem_present = false;
+        }
+    }
     let world = &app.world;
     let player = &mut app.player;
     let npcs = &mut app.npcs;
@@ -1394,6 +1492,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         })
         .collect();
     app.revenge_markers.extend(cached);
+    // The Old One's Army's tick (the spawn hold's decay + the crystal's
+    // 600-tick win-death resolve) rides before the death retain: the
+    // win-death zeroes the crystal's hp AND stops the event in one pass.
+    update_dd2_event(app, dt);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -1546,18 +1648,46 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        if let Some((kind, sx, sy)) = n.wants_sphere.take() {
+        for (kind, sx, sy) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
+            // no direction argument, the ctor's `spriteDirection = -1`,
+            // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
+            // (`NPC.cs:12176/12190/12201`): the family spawns unflipped
+            // and invisible, fading in over 26 ticks.
+            if matches!(
+                kind,
+                NpcKind::GolemHead | NpcKind::GolemFistLeft | NpcKind::GolemFistRight
+            ) {
+                ball.facing = -1;
+                ball.alpha = 255;
+            }
             spheres.push(ball);
         }
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
+    {
+        let prime = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+            .cloned();
+        if let Some(prime) = prime {
+            let (pw, ph) = prime.size();
+            app.world.prime_present = true;
+            app.world.prime_x = prime.x + pw * 0.5;
+            app.world.prime_y = prime.y;
+            let _ = ph;
+        } else {
+            app.world.prime_present = false;
+        }
+    }
     // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
     {
         let head = app
@@ -1609,6 +1739,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_present = true;
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_vx = body.vx;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
             let head_alive = app
                 .npcs
@@ -1949,12 +2080,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if player.hp <= 0 && !player.dead {
             let (dx, dy) = player.center();
             let boss_near = player.boss_hinders(&app.npcs);
-            let death_text = dot_death_text(player.dot_death).to_string();
+            // The `Main.rand.Next(n) + 1` variant roll rides the item
+            // stream (the M4-LOOT `Main.rand` stand-in) — one draw per
+            // death, before the player borrow is taken.
+            let roll = crate::app::rand01(&mut app.item_rng);
+            let death_text = dot_death_text(player.dot_death, &app.player_name, roll);
             player.dot_death = None;
             drop(player);
-            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
-            // color (`ChatColors.cs`); the ported monitor rides the App.
-            crate::chat::broadcast_death(&mut app.chat, &app.player_name, &death_text);
+            // `Player.KillMe`'s chat broadcast: the resolved message in
+            // the Death color (`ChatColors.cs`); the ported monitor rides
+            // the App.
+            crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
@@ -2205,6 +2341,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer = 1.0 / 60.0;
 }
 
+
 /// The full NPC loot through the rule engine
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
@@ -2381,12 +2518,19 @@ mod tests {
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // DW-1.3 — the death collection resolves the DoT table text when the
-        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and keeps
-        // the M2-DEATH-1 stub for any other death.
-        assert_eq!(dot_death_text(None), "was slain...");
-        assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
-        assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
+        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
+        // Slain row for any other death (`Lang.cs` CreateDeathMessage).
+        assert_eq!(dot_death_text(None, "Belsin", 0.0), "Belsin was slain...");
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Poison), "Belsin", 0.5),
+            "Belsin couldn't find the antidote."
+        );
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Burned), "Belsin", 0.0),
+            "Belsin couldn't put the fire out."
+        );
     }
 
     #[test]
@@ -4720,5 +4864,339 @@ mod dd2_goblin_tests {
             }
         }
         assert!(saw_flame || saw_summon, "the mage cast");
+    }
+    #[test]
+    fn betsy_hovers_in_then_approaches_and_breaths() {
+        // `AI_110_Betsy` (`NPC.cs:61850+`): phase 0's 10-tick spawn pause,
+        // phase 1's approach to the 300/-200 offset past the player, the
+        // phase table's pick, phase 2's 687 breath at 35.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The spawn pause: 10 ticks.
+        for _ in 0..11 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the approach starts");
+        // The approach: the velocity orients toward the offset.
+        let v = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!(v > 0.0, "the flight carries: {v}");
+        // Drive into the phase table's first pick (30 ticks).
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.ai[0] > 1.0, "an attack phase was picked");
+        assert!(n.ai[3] >= 1.0, "the phase rotation advanced");
+    }
+    #[test]
+    fn betsy_flame_breaths_and_volleys_the_fireballs() {
+        // `AI_110_Betsy`'s phases 3-6 (`NPC.cs:61942-62060`): the flame
+        // breath repositions to the 600-px offset and 687s at 35; the
+        // volley repositions to 1500 px and 686s at 35; the circle flight
+        // rotates; the dash lunges.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // Phase 3 (the flame breath).
+        n.ai[0] = 3.0;
+        n.ai[1] = 0.0;
+        let mut saw_breath = false;
+        for _ in 0..50 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw_breath = true;
+                break;
+            }
+        }
+        assert!(saw_breath, "the flame breath fires");
+        // Phase 4 (the volley).
+        let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        m.hp = m.max_hp;
+        m.ai[0] = 4.0;
+        m.ai[1] = 0.0;
+        let mut saw_volley = false;
+        for _ in 0..80 {
+            m.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !m.wants_hostile_shot.is_empty() {
+                saw_volley = true;
+                break;
+            }
+        }
+        assert!(saw_volley, "the volley fires");
+    }
+    #[test]
+    fn the_wither_beast_pulses_and_self_heals() {
+        // `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`):
+        // the aura phase's 60-tick self-heal (`lifeMax / 20` capped to the
+        // missing hp) and the walk through the harness.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2WitherBeast, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = 300; // the wounded beast (500 max)
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 325, "the 60-tick heal (25 = 500/20)");
+    }
+    #[test]
+    fn the_eternia_crystal_shields_then_opens() {
+        // `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`): the 180-tick
+        // spawn-in shield (`localAI[0]` — the port's caster_counter) holds
+        // `dontTakeDamage` until the count passes 180.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..60 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.dont_take_damage, "the spawn-in shield holds");
+        assert_eq!(n.caster_counter, 60);
+        for _ in 0..121 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(!n.dont_take_damage, "the crystal opens at 180");
+    }
+}
+
+#[cfg(test)]
+mod crystal_summon_tests {
+    use super::*;
+
+    fn base_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The stand at tile (150, 119) with a centered frame.
+        let i = w.index(150, 119);
+        w.tiles[i].kind = 466;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_on_the_stand_starts_the_army() {
+        // `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`):
+        // the 3828 over the stand 466 summons the crystal + starts the
+        // event; the item consumes.
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        // The cursor over the stand.
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.world.dd2_event_ongoing;
+        assert!(!before);
+        assert!(crate::world_sim::editing::use_etherian_crystal(&mut app));
+        assert!(
+            app.world.dd2_event_ongoing,
+            "the event raised the ongoing flag"
+        );
+        assert_eq!(app.world.dd2_wave, 1, "the first wave");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal spawned"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the item consumed");
+    }
+
+    #[test]
+    fn the_crystal_refuses_without_the_stand_and_while_active() {
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.world.dd2_event_ongoing = true;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "the active event refuses"
+        );
+        app.world.dd2_event_ongoing = false;
+        // Remove the stand.
+        let i = app.world.index(150, 119);
+        app.world.tiles[i].kind = 1;
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "no stand refuses"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dd2_wave_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_wave_advances_on_the_budget() {
+        // `DD2Event.CheckProgress`: the tier-1 roster's kills advance the
+        // wave at the budget with the 1800-tick break.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 2, "the wave advances");
+        assert_eq!(app.world.dd2_wave_kills, 0.0, "the counter resets");
+        assert_eq!(
+            app.world.dd2_spawn_hold,
+            tr_core::dd2::SPAWN_HOLD_WAVE_BREAK,
+            "the break rides"
+        );
+    }
+
+    #[test]
+    fn the_wave_hold_refuses_the_kill() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 100;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 1, "the hold's refusal");
+        assert_eq!(app.world.dd2_wave_kills, 59.0, "no score under the hold");
+    }
+
+    #[test]
+    fn the_off_roster_kill_scores_nothing() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
+        report_invasion_kill(&mut app, NpcKind::Skeleton);
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod crystal_death_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_win_death_stops_the_army() {
+        // `AI`'s aiStyle-105 arm's win-death (`NPC.cs:40959-40966`):
+        // `ai[0] >= 600` → `DD2Event.StopInvasion` + `life = 0` — via
+        // update_dd2_event's resolve the event clears and the crystal goes.
+        let mut app = base_app();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.ai[0] = 599.0;
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.push(n);
+        app.player = Some(player);
+        // The sim's tick runs the machine (the 600 counter) and the
+        // event's tick resolves the request.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the event stops");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal is gone"
+        );
     }
 }

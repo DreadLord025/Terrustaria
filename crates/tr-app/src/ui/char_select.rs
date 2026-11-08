@@ -33,15 +33,25 @@ use crate::assets;
 // --- Source strings (Localization `UI.*` / `GameUI.*`, English) ---------------
 
 /// `UI.SelectPlayer` — the header text (`UICharacterSelect.cs:59`).
-pub const SELECT_PLAYER: &str = "Select Player";
+pub fn select_player() -> String {
+    crate::lang::text("UI.SelectPlayer")
+}
 /// `UI.Back` (`UICharacterSelect.cs:65`).
-pub const BACK: &str = "Back";
+pub fn back() -> String {
+    crate::lang::text("UI.Back")
+}
 /// `UI.New` (`UICharacterSelect.cs:76`).
-pub const NEW: &str = "New";
+pub fn new_button() -> String {
+    crate::lang::text("UI.New")
+}
 /// `GameUI.PlayerLifeMax` — `" HP"` (`UICharacterListItem.cs:338`).
-pub const LIFE_SUFFIX: &str = " HP";
+pub fn life_suffix() -> String {
+    crate::lang::text("GameUI.PlayerLifeMax")
+}
 /// `GameUI.PlayerManaMax` — `" MP"` (`UICharacterListItem.cs:342`).
-pub const MANA_SUFFIX: &str = " MP";
+pub fn mana_suffix() -> String {
+    crate::lang::text("GameUI.PlayerManaMax")
+}
 /// The fixed play-time string: the port tracks no play time, so `num5 = 0` and
 /// `playTime` is zero — `"0" + 0 + ":00:00"` (`:376-379`; plan disposition 2).
 pub const PLAYTIME_TEXT: &str = "00:00:00";
@@ -441,13 +451,13 @@ pub fn card_colors(hovered: bool) -> ([u8; 4], [u8; 4]) {
 /// `DrawSelf`'s difficulty switch (`UICharacterListItem.cs:353-370`): the
 /// `UI.Softcore/Mediumcore/Hardcore/Creative` label and its colour
 /// (`White` / `Main.mcColor` / `Main.hcColor` / `Main.creativeModeColor`).
-pub fn difficulty_text(difficulty: u8) -> (&'static str, [u8; 4]) {
+pub fn difficulty_text(difficulty: u8) -> (String, [u8; 4]) {
     match difficulty {
-        1 => ("Mediumcore", uistate::MC_COLOR),
-        2 => ("Hardcore", uistate::HC_COLOR),
-        3 => ("Journey", uistate::CREATIVE_MODE_COLOR),
+        1 => (crate::lang::text("UI.Mediumcore"), uistate::MC_COLOR),
+        2 => (crate::lang::text("UI.Hardcore"), uistate::HC_COLOR),
+        3 => (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR),
         // `case 0` and the unlabelled fallthrough both land on Classic/White.
-        _ => ("Classic", [255, 255, 255, 255]),
+        _ => (crate::lang::text("UI.Softcore"), [255, 255, 255, 255]),
     }
 }
 
@@ -455,22 +465,22 @@ pub fn difficulty_text(difficulty: u8) -> (&'static str, [u8; 4]) {
 /// shows. The favourite arm flips (`:147-154`) and the delete arm is the
 /// favourited gate's label (`:174-184`) — drawn on the right-hand
 /// [`CardLayout::delete_label`], not the left one.
-pub fn button_label(button: usize, is_favorite: bool) -> &'static str {
+pub fn button_label(button: usize, is_favorite: bool) -> String {
     match button {
-        BUTTON_PLAY => "Play", // `UI.Play` (`:171`)
+        BUTTON_PLAY => crate::lang::text("UI.Play"), // `UI.Play` (`:171`)
         BUTTON_FAVORITE => {
             if is_favorite {
-                "Unfavorite" // `UI.Unfavorite` (`:149`)
+                crate::lang::text("UI.Unfavorite") // `UI.Unfavorite` (`:149`)
             } else {
-                "Favorite" // `UI.Favorite` (`:153`)
+                crate::lang::text("UI.Favorite") // `UI.Favorite` (`:153`)
             }
         }
-        BUTTON_RENAME => "Rename", // `UI.Rename` (`:142`)
+        BUTTON_RENAME => crate::lang::text("UI.Rename"), // `UI.Rename` (`:142`)
         _ => {
             if is_favorite {
-                "Cannot Delete (Favorited)" // `UI.CannotDeleteFavorited` (`:178`)
+                crate::lang::text("UI.CannotDeleteFavorited") // `UI.CannotDeleteFavorited` (`:178`)
             } else {
-                "Delete" // `UI.Delete` (`:182`)
+                crate::lang::text("UI.Delete") // `UI.Delete` (`:182`)
             }
         }
     }
@@ -671,7 +681,7 @@ fn draw_card(
         c.life_text[0],
         c.life_text[1],
         [1.0; 4],
-        &format!("{}{LIFE_SUFFIX}", entry.life_max),
+        &format!("{}{}", entry.life_max, life_suffix()),
     );
     if let Some(sheet) = lookups.ui_mana {
         push_whole(r, lookups, &sheet, c.mana_icon, [1.0; 4]);
@@ -682,7 +692,7 @@ fn draw_card(
         c.mana_text[0],
         c.mana_text[1],
         [1.0; 4],
-        &format!("{}{MANA_SUFFIX}", entry.mana_max),
+        &format!("{}{}", entry.mana_max, mana_suffix()),
     );
     // Difficulty panel (`:343-371`), text centred at `+ (num3/2 - w/2, 3)`.
     draw_inner_panel(
@@ -693,14 +703,14 @@ fn draw_card(
         c.difficulty_panel[2],
     );
     let (diff_text, diff_color) = difficulty_text(entry.difficulty);
-    let diff_w = hud_text_width(r, lookups, diff_text, 1.0);
+    let diff_w = hud_text_width(r, lookups, &diff_text, 1.0);
     border_string(
         r,
         lookups,
         c.difficulty_panel[0] + c.difficulty_panel[2] * 0.5 - diff_w * 0.5,
         c.difficulty_panel[1] + 3.0,
         color::tint(diff_color),
-        diff_text,
+        &diff_text,
     );
     // Play-time panel (`:372-379`) — the fixed `00:00:00` (no play-time
     // tracking, plan disposition 2), centred the same way.
@@ -792,17 +802,17 @@ fn draw_card(
         if button == BUTTON_DELETE {
             // `Left -30, HAlign 1` (`:128-133`): the right edge anchors, the
             // text grows leftward.
-            let w = hud_text_width(r, lookups, text, 1.0);
+            let w = hud_text_width(r, lookups, &text, 1.0);
             border_string(
                 r,
                 lookups,
                 c.delete_label[0] - w,
                 c.delete_label[1] - 2.0,
                 [1.0; 4],
-                text,
+                &text,
             );
         } else {
-            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], text);
+            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], &text);
         }
     }
 }
@@ -851,7 +861,7 @@ pub fn draw(
         lookups,
         l.header,
         &header_style(),
-        SELECT_PLAYER,
+        &select_player(),
         header_w,
         false,
     );
@@ -863,8 +873,8 @@ pub fn draw(
         lookups,
         l.back,
         &fat_button_style(),
-        BACK,
-        large_text_width(r, lookups, BACK),
+        &back(),
+        large_text_width(r, lookups, &back()),
         in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
@@ -872,8 +882,8 @@ pub fn draw(
         lookups,
         l.new,
         &fat_button_style(),
-        NEW,
-        large_text_width(r, lookups, NEW),
+        &new_button(),
+        large_text_width(r, lookups, &new_button()),
         in_rect(mouse, l.new),
     );
 }
@@ -1100,13 +1110,13 @@ mod tests {
     #[test]
     fn difficulty_texts_follow_the_switch() {
         // `:353-370` + `Main.cs:66765-66768`.
-        assert_eq!(difficulty_text(0), ("Classic", [255, 255, 255, 255]));
-        assert_eq!(difficulty_text(1), ("Mediumcore", uistate::MC_COLOR));
-        assert_eq!(difficulty_text(2), ("Hardcore", uistate::HC_COLOR));
-        assert_eq!(difficulty_text(3), ("Journey", uistate::CREATIVE_MODE_COLOR));
+        assert_eq!(difficulty_text(0), (crate::lang::text("UI.Softcore"), [255, 255, 255, 255]));
+        assert_eq!(difficulty_text(1), (crate::lang::text("UI.Mediumcore"), uistate::MC_COLOR));
+        assert_eq!(difficulty_text(2), (crate::lang::text("UI.Hardcore"), uistate::HC_COLOR));
+        assert_eq!(difficulty_text(3), (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR));
         // The C# switch has no default arm — an unknown difficulty falls through
         // with an empty label; the port lands it on Classic.
-        assert_eq!(difficulty_text(9).0, "Classic");
+        assert_eq!(difficulty_text(9).0, crate::lang::text("UI.Softcore"));
     }
 
     #[test]

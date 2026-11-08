@@ -49,6 +49,7 @@ mod regen;
 mod research;
 mod sand;
 mod ambience;
+mod ambient_sound;
 mod chest_gen;
 mod craft;
 mod registry;

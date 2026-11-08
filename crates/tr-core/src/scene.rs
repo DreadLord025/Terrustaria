@@ -716,6 +716,11 @@ pub struct SceneState {
     pub shimmer_darken: f32,
     /// `SceneState._shimmerBrightenDelay` (`SceneState.cs:30`).
     shimmer_brighten_delay: f32,
+    /// `SceneState._blizzardSoundVolume` (`SceneState.cs:33`): the
+    /// blizzard loops' cross-fade (`SceneState.cs:210-228`), ramped by
+    /// `MoveTowards` at 0.01 per update — M6-AUDIO-1's emitter, driven from
+    /// the `tr-app` side (`ambient_sound::blizzard_loop_volumes`).
+    pub blizzard_sound_volume: f32,
     /// `SceneState.skipTransitions` (`:35`).
     pub skip_transitions: bool,
     /// `Main.bloodMoon` — the only M1 reader is the phase-3 BloodMoon filter;
@@ -741,6 +746,7 @@ impl SceneState {
             shimmer_alpha: 0.0,
             shimmer_darken: 0.0,
             shimmer_brighten_delay: 0.0,
+            blizzard_sound_volume: 0.0,
             skip_transitions: true,
             blood_moon: false,
             forced_severity: None,
@@ -760,6 +766,7 @@ impl SceneState {
         self.outside_weather_effect_intensity = 1.0;
         self.outside_weather_effect_intensity_backing = 1.0;
         self.graveyard_visual_intensity = 0.0;
+        self.blizzard_sound_volume = 0.0;
         self.skip_transitions = true;
         self.blood_moon = false;
         self.forced_severity = None;
@@ -2070,6 +2077,8 @@ mod tests {
         assert_eq!(state.outside_weather_effect_intensity, 1.0);
         assert_eq!(state.outside_weather_effect_intensity_backing, 1.0);
         assert_eq!(state.graveyard_visual_intensity, 0.0);
+        // `_blizzardSoundVolume = 0f` (`SceneState.cs:44`).
+        assert_eq!(state.blizzard_sound_volume, 0.0);
         assert!(state.skip_transitions);
         assert!(!state.blood_moon);
     }

@@ -133,6 +133,11 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// The Skeletron Prime head's centre + the present flag (the limbs'
+    /// tether reads — the WoF write-through shape).
+    pub prime_present: bool,
+    pub prime_x: f32,
+    pub prime_y: f32,
     /// The Skeletron head's centre (`NPC.cs:21930`'s spawn point + the
     /// hands' tether reads) — the skeletron_x/y pair.
     pub skeletron_x: f32,
@@ -188,6 +193,20 @@ pub struct World {
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
+    /// raises it, the win/loss clears it.
+    pub dd2_event_ongoing: bool,
+    /// `NPC.waveNumber` — the Old One's Army's wave (1-3 tiers).
+    pub dd2_wave: i32,
+    /// `NPC.waveKills` — the current wave's kill count.
+    pub dd2_wave_kills: f32,
+    /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
+    /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
+    pub dd2_spawn_hold: i32,
+    /// `DD2Event.LostThisRun` — the crystal's death (`NPC.cs`'s case-548
+    /// death-flag) sets it (`:79346`'s event-flag family); the weapon
+    /// rosters clear with the event's stop.
+    pub dd2_lost: bool,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -214,6 +233,13 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// `Main.travelShop` (`Main.cs:1779`; the 40 slots of
+    /// `Main.TravelShopMaxSlots`, allocated at `Main.cs:67030`): the
+    /// Travelling Merchant's per-visit stock — `Chest.SetupTravelShop`
+    /// (`Chest.cs:1275-1358`) regenerates it for every visit, the shop
+    /// index 19 (`Chest.cs:2791-2810`) reads it back. A `0` slot is
+    /// an empty one.
+    pub travel_shop: [u16; 40],
 
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
@@ -264,6 +290,9 @@ impl World {
             spawn_meteor: false,
             golem_x: 0.0,
             skeletron_x: 0.0,
+            prime_present: false,
+            prime_x: 0.0,
+            prime_y: 0.0,
             skeletron_y: 0.0,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
@@ -297,6 +326,11 @@ impl World {
             downed_frost: false,
             downed_pirates: false,
             downed_martians: false,
+            dd2_event_ongoing: false,
+            dd2_wave: 1,
+            dd2_wave_kills: 0.0,
+            dd2_spawn_hold: 300,
+            dd2_lost: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
@@ -308,6 +342,7 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            travel_shop: [0; 40],
             butterfly_chance: 0,
         }
     }
@@ -361,6 +396,65 @@ impl World {
             self.invasion_delay = 0;
             self.invasion_arm_pending = true;
         }
+    }
+
+    /// `UpdateTime_StartNight`'s blood-moon roll
+    /// (`Main.cs:65333-65352`): 1-in-9 (1-in-6 on the tenth-anniversary
+    /// world) at every dusk, gated on no eye spawn and a moon phase other
+    /// than the new moon, and only when a player with more than 120 max
+    /// life exists. On a hit the flag raises and both dial cooldowns
+    /// force-reset (`:65344-65346`).
+    pub fn roll_blood_moon(
+        &mut self,
+        rng01: f64,
+        tenth_anniversary: bool,
+        any_player_life_over_120: bool,
+        spawn_eye: bool,
+    ) -> bool {
+        // `:65335-65341` — the roll gate.
+        if spawn_eye || self.moon_phase == 4 {
+            return false;
+        }
+        if rng01 >= 1.0 / f64::from(if tenth_anniversary { 6 } else { 9 }) {
+            return false;
+        }
+        // `:65342-65349` — the 120-HP player gate.
+        if !any_player_life_over_120 {
+            return false;
+        }
+        self.blood_moon = true;
+        // `:65344-65346` — "instantly reusable after certain celestial
+        // events".
+        self.sundial_cooldown = 0;
+        self.moondial_cooldown = 0;
+        true
+    }
+
+    /// `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`):
+    /// 1-in-20 at every dawn, hardmode with any mech boss down, then the
+    /// same dial-cooldown force-reset (`:65423-65426`).
+    pub fn roll_eclipse(
+        &mut self,
+        rng01: f64,
+        hard_mode: bool,
+        downed_mech_boss_any: bool,
+    ) -> bool {
+        // `:65421-65422` — the roll gate.
+        if !(hard_mode && downed_mech_boss_any) {
+            return false;
+        }
+        if rng01 >= 1.0 / 20.0 {
+            return false;
+        }
+        self.eclipse = true;
+        self.sundial_cooldown = 0;
+        self.moondial_cooldown = 0;
+        true
+    }
+
+    /// `NPC.downedMechBossAny` — any of the three mech bosses down.
+    pub fn downed_mech_boss_any(&self) -> bool {
+        self.downed_mech_boss1 || self.downed_mech_boss2 || self.downed_mech_boss3
     }
 
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the
@@ -644,6 +738,58 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_blood_moon_roll_matches_the_dusk_gate() {
+        // `Main.cs:65333-65352`: 1-in-9 (1-in-6 on the tenth-anniversary
+        // world), the new moon and the eye spawn skip it, the 120-HP player
+        // gate, both dial cooldowns force-reset.
+        let mut w = World::new("t".into(), 40, 40);
+        w.sundial_cooldown = 3;
+        w.moondial_cooldown = 5;
+        assert!(w.roll_blood_moon(1.0 / 18.0, false, true, false));
+        assert!(w.blood_moon);
+        assert_eq!((w.sundial_cooldown, w.moondial_cooldown), (0, 0));
+        // Outside the window nothing happens.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.5, false, true, false));
+        assert!(!w.blood_moon);
+        // The phase-4 moon and the eye spawn gate it off.
+        let mut w = World::new("t".into(), 40, 40);
+        w.moon_phase = 4;
+        assert!(!w.roll_blood_moon(0.0, false, true, false));
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.0, false, true, true));
+        // Without a 120+ HP player it never raises.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.0, false, false, false));
+        // The anniversary world's 1-in-6 window is wider than the normal
+        // 1-in-9, so 1/9 fits it and 1/12 fits too.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(w.roll_blood_moon(1.0 / 9.0, true, true, false));
+        assert!(w.roll_blood_moon(1.0 / 12.0, true, true, false));
+        // And the same 1/9 rolls in the normal window.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(w.roll_blood_moon(0.11, false, true, false));
+    }
+
+    #[test]
+    fn the_eclipse_roll_needs_hardmode_and_a_mech_boss() {
+        // `Main.cs:65421-65430`: 1-in-20, hardmode with a mech down, the same
+        // dial-cooldown force-reset.
+        let mut w = World::new("t".into(), 40, 40);
+        w.sundial_cooldown = 8;
+        w.hard_mode = true;
+        w.downed_mech_boss2 = true;
+        assert!(w.roll_eclipse(1.0 / 40.0, true, w.downed_mech_boss_any()));
+        assert!(w.eclipse);
+        assert_eq!((w.sundial_cooldown, w.moondial_cooldown), (0, 0));
+        // Early mode, or no mechs: never.
+        let mut w = World::new("t".into(), 40, 40);
+        w.hard_mode = true;
+        assert!(!w.roll_eclipse(0.0, true, false));
+        assert!(!w.roll_eclipse(0.0, false, true));
+    }
+
     use super::*;
 
     #[test]

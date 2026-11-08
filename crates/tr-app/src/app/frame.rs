@@ -123,7 +123,31 @@ impl App {
             // (the freeze stops the advance entirely).
             let rate = self.creative_powers.time_rate();
             if rate > 0.0 {
-                advance_time(&mut self.world, dt * rate);
+                // The dawn/dusk event rolls ride the clock's own stream
+                // (`Main.rand`'s time cluster — the C# rolls at both phase
+                // boundaries read the same stream), drawn once per advance.
+                let roll01 = f64::from(rand01(&mut self.clock_rng));
+                // `Main.cs:65342-65349`'s player gate.
+                let any_over_120 = self
+                    .player
+                    .as_ref()
+                    .is_some_and(|p| p.max_hp > 120);
+                let (blood_moon, eclipse) =
+                    advance_time(&mut self.world, dt * rate, roll01, any_over_120);
+                if blood_moon {
+                    crate::chat::broadcast_death_text(
+                        &mut self.chat,
+                        &crate::lang::text("LegacyMisc.8"),
+                        crate::chat::COLOR_WORLD,
+                    );
+                }
+                if eclipse {
+                    crate::chat::broadcast_death_text(
+                        &mut self.chat,
+                        &crate::lang::text("LegacyMisc.20"),
+                        crate::chat::COLOR_WORLD,
+                    );
+                }
             }
         }
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
@@ -402,6 +426,9 @@ impl App {
             // `ApplyVisuals` driver; the post branch consumes
             // `filter_driver.output`.
             crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            // The SceneState blizzard loops' sound emitter rides inside
+            // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
+            // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
             // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
             // the per-tick audio update): the sticky windy-day/storm flags the
             // ambience gates read; the hysteresis bands make the per-frame

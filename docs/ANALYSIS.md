@@ -1548,6 +1548,46 @@ and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
 
+### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
+
+The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall
+loops, M1.4-BG-20) and the rain/wind music-pool loops were already in main, so this task
+ported the remaining three and verified the fourth:
+
+* **Blizzard loops** (`SceneState.cs:189-253`). The two tracked global loops resume on
+  `ZoneRain && ZoneSnow` — the raw zone pair, not the `UseStormEffects`-gated visual — and
+  cross-fade through `_blizzardSoundVolume` (`MoveTowards ±0.01` per `SceneState.Update`,
+  so it lives on the port's `SceneState` beside the other fades, not on a tick) split
+  `min(1, cloudAlpha*2) * outsideWeatherEffectIntensity`. `audio.rs::set_ambient_loop` is
+  the `ActiveSound.DetermineIntendedVolume` engine half: global → no attenuation,
+  `clamp(Style.Volume × Volume × ambientVolume)`, `SoundID.cs:1598-1599`'s 0.5/1 style
+  volumes. The sink is created on the first non-zero volume and then kept (muted at 0) —
+  the C# `SlotId` policy.
+* **Thunder strike** (`Main.cs:58747-58766`). The cue plays from the weather tick with the
+  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream. Two
+  documented gaps: the `case 43` re-roll-on-playing loop has no port model (no per-slot
+  instance bookkeeping), and the pitch jitter is consumed but not applied (the rodio
+  sources have no pitch control — the same gap as the BG-20 liquid loops).
+* **Critter sounds** (`NPC.cs:92244-92340`) and **liquid-change sounds**
+  (`WorldGen.cs:4632-4650`) land as pure, tested tables. Their call sites need the critter
+  NPC kinds (M4-NPC — the roster has none today) and the liquid merge pass
+  (`Liquid.CreateLiquidMergeTile`, `Liquid.cs:1324` — `tr-core/liquid.rs` ports the settle
+  but not the merge tiles), so they run constants-off with citations, the M6-MUSIC-1
+  pattern.
+
+Deviations (deliberate):
+
+* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
+  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
+  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
+  map to (a sink never dies in the port).
+* The thunder/pitch and critter rolls come from the owning system's stream (the
+  WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand` the C# draws.
+* `FocusHelper.UpdateBackgroundThunder`'s unfocused half and `StopAmbientSounds`
+  (`Main.cs:11040-11045`) stay as BG-20 pinned them (the port always claims focus).
+* The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
+  the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
@@ -2856,6 +2896,66 @@ summon (`ai[1] == 2` at 64 — the 673 marker + `RaiseGoblins`), the
 shadowflame (`ai[1] == 0` at 32 — the 675 at 40), the heal (`ai[1] == 1`
 at 40/48/56 — the 674 markers), then the pattern advance and the
 97/127/183 re-arm.
+
+## Betsy (M4-EVENT-5i)
+
+The dragon's v1: the spawn pause, the phase-1 approach to the
+300/-200 offset past the player (7.5 speed / 0.45 accel), the phase
+rotation's pick (0/1/3 → 2, 2 → 3, 4/6 → 5, the 8-wrap) and phase 2's
+687 breath at 35. The fireball 686, the circle flight and the dash
+ride the attack family's slices.
+
+## Betsy's attacks (M4-EVENT-5j)
+
+The phase arms verbatim: the wind pause, the flame breath (the 600-px
+reposition + the 687 at 35), the fireball volley (the 1500-px
+reposition, the rotated muzzle, the 686 at 35 every 10 ticks), the
+circle flight and the dash.
+
+## The Wither Beast (M4-EVENT-5k)
+
+The ethereal caster-beast: the walk with its row (speed 1.4, damp 0.7)
+and the aura phase — the pulse counter, the ring dust at the 400-px
+radius, the 60-tick self-heal (`lifeMax / 20` capped to the missing
+hp). The 683 crystal shots ride the shooter block's slice.
+
+## The tavernkeeper + the etherian crystal (M4-EVENT-5m)
+
+The Old One's Army's entry: the tavernkeeper (a town NPC) and the
+Eternia Crystal (548) with its 180-tick spawn-in shield — the
+`localAI[0]` counter holds `dontTakeDamage` until the crystal opens,
+then the event's waves ride it. The summon arm (the crystal item over
+the stand, `SummonCrystal`'s frame-offset spawn) is the seam to
+`DD2Event`.
+
+## The crystal summon (M4-EVENT-5n)
+
+The Old One's Army's entry point: the crystal item over the stand runs
+`SummonCrystal` — the gates, the frame math's spawn point, the
+consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
+`dd2_wave` carry the event's seam.
+
+## The Old One's Army's waves (M4-EVENT-5o)
+
+`tr-core/src/dd2.rs` ports the wave engine: the rosters (552/555/561/
+558/564 by wave) with the lane rates (90→40), the budgets (60/80/100/
+120/140, the wave-5 cap, the wave-6 win sentinel) and `CheckProgress`'s
+advance — the hold's early refusal, the budget's pass → wave+1 with
+the 1800-tick break.
+
+## The crystal's win-death (M4-EVENT-5p)
+
+The event's end: the crystal's `ai[0] >= 600` arm fires
+`DD2Event.StopInvasion` + `life = 0` — the port's `wants_event_stop`,
+resolved by `update_dd2_event` before the death retain (the flag and the
+crystal go in one pass).
+
+## The DD2 tiers (M4-EVENT-5q)
+
+The tier-2/tier-3 rosters and budgets (`Difficulty_2/3_*`): the tiers
+swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
+554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
+wave 7's tier-3 budget is Betsy's own HP bucket.
 
 ## The invasion progress bar (M4-EVENT-1b)
 
@@ -6299,6 +6399,37 @@ Deliberate deviations and notes:
   unknown-key behaviour.
 
 
+## Tile sections (M6-NET-3)
+
+The `10`/`20` codecs and the section flow are 1:1 ports; the deviations:
+
+- **`frame_important` rides the wire.** The C# reads its global
+  `Main.tileFrameImportant[]` table on both sides of `10`/`20`; the port's
+  table is per-world (`World::frame_important`) and the reader thread has no
+  world, so the flag rides in a previously-unused bit (`10`'s `b4` bit 0,
+  `20`'s third flag byte bit 4). Two-client only.
+- **`wall_frame` is the one added byte** in `10`'s payload (after the wall
+  low byte): the C# covers it through `CopyFrom` inside a run, the port needs
+  it on the wire so a section's walls render identically.
+- **The chest/sign/tile-entity tail of `CompressTileBlock` is not ported**
+  (`NetMessage.cs:2208-2230`): the port's chests are world chests synced by
+  the item stream and its signs/tile-entities have no sync path yet — the
+  section stream covers tiles, walls, liquids, the four wire colours, paint
+  and the invisible/fullbright quad.
+- **The deflate stream is wire-compatible, not byte-identical**: the port
+  uses flate2's raw deflate (a .NET `DeflateStream` peer decodes it), while
+  byte-for-byte equality would need .NET's encoder internals.
+- **The NPC/chest pushes inside `SendSection` ride the cadence tick**: the
+  C# streams `23` for the section's town NPCs and the chest contents inline
+  (`NetMessage.cs:2715-2753`); the port's 10 Hz tick covers both within a
+  tick of the section arriving.
+- **The per-NPC `netSpam` gate and the section culling of `23` are not
+  ported** (all live NPCs stream each tick); the client's despawn is a 200 ms
+  staleness prune rather than the C#'s life-to-0 broadcast.
+- **`20 SectionRange` replicates the 1x1 edit**: the C# widens door/object
+  edits to their frame group (`SendTileSquare(-1, x, y, 2)`); the port's
+  multi-tile objects arrive as per-tile edits, so the widening waits for the
+  door/object sync. `changeType` rides 0 (no switch family yet).
 ## The Golem family's display (M4-BOSS-19b)
 
 The port draws the Golem family over the extracted sheets' real rows, but
@@ -6340,3 +6471,80 @@ several vanilla details are deliberately not carried:
 - **`alpha` on the whole NPC draw.** `Npc::alpha` (new) tints every NPC
   through `GetAlpha`'s `(255 - alpha)/255`; only the Golem family's
   spawn fades set it today.
+
+## The Deerclops' display (M4-BOSS-24)
+
+- **The sheet is a grid, not a column.** `DrawNPCDirect_Deerclops` decodes
+  `npc.frame` as a 5x5 cell index (`cell / 5` column, `cell % 5` row) over
+  the 1090x1200 sheet's 218x240 cells drawn 220x242 (`Utils.Frame`'s +2/+2
+  size offsets, `Main.cs:26338`). `Main.npcFrameCount[668] = 8` only feeds
+  `SetFrameSize` and the dead `DrawNPCDirect_DeerclopsLeg`; the live draw
+  never uses it. The C#'s `frame.Width = 180` write is vestigial.
+- **The flip is inverted vs the generic NPCs.** The vanilla passes
+  `npcSpriteEffect ^ FlipHorizontally`, cancelling the generic
+  `spriteDirection == 1` flip — the sheet faces RIGHT by default, so the
+  port flips on `facing < 0` (the generic path keeps `facing > 0`).
+- **The anchor.** The cell is drawn at the NPC's Bottom with the origin
+  (106, 238) (or (114, 238) flipped): the cell's centre sits 4 px against
+  the facing direction and its bottom 4 px below the hitbox — the
+  `origin.Y -= 4` sink of the vanilla's art.
+- **The damage/phase overlays not carried.** The `localAI[3]` red shake
+  copies and the ai[0]==7/8 purple ghosts (`Main.cs:26366-26404`) read
+  `Main.GlobalTimeWrappedHourly` — wall-clock, so they cannot ride the
+  port's deterministic frame cache. The port's `hurt_cd` tint covers the
+  flash; the sequence cells are the visible part.
+- **The step sounds.** `FindFrame` case 668 plays `SoundID.DeerclopsStep`
+  at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
+  audio access, so the cue rides the follow-up like the other NPC steps.
+
+
+## NetModules (M6-NET-4)
+
+The envelope and the ported bodies are 1:1; the deviations:
+
+- **The chat relay broadcasts to everyone including the sender.** The C#'s
+  `ChatHelper.BroadcastChatMessageAs` does the same; the port's host also
+  runs the sender's line through its own `ChatMonitor::send` locally, so the
+  author's slot rides only for the line's colour (player chat is one colour
+  in the port until the team/chat channels land).
+- **The Ping module echoes back to the sender.** The C# skips the sender
+  (`ignoreClient = userId`) because its diagnostics UI counts bytes, not
+  round trips; the port measures an RTT for the client (`net_rtt_ms`), which
+  the C# does not need.
+- **`SkyEntity` grew `net_seed`/`net_sent`** so the host can relay the exact
+  spawn; the `SkyKind` → `SkyEntityType` mapping is the port's declaration
+  order until the C#'s `SkyEntityType.cs` values are pinned.
+- **The NetText module's keyed/format `NetworkText` modes are not resolved**:
+  a non-zero mode byte keeps the raw text (the substitution list is skipped).
+- **The unmapped module ids ride reserved** (0 Liquid, 4 Bestiary, 5/7
+  CreativeUnlocks+Report, 6/10 CreativePowers+Permissions, 8
+  TeleportPylon): their bodies land with the systems' multiplayer passes
+  (the creative registry's per-player split, the pylon system, the
+  npc-netId → credit-id table). Unknown ids are silently ignored exactly as
+  `NetManager.Read` does.
+- **The `82` envelope is not whitelisted in the accept gate**, matching the
+  C#: a pre-`IN_WORLD` slot's module message is booted
+  (`MessageBuffer.cs:161`'s whitelist does not contain 82).
+
+## The humanoid walkers' display (M4-NPC-3c)
+
+- **The zombie never animates.** `FindFrame` has no case 9 and
+  `npcFrameCount[9] = 1`: the vanilla zombie's sprite is the single 30x48
+  NPC_9 frame, its walk expressed purely in the body motion. The port's
+  v1 ran the case-3 group's walker (the 0/1/2 band cycle) on it — rows
+  1/2 did not exist in the sheet.
+- **The town NPCs and goblins are not 3-frame walkers.** They belong to
+  `FindFrame`'s humanoid-group arm (`NPC.cs:68547-69587`), which walks
+  rows 2..npcFrameCount-1: 26 rows for the Guide/Witch Doctor, 25 for
+  the Merchant/Arms Dealer/Demolitionist/Painter/Tinkerer, 23 for the
+  Nurse/Clothier, 21 for the Dryad and the Goblin Archer, 16 for the
+  other three goblins, 15 for the cave walkers. The v1's 3-frame machine
+  showed the idle rows while walking.
+- **The sit/talk/attack zones are the follow-up.** The group's
+  `ai[0]` 2/3/4/5/6/7/11/18/19/23 arms (the sit, the talking, the
+  downed, the shop-attack cycles over `AttackFrameCount`) ride the town
+  AI states the port does not model; the default (idle/walk) arm is
+  what the port draws.
+- **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
+  and their widths differ per town NPC (40/46/48/50/52/56) — the draw
+  takes each sheet's real frame instead of a stretched 38x48.

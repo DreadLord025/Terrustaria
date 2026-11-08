@@ -62,7 +62,27 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
     ("Roar_0", 15),
+    // `LegacySoundPlayer` case 43 (`LegacySoundPlayer.cs:454-476`) — the
+    // thunder strike: `SoundThunder[Next(6)]` from `Sounds/Thunder_0..5`,
+    // played by `UpdateWeather` when the thunder delay hits 0
+    // (`Main.cs:58759-58761`). Ambient type: the ambient-volume slider.
+    ("Thunder_0", 43),
+    ("Thunder_1", 43),
+    ("Thunder_2", 43),
+    ("Thunder_3", 43),
+    ("Thunder_4", 43),
+    ("Thunder_5", 43),
 ];
+
+/// The SceneState ambient loops (`SceneState.cs:189-253`): the blizzard's
+/// outside (`blizzard_strong_loop`, `SoundID.cs:1599`'s `WithVolume(0.5f)`)
+/// and inside-building tracks. Unlike the positional SFX above these are
+/// global (no position → no attenuation, `ActiveSound.cs:140-152`) and their
+/// volume is re-set every frame by [`Audio::set_ambient_loop`]. The second
+/// tuple field is the `LegacySoundStyle.Volume` the engine multiplies in
+/// (`ActiveSound.DetermineIntendedVolume` `:155-165`).
+const AMBIENT_LOOP_CUES: &[(&str, f32)] =
+    &[("blizzard_strong_loop", 0.5), ("blizzard_inside_building_loop", 1.0)];
 
 fn sound_type(cue: &str) -> u32 {
     SFX_CUES
@@ -79,6 +99,16 @@ pub struct Audio {
     /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
     /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
     liquid_loops: [Option<rodio::Sink>; 2],
+    /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
+    /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
+    /// the trackable path, `LegacySoundPlayer.cs:257`).
+    ambient_loop_cues: HashMap<&'static str, (u16, u32, Vec<i16>, f32)>,
+    /// One live sink per [`AMBIENT_LOOP_CUES`] entry, created on the first
+    /// non-zero volume — the SceneState `PlayTrackedSound` +
+    /// re-create-if-dead policy (`SceneState.cs:197-228`). A sink muted at
+    /// volume 0 keeps playing, like the vanilla instance the `SlotId` keeps
+    /// alive (`:231-246`).
+    ambient_loops: HashMap<&'static str, rodio::Sink>,
     /// The decoded `Sounds/Liquid_{0,1}` loops (channels, rate, samples).
     liquid_cues: [Option<(u16, u32, Vec<i16>)>; 2],
     /// Per-frame `Main.Camera.Center` + the volume sliders (see [`crate::sound`]).
@@ -135,12 +165,37 @@ impl Audio {
             }
         }
         log::info!("audio: {} PCM cues loaded", cues.len());
+        // The SceneState loops: `Sounds/Custom/<name>.xnb`, the trackable
+        // path (`LegacySoundPlayer.cs:257`), global PCM like the liquid ones.
+        let mut ambient_loop_cues: HashMap<&'static str, (u16, u32, Vec<i16>, f32)> =
+            HashMap::new();
+        if let Some(dir) = content.map(|c| c.join("Sounds").join("Custom")) {
+            for (name, style_volume) in AMBIENT_LOOP_CUES {
+                let path = dir.join(format!("{name}.xnb"));
+                match load_sound(&path) {
+                    Ok(s) => {
+                        let samples = s
+                            .data
+                            .chunks_exact(2)
+                            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                            .collect();
+                        ambient_loop_cues.insert(
+                            name,
+                            (s.channels, s.sample_rate, samples, *style_volume),
+                        );
+                    }
+                    Err(e) => log::debug!("ambient loop {name}: {e:#}"),
+                }
+            }
+        }
         Self {
             _stream: stream,
             handle,
             cues,
             liquid_loops: [None, None],
             liquid_cues,
+            ambient_loop_cues,
+            ambient_loops: HashMap::new(),
             listener: Listener {
                 camera_center: (0.0, 0.0),
                 sound_volume: 1.0,
@@ -223,6 +278,49 @@ impl Audio {
             sink.append(source);
             sink.set_volume(volume);
             self.liquid_loops[channel] = Some(sink);
+        }
+    }
+
+    /// One of the SceneState ambient loops (`SceneState.cs:189-228`): the
+    /// caller passes the `ActiveSound.Volume` the C# stores every frame, the
+    /// engine half here mirrors `ActiveSound.DetermineIntendedVolume`
+    /// (`ActiveSound.cs:155-165`) — a global cue has no attenuation, so the
+    /// final gain is `clamp(Style.Volume × volume × ambientVolume, 0, 1)`.
+    ///
+    /// Start/stop policy = the C# `GetActiveSound`/`PlayTrackedSound` pair
+    /// (`:197-228`): a sink is created on the first non-zero volume and kept
+    /// afterwards, so a fade-out and back continues the same instance (the
+    /// C# mutes the live instance at volume 0 and only drops the `SlotId`
+    /// once it is gone).
+    pub fn set_ambient_loop(&mut self, name: &'static str, volume: f32) {
+        let Some((channels, rate, samples, style_volume)) =
+            self.ambient_loop_cues.get(name).cloned()
+        else {
+            return;
+        };
+        let Some(handle) = &self.handle else { return };
+        let volume = (style_volume * volume * self.listener.ambient_volume).clamp(0.0, 1.0);
+        if volume > 0.0 && !self.ambient_loops.contains_key(name) {
+            // `SceneState.cs:197-206`: a dead sound is re-created.
+            let buf = rodio::buffer::SamplesBuffer::new(channels, rate, samples)
+                .convert_samples::<f32>();
+            let source = Panned {
+                inner: buf.repeat_infinite(),
+                channels,
+                left: 1.0,
+                right: 1.0,
+                channel: 0,
+            };
+            if let Ok(sink) = rodio::Sink::try_new(handle) {
+                sink.append(source);
+                sink.set_volume(volume);
+                log::info!("audio: ambient loop {name} started ({volume:.3})");
+                self.ambient_loops.insert(name, sink);
+            }
+            return;
+        }
+        if let Some(sink) = self.ambient_loops.get_mut(name) {
+            sink.set_volume(volume);
         }
     }
 }
