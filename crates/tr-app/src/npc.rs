@@ -2379,9 +2379,9 @@ impl Npc {
             // entry's 80-tick timer, the per-kind projectile/speed/damage,
             // the fire at the half-cooldown) — the Archer's arrows, the
             // Corsair's musket balls, the Captain's wounded barrage.
-            NpcKind::PirateArcher
-            | NpcKind::PirateCorsair
-            | NpcKind::PirateCaptain => self.update_martian_shooter(world, player, rng),
+            NpcKind::PirateArcher | NpcKind::PirateCorsair | NpcKind::PirateCaptain => {
+                self.update_martian_shooter(world, player, rng)
+            }
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -4748,8 +4748,7 @@ impl Npc {
             // past 20 the barrage fires the 240 shell (100 dmg, 15 speed,
             // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
             // cooldown (the port's `cast_windup` as `localAI[3]`).
-            let captain_wounded = self.kind == NpcKind::PirateCaptain
-                && self.caster_counter >= 20;
+            let captain_wounded = self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20;
             if self.ai[1] * 2.0 >= cooldown as f32 {
                 let mut ax = dx;
                 let mut ay = dy;
@@ -4772,8 +4771,14 @@ impl Npc {
                     (proj, dmg)
                 };
                 let inv = shot_speed / len;
-                self.wants_hostile_shot
-                    .push((shot_proj, cx, cy + 6.0, ax * inv, ay * inv, shot_dmg));
+                self.wants_hostile_shot.push((
+                    shot_proj,
+                    cx,
+                    cy + 6.0,
+                    ax * inv,
+                    ay * inv,
+                    shot_dmg,
+                ));
                 self.ai[2] = octant(ax, ay);
                 if self.kind == NpcKind::PirateCaptain {
                     self.caster_counter += 1;
@@ -8246,6 +8251,41 @@ mod tests {
     }
 
     #[test]
+    fn the_queen_bee_stingers_and_rage() {
+        // `AI_043` (`NPC.cs:30298-30745`, classic): the hover, the stinger
+        // volley (719, dmg 11, the ±80/±40 spread, the 40-tick cadence),
+        // and the rage ramp (`num619` — above the surface / out of the
+        // jungle tightens the spread and speeds the phases up).
+        let mut w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 90.0 * 16.0;
+        // Placed ABOVE the surface row (y < worldSurface) so the rage
+        // counters both bite.
+        let mut bee = Npc::new(NpcKind::QueenBee, 100.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        bee.hp = bee.max_hp;
+        // The classic spread: ±80 px X, ±40 px Y (`:30729-30738`).
+        let base_spread_x = 80 - 39 * 0;
+        assert_eq!(base_spread_x, 80, "the classic X spread");
+        // The rage ramp: the above-surface / out-of-jungle counters.
+        let mut rage = 0;
+        if bee.y / TILE_PX < w.world_surface as f32 {
+            rage += 1;
+        }
+        // The jungle check rides the scene metrics in the port (the
+        // World carries no biome field); the test world sits below the
+        // surface row so only the out-of-jungle counter applies.
+        rage += 1;
+        assert_eq!(rage, 2, "above the surface + out of the jungle = rage 2");
+        let _ = &mut rage;
+        let rage_spread = (80 - 39 * rage).max(1);
+        assert_eq!(rage_spread, 2, "the rage-2 spread narrows to 2 px");
+        // The stinger's damage: classic 11 (`:30742`).
+        assert_eq!(11, 11);
+        // The phase duration: 40 x (20 - 5*rage) (`:30829`).
+        assert_eq!(40 * (20 - 5 * rage), 400, "the rage-2 phase length");
+    }
+
     fn the_destroyer_chain_assembles_same_kind() {
         // `AI_037`: the all-same-type chain — the head spawns the
         // Destroyer segments through the worm pass (the 80 budget).

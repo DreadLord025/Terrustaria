@@ -98,6 +98,9 @@ pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
+/// `ProjectileID.QueenBeeStinger` (719) — the Queen Bee's stingers
+/// (`NPC.cs:30742`'s `NewProjectile`).
+pub const BEE_STINGER: u16 = 719;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -264,6 +267,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
             // 187, penetrate -1, tileCollide false, timeLeft 300.
             SHADOW_HAND => (40.0, 40.0, 187, -1, 300, 0, false, false, false),
+            // `Projectile.cs:7608-7616` — the stinger: 10x10, aiStyle 1,
+            // penetrate -1, tileCollide true.
+            BEE_STINGER => (10.0, 10.0, 1, -1, 300, 0, true, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
