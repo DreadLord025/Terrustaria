@@ -121,6 +121,9 @@ pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
+/// `ProjectileID.BombSkeletronPrime` (102) — the Prime cannon's bombs
+/// (`NPC.cs:28665`'s `num528`; classic damage 0).
+pub const BOMB_SKELETRON: u16 = 102;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -307,6 +310,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
             // 187, penetrate -1, tileCollide false, timeLeft 300.
             SHADOW_HAND => (40.0, 40.0, 187, -1, 300, 0, false, false, false),
+            // `Projectile.cs:1896-1903` — the bomb: 22x22, aiStyle 16,
+            // penetrate -1, hostile.
+            BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and

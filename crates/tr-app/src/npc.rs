@@ -391,6 +391,18 @@ pub enum NpcKind {
     /// `NPCID.WallOfFleshEye` (114) — the WoF's mirror eye (`aiStyle 28`,
     /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life).
     WallOfFleshEye,
+    /// `NPCID.PrimeCannon` (128) — the Prime's bomb limb (`aiStyle 35`,
+    /// `NPC.cs:10577-10591`: 52x52, dmg 30, def 23, 7000 HP).
+    PrimeCannon,
+    /// `NPCID.PrimeSaw` (129) — the Prime's saw limb (`aiStyle 33`:
+    /// 56 dmg, def 38, 9000 HP).
+    PrimeSaw,
+    /// `NPCID.PrimeVice` (130) — the Prime's vice limb (`aiStyle 34`:
+    /// 52 dmg, def 34, 9000 HP).
+    PrimeVice,
+    /// `NPCID.PrimeLaser` (131) — the Prime's laser limb (`aiStyle 36`:
+    /// 29 dmg, def 20, 6000 HP).
+    PrimeLaser,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -675,6 +687,10 @@ impl NpcKind {
             NpcKind::SkeletronHand => 79,
             NpcKind::WallOfFleshEye => 80,
             NpcKind::WallOfFleshEye => 80,
+            NpcKind::PrimeCannon => 81,
+            NpcKind::PrimeSaw => 82,
+            NpcKind::PrimeVice => 83,
+            NpcKind::PrimeLaser => 84,
         }
     }
 
@@ -789,6 +805,10 @@ impl NpcKind {
             78 => NpcKind::Deerclops,
             79 => NpcKind::SkeletronHand,
             80 => NpcKind::WallOfFleshEye,
+            81 => NpcKind::PrimeCannon,
+            82 => NpcKind::PrimeSaw,
+            83 => NpcKind::PrimeVice,
+            84 => NpcKind::PrimeLaser,
             _ => return None,
         })
     }
@@ -972,6 +992,9 @@ impl NpcKind {
             NpcKind::Deerclops => (60.0, 154.0),
             NpcKind::SkeletronHand => (52.0, 52.0),
             NpcKind::WallOfFleshEye => (100.0, 100.0),
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                (52.0, 52.0)
+            }
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -1209,6 +1232,10 @@ impl NpcKind {
             NpcKind::Deerclops => 7000,
             NpcKind::SkeletronHand => 600,
             NpcKind::WallOfFleshEye => 8000,
+            NpcKind::PrimeCannon => 7000,
+            NpcKind::PrimeSaw => 9000,
+            NpcKind::PrimeVice => 9000,
+            NpcKind::PrimeLaser => 6000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -1349,6 +1376,10 @@ impl NpcKind {
             NpcKind::Deerclops => 20,
             NpcKind::SkeletronHand => 20,
             NpcKind::WallOfFleshEye => 50,
+            NpcKind::PrimeCannon => 30,
+            NpcKind::PrimeSaw => 56,
+            NpcKind::PrimeVice => 52,
+            NpcKind::PrimeLaser => 29,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -2026,10 +2057,15 @@ impl Npc {
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
             NpcKind::WallOfFleshEye => 80000.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Deerclops => 0.0,
             NpcKind::SkeletronHand => 0.0,
-            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
-            NpcKind::Deerclops => 50000.0,
+            NpcKind::WallOfFleshEye => 0.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -2193,6 +2229,10 @@ impl Npc {
             NpcKind::Deerclops => 10,
             NpcKind::SkeletronHand => 14,
             NpcKind::WallOfFleshEye => 0,
+            NpcKind::PrimeCannon => 23,
+            NpcKind::PrimeSaw => 38,
+            NpcKind::PrimeVice => 34,
+            NpcKind::PrimeLaser => 20,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -2275,6 +2315,9 @@ impl Npc {
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
             NpcKind::WallOfFleshEye => 80000.0,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                0.0
+            }
             NpcKind::Zombie => 60.0,
             // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
             NpcKind::Skeleton => 100.0,
@@ -2535,6 +2578,9 @@ impl Npc {
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
             NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                self.update_prime_limb(world, player)
+            }
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
@@ -2711,6 +2757,10 @@ impl Npc {
             NpcKind::SkeletronHand => {
                 // The hand's single frame (`NPC.cs` has no FindFrame case
                 // for type 36 — the strip is one frame).
+                self.frame = 0;
+            }
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                // The limbs' single frame.
                 self.frame = 0;
             }
             NpcKind::WallOfFleshEye => {
@@ -5653,8 +5703,14 @@ impl Npc {
             self.ai[0] -= 1.0;
             // The summon arm (`ai[1] == 2` at 64).
             if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
-                self.wants_hostile_shot
-                    .push((673u16, cx + self.facing as f32 * 24.0, cy - 40.0, 0.0, 0.0, 0));
+                self.wants_hostile_shot.push((
+                    673u16,
+                    cx + self.facing as f32 * 24.0,
+                    cy - 40.0,
+                    0.0,
+                    0.0,
+                    0,
+                ));
                 // `DD2Event.RaiseGoblins` — the port's summon request.
                 self.wants_sphere = Some((NpcKind::DD2GoblinT1, cx, cy));
             }
@@ -5670,8 +5726,14 @@ impl Npc {
             // The heal arm (`ai[1] == 1` at 40/48/56): the markers under
             // the target (the port places them at the vertical scan).
             if self.ai[1] == 1.0 && matches!(self.ai[0], 40.0 | 48.0 | 56.0) {
-                self.wants_hostile_shot
-                    .push((674u16, cx + self.facing as f32 * 240.0, cy, 0.0, 0.0, 0));
+                self.wants_hostile_shot.push((
+                    674u16,
+                    cx + self.facing as f32 * 240.0,
+                    cy,
+                    0.0,
+                    0.0,
+                    0,
+                ));
             }
             if self.ai[0] <= 0.0 {
                 let prior = self.ai[1];
@@ -6452,6 +6514,142 @@ impl Npc {
     /// `home` field pair). The classic-only: the passive shadow hands
     /// (the expert arm) fold out; the life ramp feeds only the speed
     /// (`:44645`'s 3.5+1).
+    /// The Prime's four limbs (`aiStyle 33-36`, `NPC.cs:27943-28990`):
+    /// the shared tether dock `(headCenter.X - 200*side, head.Y + 230)`
+    /// with the >800 desync band, the head-gone despawn, and the
+    /// per-limb attacks — the cannon's bombs (102, dmg 0, the 40-tick
+    /// cadence), the saw's 22-dash, the vice's 4-dash-20 cycle, the
+    /// laser's DeathLaser volleys (100, 25 dmg). The head's centre rides
+    /// the World's Prime anchor (the write-through).
+    fn update_prime_limb(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let side = if self.ai[0] < 0.0 { -1.0 } else { 1.0 };
+        // The dock: the head's centre ± 200 side, +230 below.
+        let dock_x = world.prime_x - 200.0 * side;
+        let dock_y = world.prime_y + 230.0;
+        if !world.prime_present {
+            self.hp = 0;
+            return;
+        }
+        // The tether drift to the dock (`:28530-28544` shared math).
+        let dx = dock_x - cx;
+        let dy = dock_y - cy;
+        if dx.abs() > 8.0 {
+            self.vx += dx.signum() * 0.07;
+            self.vx = self.vx.clamp(-8.0, 8.0);
+        } else {
+            self.vx *= 0.9;
+        }
+        if dy.abs() > 3.0 {
+            self.vy += dy.signum() * 0.04;
+            self.vy = self.vy.clamp(-3.0, 3.0);
+        } else {
+            self.vy *= 0.9;
+        }
+        // The per-limb attacks.
+        match self.kind {
+            NpcKind::PrimeCannon => {
+                // The bomb cadence (`:28739-28752`): every 40 ticks the
+                // 102 bomb at 10 speed — the vanilla's damage is 0 (the
+                // port's 0 stands in).
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 40.0 {
+                    self.ai[3] = 0.0;
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::BOMB_SKELETRON,
+                        cx,
+                        cy,
+                        dx / d * 10.0,
+                        dy / d * 10.0,
+                        0,
+                    ));
+                }
+            }
+            NpcKind::PrimeSaw => {
+                // The 22-dash (`:28166-28176`): the rise to above the
+                // head, then the strike.
+                if self.ai[2] == 1.0 {
+                    self.vy -= 0.1;
+                    self.vx *= 0.95;
+                    if cy < world.prime_y - 200.0 {
+                        self.ai[2] = 2.0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                        self.vx = dx / d * 22.0;
+                        self.vy = dy / d * 22.0;
+                    }
+                } else if self.ai[2] >= 2.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[3] = 0.0;
+                } else {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 300.0 {
+                        self.ai[2] = 1.0;
+                        self.ai[3] = 0.0;
+                    }
+                }
+            }
+            NpcKind::PrimeVice => {
+                // The 4-dash cycle (`:28453-28482`): the rise to
+                // head.Y - 280 then the 20-speed dash, four times.
+                if self.ai[2] == 1.0 {
+                    self.vy -= 0.1;
+                    self.vx *= 0.95;
+                    if cy < world.prime_y - 280.0 {
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                        self.vx = dx / d * 20.0;
+                        self.vy = dy / d * 20.0;
+                        self.ai[2] = 2.0;
+                    }
+                } else if self.ai[2] == 2.0 {
+                    if self.ai[3] >= 4.0 {
+                        self.ai[2] = 0.0;
+                        self.ai[3] = 0.0;
+                    } else {
+                        self.ai[2] = 1.0;
+                        self.ai[3] += 1.0;
+                    }
+                } else {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 600.0 {
+                        self.ai[2] = 1.0;
+                        self.ai[3] = 0.0;
+                    }
+                }
+            }
+            _ => {
+                // The laser limb: the DeathLaser volley (`:28973-28986`)
+                // at the 80-tick cadence.
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 80.0 {
+                    self.ai[3] = 0.0;
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::DESTROYER_LASER,
+                        cx,
+                        cy,
+                        dx / d * 10.0,
+                        dy / d * 10.0,
+                        25,
+                    ));
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     /// The WoF's mirror eye (`aiStyle 28`, `NPC.cs:26053-26208`): the
     /// life/X mirror, the Y target `(band mid + drawTop/Bottom) / 2` chased
     /// at ±1 capped ±5, the eye-laser volley (the 600-tick idle → 4-shot
@@ -7448,6 +7646,10 @@ impl Npc {
         h ^= match self.kind {
             NpcKind::Slime => 0,
             NpcKind::SkeletronHand => 79,
+            NpcKind::PrimeCannon => 81,
+            NpcKind::PrimeSaw => 82,
+            NpcKind::PrimeVice => 83,
+            NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
@@ -7855,6 +8057,55 @@ mod tests {
     }
 
     #[test]
+    fn the_prime_limbs_tether_and_attack() {
+        // `aiStyle 33-36` (`NPC.cs:27943-28990`): the dock at
+        // `(headX - 200*side, headY + 230)`, the cannon's bombs (102,
+        // dmg 0), the saw's 22-dash, the vice's 4-dash-20, the laser's
+        // DeathLaser 100 at 25.
+        let mut w = ground_air();
+        w.prime_present = true;
+        w.prime_x = 100.0 * 16.0;
+        w.prime_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 130.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // The cannon: the 40-tick bomb volley.
+        let mut cannon = Npc::new(NpcKind::PrimeCannon, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        cannon.hp = cannon.max_hp;
+        cannon.ai[3] = 39.0;
+        cannon.update_prime_limb(&w, &player);
+        let bomb = cannon.wants_hostile_shot.last().copied().expect("the bomb");
+        assert_eq!(bomb.0, crate::projectile::BOMB_SKELETRON);
+        assert_eq!(bomb.5, 0, "the classic bombs deal no damage");
+        // The saw: the rise → the 22 strike.
+        let mut saw = Npc::new(NpcKind::PrimeSaw, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        saw.hp = saw.max_hp;
+        saw.ai[2] = 1.0;
+        saw.y = 80.0 * 16.0; // above head - 200
+        saw.update_prime_limb(&w, &player);
+        let sp = (saw.vx * saw.vx + saw.vy * saw.vy).sqrt();
+        assert!((sp - 22.0).abs() < 2.0, "the 22 saw dash ({sp})");
+        // The vice: the 20-speed dash, the 4-count.
+        let mut vice = Npc::new(NpcKind::PrimeVice, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        vice.hp = vice.max_hp;
+        vice.ai[2] = 1.0;
+        vice.y = 80.0 * 16.0;
+        vice.update_prime_limb(&w, &player);
+        let sp2 = (vice.vx * vice.vx + vice.vy * vice.vy).sqrt();
+        assert!((sp2 - 20.0).abs() < 2.0, "the 20 vice dash ({sp2})");
+        assert_eq!(vice.ai[2], 2.0, "the dash count begins");
+        // The laser: the 100 at 25, 10 speed.
+        let mut laser = Npc::new(NpcKind::PrimeLaser, 100.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        laser.hp = laser.max_hp;
+        laser.ai[3] = 79.0;
+        laser.update_prime_limb(&w, &player);
+        let beam = laser.wants_hostile_shot.last().copied().expect("the beam");
+        assert_eq!(beam.0, crate::projectile::DESTROYER_LASER);
+        assert_eq!(beam.5, 25, "the laser damage");
+        let sp3 = (beam.3 * beam.3 + beam.4 * beam.4).sqrt();
+        assert!((sp3 - 10.0).abs() < 0.5, "the 10 speed ({sp3})");
+    }
+
     fn the_wof_eye_mirrors_and_volleys() {
         // `aiStyle 28` (`NPC.cs:26053-26208`): the Y target rides the
         // band halves, the volley's idle-600 -> 4-shot bursts at 46 ticks
