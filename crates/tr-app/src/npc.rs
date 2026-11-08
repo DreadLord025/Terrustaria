@@ -1388,7 +1388,7 @@ pub struct Npc {
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
     /// the (kind, bottom-centre x, bottom-centre y) spawn point.
-    pub wants_sphere: Option<(NpcKind, f32, f32)>,
+    pub wants_sphere: Vec<(NpcKind, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
@@ -1448,6 +1448,17 @@ pub struct Npc {
     /// The Dutchman's cannon-crew spawn request (`AI_093`'s init arm:
     /// the 4 cannons 492 at the ship's centre, `NPC.cs:38859-38872`).
     pub wants_dutchman_crew: bool,
+    /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
+    /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
+    /// machines decrement it by 10 per tick and the draw reads it as
+    /// `GetAlpha`'s `(255 - alpha)/255` tint (`NPC.cs:93406-93412`).
+    pub alpha: u8,
+    /// The attached head's `localAI[1]` (`NPC.cs:31213/31218/31223`):
+    /// the player's side about the head — -1 left of `Center.X - width`,
+    /// +1 right of `+ width`, 0 in-band; the phase-1-only turn that
+    /// drives FindFrame case 246's +4/+2 rows and the beam volley's ±18
+    /// vs ±30 side arm (`NPC.cs:72953-72959` / `:31305-31327`).
+    pub head_turn: i32,
 }
 
 /// The 2-D rotation helper for the Dutchman's drop offsets
@@ -1792,7 +1803,7 @@ impl Npc {
             home: None,
             caster_counter: 0,
             cast_windup: 0,
-            wants_sphere: None,
+            wants_sphere: Vec::new(),
             swim_phase: 0.0,
             worm_id: 0,
             seg_index: 0,
@@ -1821,6 +1832,8 @@ impl Npc {
             crew_cannons: 0,
             wants_dutchman_drop: None,
             wants_dutchman_crew: false,
+            alpha: 0,
+            head_turn: 0,
         }
     }
 
@@ -3065,13 +3078,11 @@ impl Npc {
                     }
                 }
             }
-            NpcKind::Golem
-            | NpcKind::GolemHead
-            | NpcKind::GolemFistLeft
-            | NpcKind::GolemFistRight
-            | NpcKind::GolemHeadFree => {
-                // The v1: the single-frame draws (the Golem's part
-                // animation cycles land with the full AI_045-48 machines).
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                // The fists: `Main.npcFrameCount` 247/248 = 1
+                // (`Main.cs:67108`) — `FindFrame` has no case, the
+                // frame stays row 0; the draw tilts the quad by
+                // `npc.rotation` (the lunge angle) instead.
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
@@ -3084,9 +3095,10 @@ impl Npc {
             NpcKind::Golem => {
                 // `FindFrame`'s case 245 (`NPC.cs:72898-72930`): the
                 // grounded state selects the 5-row charge ramp over the
-                // `ai[1]` window (-20..0), row 0 while charging; the
-                // flight arm's literal `frame.Y = 1` pixel write folds
-                // to row 0 (the documented 1-px deviation).
+                // `ai[1]` window (-20..-1 — the -1 tick launches the slam
+                // and never draws), row 0 while charging; the flight arm's
+                // literal `frame.Y = 1` pixel write folds to row 0 (the
+                // documented 1-px deviation).
                 if self.ai[0] == 0.0 {
                     let c = self.cast_windup as f32;
                     self.frame = if c < -16.0 {
@@ -3109,18 +3121,34 @@ impl Npc {
             NpcKind::GolemHead => {
                 // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): the mouth
                 // row rides the fireball window (the first/last 20 of the
-                // 300 cadence — `:31181`/`:31186`'s localAI[0]), the
-                // phase-1 head-turn rows (+2/+4) follow the side toward
-                // the player (`:31213`/`:31218`'s localAI[1]).
+                // 300 cadence — `:31178`'s window with the localAI[0]
+                // writes at `:31181`/`:31186` (phase 0) and
+                // `:31240`/`:31244` (phase 1), folded: the port tests the
+                // window directly); in phase 1 the head-turn rows ride
+                // `localAI[1]` (`npc.head_turn`): +4 on the left side
+                // (`:72953-72955`), +2 on the right (`:72957-72959`),
+                // NOTHING in-band (`:31223`'s zero — the three-way the
+                // v1 missed).
                 let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                // /'s localAI[1] side turns ride the
-                // facing (the machine faces the player): +2 left, +4 right
-                // (`:72955`/`:72959`'s row offsets).
                 let mut row = if mouth { 1 } else { 0 };
                 if self.ai[0] == 1.0 {
-                    row += if self.facing < 0 { 4 } else { 2 };
+                    row += match self.head_turn {
+                        -1 => 4,
+                        1 => 2,
+                        _ => 0,
+                    };
                 }
                 self.frame = row;
+            }
+            NpcKind::GolemHeadFree => {
+                // `FindFrame`'s case 249 (`NPC.cs:72963-72981`): the mouth
+                // row only, off the free head's own 300-cadence
+                // `localAI[0]` (`:31439`/`:31443` — the same first/last-20
+                // window). No wind-up ramp, no side turn; the C#'s
+                // `frameCounter++` at :72976-72979 is dead (nothing reads
+                // it for this type) and is not carried.
+                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
+                self.frame = if mouth { 1 } else { 0 };
             }
             NpcKind::GoblinTinkerer => {
                 // The town 3-frame machine (`Main.npcFrameCount[107]`,
@@ -4172,7 +4200,7 @@ impl Npc {
                 NpcKind::FireImp => NpcKind::BurningSphere,
                 _ => return,
             };
-            self.wants_sphere = Some((sphere, sx, sy));
+            self.wants_sphere.push((sphere, sx, sy));
         }
     }
 
@@ -5056,7 +5084,11 @@ impl Npc {
                     // damp.
                     self.vx *= 0.5;
                     let octant = if py.abs() > px.abs() * 2.0 {
-                        if py > 0.0 { 1.0 } else { 5.0 }
+                        if py > 0.0 {
+                            1.0
+                        } else {
+                            5.0
+                        }
                     } else if px.abs() > py.abs() * 2.0 {
                         3.0
                     } else if py > 0.0 {
@@ -6100,14 +6132,21 @@ impl Npc {
         match self.kind {
             NpcKind::Golem => {
                 // The body (`AI_045_Golem`, `NPC.cs:19505-19780`).
+                // The alpha fade (`:19535-19543`): `alpha -= 10` with
+                // `ai[1] = 0` — the port's ai[1] analog is `cast_windup`
+                // (the wind-up counter), so the fade holds the ramp at 0.
+                if self.alpha > 0 {
+                    self.alpha = self.alpha.saturating_sub(10);
+                    self.cast_windup = 0;
+                }
                 // The init (the `localAI[0]` one-shot, `:19517-19525`):
                 // the parts spawn request — the sim resolves the offsets
                 // (247 at -84/-9, 248 at +78/-9, 246 at -3/-57).
                 if self.caster_counter == 0 && self.cast_windup == 0 {
                     self.caster_counter = 1;
-                    self.wants_sphere = Some((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
-                    self.wants_sphere = Some((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
-                    self.wants_sphere = Some((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
+                    self.wants_sphere.push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
+                    self.wants_sphere.push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
+                    self.wants_sphere.push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
                 }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`).
@@ -6164,6 +6203,12 @@ impl Npc {
                 let d = (tx * tx + ty * ty).sqrt().max(0.001);
                 self.vx = (self.vx + tx / d * 9.0).clamp(-7.0, 7.0);
                 self.vy = (self.vy + ty / d * 9.0).clamp(-7.0, 7.0);
+                // The alpha fade (`:31169-31173`): `ai[1] = 30` — the
+                // mid-window hold keeps the mouth row closed (20..280).
+                if self.alpha > 0 {
+                    self.alpha = self.alpha.saturating_sub(10);
+                    self.ai[1] = 30.0;
+                }
                 if self.hp < self.max_hp / 2 {
                     self.ai[0] = 1.0;
                 } else {
@@ -6172,16 +6217,40 @@ impl Npc {
                 // The fireball cycle (`:31174-31258`): the 300 cadence,
                 // the 258 at 18 (phase 0) / 24 (phase 1), the spawn
                 // Center + (0, 10) with the phase-1 +-40 side offset.
-                self.ai[1] += 1.0;
+                // The phase-1 cadence doubles under the 40%/20% life
+                // tiers (`:31227-31235`'s extra `num688` adds — the
+                // solo balance factor).
+                let mut step = 1.0;
+                if self.ai[0] == 1.0 {
+                    if (self.hp as f32) < (self.max_hp as f32) * 0.4 {
+                        step += 1.0;
+                    }
+                    if (self.hp as f32) < (self.max_hp as f32) * 0.2 {
+                        step += 1.0;
+                    }
+                }
+                self.ai[1] += step;
+                // The phase-1 head turn (`:31207-31224`): the three-way
+                // `localAI[1]` (`head_turn`) by the player's side about
+                // `Center.X +- width` — the FindFrame +4/+2 rows and the
+                // volley's side arm read it. Phase 0 leaves it (the C#
+                // writes localAI[1] only in the phase-1 arm).
+                if self.ai[0] == 1.0 {
+                    self.head_turn = if pcx < cx - w {
+                        -1
+                    } else if pcx > cx + w {
+                        1
+                    } else {
+                        0
+                    };
+                }
                 if self.ai[1] >= 300.0 {
                     self.ai[1] = 0.0;
                     let ox = if self.ai[0] == 1.0 {
-                        if pcx < cx - w {
-                            -40.0 * scale
-                        } else if pcx > cx + w {
-                            40.0 * scale
-                        } else {
-                            0.0
+                        match self.head_turn {
+                            -1 => -40.0 * scale,
+                            1 => 40.0 * scale,
+                            _ => 0.0,
                         }
                     } else {
                         0.0
@@ -6196,19 +6265,47 @@ impl Npc {
                     ));
                 }
                 // The beam volley (`:31261-31334`, the phase-1 arm): the
-                // two-shot EyeBeam 259 dmg 28 at the 11 speed with the
-                // 3-tick lead; the vanilla's 60+Next(600) cadence folds
-                // to the 300 average (the classic solo player).
+                // cadence `num688` (solo 1) with the extra +1 adds at the
+                // life < 1/3, 1/4, 1/5 tiers and +4 while the head cannot
+                // hit the player (`Collision.CanHit` false — the
+                // `line_clear` stand-in); the vanilla's 60+Next(600)
+                // trigger folds to the flat 300 average (the RNG stream
+                // discipline). Two arms by the turn: in-band (`head_turn`
+                // 0) fires the two-shot EyeBeam 259 (dmg 28) at the 11
+                // speed from +-18; a side turn fires the single 12-speed
+                // beam from +-30 (`:31305-31327`). Both carry the 3-tick
+                // lead; the C#'s `timeLeft = 300` override rides the
+                // pool's timed-spawn arm (the laser's shape).
                 if self.ai[0] == 1.0 {
-                    self.ai[2] += 1.0;
+                    let mut step = 1.0;
+                    if (self.hp as f32) < (self.max_hp as f32) / 3.0 {
+                        step += 1.0;
+                    }
+                    if self.hp < self.max_hp / 4 {
+                        step += 1.0;
+                    }
+                    if self.hp < self.max_hp / 5 {
+                        step += 1.0;
+                    }
+                    if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        step += 4.0;
+                    }
+                    self.ai[2] += step;
                     if self.ai[2] > 300.0 {
                         self.ai[2] = 0.0;
-                        for sx in [-18.0 * scale, 18.0 * scale] {
+                        let (shots, count) = if self.head_turn == 0 {
+                            ([(-18.0 * scale, 11.0), (18.0 * scale, 11.0)], 2)
+                        } else if self.head_turn == -1 {
+                            ([(-30.0 * scale, 12.0), (0.0, 0.0)], 1)
+                        } else {
+                            ([(30.0 * scale, 12.0), (0.0, 0.0)], 1)
+                        };
+                        for (sx, sp) in shots.into_iter().take(count) {
                             let mut vx = pcx - (cx + sx);
                             let mut vy = pcy - (cy - 22.0 * scale);
                             let vd = (vx * vx + vy * vy).sqrt().max(0.001);
-                            vx = vx / vd * 11.0;
-                            vy = vy / vd * 11.0;
+                            vx = vx / vd * sp;
+                            vy = vy / vd * sp;
                             self.wants_hostile_shot.push((
                                 crate::projectile::GOLEM_EYE_BEAM,
                                 cx + sx + vx * 3.0,
@@ -6223,69 +6320,134 @@ impl Npc {
             }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
                 // The fists (`AI_047_GolemFist`, `NPC.cs:19231-19503`):
-                // the tether (-84 / +78, -9), the follow with the contact
-                // cadence 60, the wind-up 30, the dash 12.
-                let anchor_x = world.golem_x
-                    + if self.kind == NpcKind::GolemFistLeft {
-                        -84.0
-                    } else {
-                        78.0
-                    };
+                // the tether (`vector = body.Center + body.velocity +
+                // (0, -9 * scale)`, `:19261-19265`, with the -84 / +78
+                // side fold), the follow with the contact cadence 60,
+                // the wind-up 30, the dash 12 (+tiers). `num` (the
+                // `GetMyBalance` factor, `:19233`) is 1.0 for the solo
+                // unscaled player — the multiplayer/good-world branches
+                // stay off (documented in ANALYSIS).
+                let left = self.kind == NpcKind::GolemFistLeft;
+                let anchor_x = world.golem_x + world.golem_vx + if left { -84.0 } else { 78.0 };
                 let anchor_y = world.golem_y - 9.0;
+                // The alpha fade (`:19248-19255`): `ai[1] = 0` — the
+                // cadence counter resets while the fist fades in.
+                if self.alpha > 0 {
+                    self.alpha = self.alpha.saturating_sub(10);
+                    self.ai[1] = 0.0;
+                }
                 if self.ai[0] == 0.0 {
                     // The follow (`:19262-19330`).
                     let dx = anchor_x - cx;
                     let dy = anchor_y - cy;
                     let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    let num3 = 14.0;
-                    if d < 12.0 + num3 {
-                        self.vx = 0.0;
-                        self.vy = 0.0;
-                    } else {
-                        self.vx = dx / d * num3;
-                        self.vy = dy / d * num3;
+                    // The approach speed (`:19265-19282`): the base 14,
+                    // +3/+3 under the own half/quarter life, +8 while the
+                    // body is damaged, x1 solo, clamped at 32.
+                    let mut num3: f32 = 14.0;
+                    if self.hp < self.max_hp / 2 {
+                        num3 += 3.0;
                     }
-                    // The contact cadence: +1, the body's damaged
-                    // tier adds 10x (`:19301`'s `10f * num5` — the
-                    // 16.7x charge under damage).
-                    self.ai[1] += if world.golem_hp_ratio < 1.0 {
-                        10.0
+                    if self.hp < self.max_hp / 4 {
+                        num3 += 3.0;
+                    }
+                    if world.golem_hp_ratio < 1.0 {
+                        num3 += 8.0;
+                    }
+                    num3 = num3.min(32.0);
+                    if d < 12.0 + num3 {
+                        // In contact (`:19285-19317`): the raw delta
+                        // velocity (the C# writes `velocity = vector2`),
+                        // rotation reset, the cadence accumulates ONLY
+                        // here, and the 60 trigger passes the side gate.
+                        self.vx = dx;
+                        self.vy = dy;
+                        self.rotation = 0.0;
+                        let mut step = 1.0;
+                        if self.hp < self.max_hp / 2 {
+                            step += 1.0;
+                        }
+                        if self.hp < self.max_hp / 4 {
+                            step += 1.0;
+                        }
+                        if world.golem_hp_ratio < 1.0 {
+                            step += 10.0;
+                        }
+                        self.ai[1] += step;
+                        if self.ai[1] >= 60.0 {
+                            // `:19308-19317`'s side gate: the left fist
+                            // dashes when the player stands right of its
+                            // `Center.X + 100`, the right fist when they
+                            // stand left of `- 100`; otherwise the
+                            // cadence resets and the fist keeps hovering.
+                            let dashes = if left {
+                                cx + 100.0 > pcx
+                            } else {
+                                cx - 100.0 < pcx
+                            };
+                            self.ai[1] = 0.0;
+                            if dashes {
+                                self.ai[0] = 1.0;
+                            }
+                        }
                     } else {
-                        1.0
-                    };
-                    if self.ai[1] >= 60.0 {
-                        self.ai[0] = 1.0;
-                        self.ai[1] = 0.0;
+                        // Out of range (`:19319-19329`): move at num3
+                        // along the delta; the rotation aims the sprite
+                        // along the velocity (247's arm is negated — the
+                        // left sheet points the other way).
+                        let ratio = num3 / d;
+                        self.vx = dx * ratio;
+                        self.vy = dy * ratio;
+                        self.rotation = if left {
+                            (-self.vy).atan2(-self.vx)
+                        } else {
+                            self.vy.atan2(self.vx)
+                        };
                     }
                 } else if self.ai[0] == 1.0 {
-                    // The wind-up (`:19331-19390`): the hard snap + the
-                    // 30-tick hold.
+                    // The wind-up (`:19331-19390`): the hard Center snap
+                    // to the anchor + the 30-tick hold; the launch sets
+                    // the dash speed tiers.
                     self.x = anchor_x - w * 0.5;
                     self.y = anchor_y - h * 0.5;
+                    self.rotation = 0.0;
                     self.vx = 0.0;
                     self.vy = 0.0;
                     self.ai[1] += 1.0;
                     if self.ai[1] >= 30.0 {
                         self.ai[0] = 2.0;
                         self.ai[1] = 0.0;
-                    }
-                } else if self.ai[0] == 2.0 {
-                    // The dash (`:19361-19449`): the first tick sets the
-                    // 12-speed lunge; the 700-px distance return.
-                    if self.ai[1] == 0.0 {
-                        let dx = pcx - cx;
-                        let dy = pcy - cy;
-                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                        // `:19362-19378`'s tiers: the base 12, the
-                        // body-damaged +10 (the own-life tiers fold), the
-                        // 48 clamp.
-                        let mut sp = 12.0;
+                        // `:19361-19378`'s dash tiers: the base 12,
+                        // +4/+4 under the own half/quarter life, +10 while
+                        // the body is damaged, x1 solo, clamped at 48.
+                        let mut sp: f32 = 12.0;
+                        if self.hp < self.max_hp / 2 {
+                            sp += 4.0;
+                        }
+                        if self.hp < self.max_hp / 4 {
+                            sp += 4.0;
+                        }
                         if world.golem_hp_ratio < 1.0 {
                             sp += 10.0;
                         }
+                        sp = sp.min(48.0);
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
                         self.vx = dx / d * sp;
                         self.vy = dy / d * sp;
+                        self.rotation = if left {
+                            (-self.vy).atan2(-self.vx)
+                        } else {
+                            self.vy.atan2(self.vx)
+                        };
                     }
+                } else if self.ai[0] == 2.0 {
+                    // The dash (`:19392-19449`): the lunge until the
+                    // anchor distance passes 700 (the C#'s `collideX /
+                    // collideY` exit rides the tile-collision pass — the
+                    // port's sim has no per-NPC collision flags yet, the
+                    // documented deviation).
                     self.ai[1] += 1.0;
                     let ddx = anchor_x - cx;
                     let ddy = anchor_y - cy;
@@ -6305,9 +6467,20 @@ impl Npc {
                 self.vy += ty / d * 0.05;
                 self.vx = self.vx.clamp(-7.0, 7.0);
                 self.vy = self.vy.clamp(-7.0, 7.0);
-                // The fireball salvo (`:31436-31465`): the 300 cadence,
-                // the 258 dmg 20 at the 8 speed.
-                self.ai[1] += 1.0;
+                // The fireball salvo (`:31421-31465`): the 300 cadence
+                // (doubled under the 10% body life, `:31432-31436`), the
+                // 258 dmg 20 at the 8 speed from Center - (0, 10). The
+                // C#'s `flag53` (the CanHit block hold, `:31446-31450`)
+                // pins `ai[1] = 20` while the line is blocked — the
+                // `line_clear` stand-in.
+                let mut step = 1.0;
+                if world.golem_hp_ratio < 0.1 {
+                    step += 1.0;
+                }
+                self.ai[1] += step;
+                if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    self.ai[1] = 20.0;
+                }
                 if self.ai[1] >= 300.0 {
                     self.ai[1] = 0.0;
                     self.wants_hostile_shot.push((
@@ -7435,7 +7608,8 @@ mod tests {
         for _ in 0..400 {
             let (px, py) = (tim.x, tim.y);
             tim.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            if let Some((kind, sx, sy)) = tim.wants_sphere {
+            let req = tim.wants_sphere.drain(..).next();
+            if let Some((kind, sx, sy)) = req {
                 assert_eq!(kind, NpcKind::ChaosBall);
                 // The Chaos Ball spawn point: Tim's bottom-centre, 8 px
                 // above the top (`:21242`'s NewNPC(x + w/2, y - 8) with the
@@ -7488,7 +7662,8 @@ mod tests {
         let mut shot = false;
         for _ in 0..400 {
             imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            if let Some((kind, _, _)) = imp.wants_sphere {
+            let req = imp.wants_sphere.drain(..).next();
+            if let Some((kind, _, _)) = req {
                 assert_eq!(kind, NpcKind::BurningSphere);
                 shot = true;
                 break;
@@ -8797,7 +8972,7 @@ mod tests {
         body.cast_windup = 0;
         // The init tick spawn-requests the parts.
         body.update_golem(&w, &player);
-        assert!(body.wants_sphere.is_some(), "the parts request");
+        assert!(!body.wants_sphere.is_empty(), "the parts request");
         // The charge: 300 ticks -> the counter flips negative (the
         // countdown ticks past the cap).
         for _ in 0..300 {
@@ -8865,23 +9040,28 @@ mod tests {
     #[test]
     fn the_golem_fists_follow_wind_up_and_dash() {
         // `AI_047_GolemFist` (`NPC.cs:19231-19503`): the follow to the
-        // anchor, the 60-contact -> the 30 wind-up, the dash.
+        // anchor, the 60-contact -> the 30 wind-up, the dash. The player
+        // stands LEFT of the left fist's anchor — the side gate
+        // (`:19308-19317`) only then lets the 60-cadence transition.
         let mut w = ground_air();
         w.golem_present = true;
         w.golem_x = 100.0 * 16.0;
         w.golem_y = 100.0 * 16.0;
         let mut player = crate::player::Player::spawn(&w);
-        player.x = 110.0 * 16.0;
+        player.x = 60.0 * 16.0;
         player.y = 100.0 * 16.0;
-        let mut fist = Npc::new(NpcKind::GolemFistLeft, 20.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        // The fist starts just left of its anchor column (the anchor's
+        // center is 1516): the first tick closes the last px and the
+        // in-contact cadence starts.
+        let mut fist = Npc::new(NpcKind::GolemFistLeft, 1490.0, 100.0 * 16.0, 1, 0.0);
         fist.hp = fist.max_hp;
-        // The follow: the fist approaches the anchor column.
-        for _ in 0..30 {
-            fist.update_golem(&w, &player);
-        }
+        // The follow: the fist closes the last few px to the anchor.
+        fist.update_golem(&w, &player);
         assert!(fist.vx > 0.0, "the follow pulls toward the anchor");
-        // The contact (60) -> the wind-up (30) -> the dash: the 90 ticks,
-        // then the launch tick sets the 12-speed lunge.
+        // The contact (60) -> the wind-up (30): the dash state opens on
+        // the 92nd tick with the 12-speed lunge; the >700 anchor
+        // distance ends the dash (`:19445`) — the assertion lands inside
+        // the dash window.
         for _ in 0..91 {
             fist.update_golem(&w, &player);
         }
@@ -8891,6 +9071,137 @@ mod tests {
             (dash_speed - 12.0).abs() < 2.0,
             "the 12-speed lunge ({dash_speed})"
         );
+    }
+
+    #[test]
+    fn the_golem_fist_side_gate_and_damage_tiers() {
+        // `AI_047_GolemFist`'s two gates: the side gate (`:19308-19317`)
+        // and the damaged tiers (`:19291-19304` / `:19361-19378`).
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        // The player stands RIGHT of the left fist's `Center + 100`:
+        // the gate fails, the cadence resets and the fist never dashes.
+        player.x = 130.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut fist = Npc::new(NpcKind::GolemFistLeft, 1490.0, 100.0 * 16.0, 1, 0.0);
+        fist.hp = fist.max_hp;
+        for _ in 0..400 {
+            fist.update_golem(&w, &player);
+        }
+        assert_eq!(fist.ai[0], 0.0, "the blocked gate keeps the follow state");
+        // The same scene with the damaged body: the cadence runs 11x
+        // (`:19301`'s +10 body tier on the +1) and the dash launches at
+        // 22 (12 + 10).
+        w.golem_hp_ratio = 0.5;
+        player.x = 60.0 * 16.0;
+        let mut fist2 = Npc::new(NpcKind::GolemFistLeft, 1490.0, 100.0 * 16.0, 1, 0.0);
+        fist2.hp = fist2.max_hp;
+        let mut transition_tick = None;
+        for t in 0..45 {
+            fist2.update_golem(&w, &player);
+            if fist2.ai[0] == 1.0 && transition_tick.is_none() {
+                transition_tick = Some(t);
+            }
+        }
+        assert_eq!(fist2.ai[0], 2.0, "the dash state after the wind-up");
+        let dash_speed = (fist2.vx * fist2.vx + fist2.vy * fist2.vy).sqrt();
+        assert!(
+            (dash_speed - 22.0).abs() < 2.0,
+            "the 12+10 damaged lunge ({dash_speed})"
+        );
+        // The 11x cadence fires the 60-contact inside 6 ticks (60/11).
+        assert!(
+            transition_tick.expect("the transition fires") < 10,
+            "the 11x cadence is fast"
+        );
+    }
+
+    #[test]
+    fn the_golem_head_turn_rows_and_free_head_mouth_row() {
+        // `FindFrame` cases 246/249 (`NPC.cs:72931-72981`): the mouth row
+        // rides the 300-cadence window; the attached head's phase-1 rows
+        // add the three-way `localAI[1]` turn (+4 left / +2 right / 0
+        // in-band); the free head carries the mouth row alone.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        let mut head = Npc::new(
+            NpcKind::GolemHead,
+            100.0 * 16.0 - 3.0,
+            100.0 * 16.0 - 57.0,
+            -1,
+            0.0,
+        );
+        head.hp = head.max_hp / 3;
+        head.ai[0] = 1.0;
+        // The in-band player (inside `Center.X +- width`): the turn is 0,
+        // the mouth window (first/last 20 of 300) selects row 1.
+        head.ai[1] = 5.0;
+        head.update_golem(&w, &player);
+        head.find_frame();
+        assert_eq!(head.head_turn, 0, "the in-band turn");
+        assert_eq!(head.frame, 1, "the mouth row without the turn offset");
+        // The player to the left: -1 -> +4; mid-cadence -> the closed
+        // mouth (row 0 + 4).
+        player.x = (100.0 * 16.0 - 200.0) as f32;
+        head.update_golem(&w, &player);
+        head.ai[1] = 150.0;
+        head.find_frame();
+        assert_eq!(head.head_turn, -1, "the left turn");
+        assert_eq!(head.frame, 4, "the +4 row");
+        // The player to the right: +1 -> +2 with the mouth open.
+        player.x = (100.0 * 16.0 + 200.0) as f32;
+        head.update_golem(&w, &player);
+        head.ai[1] = 295.0;
+        head.find_frame();
+        assert_eq!(head.head_turn, 1, "the right turn");
+        assert_eq!(head.frame, 3, "the mouth +2 row");
+        // The free head: case 249's mouth-only rows, no turn.
+        let mut free = Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 100.0 * 16.0, -1, 0.0);
+        free.hp = free.max_hp;
+        free.ai[1] = 5.0;
+        free.find_frame();
+        assert_eq!(free.frame, 1, "the free head's mouth row");
+        free.ai[1] = 150.0;
+        free.find_frame();
+        assert_eq!(free.frame, 0, "the free head's closed row");
+    }
+
+    #[test]
+    fn the_golem_family_spawn_fade() {
+        // `SetDefaults`' `alpha = 255` (`NPC.cs:12176/12190/12201`) with
+        // the machines' `alpha -= 10` fades (`:19535-19543`,
+        // `:19248-19255`, `:31169-31173`): the family spawns invisible and
+        // takes 26 ticks to fade in; the draw's tint maps it through
+        // `GetAlpha`'s `(255 - alpha)/255`.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        let mut fist = Npc::new(NpcKind::GolemFistLeft, 100.0 * 16.0, 100.0 * 16.0, -1, 0.0);
+        fist.alpha = 255;
+        fist.hp = fist.max_hp;
+        for t in 1..=26u16 {
+            fist.update_golem(&w, &player);
+            let want = 255u8.saturating_sub((t * 10).min(255) as u8);
+            assert_eq!(fist.alpha, want, "the fade at tick {t}");
+        }
+        assert_eq!(fist.alpha, 0, "the fade completes at 26 ticks");
+        // The body's fade resets the charge ramp each tick (`ai[1] = 0`,
+        // `:19535-19543`) — the grounded arm's `+= 1` then leaves it at
+        // 1: the ramp never advances while the fade runs.
+        let mut body = Npc::new(NpcKind::Golem, 100.0 * 16.0, 100.0 * 16.0, -1, 0.0);
+        body.alpha = 255;
+        body.hp = body.max_hp;
+        body.update_golem(&w, &player);
+        assert_eq!(body.alpha, 245, "the body's fade");
+        assert_eq!(body.cast_windup, 1, "the ramp holds at the reset");
     }
 
     #[test]
