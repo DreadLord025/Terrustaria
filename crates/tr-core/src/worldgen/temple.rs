@@ -1,27 +1,32 @@
-//! The Lihzahrd temple — the M5-BIOME phase-6 stub: the faithful
-//! `LihzahrdTemple` placement search (`WorldGen.cs:15834-15926`) writing the
-//! `GenVars` the later temple passes read, over the shape-level room body.
+//! The Lihzahrd temple — the M5-BIOME phase-6 seam (the faithful
+//! `LihzahrdTemple` placement search, `WorldGen.cs:15834-15926`) plus the
+//! M5-TEMPLE phase-1 interior port: the room walk and the brick generation
+//! (`makeTemple`, `WorldGen.cs:33440-33548` + `:34238-34462`).
 //!
-//! The C# temple (`makeTemple`, `WorldGen.cs:33435-34237`): the brick box
+//! The C# temple (`makeTemple`, `WorldGen.cs:33435-34237`): the brick shell
 //! (the Lihzahrd brick 226, the walls 87 unsafe / 112 safe) buried in the
 //! jungle cavern below the rock layer, the interior rooms carved, the altar
 //! (237) in the main room, the dart traps (137) in the walls, the
-//! teleporter pads, the chests. The M5-TEMPLE seam (what is verbatim vs
-//! shape-level here): the placement search is the verbatim pass; the room
-//! generation is the shape-level slice — vanilla's non-intersecting room
-//! walk (`:33444-33548`), `makeTemple_GenerateBricks` (`:34241+`), the
-//! jitter carve sweeps (`:33554-33684`), the `templePather` corridors
+//! teleporter pads, the chests. Ported so far: the placement search
+//! (M5-BIOME), the room walk + the depth-unioned brick fills + the corner
+//! Line walkers (phase 1). Still to port (the M5-TEMPLE phases 2-3): the
+//! jitter carve sweeps (`:33550-33684`), the `templePather` corridors
 //! (`:33686-33787`), the `outerTempled` sweeps (`:33819-33850`), the
-//! style-11 door (`:33950`), the `templeCleaner` sweeps (`:33954-33961`,
-//! `:33335`) and the spike/platform loop (`:34049-34217`) are not ported;
-//! the stub keeps the box + hall + altar-room body. What publishes state:
-//! the bounds `t_left/t_right/t_top/t_bottom` = the filled extent ± 10 (the
-//! C# room-union ± 10, `:33788-33817`, published `:34231-34235`),
-//! `t_rooms = 2` (the C# publishes the final room count, `:34235`) and the
-//! altar anchor `l_altar_x/l_altar_y` = the 3×2 altar's top-left
-//! (`:34000-34001`, hand-built fallback `:34038-34039`) — the fields
-//! `LihzahrdTemplePart2` (`:17701`) and `LihzahrdAltar` (`:21943`) consume
-//! (M5-TEMPLE's row owns the full interior).
+//! entrance shaft + the style-11 door (`:33852-33857`), the `templeCleaner`
+//! sweeps (`:33954-33961`, `:33335`), the altar publication (`:33988-34068`),
+//! the spike loop (`:34069-34217`), `templePart2` (`:34464`) and the
+//! `LihzahrdAltar` re-write (`:21943`).
+//!
+//! What publishes state: the bounds `t_left/t_right/t_top/t_bottom` = the
+//! room-union ± 10 (the C# publishes the filled extent ± 10,
+//! `:33788-33817`, published `:34231-34235`), `t_rooms` = the final walk
+//! count (`:34235`) and the altar anchor `l_altar_x/l_altar_y` = the 3×2
+//! altar's top-left (`:34000-34001`, hand-built fallback `:34038-34039`) —
+//! the fields `LihzahrdTemplePart2` (`:17701`) and `LihzahrdAltar`
+//! (`:21943`) consume (M5-TEMPLE's row owns the full interior). Until the
+//! phase-2 altar port lands, the pass still publishes the stub shell's
+//! bounds + anchor (kept adjacent to the faithful walk so the worldgen
+//! stays coherent mid-port).
 //!
 //! Deviations (ANALYSIS "Lihzahrd temple (M1.4-WGEN-6)"): the C#'s
 //! multi-room crawl with the doors and the teleporters is the shape-level
@@ -142,6 +147,461 @@ pub(crate) fn find_temple_site(
     site
 }
 
+/// `WorldGen.InWorld(i, j, fluff)` (`WorldGen.cs:9688-9701`): the cell
+/// plus `fluff` tiles of margin must sit inside the world.
+pub(crate) fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// The C# `Rectangle` (`System.Drawing`): `x`/`y` the top-left, `w`/`h` the
+/// size. `Right`/`Bottom` are exclusive ends (`x + w`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+impl Rect {
+    fn right(&self) -> i32 {
+        self.x + self.w
+    }
+
+    fn bottom(&self) -> i32 {
+        self.y + self.h
+    }
+
+    /// `Rectangle.Intersects` — the half-open axis-aligned overlap test
+    /// (edges touching do not count).
+    fn intersects(&self, other: &Rect) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
+    }
+}
+
+/// One walk room + the depth level the brick union groups it by — the C#'s
+/// `array[i]` (the rect) with `array2[i]` (the depth, `WorldGen.cs:33537`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TempleRoom {
+    pub rect: Rect,
+    pub depth: i32,
+}
+
+/// The per-depth `DungeonBounds` slice (`DungeonBounds.cs:21-101`): the room
+/// union at one depth level. `Inflate(amount)` (`:108-111`) moves all four
+/// edges by `± amount`; the port applies it at build time.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Bounds {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// `makeTemple`'s room walk (`WorldGen.cs:33440-33548`): `num2` rooms
+/// (`Next((int)(scale*10), (int)(scale*16))`, `scale = maxTilesX / 4200`)
+/// stepping sideways from the bury point, flipping the horizontal/vertical
+/// stagger every `Next(1, 3)` rooms and drifting downward (`num19`, the ±100
+/// ladder), each rect re-rolled until it misses every earlier room. The last
+/// room (or the first one hitting the underworld ceiling) collapses to the
+/// big altar room. Returns the rects with their depth levels — the
+/// `makeTemple_GenerateBricks` (`WorldGen.cs:34238+`) input.
+///
+/// The C# shares one `genRand` across the whole world; the port's per-pass
+/// `pass_rng` stream is the recorded deviation — the draws inside follow the
+/// C# statement order 1:1.
+pub(crate) fn make_temple_rooms(
+    rng: &mut super::Rng,
+    scale: f64,
+    underworld_layer: i32,
+    x: i32,
+    y: i32,
+) -> Vec<TempleRoom> {
+    // `:33440-33452`: the room count, the first direction and the flip
+    // period. `num3` is the current direction; `num4` the per-room copy the
+    // stagger flips.
+    let mut num2 = rng.range((scale * 10.0) as i32, (scale * 16.0) as i32);
+    let num3 = if rng.range(0, 2) == 0 { -1 } else { 1 };
+    let mut num4 = num3;
+    let (mut num7, mut num8) = (x, y);
+    let mut num9 = rng.range(1, 3);
+    let mut num10 = 0;
+    let mut num13 = 0;
+    let mut num19 = -10;
+    let mut rooms: Vec<TempleRoom> = Vec::new();
+    let mut i = 0;
+    while i < num2 {
+        num10 += 1;
+        let mut num14 = num4;
+        let mut num15 = num7;
+        let mut num16 = num8;
+        let mut rect = Rect {
+            x: num15,
+            y: num16,
+            w: 0,
+            h: 0,
+        };
+        let mut flag = true;
+        while flag {
+            num15 = num7;
+            num16 = num8;
+            let mut num17 = rng.range(25, 50);
+            let mut num18 = rng.range(20, 35);
+            if num18 > num17 {
+                num18 = num17;
+            }
+            // `:33472`: the underworld-ceiling test on the CURRENT position
+            // (`UnderworldLayer` = maxTilesY - 200, passed in).
+            let flag2 = num16 + 70 >= underworld_layer - 10;
+            // `:33475-33486`: the last-room resize (the altar room).
+            if i == num2 - 1 || flag2 {
+                num2 = i + 1;
+                num17 = rng.range(55, 65);
+                num18 = rng.range(45, 50);
+                if num18 > num17 {
+                    num18 = num17;
+                }
+                num17 = (num17 as f64 * 1.6) as i32;
+                num18 = (num18 as f64 * 1.35) as i32;
+                num16 += rng.range(5, 10);
+            }
+            if num10 > num9 {
+                num16 += rng.range(num18 + 1, num18 + 3) + num19;
+                num15 += rng.range(-5, 6);
+                num14 = num3 * -1;
+            } else {
+                num15 += (rng.range(num17 + 1, num17 + 3) + num19) * num14;
+                num16 += rng.range(-5, 6);
+            }
+            flag = false;
+            rect = Rect {
+                x: num15 - num17 / 2,
+                y: num16 - num18 / 2,
+                w: num17,
+                h: num18,
+            };
+            // `:33512`: the underworld trigger skips the intersection scan
+            // (the big room overlaps everything by design).
+            if flag2 {
+                break;
+            }
+            // `:33515-33522`: the retry loop — every earlier rect, and the
+            // 1/100 downward drift (`num19` walks-wide).
+            for j in 0..i as usize {
+                if rooms[j].rect.intersects(&rect) {
+                    flag = true;
+                }
+                if rng.range(0, 100) == 0 {
+                    num19 += 1;
+                }
+            }
+        }
+        // `:33537`: the last room of the walk carries depth + 1 (in practice
+        // the shrink above already made `i == num2` unreachable — the C#
+        // ternary stays verbatim).
+        let depth = if i == num2 { num13 + 1 } else { num13 };
+        if num10 > num9 {
+            num9 += 1;
+            num10 = 1;
+            num13 += 1;
+        }
+        rooms.push(TempleRoom { rect, depth });
+        num4 = num14;
+        num7 = num15;
+        num8 = num16;
+        i += 1;
+    }
+    rooms
+}
+
+/// `makeTemple_GenerateBricks`'s first loop (`WorldGen.cs:34244-34265`): the
+/// per-depth `DungeonBounds` unions — one level per depth value that occurs,
+/// the null levels of the C#'s sparse array skipped.
+fn depth_bounds(rooms: &[TempleRoom]) -> Vec<Option<Bounds>> {
+    let mut levels: Vec<Option<Bounds>> = Vec::new();
+    for room in rooms {
+        let idx = room.depth as usize;
+        if levels.len() <= idx {
+            levels.resize(idx + 1, None);
+        }
+        let (left, top) = (room.rect.x, room.rect.y);
+        let (right, bottom) = (room.rect.right(), room.rect.bottom());
+        levels[idx] = Some(match levels[idx] {
+            // `DungeonBounds.SetBounds` (`DungeonBounds.cs:249-256`) for the
+            // first room at the depth, `UpdateBounds` (`:285-297`) for the
+            // rest.
+            None => Bounds {
+                left,
+                top,
+                right,
+                bottom,
+            },
+            Some(prev) => Bounds {
+                left: prev.left.min(left),
+                top: prev.top.min(top),
+                right: prev.right.max(right),
+                bottom: prev.bottom.max(bottom),
+            },
+        });
+    }
+    levels
+}
+
+/// The brick write of the GenerateBricks family — the C#'s
+/// `ClearEverything(); active(true); type = 226` (`WorldGen.cs:34272-34275`,
+/// `:34366-34369`, the FillY/FillX bodies `:34404-34407`): everything
+/// resets, so the wall drops to 0.
+fn clear_and_brick(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    world.tiles[i] = Tile {
+        kind: TILE_TEMPLE_BRICK,
+        flags: FLAG_ACTIVE,
+        ..Default::default()
+    };
+}
+
+/// `makeTemple_GenerateBricks` (`WorldGen.cs:34238-34299`): the depth unions
+/// inflated by 10, the brick fill over each union box, then the four
+/// corner-to-corner `Line_StrictAngles` between every pair of levels
+/// (bridging the depth stagger into one shell).
+pub(crate) fn make_temple_generate_bricks(world: &mut World, rooms: &[TempleRoom]) {
+    let mut levels: Vec<Bounds> = depth_bounds(rooms)
+        .into_iter()
+        .flatten()
+        .map(|mut b| {
+            // `DungeonBounds.Inflate(10)` (`DungeonBounds.cs:108-111`).
+            b.left -= 10;
+            b.top -= 10;
+            b.right += 10;
+            b.bottom += 10;
+            b
+        })
+        .collect();
+    for b in &levels {
+        for k in b.left..=b.right {
+            for l in b.top..=b.bottom {
+                clear_and_brick(world, k, l);
+            }
+        }
+    }
+    for m in 0..levels.len() {
+        let a = levels[m];
+        for n in m + 1..levels.len() {
+            let b = levels[n];
+            generate_bricks_line_strict_angles(world, a.left, a.top, b.left, b.top, false, false);
+            generate_bricks_line_strict_angles(world, a.right, a.top, b.right, b.top, true, false);
+            generate_bricks_line_strict_angles(world, a.left, a.bottom, b.left, b.bottom, false, true);
+            generate_bricks_line_strict_angles(
+                world,
+                a.right,
+                a.bottom,
+                b.right,
+                b.bottom,
+                true,
+                true,
+            );
+        }
+    }
+}
+
+/// The squared distance — the C# compares `origin.Distance(...)` values
+/// (`Vector2.Distance`, f32); the squared compare is equivalent for the
+/// non-negative distances here.
+fn dist2(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let (dx, dy) = (bx - ax, by - ay);
+    dx * dx + dy * dy
+}
+
+/// `makeTemple_GenerateBricks_Line_StrictAngles`
+/// (`WorldGen.cs:34301-34339`): the 500-step L-corner staircase between the
+/// two anchors, with the straight `_Line` fallback when the corner isn't
+/// reached in time (or the anchors share an axis).
+fn generate_bricks_line_strict_angles(
+    world: &mut World,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    fill_left: bool,
+    fill_upwards: bool,
+) {
+    if start_x == end_x || start_y == end_y {
+        generate_bricks_line(world, start_x, start_y, end_x, end_y, fill_left, fill_upwards);
+        return;
+    }
+    // `:34309-34315`: the corner origin (the opposite corner in the fill
+    // axes) and which endpoint walks to the other.
+    let (ox, oy) = if fill_upwards {
+        (end_x as f32, start_y as f32)
+    } else {
+        (start_x as f32, end_y as f32)
+    };
+    let (sx, sy) = (start_x as f32, start_y as f32);
+    let (ex, ey) = (end_x as f32, end_y as f32);
+    let (mut vector, mut vector2) = ((sx, sy), (ex, ey));
+    if dist2(ox, oy, ex, ey) > dist2(ox, oy, sx, sy) {
+        std::mem::swap(&mut vector, &mut vector2);
+    }
+    let mut vector3 = vector;
+    // `:34319-34320`: the per-axis step sign (never 0 — the axes differ).
+    let vector4 = (
+        if vector2.0 > vector.0 { 1.0 } else { -1.0 },
+        if vector2.1 > vector.1 { 1.0 } else { -1.0 },
+    );
+    let mut num3 = 500;
+    while vector3.0 != vector2.0 && vector3.1 != vector2.1 {
+        num3 -= 1;
+        if num3 < 0 {
+            break;
+        }
+        vector3.0 += vector4.0;
+        vector3.1 += vector4.1;
+    }
+    if num3 < 0 {
+        generate_bricks_line(world, start_x, start_y, end_x, end_y, fill_left, fill_upwards);
+        return;
+    }
+    let (corner_x, corner_y) = (vector3.0 as i32, vector3.1 as i32);
+    generate_bricks_line(world, start_x, start_y, corner_x, corner_y, fill_left, fill_upwards);
+    generate_bricks_line(world, corner_x, corner_y, end_x, end_y, fill_left, fill_upwards);
+}
+
+/// `makeTemple_GenerateBricks_Line` (`WorldGen.cs:34341-34380`): the
+/// normalized walk from start to end (the 2000-step cap), a brick at every
+/// `Math.Round`'d step (banker's rounding), the FillY/FillX gap closers, and
+/// the `InWorld(x, y, 5)` guard that ends the walk at the world edge.
+fn generate_bricks_line(
+    world: &mut World,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    fill_left: bool,
+    fill_upwards: bool,
+) {
+    let vector = (start_x as f32, start_y as f32);
+    let vector2 = ((end_x as f32) - vector.0, (end_y as f32) - vector.1);
+    if vector2 == (0.0, 0.0) {
+        return;
+    }
+    // `:34355-34357`: `SafeNormalize(Vector2.UnitX)` — the delta is non-zero
+    // here, so this is the plain normalize; `num2` is the unit step length.
+    let num = (vector2.0 * vector2.0 + vector2.1 * vector2.1).sqrt();
+    let vector3 = (vector2.0 / num, vector2.1 / num);
+    let num2 = (vector3.0 * vector3.0 + vector3.1 * vector3.1).sqrt();
+    let mut num3 = 2000;
+    let mut last_x_adjusted = -1;
+    let mut last_y_adjusted = -1;
+    let mut at = vector;
+    let mut remaining = num;
+    while remaining > 0.0 {
+        num3 -= 1;
+        if num3 <= 0 {
+            break;
+        }
+        let x4 = crate::damage::round_bankers(at.0 as f64) as i32;
+        let y5 = crate::damage::round_bankers(at.1 as f64) as i32;
+        if !in_world(world, x4, y5, 5) {
+            break;
+        }
+        clear_and_brick(world, x4, y5);
+        generate_bricks_line_fill_y(world, fill_upwards, last_x_adjusted, x4, y5);
+        generate_bricks_line_fill_x(world, fill_left, last_y_adjusted, x4, y5);
+        last_x_adjusted = x4;
+        last_y_adjusted = y5;
+        at.0 += vector3.0;
+        at.1 += vector3.1;
+        remaining -= num2;
+    }
+}
+
+/// `makeTemple_GenerateBricks_Line_FillY` (`WorldGen.cs:34382-34421`): march
+/// from the point to the next brick in the fill direction (300-step cap, the
+/// 10-tile edge guard) and brick the gap.
+fn generate_bricks_line_fill_y(
+    world: &mut World,
+    fill_upwards: bool,
+    last_x_adjusted: i32,
+    current_x: i32,
+    current_y: i32,
+) {
+    if current_x == last_x_adjusted {
+        return;
+    }
+    let step = if fill_upwards { -1 } else { 1 };
+    // `:34394-34408`: the scan to the next brick.
+    let mut scan = current_y + step;
+    let mut num3 = 0;
+    while !is_temple_brick(world, current_x, scan) {
+        num3 += 1;
+        scan += step;
+        if world.tile(current_x, scan).is_none() || !in_world(world, current_x, scan, 5) {
+            break;
+        }
+    }
+    if num3 >= 300 || scan <= 10 || scan >= world.height - 10 {
+        return;
+    }
+    // `:34413-34421`: the gap fill.
+    let mut write = current_y + step;
+    while !is_temple_brick(world, current_x, write) {
+        clear_and_brick(world, current_x, write);
+        write += step;
+        if world.tile(current_x, write).is_none() || !in_world(world, current_x, write, 5) {
+            break;
+        }
+    }
+}
+
+/// `makeTemple_GenerateBricks_Line_FillX` (`WorldGen.cs:34423-34462`): the
+/// horizontal twin of `_FillY` — the `Main.maxTilesX - 10` edge guard.
+fn generate_bricks_line_fill_x(
+    world: &mut World,
+    fill_left: bool,
+    last_y_adjusted: i32,
+    current_x: i32,
+    current_y: i32,
+) {
+    if current_y == last_y_adjusted {
+        return;
+    }
+    let step = if fill_left { -1 } else { 1 };
+    let mut scan = current_x + step;
+    let mut num3 = 0;
+    while !is_temple_brick(world, scan, current_y) {
+        num3 += 1;
+        scan += step;
+        if world.tile(scan, current_y).is_none() || !in_world(world, scan, current_y, 5) {
+            break;
+        }
+    }
+    if num3 >= 300 || scan <= 10 || scan >= world.width - 10 {
+        return;
+    }
+    let mut write = current_x + step;
+    while !is_temple_brick(world, write, current_y) {
+        clear_and_brick(world, write, current_y);
+        write += step;
+        if world.tile(write, current_y).is_none() || !in_world(world, write, current_y, 5) {
+            break;
+        }
+    }
+}
+
+/// The C#'s `tile.active() && tile.type == 226` test the Fill scans use
+/// (`WorldGen.cs:34400` / `:34441`).
+fn is_temple_brick(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && t.kind == TILE_TEMPLE_BRICK)
+}
+
 fn put_brick(world: &mut World, x: i32, y: i32, wall: u16) {
     if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
         return;
@@ -223,6 +683,19 @@ pub(crate) fn pass_lihzahrd_temple(
 ) -> TempleBounds {
     // `WorldGen.cs:15834-15930`: the placement search (or its fallback).
     let (cx, cy) = find_temple_site(world, dungeon_x, rock_layer, rng);
+    // `WorldGen.cs:33440-33548` + `:34238-34462` — the faithful room walk and
+    // the brick fills (the M5-TEMPLE phase-1 port). The pre-phase-2 body
+    // below (the box/hall/altar write anchored on the same bury point) is the
+    // interim stub shell; the faithful carve/corridor/shaft/altar/spike code
+    // replaces it in the next phase and publishes the bounds below.
+    let rooms = make_temple_rooms(
+        rng,
+        world.width as f64 / 4200.0,
+        world.height - 200,
+        cx,
+        cy,
+    );
+    make_temple_generate_bricks(world, &rooms);
     // The shape-level room body (the M5-TEMPLE seam — the module docs carry
     // the split): the outer box with the unsafe walls.
     let hw = rng.range(34, 46);
@@ -310,6 +783,257 @@ mod tests {
                 };
             }
         }
+    }
+
+    /// DW-1.1: the room walk on the vanilla large world (scale 1.0 →
+    /// `Next(10, 16)` rooms): the room count, the draw ledger (the stream
+    /// state — any draw order change shifts it) and the first/last room's
+    /// geometry (`WorldGen.cs:33440-33548`). The last room is the resized
+    /// altar room (`(int)(Next(55,65) * 1.6)` × `(int)(Next(45,50) * 1.35)`),
+    /// the last depth level the C# publishes as the walk's room count.
+    #[test]
+    fn test_DW_1_1_room_walk_draw_ledger() {
+        let mut rng = Rng(0xDEAD_BEEF);
+        let rooms = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300);
+        assert_eq!(rooms.len(), 15, "the walk's room count");
+        assert_eq!(rng.0, 0xcd25_41e9_adf9_5601, "the draw ledger");
+        let first = rooms[0].rect;
+        assert_eq!(
+            (first.x, first.y, first.w, first.h),
+            (2014, 284, 43, 24),
+            "the first room"
+        );
+        assert_eq!(rooms[0].depth, 0);
+        let last = rooms[rooms.len() - 1].rect;
+        assert_eq!(
+            (last.x, last.y, last.w, last.h),
+            (1620, 422, 97, 63),
+            "the resized altar room"
+        );
+        assert_eq!(rooms[rooms.len() - 1].depth, 3);
+        // The room shapes stay inside the C#'s rolls and never intersect, and
+        // the depth level only grows (the `num13` flip ladder).
+        for (i, room) in rooms.iter().enumerate() {
+            let (w, h) = (room.rect.w, room.rect.h);
+            if i + 1 == rooms.len() {
+                assert!((88..=104).contains(&w) && (60..=67).contains(&h));
+            } else {
+                assert!((25..50).contains(&w) && (20..35).contains(&h) || w == h);
+                assert!(h <= w, "the `num18 = min(num18, num17)` cap");
+            }
+            for earlier in &rooms[..i] {
+                assert!(
+                    !room.rect.intersects(&earlier.rect),
+                    "room {i} intersects an earlier room"
+                );
+            }
+            if i > 0 {
+                assert!(room.depth >= rooms[i - 1].depth, "the depth ladder");
+            }
+        }
+    }
+
+    /// DW-1.1: the last-room resize also fires on the underworld ceiling
+    /// (`flag2 = num16 + 70 >= UnderworldLayer - 10`, `WorldGen.cs:33472`):
+    /// with the bury point exactly on the boundary the walk collapses to the
+    /// single altar room and consumes no intersection draws (the flag2
+    /// break skips the retry loop, `:33512`).
+    #[test]
+    fn test_DW_1_1_underworld_ceiling_collapses_the_walk() {
+        // At (2000, 220) with layer 300: 220 + 70 = 290 >= 290 → flag2.
+        let mut rng = Rng(0xDEAD_BEEF);
+        let rooms = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220);
+        assert_eq!(rooms.len(), 1, "the walk collapses to one room");
+        let room = rooms[0].rect;
+        assert!((88..=104).contains(&room.w) && (60..=67).contains(&room.h));
+        // The draw ledger: the count draw, the direction, the flip period,
+        // the two resize rolls, the Next(5,10) and the two stagger rolls —
+        // no `Next(100)` intersection draws (the ledger is pinned by the
+        // state; a retry-loop entry would add two more draws).
+        let mut fresh = Rng(0xDEAD_BEEF);
+        for _ in 0..10 {
+            fresh.next_u32();
+        }
+        assert_eq!(rng.0, fresh.0, "10 draws, no intersection retry");
+    }
+
+    /// DW-1.2: the depth unions + `Inflate(10)` brick the exact C# shape
+    /// (`makeTemple_GenerateBricks` `WorldGen.cs:34238-34276`): one union box
+    /// per depth level that occurs, the null levels of the C#'s sparse
+    /// `DungeonBounds` array skipped — a depth value with no rooms fills
+    /// nothing and adds no lines.
+    #[test]
+    fn test_DW_1_2_depth_union_and_fill() {
+        let mut world = World::new("t".into(), 300, 300);
+        let rooms = vec![
+            TempleRoom {
+                rect: Rect { x: 100, y: 100, w: 40, h: 30 },
+                depth: 0,
+            },
+            TempleRoom {
+                rect: Rect { x: 130, y: 110, w: 20, h: 20 },
+                depth: 0,
+            },
+            TempleRoom {
+                rect: Rect { x: 200, y: 150, w: 10, h: 10 },
+                depth: 2, // the level 1 stays empty
+            },
+        ];
+        make_temple_generate_bricks(&mut world, &rooms);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        // The level-0 union (100..150 × 100..130) inflated to (90..160 ×
+        // 90..140): inside filled, the cells just outside not.
+        assert!(brick(&world, 95, 95) && brick(&world, 90, 90) && brick(&world, 160, 140));
+        assert!(!brick(&world, 89, 90) && !brick(&world, 90, 89) && !brick(&world, 90, 141));
+        // The level-2 union (200..210 × 150..160) inflated to (190..220 ×
+        // 140..170).
+        assert!(brick(&world, 190, 140) && brick(&world, 220, 170));
+        assert!(!brick(&world, 189, 140) && !brick(&world, 220, 171));
+        // The empty level 1 fills nothing where no room union reaches, and
+        // the depth-0↔2 corner lines bridge the two levels.
+        assert!(!brick(&world, 40, 40) && !brick(&world, 260, 260));
+        // The brick write clears the wall (`ClearEverything`, :34271-34274).
+        let t = world.tile(95, 95).unwrap();
+        assert_eq!(t.wall, 0);
+    }
+
+    /// DW-1.3: `_Line` (`WorldGen.cs:34341-34380`) bricks the straight walk
+    /// and nothing off it.
+    #[test]
+    fn test_DW_1_3_line_straight() {
+        let mut world = World::new("t".into(), 300, 300);
+        generate_bricks_line(&mut world, 10, 10, 30, 10, false, false);
+        for x in 10..=29 {
+            let t = world.tile(x, 10).unwrap();
+            assert!(t.active() && t.kind == 226, "the brick at ({x}, 10)");
+        }
+        // The walk is [start, end) — the `num -= unit step` loop stops before
+        // the end cell (`WorldGen.cs:34371-34377`).
+        assert!(!world.tile(30, 10).unwrap().active());
+        assert!(!world.tile(20, 9).unwrap().active());
+    }
+
+    /// DW-1.3: `_Line_StrictAngles` (`WorldGen.cs:34301-34339`) writes the
+    /// L: the axis-aligned leg to the corner, then the diagonal leg; the
+    /// unused corner-adjacent cells stay untouched.
+    #[test]
+    fn test_DW_1_3_line_strict_angles_corner() {
+        let mut world = World::new("t".into(), 300, 300);
+        // start (10,10) → end (30,25), fill_left/fill_upwards false: the
+        // origin is (10,25); the end is farther, so the walk starts there and
+        // stops on the start's y-axis → the corner (15,10).
+        generate_bricks_line_strict_angles(&mut world, 10, 10, 30, 25, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        for x in 10..=15 {
+            assert!(brick(&world, x, 10), "the horizontal leg at ({x}, 10)");
+        }
+        assert!(brick(&world, 30, 25), "the diagonal leg reaches the end");
+        assert!(!brick(&world, 20, 10), "the corner branch is not a straight line");
+        assert!(!brick(&world, 15, 15));
+    }
+
+    /// DW-1.3: the StrictAngles 500-step cap falls back to the straight line
+    /// (`WorldGen.cs:34326-34328`) — the long diagonal still bricks.
+    #[test]
+    fn test_DW_1_3_line_strict_angles_cap_falls_back_to_straight() {
+        let mut world = World::new("t".into(), 3000, 3000);
+        // The corner walk would need ~1950 steps (> 500).
+        generate_bricks_line_strict_angles(&mut world, 100, 100, 2000, 2050, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        assert!(brick(&world, 101, 101));
+        assert!(!brick(&world, 2000, 2050) && !brick(&world, 1500, 1600), "the cap cut the line");
+    }
+
+    /// DW-1.3: `_Line`'s 2000-step cap (`WorldGen.cs:34364-34368`) stops the
+    /// walk; the cells past the cap stay untouched.
+    #[test]
+    fn test_DW_1_3_line_cap_aborts() {
+        let mut world = World::new("t".into(), 3000, 3000);
+        // A ~4242-step diagonal: the cap stops at write 1999 (≈ (1423,
+        // 1423)); (1500, 1500) is past it.
+        generate_bricks_line(&mut world, 10, 10, 2900, 2900, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        assert!(brick(&world, 1423, 1423), "the last capped write");
+        assert!(!brick(&world, 1500, 1500), "past the cap");
+        assert!(!brick(&world, 2900, 2900), "the line never reaches the end");
+    }
+
+    /// DW-1.3: `_Line_FillY` (`WorldGen.cs:34382-34421`) closes a vertical
+    /// gap down to the next brick and stops there.
+    #[test]
+    fn test_DW_1_3_fill_y_closes_the_gap() {
+        let mut world = World::new("t".into(), 300, 300);
+        // The pre-existing brick the scan stops at.
+        let i = world.index(50, 60);
+        world.tiles[i].kind = 226;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        generate_bricks_line_fill_y(&mut world, false, -1, 50, 20);
+        for y in 21..60 {
+            let t = world.tile(50, y).unwrap();
+            assert!(t.active() && t.kind == 226, "the gap fill at (50, {y})");
+        }
+        assert!(!world.tile(50, 61).unwrap().active(), "the fill stops at the brick");
+        assert!(!world.tile(50, 20).unwrap().active(), "the anchor cell is not filled");
+    }
+
+    /// DW-1.3: `_Line_FillX` (`WorldGen.cs:34423-34462`) closes a horizontal
+    /// gap to the right, up to the next brick.
+    #[test]
+    fn test_DW_1_3_fill_x_closes_the_gap() {
+        let mut world = World::new("t".into(), 300, 300);
+        let i = world.index(70, 50);
+        world.tiles[i].kind = 226;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        generate_bricks_line_fill_x(&mut world, false, -1, 30, 50);
+        for x in 31..70 {
+            let t = world.tile(x, 50).unwrap();
+            assert!(t.active() && t.kind == 226, "the gap fill at ({x}, 50)");
+        }
+        assert!(!world.tile(71, 50).unwrap().active(), "the fill stops at the brick");
+        assert!(!world.tile(30, 50).unwrap().active(), "the anchor cell is not filled");
+    }
+
+    /// DW-1.3: the FillY scan guards — the 300-step cap and the world edge
+    /// leave the cell untouched (`WorldGen.cs:34408-34410`), so a gap with no
+    /// brick at the end fills nothing.
+    #[test]
+    fn test_DW_1_3_fill_y_guards_abort_without_writes() {
+        let mut world = World::new("t".into(), 300, 300);
+        generate_bricks_line_fill_y(&mut world, false, -1, 50, 20);
+        for y in 21..300 {
+            assert!(
+                !world.tile(50, y).unwrap().active() && world.tile(50, y).unwrap().kind == 0,
+                "the scan burned its 300 steps and wrote nothing at y={y}"
+            );
+        }
+        // The edge guard: an anchor close to the bottom aborts too.
+        let mut near = World::new("t".into(), 300, 300);
+        generate_bricks_line_fill_y(&mut near, true, -1, 50, 280);
+        for y in 0..280 {
+            assert!(!near.tile(50, y).unwrap().active(), "the edge guard at y={y}");
+        }
+    }
+
+    /// DW-1.4: the underworld-ceiling test uses the value the caller passes
+    /// — `UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`) is computed by
+    /// the step, and the boundary is exact: at the layer the walk collapses,
+    /// one row lower it does not.
+    #[test]
+    fn test_DW_1_4_last_room_trigger_uses_depth_minus_200() {
+        let mut collapsed = Rng(0xDEAD_BEEF);
+        let rooms = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220);
+        assert_eq!(rooms.len(), 1, "220 + 70 >= 300 - 10");
+        let mut normal = Rng(0xDEAD_BEEF);
+        let rooms = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220);
+        assert!(rooms.len() > 1, "220 + 70 < 301 - 10");
     }
 
     /// DW-6.1: the acceptance semantics — with the whole vanilla y band

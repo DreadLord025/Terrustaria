@@ -135,15 +135,13 @@ mod tests {
     /// vegetation family (its per-pass stream) — the shell blobs retype the
     /// shore sand, the inland water clears, the seaweed grows — every world
     /// on every seed changes by design.
-    /// Re-pinned for M5-OCEAN phase 5: the vegetation family lands — the
-    /// faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) in the
-    /// cacti step (the three zones, the beach coral 81 / seashells 324, the
-    /// middle cactus via `PlantCactus`, the sea oats 529, the retired compact
-    /// scatter) and the `AddTrees` beach palm arm (`:31372-31386`) in
-    /// `plant_trees`, with the ocean frame statics added — every world on
-    /// every seed changes by design.
-    const SEED42_512: u32 = 3862881231;
-    const DEFAULT_WORLD: u32 = 2822219158;
+    /// Re-pinned for M5-TEMPLE phase 1: the room walk + the brick generation
+    /// land (`makeTemple` `WorldGen.cs:33440-33548` + `:34238-34462`) — the
+    /// depth-unioned Lihzahrd brick fills and the corner Line walkers add
+    /// tiles to every world on every seed (the temple sits in all of them by
+    /// design). Final pins follow phases 2-3.
+    const SEED42_512: u32 = 2067651109;
+    const DEFAULT_WORLD: u32 = 2366599377;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
