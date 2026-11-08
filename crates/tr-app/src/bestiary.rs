@@ -773,6 +773,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Etherian Skeleton Captain",
     },
     BestiaryEntryDef {
+        credit_id: "DD2DarkMageT1",
+        net_id: 564,
+        kind: NpcKind::DD2DarkMage,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mage",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2Betsy",
+        net_id: 551,
+        kind: NpcKind::DD2Betsy,
+        variant: None,
+        quick_unlock: false,
+        name: "Betsy",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,
@@ -819,6 +835,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: true,
         name: "Golem",
+    },
+    BestiaryEntryDef {
+        credit_id: "WallofFleshEye",
+        net_id: 114,
+        kind: NpcKind::WallOfFleshEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall of Flesh Eye",
     },
     BestiaryEntryDef {
         credit_id: "SkeletronHand",

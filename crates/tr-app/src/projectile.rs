@@ -98,6 +98,19 @@ pub const DD2_SPEAR_T3: u16 = 685;
 /// (`Projectile.cs:7263-7272`: 14x14, aiStyle 16, hostile, penetrate -1,
 /// ranged).
 pub const DD2_BOMB: u16 = 681;
+/// `ProjectileID.DD2SummonSkeleton`-family marker (673/674) — the Dark
+/// Mage's summon/heal casts (`Projectile.cs:7208-7220`: 10x10, aiStyle
+/// 133, alpha 255, tileCollide false, timeLeft 900).
+pub const DARK_MAGE_MARKER: u16 = 673;
+/// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
+/// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
+pub const DARK_MAGE_FLAME: u16 = 675;
+/// `ProjectileID.DD2BetsyBreath` (687) — Betsy's breath
+/// (`AI_110`'s `NewProjectile(..., 687, 35, ...)`).
+pub const BETSY_BREATH: u16 = 687;
+/// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
+/// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
+pub const BETSY_FIREBALL: u16 = 686;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -117,10 +130,30 @@ pub const MUSKET_BALL: u16 = 14;
 pub const TRAP_DART: u16 = 98;
 /// The Super Dart Trap's projectile (`Projectile.cs:2707-2716`).
 pub const TRAP_SUPERDART: u16 = 184;
-/// The Spear Trap's projectile (`Projectile.cs:2717-2727`).
-pub const TRAP_SPEAR: u16 = 185;
-/// The Spiky Ball Trap's projectile (`Projectile.cs:9330-9339`).
-pub const TRAP_SPIKY: u16 = 980;
+/// The Spiky Ball Trap's projectile (`Projectile.cs:2717-2727` — the C#
+/// `SpikyBallTrap = 185`; the WIRE-1 legacy named it TRAP_SPEAR).
+pub const TRAP_SPIKY_BALL: u16 = 185;
+/// The Spear Trap's projectile (`Projectile.cs:2717-2727`'s next arm — the
+/// C# `SpearTrap = 186`, aiStyle 14, 14×14, `timeLeft = 900`).
+pub const TRAP_SPEAR: u16 = 186;
+/// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
+/// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
+pub const TRAP_VENOM_DART: u16 = 980;
+/// `ProjectileID.Explosives` (108) — the explosives tile's blast
+/// (`Projectile.cs:1953-1965`; aiStyle 16, the bomb family).
+pub const EXPLOSIVES_BLAST: u16 = 108;
+/// The land mine's explosion (164, `Projectile.cs:2524-2535`) — aiStyle 16,
+/// 128×128, a ported shape with no vanilla constant name (`ProjectileID.cs`
+/// calls it simply `Mine`).
+pub const LANDMINE_BLAST: u16 = 164;
+/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
+pub const CANNON_BOMB: u16 = 178;
+/// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
+/// `extraUpdates = 30`.
+pub const CANNON_EXPLOSIVE: u16 = 601;
+/// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
+/// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
+pub const CANNON_BUNNY: u16 = 281;
 /// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
 pub const POISON_DART: u16 = 645;
 /// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
@@ -278,7 +311,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
             // the spiky ball — `penetrate = -1`, `trap = true`.
-            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY => {
+            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY_BALL | TRAP_VENOM_DART => {
                 (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, true)
             }
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
@@ -287,6 +320,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
             // `timeLeft = 900`.
             TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true),
+            // The wiring.device arms (M7-WIRE-2): the explosives 141's
+            // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
+            // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
+            // (`:2524-2535` — aiStyle 16, 128×128, `timeLeft` 2, trap-less),
+            // and the cannon ammo 178/601 (`:2641-2649` — aiStyle 1, 10×10,
+            // `timeLeft` 2 / `extraUpdates` 30).
+            EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true),
+            LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false),
+            CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false),
+            CANNON_EXPLOSIVE => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 30, true, false, false),
             // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
             // 22×22, aiStyle 3, `penetrate = -1`, melee.
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
@@ -319,6 +362,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_SPEAR => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             DD2_SPEAR_T3 => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             DD2_BOMB => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The Dark Mage's casts (`Projectile.cs:7208-7230`): the summon
+            // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
+            // 255, tileCollide false, timeLeft 900) and the shadowflame
+            // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
+            DARK_MAGE_MARKER => (10.0, 10.0, 133, -1, 900, 0, false, false, false),
+            DARK_MAGE_FLAME => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
+            // aiStyle-1 breath flight).
+            BETSY_BREATH => (12.0, 12.0, 1, -1, TIME_LEFT_DEFAULT, 1, true, false, false),
+            // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
+            // ...)` — the 1500-px leaping shot).
+            BETSY_FIREBALL => (22.0, 22.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {
@@ -1009,6 +1064,24 @@ impl ProjectilePool {
         damage: i32,
         knock_back: f32,
     ) -> Option<usize> {
+        self.spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, 0.0, 0.0)
+    }
+
+    /// `spawn_with_data` with the C# `NewProjectile`'s `ai0/ai1` arguments
+    /// (the fireworks fountain's tile anchor, the bunny cannon's
+    /// `1, owner + 1` — M7-WIRE-2). Every other arm passes 0.
+    pub fn spawn_with_data_ai(
+        &mut self,
+        kind: u16,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+        ai1: f32,
+    ) -> Option<usize> {
         let data = proj_data(kind)?;
         let mut slot = None;
         for (i, p) in self.slots.iter().enumerate() {
@@ -1036,7 +1109,7 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: data.extra_updates,
-            ai: [0.0; 3],
+            ai: [ai0, ai1, 0.0],
             w: data.w,
             h: data.h,
             tile_collide: data.tile_collide,
@@ -1779,13 +1852,18 @@ mod arrow_tests {
         let poison = proj_data(POISON_DART).unwrap();
         assert!(!poison.tile_collide);
         assert_eq!(poison.extra_updates, 5);
+        // The spear trap's spear (186, `Projectile.cs:2717-2727` — aiStyle 14)
+        // and the spiky ball (185) both ride the ported families.
         let spear = proj_data(TRAP_SPEAR).unwrap();
         assert_eq!((spear.w, spear.h), (14.0, 14.0));
         assert_eq!(spear.ai_style, 14);
         assert_eq!(spear.time_left, 900);
-        // The boulder 186 (aiStyle 37) and the flame jet 187 (aiStyle 38)
-        // are unported — no data, the emission drops at the drain.
-        assert!(proj_data(186).is_none());
+        let spiky = proj_data(TRAP_SPIKY_BALL).unwrap();
+        assert_eq!((spiky.w, spiky.h), (10.0, 10.0));
+        assert_eq!(spiky.penetrate, -1);
+        assert_eq!(TRAP_SPEAR, 186, "the C# ProjectileID.SpearTrap");
+        // The flame jet 187 (aiStyle 38) is unported — no data, the emission
+        // drops at the drain.
         assert!(proj_data(187).is_none());
         // The shuriken keeps its aiStyle-2 path, not the data table.
         assert!(proj_data(SHURIKEN).is_none());

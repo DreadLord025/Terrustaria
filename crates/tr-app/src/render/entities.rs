@@ -153,6 +153,7 @@ pub(crate) struct NpcAssets {
     pub(crate) golem_head_free: Option<BgTex>,
     pub(crate) deerclops: Option<BgTex>,
     pub(crate) skeletron_hand: Option<BgTex>,
+    pub(crate) wof_eye: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -198,6 +199,10 @@ pub(crate) struct NpcAssets {
     /// `NPC_555-567` — the DD2 support family (the bombers/javelineers'
     /// humanoid strips + the skeletons' 14-frame materialize sheets).
     pub(crate) dd2_support: Option<BgTex>,
+    /// `NPC_564` — the Dark Mage (20-frame caster strip of 34x62).
+    pub(crate) dark_mage: Option<BgTex>,
+    /// `NPC_551` — Betsy (11-frame dragon strip of 190x90).
+    pub(crate) betsy: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -273,6 +278,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         golem_head_free: sky_tex(atlas, "NPC_249", None),
         deerclops: sky_tex(atlas, "NPC_668", None),
         skeletron_hand: sky_tex(atlas, "NPC_36", None),
+        wof_eye: sky_tex(atlas, "NPC_114", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -301,6 +307,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dutchman_cannon: sky_tex(atlas, "NPC_492", None),
         dd2_goblins: sky_tex(atlas, "NPC_553", None),
         dd2_support: sky_tex(atlas, "NPC_556", None),
+        dark_mage: sky_tex(atlas, "NPC_564", None),
+        betsy: sky_tex(atlas, "NPC_551", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1067,6 +1075,20 @@ pub(crate) fn draw_npcs(
                 [18.0, 40.0],
                 [n.x, n.y],
             ),
+            // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
+            NpcKind::DD2DarkMage => (
+                assets.dark_mage.as_ref(),
+                assets.dark_mage.as_ref().map_or(62.0, |t| t.h / 20.0),
+                [34.0, 62.0],
+                [n.x, n.y],
+            ),
+            // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
+            NpcKind::DD2Betsy => (
+                assets.betsy.as_ref(),
+                assets.betsy.as_ref().map_or(90.0, |t| t.h / 11.0),
+                [190.0, 90.0],
+                [n.x, n.y],
+            ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
                 assets.dd2_support.as_ref(),
                 assets.dd2_support.as_ref().map_or(52.0, |t| t.h / 14.0),
@@ -1198,6 +1220,14 @@ pub(crate) fn draw_npcs(
                 assets.skeletron_hand.as_ref(),
                 assets.skeletron_hand.as_ref().map_or(52.0, |t| t.h),
                 [52.0, 52.0],
+                [n.x, n.y],
+            ),
+            // The WoF's mirror eye: the 100x100 sheet (the vanilla's
+            // `WorldofFleshEye` texture).
+            NpcKind::WallOfFleshEye => (
+                assets.wof_eye.as_ref(),
+                assets.wof_eye.as_ref().map_or(100.0, |t| t.h),
+                [100.0, 100.0],
                 [n.x, n.y],
             ),
             // The goblins: the 3-frame humanoid sheets (the vanilla

@@ -451,6 +451,7 @@ fn portrait_data(
         NpcKind::MartianDrone => 77,         // NPC_388
         NpcKind::Deerclops => 75,            // NPC_668
         NpcKind::SkeletronHand => 76,        // NPC_36
+        NpcKind::WallOfFleshEye => 77,       // NPC_114
         NpcKind::BrainScrambler => 78,       // NPC_381
         NpcKind::RayGunner => 79,            // NPC_382
         NpcKind::ScutlixRider => 80,         // NPC_390
@@ -472,6 +473,8 @@ fn portrait_data(
         NpcKind::DD2JavelinT3 => 96,         // NPC_563
         NpcKind::DD2SkeletonT1 => 97,        // NPC_566
         NpcKind::DD2SkeletonT3 => 98,        // NPC_567
+        NpcKind::DD2DarkMage => 99,       // NPC_564
+        NpcKind::DD2Betsy => 100,        // NPC_551
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -482,6 +485,7 @@ fn portrait_data(
         (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
         (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::SkeletronHand, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::WallOfFleshEye, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
@@ -720,6 +724,20 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(52.0);
             (sheet_i, h, 26.0, h, white)
+        }
+        // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
+        (NpcKind::DD2DarkMage, _) => {
+            let h = lookups.bestiary_npc_sheets[99]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
+        (NpcKind::DD2Betsy, _) => {
+            let h = lookups.bestiary_npc_sheets[100]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 190.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

@@ -1723,6 +1723,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The Hungry init (`localAI[0]` 1 → 2): the 11 Hungries along the
         // band (`ai[0] = i * 0.1 - 0.05`); the eye/mouth mirrors (114) are
         // the render follow-up.
+        // The mirror eyes (`:26041-26051`): the two 114s at the band
+        // mid + the drawTop/drawBottom halves, the ai[0] sign picks the
+        // half each chases.
+        for top in [true, false] {
+            let ey = if top {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_top) * 0.5
+            } else {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) * 0.5
+            };
+            let mut eye = Npc::new(NpcKind::WallOfFleshEye, wof.x, ey, wof.facing, 0.0);
+            eye.hp = eye.max_hp;
+            eye.ai[0] = if top { 1.0 } else { -1.0 };
+            app.npcs.push(eye);
+        }
         if wof.wants_hungry {
             let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
             for i in 0..11 {
@@ -4667,5 +4681,111 @@ mod dd2_goblin_tests {
         let s = thrown.expect("the bomb lobs at the cadence");
         assert_eq!(s.0, 681);
         assert_eq!(s.5, 40);
+    }
+    #[test]
+    fn the_dark_mage_materializes_then_casts() {
+        // `AI_109_DarkMage` (`NPC.cs:65791+`): the materialize runs
+        // 60 ticks of `localAI[3]` (the port's caster_counter), then the
+        // cast cycle fires the shadowflame 675 (40 dmg) / the summon
+        // marker 673 in their ai[0] windows.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2DarkMage, 145.0 * TILE_PX, 1500.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The materialize.
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.caster_counter, 60, "the materialize ran");
+        // The re-arm + the cast cycle: arm the shadowflame phase.
+        n.ai[1] = 0.0;
+        n.ai[0] = 97.0;
+        let mut saw_flame = false;
+        let mut saw_summon = false;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 675 {
+                    saw_flame = true;
+                }
+                if s.0 == 673 {
+                    saw_summon = true;
+                }
+            }
+            if saw_flame || saw_summon {
+                break;
+            }
+        }
+        assert!(saw_flame || saw_summon, "the mage cast");
+    }
+    #[test]
+    fn betsy_hovers_in_then_approaches_and_breaths() {
+        // `AI_110_Betsy` (`NPC.cs:61850+`): phase 0's 10-tick spawn pause,
+        // phase 1's approach to the 300/-200 offset past the player, the
+        // phase table's pick, phase 2's 687 breath at 35.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The spawn pause: 10 ticks.
+        for _ in 0..11 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the approach starts");
+        // The approach: the velocity orients toward the offset.
+        let v = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!(v > 0.0, "the flight carries: {v}");
+        // Drive into the phase table's first pick (30 ticks).
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.ai[0] > 1.0, "an attack phase was picked");
+        assert!(n.ai[3] >= 1.0, "the phase rotation advanced");
+    }
+    #[test]
+    fn betsy_flame_breaths_and_volleys_the_fireballs() {
+        // `AI_110_Betsy`'s phases 3-6 (`NPC.cs:61942-62060`): the flame
+        // breath repositions to the 600-px offset and 687s at 35; the
+        // volley repositions to 1500 px and 686s at 35; the circle flight
+        // rotates; the dash lunges.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // Phase 3 (the flame breath).
+        n.ai[0] = 3.0;
+        n.ai[1] = 0.0;
+        let mut saw_breath = false;
+        for _ in 0..50 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw_breath = true;
+                break;
+            }
+        }
+        assert!(saw_breath, "the flame breath fires");
+        // Phase 4 (the volley).
+        let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        m.hp = m.max_hp;
+        m.ai[0] = 4.0;
+        m.ai[1] = 0.0;
+        let mut saw_volley = false;
+        for _ in 0..80 {
+            m.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !m.wants_hostile_shot.is_empty() {
+                saw_volley = true;
+                break;
+            }
+        }
+        assert!(saw_volley, "the volley fires");
     }
 }

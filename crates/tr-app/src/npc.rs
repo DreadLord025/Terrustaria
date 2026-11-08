@@ -180,6 +180,14 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.DD2Betsy` (551) — the Old One's Army's dragon boss
+    /// (`NPC.cs:16400-16424`: 190×90, aiStyle 110, 50000 HP, dmg 80,
+    /// def 38, noGravity, noTileCollide, lavaImmune).
+    DD2Betsy,
+    /// `NPCID.DD2DarkMageT1` (564) — the Old One's Army caster (`NPC.cs`
+    /// `:16445-16466`: 34×62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
+    /// noGravity, lavaImmune; the summon/heal/shadowflame casts).
+    DD2DarkMage,
     /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
     /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
@@ -376,6 +384,9 @@ pub enum NpcKind {
     /// `NPCID.SkeletronHand` (36) — the Skeletron's tether hand (`aiStyle
     /// 12`, `NPC.cs:9183-9196`: 52x52, dmg 20, def 14, 600 HP, kb 0).
     SkeletronHand,
+    /// `NPCID.WallOfFleshEye` (114) — the WoF's mirror eye (`aiStyle 28`,
+    /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life).
+    WallOfFleshEye,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -605,6 +616,8 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 103,
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -655,6 +668,8 @@ impl NpcKind {
             NpcKind::GolemHeadFree => 77,
             NpcKind::Deerclops => 78,
             NpcKind::SkeletronHand => 79,
+            NpcKind::WallOfFleshEye => 80,
+            NpcKind::WallOfFleshEye => 80,
         }
     }
 
@@ -715,6 +730,8 @@ impl NpcKind {
             103 => NpcKind::DD2JavelinT3,
             104 => NpcKind::DD2SkeletonT1,
             105 => NpcKind::DD2SkeletonT3,
+            106 => NpcKind::DD2DarkMage,
+            107 => NpcKind::DD2Betsy,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -765,6 +782,7 @@ impl NpcKind {
             77 => NpcKind::GolemHeadFree,
             78 => NpcKind::Deerclops,
             79 => NpcKind::SkeletronHand,
+            80 => NpcKind::WallOfFleshEye,
             _ => return None,
         })
     }
@@ -927,6 +945,10 @@ impl NpcKind {
             | NpcKind::DD2GoblinBomberT3 => (18.0, 40.0),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (26.0, 52.0),
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => (18.0, 40.0),
+            // The Dark Mage: 34x62 (`NPC.cs`'s case 564).
+            NpcKind::DD2DarkMage => (34.0, 62.0),
+            // Betsy: 190x90 (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => (190.0, 90.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -941,6 +963,7 @@ impl NpcKind {
             // `SetDefaults` 668 (`:17451-17452`): 60x154.
             NpcKind::Deerclops => (60.0, 154.0),
             NpcKind::SkeletronHand => (52.0, 52.0),
+            NpcKind::WallOfFleshEye => (100.0, 100.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -997,6 +1020,46 @@ impl NpcKind {
             // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
             NpcKind::Hungry => (30.0, 30.0),
             NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
+        }
+    }
+
+    /// The C# `NPCID` this kind ports — the statue spawns' ids, the
+    /// `MechSpawn` caps (`NPC.cs:7420`) and the teleporting statues' rosters
+    /// (`Wiring.cs:2424`/`:2452`) all speak C# ids. Rows arrive with the
+    /// kinds; `u16::MAX` marks a kind the caps can never match (the C#'s
+    /// `MechSpawn` counts by type, and no statue spawns an unmapped kind).
+    pub(crate) fn cs_id(self) -> u16 {
+        match self {
+            NpcKind::Slime => 1,
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 133,
+            NpcKind::Zombie => 21,
+            NpcKind::KingSlime => 50,
+            NpcKind::Guide => 22,
+            // The teleporting statues' rosters (`Wiring.cs:2424`/`:2452`) are the
+            // town NPCs — the port has most of them.
+            NpcKind::Merchant => 17,
+            NpcKind::Nurse => 18,
+            NpcKind::ArmsDealer => 19,
+            NpcKind::Dryad => 20,
+            NpcKind::Demolitionist => 38,
+            NpcKind::Clothier => 54,
+            NpcKind::Painter => 227,
+            NpcKind::WitchDoctor => 228,
+            NpcKind::Skeleton => 77,
+            NpcKind::UndeadMiner => 23,
+            NpcKind::CaveBat => 49,
+            NpcKind::JungleBat => 51,
+            NpcKind::Hellbat => 60,
+            NpcKind::VoodooDemon => 66,
+            NpcKind::EaterOfSouls => 6,
+            NpcKind::Hornet => 42,
+            NpcKind::MeteorHead => 5,
+            NpcKind::FireImp => 24,
+            NpcKind::Goldfish => 55,
+            NpcKind::Piranha => 58,
+            NpcKind::Shark => 65,
+            _ => u16::MAX,
         }
     }
 
@@ -1116,6 +1179,10 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 1000,
             NpcKind::DD2SkeletonT1 => 25,
             NpcKind::DD2SkeletonT3 => 480,
+            // The Dark Mage: 800 HP.
+            NpcKind::DD2DarkMage => 800,
+            // Betsy: 50000 HP (`NPC.cs`'s case 551).
+            NpcKind::DD2Betsy => 50000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1131,6 +1198,7 @@ impl NpcKind {
             // `:17456`: 7000.
             NpcKind::Deerclops => 7000,
             NpcKind::SkeletronHand => 600,
+            NpcKind::WallOfFleshEye => 8000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -1250,6 +1318,10 @@ impl NpcKind {
             NpcKind::DD2JavelinT3 => 80,
             NpcKind::DD2SkeletonT1 => 18,
             NpcKind::DD2SkeletonT3 => 70,
+            // The Dark Mage: dmg 40.
+            NpcKind::DD2DarkMage => 40,
+            // Betsy: dmg 80.
+            NpcKind::DD2Betsy => 80,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1264,6 +1336,7 @@ impl NpcKind {
             // `:17455`: 20.
             NpcKind::Deerclops => 20,
             NpcKind::SkeletronHand => 20,
+            NpcKind::WallOfFleshEye => 50,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1919,6 +1992,10 @@ impl Npc {
             | NpcKind::DD2GoblinBomberT3 => 0.1,
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => 0.2,
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
+            // The Dark Mage: kb 0 (case 564 sets nothing).
+            NpcKind::DD2DarkMage => 0.0,
+            // Betsy: kb 0 (case 551 sets nothing).
+            NpcKind::DD2Betsy => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1934,6 +2011,7 @@ impl Npc {
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
             NpcKind::Deerclops => 0.0,
             NpcKind::SkeletronHand => 0.0,
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
@@ -2001,6 +2079,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
+            _ => 0.4,
         }
     }
 
@@ -2079,6 +2158,10 @@ impl Npc {
             NpcKind::DD2JavelinT3 => 38,
             NpcKind::DD2SkeletonT1 => 12,
             NpcKind::DD2SkeletonT3 => 22,
+            // The Dark Mage: def 18.
+            NpcKind::DD2DarkMage => 18,
+            // Betsy: def 38.
+            NpcKind::DD2Betsy => 38,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2093,6 +2176,7 @@ impl Npc {
             // `:17457`: 10.
             NpcKind::Deerclops => 10,
             NpcKind::SkeletronHand => 14,
+            NpcKind::WallOfFleshEye => 0,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -2174,6 +2258,7 @@ impl Npc {
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
             NpcKind::Zombie => 60.0,
             // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
             NpcKind::Skeleton => 100.0,
@@ -2231,7 +2316,9 @@ impl Npc {
             | NpcKind::DD2JavelinT2
             | NpcKind::DD2JavelinT3
             | NpcKind::DD2SkeletonT1
-            | NpcKind::DD2SkeletonT3 => 0.0,
+            | NpcKind::DD2SkeletonT3
+            | NpcKind::DD2DarkMage
+            | NpcKind::DD2Betsy => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2430,6 +2517,7 @@ impl Npc {
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
+            NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
@@ -2523,6 +2611,10 @@ impl Npc {
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
                 self.update_dd2_skeleton(world, player)
             }
+            // The Dark Mage: aiStyle 109's cast machine.
+            NpcKind::DD2DarkMage => self.update_dark_mage(world, player, rng),
+            // Betsy: aiStyle 110's phase machine.
+            NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2600,6 +2692,10 @@ impl Npc {
             NpcKind::SkeletronHand => {
                 // The hand's single frame (`NPC.cs` has no FindFrame case
                 // for type 36 — the strip is one frame).
+                self.frame = 0;
+            }
+            NpcKind::WallOfFleshEye => {
+                // The single frame — no FindFrame case for type 114.
                 self.frame = 0;
             }
             // The goblins: the 16/21/20-frame humanoid strips (the same
@@ -2748,6 +2844,22 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 14;
+                }
+            }
+            // Betsy: the 11-frame dragon strip.
+            NpcKind::DD2Betsy => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
+                }
+            }
+            // The Dark Mage: the 20-frame caster strip.
+            NpcKind::DD2DarkMage => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 20;
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -5473,6 +5585,301 @@ impl Npc {
         }
     }
 
+    /// `AI_109_DarkMage` (`NPC.cs:65791-66000`) — the Old One's Army's
+    /// caster. The materialize cycle rides `localAI[3]` (the port's
+    /// `caster_counter`: 60 ticks of fade-in from the portal) — the
+    /// vanilla's alpha fade is render-side; the CAST machine rides
+    /// `ai[0]`'s negative/positive cycle: the spawn request
+    /// (`ai[1] == 2` at `ai[0] == 64` fires the 673 summon marker +
+    /// `DD2Event.RaiseGoblins`), the shadowflame (`ai[1] == 0` at
+    /// `ai[0] == 32`: the 675 at 40 damage toward the player), the heal
+    /// (`ai[1] == 1` at `ai[0] == 40/48/56`: the 674 markers under the
+    /// target), and the re-arm (`ai[0] <= 0` → `ai[1]++` wrapped, the
+    /// −20/−120 rest). The flight: the hover toward the player with the
+    /// slow damp (0.5/0.1 speeds, the 0.96 damping), the rotation = vx
+    /// × 0.04.
+    ///
+    /// Deviations: `DD2Event.RaiseGoblins`/`CanRaiseGoblinsHere` ride the
+    /// DD2 framework (the summon request rides `wants_sphere`); the
+    /// `GetAttackDamage_ScaledByDifficulty` runs classic; the portal
+    /// sound/dust arms are unmodelled.
+    fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The materialize: `localAI[3]` counts to 60.
+        if self.caster_counter < 60 {
+            self.caster_counter += 1;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The hover (`:65950`'s tail): the slow approach with the damp.
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+        self.vx += (dx / d * 2.0 - self.vx) * 0.1;
+        self.vy += (dy / d * 2.0 - self.vy) * 0.1;
+        self.vx *= 0.96;
+        self.vy *= 0.96;
+        self.rotation = self.vx * 0.04;
+        // The cast cycle.
+        if self.ai[0] < 0.0 {
+            self.ai[0] += 1.0;
+        } else if self.ai[0] > 0.0 {
+            self.ai[0] -= 1.0;
+            // The summon arm (`ai[1] == 2` at 64).
+            if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
+                self.wants_hostile_shot
+                    .push((673u16, cx + self.facing as f32 * 24.0, cy - 40.0, 0.0, 0.0, 0));
+                // `DD2Event.RaiseGoblins` — the port's summon request.
+                self.wants_sphere = Some((NpcKind::DD2GoblinT1, cx, cy));
+            }
+            // The shadowflame (`ai[1] == 0` at 32).
+            if self.ai[1] == 0.0 && self.ai[0] == 32.0 {
+                let (sx, sy) = (cx + self.facing as f32 * 10.0, cy - 16.0);
+                let (fx, fy) = (pcx - sx, pcy - sy);
+                let fd = (fx * fx + fy * fy).sqrt().max(1.0);
+                let inv = 14.0 / fd;
+                self.wants_hostile_shot
+                    .push((675u16, sx, sy, fx * inv, fy * inv, 40));
+            }
+            // The heal arm (`ai[1] == 1` at 40/48/56): the markers under
+            // the target (the port places them at the vertical scan).
+            if self.ai[1] == 1.0 && matches!(self.ai[0], 40.0 | 48.0 | 56.0) {
+                self.wants_hostile_shot
+                    .push((674u16, cx + self.facing as f32 * 240.0, cy, 0.0, 0.0, 0));
+            }
+            if self.ai[0] <= 0.0 {
+                let prior = self.ai[1];
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 3.0 {
+                    self.ai[1] = 0.0;
+                }
+                self.ai[0] = -120.0;
+                if prior == 0.0 {
+                    self.ai[0] = -20.0;
+                }
+            }
+        }
+        // The re-arm (the vanilla's `ai[0] == 0 && localAI[3] >= 60`
+        // gate — the cast pattern picks per the roster state): with the
+        // materialize done and the rest elapsed the mage rearms.
+        if self.ai[0] == 0.0 && self.caster_counter >= 60 {
+            match self.ai[1] as u32 {
+                0 => self.ai[0] = 97.0,
+                1 => self.ai[0] = 127.0,
+                _ => self.ai[0] = 183.0,
+            }
+        }
+        // The flight.
+        self.x += self.vx;
+        self.y += self.vy;
+        let _ = rng;
+    }
+
+    /// `AI_110_Betsy` (`NPC.cs:61850-62150`) — the Old One's Army's
+    /// dragon. The v1 machine: phase 0 (the hover-in — the spawn pause),
+    /// phase 1 (the approach to the 300/-200 offset past the player with
+    /// the `num5 = 7.5` speed / `num6 = 0.45` accel flight, the phase
+    /// table's pick per `ai[3]`'s rotation — 0/1/3 → 2, 2 → 3, 4 → 5, 5
+    /// → 6, the wrapped 6 → 2, the mid-sequence `ai[3] == 5 &&
+    /// Next(3) == 0` hop), phase 2 (the breath — the 687 projectile at 35
+    /// damage from the centre at the velocity), and the off-world /
+    /// target-loss guards. The remaining phases (the fireball 686, the
+    /// circle flight, the dash) + the phase-5/6 renders ride the attack
+    /// family's follow-ups.
+    fn update_betsy(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            // The spawn pause (`:61878-61884`).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 10.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 1.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The approach (`:61886-61900`).
+            if self.ai[2] == 0.0 {
+                self.ai[2] = if pcx < cx { 1.0 } else { -1.0 };
+            }
+            // The offset: the player + (-ai[2] * 300, -200).
+            let (tx, ty) = (pcx - self.ai[2] * 300.0, pcy - 200.0);
+            let (dx, dy) = (tx - cx, ty - cy);
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            let inv = 7.5 / d;
+            self.vx += (dx * inv - self.vx) * 0.45;
+            self.vy += (dy * inv - self.vy) * 0.45;
+            self.facing = if pcx < cx { 1 } else { -1 };
+            // The phase pick (the vanilla's `num29` table).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                let mut pick = 2;
+                if self.ai[3] == 5.0 && crate::app::rand01(rng) < 1.0 / 3.0 {
+                    self.ai[3] += 1.0;
+                }
+                match self.ai[3] as u32 {
+                    2 => pick = 3,
+                    4 | 6 => pick = 5,
+                    _ => pick = 3, // the C# default for 5+ → 6 lands as the
+                    // next attack family; the port folds 5's pick as 3
+                    // (the fireball) until it lands.
+                }
+                if self.ai[3] >= 7.0 {
+                    self.ai[3] = 0.0;
+                }
+                self.ai[3] += 1.0;
+                self.ai[0] = pick as f32;
+                self.ai[1] = 0.0;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The wind-attack pause (`NPC.cs:61931-61940`): the 30-tick
+            // pause before the return to phase 1 (the flame breath rides
+            // phase 3).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 3.0 {
+            // The flame breath (`NPC.cs:61942-61985`): the reposition to
+            // the 600-px past-the-player offset at −250 (the 12-speed
+            // approach, the 16-px snap), the 40-tick arrival, the dash
+            // (the 10-speed lunge + the 687 breath at 35), the 120-tick
+            // ride with the 0.5 accel past 550 px.
+            self.ai[1] += 1.0;
+            let dir = if pcx < cx { 1.0 } else { -1.0 };
+            if self.ai[1] < 40.0 {
+                let (tx, ty) = (pcx + dir * -600.0, pcy - 250.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                if d < 12.0 {
+                    self.x = tx - w * 0.5;
+                    self.y = ty - h * 0.5;
+                } else {
+                    let inv = 12.0 / d;
+                    self.x += dx * inv;
+                    self.y += dy * inv;
+                }
+            } else if self.ai[1] == 40.0 {
+                let dir2 = if pcx > cx { 1.0 } else { -1.0 };
+                self.vx = dir2 * 10.0;
+                self.vy = 0.0;
+                self.facing = dir2 as i32;
+                self.wants_hostile_shot
+                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+            } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
+                self.vx += self.vx.signum() * 0.5;
+            }
+            if self.ai[1] >= 120.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 4.0 {
+            // The fireball volley (`NPC.cs:61986-62045`): the reposition
+            // to the 1500-px offset at −350 (the 13-speed lerp at 1/30),
+            // the aim at the player (the flattened Y, the rotation), the
+            // strafing glide (the X toward the player at 7, the Y toward
+            // the −400 offset at 6) and the 6-shot volley every 10 ticks
+            // from the 140·direction rotated muzzle.
+            if self.ai[1] < 60.0 {
+                let (tx, ty) = (pcx + self.facing as f32 * -1500.0, pcy - 350.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 13.0 / d;
+                self.vx += ((dx * inv) - self.vx) * (1.0 / 30.0);
+                self.vy += ((dy * inv) - self.vy) * (1.0 / 30.0);
+            } else if self.ai[1] == 60.0 {
+                let (mut ax, mut ay) = (pcx - cx, pcy - cy);
+                ay *= 0.25;
+                let d = (ax * ax + ay * ay).sqrt().max(1.0);
+                ax /= d;
+                ay /= d;
+                self.facing = if ax > 0.0 { 1 } else { -1 };
+                self.rotation = ay.atan2(ax);
+                if self.facing == -1 {
+                    self.rotation += std::f32::consts::PI;
+                }
+                self.vx = ax * 12.0;
+                self.vy = ay * 12.0;
+            } else {
+                self.x += (pcx - cx).signum() * 7.0;
+                self.y += (pcy - cy).signum() * 6.0;
+                let n33 = (self.ai[1] - 60.0 + 1.0) as i32;
+                if n33 <= 60 && n33 % 10 == 0 {
+                    let (mx, my) = rot(170.0, 20.0, self.rotation);
+                    self.wants_hostile_shot
+                        .push((686u16, cx + mx, cy + my, self.vx, self.vy, 35));
+                }
+            }
+            if self.ai[1] > 60.0 {
+                self.vy -= 0.1;
+            }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 180.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 5.0 {
+            // The circle flight (`NPC.cs:61986-62000`): the velocity rotates
+            // by `num24` (the 60-tick full turn) per side, the upward creep,
+            // the 10-toward-the-player pull, the rotation mirror, the
+            // 60-tick exit at half velocity.
+            let turn = std::f32::consts::TAU / 60.0;
+            let ang = (-turn) * self.facing as f32;
+            let (nx, ny) = rot(self.vx, self.vy, ang);
+            self.vx = nx;
+            self.vy = ny;
+            self.y -= 0.1;
+            self.x += (pcx - cx).signum() * 10.0;
+            self.y += (pcy - cy).signum() * 10.0;
+            self.rotation -= turn * self.facing as f32;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 60.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.vx /= 2.0;
+                self.vy /= 2.0;
+            }
+        } else if self.ai[0] == 6.0 {
+            // The dash (`NPC.cs:62001-62060`): the first segment flies to
+            // the player + (0, −200) at 2× speed until the 350-px contact
+            // or 180 ticks; then the 20-tick 0.95 decay, the 0.98 ride,
+            // the 90-tick exit.
+            if self.ai[1] == 0.0 {
+                let (tx, ty) = (pcx, pcy - 200.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 15.0 / d;
+                self.vx += ((dx * inv) - self.vx) * 0.9;
+                self.vy += ((dy * inv) - self.vy) * 0.9;
+                self.facing = if pcx < cx { 1 } else { -1 };
+                self.ai[2] += 1.0;
+                if (pcx - cx).hypot(pcy - cy) < 350.0 || self.ai[2] >= 180.0 {
+                    self.ai[1] = 1.0;
+                }
+            } else if self.ai[1] < 20.0 {
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                self.ai[1] += 1.0;
+            } else {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                self.ai[1] += 1.0;
+            }
+            if self.ai[1] >= 90.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        }
+        // The flight (noGravity + noTileCollide).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -5961,6 +6368,83 @@ impl Npc {
     /// `home` field pair). The classic-only: the passive shadow hands
     /// (the expert arm) fold out; the life ramp feeds only the speed
     /// (`:44645`'s 3.5+1).
+    /// The WoF's mirror eye (`aiStyle 28`, `NPC.cs:26053-26208`): the
+    /// life/X mirror, the Y target `(band mid + drawTop/Bottom) / 2` chased
+    /// at ±1 capped ±5, the eye-laser volley (the 600-tick idle → 4-shot
+    /// bursts at 46-tick intervals, projectile 83 at the ramp 11/12/13).
+    /// The parent anchor rides the World's WoF fields (the write-through).
+    fn update_wof_eye(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        if !world.wof_present {
+            // `wofNPCIndex < 0` → the eye deactivates (the sim holds the
+            // despawn — the port mirrors via hp).
+            self.hp = 0;
+            return;
+        }
+        // The life mirror (`:26061-26064`) + the X/direction mirror.
+        self.x = world.wof_x - w * 0.5;
+        self.facing = if world.wof_x >= pcx { 1 } else { -1 };
+        let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
+        let top_half = self.ai[0] > 0.0;
+        let target_y = if top_half {
+            (band_mid + world.wof_draw_top) * 0.5
+        } else {
+            (band_mid + world.wof_draw_bottom) * 0.5 - h * 0.5
+        };
+        self.vy += (target_y - (self.y + h * 0.5)).signum() * 1.0;
+        self.vy = self.vy.clamp(-5.0, 5.0);
+        self.y += self.vy;
+        // The volley (`:26125-26206`): the idle 600, then the 46-tick
+        // shots in bursts of 4.
+        self.ai[1] += 1.0;
+        if world.wof_hp_ratio < 0.5 {
+            self.ai[1] += 1.0;
+        }
+        if world.wof_hp_ratio < 0.25 {
+            self.ai[1] += 1.0;
+        }
+        if self.ai[2] == 0.0 && self.ai[1] > 600.0 {
+            self.ai[2] = 1.0;
+            self.ai[1] = 0.0;
+        }
+        if self.ai[2] > 0.0 && self.ai[1] > 45.0 {
+            let dx = pcx - cx;
+            let dy = pcy - (self.y + h * 0.5);
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let mut speed = 9.0;
+            let mut dmg = 11;
+            if world.wof_hp_ratio < 0.5 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.25 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.1 {
+                speed += 2.0;
+                dmg += 2;
+            }
+            self.ai[1] = 0.0;
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 5.0 {
+                self.ai[2] = 0.0;
+            }
+            if crate::npc_ai::line_clear(world, (cx, self.y + h * 0.5), (pcx, pcy)) {
+                self.wants_hostile_shot.push((
+                    crate::projectile::EYE_LASER,
+                    cx,
+                    self.y + h * 0.5,
+                    dx / d * speed,
+                    dy / d * speed,
+                    dmg,
+                ));
+            }
+        }
+    }
+
     /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22613`): the
     /// tether return to the orbit slot `(headCenter.X - 200 * side,
     /// head.Y + 230)`, the 300-tick lunge cadence, the -8 rise to 200
@@ -6880,6 +7364,7 @@ impl Npc {
         h ^= match self.kind {
             NpcKind::Slime => 0,
             NpcKind::SkeletronHand => 79,
+            NpcKind::WallOfFleshEye => 80,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -6939,6 +7424,8 @@ impl Npc {
             NpcKind::DD2JavelinT3 => 103,
             NpcKind::DD2SkeletonT1 => 104,
             NpcKind::DD2SkeletonT3 => 105,
+            NpcKind::DD2DarkMage => 106,
+            NpcKind::DD2Betsy => 107,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -7283,6 +7770,46 @@ mod tests {
     }
 
     #[test]
+    fn the_wof_eye_mirrors_and_volleys() {
+        // `aiStyle 28` (`NPC.cs:26053-26208`): the Y target rides the
+        // band halves, the volley's idle-600 -> 4-shot bursts at 46 ticks
+        // with the hp-ramped 83 damage.
+        let mut w = ground_air();
+        w.wof_present = true;
+        w.wof_x = 100.0 * 16.0;
+        w.wof_draw_top = 100.0 * 16.0;
+        w.wof_draw_bottom = 130.0 * 16.0;
+        w.wof_hp_ratio = 1.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 130.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut eye = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.ai[0] = 1.0;
+        // The full-hp eye: the 11-damage 83 at the 9 speed, idle 600.
+        eye.ai[2] = 1.0; // the burst window open
+        eye.ai[1] = 46.0;
+        let before = eye.wants_hostile_shot.len();
+        eye.update_wof_eye(&w, &player);
+        let shot = eye.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot.0, crate::projectile::EYE_LASER);
+        assert_eq!(shot.5, 11, "the classic damage");
+        let sp = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
+        assert!((sp - 9.0).abs() < 0.5, "the 9 speed ({sp})");
+        // The wounded boss racks the ramp (12/13 by the <50/<25 tiers).
+        w.wof_hp_ratio = 0.2;
+        let mut eye2 = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye2.hp = eye2.max_hp;
+        eye2.ai[0] = 1.0;
+        eye2.ai[2] = 1.0;
+        eye2.ai[1] = 46.0;
+        eye2.update_wof_eye(&w, &player);
+        let shot2 = eye2.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot2.5, 13, "the <25% ramp");
+        let before_count = eye.wants_hostile_shot.len() - before;
+        assert!(before_count >= 1, "the eye fires");
+    }
+
     fn the_skeletron_hand_tethers_and_lunges() {
         // `aiStyle 12` (`NPC.cs:22300-22613`): the orbit return to
         // `(headCenter.X - 200*side, head.Y + 230)`, the 300-tick lunge
