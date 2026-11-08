@@ -2474,16 +2474,11 @@ mod tests {
         let config = config.pass("Jungle Temple");
         let mut streams = Streams::new(opts.seed);
         step_temple(&mut world, &mut gv, &mut streams, &opts, &noise, &config);
-        // The deterministic fallback bury point (212, 380) sits inside the
-        // published bounds; `t_rooms` carries the carved-room count.
-        let (bx, by) = (212, 380);
+        // The faithful publication (M5-TEMPLE phase 2): the walk's room-union
+        // ± 10 and the final room count (`WorldGen.cs:34231-34235`) — on the
+        // sub-vanilla scale the walk rolls a single resized room.
         let tb = gv.temple;
-        assert_eq!(tb.t_rooms, 2, "t_rooms");
-        assert!(
-            tb.t_left <= bx && bx <= tb.t_right && tb.t_top <= by && by <= tb.t_bottom,
-            "the bury point inside the bounds {:?}",
-            tb
-        );
+        assert_eq!(tb.t_rooms, 1, "t_rooms");
         assert!(
             tb.t_left <= tb.l_altar_x && tb.l_altar_x + 2 < tb.t_right,
             "the altar anchor x inside the bounds"

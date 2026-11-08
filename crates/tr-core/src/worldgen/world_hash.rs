@@ -135,13 +135,13 @@ mod tests {
     /// vegetation family (its per-pass stream) — the shell blobs retype the
     /// shore sand, the inland water clears, the seaweed grows — every world
     /// on every seed changes by design.
-    /// Re-pinned for M5-TEMPLE phase 1: the room walk + the brick generation
-    /// land (`makeTemple` `WorldGen.cs:33440-33548` + `:34238-34462`) — the
-    /// depth-unioned Lihzahrd brick fills and the corner Line walkers add
-    /// tiles to every world on every seed (the temple sits in all of them by
-    /// design). Final pins follow phases 2-3.
-    const SEED42_512: u32 = 2067651109;
-    const DEFAULT_WORLD: u32 = 2366599377;
+    /// Re-pinned for M5-TEMPLE phase 2: the full `makeTemple` body lands
+    /// (`WorldGen.cs:33550-34217` — the jitter carve, the corridors, the
+    /// outerTempled skin, the entrance shaft + the Lihzahrd door, the
+    /// cleaner/widen sweeps, the altar publication and the spikes) — every
+    /// world on every seed changes by design. Final pins follow phase 3.
+    const SEED42_512: u32 = 2109138558;
+    const DEFAULT_WORLD: u32 = 948698174;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
