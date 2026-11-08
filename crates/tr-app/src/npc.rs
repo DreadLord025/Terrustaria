@@ -2515,7 +2515,7 @@ impl Npc {
             }
             NpcKind::DD2GoblinBomberT1
             | NpcKind::DD2GoblinBomberT2
-            | NpcKind::DD2GoblinBomberT3 => self.update_dd2_goblin(world, player, dt),
+            | NpcKind::DD2GoblinBomberT3 => self.update_dd2_bomber(world, player, rng),
             NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
                 self.update_dd2_skeleton(world, player)
             }
@@ -5431,6 +5431,53 @@ impl Npc {
     /// gravity arc (the port's ballistic integration stands in for the
     /// projectile's own aiStyle-1 flight). The walk rides the harness
     /// with the `speed = 8, accel × 3` row.
+    /// `AI_107_ImprovedWalkers`'s kobold-bomber arm (`NPC.cs:63490-63535`)
+    /// — the lob: the walk rides the harness (the speed 0.88/0.88/1.12 +
+    /// the tiered 0.6/0.6/0.4 `num16` arc weight + the `num15 = 0.4`
+    /// sway); the `ai[1]` cycle counts to 18 and lobs the 681 bomb
+    /// (14x14, aiStyle 16 — the bomb flight, penetrate -1) at the classic
+    /// damages 20/30/40 from the centre - 14 at the ballistic aim; the
+    /// vanilla's `flag24`/`flag12`/`flag15` (the chase/park states) and
+    /// the `DD2Event.EnemiesShouldChasePlayers` flag ride the DD2Event
+    /// framework — constants-off until it lands.
+    fn update_dd2_bomber(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The lob cycle: `ai[1]` to 18 (`num9`).
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 18.0 {
+            self.ai[1] = 0.0;
+            let dmg = match self.kind {
+                NpcKind::DD2GoblinBomberT2 => 30,
+                NpcKind::DD2GoblinBomberT3 => 40,
+                _ => 20,
+            };
+            // The ballistic aim: at the player (the arc's weight is the
+            // projectile's own aiStyle-16 flight).
+            let (dx, dy) = (pcx - cx, pcy - (cy - 14.0));
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+            let inv = 6.0 / dist; // the vanilla's `num10 = 6`
+            self.wants_hostile_shot
+                .push((681u16, cx, cy - 14.0, dx * inv, dy * inv, dmg));
+            let _ = rng;
+        }
+    }
+
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);

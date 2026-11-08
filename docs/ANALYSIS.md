@@ -2769,6 +2769,14 @@ The javelin throwers' arm: the 82-tick cadence throws the 662 spear
 the vanilla's fast row (speed 8, accel × 3). The 681 bomb's row joins
 the pool's data set — the bomber's throw arm rides it when it lands.
 
+## The kobold bombers (M4-EVENT-5g)
+
+The bomber's lob: the 18-tick cadence throws the 681 bomb at the
+tiered classic damages (20/30/40) from the centre - 14, the ballistic
+aim at the player (the vanilla's `num10 = 6` speed — the bomb's own
+aiStyle-16 flight carries the arc). The walk rides the harness with
+the tiers' speeds and arc weights.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

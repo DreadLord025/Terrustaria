@@ -4645,4 +4645,61 @@ mod dd2_goblin_tests {
         assert_eq!(s.0, 685);
         assert_eq!(s.5, 80);
     }
+    #[test]
+    fn the_bombers_lob_the_681_bomb() {
+        // The bomber arm (`NPC.cs:63490-63535`): the 18-tick cadence lobs
+        // the 681 bomb at the tiered classic damages.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 20);
+    }
+
+    #[test]
+    fn the_tier3_bomber_lobs_the_bomb_at_40() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 40);
+    }
 }
