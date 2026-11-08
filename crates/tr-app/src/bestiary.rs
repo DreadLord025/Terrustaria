@@ -829,6 +829,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Golem",
     },
     BestiaryEntryDef {
+        credit_id: "WallofFleshEye",
+        net_id: 114,
+        kind: NpcKind::WallOfFleshEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall of Flesh Eye",
+    },
+    BestiaryEntryDef {
         credit_id: "SkeletronHand",
         net_id: 36,
         kind: NpcKind::SkeletronHand,

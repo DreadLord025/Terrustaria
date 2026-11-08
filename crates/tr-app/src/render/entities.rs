@@ -153,6 +153,7 @@ pub(crate) struct NpcAssets {
     pub(crate) golem_head_free: Option<BgTex>,
     pub(crate) deerclops: Option<BgTex>,
     pub(crate) skeletron_hand: Option<BgTex>,
+    pub(crate) wof_eye: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -275,6 +276,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         golem_head_free: sky_tex(atlas, "NPC_249", None),
         deerclops: sky_tex(atlas, "NPC_668", None),
         skeletron_hand: sky_tex(atlas, "NPC_36", None),
+        wof_eye: sky_tex(atlas, "NPC_114", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -1208,6 +1210,14 @@ pub(crate) fn draw_npcs(
                 assets.skeletron_hand.as_ref(),
                 assets.skeletron_hand.as_ref().map_or(52.0, |t| t.h),
                 [52.0, 52.0],
+                [n.x, n.y],
+            ),
+            // The WoF's mirror eye: the 100x100 sheet (the vanilla's
+            // `WorldofFleshEye` texture).
+            NpcKind::WallOfFleshEye => (
+                assets.wof_eye.as_ref(),
+                assets.wof_eye.as_ref().map_or(100.0, |t| t.h),
+                [100.0, 100.0],
                 [n.x, n.y],
             ),
             // The goblins: the 3-frame humanoid sheets (the vanilla
