@@ -1172,6 +1172,11 @@ impl NpcKind {
 
 #[derive(Clone, Debug)]
 pub struct Npc {
+    /// `NPC.shimmerTransparency` (`NPC.cs`'s field) — the 1.0 of a
+    /// shimmer-released NPC (`WorldItem.GetShimmered`'s makeNPC arm,
+    /// `WorldItem.cs:1768`, and 4986's `:1732`) or the 0.89 of the shimmered
+    /// variant (`NPC.GetShimmered`, `NPC.cs:91548`). Render layer only.
+    pub shimmer_transparency: f32,
     /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
     /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
     /// `+= extraValue` (:79680).
@@ -1608,6 +1613,7 @@ impl Npc {
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            shimmer_transparency: 0.0,
             extra_value: 0,
             slime: SlimeVariant::Blue,
             x,

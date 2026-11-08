@@ -77,6 +77,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     app.items.push(crate::item::ItemDrop {
                         kind: item_id as u16,
                         count: 1,
+                        shimmer_time: 0.0,
+                        shimmered: false,
+                        shimmer_pending: false,
+                        shimmer_wet: false,
                         prefix: 0,
                         pos: Vec2::new(x as f32, y as f32),
                         vel: Vec2::ZERO,
