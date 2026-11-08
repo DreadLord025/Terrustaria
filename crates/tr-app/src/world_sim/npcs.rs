@@ -4823,4 +4823,32 @@ mod dd2_goblin_tests {
         }
         assert_eq!(n.hp, 325, "the 60-tick heal (25 = 500/20)");
     }
+    #[test]
+    fn the_eternia_crystal_shields_then_opens() {
+        // `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`): the 180-tick
+        // spawn-in shield (`localAI[0]` — the port's caster_counter) holds
+        // `dontTakeDamage` until the count passes 180.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..60 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.dont_take_damage, "the spawn-in shield holds");
+        assert_eq!(n.caster_counter, 60);
+        for _ in 0..121 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(!n.dont_take_damage, "the crystal opens at 180");
+    }
 }

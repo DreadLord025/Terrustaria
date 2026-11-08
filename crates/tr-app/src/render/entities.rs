@@ -209,6 +209,10 @@ pub(crate) struct NpcAssets {
     pub(crate) betsy: Option<BgTex>,
     /// `NPC_568` — the Wither Beast (14-frame humanoid strip of 18x40).
     pub(crate) wither_beast: Option<BgTex>,
+    /// `NPC_550` — the tavernkeeper (16-frame humanoid strip of 18x40),
+    /// `NPC_548` — the Etheria Crystal (40x40).
+    pub(crate) tavern: Option<BgTex>,
+    pub(crate) crystal: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -320,6 +324,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dark_mage: sky_tex(atlas, "NPC_564", None),
         betsy: sky_tex(atlas, "NPC_551", None),
         wither_beast: sky_tex(atlas, "NPC_568", None),
+        tavern: sky_tex(atlas, "NPC_550", None),
+        crystal: sky_tex(atlas, "NPC_548", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -1127,6 +1133,20 @@ pub(crate) fn draw_npcs(
                 assets.wither_beast.as_ref(),
                 assets.wither_beast.as_ref().map_or(40.0, |t| t.h / 14.0),
                 [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
+            NpcKind::DD2Bartender => (
+                assets.tavern.as_ref(),
+                assets.tavern.as_ref().map_or(40.0, |t| t.h / 16.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The crystal: the NPC_548 strip over the 40x40 frames.
+            NpcKind::DD2EterniaCrystal => (
+                assets.crystal.as_ref(),
+                assets.crystal.as_ref().map_or(40.0, |t| t.h),
+                [40.0, 40.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (

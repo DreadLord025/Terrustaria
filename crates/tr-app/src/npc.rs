@@ -180,6 +180,13 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.DD2Bartender` (550) — the tavernkeeper (`NPC.cs`:
+    /// 18×40, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5).
+    DD2Bartender,
+    /// `NPCID.DD2EterniaCrystal` (548) — the Old One's Army's crystal
+    /// (`NPC.cs:15998-16022`: 40×40, aiStyle 105, def 14, 1000 HP,
+    /// friendly, npcSlots 0, hide; the 180-tick spawn-in shield).
+    DD2EterniaCrystal,
     /// `NPCID.DD2WitherBeastT2` (568) — the Old One's Army's ethereal
     /// caster-beast (`NPC.cs`: 18×40, aiStyle 107, 500 HP, dmg 50, def 30,
     /// kb 0.15; the aura + the self-heal + the 683 crystal shots).
@@ -635,6 +642,8 @@ impl NpcKind {
             NpcKind::DD2DarkMage => 106,
             NpcKind::DD2Betsy => 107,
             NpcKind::DD2WitherBeast => 108,
+            NpcKind::DD2Bartender => 109,
+            NpcKind::DD2EterniaCrystal => 110,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -754,6 +763,8 @@ impl NpcKind {
             106 => NpcKind::DD2DarkMage,
             107 => NpcKind::DD2Betsy,
             108 => NpcKind::DD2WitherBeast,
+            109 => NpcKind::DD2Bartender,
+            110 => NpcKind::DD2EterniaCrystal,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -977,6 +988,9 @@ impl NpcKind {
             NpcKind::DD2Betsy => (190.0, 90.0),
             // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
             NpcKind::DD2WitherBeast => (18.0, 40.0),
+            // The tavernkeeper + the etherian crystal: 18x40 / 40x40.
+            NpcKind::DD2Bartender => (18.0, 40.0),
+            NpcKind::DD2EterniaCrystal => (40.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -1216,6 +1230,9 @@ impl NpcKind {
             NpcKind::DD2Betsy => 50000,
             // The WitherBeast: 500 HP.
             NpcKind::DD2WitherBeast => 500,
+            // The tavernkeeper 250, the crystal 1000 (`NPC.cs`'s rows).
+            NpcKind::DD2Bartender => 250,
+            NpcKind::DD2EterniaCrystal => 1000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1361,6 +1378,9 @@ impl NpcKind {
             NpcKind::DD2Betsy => 80,
             // The WitherBeast: dmg 50.
             NpcKind::DD2WitherBeast => 50,
+            // The tavernkeeper 10, the crystal 0 (its contact damage is 0).
+            NpcKind::DD2Bartender => 10,
+            NpcKind::DD2EterniaCrystal => 0,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -2044,6 +2064,9 @@ impl Npc {
             NpcKind::DD2Betsy => 0.0,
             // The WitherBeast: kb 0.15.
             NpcKind::DD2WitherBeast => 0.15,
+            // The tavernkeeper 0.5, the crystal 0.
+            NpcKind::DD2Bartender => 0.5,
+            NpcKind::DD2EterniaCrystal => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -2217,6 +2240,9 @@ impl Npc {
             NpcKind::DD2Betsy => 38,
             // The WitherBeast: def 30.
             NpcKind::DD2WitherBeast => 30,
+            // The tavernkeeper 15, the crystal 14.
+            NpcKind::DD2Bartender => 15,
+            NpcKind::DD2EterniaCrystal => 14,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -2381,7 +2407,9 @@ impl Npc {
             | NpcKind::DD2SkeletonT3
             | NpcKind::DD2DarkMage
             | NpcKind::DD2Betsy
-            | NpcKind::DD2WitherBeast => 0.0,
+            | NpcKind::DD2WitherBeast
+            | NpcKind::DD2EterniaCrystal
+            | NpcKind::DD2Bartender => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2568,6 +2596,7 @@ impl Npc {
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
             NpcKind::Guide
+            | NpcKind::DD2Bartender
             | NpcKind::Merchant
             | NpcKind::Dryad
             | NpcKind::Nurse
@@ -2683,6 +2712,10 @@ impl Npc {
             NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
             // The WitherBeast: aiStyle 107's aura/self-heal machine.
             NpcKind::DD2WitherBeast => self.update_wither_beast(world, player, rng),
+            // The tavernkeeper: the town-NPC walker (aiStyle 7).
+            NpcKind::DD2Bartender => self.update_guide(world, dt),
+            // The etherian crystal: aiStyle 105's machine.
+            NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
@@ -2952,6 +2985,18 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 14;
                 }
+            }
+            // The tavernkeeper: the humanoid 16-frame strip.
+            NpcKind::DD2Bartender => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 16;
+                }
+            }
+            // The etherian crystal: the 1-frame strip.
+            NpcKind::DD2EterniaCrystal => {
+                self.frame = 0;
             }
             // The Dark Mage: the 20-frame caster strip.
             NpcKind::DD2DarkMage => {
@@ -6038,6 +6083,19 @@ impl Npc {
     /// 60-tick self-heal (`lifeMax / 20` capped to the missing hp); the
     /// wave ramp rides `localAI[3]` (the port's `caster_counter`); the
     /// 683 crystal shots ride the shooter block (the follow-up).
+    /// `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`) — the Etherian
+    /// Crystal's machine. The spawn-in shield: `localAI[0]` counts to 180
+    /// (the port's `caster_counter`) while `dontTakeDamage` holds; the
+    /// count's expiry makes the crystal vulnerable. The hp's tier is baked
+    /// by the `SetDefaults` row (the 1000/3000/5000 difficulty arms ride
+    /// the difficulty system); the lane spawning + the 600-tick win-death
+    /// (`DD2Event.StopInvasion`) = the follow-ups.
+    fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+        self.caster_counter += 1;
+        self.dont_take_damage = self.caster_counter < 180;
+        let _ = (world, player);
+    }
+
     fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -7802,6 +7860,8 @@ impl Npc {
             NpcKind::DD2DarkMage => 106,
             NpcKind::DD2Betsy => 107,
             NpcKind::DD2WitherBeast => 108,
+            NpcKind::DD2Bartender => 109,
+            NpcKind::DD2EterniaCrystal => 110,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

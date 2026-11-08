@@ -797,6 +797,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Wither Beast",
     },
     BestiaryEntryDef {
+        credit_id: "DD2Bartender",
+        net_id: 550,
+        kind: NpcKind::DD2Bartender,
+        variant: None,
+        quick_unlock: false,
+        name: "Bartender",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2EterniaCrystal",
+        net_id: 548,
+        kind: NpcKind::DD2EterniaCrystal,
+        variant: None,
+        quick_unlock: false,
+        name: "Eternia Crystal",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,
