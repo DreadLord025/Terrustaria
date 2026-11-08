@@ -32,7 +32,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // `Item.cs:49385`).
         for spawn in app.wiring.take_statue_spawns() {
             match spawn {
-                tr_core::wiring::StatueSpawn::Npc { x, y, npc_id } => {
+                tr_core::wiring::StatueSpawn::Npc { x, y, npc_id, .. } => {
                     // The C# NPC id → the ported kind (the Blue Slime 1 and
                     // the Demon Eye 2; the rest arrive with M4-NPC-1's
                     // families).
@@ -64,7 +64,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         app.npcs.push(npc);
                     }
                 }
-                tr_core::wiring::StatueSpawn::Item { x, y, item_id } => {
+                tr_core::wiring::StatueSpawn::Item { x, y, item_id, .. } => {
                     // `Item.MechSpawn` (`Item.cs:49385-49405`): the same caps
                     // over the dropped items of the same C# item id.
                     if !crate::wiring_stub::item_mech_spawn(
@@ -84,6 +84,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         phase: 0.0,
                     });
                 }
+                // The `cap_ids` (both variants' `MechSpawn` arguments) and the
+                // teleporting-statue / boulder-statue requests land with
+                // M7-WIRE-2 phase 4, together with the generalized NPC-cap
+                // group table and the bottom-center spawn helper.
+                tr_core::wiring::StatueSpawn::Teleport { .. }
+                | tr_core::wiring::StatueSpawn::Boulder { .. } => {}
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
