@@ -1723,6 +1723,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The Hungry init (`localAI[0]` 1 → 2): the 11 Hungries along the
         // band (`ai[0] = i * 0.1 - 0.05`); the eye/mouth mirrors (114) are
         // the render follow-up.
+        // The mirror eyes (`:26041-26051`): the two 114s at the band
+        // mid + the drawTop/drawBottom halves, the ai[0] sign picks the
+        // half each chases.
+        for top in [true, false] {
+            let ey = if top {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_top) * 0.5
+            } else {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) * 0.5
+            };
+            let mut eye = Npc::new(NpcKind::WallOfFleshEye, wof.x, ey, wof.facing, 0.0);
+            eye.hp = eye.max_hp;
+            eye.ai[0] = if top { 1.0 } else { -1.0 };
+            app.npcs.push(eye);
+        }
         if wof.wants_hungry {
             let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
             for i in 0..11 {

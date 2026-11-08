@@ -376,6 +376,9 @@ pub enum NpcKind {
     /// `NPCID.SkeletronHand` (36) — the Skeletron's tether hand (`aiStyle
     /// 12`, `NPC.cs:9183-9196`: 52x52, dmg 20, def 14, 600 HP, kb 0).
     SkeletronHand,
+    /// `NPCID.WallOfFleshEye` (114) — the WoF's mirror eye (`aiStyle 28`,
+    /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life).
+    WallOfFleshEye,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -655,6 +658,8 @@ impl NpcKind {
             NpcKind::GolemHeadFree => 77,
             NpcKind::Deerclops => 78,
             NpcKind::SkeletronHand => 79,
+            NpcKind::WallOfFleshEye => 80,
+            NpcKind::WallOfFleshEye => 80,
         }
     }
 
@@ -765,6 +770,7 @@ impl NpcKind {
             77 => NpcKind::GolemHeadFree,
             78 => NpcKind::Deerclops,
             79 => NpcKind::SkeletronHand,
+            80 => NpcKind::WallOfFleshEye,
             _ => return None,
         })
     }
@@ -941,6 +947,7 @@ impl NpcKind {
             // `SetDefaults` 668 (`:17451-17452`): 60x154.
             NpcKind::Deerclops => (60.0, 154.0),
             NpcKind::SkeletronHand => (52.0, 52.0),
+            NpcKind::WallOfFleshEye => (100.0, 100.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -1131,6 +1138,7 @@ impl NpcKind {
             // `:17456`: 7000.
             NpcKind::Deerclops => 7000,
             NpcKind::SkeletronHand => 600,
+            NpcKind::WallOfFleshEye => 8000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -1264,6 +1272,7 @@ impl NpcKind {
             // `:17455`: 20.
             NpcKind::Deerclops => 20,
             NpcKind::SkeletronHand => 20,
+            NpcKind::WallOfFleshEye => 50,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1934,6 +1943,7 @@ impl Npc {
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
             NpcKind::Deerclops => 0.0,
             NpcKind::SkeletronHand => 0.0,
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
@@ -2093,6 +2103,7 @@ impl Npc {
             // `:17457`: 10.
             NpcKind::Deerclops => 10,
             NpcKind::SkeletronHand => 14,
+            NpcKind::WallOfFleshEye => 0,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -2174,6 +2185,7 @@ impl Npc {
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
             NpcKind::Deerclops => 50000.0,
             NpcKind::SkeletronHand => 0.0,
+            NpcKind::WallOfFleshEye => 80000.0,
             NpcKind::Zombie => 60.0,
             // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
             NpcKind::Skeleton => 100.0,
@@ -2430,6 +2442,7 @@ impl Npc {
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
+            NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
@@ -2600,6 +2613,10 @@ impl Npc {
             NpcKind::SkeletronHand => {
                 // The hand's single frame (`NPC.cs` has no FindFrame case
                 // for type 36 — the strip is one frame).
+                self.frame = 0;
+            }
+            NpcKind::WallOfFleshEye => {
+                // The single frame — no FindFrame case for type 114.
                 self.frame = 0;
             }
             // The goblins: the 16/21/20-frame humanoid strips (the same
@@ -5961,6 +5978,83 @@ impl Npc {
     /// `home` field pair). The classic-only: the passive shadow hands
     /// (the expert arm) fold out; the life ramp feeds only the speed
     /// (`:44645`'s 3.5+1).
+    /// The WoF's mirror eye (`aiStyle 28`, `NPC.cs:26053-26208`): the
+    /// life/X mirror, the Y target `(band mid + drawTop/Bottom) / 2` chased
+    /// at ±1 capped ±5, the eye-laser volley (the 600-tick idle → 4-shot
+    /// bursts at 46-tick intervals, projectile 83 at the ramp 11/12/13).
+    /// The parent anchor rides the World's WoF fields (the write-through).
+    fn update_wof_eye(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        if !world.wof_present {
+            // `wofNPCIndex < 0` → the eye deactivates (the sim holds the
+            // despawn — the port mirrors via hp).
+            self.hp = 0;
+            return;
+        }
+        // The life mirror (`:26061-26064`) + the X/direction mirror.
+        self.x = world.wof_x - w * 0.5;
+        self.facing = if world.wof_x >= pcx { 1 } else { -1 };
+        let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
+        let top_half = self.ai[0] > 0.0;
+        let target_y = if top_half {
+            (band_mid + world.wof_draw_top) * 0.5
+        } else {
+            (band_mid + world.wof_draw_bottom) * 0.5 - h * 0.5
+        };
+        self.vy += (target_y - (self.y + h * 0.5)).signum() * 1.0;
+        self.vy = self.vy.clamp(-5.0, 5.0);
+        self.y += self.vy;
+        // The volley (`:26125-26206`): the idle 600, then the 46-tick
+        // shots in bursts of 4.
+        self.ai[1] += 1.0;
+        if world.wof_hp_ratio < 0.5 {
+            self.ai[1] += 1.0;
+        }
+        if world.wof_hp_ratio < 0.25 {
+            self.ai[1] += 1.0;
+        }
+        if self.ai[2] == 0.0 && self.ai[1] > 600.0 {
+            self.ai[2] = 1.0;
+            self.ai[1] = 0.0;
+        }
+        if self.ai[2] > 0.0 && self.ai[1] > 45.0 {
+            let dx = pcx - cx;
+            let dy = pcy - (self.y + h * 0.5);
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let mut speed = 9.0;
+            let mut dmg = 11;
+            if world.wof_hp_ratio < 0.5 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.25 {
+                speed += 1.0;
+                dmg += 1;
+            }
+            if world.wof_hp_ratio < 0.1 {
+                speed += 2.0;
+                dmg += 2;
+            }
+            self.ai[1] = 0.0;
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 5.0 {
+                self.ai[2] = 0.0;
+            }
+            if crate::npc_ai::line_clear(world, (cx, self.y + h * 0.5), (pcx, pcy)) {
+                self.wants_hostile_shot.push((
+                    crate::projectile::EYE_LASER,
+                    cx,
+                    self.y + h * 0.5,
+                    dx / d * speed,
+                    dy / d * speed,
+                    dmg,
+                ));
+            }
+        }
+    }
+
     /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22613`): the
     /// tether return to the orbit slot `(headCenter.X - 200 * side,
     /// head.Y + 230)`, the 300-tick lunge cadence, the -8 rise to 200
@@ -6880,6 +6974,7 @@ impl Npc {
         h ^= match self.kind {
             NpcKind::Slime => 0,
             NpcKind::SkeletronHand => 79,
+            NpcKind::WallOfFleshEye => 80,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -7283,6 +7378,46 @@ mod tests {
     }
 
     #[test]
+    fn the_wof_eye_mirrors_and_volleys() {
+        // `aiStyle 28` (`NPC.cs:26053-26208`): the Y target rides the
+        // band halves, the volley's idle-600 -> 4-shot bursts at 46 ticks
+        // with the hp-ramped 83 damage.
+        let mut w = ground_air();
+        w.wof_present = true;
+        w.wof_x = 100.0 * 16.0;
+        w.wof_draw_top = 100.0 * 16.0;
+        w.wof_draw_bottom = 130.0 * 16.0;
+        w.wof_hp_ratio = 1.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 130.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut eye = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.ai[0] = 1.0;
+        // The full-hp eye: the 11-damage 83 at the 9 speed, idle 600.
+        eye.ai[2] = 1.0; // the burst window open
+        eye.ai[1] = 46.0;
+        let before = eye.wants_hostile_shot.len();
+        eye.update_wof_eye(&w, &player);
+        let shot = eye.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot.0, crate::projectile::EYE_LASER);
+        assert_eq!(shot.5, 11, "the classic damage");
+        let sp = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
+        assert!((sp - 9.0).abs() < 0.5, "the 9 speed ({sp})");
+        // The wounded boss racks the ramp (12/13 by the <50/<25 tiers).
+        w.wof_hp_ratio = 0.2;
+        let mut eye2 = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
+        eye2.hp = eye2.max_hp;
+        eye2.ai[0] = 1.0;
+        eye2.ai[2] = 1.0;
+        eye2.ai[1] = 46.0;
+        eye2.update_wof_eye(&w, &player);
+        let shot2 = eye2.wants_hostile_shot.last().copied().expect("the volley");
+        assert_eq!(shot2.5, 13, "the <25% ramp");
+        let before_count = eye.wants_hostile_shot.len() - before;
+        assert!(before_count >= 1, "the eye fires");
+    }
+
     fn the_skeletron_hand_tethers_and_lunges() {
         // `aiStyle 12` (`NPC.cs:22300-22613`): the orbit return to
         // `(headCenter.X - 200*side, head.Y + 230)`, the 300-tick lunge
