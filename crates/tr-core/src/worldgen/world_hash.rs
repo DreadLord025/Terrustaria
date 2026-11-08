@@ -105,8 +105,45 @@ mod tests {
     /// shell publishes `GenVars.temple`, and 137/237 join the frame-
     /// important boot statics — every world on every seed changes by
     /// design (the ANALYSIS section lands in Phase 7).
-    const SEED42_512: u32 = 992682600;
-    const DEFAULT_WORLD: u32 = 1041482865;
+    /// Re-pinned for M5-OCEAN phase 1: the vanilla beach geometry lands —
+    /// `GenVars.leftBeachEnd`/`rightBeachStart` drawn at the head of the
+    /// terrain step from the `Beaches` stream (`WorldGen.cs:11415-11440`:
+    /// `Next(300,340)`, the fixed-Right dungeon side adds 40 left / 20
+    /// right), the compact t²·30 edge ramp retires for the vanilla flat
+    /// shelf at sea level, and `SurfaceMap.beach` splits into the two
+    /// anchors (the living-tree anchors, the jungle/dungeon spans, the
+    /// edge flood and the sand-top rule all ride the new values — every
+    /// world on every seed changes by design).
+    /// Re-pinned for M5-OCEAN phase 2: the ocean sand/water family lands —
+    /// the faithful `Ocean Sand` (`WorldGen.cs:11580`) after the spans
+    /// planner, `Beaches` (`:14888`) and `Gravitating Sand` (`:15138`)
+    /// between `dungeon` and `ocean caves` (the carve itself: air/water/
+    /// sand prism, `TuneOceanDepth`'s seafloor curve, the wall wipe, the
+    /// shell anchors), the compact edge flood and fill sand-top rule
+    /// retire — every world on every seed changes by design.
+    /// Re-pinned for M5-OCEAN phase 3: the shape-level ocean-cave
+    /// placeholder retires for the faithful `WorldGen.oceanCave` walker
+    /// (`WorldGen.cs:76452-76713` — the shrinking ellipse, the sentinel-264
+    /// carve marker, the stalactite columns, the water shafts) on its own
+    /// `pass_rng("Create Ocean Caves")` stream (was `streams.drng` — the
+    /// accepted world change, the later `drng` consumers shift) — every
+    /// world on every seed changes by design.
+    /// Re-pinned for M5-OCEAN phase 4: the late water/sand passes land —
+    /// `Remove Water From Sand` (`WorldGen.cs:16211`) and `Shell Piles`
+    /// (`:16266`) before `slopes` (vanilla `:16211`/`:16266` → Smooth World
+    /// `:16419`), and the `Water Plants` seaweed arm (`:21973`) after the
+    /// vegetation family (its per-pass stream) — the shell blobs retype the
+    /// shore sand, the inland water clears, the seaweed grows — every world
+    /// on every seed changes by design.
+    /// Re-pinned for M5-OCEAN phase 5: the vegetation family lands — the
+    /// faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) in the
+    /// cacti step (the three zones, the beach coral 81 / seashells 324, the
+    /// middle cactus via `PlantCactus`, the sea oats 529, the retired compact
+    /// scatter) and the `AddTrees` beach palm arm (`:31372-31386`) in
+    /// `plant_trees`, with the ocean frame statics added — every world on
+    /// every seed changes by design.
+    const SEED42_512: u32 = 3862881231;
+    const DEFAULT_WORLD: u32 = 2822219158;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

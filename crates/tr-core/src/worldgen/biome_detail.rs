@@ -57,70 +57,6 @@ fn nactive(t: &Tile) -> bool {
     t.active() && (t.flags & FLAG_INACTIVE) == 0
 }
 
-/// The ocean caves (`OceanCaves`, `:15167-15191`): one winding shaft per
-/// ocean side (a `Next(3)` gate per side) from the surface down past the
-/// ocean floor, carved wide enough to walk. The shaft reuses the port's
-/// blob carve aimed at the beach ramps.
-pub(crate) fn pass_ocean_caves(
-    world: &mut World,
-    surface: &[i32],
-    beach: i32,
-    rng: &mut Rng,
-) {
-    for side in 0..2 {
-        if rng.range(0, 3) != 0 {
-            continue;
-        }
-        let x = if side == 0 {
-            rng.range(55, 95)
-        } else {
-            rng.range(world.width - 95, world.width - 55)
-        };
-        // The surface scan (`:15182-15184`): the first active tile down.
-        let mut y = 0;
-        while y < world.height - 2 && !active_at(world, x, y) {
-            y += 1;
-        }
-        if y >= world.height - 4 {
-            continue;
-        }
-        // The winding shaft down past the sea floor, then the terminal room.
-        let bottom = (surface[x as usize] + 60).min(world.height - 60);
-        let mut cx = x;
-        let mut cy = y;
-        while cy < bottom {
-            let w = if cy < y + 12 { 1 } else { 2 };
-            for dx in -w..=w {
-                let px = cx + dx;
-                if px < 2 || px >= world.width - 2 {
-                    continue;
-                }
-                let i = world.index(px, cy);
-                world.tiles[i] = Tile::default();
-            }
-            cy += 1;
-            if rng.range(0, 3) == 0 {
-                cx += rng.range(-1, 2);
-            }
-        }
-        // The terminal bubble room.
-        let r = rng.range(5, 9);
-        for px in (cx - r)..=(cx + r) {
-            for py in (cy - r)..=(cy + r) {
-                if px < 2 || py < 2 || px >= world.width - 2 || py >= world.height - 2 {
-                    continue;
-                }
-                let dist = ((px - cx) * (px - cx) + (py - cy) * (py - cy)) as f32;
-                if dist.sqrt() <= r as f32 {
-                    let i = world.index(px, py);
-                    world.tiles[i] = Tile::default();
-                }
-            }
-        }
-        let _ = beach;
-    }
-}
-
 /// The fragile-ice pockets (`FragileIceOverIceBiomeWater`, `:16667-16690`):
 /// the ice band's water tiles break their ice skin — the port carves the
 /// 1-3 tile holes into the ice sheet above the water pockets, so the frozen
@@ -177,7 +113,7 @@ pub(crate) fn pass_fragile_ice(world: &mut World, snow_start: i32, rng: &mut Rng
 /// verbatim. `growth.rs`'s `empty_tile_check` only exempts the ignore kind
 /// itself, which is the wrong semantics for the underground trees
 /// (the phase discovery Gap 2; the Decision-#13 local-slice precedent).
-fn empty_tile_check(
+pub(crate) fn empty_tile_check(
     world: &World,
     start_x: i32,
     end_x: i32,
