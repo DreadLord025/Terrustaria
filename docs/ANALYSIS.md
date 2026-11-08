@@ -6622,3 +6622,47 @@ The envelope and the ported bodies are 1:1; the deviations:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
+
+## Xorshift core unification (refactor-xorshift-unify)
+
+One xorshift64 core now feeds the worldgen streams and the wind walk alike
+(`crates/tr-core/src/rng.rs`, `pub struct Xorshift64(pub u64)`), replacing two
+private cores and two inlined copies of the same step. Before:
+
+- **`worldgen/noise.rs`'s `Rng`** — the worldgen contract: raw-XOR seeding
+  (`Rng(seed ^ const)` for the three `pipeline::Streams`, `Rng(seed ^
+  fnv1a64(name))` per pass), the high-32-bit word draw `next_u32`, plus
+  `range`/`chance`/`next_f64`.
+- **`wind.rs`'s private `Rng`** — the splitmix64 seeding (`from_seed`: the
+  `0x9E3779B97F4A7C15` add, the `0xBF58476D1CE4E5B9` and `0x94D049BB133111EB`
+  multiplies, the `0x2545F4914F6CDD1D` all-zero guard) with `next_int` taking
+  `next_u64`'s high half modulo.
+- **The duplicates** — `worldgen/temple.rs`'s `next_double` (= `next_f64`) and
+  `menu/mod.rs::random_name`'s inlined 13/7/17 triple.
+
+The step and the word extraction were already identical in both cores, so the
+unified struct carries both draw conventions: `next_u64` returns the full word,
+`next_u32` returns its HIGH 32 bits (the worldgen contract), `from_seed` is the
+splitmix seeding, and `range` (an empty range returns `lo` without a draw —
+wind's `next_int` was this function) / `chance` / `next_f64` round it out. The
+worldgen surface is unchanged: `noise.rs` re-exports the core as `Rng`
+(`pub(crate) use crate::rng::Xorshift64 as Rng`), so every pass's import and the
+seeding contract stay as they were, while `wind.rs`, `temple.rs` and
+`random_name` call the core directly.
+
+Byte-exactness is pinned, not assumed: `rng.rs`'s tests replay the
+pre-refactor cores **verbatim** — the worldgen `old_next_u32` (7 seeds × 512
+draws), wind's `old_next_int` over its real call-site ranges (5 seeds, 16
+range windows) and the splitmix chain over the seeds 0..4096 — while the
+suites that consumed the old cores (`deterministic_for_seed`, the worldgen
+replay-pair tests and the wind tests) stay green unchanged.
+
+- **Out:** the ported C# stream `FastRandom` (`tile_light/palette.rs`, the
+  48-bit LCG) stays as it is — the `UnifiedRandom` replay, not this core;
+  `audio.rs`'s xorshift64*** (the 12/25/27 triple with the `0x2545F4914F6CDD1D`
+  multiplier) is a different core and stays; the ~13 other copies of the
+  splitmix64 finalizer — `spawner.rs`'s splitmix core misnamed `FastRandom`, the
+  `next_rand`/`rand01` streams of `rain.rs`/`sand.rs`/`chest_gen.rs`/
+  `prefix.rs`/`mount.rs`/`app/frame.rs`, `wiring.rs`'s LCG + finalizer — and
+  `flame.rs`'s second 48-bit LCG copy are recorded as a follow-up engineering
+  row.
