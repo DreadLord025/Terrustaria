@@ -167,6 +167,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Painter => &[],
         NpcKind::WitchDoctor => &[],
         NpcKind::Clothier => &[],
+        // `NPCID.cs:8247-8253`: the Travelling Merchant's `SpecificallyImmuneTo`
+        // row — the Confused debuff (31).
+        NpcKind::TravellingMerchant => &[31],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
@@ -237,7 +240,23 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::MartianSaucerCannon
         | NpcKind::MartianSaucerCore
         | NpcKind::FlyingDutchman
-        | NpcKind::FlyingDutchmanCannon => &[],
+        | NpcKind::FlyingDutchmanCannon
+        | NpcKind::DD2GoblinT1
+        | NpcKind::DD2GoblinT2
+        | NpcKind::DD2GoblinT3
+        | NpcKind::DD2GoblinBomberT1
+        | NpcKind::DD2GoblinBomberT2
+        | NpcKind::DD2GoblinBomberT3
+        | NpcKind::DD2JavelinT1
+        | NpcKind::DD2JavelinT2
+        | NpcKind::DD2JavelinT3
+        | NpcKind::DD2SkeletonT1
+        | NpcKind::DD2SkeletonT3
+        | NpcKind::DD2DarkMage
+        | NpcKind::DD2Betsy
+        | NpcKind::DD2WitherBeast
+        | NpcKind::DD2Bartender
+        | NpcKind::DD2EterniaCrystal => &[],
         // The pirates: no `DebuffImmunitySets` rows.
         NpcKind::PirateDeckhand
         | NpcKind::PirateCaptainsMate
@@ -250,6 +269,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GolemFistRight
         | NpcKind::GolemHeadFree => &[],
         NpcKind::Deerclops => &[],
+        NpcKind::SkeletronHand => &[],
+        NpcKind::WallOfFleshEye => &[],
+        NpcKind::PrimeCannon => &[],
+        NpcKind::PrimeSaw => &[],
+        NpcKind::PrimeVice => &[],
+        NpcKind::PrimeLaser => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

@@ -46,27 +46,27 @@ use crate::assets;
 // --- Source strings (Localization `UI.*` / `LegacyMenu.*`, English) -----------
 
 /// `Language.GetText("UI.Submit")` (`UIVirtualKeyboard.cs:291`, `:327`).
-pub const SUBMIT: &str = "Submit";
+pub fn submit() -> String { crate::lang::text("UI.Submit") }
 /// `Language.GetText("UI.Cancel")` (`:314`, `:367`).
-pub const CANCEL: &str = "Cancel";
+pub fn cancel() -> String { crate::lang::text("UI.Cancel") }
 /// `Language.GetText("UI.SpaceButton")` (`:452`).
-pub const SPACE: &str = "Space";
+pub fn space() -> String { crate::lang::text("UI.SpaceButton") }
 /// The symbol toggle's own label (`CreateKeyboardButton("@%", 1, 4, 1)`, `:263`).
 pub const SYMBOL_BUTTON_LABEL: &str = "@%";
 /// `Lang.menu[45]` — the character-name keyboard's label
 /// (`UICharacterListItem.cs:199`, `LegacyMenu.45`).
-pub const ENTER_CHARACTER_NAME: &str = "Enter Character Name:";
+pub fn enter_character_name() -> String { crate::lang::menu(45) }
 /// `Lang.menu[48]` — the world-name keyboard's label
 /// (`UIWorldListItem.cs:418`, `LegacyMenu.48`).
-pub const ENTER_WORLD_NAME: &str = "Enter World Name:";
+pub fn enter_world_name() -> String { crate::lang::menu(48) }
 /// `Language.GetText("UI.EnterNewName")` — the chest-rename keyboard's label
 /// (`IngameFancyUI.cs:100`).
-pub const ENTER_NEW_NAME: &str = "Enter new name:";
+pub fn enter_new_name() -> String { crate::lang::text("UI.EnterNewName") }
 /// `Language.GetText("UI.Save")` — the desktop submit pair's label for the
 /// sign/chest contexts (`(this._editingSign || this._editingChest) ?
 /// Language.GetText("UI.Save") : Language.GetText("UI.Submit")`,
 /// `UIVirtualKeyboard.cs:327`).
-pub const SUBMIT_SAVE: &str = "Save";
+pub fn submit_save() -> String { crate::lang::text("UI.Save") }
 
 /// The default key labels, column bands of 10 (`DEFAULT_KEYS`, `:33`): the
 /// grid loop reads `DEFAULT_KEYS[j * 10 + i]` (`:223`), so the string is
@@ -898,7 +898,7 @@ pub fn draw(
             bg,
             border,
             KEY_TEXT_SCALE,
-            SPACE,
+            &space(),
             [1.0; 4],
         );
         // The backspace key (`:391-407`): the `VK_Backspace` icon at
@@ -930,7 +930,7 @@ pub fn draw(
             bg,
             border,
             KEY_TEXT_SCALE,
-            SUBMIT,
+            &submit(),
             if valid { [1.0; 4] } else { color::tint(GRAY) },
         );
         let (bg, border) = if in_rect(mouse, l.cancel) {
@@ -946,7 +946,7 @@ pub fn draw(
             bg,
             border,
             KEY_TEXT_SCALE,
-            CANCEL,
+            &cancel(),
             [1.0; 4],
         );
     } else {
@@ -955,9 +955,9 @@ pub fn draw(
         // 0.85 while hovered (`:334-343`, `:370-379`). The submit label is
         // `UI.Save` for the sign/chest contexts (`:327`).
         let submit_label = if request.context.editing_chest() {
-            SUBMIT_SAVE
+            submit_save()
         } else {
-            SUBMIT
+            submit()
         };
         let submit_hover = in_rect(mouse, l.submit);
         draw_panel_label(
@@ -966,7 +966,7 @@ pub fn draw(
             l.submit,
             [0.0, 12.0, 0.0, 12.0],
             if submit_hover { SUBMIT2_HOVER_SCALE } else { SUBMIT2_SCALE },
-            submit_label,
+            &submit_label,
             if submit_hover { [1.0; 4] } else { color::tint(SILVER) },
         );
         let cancel_hover = in_rect(mouse, l.cancel);
@@ -976,7 +976,7 @@ pub fn draw(
             l.cancel,
             [0.0, 12.0, 0.0, 12.0],
             if cancel_hover { SUBMIT2_HOVER_SCALE } else { SUBMIT2_SCALE },
-            CANCEL,
+            &cancel(),
             if cancel_hover { [1.0; 4] } else { color::tint(SILVER) },
         );
     }
@@ -1150,7 +1150,7 @@ mod tests {
     fn new_state_seeds_shift_on_empty_text() {
         // `:429-433` — empty starting text seeds `KeyState.Shift`.
         let seeded = KeyboardState::new(&Request {
-            label: ENTER_CHARACTER_NAME.into(),
+            label: enter_character_name(),
             initial: String::new(),
             allow_empty: true,
             max_length: 20,
@@ -1161,7 +1161,7 @@ mod tests {
         assert_eq!(seeded.text, "");
         // A non-empty start stays Default.
         let named = KeyboardState::new(&Request {
-            label: ENTER_WORLD_NAME.into(),
+            label: enter_world_name(),
             initial: "World 1".into(),
             allow_empty: true,
             max_length: 27,

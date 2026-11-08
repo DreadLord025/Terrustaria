@@ -228,6 +228,27 @@ pub fn load_world_images(
         "Extra_164",
         "Extra_169",
         "Extra_204",
+        // The M2-MOUNT-2 hover/flyer set (`Mount.cs:1163-2532`): Pigron, the
+        // Bee + its wing strip, the UFO + its glow, the Drill's three parts,
+        // CuteFishron, Witch Broom (Extra_113), Pirate Ship (166), Dark Mage
+        // Book (170), Lava Shark (172), Bat (274), Pixie (290/291).
+        "Mount_Pigron",
+        "Mount_Bee",
+        "Mount_BeeWings",
+        "Mount_UFO",
+        "Mount_UFOGlow",
+        "Mount_DrillRing",
+        "Mount_DrillSeat",
+        "Mount_DrillDiode",
+        "Mount_CuteFishron1",
+        "Mount_CuteFishron2",
+        "Extra_113",
+        "Extra_166",
+        "Extra_170",
+        "Extra_172",
+        "Extra_274",
+        "Extra_290",
+        "Extra_291",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -293,6 +314,12 @@ pub fn load_world_images(
         "NPC_247",
         "NPC_249",
         "NPC_668",
+        "NPC_36",
+        "NPC_114",
+        "NPC_128",
+        "NPC_129",
+        "NPC_130",
+        "NPC_131",
         "NPC_105",
         "NPC_107",
         "NPC_8",
@@ -309,6 +336,7 @@ pub fn load_world_images(
         "NPC_2",
         "NPC_3",
         "NPC_50",
+        "NPC_368",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -770,7 +798,13 @@ const FONT_LAYER_SIZE: f32 = 8192.0;
 /// Cyrillic, Greek, CJK, Kana, full Hangul), so this is where the localized
 /// strings become renderable text.
 pub fn load_fonts() -> LoadedFonts {
-    let names = ["Mouse_Text", "Item_Stack", "Death_Text", "Combat_Text", "Combat_Crit"];
+    let names = [
+        "Mouse_Text",
+        "Item_Stack",
+        "Death_Text",
+        "Combat_Text",
+        "Combat_Crit",
+    ];
     let Some(fonts_dir) = content_dir().map(|p| p.join("Fonts")) else {
         log::warn!("no Content/Fonts directory; text falls back to the bitmap font");
         return LoadedFonts {
@@ -831,9 +865,8 @@ pub fn load_fonts() -> LoadedFonts {
         rect_cursor += font.pages.len();
     }
     let mut slots = bound.into_iter();
-    let [ui, item, death, combat_text, combat_crit] = std::array::from_fn(|_| {
-        slots.next().and_then(|(f, _)| f)
-    });
+    let [ui, item, death, combat_text, combat_crit] =
+        std::array::from_fn(|_| slots.next().and_then(|(f, _)| f));
     LoadedFonts {
         atlas: Some(font_atlas),
         ui,
@@ -868,7 +901,12 @@ pub fn build_ui_font(
             out.glyphs.insert(
                 g.ch,
                 FontGlyph {
-                    uv: [u0 + half_texel, v0 + half_texel, u0 + w as f32 / FONT_LAYER_SIZE - half_texel, v0 + h as f32 / FONT_LAYER_SIZE - half_texel],
+                    uv: [
+                        u0 + half_texel,
+                        v0 + half_texel,
+                        u0 + w as f32 / FONT_LAYER_SIZE - half_texel,
+                        v0 + h as f32 / FONT_LAYER_SIZE - half_texel,
+                    ],
                     w: w as f32,
                     h: h as f32,
                     pad: [g.pad[0] as f32, g.pad[1] as f32],
@@ -1451,6 +1489,12 @@ impl Lookups {
                 atlas.sheet("NPC_247").copied(),
                 atlas.sheet("NPC_249").copied(),
                 atlas.sheet("NPC_668").copied(),
+                atlas.sheet("NPC_36").copied(),
+                atlas.sheet("NPC_114").copied(),
+                atlas.sheet("NPC_128").copied(),
+                atlas.sheet("NPC_129").copied(),
+                atlas.sheet("NPC_130").copied(),
+                atlas.sheet("NPC_131").copied(),
                 atlas.sheet("NPC_399").copied(),
                 atlas.sheet("NPC_388").copied(),
                 atlas.sheet("NPC_381").copied(),
@@ -1463,6 +1507,23 @@ impl Lookups {
                 atlas.sheet("NPC_395").copied(),
                 atlas.sheet("NPC_491").copied(),
                 atlas.sheet("NPC_492").copied(),
+                atlas.sheet("NPC_552").copied(),
+                atlas.sheet("NPC_553").copied(),
+                atlas.sheet("NPC_554").copied(),
+                atlas.sheet("NPC_555").copied(),
+                atlas.sheet("NPC_556").copied(),
+                atlas.sheet("NPC_557").copied(),
+                atlas.sheet("NPC_561").copied(),
+                atlas.sheet("NPC_562").copied(),
+                atlas.sheet("NPC_563").copied(),
+                atlas.sheet("NPC_566").copied(),
+                atlas.sheet("NPC_567").copied(),
+                atlas.sheet("NPC_564").copied(),
+                atlas.sheet("NPC_551").copied(),
+                atlas.sheet("NPC_568").copied(),
+                atlas.sheet("NPC_550").copied(),
+                atlas.sheet("NPC_548").copied(),
+                atlas.sheet("NPC_368").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

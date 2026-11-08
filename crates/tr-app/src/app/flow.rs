@@ -306,15 +306,15 @@ pub(crate) trait FrontScreenBehaviours {
     /// Player" / "Select World"). The creation screens and the keyboard draw
     /// their own title pieces (the keyboard's label is the session's
     /// [`ui::keyboard::Request::label`]), so they have none.
-    fn header(&self) -> &'static str;
+    fn header(&self) -> String;
 
     /// The header's Death-font width (`UITextPanel.cs:126-131`, the
     /// `App::front_header_w` convention) measured over the draw pass — the
     /// select screens' draw prologue.
     fn header_w(&self, d: &FrontDraw<'_>) -> f32 {
         match &d.lookups.death_font {
-            Some(f) => font_width(f, self.header(), 1.0),
-            None => d.renderer.text_width(self.header(), 1.0),
+            Some(f) => font_width(f, &self.header(), 1.0),
+            None => d.renderer.text_width(&self.header(), 1.0),
         }
     }
 
@@ -337,13 +337,13 @@ pub(crate) trait FrontScreenBehaviours {
 }
 
 impl FrontScreenBehaviours for FrontScreen {
-    fn header(&self) -> &'static str {
+    fn header(&self) -> String {
         match self {
-            FrontScreen::CharSelect => ui::char_select::SELECT_PLAYER,
-            FrontScreen::WorldSelect => ui::world_select::SELECT_WORLD,
+            FrontScreen::CharSelect => ui::char_select::select_player(),
+            FrontScreen::WorldSelect => ui::world_select::select_world(),
             // The creation screens and the keyboard draw their own title
             // pieces; no static `UITextPanel`.
-            _ => "",
+            _ => String::new(),
         }
     }
 
@@ -419,7 +419,7 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::CharSelect => {
                 let l = ui::char_select::resolved_layout(
                     screen,
-                    app.front_header_w(self.header()),
+                    app.front_header_w(&self.header()),
                     app.players.len(),
                 );
                 let favorites: Vec<bool> = app.players.iter().map(|p| p.is_favorite).collect();
@@ -461,7 +461,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                label: ui::keyboard::enter_character_name(),
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 20,
@@ -556,7 +556,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         let back = FrontScreen::CharCreation(state);
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                label: ui::keyboard::enter_character_name(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::char_creation::MAX_NAME_LENGTH,
@@ -574,7 +574,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             let back = FrontScreen::CharCreation(state);
                             app.open_keyboard_with_tail(
                                 ui::keyboard::Request {
-                                    label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                    label: ui::keyboard::enter_character_name(),
                                     initial: String::new(),
                                     allow_empty: false,
                                     max_length: ui::char_creation::MAX_NAME_LENGTH,
@@ -683,7 +683,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         // empty even on a renamed draft (`:693`).
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
@@ -713,7 +713,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     Nav::NameAndCreate(draft) => {
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: String::new(),
                                 allow_empty: false,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
@@ -745,7 +745,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // lives on `char_select` and serves both hit-tests.
                 let l = ui::char_select::resolved_layout(
                     screen,
-                    app.front_header_w(self.header()),
+                    app.front_header_w(&self.header()),
                     app.worlds.len(),
                 );
                 let favorites: Vec<bool> = app.worlds.iter().map(|w| w.is_favorite).collect();
@@ -797,7 +797,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
-                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                label: ui::keyboard::enter_world_name(),
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 27,
@@ -1159,7 +1159,7 @@ pub(crate) mod front_flow_tests {
         // the Task 6 gap, the creation screen joins with Task 7.
         let session = || {
             let request = ui::keyboard::Request {
-                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                label: ui::keyboard::enter_character_name(),
                 initial: String::new(),
                 allow_empty: true,
                 max_length: 20,
@@ -1390,13 +1390,27 @@ pub(crate) mod front_flow_tests {
             local_id: 0,
             net_timer: 0.0,
             net_state: crate::net::client_state::NOT_CONNECTED,
-            net_chunks: Vec::new(),
+            net_pending_sections: Vec::new(),
             net_info: None,
             net_status_text: String::new(),
             net_status_max: 0,
             net_status_count: 0,
             net_last_recv: std::time::Instant::now(),
             net_dropped: false,
+            net_npcs: std::collections::HashMap::new(),
+            net_npc_seen: Vec::new(),
+            net_npcs_seen_at: std::collections::HashMap::new(),
+            net_npcs_dirty: false,
+            net_npc_gen: std::collections::HashMap::new(),
+            net_items: std::collections::HashMap::new(),
+            net_items_dirty: false,
+            net_item_last: std::collections::HashMap::new(),
+            net_reserved: std::collections::HashMap::new(),
+            net_ps_last: crate::net::PlayerState::default(),
+            net_beat: 0,
+            net_module_beat: 0,
+            net_ping_at: None,
+            net_rtt_ms: 0,
             join_target: None,
             map: None,
             map_grab: None,
@@ -1477,6 +1491,7 @@ pub(crate) mod front_flow_tests {
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
             ambience_rng: 1,
+            clock_rng: 7,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
@@ -1524,7 +1539,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         app.mouse_pos = Vec2::new(l.back[0] + l.back[2] * 0.5, l.back[1] + l.back[3] * 0.5);
@@ -1548,7 +1563,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         let delete = ui::char_select::card_layout(l.list, 0).delete;
@@ -1580,7 +1595,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.front_header_w(&ui::world_select::select_world()),
             app.worlds.len(),
         );
         let delete = ui::world_select::card_layout(l.list, 0, false).delete;
@@ -1636,7 +1651,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.front_header_w(&ui::world_select::select_world()),
             app.worlds.len(),
         );
         let new = l.new;
@@ -1711,7 +1726,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("the name plate opens the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_WORLD_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_world_name());
         assert!(session.request.initial.is_empty(), "the box opens empty");
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 27);
@@ -1789,7 +1804,7 @@ pub(crate) mod front_flow_tests {
     /// `RenameButtonClick` builds (`UICharacterListItem.cs:196-206`).
     fn keyboard_app() -> App {
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            label: ui::keyboard::enter_character_name(),
             initial: "Bob".into(),
             allow_empty: true,
             max_length: 20,
@@ -1820,7 +1835,7 @@ pub(crate) mod front_flow_tests {
         );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         let rename = ui::char_select::card_layout(l.list, 0).rename;
@@ -1829,7 +1844,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("the rename click opens the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_character_name());
         assert_eq!(session.request.initial, "Bob");
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
@@ -1873,7 +1888,7 @@ pub(crate) mod front_flow_tests {
         // `:763-766`: `Main.inputTextEnter && CanSubmit` — an empty text with
         // `allowEmpty: false` keeps the keyboard up; typing fixes it.
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            label: ui::keyboard::enter_character_name(),
             initial: String::new(),
             allow_empty: false,
             max_length: 20,
@@ -1923,7 +1938,7 @@ pub(crate) mod front_flow_tests {
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("TR_UI=vk presets the keyboard");
         };
-        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert_eq!(session.request.label, ui::keyboard::enter_character_name());
         assert!(
             session.state.text.is_empty(),
             "the fresh name is empty (`Player.cs:826`)"
@@ -1944,7 +1959,7 @@ pub(crate) mod front_flow_tests {
         // `Close(quiet: true)` tail (`IngameFancyUI.cs:148-156`) closes into
         // gameplay even on the chest<0 no-op (`ChestUI.cs:844-848`).
         let request = ui::keyboard::Request {
-            label: ui::keyboard::ENTER_NEW_NAME.into(),
+            label: ui::keyboard::enter_new_name(),
             initial: String::new(),
             allow_empty: false,
             max_length: 20,
@@ -1999,7 +2014,7 @@ pub(crate) mod front_flow_tests {
         let (sw, sh) = app.screen_size();
         let l = ui::char_select::resolved_layout(
             Vec2::new(sw, sh),
-            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.front_header_w(&ui::char_select::select_player()),
             app.players.len(),
         );
         click_creation(&mut app, l.new);

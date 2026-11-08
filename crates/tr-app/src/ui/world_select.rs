@@ -32,9 +32,9 @@ use tr_render::SpriteRenderer;
 
 use super::cards::{button_sheet, draw_card_button, draw_inner_panel, fat_button_style, header_style};
 use super::char_select::{
-    button_label, list_content_height, resolved_layout, scrollbar_attaches, Layout, BACK,
+    button_label, list_content_height, resolved_layout, scrollbar_attaches, Layout,
     BUTTON_DELETE, BUTTON_FAVORITE, BUTTON_PLAY, BUTTON_RENAME, CARD_BG_REST, CARD_BORDER_HOVER,
-    CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH, CONTAINER_PANEL_BG, GRAY, NEW,
+    CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH, CONTAINER_PANEL_BG, GRAY,
 };
 use super::color;
 use super::hover_pair;
@@ -55,13 +55,18 @@ pub use super::save_list::sort_worlds;
 // --- Source strings (Localization `UI.*`, English) -----------------------------
 
 /// `UI.SelectWorld` — the header text (`UIWorldSelect.cs:62`).
-pub const SELECT_WORLD: &str = "Select World";
+pub fn select_world() -> String {
+    crate::lang::text("UI.SelectWorld")
+}
 
 /// `UI.WorldSizeFormat` — `"{0} World"` (`UIWorldListItem.cs:522`), filled with
 /// `WorldSizeName` (`WorldFileData.cs:336-342` = `UI.WorldSizeSmall/Medium/
 /// Large`, "Small"/"Medium"/"Large"; the port's `size_id` buckets it,
-/// `save_list::size_bucket`).
-pub const SIZE_NAMES: [&str; 3] = ["Small", "Medium", "Large"];
+/// `save_list::size_bucket`). The three size labels resolve `Lang.menu[92..94]`
+/// (`UIWorldCreation.cs:368-370` sets the same names).
+pub fn size_name(size_id: u8) -> String {
+    crate::lang::menu(92 + size_id.min(2) as usize)
+}
 
 // --- Card metrics ---------------------------------------------------------------
 
@@ -139,10 +144,10 @@ pub fn joinable(active_difficulty: u8, world_difficulty: u8) -> bool {
 /// else `num` 2 -> `UI.Expert` + `Main.mcColor` (`:72-75`), `num` 3 ->
 /// `UI.Master` + `Main.hcColor` (`:76-79`), the `default`/`num` 1 arm ->
 /// `UI.Normal` "Classic" + `Color.White` (`:69-71`).
-pub fn difficulty_text(game_mode: u8) -> (&'static str, [u8; 4]) {
+pub fn difficulty_text(game_mode: u8) -> (String, [u8; 4]) {
     if game_mode == 3 {
         // `:47-52` — `UI.Creative`, checked before the switch.
-        return ("Journey", uistate::CREATIVE_MODE_COLOR);
+        return (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR);
     }
     let mut num = 1usize;
     match game_mode {
@@ -154,9 +159,9 @@ pub fn difficulty_text(game_mode: u8) -> (&'static str, [u8; 4]) {
     // (no FTW field on `save_list::WorldEntry`), so `num == 4` (Legendary)
     // never fires.
     match num {
-        2 => ("Expert", uistate::MC_COLOR),   // `:72-75`
-        3 => ("Master", uistate::HC_COLOR),   // `:76-79`
-        _ => ("Classic", [255, 255, 255, 255]), // `default:` -> `UI.Normal` (`:69-71`)
+        2 => (crate::lang::text("UI.Expert"), uistate::MC_COLOR), // `:72-75`
+        3 => (crate::lang::text("UI.Master"), uistate::HC_COLOR), // `:76-79`
+        _ => (crate::lang::text("UI.Normal"), [255, 255, 255, 255]), // `UI.Normal` (`:69-71`)
     }
 }
 
@@ -585,22 +590,20 @@ fn draw_card(
         c.difficulty_panel[2],
     );
     let (diff_text, diff_color) = difficulty_text(entry.difficulty);
-    let diff_w = hud_text_width(r, lookups, diff_text, 1.0);
+    let diff_w = hud_text_width(r, lookups, &diff_text, 1.0);
     border_string(
         r,
         lookups,
         c.difficulty_panel[0] + c.difficulty_panel[2] * 0.5 - diff_w * 0.5,
         c.difficulty_panel[1] + 3.0,
         color::tint(diff_color),
-        diff_text,
+        &diff_text,
     );
     // Size panel (`:515-524`): `"{0} World"` with the `WorldSizeName`, White,
     // centred the same way.
     draw_inner_panel(r, lookups, c.size_panel[0], c.size_panel[1], c.size_panel[2]);
-    let size_text = format!(
-        "{} World",
-        SIZE_NAMES[(entry.size_id as usize).min(SIZE_NAMES.len() - 1)]
-    );
+    let size_text =
+        crate::lang::text_args("UI.WorldSizeFormat", &[size_name(entry.size_id)]);
     let size_w = hud_text_width(r, lookups, &size_text, 1.0);
     border_string(
         r,
@@ -619,7 +622,8 @@ fn draw_card(
         c.created_panel[1],
         c.created_panel[2],
     );
-    let created = format!("Created: {}", created_text(entry.path.as_deref()));
+    let created =
+        crate::lang::text_args("UI.WorldCreatedFormat", &[created_text(entry.path.as_deref())]);
     let created_w = hud_text_width(r, lookups, &created, 1.0);
     border_string(
         r,
@@ -705,17 +709,17 @@ fn draw_card(
         if button == BUTTON_DELETE {
             // `Left -30, HAlign 1` (`:166-170`): the right edge anchors, the
             // text grows leftward.
-            let w = hud_text_width(r, lookups, text, 1.0);
+            let w = hud_text_width(r, lookups, &text, 1.0);
             border_string(
                 r,
                 lookups,
                 c.delete_label[0] - w,
                 c.delete_label[1] - 2.0,
                 [1.0; 4],
-                text,
+                &text,
             );
         } else {
-            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], text);
+            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], &text);
         }
     }
 
@@ -785,7 +789,7 @@ pub fn draw(
         lookups,
         l.header,
         &header_style(),
-        SELECT_WORLD,
+        &select_world(),
         header_w,
         false,
     );
@@ -797,8 +801,8 @@ pub fn draw(
         lookups,
         l.back,
         &fat_button_style(),
-        BACK,
-        large_text_width(r, lookups, BACK),
+        &super::char_select::back(),
+        large_text_width(r, lookups, &super::char_select::back()),
         in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
@@ -806,8 +810,8 @@ pub fn draw(
         lookups,
         l.new,
         &fat_button_style(),
-        NEW,
-        large_text_width(r, lookups, NEW),
+        &super::char_select::new_button(),
+        large_text_width(r, lookups, &super::char_select::new_button()),
         in_rect(mouse, l.new),
     );
 }
@@ -1022,13 +1026,13 @@ mod tests {
     fn difficulty_texts_follow_the_getdifficulty_map() {
         // `AWorldListItem.cs:43-85` + the `UI.*` strings ("Normal" is
         // "Classic", `Main.cs:66765-66768` for the colours).
-        assert_eq!(difficulty_text(0), ("Classic", [255, 255, 255, 255]));
-        assert_eq!(difficulty_text(1), ("Expert", uistate::MC_COLOR));
-        assert_eq!(difficulty_text(2), ("Master", uistate::HC_COLOR));
-        assert_eq!(difficulty_text(3), ("Journey", uistate::CREATIVE_MODE_COLOR));
+        assert_eq!(difficulty_text(0), (crate::lang::text("UI.Normal"), [255, 255, 255, 255]));
+        assert_eq!(difficulty_text(1), (crate::lang::text("UI.Expert"), uistate::MC_COLOR));
+        assert_eq!(difficulty_text(2), (crate::lang::text("UI.Master"), uistate::HC_COLOR));
+        assert_eq!(difficulty_text(3), (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR));
         // GameMode 3 returns before the switch (`:47-52`).
         // The `default` arm catches every other GameMode (`:69-71`).
-        assert_eq!(difficulty_text(9).0, "Classic");
+        assert_eq!(difficulty_text(9).0, crate::lang::text("UI.Normal"));
         // The FTW bump (`:63-66`) is always +0 in the port, so `num == 4`
         // (Legendary) is unreachable — nothing maps to `UI.Legendary`.
     }
