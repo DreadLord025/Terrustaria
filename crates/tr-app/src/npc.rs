@@ -10519,6 +10519,34 @@ mod tests {
 
 
     #[test]
+    fn the_worm_segments_keep_the_single_frame_and_chain_rotation() {
+        // `FindFrame` has no case for 7..15 and `Main.npcFrameCount` 7..15
+        // = 1 (`Main.cs:67082`): the segments hold row 0; the chain's
+        // `rotation = atan2 + 1.57` (`AI_006`, `NPC.cs:51867-51922`) is
+        // the draw's tilt (the rotation branch now carries the worm kinds).
+        for kind in [
+            NpcKind::DevourerHead,
+            NpcKind::DevourerBody,
+            NpcKind::DevourerTail,
+            NpcKind::GiantWormHead,
+            NpcKind::GiantWormBody,
+            NpcKind::GiantWormTail,
+            NpcKind::EaterOfWorldsHead,
+            NpcKind::EaterOfWorldsBody,
+            NpcKind::EaterOfWorldsTail,
+        ] {
+            let mut s = bare(kind);
+            // `FindFrame` has no case — the frame stays at its
+            // `SetFrameSize` row 0 (the port's empty arm leaves it).
+            s.find_frame();
+            assert_eq!(s.frame, 0, "the {kind:?} segment starts at row 0");
+            s.find_frame();
+            assert_eq!(s.frame, 0, "the {kind:?} segment never advances");
+        }
+    }
+
+
+    #[test]
     fn the_golem_family_stats_and_maps() {
         // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the
         // kind<->u16 65-69, the bestiary fold (the parts -> the Golem
