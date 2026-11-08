@@ -1293,9 +1293,10 @@ mod tests {
         m.toggle(Toggle::LightMode);
         assert_eq!(m.settings.light_mode, 0, "four modes");
         m.toggle(Toggle::FrameSkip);
+        assert_eq!(m.settings.frame_skip, 0, "the vanilla Subtle default wraps to Off");
         m.toggle(Toggle::FrameSkip);
         m.toggle(Toggle::FrameSkip);
-        assert_eq!(m.settings.frame_skip, 0, "three modes");
+        assert_eq!(m.settings.frame_skip, 2, "three modes, back to Subtle");
     }
 
     #[test]
@@ -1506,7 +1507,10 @@ mod tests {
         m.mouse = Vec2::new(708.0, 332.0); // 84 px into the hit box: value 0.5
         m.drag_volume_screen(1600.0);
         assert_eq!(m.bar_grab, Some(0));
-        assert!((m.settings.music_volume - 0.75).abs() < 1e-6);
+        // The store waits for the lock it checks (`Main.cs:51540`), so the first
+        // frame leaves the bar at the default — now vanilla's 1f
+        // (`Main.cs:66857`), not the port's old 0.75.
+        assert!((m.settings.music_volume - 1.0).abs() < 1e-6);
         m.drag_volume_screen(1600.0);
         assert!((m.settings.music_volume - 0.5).abs() < 1e-6);
         // Sticky: dragging out past the bar's right edge keeps following — 797
@@ -1526,8 +1530,9 @@ mod tests {
         assert_eq!(m.bar_grab, Some(1));
         m.drag_volume_screen(1600.0);
         assert!((m.settings.sound_volume - 0.5).abs() < 1e-6);
-        // The ambient bar stayed put throughout.
-        assert!((m.settings.ambient_volume - 0.75).abs() < 1e-6);
+        // The ambient bar stayed put throughout — at vanilla's 1f default
+        // (`Main.cs:66858`).
+        assert!((m.settings.ambient_volume - 1.0).abs() < 1e-6);
     }
 
     #[test]

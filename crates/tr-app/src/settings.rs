@@ -22,11 +22,14 @@ pub struct Settings {
     pub map_enabled: bool,
     /// `Main.HidePassword`.
     pub hide_password: bool,
-    /// `Main.SettingPlayWhenUnfocused`.
+    /// `Main.SettingPlayWhenUnfocused`: default **false** — `static Main()`
+    /// (`Main.cs:66512`). The menuMode 11 row inverts it into the
+    /// "Pause When Unfocused" label ("Off" when the flag is true).
     pub play_when_unfocused: bool,
     /// `Main.showItemText`.
     pub pickup_text: bool,
-    /// `Main.invasionProgressMode`: 0 off, 1 timed, 2 on.
+    /// `Main.invasionProgressMode`: 0 off, 1 timed, 2 on; default **2** (On) —
+    /// `static Main()` (`Main.cs:67080`).
     pub event_progress: u8,
     /// `Main.placementPreview`.
     pub placement_preview: bool,
@@ -47,7 +50,8 @@ pub struct Settings {
     /// `Get("BackgroundParallax", ref bgScroll)` keeps it (`Main.cs:4405-4408`)
     /// — the screen shows "Parallax: 60" with the 0.88 backdrop factor.
     pub parallax_scroll: u8,
-    /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle.
+    /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle (`FrameSkipMode.cs:3-8`);
+    /// default **2** (Subtle) — `static Main()` (`Main.cs:67204`).
     pub frame_skip: u8,
     /// `Lighting.Mode`: 0 Color, 1 White, 2 Retro, 3 Trippy.
     pub light_mode: u8,
@@ -67,11 +71,11 @@ pub struct Settings {
     pub craft_from_nearby_chests: bool,
     /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
     pub zoom: f32,
-    /// `Main.musicVolume`.
+    /// `Main.musicVolume`: default **1f** — `static Main()` (`Main.cs:66857`).
     pub music_volume: f32,
-    /// `Main.soundVolume`.
+    /// `Main.soundVolume`: default **1f** — `static Main()` (`Main.cs:66859`).
     pub sound_volume: f32,
-    /// `Main.ambientVolume`.
+    /// `Main.ambientVolume`: default **1f** — `static Main()` (`Main.cs:66858`).
     pub ambient_volume: f32,
     /// `Main.MapScale`: saved as "MapScale" (`Main.cs:4202`), load-clamped
     /// [0.5, 1] (`:4494`), default 1 (`:67298`). P4 draws the reference 1.0
@@ -185,15 +189,20 @@ impl Default for Settings {
             auto_pause: false,
             map_enabled: true,
             hide_password: false,
-            play_when_unfocused: true,
+            // `Main.SettingPlayWhenUnfocused = false` (`Main.cs:66512`).
+            play_when_unfocused: false,
             pickup_text: true,
-            event_progress: 1,
+            // `Main.invasionProgressMode = 2` (`Main.cs:67080`) — the
+            // "Event Progress Bar: On" row of menuMode 1112.
+            event_progress: 2,
             placement_preview: true,
             highlight_new_items: true,
             tile_grid: false,
             gamepad_instructions: true,
             parallax_scroll: 60,
-            frame_skip: 0,
+            // `Main.FrameSkipMode = FrameSkipMode.Subtle` (`Main.cs:67204`), i.e.
+            // the enum's 2 (`Terraria/Enums/FrameSkipMode.cs:3-8`).
+            frame_skip: 2,
             light_mode: 0,
             quality: 0,
             background: true,
@@ -202,9 +211,12 @@ impl Default for Settings {
             tiles_sway: true,
             craft_from_nearby_chests: true,
             zoom: 1.0,
-            music_volume: 0.75,
-            sound_volume: 0.75,
-            ambient_volume: 0.75,
+            // `Main.musicVolume = 1f` (`Main.cs:66857`), `Main.ambientVolume =
+            // 1f` (`:66858`), `Main.soundVolume = 1f` (`:66859`) — the
+            // `static Main()` values, not the 0.75 the port used before.
+            music_volume: 1.0,
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
             map_scale: 1.0,
             minimap_frame: "Default".to_string(),
             mouse_color: [255, 50, 95, 255],      // Main.cs:67199
@@ -568,7 +580,9 @@ mod tests {
         assert!(!s.auto_pause);
         assert!(s.map_enabled);
         assert!(!s.hide_password);
-        assert!(s.play_when_unfocused);
+        // `Main.SettingPlayWhenUnfocused = false` (`Main.cs:66512`) — the
+        // port's `true` was a plain parity break.
+        assert!(!s.play_when_unfocused);
         assert!(s.placement_preview);
         assert!(!s.tile_grid);
         // `Main.bgScroll` is a plain static (`Main.cs:2429`) that a fresh config
@@ -577,13 +591,20 @@ mod tests {
         // and the keyless `Get("BackgroundParallax", ...)` keeps it
         // (`Main.cs:4405-4408`).
         assert_eq!(s.parallax_scroll, 60);
-        assert_eq!(s.frame_skip, 0);
+        // `Main.FrameSkipMode = FrameSkipMode.Subtle` (`Main.cs:67204`), the
+        // enum's 2 (`FrameSkipMode.cs:3-8`) — the port's 0 (Off) was wrong.
+        assert_eq!(s.frame_skip, 2);
         assert_eq!(s.light_mode, 0);
         assert_eq!(s.quality, 0);
         assert!(s.background);
         assert!(s.blood);
-        assert_eq!(s.event_progress, 1);
-        assert!((s.music_volume - 0.75).abs() < 1e-6);
+        // `Main.invasionProgressMode = 2` (`Main.cs:67080`).
+        assert_eq!(s.event_progress, 2);
+        // `Main.musicVolume = 1f` (`Main.cs:66857`), `Main.soundVolume = 1f`
+        // (`:66859`), `Main.ambientVolume = 1f` (`:66858`).
+        assert_eq!(s.music_volume, 1.0);
+        assert_eq!(s.sound_volume, 1.0);
+        assert_eq!(s.ambient_volume, 1.0);
         assert_eq!(s.map_scale, 1.0);
         assert_eq!(s.minimap_frame, "Default");
         // `Main.mouseColor = new Color(255, 50, 95)` (`Main.cs:67199`) and
