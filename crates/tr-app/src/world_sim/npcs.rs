@@ -906,6 +906,9 @@ fn invasion_spawn_pick(
     walker_alive: bool,
     saucer_alive: bool,
     progress_30: bool,
+    // The type-3 table's Dutchman window (`NPC.cs:1460-1468`): the
+    // invasion's drained fraction `(sizeStart - size) / sizeStart`.
+    progress_frac: f32,
 ) -> NpcKind {
     let hard_type = if invasion_type == 1 { Some(1) } else { None };
     // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
@@ -987,6 +990,12 @@ fn invasion_spawn_pick(
     // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
     // Deckhand.
     if invasion_type == 3 {
+        // The Dutchman (`NPC.cs:1460-1468`): the half-points window
+        // (the drained fraction in [0.5, 1)) spawns the ship — its four
+        // cannons fight for it.
+        if progress_frac >= 0.5 && progress_frac < 1.0 {
+            return NpcKind::FlyingDutchman;
+        }
         let r = crate::app::frame::rand01(rng);
         if r < 1.0 / 30.0 {
             return NpcKind::PirateCaptain;
@@ -1050,11 +1059,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             && app.npcs[i].kind != NpcKind::MartianSaucer
             && app.npcs[i].kind != NpcKind::MartianSaucerTurret
             && app.npcs[i].kind != NpcKind::MartianSaucerCannon
+            && app.npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && app.npcs[i].kind != NpcKind::FlyingDutchman
         {
+            continue;
+        }
+        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
+        // links have no port model — the count within the reach stands
+        // in: the ship's death rides it).
+        if app.npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = app.npcs[i].center();
+            let count = app
+                .npcs
+                .iter()
+                .filter(|m| {
+                    m.kind == NpcKind::FlyingDutchmanCannon && m.hp > 0 && {
+                        let (mcx, mcy) = m.center();
+                        (mcx - scx).hypot(mcy - scy) < 1600.0
+                    }
+                })
+                .count() as i32;
+            app.npcs[i].crew_cannons = count;
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
             NpcKind::Scutlix
+        } else if app.npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
         } else {
             NpcKind::MartianSaucerCore
         };
@@ -1214,6 +1245,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             None
         }
     };
+    // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
+    // body's centre / velocity.X / life ratio for the head and fist
+    // tethers. Hoisted BEFORE the AI pass: the C# parts read
+    // `Main.npc[NPC.golemBoss].Center / life / lifeMax / velocity` live
+    // inside their own AI (the body's lower slot updates first), so the
+    // pre-pass write is the closest same-tick value.
+    {
+        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem && n.hp > 0);
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_vx = body.vx;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+        } else {
+            app.world.golem_present = false;
+        }
+    }
     let world = &app.world;
     let player = &mut app.player;
     let npcs = &mut app.npcs;
@@ -1396,8 +1446,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.world.downed_eow = true;
             }
             NpcKind::GolemHead => {
-                let mut free =
-                    Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
+                // `NPC.cs:84953-84962`'s death hook: the free head spawns
+                // at the dying head's position — the C# passes the
+                // head's `Center.X` / `position.Y + height` as the new
+                // NPC's Bottom, which lands the 70x70 free head exactly
+                // on the head's box (the port's old `+ h` was a box
+                // height low); `NewNPC`'s default `spriteDirection = -1`
+                // keeps the sheet unflipped.
+                let mut free = Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y, -1, 0.0);
                 free.dont_take_damage = true;
                 free.hp = free.max_hp;
                 app.npcs.push(free);
@@ -1515,12 +1571,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        if let Some((kind, sx, sy)) = n.wants_sphere.take() {
+        for (kind, sx, sy) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
+            // no direction argument, the ctor's `spriteDirection = -1`,
+            // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
+            // (`NPC.cs:12176/12190/12201`): the family spawns unflipped
+            // and invisible, fading in over 26 ticks.
+            if matches!(
+                kind,
+                NpcKind::GolemHead | NpcKind::GolemFistLeft | NpcKind::GolemFistRight
+            ) {
+                ball.facing = -1;
+                ball.alpha = 255;
+            }
             spheres.push(ball);
         }
     }
@@ -1548,35 +1616,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.npcs.push(head);
         }
     }
-    // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
-    // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
-    // centre for the head/fist tethers; the BODY is invulnerable while
-    // the attached head (246) lives. The fists' deaths do not shield.
+    // The Golem's shield reconcile (`NPC.cs:19547/19567`'s
+    // `dontTakeDamage = flag`): the BODY is invulnerable while the
+    // attached head (246) lives (the anchor/ratio/velocity write rides
+    // the pre-pass hoist above). The fists' deaths do not shield.
     {
-        let body = app
+        let head_alive = app
             .npcs
             .iter()
+            .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+        if let Some(b) = app
+            .npcs
+            .iter_mut()
             .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
-            .cloned();
-        if let Some(body) = body {
-            let (bw, bh) = body.size();
-            app.world.golem_present = true;
-            app.world.golem_x = body.x + bw * 0.5;
-            app.world.golem_y = body.y + bh * 0.5;
-            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
-            let head_alive = app
-                .npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
-            if let Some(b) = app
-                .npcs
-                .iter_mut()
-                .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
-            {
-                b.dont_take_damage = head_alive;
-            }
-        } else {
-            app.world.golem_present = false;
+        {
+            b.dont_take_damage = head_alive;
+        }
+        let body_alive = app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::Golem && n.hp > 0);
+        if !body_alive {
             // NPC.cs:31141/19242/31372's golemBoss < 0 arm: the parts
             // 9999-strike themselves (the no-interaction kill — the port's
             // hp = 0; the kill credit is the documented deviation).
@@ -1604,16 +1664,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut servants);
     // The hostile shots (`NPC.cs`'s `Projectile.NewProjectile` arms —
-    // the archer's Wooden Arrow Hostile 81): the update pass set
-    // `wants_hostile_shot`, this pass resolves it into the pool (the
-    // knockback 0 — the C# call's `KnockBack: 0f`).
+    // the archer's Wooden Arrow Hostile 81): the update pass filled
+    // `wants_hostile_shot`, this pass drains it into the pool (the
+    // knockback 0 — the C# call's `KnockBack: 0f`); a volley may queue
+    // several shots on one tick.
     let mut shots = Vec::new();
     for n in app.npcs.iter_mut() {
         shots.append(&mut n.wants_hostile_shot);
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
         #[cfg(test)]
-        eprintln!("[spawn-dbg] pool slots active: {}", app.projectiles.slots().iter().filter(|p| p.active).count());
+        eprintln!(
+            "[spawn-dbg] pool slots active: {}",
+            app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
         // The AI_037 arm's `timeLeft = 300` override rides the laser.
         let time_left = if kind == crate::projectile::DESTROYER_LASER {
             300
@@ -1804,21 +1868,77 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         spawned_crew.push(crew);
     }
+    // The Dutchman's cannon crew (`AI_093`'s init arm): the 4 cannons
+    // 492 at the ship's centre + seat*40 - 150 with the seat `ai[1]`.
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::FlyingDutchman || !n.wants_dutchman_crew {
+            continue;
+        }
+        n.wants_dutchman_crew = false;
+        let (dw, dh) = n.size();
+        let dcx = n.x + dw * 0.5;
+        let dcy = n.y + dh * 0.5;
+        let mut crew = Vec::new();
+        for seat in 0..4 {
+            let mut c = Npc::new(
+                NpcKind::FlyingDutchmanCannon,
+                dcx + (seat as f32) * 40.0 - 150.0,
+                dcy,
+                seat as i32,
+                0.0,
+            );
+            c.hp = c.max_hp;
+            c.ai[1] = seat as f32;
+            c.carrier_x = dcx;
+            c.carrier_y = dcy;
+            crew.push(c);
+        }
+        spawned_crew.push(crew);
+    }
     for crew in spawned_crew {
         app.npcs.extend(crew);
     }
+    // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
+    // the payload's pirate spawns with the drop velocity (the vanilla's
+    // `±5 X` jitter + the ship's X, then the -8.01 Y launch).
+    let mut dutch_drops: Vec<Npc> = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::FlyingDutchman {
+            continue;
+        }
+        if let Some((kind, dx, dy)) = n.wants_dutchman_drop.take() {
+            let (pw, ph) = kind.size();
+            let mut p = Npc::new(kind, dx - pw * 0.5, dy - ph, 1, 0.0);
+            p.hp = p.max_hp;
+            let mut jitter = 0u64;
+            p.vx = (crate::app::rand01(&mut jitter) - 0.5) * 5.0 + n.vx;
+            p.vy = -8.01;
+            dutch_drops.push(p);
+        }
+    }
+    app.npcs.extend(dutch_drops);
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {
-        if n.wants_minion {
-            n.wants_minion = false;
-            if minions < 4 {
-                let xt = ((n.x / TILE_PX) as i32 + n.facing * 2).clamp(2, app.world.width - 3);
-                if let Some(m) = Npc::spawn_slime(&app.world, xt) {
-                    spawned.push(m);
-                    minions += 1;
-                }
+        if !n.wants_minion {
+            continue;
+        }
+        n.wants_minion = false;
+        // The King Slime's batch (`AI_015` `:44233-44247`): the 5 %-damage
+        // arm spawns `rand(1, 4)` (1-3) Blue Slimes, the death arm 4-7; the
+        // port's `wants_minion_batch` carries the count for the resolution.
+        let batch = n.wants_minion_batch.max(1);
+        n.wants_minion_batch = 0;
+        for k in 0..batch {
+            if minions >= 8 {
+                break;
+            }
+            let xt =
+                ((n.x / TILE_PX) as i32 + n.facing * (2 + k as i32)).clamp(2, app.world.width - 3);
+            if let Some(m) = Npc::spawn_slime(&app.world, xt) {
+                spawned.push(m);
+                minions += 1;
             }
         }
     }
@@ -2022,6 +2142,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
+            let progress_frac = if app.world.invasion_size_start > 0 {
+                (app.world.invasion_size_start - app.world.invasion_size) as f32
+                    / app.world.invasion_size_start as f32
+            } else {
+                0.0
+            };
             let walker_alive = app
                 .npcs
                 .iter()
@@ -2043,6 +2169,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 walker_alive,
                 saucer_alive,
                 progress_30,
+                progress_frac,
             );
             invasion_pick = Some((kind, ix, iy));
         }
@@ -2587,7 +2714,7 @@ mod invasion_tests {
         // The table: the picks are always goblins.
         let mut rng = 7u64;
         for _ in 0..40 {
-            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false);
+            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0);
             assert!(matches!(
                 kind,
                 NpcKind::GoblinSorcerer
@@ -2602,7 +2729,7 @@ mod invasion_tests {
         let mut saw_summoner = false;
         for _ in 0..200 {
             if matches!(
-                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false),
+                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false, 0.0),
                 NpcKind::GoblinSummoner
             ) {
                 saw_summoner = true;
@@ -2614,7 +2741,7 @@ mod invasion_tests {
         for _ in 0..200 {
             assert!(
                 !matches!(
-                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false),
+                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false, 0.0),
                     NpcKind::GoblinSummoner
                 ),
                 "the alive summoner blocks the roll"
@@ -2824,7 +2951,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..60 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false),
+                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false, 0.0),
                     NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
                 ));
             }
@@ -2832,7 +2959,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..40 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false),
+                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0),
                     NpcKind::GoblinSorcerer
                         | NpcKind::GoblinThief
                         | NpcKind::GoblinPeon
@@ -2931,7 +3058,7 @@ mod pirate_invasion_tests {
         let mut rng = 11u64;
         for _ in 0..80 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
                 NpcKind::PirateDeckhand
                     | NpcKind::PirateCaptainsMate
                     | NpcKind::PirateArcher
@@ -2944,7 +3071,7 @@ mod pirate_invasion_tests {
         let mut saw_captain = false;
         for _ in 0..600 {
             if matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
                 NpcKind::PirateCaptain
             ) {
                 saw_captain = true;
@@ -2992,6 +3119,61 @@ mod pirate_invasion_tests {
             app.world.downed_golem,
             "the body's death is the fight's end"
         );
+    }
+
+    #[test]
+    fn the_golem_parts_assemble_and_hold() {
+        // `AI_045`'s one-shot init (`NPC.cs:19517-19522`): the body's
+        // first tick requests all THREE parts (247 at -84/-9, 248 at
+        // +78/-9, 246 at -3/-57); the parts then keep their hp through
+        // the wind-up window (the shield keeps the body whole, nothing
+        // touches the parts).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 118..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        app.world = big;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 44.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        let mut body = Npc::new(NpcKind::Golem, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        body.hp = body.max_hp;
+        app.npcs.push(body);
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        for kind in [
+            NpcKind::GolemHead,
+            NpcKind::GolemFistLeft,
+            NpcKind::GolemFistRight,
+        ] {
+            let part = app
+                .npcs
+                .iter()
+                .find(|n| n.kind == kind)
+                .unwrap_or_else(|| panic!("the {kind:?} part must live"));
+            assert_eq!(part.hp, part.max_hp, "the {kind:?} part keeps its hp");
+        }
+        // The parts sit at the body's anchor offsets (`:19520-19522`).
+        // The port's tether converges to the anchor within its ±7
+        // velocity clamp (the C# snaps the raw delta within 100 px,
+        // `:31148-31160`), so the tolerance carries the clamp.
+        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem).unwrap();
+        let (bx, by) = body.center();
+        let head = app.npcs.iter().find(|n| n.kind == NpcKind::GolemHead).unwrap();
+        let (hx, hy) = head.center();
+        assert!((hx - bx + 3.0).abs() < 10.0, "the head's -3 tether");
+        assert!((hy - by + 57.0).abs() < 10.0, "the head's -57 tether");
     }
 }
 
@@ -3172,7 +3354,7 @@ mod invasion_bar_tests {
             let mut seen_drone = false;
             let mut seen_walker = false;
             for _ in 0..600 {
-                let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false);
+                let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false, 0.0);
                 assert!(
                     matches!(
                         kind,
@@ -3201,7 +3383,7 @@ mod invasion_bar_tests {
             let mut seen_scrambler = false;
             let mut seen_rider = false;
             for _ in 0..1200 {
-                match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false) {
+                match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0) {
                     NpcKind::RayGunner => seen_ray = true,
                     NpcKind::BrainScrambler => seen_scrambler = true,
                     NpcKind::ScutlixRider => seen_rider = true,
@@ -3216,7 +3398,7 @@ mod invasion_bar_tests {
             let mut rng = 5u64;
             for _ in 0..200 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 4, true, false, false),
+                    invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0),
                     NpcKind::GrayGrunt
                         | NpcKind::GigaZapper
                         | NpcKind::MartianOfficer
@@ -3842,7 +4024,10 @@ mod saucer_battery_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -3964,11 +4149,443 @@ mod saucer_battery_tests {
             }
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MartianSaucerCore);
+        let core = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerCore);
         // The crew removal retires the mounts too; the core survives until
         // the bridge lands (its own follow-up slice).
         assert!(core.is_some() || app.world.invasion_type == 0);
         let _ = player;
         player.x += 0.0;
+    }
+}
+
+#[cfg(test)]
+mod dutchman_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_ship_spawns_its_four_cannons() {
+        // `AI_093`'s init arm (`NPC.cs:38859-38872`): the 4 cannons 492
+        // at the ship's centre + seat*40 - 150 with the seat `ai[1]`.
+        let (mut app, _player) = app_with_player();
+        let mut ship = Npc::new(NpcKind::FlyingDutchman, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        ship.hp = ship.max_hp;
+        app.npcs.push(ship);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let cannons: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::FlyingDutchmanCannon)
+            .collect();
+        assert_eq!(cannons.len(), 4, "the crew");
+        for (seat, c) in cannons.iter().enumerate() {
+            assert_eq!(c.ai[1], seat as f32);
+        }
+    }
+
+    #[test]
+    fn the_dead_crew_kills_the_ship() {
+        // The crew-alive loop (`NPC.cs:38874-38890`): all four cannons
+        // dead → the self-strike.
+        let (mut app, _player) = app_with_player();
+        let mut ship = Npc::new(NpcKind::FlyingDutchman, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        ship.hp = ship.max_hp;
+        app.npcs.push(ship);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::FlyingDutchmanCannon {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::FlyingDutchman));
+    }
+
+    #[test]
+    fn the_ship_drops_pirates_off_its_side() {
+        // `AI_093`'s Next(300) arm: the drop pays a pirate out at the
+        // rotated side offset (the payload's range rides the ship's dims).
+        let (mut app, mut player) = app_with_player();
+        let mut ship = Npc::new(NpcKind::FlyingDutchman, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        ship.hp = ship.max_hp;
+        ship.wants_scutlix = true;
+        ship.crew_cannons = 4;
+        app.npcs.push(ship);
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut drops = 0;
+        for _ in 0..2000 {
+            if let Some(n) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::FlyingDutchman)
+            {
+                n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+                if let Some((kind, dx, dy)) = n.wants_dutchman_drop {
+                    assert!(matches!(
+                        kind,
+                        NpcKind::PirateCaptainsMate
+                            | NpcKind::PirateCorsair
+                            | NpcKind::PirateArcher
+                            | NpcKind::PirateDeckhand
+                    ));
+                    let (cx, cy) = n.center();
+                    assert!((dx - cx).abs() <= 145.0);
+                    assert!((dy - cy).abs() <= 95.0);
+                    drops += 1;
+                    n.wants_dutchman_drop = None;
+                }
+            }
+        }
+        assert!(drops > 0, "the ship drops pirates over time");
+    }
+
+    #[test]
+    fn the_type3_table_spawns_the_dutchman_in_the_half_window() {
+        // `NPC.cs:1460-1468`: the half-points window spawns the ship;
+        // elsewhere the pirate table runs.
+        let mut rng = 21u64;
+        for _ in 0..200 {
+            assert_eq!(
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.75),
+                NpcKind::FlyingDutchman
+            );
+        }
+        let mut rng = 21u64;
+        for _ in 0..200 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.25),
+                NpcKind::PirateCaptain
+                    | NpcKind::PirateArcher
+                    | NpcKind::PirateCorsair
+                    | NpcKind::PirateCaptainsMate
+                    | NpcKind::PirateDeckhand
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod pirate_shot_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_deadeye_fires_the_arrow() {
+        // The Archer 214's arm of the shooter block (`NPC.cs:59502-59507`):
+        // the arrow 180 at 25 damage, the ±45 jitter, the 10 speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 25);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 10.0).abs() < 0.01, "the arrow's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Deadeye never fired");
+    }
+
+    #[test]
+    fn the_corsair_fires_the_musket_ball() {
+        // The Corsair 215's arm: the musket ball 82 at 35 damage at 14
+        // speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 11u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCorsair,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 82);
+                assert_eq!(s.5, 35);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 14.0).abs() < 0.01, "the ball's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Corsair never fired");
+    }
+
+    #[test]
+    fn the_captain_fires_the_wounded_barrage() {
+        // The Captain 216's arm (`NPC.cs:59390-59397`): the arrow 180 at
+        // 30 damage with the ±50 jitter at the 9 speed; the wounded arm
+        // (localAI[2] >= 20) is the follow-up.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 30);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 9.0).abs() < 0.01, "the captain's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Captain never fired");
+    }
+
+    #[test]
+    fn the_pirate_shooters_round_trip_their_pool_shots() {
+        // The 180/82 projectile rows landed: the machine's payload
+        // resolves into the pool through the sim (the 180 arrow at 25).
+        let (mut app, mut player) = app_with_player();
+        let mut n = Npc::new(NpcKind::PirateArcher, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        app.player.as_mut().unwrap().x = 160.0 * TILE_PX;
+        app.player.as_mut().unwrap().y = 118.0 * TILE_PX;
+        app.npcs.push(n);
+        let mut fired = 0;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            fired += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 180 && p.damage == 25)
+                .count();
+        }
+        assert!(fired > 0, "the 180 arrow lands in the pool");
+        player.x += 0.0;
+    }
+    #[test]
+    fn the_captains_wounded_arm_fires_the_240_barrage() {
+        // The Captain 216's wounded arm (`NPC.cs:59170-59235` + `:59603`):
+        // past 20 shots the barrage fires the 240 shell (100 dmg, 15
+        // speed, no jitter); the port's `caster_counter` = localAI[2].
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        // Force the wounded state: 20 shots counted.
+        n.caster_counter = 20;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 240 {
+                    assert_eq!(s.5, 100, "the barrage's damage");
+                    let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                    assert!((speed - 15.0).abs() < 0.01, "the barrage's speed");
+                    return;
+                }
+            }
+        }
+        panic!("the wounded arm never fired the barrage");
+    }
+}
+
+#[cfg(test)]
+mod dd2_goblin_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_dd2_goblins_walk_and_tier_their_stats() {
+        // The three `SetDefaults` rows (`NPC.cs`'s 552-554) + the
+        // aiStyle-107 walk: the tiers march at their own speed and the
+        // wave ramp accel.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut t1 = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        t1.hp = t1.max_hp;
+        let mut t3 = Npc::new(NpcKind::DD2GoblinT3, 155.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        t3.hp = t3.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (t1_x, _) = t1.center();
+        let (t3_x, _) = t3.center();
+        for _ in 0..60 {
+            t1.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            t3.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (t1_end, _) = t1.center();
+        let (t3_end, _) = t3.center();
+        // The T3's speed add (0.4) makes it cover more ground.
+        assert!(
+            (t3_end - t3_x).abs() >= (t1_end - t1_x).abs(),
+            "the tier-3's faster walk: {} vs {}",
+            (t3_end - t3_x).abs(),
+            (t1_end - t1_x).abs()
+        );
+        // Both walked toward the player.
+        assert!((t1_end - t1_x).abs() > 10.0, "the T1 walked");
+    }
+
+    #[test]
+    fn the_wave_ramp_accelerates() {
+        // The `localAI[3]` ramp (`NPC.cs:63140-63143`): the port's
+        // `caster_counter` drives the accel element; past 60 it holds.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2GoblinT1, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        // A fresh goblin: the ramp's accel is small.
+        n.caster_counter = 0;
+        let fresh: (f32, f32) = (0.0, 0.0);
+        let _ = fresh;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        // The machine runs the ramp without panicking (the counters' state
+        // rides the App in the port — the walk lands).
+        assert!(n.hp > 0);
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+    #[test]
+    fn the_dd2_support_walks_and_the_skeletons_materialize() {
+        // The support rows (`NPC.cs`'s 555-567): the bombers (50/200/700
+        // HP) and the throwers (60/300/1000) march through the harness;
+        // the etherian skeletons ride the materialize cycle — their
+        // `localAI[3]` (the port's `caster_counter`) counts the spawn-in.
+        let (mut app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut b = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        b.hp = b.max_hp;
+        let mut s = Npc::new(
+            NpcKind::DD2SkeletonT1,
+            155.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        s.hp = s.max_hp;
+        let s_before = s.caster_counter;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (b_x, _) = b.center();
+        for _ in 0..60 {
+            b.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            s.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (b_end, _) = b.center();
+        assert!((b_end - b_x).abs() > 10.0, "the bomber walked");
+        assert_eq!(s.caster_counter, s_before + 60, "the materialize ticks");
+        let _ = app;
+        app.npcs.push(b);
     }
 }

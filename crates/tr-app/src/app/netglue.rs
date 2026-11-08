@@ -32,6 +32,23 @@ const GATE_WHITELIST: [u8; 9] = [93, 16, 42, 50, 38, 68, 147, 161, 12];
 /// (`MessageBuffer.cs:160/167/171` = `LegacyMultiplayer.2`, `:218` = `.4`,
 /// `:2231` = `.1`, `:377-386` = the name keys).
 const TXT_INVALID_OP: &str = "Invalid operation at this state.";
+
+/// `Main.multiplayerNPCSmoothingRange` (`Main.cs:1663`, default 300,
+/// `Main.cs:67007`): the window inside which a networked position snap
+/// accrues a visual lag instead of jumping. Both the players'
+/// (`MessageBuffer.cs:1004-1008`) and the NPCs' (`:1636-1646`) smoothing use
+/// it.
+const SMOOTHING_RANGE: f32 = 300.0;
+
+/// The `13` heartbeat span in `net_tick` calls: the C#'s
+/// `netPlayCounter % 420 == 0` at 60 Hz = 7 s (`Main.cs:64522-64529`); the
+/// port's tick runs at 10 Hz, so 42 calls cover the same span.
+const NET_HEARTBEAT_TICKS: u32 = 42;
+
+/// A client NPC slot silent past this is despawned: the host streams the live
+/// set at 10 Hz and says nothing when an NPC dies, so the client prunes on
+/// staleness (two missed cadence ticks).
+const NPC_STALE: std::time::Duration = std::time::Duration::from_millis(200);
 const TXT_WRONG_VERSION: &str = "You are not using the same version as this server.";
 const TXT_BAD_PASSWORD: &str = "Incorrect password.";
 const TXT_NAME_EMPTY: &str = "Name is empty.";
@@ -84,6 +101,35 @@ impl App {
             for ev in client_events {
                 self.client_event(client, ev);
             }
+            // The `23` despawn diff: the host streams every live NPC each
+            // cadence tick, so a slot missing from this poll's batch is gone
+            // (the C# equivalent turns life to 0 and keeps the slot).
+            if !self.net_npc_seen.is_empty() {
+                let seen: std::collections::HashSet<u32> = self.net_npc_seen.drain(..).collect();
+                self.net_npcs.retain(|slot, _| seen.contains(slot));
+                self.net_npcs_dirty = true;
+            }
+            // Staleness prune: a slot the host stopped streaming (it died, or
+            // the host stopped simulating it) disappears after `NPC_STALE`.
+            let now = Instant::now();
+            let stale: Vec<u32> = self
+                .net_npcs
+                .keys()
+                .copied()
+                .filter(|slot| {
+                    self.net_npcs_seen_at
+                        .get(slot)
+                        .is_some_and(|t| now.duration_since(*t) >= NPC_STALE)
+                })
+                .collect();
+            if !stale.is_empty() {
+                for slot in stale {
+                    self.net_npcs.remove(&slot);
+                    self.net_npcs_seen_at.remove(&slot);
+                }
+                self.net_npcs_dirty = true;
+            }
+            self.net_rebuild_lists();
             // The client's own timeout (`Main.cs:64540-64544`).
             if self.net_state > net::client_state::NOT_CONNECTED
                 && self.net_last_recv.elapsed() >= net::IDLE_TIMEOUT
@@ -241,11 +287,14 @@ impl App {
                 // The peer is in-world (`case 14`); make sure it has a
                 // remote-player entry (the identity usually arrives first).
                 if server.state(id) >= slot_state::IN_WORLD {
+                    let (px, py) = self.net_peer_spawn_pos();
                     self.remote_players
                         .entry(id)
                         .or_insert_with(|| net::PlayerNet {
                             id,
                             name: server.slot_name(id),
+                            x: px,
+                            y: py,
                             ..Default::default()
                         });
                 }
@@ -264,12 +313,30 @@ impl App {
                     p.max_hp = (max_hp as i32).max(20);
                 }
             }
-            // ---- internal, in-world only ----
-            C2s::Player(p) => {
-                self.remote_players.insert(p.id, p.clone());
+            // `case 13` — the per-tick player state. The server forces the
+            // subject to the sender (`MessageBuffer.cs:959`) and relays to
+            // everyone else (`MessageBuffer.cs:1054-1057`); the port also
+            // keeps the snapshot locally so the host's own view sees the peer.
+            C2s::PlayerState(ps) => {
+                let peer = id;
+                let entry = self.remote_players.entry(peer).or_default();
+                entry.id = peer;
+                entry.x = ps.x;
+                entry.y = ps.y;
+                entry.vx = ps.vx;
+                entry.vy = ps.vy;
+                entry.facing = if ps.flags_a.get(6) { 1 } else { -1 };
+                entry.selected = ps.selected_item as u16;
+                entry.on_ground = ps.on_ground;
+                entry.leg_frame = ps.leg_frame;
+                entry.body_frame = ps.body_frame;
+                entry.hp = ps.hp;
+                entry.max_hp = ps.max_hp;
+                let mut relay = ps.clone();
+                relay.player_id = id as u8;
                 // The C# never echoes a snapshot back to its sender
                 // (`SendData`'s `ignoreClient` routing, `NetMessage.cs:1692-1826`).
-                server.broadcast_except(&S2c::Player(p), id);
+                server.broadcast_except(&S2c::PlayerState(Box::new(relay)), id);
             }
             C2s::Edit { x, y, kind, tile } => {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
@@ -278,6 +345,11 @@ impl App {
                 server.broadcast(&S2c::Edit { x, y, kind, tile });
             }
             C2s::Pickup { drop } => {
+                // The client's pickup request (the port's stand-in for the
+                // C# `SyncItem`→`151` path — `WorldItem.cs:612-615`). The host
+                // validates the range, removes the slot and announces the
+                // removal as `151`; the indices shift, and the next cadence
+                // tick's `21` diff streams the shifted slots.
                 let center = self
                     .remote_players
                     .get(&id)
@@ -286,19 +358,7 @@ impl App {
                     if let Some(c) = self.items.get(drop as usize).map(|it| it.center()) {
                         if (c - center).length() < 60.0 {
                             self.items.remove(drop as usize);
-                            server.broadcast(&S2c::Items(
-                                self.items
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, it)| net::ItemNet {
-                                        id: i as u32,
-                                        item: it.kind,
-                                        count: it.count,
-                                        x: it.pos.x,
-                                        y: it.pos.y,
-                                    })
-                                    .collect(),
-                            ));
+                            server.broadcast(&S2c::ItemDead { slot: drop as i16 });
                         }
                     }
                 }
@@ -310,17 +370,36 @@ impl App {
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
     /// the peers, the peers learn the newcomer.
     fn host_slot_join_complete(&mut self, server: &net::Server, id: u32, _s: net::PlayerSpawn) {
+        // The port's `SyncOnePlayer` (`NetMessage.cs:2885-2946`) sends the
+        // joining peer everyone's state; the host's own snapshot leads.
         for p in self.remote_players.values() {
             if p.id != id {
-                server.send(id, &S2c::Player(p.clone()));
+                server.send(id, &S2c::PlayerState(Box::new(self.player_state_of(p))));
+                if !p.name.is_empty() {
+                    server.send(
+                        id,
+                        &S2c::PlayerInfo(net::PlayerInfo::with_name(p.id as u8, &p.name)),
+                    );
+                }
             }
         }
+        // The host is a player too (its slot is 0): the display names ride
+        // `4 PlayerInfo`, which msg 13 lacks.
+        if !self.player_name.is_empty() {
+            server.send(
+                id,
+                &S2c::PlayerInfo(net::PlayerInfo::with_name(0, &self.player_name)),
+            );
+        }
         let name = server.slot_name(id);
+        let (px, py) = self.net_peer_spawn_pos();
         self.remote_players.insert(
             id,
             net::PlayerNet {
                 id,
                 name: name.clone(),
+                x: px,
+                y: py,
                 ..Default::default()
             },
         );
@@ -440,11 +519,14 @@ impl App {
             S2c::PlayerInfo(pi) => {
                 let peer = pi.player_id as u32;
                 if peer != self.local_id {
+                    let (px, py) = self.net_peer_spawn_pos();
                     self.remote_players
                         .entry(peer)
                         .or_insert_with(|| net::PlayerNet {
                             id: peer,
                             name: pi.name.clone(),
+                            x: px,
+                            y: py,
                             ..Default::default()
                         });
                     if let Some(p) = self.remote_players.get_mut(&peer) {
@@ -464,11 +546,14 @@ impl App {
             }
             S2c::PlayerActive { player_id, active } => {
                 if active && player_id as u32 != self.local_id {
+                    let (px, py) = self.net_peer_spawn_pos();
                     self.remote_players
                         .entry(player_id as u32)
                         .or_insert_with(|| net::PlayerNet {
                             id: player_id as u32,
                             name: format!("Player {}", player_id),
+                            x: px,
+                            y: py,
                             ..Default::default()
                         });
                 } else {
@@ -482,11 +567,14 @@ impl App {
             // slot on the read side, so we never list ourselves.
             S2c::Joined { id, name } => {
                 if id != self.local_id {
+                    let (px, py) = self.net_peer_spawn_pos();
                     self.remote_players
                         .entry(id)
                         .or_insert_with(|| net::PlayerNet {
                             id,
                             name,
+                            x: px,
+                            y: py,
                             ..Default::default()
                         });
                 }
@@ -494,8 +582,52 @@ impl App {
             S2c::Left { id } => {
                 self.remote_players.remove(&id);
             }
-            S2c::Player(p) => {
-                self.remote_players.insert(p.id, p);
+            // `case 13` — a peer's per-tick state. The client discards its
+            // own echo (`MessageBuffer.cs:955`) and applies the C#'s
+            // smoothing: the visual lag accrues into `netOffset`, the
+            // position snaps to the wire value (`MessageBuffer.cs:1004-1016`).
+            S2c::PlayerState(ps) => {
+                let peer = ps.player_id as u32;
+                if peer == self.local_id {
+                    return;
+                }
+                let (px, py) = self.net_peer_spawn_pos();
+                let entry = self
+                    .remote_players
+                    .entry(peer)
+                    .or_insert_with(|| net::PlayerNet {
+                        id: peer,
+                        name: format!("Player {}", ps.player_id),
+                        x: px,
+                        y: py,
+                        ..Default::default()
+                    });
+                if entry.name.is_empty() {
+                    entry.name = format!("Player {}", ps.player_id);
+                }
+                if ps.x != 0.0 || ps.y != 0.0 {
+                    entry.off_x += ps.x - entry.x;
+                    entry.off_y += ps.y - entry.y;
+                    // `multiplayerNPCSmoothingRange` = 300 (`Main.cs:67007`):
+                    // past it the offset snaps to zero.
+                    if (entry.off_x * entry.off_x + entry.off_y * entry.off_y).sqrt()
+                        > SMOOTHING_RANGE
+                    {
+                        entry.off_x = 0.0;
+                        entry.off_y = 0.0;
+                    }
+                }
+                entry.x = ps.x;
+                entry.y = ps.y;
+                entry.vx = ps.vx;
+                entry.vy = ps.vy;
+                entry.facing = if ps.flags_a.get(6) { 1 } else { -1 };
+                entry.selected = ps.selected_item as u16;
+                entry.on_ground = ps.on_ground;
+                entry.leg_frame = ps.leg_frame;
+                entry.body_frame = ps.body_frame;
+                entry.hp = ps.hp;
+                entry.max_hp = ps.max_hp;
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -505,22 +637,91 @@ impl App {
                 apply_edit(&mut self.world, x, y, kind, tile);
                 self.world_key = None;
             }
-            S2c::Npcs(list) => {
-                self.npcs = list
-                    .iter()
-                    .filter_map(|n| npc_from_net(&self.world, n))
-                    .collect();
+            // `case 23` — one NPC's state. The client keeps a slot-keyed
+            // store (`net_npcs`) and recreates a slot only on a kind change or
+            // the spawn flag (the C#'s `generation`/`spawnNeedsSyncing` test,
+            // `MessageBuffer.cs:1602-1613`); the smoothing is the same
+            // netOffset accumulator (`MessageBuffer.cs:1636-1646`). Seen
+            // slots feed the despawn diff in `poll_net`.
+            S2c::NpcInfo(info) => {
+                let slot = info.slot as u32;
+                self.net_npc_seen.push(slot);
+                self.net_npcs_seen_at.insert(slot, Instant::now());
+                let kind = crate::npc::NpcKind::from_u16(info.kind.max(0) as u16);
+                let recreate = !self.net_npcs.contains_key(&slot)
+                    || info.spawn
+                    || kind
+                        .map(|k| self.net_npcs[&slot].kind.to_u16() != k.to_u16())
+                        .unwrap_or(true);
+                let mut npc = if recreate {
+                    match npc_from_net(&self.world, info.as_ref()) {
+                        Some(n) => {
+                            self.net_npcs.insert(slot, n.clone());
+                            n
+                        }
+                        None => {
+                            log::warn!("unknown npc kind {} on slot {slot}", info.kind);
+                            return;
+                        }
+                    }
+                } else {
+                    // Patch in place: the store keeps the offsets between snaps.
+                    match self.net_npcs.get_mut(&slot) {
+                        Some(n) => n.clone(),
+                        None => return,
+                    }
+                };
+                // The smoothing: accrue the lag toward the new snap, then snap.
+                if !recreate {
+                    npc.net_offset.x += npc.x - info.x;
+                    npc.net_offset.y += npc.y - info.y;
+                    if npc.net_offset.length() > SMOOTHING_RANGE {
+                        npc.net_offset = Vec2::ZERO;
+                    }
+                }
+                npc.x = info.x;
+                npc.y = info.y;
+                npc.vx = info.vx;
+                npc.vy = info.vy;
+                npc.facing = if info.dir_right { 1 } else { -1 };
+                if !info.life_full && info.hp >= 0 {
+                    npc.hp = info.hp;
+                }
+                self.net_npcs.insert(slot, npc);
+                self.net_npcs_dirty = true;
             }
-            S2c::Items(list) => {
-                self.items = list
-                    .iter()
-                    .map(|it| {
-                        let mut d =
-                            item::ItemDrop::new(it.item, it.count, 0, it.x, it.y, 0.0, 0.0, 0.0);
-                        d.age = 60.0;
-                        d
-                    })
-                    .collect();
+            // `case 21` — one drop's state, keyed by the host slot index
+            // (the port's item ids — the C# fixed-400 scheme is M6-NET-5).
+            S2c::ItemState(d) => {
+                let mut drop = item::ItemDrop::new(
+                    d.kind.max(0) as u16,
+                    d.stack.max(0) as u32,
+                    d.prefix as u16,
+                    d.x,
+                    d.y,
+                    d.vx,
+                    d.vy,
+                    0.0,
+                );
+                drop.shimmered = d.shimmered;
+                drop.shimmer_time = d.shimmer_time;
+                drop.age = 60.0;
+                self.net_items.insert(d.slot as i16, drop);
+                self.net_items_dirty = true;
+            }
+            // `151` — the slot is gone.
+            S2c::ItemDead { slot } => {
+                self.net_items.remove(&slot);
+                self.net_items_dirty = true;
+            }
+            // `case 22` — the reservation announcement (server→client only;
+            // `MessageBuffer.cs:1552-1562` refuses it on the server).
+            S2c::ItemOwner(o) => {
+                if o.reserved_for == 255 {
+                    self.net_reserved.remove(&o.slot);
+                } else {
+                    self.net_reserved.insert(o.slot, (o.reserved_for, o.hold));
+                }
             }
             // Unused in this milestone (the chunk stream replaces them).
             S2c::Inventory { .. } => {}
@@ -769,54 +970,230 @@ impl App {
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
+            ..Default::default()
         };
         match &self.net {
             NetRole::Host(server) => {
-                server.broadcast(&S2c::Player(me));
-                let npcs: Vec<net::NpcNet> = self
-                    .npcs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, n)| net::NpcNet {
-                        id: i as u32,
-                        kind: n.kind.to_u16(),
-                        x: n.x,
-                        y: n.y,
-                        vx: n.vx,
-                        vy: n.vy,
-                        hp: n.hp,
-                        max_hp: n.max_hp,
-                        facing: n.facing,
-                        on_ground: n.on_ground,
-                        anim: n.anim,
-                        hurt_cd: n.hurt_cd,
-                    })
-                    .collect();
-                server.broadcast(&S2c::Npcs(npcs));
-                let items: Vec<net::ItemNet> = self
-                    .items
-                    .iter()
-                    .enumerate()
-                    .map(|(i, it)| net::ItemNet {
-                        id: i as u32,
-                        item: it.kind,
-                        count: it.count,
+                // The host's own snapshot, as `13 PlayerState`.
+                server.broadcast(&S2c::PlayerState(Box::new(self.player_state_of(&me))));
+                // `23 NPCInfo` — one message per live NPC, the C#'s per-NPC
+                // `SendData(23, -1, -1, null, whoAmI)` (`NPC.cs:90613`). The
+                // port sends the whole live set each cadence tick (the C#'
+                // `netSpam` per-NPC gate and the section culling are the
+                // M6-NET-3 follow-ups), which doubles as the despawn feed.
+                for (i, npc) in self.npcs.iter().enumerate() {
+                    let slot = i as u32;
+                    let kind = npc.kind.to_u16() as i16;
+                    let (spawn, generation) = match self.net_npc_gen.get(&slot) {
+                        Some((k, g)) if *k == kind => (false, *g),
+                        _ => {
+                            let g = self
+                                .net_npc_gen
+                                .get(&slot)
+                                .map(|(_, g)| g.wrapping_add(1))
+                                .unwrap_or(1);
+                            (true, g)
+                        }
+                    };
+                    self.net_npc_gen.insert(slot, (kind, generation));
+                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
+                        slot: slot as u8,
+                        generation: generation as u8,
+                        spawn,
+                        kind,
+                        x: npc.x,
+                        y: npc.y,
+                        vx: npc.vx,
+                        vy: npc.vy,
+                        dir_right: npc.facing > 0,
+                        dir_y_down: npc.vy > 0.0,
+                        sprite_right: npc.facing > 0,
+                        life_full: npc.hp >= npc.max_hp,
+                        hp: npc.hp,
+                    })));
+                }
+                // Prune the generation bookkeeping of slots that died.
+                self.net_npc_gen
+                    .retain(|slot, _| (*slot as usize) < self.npcs.len());
+                // `21 ItemDrop` / `151` — only the slots whose state changed
+                // since the last send, plus the vanished tail (the index
+                // shift a removal causes). The C#'s default broadcast has no
+                // per-item gate either (`NetMessage.cs:1801-1811`).
+                let live = self.items.len() as i16;
+                for (i, it) in self.items.iter().enumerate() {
+                    let slot = i as i16;
+                    let st = net::ItemState {
+                        slot,
                         x: it.pos.x,
                         y: it.pos.y,
-                    })
+                        vx: it.vel.x,
+                        vy: it.vel.y,
+                        stack: it.count.min(i16::MAX as u32) as i16,
+                        prefix: it.prefix.min(255) as u8,
+                        kind: it.kind as i16,
+                        shimmered: it.shimmered,
+                        shimmer_time: it.shimmer_time,
+                    };
+                    if self.net_item_last.get(&slot) != Some(&st) {
+                        self.net_item_last.insert(slot, st);
+                        server.broadcast(&S2c::ItemState(Box::new(st)));
+                    }
+                }
+                let dead: Vec<i16> = self
+                    .net_item_last
+                    .keys()
+                    .copied()
+                    .filter(|slot| *slot >= live)
                     .collect();
-                server.broadcast(&S2c::Items(items));
+                for slot in dead {
+                    self.net_item_last.remove(&slot);
+                    server.broadcast(&S2c::ItemDead { slot });
+                }
                 server.broadcast(&S2c::Time {
                     time: self.world.time,
                     day: self.world.day_time,
                 });
             }
             NetRole::Client(client) => {
+                // The C#'s `TrySyncingInput` change-driven send plus the
+                // 420-tick heartbeat (`Player.cs:6852-6916`,
+                // `Main.cs:64522-64529`); the port's control flags are not
+                // synced (each peer simulates its own player), so the change
+                // test covers position, animation, selection and health.
                 if self.net_state >= net::client_state::IN_WORLD {
-                    client.send(&C2s::Player(me));
+                    let mut changed = (me.x - self.net_ps_last.x).abs() > 0.5
+                        || (me.y - self.net_ps_last.y).abs() > 0.5
+                        || me.facing != self.net_ps_last_facing()
+                        || me.selected != self.net_ps_last.selected_item as u16
+                        || me.leg_frame != self.net_ps_last.leg_frame
+                        || me.body_frame != self.net_ps_last.body_frame
+                        || me.on_ground != self.net_ps_last.on_ground
+                        || me.hp != self.net_ps_last.hp
+                        || me.max_hp != self.net_ps_last.max_hp;
+                    self.net_beat = self.net_beat.wrapping_add(1);
+                    if !changed && self.net_beat % NET_HEARTBEAT_TICKS == 0 {
+                        changed = true; // the heartbeat (420 ticks ≈ 7 s)
+                    }
+                    if changed {
+                        client.send(&C2s::PlayerState(self.player_state_of(&me)));
+                        self.net_ps_last = self.player_state_of(&me);
+                    }
                 }
             }
             NetRole::Off => {}
+        }
+    }
+
+    /// The per-frame smoothing upkeep for a joining client: both `netOffset`
+    /// accumulators decay toward zero (the C#'s `Player.UpdateNetOffset` —
+    /// `max(2, 10% of the lag)` per tick, collision-boosted; the NPC arm's
+    /// `2 + 2*(len/range)` — `NPC.cs:90287-90311`), and the client's npc list
+    /// is refreshed from the slot store so the render sees the decayed
+    /// offsets. Host/single-player: a no-op (`net_offset`/`off_*` stay zero).
+    pub(crate) fn net_interp_tick(&mut self, dt: f32) {
+        if !self.is_client() {
+            return;
+        }
+        // One 60 Hz tick of decay per (dt * 60) so a 144 Hz display does not
+        // decay faster than the original.
+        let scale = (dt * 60.0).clamp(0.0, 4.0);
+        for p in self.remote_players.values_mut() {
+            let len = (p.off_x * p.off_x + p.off_y * p.off_y).sqrt();
+            if len <= 0.0 {
+                continue;
+            }
+            let step = (len * 0.1).max(2.0) * scale;
+            let k = ((len - step) / len).max(0.0);
+            p.off_x *= k;
+            p.off_y *= k;
+            if (p.off_x * p.off_x + p.off_y * p.off_y).sqrt() < 0.5 {
+                p.off_x = 0.0;
+                p.off_y = 0.0;
+            }
+        }
+        let mut dirty = false;
+        for npc in self.net_npcs.values_mut() {
+            let len = npc.net_offset.length();
+            if len <= 0.0 {
+                continue;
+            }
+            let step = (2.0 + 2.0 * len / SMOOTHING_RANGE) * scale;
+            let k = ((len - step) / len).max(0.0);
+            npc.net_offset *= k;
+            if npc.net_offset.length() < 0.5 {
+                npc.net_offset = Vec2::ZERO;
+            }
+            dirty = true;
+        }
+        if dirty {
+            self.net_npcs_dirty = true;
+            // Rebuild immediately: the decay must be visible to this frame's
+            // draw (poll_net's rebuild is a frame behind it otherwise).
+            self.net_rebuild_lists();
+        }
+    }
+
+    /// The pixel position a peer slot is seeded at when it is first seen:
+    /// the world spawn, where the C# creates `Main.player[i]` before the
+    /// first `13` arrives (`MessageBuffer.cs:908-930`'s spawn arm).
+    fn net_peer_spawn_pos(&self) -> (f32, f32) {
+        let sx = self.world.spawn_x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+        let sy = self.world.spawn_y as f32 * TILE_PX;
+        (sx, sy)
+    }
+
+    /// Builds the `13 PlayerState` body for a stored peer snapshot (the
+    /// host-side relay and the join bundle).
+    fn player_state_of(&self, p: &net::PlayerNet) -> net::PlayerState {
+        let mut flags_a = net::BitsByte::new();
+        flags_a.set(6, p.facing > 0);
+        let mut flags_b = net::BitsByte::new();
+        flags_b.set(2, p.vx != 0.0 || p.vy != 0.0);
+        net::PlayerState {
+            player_id: p.id as u8,
+            flags_a,
+            flags_b,
+            flags_c: net::BitsByte::new(),
+            flags_d: net::BitsByte::new(),
+            selected_item: p.selected as u8,
+            x: p.x,
+            y: p.y,
+            vx: p.vx,
+            vy: p.vy,
+            on_ground: p.on_ground,
+            leg_frame: p.leg_frame,
+            body_frame: p.body_frame,
+            hp: p.hp,
+            max_hp: p.max_hp,
+        }
+    }
+
+    /// Rebuilds the client's npc/item render lists from the slot stores, in
+    /// slot order (the deterministic render order — `TR_SHOT` parity).
+    fn net_rebuild_lists(&mut self) {
+        if std::mem::take(&mut self.net_npcs_dirty) {
+            let mut slots: Vec<(u32, crate::npc::Npc)> =
+                self.net_npcs.iter().map(|(k, v)| (*k, v.clone())).collect();
+            slots.sort_by_key(|(k, _)| *k);
+            self.npcs = slots.into_iter().map(|(_, v)| v).collect();
+        }
+        if std::mem::take(&mut self.net_items_dirty) {
+            let mut v: Vec<(i16, item::ItemDrop)> = self
+                .net_items
+                .iter()
+                .map(|(k, d)| (*k, d.clone()))
+                .collect();
+            v.sort_by_key(|(k, _)| *k);
+            self.items = v.into_iter().map(|(_, d)| d).collect();
+        }
+    }
+
+    /// The stored `13` snapshot's facing (`flags_a` bit 6).
+    fn net_ps_last_facing(&self) -> i32 {
+        if self.net_ps_last.flags_a.get(6) {
+            1
+        } else {
+            -1
         }
     }
 
@@ -868,10 +1245,19 @@ fn decompressed_world(data: &[u8]) -> Option<World> {
     save::parse(&out).ok()
 }
 
-fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
-    let kind = crate::npc::NpcKind::from_u16(n.kind)?;
-    let tx = (n.x / TILE_PX) as i32;
-    let mut npc = match kind {
+/// The world-probing NPC ctors, seeding a client-side NPC's stats from the
+/// `23` body (`npc_from_net`'s stats pass). `None` when the world has no
+/// column surface at the slot — the joining client's column tables are not
+/// part of the transferred world blob — and the caller falls back to a bare
+/// seed, because the `23` body carries everything the render needs.
+fn npc_seed(
+    world: &World,
+    kind: crate::npc::NpcKind,
+    tx: i32,
+    x: f32,
+    y: f32,
+) -> Option<crate::npc::Npc> {
+    Some(match kind {
         crate::npc::NpcKind::Slime => crate::npc::Npc::spawn_slime(world, tx)?,
         crate::npc::NpcKind::DemonEye | crate::npc::NpcKind::WanderingEye => {
             crate::npc::Npc::spawn_eye(world, tx)?
@@ -888,7 +1274,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::Clothier
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         crate::npc::NpcKind::QueenBee
@@ -907,7 +1293,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::GolemHeadFree
         | crate::npc::NpcKind::Deerclops
         | crate::npc::NpcKind::Creeper => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         crate::npc::NpcKind::Skeleton
@@ -920,7 +1306,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         crate::npc::NpcKind::EaterOfSouls
         | crate::npc::NpcKind::Hornet
         | crate::npc::NpcKind::MeteorHead => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         // The swimmers: the ctor plants the feet on the column surface —
@@ -969,6 +1355,19 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::MartianSaucerTurret
         | crate::npc::NpcKind::MartianSaucerCannon
         | crate::npc::NpcKind::MartianSaucerCore
+        | crate::npc::NpcKind::FlyingDutchman
+        | crate::npc::NpcKind::FlyingDutchmanCannon
+        | crate::npc::NpcKind::DD2GoblinT1
+        | crate::npc::NpcKind::DD2GoblinT2
+        | crate::npc::NpcKind::DD2GoblinT3
+        | crate::npc::NpcKind::DD2GoblinBomberT1
+        | crate::npc::NpcKind::DD2GoblinBomberT2
+        | crate::npc::NpcKind::DD2GoblinBomberT3
+        | crate::npc::NpcKind::DD2JavelinT1
+        | crate::npc::NpcKind::DD2JavelinT2
+        | crate::npc::NpcKind::DD2JavelinT3
+        | crate::npc::NpcKind::DD2SkeletonT1
+        | crate::npc::NpcKind::DD2SkeletonT3
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher
@@ -980,7 +1379,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::ChaosBall
         | crate::npc::NpcKind::BurningSphere
         | crate::npc::NpcKind::WaterSphere => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         crate::npc::NpcKind::CaveBat
@@ -988,7 +1387,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::Hellbat
         | crate::npc::NpcKind::VoodooDemon => {
             // The net spawn hangs the bat at the net Y (the cave air).
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
@@ -997,26 +1396,39 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         crate::npc::NpcKind::Hungry
         | crate::npc::NpcKind::LeechHead
         | crate::npc::NpcKind::LeechBody => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         // The eye and the servant: the ctor seeds the stats — the net state
         // overwrites the position below (the hover arm's shape).
         crate::npc::NpcKind::EyeOfCthulhu | crate::npc::NpcKind::ServantOfCthulhu => {
-            let y = (n.y / TILE_PX) as i32;
+            let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
-    };
+    })
+}
+
+fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
+    let kind = crate::npc::NpcKind::from_u16(n.kind.max(0) as u16)?;
+    let tx = (n.x / TILE_PX) as i32;
+    let mut npc = npc_seed(world, kind, tx, n.x, n.y).unwrap_or_else(|| {
+        // The world-probing ctors failed (no column surface at the slot on a
+        // joining client): the `23` body carries everything the render needs,
+        // so a bare stats seed is enough.
+        crate::npc::Npc::new(kind, n.x, n.y, 1, 0.0)
+    });
     npc.x = n.x;
     npc.y = n.y;
     npc.vx = n.vx;
     npc.vy = n.vy;
-    npc.hp = n.hp;
-    npc.max_hp = n.max_hp;
-    npc.facing = n.facing;
-    npc.on_ground = n.on_ground;
-    npc.anim = n.anim;
-    npc.hurt_cd = n.hurt_cd;
+    if !n.life_full && n.hp >= 0 {
+        npc.hp = n.hp;
+    }
+    npc.facing = if n.dir_right { 1 } else { -1 };
+    // `hurt_cd` rides `28 NPCStrike` in the C# (`MessageBuffer.cs:1766`);
+    // until that message lands the client shows no hit flash on networked
+    // NPCs — deviation in `docs/ANALYSIS.md`.
+    npc.hurt_cd = 0.0;
     Some(npc)
 }
 
@@ -1076,6 +1488,7 @@ mod handshake_tests {
         let server = net::Server::start(0, password.to_string()).unwrap();
         let addr = server.addr().to_string();
         host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
         client_app.player_name = "client".into();
         client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
         client_app.join_target = Some((addr, client_pw.to_string()));
@@ -1201,5 +1614,202 @@ mod handshake_tests {
             "no load status was received (state {})",
             client_app.net_state
         );
+    }
+
+    /// Pumps both apps at 60 Hz for `frames` frames: the net tick (10 Hz
+    /// internally) plus the event drain, as the real frame loop does.
+    fn pump(host: &mut App, client: &mut App, frames: usize) {
+        for _ in 0..frames {
+            host.net_tick(1.0 / 60.0);
+            client.net_tick(1.0 / 60.0);
+            host.poll_net();
+            client.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    /// A fully joined pair with a live player on the host: the two-app world
+    /// the M6-NET-2 sync tests stream snapshots through.
+    fn in_world_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        // A dirt row so the NPC ctors find a column surface on both sides
+        // (the world transfer carries it to the client).
+        host_app.world.column_surface = vec![host_app.world.height; host_app.world.width as usize];
+        for x in 0..host_app.world.width {
+            let i = host_app.world.index(x, 4);
+            host_app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            // `surface_of` reads the precomputed column table, not the tiles.
+            host_app.world.column_surface[x as usize] = 4;
+        }
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        host_app.player_name = "host".into();
+        (host_app, client_app)
+    }
+
+    #[test]
+    fn player_state_syncs_across_the_wire() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The peer slot is seeded at the world spawn, so the first snapshot
+        // (the host standing at its spawn) carries no lag.
+        let spawn = client_app.net_peer_spawn_pos();
+        host_app.player.as_mut().unwrap().x = spawn.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert!(
+            (peer.x - spawn.0).abs() < 0.01,
+            "x snapped to the wire value"
+        );
+        assert!(peer.off_x.abs() < 0.01, "the first snap carries no lag");
+        assert_eq!(peer.name, "host");
+        // A 60 px step: the lag accrues, the position snaps.
+        host_app.player.as_mut().unwrap().x = spawn.0 + 60.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert!((peer.x - (spawn.0 + 60.0)).abs() < 0.01);
+        assert!(
+            (peer.off_x - 60.0).abs() < 0.01,
+            "the offset is the visual lag: {:.2}",
+            peer.off_x
+        );
+    }
+
+    #[test]
+    fn the_net_offset_decays_toward_zero() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        host_app.player.as_mut().unwrap().x = 160.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let first = client_app.remote_players[&0].off_x;
+        assert!(first > 50.0, "the 60 px step accrued a lag");
+        // One 60 Hz frame of the C#'s decay: `max(2, 10%)` toward zero.
+        client_app.net_interp_tick(1.0 / 60.0);
+        let second = client_app.remote_players[&0].off_x;
+        assert!(
+            second < first && second > 0.0,
+            "the lag decays, not jumps: {first} -> {second}"
+        );
+        // Enough frames and it is gone.
+        for _ in 0..600 {
+            client_app.net_interp_tick(1.0 / 60.0);
+        }
+        assert_eq!(client_app.remote_players[&0].off_x, 0.0);
+    }
+
+    #[test]
+    fn a_teleport_farther_than_the_range_snaps_the_offset() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        // 400 px: past `multiplayerNPCSmoothingRange` (300) the C# resets the
+        // offset to zero instead of sliding (`MessageBuffer.cs:1006-1008`).
+        host_app.player.as_mut().unwrap().x = 500.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert!((peer.x - 500.0).abs() < 0.01);
+        assert_eq!(peer.off_x, 0.0);
+    }
+
+    #[test]
+    fn npc_snapshots_keep_the_slot_and_despawn_on_absence() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let slime = crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue);
+        host_app.npcs.push(slime);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.npcs.len(), 1, "the client stores the NPC");
+        let x0 = client_app.npcs[0].x;
+        // Move it: the same slot is patched, not re-created.
+        host_app.npcs[0].x = x0 + 80.0;
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.npcs.len(), 1, "no re-spawn per snapshot");
+        assert!(
+            (client_app.npcs[0].x - (x0 + 80.0)).abs() < 0.01,
+            "the position snaps"
+        );
+        assert!(
+            client_app.npcs[0].net_offset.length() > 50.0,
+            "the npc lag accrued: {}",
+            client_app.npcs[0].net_offset.length()
+        );
+        // The decay shrinks it (the C#'s `2 + 2*(len/range)` step).
+        let before = client_app.npcs[0].net_offset.length();
+        client_app.net_interp_tick(1.0 / 60.0);
+        assert!(client_app.npcs[0].net_offset.length() < before);
+        // The NPC disappears: the streamed set no longer contains the slot.
+        host_app.npcs.clear();
+        pump(&mut host_app, &mut client_app, 150);
+        assert!(
+            client_app.npcs.is_empty(),
+            "the despawn diff removed it: {} left",
+            client_app.npcs.len()
+        );
+    }
+
+    #[test]
+    fn item_states_sync_and_remove() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut drop = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        drop.age = 60.0;
+        host_app.items.push(drop);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.items.len(), 1, "the drop is streamed");
+        assert_eq!(client_app.items[0].kind, 7);
+        // It moves: the 21 diff updates it.
+        host_app.items[0].pos.x = 140.0;
+        pump(&mut host_app, &mut client_app, 15);
+        assert!((client_app.items[0].pos.x - 140.0).abs() < 0.01);
+        // It is picked up: the 151 removes it.
+        host_app.items.clear();
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.items.is_empty(), "the removal streamed as 151");
+    }
+
+    #[test]
+    fn a_pickup_request_removes_the_drop_on_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Stand the client's peer next to the drop on the HOST's side (the
+        // host validates the 60 px range against `remote_players[client]`).
+        host_app.remote_players.insert(
+            1,
+            net::PlayerNet {
+                id: 1,
+                x: 100.0,
+                y: 100.0,
+                ..Default::default()
+            },
+        );
+        host_app.player.as_mut().unwrap().x = 100.0;
+        host_app.player.as_mut().unwrap().y = 100.0;
+        let mut drop = item::ItemDrop::new(7, 3, 0, 108.0, 108.0, 0.0, 0.0, 0.0);
+        drop.age = 60.0;
+        host_app.items.push(drop);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(host_app.items.len(), 1);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Pickup { drop: 0 });
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            host_app.items.is_empty(),
+            "the host validated and removed it"
+        );
+        assert!(client_app.items.is_empty(), "the client saw the 151");
+    }
+
+    #[test]
+    fn the_host_own_snapshot_reaches_the_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 42.0;
+        host_app.player.as_mut().unwrap().leg_frame = 5;
+        pump(&mut host_app, &mut client_app, 15);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert!((peer.x - 42.0).abs() < 0.01);
+        assert_eq!(peer.leg_frame, 5);
     }
 }

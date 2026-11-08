@@ -2170,7 +2170,119 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// spawns of any cleanup kills, the frame-cache invalidation. Returns whether
 /// the click was consumed; `false` lets the caller fall through to the place
 /// path.
+/// `TileInteractionsUse`'s Lihzahrd Altar arm (`Player.cs:32755-32790`):
+/// the gates are `!NPC.AnyNPCs(245) && Main.hardMode &&
+/// NPC.downedPlantBoss`; the 58-slot inventory scan consumes one Power
+/// Cell 1293; the roar is `SoundID.Roar` (15) and the summon is
+/// `NPC.SpawnOnPlayer(plr, 245)`. The click is consumed whether or not
+/// the gates pass (the C#'s `flag2 = true`).
+fn use_golem_altar(app: &mut App) -> bool {
+    let gated = app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && n.kind == NpcKind::Golem)
+        || !app.world.hard_mode
+        || !app.world.downed_plant_boss;
+    if !gated {
+        // The inventory scan: the first 1293 row decrements; a zero
+        // stack clears (`SetDefaults(0)`) exactly like the C#.
+        for slot in 0..app.inventory.len() {
+            if app.inventory[slot].kind == 1293 && app.inventory[slot].count > 0 {
+                app.inventory[slot].count -= 1;
+                if app.inventory[slot].count == 0 {
+                    app.inventory[slot].kind = 0;
+                }
+                app.audio.play("Roar_0");
+                spawn_golem_on_altar(app);
+                break;
+            }
+        }
+    }
+    true
+}
+
+/// `NPC.SpawnOnPlayer`'s case-245 arm (`NPC.cs:80475-80531`): the
+/// ±20-tile scan around the player for the altar's origin cell
+/// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
+/// scans up and down that column (`WorldGen.SolidTile`'s
+/// active/!solidTop/!halfBrick/slope-0 shape — an out-of-bounds cell
+/// reads solid, the C# `null` case), then the Golem lands at the
+/// column's `(up + down) / 3` pixel Y, targeting the player, with the
+/// "HasAwoken" announcement. Returns false when no altar is in range
+/// (the C#'s try/catch no-spawn path).
+fn spawn_golem_on_altar(app: &mut App) -> bool {
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = player.center();
+    let cx_t = (pcx / TILE_PX) as i32;
+    let cy_t = (pcy / TILE_PX) as i32;
+    let mut altar: Option<(i32, i32)> = None;
+    for j in (cx_t - 20)..=(cx_t + 20) {
+        for k in (cy_t - 20)..=(cy_t + 20) {
+            if app
+                .world
+                .tile(j, k)
+                .is_some_and(|t| t.active() && t.kind == 237 && t.frame_x == 18 && t.frame_y == 0)
+            {
+                altar = Some((j, k));
+            }
+        }
+    }
+    let Some((ax, ay)) = altar else {
+        return false;
+    };
+    let solid = |j: i32, k: i32| -> bool {
+        match app.world.tile(j, k) {
+            None => true,
+            Some(t) => {
+                t.active()
+                    && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                    && !t.half_brick()
+                    && t.slope() == 0
+            }
+        }
+    };
+    let mut up = ay - 15;
+    for k in ((ay - 49).max(0)..=ay).rev() {
+        if solid(ax, k) {
+            up = k;
+            break;
+        }
+    }
+    let mut down = ay - 15;
+    for k in ay..(ay + 50) {
+        if solid(ax, k) {
+            down = k;
+            break;
+        }
+    }
+    let spawn_x = ax as f32 * TILE_PX + 8.0;
+    let spawn_y = ((up + up + down) / 3) as f32 * TILE_PX;
+    let mut golem = Npc::new(NpcKind::Golem, spawn_x, spawn_y, 1, 0.0);
+    golem.hp = golem.max_hp;
+    app.npcs.push(golem);
+    app.chat
+        .new_text("The Golem has awoken!", crate::chat::COLOR_SERVER_MESSAGE);
+    true
+}
+
 fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
+    // The Lihzahrd Altar arm (`TileInteractionsUse`'s `type == 237`
+    // branch, `Player.cs:32755-32790`): the right-click on the altar
+    // consumes the click and, with a Power Cell 1293 in the INVENTORY
+    // (the vanilla scans the inventory, not the held item), no living
+    // Golem, hardmode and Plantera down, summons the boss. The arm runs
+    // before the furniture dispatch — the altar has no `interact_at`
+    // interaction of its own.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 237)
+    {
+        return use_golem_altar(app);
+    }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
@@ -5145,10 +5257,99 @@ mod loot_summon_tests {
             prefix: 0,
         };
         assert!(use_boss_summon_item(&mut app));
+        assert!(app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0));
+    }
+    #[test]
+    fn the_golem_altar_consumes_a_cell_and_summons() {
+        // `TileInteractionsUse`'s altar arm (`Player.cs:32755-32790`) +
+        // `NPC.SpawnOnPlayer`'s case-245 column scan (`NPC.cs:80475-80531`):
+        // the Power Cell 1293 in the inventory with hardmode and Plantera
+        // down pays one cell and puts the Golem at the altar column's
+        // `(up + up + down) / 3`; a missing gate refuses free.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        // The altar's origin cell (237, frame 18/0) with a ceiling 10
+        // above and a floor 6 below for the solid scans.
+        for &(ax, ay, kind, fx, fy) in &[
+            (30, 30, 237u16, 18i16, 0i16),
+            (30, 20, 1, 0, 0),
+            (30, 36, 1, 0, 0),
+        ] {
+            let i = w.index(ax, ay);
+            w.tiles[i] = tr_core::Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 30.0 * 16.0;
+        player.y = 30.0 * 16.0;
+        app.player = Some(player);
+        app.world.hard_mode = true;
+        app.world.downed_plant_boss = true;
+        // No cell: the click is consumed but nothing spawns.
+        assert!(
+            interact_tile(&mut app, 30, 30),
+            "the altar consumes the click"
+        );
+        assert!(
+            app.npcs.iter().all(|n| n.kind != NpcKind::Golem),
+            "the missing cell refuses"
+        );
+        // The cell: one paid, the Golem at the (20 + 20 + 36)/3 row.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1293,
+            name: "Lihzahrd Power Cell".into(),
+            count: 2,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 30, 30));
+        assert_eq!(app.inventory[app.selected].count, 1, "one cell paid");
+        let golem = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Golem)
+            .expect("the Golem spawns");
+        assert_eq!(golem.x, 30.0 * 16.0 + 8.0, "the altar column");
+        assert_eq!(golem.y, 25.0 * 16.0, "the (20+20+36)/3 row");
+        // A living Golem refuses the re-summon; hardmode off refuses too.
+        interact_tile(&mut app, 30, 30);
+        assert_eq!(app.inventory[app.selected].count, 1, "the living-boss gate");
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Golem {
+                n.hp = 0;
+            }
+        }
+        app.world.hard_mode = false;
+        app.inventory[app.selected].count = 2;
+        interact_tile(&mut app, 30, 30);
+        assert_eq!(
+            app.inventory[app.selected].count, 2,
+            "the hardmode gate refuses free"
+        );
         assert!(
             app.npcs
                 .iter()
-                .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+                .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
+            "the hardmode gate refuses"
         );
     }
     #[test]
