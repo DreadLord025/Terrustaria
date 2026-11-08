@@ -10547,6 +10547,38 @@ mod tests {
 
 
     #[test]
+    fn the_hovers_cycle_the_strip_at_the_eight_tick_stride() {
+        // `FindFrame`'s case 6/173 (`NPC.cs`): the counter advances the
+        // row every 8 ticks and wraps over `Main.npcFrameCount` — the
+        // Eater of Souls' and Meteor Head's 2 rows, the Hornet's 3.
+        let mut e = bare(NpcKind::EaterOfSouls);
+        e.frame = 0;
+        e.frame_counter = 0.0;
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 0, "the stride holds for 7 ticks");
+        e.find_frame();
+        assert_eq!(e.frame, 1, "the eighth tick advances");
+        // The wrap fires on the NEXT advance (the C#'s check sits inside
+        // the stride branch): one more stride carries row 1 -> 2 -> 0.
+        e.frame_counter = 7.5;
+        e.find_frame();
+        assert_eq!(e.frame, 0, "the wrap over 2 rows");
+        // The Hornet's third row.
+        let mut h = bare(NpcKind::Hornet);
+        h.frame = 2;
+        h.frame_counter = 7.5;
+        h.find_frame();
+        assert_eq!(h.frame, 0, "the hornet wraps over 3 rows");
+        h.frame = 1;
+        h.frame_counter = 0.0;
+        h.find_frame();
+        assert_eq!(h.frame, 1, "the second row holds");
+    }
+
+
+    #[test]
     fn the_golem_family_stats_and_maps() {
         // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the
         // kind<->u16 65-69, the bestiary fold (the parts -> the Golem
