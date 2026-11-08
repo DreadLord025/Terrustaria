@@ -4322,4 +4322,35 @@ mod pirate_shot_tests {
         assert!(fired > 0, "the 180 arrow lands in the pool");
         player.x += 0.0;
     }
+    #[test]
+    fn the_captains_wounded_arm_fires_the_240_barrage() {
+        // The Captain 216's wounded arm (`NPC.cs:59170-59235` + `:59603`):
+        // past 20 shots the barrage fires the 240 shell (100 dmg, 15
+        // speed, no jitter); the port's `caster_counter` = localAI[2].
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        // Force the wounded state: 20 shots counted.
+        n.caster_counter = 20;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 240 {
+                    assert_eq!(s.5, 100, "the barrage's damage");
+                    let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                    assert!((speed - 15.0).abs() < 0.01, "the barrage's speed");
+                    return;
+                }
+            }
+        }
+        panic!("the wounded arm never fired the barrage");
+    }
 }

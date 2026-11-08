@@ -2726,6 +2726,15 @@ The 180/82 projectile rows join `proj_data` — the pool's data gate
 previously dropped every kind outside its hand-listed set, so the
 family's shots silently never spawned.
 
+## The Captain's wounded barrage (M4-EVENT-5c)
+
+The pirate Captain 216 counts his shots (`localAI[2]` — the port's
+`caster_counter`); past 20 the wounded arm swaps the plain 180 arrow for
+the 240 shell: 100 damage, 15 speed, no jitter, on the rolling
+`max(60, 180 - localAI[3]*20)` cooldown (`localAI[3]` = the barrage
+count, the port's `cast_windup`). The barrage resets the shot counter.
+The 240 shell rides the Dutchman's data row.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

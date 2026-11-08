@@ -4697,7 +4697,7 @@ impl Npc {
     /// walker's (the per-type 5/0.25/0.7 table folds like the other
     /// aiStyle-3 families).
     fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
-        let (cooldown, speed, proj, dmg) = Self::shooter_params(self.kind);
+        let (mut cooldown, speed, proj, dmg) = Self::shooter_params(self.kind);
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -4727,10 +4727,19 @@ impl Npc {
             // carries the per-kind jitter (±100×0.4 for the martians'
             // rays, ±50 for the Captain's arrow) re-scaled ×(0.85..1.15);
             // the spawn is the centre + 6 y, the velocity at the speed.
+            // The Captain's WOUNDED arm (`:59170-59235` + `:59603-59606`):
+            // `localAI[2]` counts the shots (the port's `caster_counter`),
+            // past 20 the barrage fires the 240 shell (100 dmg, 15 speed,
+            // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
+            // cooldown (the port's `cast_windup` as `localAI[3]`).
+            let captain_wounded = self.kind == NpcKind::PirateCaptain
+                && self.caster_counter >= 20;
             if self.ai[1] * 2.0 >= cooldown as f32 {
                 let mut ax = dx;
                 let mut ay = dy;
-                let (jit, jit_scale) = if self.kind == NpcKind::PirateCaptain {
+                let (jit, jit_scale) = if captain_wounded {
+                    (0.0, 0.0)
+                } else if self.kind == NpcKind::PirateCaptain {
                     (50.0, 1.0)
                 } else {
                     (100.0, 0.4)
@@ -4740,10 +4749,19 @@ impl Npc {
                 ax *= 0.85 + 0.3 * crate::app::rand01(rng);
                 ay *= 0.85 + 0.3 * crate::app::rand01(rng);
                 let len = (ax * ax + ay * ay).sqrt().max(0.001);
-                let inv = speed / len;
+                let shot_speed = if captain_wounded { 15.0 } else { speed };
+                let (shot_proj, shot_dmg) = if captain_wounded {
+                    (240u16, 100)
+                } else {
+                    (proj, dmg)
+                };
+                let inv = shot_speed / len;
                 self.wants_hostile_shot
-                    .push((proj, cx, cy + 6.0, ax * inv, ay * inv, dmg));
+                    .push((shot_proj, cx, cy + 6.0, ax * inv, ay * inv, shot_dmg));
                 self.ai[2] = octant(ax, ay);
+                if self.kind == NpcKind::PirateCaptain {
+                    self.caster_counter += 1;
+                }
             }
         } else {
             // The aggression/stop entry (`:59630-59697`): grounded +
@@ -4762,6 +4780,18 @@ impl Npc {
                 }
                 let _ = (&mut ax, &mut ay);
             }
+        }
+        // The Captain's rolling cooldown (`:59174-59179`): wounded, the
+        // timer is `max(60, 180 - the barrage count * 20)`.
+        if self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20 {
+            let cd = (60).max(180 - self.cast_windup * 20);
+            cooldown = cd as u32;
+        }
+        // The barrage's counter reset: after the 240 shell leaves the
+        // vanilla's `localAI[2] = 0` (`:59523`).
+        if self.kind == NpcKind::PirateCaptain && self.caster_counter > 20 && self.ai[2] == 0.0 {
+            self.cast_windup += 1;
+            self.caster_counter = 0;
         }
         // The sleep's exit (`:59618-59623`).
         if self.ai[1] <= 0.0 {
