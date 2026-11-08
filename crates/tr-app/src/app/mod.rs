@@ -1369,7 +1369,12 @@ impl App {
     /// entity/session half of the startup: the render assets, the starting
     /// player and slimes, the inventory and the persisted session, the debug
     /// env hooks, the menu/network/map setup and the `TR_UI` preset.
+    ///
+    /// `settings` is the master copy, read once by `main` (`Settings::load`,
+    /// the read-once rule); the menu receives a clone so its edits park here on
+    /// close (`close_menu`/`park_menu`).
     pub(crate) fn new(
+        settings: settings::Settings,
         world: World,
         world_path: PathBuf,
         atlas: Atlas,
@@ -1780,7 +1785,7 @@ impl App {
         let menu_state = if skip_menu {
             None
         } else {
-            let mut m = menu::Menu::new(player_name.clone());
+            let mut m = menu::Menu::new(settings.clone(), player_name.clone());
             m.connecting = join_target.is_some();
             Some(m)
         };
@@ -1829,6 +1834,10 @@ impl App {
         // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
         // chest merges in (its anchor is already stocked — the roll skips).
         let world_chests = crate::chest_gen::generate_world_chests(&world);
+        // `Main.mouseColor`'s stored colour seeds the cursor tint
+        // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
+        // live settings, so this is only the pre-first-frame value.
+        let cursor_mouse_color = settings.mouse_color;
         let mut app = App {
             window: None,
             gpu: None,
@@ -2071,7 +2080,7 @@ impl App {
             front_mouse_down: false,
             session_draft: None,
             vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
-            settings: settings::Settings::load(),
+            settings,
             player_name,
             net: net_role,
             remote_players: HashMap::new(),
@@ -2109,7 +2118,7 @@ impl App {
             } else {
                 mouse_pin().unwrap_or(Vec2::ZERO)
             },
-            cursor: ui::cursor::CursorState::default(),
+            cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,

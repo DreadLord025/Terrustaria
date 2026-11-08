@@ -599,7 +599,10 @@ impl FrontScreenBehaviours for FrontScreen {
                             app.front = None;
                             app.front_backup = Some(FrontScreen::CharCreation(state));
                             app.park_menu();
-                            app.menu = Some(menu::Menu::open_confirm_discard(name));
+                            app.menu = Some(menu::Menu::open_confirm_discard(
+                                app.settings.clone(),
+                                name,
+                            ));
                         } else {
                             app.front = None;
                             app.enter_front(FrontScreen::CharSelect);
@@ -958,7 +961,10 @@ impl App {
                     .players
                     .get(delete_index.unwrap_or(0))
                     .map(|p| p.name.clone());
-                let mut m = menu::Menu::open_confirm_delete_player(name.unwrap_or_default());
+                let mut m = menu::Menu::open_confirm_delete_player(
+                    self.settings.clone(),
+                    name.unwrap_or_default(),
+                );
                 m.confirm_index = delete_index.unwrap_or(0);
                 self.menu = Some(m);
             }
@@ -969,14 +975,17 @@ impl App {
                     .worlds
                     .get(delete_index.unwrap_or(0))
                     .map(|w| w.name.clone());
-                let mut m = menu::Menu::open_confirm_delete_world(name.unwrap_or_default());
+                let mut m = menu::Menu::open_confirm_delete_world(
+                    self.settings.clone(),
+                    name.unwrap_or_default(),
+                );
                 m.confirm_index = delete_index.unwrap_or(0);
                 self.menu = Some(m);
             }
             Some(p) => {
                 // A plain legacy page (the Back row's `menuMode = 0`).
                 self.park_menu();
-                let mut m = menu::Menu::new(self.player_name.clone());
+                let mut m = menu::Menu::new(self.settings.clone(), self.player_name.clone());
                 m.page = p;
                 self.menu = Some(m);
             }
