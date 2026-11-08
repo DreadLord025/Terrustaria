@@ -176,8 +176,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 vx,
                 vy,
                 damage,
+                // Phase 2 adds the C#'s cap-loop count kind (0 on the floor,
+                // 185 on the ceiling); binding it into the cap scan is
+                // Phase 4's DW-4.2.
+                ..
             } => {
-                // `Wiring.cs:1825-1843`: the 1000-slot scan of the trap's own
+                // `Wiring.cs:1814-1822`: the 1000-slot scan of the trap's own
                 // projectile kind — the 200 base count decrements by the
                 // distance rings 50/100/200/300/400/500/700/900/1200 px
                 // (−50/−15/−10/−8/−6/−5/−4/−3/−2, else −1). The C#'s `j *

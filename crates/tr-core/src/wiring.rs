@@ -191,13 +191,16 @@ pub struct Wiring {
     trap_requests: Vec<TrapRequest>,
 }
 
-/// A trap emission request (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
+/// A trap emission request (`HitWireSingle`'s case 137, `Wiring.cs:1760-1993`):
 /// the engine resolves the variant, the `CheckMech` cooldown, the direction
 /// decode and the speed/damage tables; the app layer spawns the projectile
-/// (`Shot`) or runs the spear's 1000-slot proximity cap first (`Spear` — the
-/// scan reads the projectile pool, so it lives app-side).
+/// (`Shot`) or runs the spiky ball's 1000-slot proximity cap first (`Spear` —
+/// the scan reads the projectile pool, so it lives app-side).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TrapRequest {
+    /// A direct emission: the dart/super dart/flame/venom dart family and the
+    /// spear trap's projectile — every arm the C#'s shared
+    /// `if (num95 != 0)` tail spawns once (`Wiring.cs:1977-1981`).
     Shot {
         x: f32,
         y: f32,
@@ -206,15 +209,30 @@ pub enum TrapRequest {
         kind: u16,
         damage: i32,
     },
-    /// The Spear Trap's variant: the engine pre-rolls the ±1 px spread
-    /// (`Main.rand.Next(...) * 0.05f`, `Wiring.cs:1838-1839`), the app
-    /// applies the proximity cap before spawning.
+    /// The spiky ball trap's variant (185 SpikyBallTrap, `ProjectileID.cs:924`;
+    /// the variant name is the port's WIRE-1 legacy — the 186 SpearTrap emits
+    /// a `Shot`). The engine pre-rolls the ±1 px spread
+    /// (`Main.rand.Next(...) * 0.05f`, `Wiring.cs:1849-1850` floor / `:1955-1956`
+    /// ceiling — the `speedX` roll first, then `speedY`), and `count_kind` is
+    /// the projectile type the C#'s cap loop counted: **0** on the floor (F1 —
+    /// `num95` is still 0 at that loop, `:1815-1822`, and `ProjectileID.None`
+    /// means no live slot can match, so the cap never blocks) and **185** on
+    /// the ceiling (`num95 = 185` is assigned before its loop, `:1944`). The
+    /// ceiling −7 arm emits this variant **twice** from the one roll set
+    /// (F2 — the C# spawns inside the case, `:1960`, and again in the
+    /// shared tail, `:1977-1981`). The app applies the cap by counting the
+    /// pool's active `count_kind` projectiles within the distance rings off
+    /// `(i*16+8, j*18+8)` (the 18 is verbatim, F3) and blocks at ≤ 0.
     Spear {
         x: f32,
         y: f32,
         vx: f32,
         vy: f32,
         damage: i32,
+        /// The C# `num95` the cap loop tested — 0 (`ProjectileID.None`,
+        /// `ProjectileID.cs:554`) on the floor, 185 (SpikyBallTrap) on the
+        /// ceiling.
+        count_kind: u16,
     },
 }
 
@@ -497,17 +515,23 @@ impl Wiring {
         std::mem::take(&mut self.teleport_events)
     }
 
-    /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
-    /// `frameY / 18` selects the trap — 0 dart (98, 20 dmg, speed 12),
-    /// 1 superdart (184, 40, 12), 2 flame (187, 40, 5), 3 spear (185, 40,
-    /// 4±1 with the ±1 px spread roll), 4 boulder (186, 60, 8), 5 spiky
-    /// ball (980, 30, 12) — the direction decodes from `frameX` (0 → −1 X,
-    /// 18 → +1 X, 36-71 → −1 Y, ≥72 → +1 Y; the spear uses `frameX / 18`
-    /// slots instead), the spawn offset ±10 (±14 spear, ±18 boulder) px.
-    /// The wall-mounted negatives (−10..−6) emit the same projectiles with
-    /// fixed offsets. The boulder (aiStyle 37) and the flame jet (aiStyle
-    /// 38) requests are emitted verbatim; the app-side spawn drops them
-    /// until their families land (M4-PROJ follow-ups).
+    /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1760-1993`):
+    /// `frameY / 18` selects the trap — 0 dart trap (98 PoisonDart, 20 dmg,
+    /// speed 12), 1 super dart trap (184 PoisonDartTrap, 40, 12), 2 flame
+    /// trap (187 FlamethrowerTrap, 40, 5), 3 spiky ball trap (185
+    /// SpikyBallTrap, 40, `4*dir` px/tick with the ±1 px spread rolls), 4
+    /// spear trap (186 SpearTrap, 60, 8), 5 venom dart trap (980
+    /// VenomDartTrap, 30, 12) — the names are `ProjectileID.cs:750/922/924/
+    /// 926/928/2514`. The direction decodes from `frameX` (0 → −1 X, 18 → +1
+    /// X, 36-71 → −1 Y, ≥72 → +1 Y; the spiky ball/spear arms decode
+    /// `frameX / 18` slots instead), the spawn offset ±10 px (±14 spiky
+    /// ball, ±18 spear). The wall-mounted negatives (−10 dart, −9 super
+    /// dart, −8 flame) fire the same projectiles at the fixed +10/±2 px
+    /// offset; −7 is the ceiling spiky ball (185, downward — and it fires
+    /// twice, F2) and −6 the ceiling spear (186, straight down). The spear
+    /// trap (186, aiStyle 37) and the flame jet (187, aiStyle 38) requests
+    /// are emitted verbatim; the app-side spawn drops them until their
+    /// families land (M4-PROJ follow-ups).
     fn trap_emit(&mut self, i: i32, j: i32, tile_frame_x: i16, tile_frame_y: i16) {
         let variant = tile_frame_y as i32 / 18;
         let frame_x = tile_frame_x;
@@ -550,8 +574,14 @@ impl Wiring {
                     damage,
                 });
             }
-            // `Wiring.cs:1802-1849`: the spear — `CheckMech(300)` plus the
-            // ±1 px spread roll (the app layer runs the proximity cap).
+            // `Wiring.cs:1808-1853`: the floor spiky ball — `CheckMech(300)`
+            // plus the ±1 px spread rolls X-then-Y (`:1849-1850`); the app
+            // layer runs the proximity cap. F1: the C#'s cap loop counts
+            // `type == num95` with `num95` still 0 (`:1815-1822`; it is only
+            // assigned 185 inside the `if (num98 > 0)` block, `:1825`), so
+            // the request carries `count_kind = 0` — `ProjectileID.None`,
+            // a kind no pool slot can hold, and the cap is a no-op by
+            // construction.
             3 if self.check_mech(i, j, 300) => {
                 let (dx, dy): (i32, i32) = match frame_x / 18 {
                     0 | 1 => (0, 1),
@@ -572,9 +602,11 @@ impl Wiring {
                     vx: sx,
                     vy: sy,
                     damage: 40,
+                    // F1: `num95` is 0 when the cap loop runs (`:1817`).
+                    count_kind: 0,
                 });
             }
-            // `Wiring.cs:1906-1922`: the boulder — `CheckMech(90)`.
+            // `Wiring.cs:1855-1886`: the spear trap — `CheckMech(90)`.
             4 if self.check_mech(i, j, 90) => {
                 let (dx, dy): (i32, i32) = match frame_x / 18 {
                     0 | 1 => (0, 1),
@@ -592,8 +624,10 @@ impl Wiring {
                     damage: 60,
                 });
             }
-            // `Wiring.cs:1883-1920`: the wall-mounted negatives — the same
-            // projectiles, fixed offsets, `frameX != 0 → +1 X`.
+            // `Wiring.cs:1890-1936`: the wall-mounted negatives — the dart
+            // (−10), super dart (−9) and flame (−8), the same projectiles at
+            // the fixed `(i*16+8, j*16+7)` + `(10*dx, +2)` offset,
+            // `frameX != 0 → +1 X`.
             -10 | -9 | -8 if self.check_mech(i, j, 200) => {
                 let dx: i32 = if frame_x != 0 { 1 } else { -1 };
                 let (kind, damage, speed) = match variant {
@@ -610,20 +644,29 @@ impl Wiring {
                     damage,
                 });
             }
-            // The -7 spear fires downward with the symmetric spread
-            // (`speedY = 4 + rand(0,21) * 0.05`, spawn y + 6).
+            // `Wiring.cs:1938-1963`: the ceiling spiky ball — downward with
+            // the symmetric spread (the `speedX` roll `:1955`, then the
+            // `speedY` roll `:1956`), spawn `(i*16+8, j*16+16+6)`. Unlike
+            // the floor, `num95 = 185` is assigned *before* the cap loop
+            // (`:1944`), so `count_kind` is 185 here (F1's mirror). F2: the
+            // C# spawns the projectile inside the case (`:1960`) and again
+            // in the shared `if (num95 != 0)` tail (`:1977-1981`) — one roll
+            // set, two identical projectiles.
             -7 if self.check_mech(i, j, 300) => {
                 let sx = roll(self, -20, 21) * 0.05;
                 let sy = 4.0 + roll(self, 0, 21) * 0.05;
-                self.trap_requests.push(TrapRequest::Spear {
+                let request = TrapRequest::Spear {
                     x: (i * 16 + 8) as f32,
                     y: (j * 16 + 16 + 6) as f32,
                     vx: sx,
                     vy: sy,
                     damage: 40,
-                });
+                    count_kind: 185,
+                };
+                self.trap_requests.push(request);
+                self.trap_requests.push(request);
             }
-            // The -6 boulder fires straight down.
+            // `Wiring.cs:1965-1975`: the -6 spear fires straight down.
             -6 if self.check_mech(i, j, 90) => {
                 self.trap_requests.push(TrapRequest::Shot {
                     x: (i * 16 + 8) as f32,
@@ -3267,8 +3310,13 @@ mod trap_tests {
 
     #[test]
     fn the_trap_variants_map_verbatim() {
-        // 1 → 184/40/12, 2 → 187/40/5, 5 → 980/30/12 (`:1786-1796`); the
-        // vertical frameX decode (36-71 → −1 Y, ≥72 → +1 Y).
+        // The floor table (`Wiring.cs:1772-1801` / `:1855-1886`) and the wall
+        // negatives (`:1890-1936`), with the C# names (`ProjectileID.cs`):
+        // 1 → 184 PoisonDartTrap/40/12, 2 → 187 FlamethrowerTrap/40/5,
+        // 5 → 980 VenomDartTrap/30/12 (`:922`/`:928`/`:2514`), 4 → 186
+        // SpearTrap/60/8, −10/−9/−8 → 98/184/187 at the fixed +10/±2 px
+        // offset. frameX 72 fires the dart family downward (≥72 → +1 Y);
+        // the spear arm decodes `frameX / 18` slots.
         for (frame_y, kind, damage, speed) in
             [(18, 184, 40, 12.0), (36, 187, 40, 5.0), (90, 980, 30, 12.0)]
         {
@@ -3281,6 +3329,44 @@ mod trap_tests {
                 TrapRequest::Shot { vy, kind: k, damage: d, .. } => {
                     assert_eq!((k, d), (kind, damage));
                     assert_eq!(vy, speed, "frameY {frame_y} fires downward");
+                }
+                _ => panic!("variant frameY {frame_y} emits a Shot"),
+            }
+        }
+        // The spear trap (variant 4, frameY 72): 186/60 with the ±18 px
+        // offset and the speed-8 slot decode (`:1855-1886`).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 36, 72);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        match reqs[0] {
+            TrapRequest::Shot { x, y, vx, vy, kind, damage } => {
+                assert_eq!((kind, damage), (186, 60));
+                // frameX 36 → slot 2 → (0, −1): upward, no X component.
+                assert_eq!((vx, vy), (0.0, -8.0));
+                assert_eq!(x, 10.0 * 16.0 + 8.0);
+                assert_eq!(y, 20.0 * 16.0 + 8.0 - 18.0);
+            }
+            _ => panic!("variant 4 emits a Shot"),
+        }
+        // The wall-mounted negatives: frameX 18 → +1 X, `vy = 2`, the
+        // anchor at `(i*16+8+10, j*16+7+2)`.
+        for (frame_y, kind, damage, speed) in
+            [(-180, 98, 20, 12.0), (-162, 184, 40, 12.0), (-144, 187, 40, 5.0)]
+        {
+            let mut w = world();
+            put_trap(&mut w, 10, 20, 18, frame_y);
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            let reqs = wiring.take_trap_requests();
+            match reqs[0] {
+                TrapRequest::Shot { x, y, vx, vy, kind: k, damage: d } => {
+                    assert_eq!((k, d), (kind, damage));
+                    assert_eq!(vx, speed, "frameY {frame_y} fires rightward");
+                    assert_eq!(vy, 2.0);
+                    assert_eq!(x, 10.0 * 16.0 + 8.0 + 10.0);
+                    assert_eq!(y, 20.0 * 16.0 + 7.0 + 2.0);
                 }
                 _ => panic!("variant frameY {frame_y} emits a Shot"),
             }
@@ -3303,15 +3389,20 @@ mod trap_tests {
     fn the_spear_variant_requests_the_capped_spawn() {
         // Variant 3 (frameY 54): a `Spear` request with the ±1 px spread
         // roll and the +14 px offset; the frameX 0/18 slot fires downward
-        // (`Wiring.cs:1802-1849` — the cap scan runs app-side).
+        // (`Wiring.cs:1808-1853` — the cap scan runs app-side). F1: the C#'s
+        // cap loop counts `type == num95` with `num95` still 0 (`:1817`), so
+        // the request carries `count_kind = 0` — `ProjectileID.None`
+        // (`ProjectileID.cs:554`), a kind no pool slot can hold, so the
+        // app-side cap is a no-op by construction.
         let mut w = world();
         put_trap(&mut w, 10, 20, 0, 54);
         let mut wiring = Wiring::new();
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         let reqs = wiring.take_trap_requests();
         match reqs[0] {
-            TrapRequest::Spear { x, y, vx, vy, damage } => {
+            TrapRequest::Spear { x, y, vx, vy, damage, count_kind } => {
                 assert_eq!(damage, 40);
+                assert_eq!(count_kind, 0, "F1: the floor caps on type 0");
                 assert_eq!(x, 10.0 * 16.0 + 8.0);
                 assert_eq!(y, 20.0 * 16.0 + 8.0 + 14.0);
                 // `speedY = 4 * 1 + rand(0, 21) * 0.05` — 4..5 px/tick.
@@ -3320,6 +3411,125 @@ mod trap_tests {
                 assert!((-1.0..=1.0).contains(&vx), "vx {vx}");
             }
             _ => panic!("the spear variant emits a Spear"),
+        }
+    }
+
+    /// Replays the ceiling arm's two spread draws on a fresh instance seeded
+    /// the same way (`Wiring.cs:1955-1956`): the `speedX` roll comes first
+    /// (`Next(-20, 21)` → span 41), then `speedY` (`Next(0, 21)` → span 21).
+    fn ceiling_rolls(seed: u64) -> (f32, f32) {
+        let mut wiring = Wiring::new();
+        wiring.seed_faulty_rng(seed);
+        let sx = (wiring.faulty_next(41) - 20) as f32 * 0.05;
+        let sy = 4.0 + wiring.faulty_next(21) as f32 * 0.05;
+        (sx, sy)
+    }
+
+    #[test]
+    fn dw_2_2_the_ceiling_spiky_ball_fires_twice_from_one_roll_set() {
+        // Variant −7 (frameY −126): the C# spawns the spiky ball inside the
+        // case (`Wiring.cs:1960`) and again in the shared `if (num95 != 0)`
+        // tail (`:1977-1981`) — one roll set, two identical projectiles
+        // (F2). `num95 = 185` is assigned before the cap loop (`:1944`), so
+        // `count_kind` is 185 here (F1's mirror).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 0, -126);
+        let mut wiring = Wiring::new();
+        wiring.seed_faulty_rng(7);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 2, "F2: the ceiling fires twice");
+        assert_eq!(reqs[0], reqs[1], "one roll set — the requests are identical");
+        match reqs[0] {
+            TrapRequest::Spear { x, y, vx, vy, damage, count_kind } => {
+                assert_eq!(count_kind, 185);
+                assert_eq!(damage, 40);
+                assert_eq!(x, 10.0 * 16.0 + 8.0);
+                assert_eq!(y, 20.0 * 16.0 + 16.0 + 6.0);
+                // The exact X-then-Y roll values pin both the order and the
+                // one-roll-set sharing.
+                let (sx, sy) = ceiling_rolls(7);
+                assert_eq!(vx, sx);
+                assert_eq!(vy, sy);
+            }
+            _ => panic!("the ceiling variant emits a Spear"),
+        }
+        // Exactly the two spread draws were consumed — no re-roll for the
+        // second request and no draw in the flood: the next draw continues
+        // the replayed stream.
+        let mut replay = Wiring::new();
+        replay.seed_faulty_rng(7);
+        replay.faulty_next(41);
+        replay.faulty_next(21);
+        assert_eq!(wiring.faulty_next(41), replay.faulty_next(41));
+    }
+
+    #[test]
+    fn the_check_mech_cooldown_gates_the_ceiling_spiky_ball() {
+        // `CheckMech(300)` (`Wiring.cs:1940`): the re-trip inside the window
+        // emits nothing — both F2 requests hang off the same entry.
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 0, -126);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_trap_requests().len(), 2);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_trap_requests().is_empty());
+    }
+
+    #[test]
+    fn the_ceiling_spear_trap_fires_straight_down() {
+        // Variant −6 (frameY −108): 186 SpearTrap at the (i*16+8, j*16+16+10)
+        // anchor, speed (0, 8) (`Wiring.cs:1965-1975`) — the shared tail
+        // spawns it once (no F2 double on this arm).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 0, -108);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Shot { x, y, vx, vy, kind, damage } => {
+                assert_eq!((kind, damage), (186, 60));
+                assert_eq!(x, 10.0 * 16.0 + 8.0);
+                assert_eq!(y, 20.0 * 16.0 + 16.0 + 10.0);
+                assert_eq!((vx, vy), (0.0, 8.0));
+            }
+            _ => panic!("the -6 variant emits a Shot"),
+        }
+    }
+
+    #[test]
+    fn the_floor_spiky_ball_spread_bounds_follow_the_direction() {
+        // The per-direction spread bounds (`Wiring.cs:1849-1850`): the
+        // component along the direction of travel runs at `4*dir` px/tick
+        // with its roll narrowed against the direction (`Next(-20, 1)` for a
+        // negative component, `Next(0, 21)` for a positive one), while the
+        // sideways component only carries the ±1 px spread. frameX 54 → slot
+        // 3 → (−1, 0); 36 → slot 2 → (0, −1); 72 → slot 4 → (1, 0).
+        for (frame_x, vx_range, vy_range) in [
+            (54, (-5.0..=-4.0), (-1.0..=1.0)),
+            (36, (-1.0..=1.0), (-5.0..=-4.0)),
+            (72, (4.0..=5.0), (-1.0..=1.0)),
+        ] {
+            let mut w = world();
+            put_trap(&mut w, 10, 20, frame_x, 54);
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            let reqs = wiring.take_trap_requests();
+            match reqs[0] {
+                TrapRequest::Spear { vx, vy, .. } => {
+                    assert!(
+                        vx_range.contains(&vx),
+                        "vx {vx} outside {vx_range:?} for frameX {frame_x}"
+                    );
+                    assert!(
+                        vy_range.contains(&vy),
+                        "vy {vy} outside {vy_range:?} for frameX {frame_x}"
+                    );
+                }
+                _ => panic!("variant 3 emits a Spear"),
+            }
         }
     }
 }
