@@ -451,6 +451,7 @@ fn portrait_data(
         NpcKind::MartianDrone => 77,         // NPC_388
         NpcKind::Deerclops => 75,            // NPC_668
         NpcKind::SkeletronHand => 76,        // NPC_36
+        NpcKind::WallOfFleshEye => 77,       // NPC_114
         NpcKind::BrainScrambler => 78,       // NPC_381
         NpcKind::RayGunner => 79,            // NPC_382
         NpcKind::ScutlixRider => 80,         // NPC_390
@@ -484,6 +485,7 @@ fn portrait_data(
         (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
         (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::SkeletronHand, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::WallOfFleshEye, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
