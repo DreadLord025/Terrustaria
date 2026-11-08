@@ -2825,6 +2825,14 @@ The Old One's Army's entry point: the crystal item over the stand runs
 consume, `StartInvasion` + the crystal. `World.dd2_event_ongoing`/
 `dd2_wave` carry the event's seam.
 
+## The Old One's Army's waves (M4-EVENT-5o)
+
+`tr-core/src/dd2.rs` ports the wave engine: the rosters (552/555/561/
+558/564 by wave) with the lane rates (90→40), the budgets (60/80/100/
+120/140, the wave-5 cap, the wave-6 win sentinel) and `CheckProgress`'s
+advance — the hold's early refusal, the budget's pass → wave+1 with
+the 1800-tick break.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
