@@ -142,6 +142,18 @@ pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDr
     kill.object_drops
 }
 
+/// `WorldGen.SquareTileFrame(i, j)` (`WorldGen.cs:80185-80196`) — the
+/// worldgen entry the temple passes call over the altar and the furniture:
+/// the 3×3 `TileFrame` walk with no item drops and no start-up
+/// `destroyObject` (the pass-local worldgen flag), the kills' events
+/// discarded (the port's worldgen has no loot side channel — none of the
+/// pass contracts report the objects the checks destroy).
+pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
+    let mut destroy_object = false;
+    let mut kill = TileKill::default();
+    square_tile_frame(world, x, y, true, &mut destroy_object, &mut kill);
+}
+
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
 /// (:4236). The guarded checks re-entered through the cascade's own `KillTile`
 /// calls early-return while the flag is set; the unguarded `CheckAlch`,
