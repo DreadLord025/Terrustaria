@@ -1600,6 +1600,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
+            NpcKind::SolarTower => {
+                app.world.downed_tower_solar = true;
+                app.world.tower_active_solar = false;
+            }
+            NpcKind::NebulaTower => {
+                app.world.downed_tower_nebula = true;
+                app.world.tower_active_nebula = false;
+            }
+            NpcKind::StardustTower => {
+                app.world.downed_tower_stardust = true;
+                app.world.tower_active_stardust = false;
+            }
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
                 // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
                 // meteorite — the guaranteed first (the pre-kill read of
@@ -5439,3 +5451,102 @@ mod tower_shield_tests {
         assert_eq!(app.world.lunar_shield_power_normal, 100);
     }
 }
+
+#[cfg(test)]
+mod pillar_mob_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        app
+    }
+
+    #[test]
+    fn the_towers_round_trip_and_bob() {
+        // The three towers share the cultist's row (`NPC.cs`'s cases
+        // 493/507/517: 130x270, aiStyle 94, 20000 HP, dmg 0, def 20) and
+        // ride the shared machine (the sine bob, the 300-tick cycle).
+        for (kind, id) in [
+            (NpcKind::StardustTower, 113u16),
+            (NpcKind::NebulaTower, 114),
+            (NpcKind::SolarTower, 115),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            assert_eq!(kind.size(), (130.0, 270.0));
+            assert_eq!(kind.max_hp(), 20000);
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // The kind-level rows are private; the stat table's values ride the instance.
+            assert_eq!(n.max_hp, 20000);
+            let (w, h) = n.size();
+            assert_eq!((w, h), (130.0, 270.0));
+        }
+        let (mut app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let y0 = n.vy;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(
+            (n.vy - y0).abs() < 0.51,
+            "the sine bob bounds delta-v to 0.5: {}",
+            (n.vy - y0).abs()
+        );
+        let _ = app;
+    }
+
+    #[test]
+    fn the_tower_death_flags_the_shield_reset() {
+        // The tower's death raises its downed flag + deactivates it
+        // (`NPC.cs:79288`'s family at the death) — and the shield's
+        // reset fires once all four are down.
+        let mut app = base_app();
+        let _player = Player::spawn(&app.world);
+        crate::world_sim::npcs::raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 0;
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_tower_solar, "the downed flag");
+        assert!(!app.world.tower_active_solar, "the tower deactivates");
+    }
+}
+

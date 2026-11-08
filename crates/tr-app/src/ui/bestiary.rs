@@ -507,6 +507,9 @@ fn portrait_data(
         NpcKind::DD2Bartender => 102,    // NPC_550
         NpcKind::DD2EterniaCrystal => 103, // NPC_548
         NpcKind::AncientCultist => 104,  // NPC_422
+        NpcKind::StardustTower => 105,    // NPC_493
+        NpcKind::NebulaTower => 106,      // NPC_507
+        NpcKind::SolarTower => 107,       // NPC_517
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -800,6 +803,13 @@ fn portrait_data(
         // The cultist: the 1-frame NPC_422 strip over the 130x270 frames.
         (NpcKind::AncientCultist, _) => {
             let h = lookups.bestiary_npc_sheets[104]
+                .map(|s| s.height as f32)
+                .unwrap_or(270.0);
+            (sheet_i, h, 130.0, h, white)
+        }
+        // The towers: the 1-frame NPC_493/507/517 strips.
+        (NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower, _) => {
+            let h = lookups.bestiary_npc_sheets[111]
                 .map(|s| s.height as f32)
                 .unwrap_or(270.0);
             (sheet_i, h, 130.0, h, white)
