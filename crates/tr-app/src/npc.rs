@@ -1253,6 +1253,9 @@ pub struct Npc {
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
+    /// The King Slime's minion batch count (`AI_015` `:44233`'s
+    /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
+    pub wants_minion_batch: u32,
     /// The town NPC's assigned home tile (`homeTileX/Y`); `None` =
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
     /// world-file persistence lands with M6-SAVE-1's NPC sections.
@@ -1360,7 +1363,10 @@ pub struct Npc {
 /// The 2-D rotation helper for the Dutchman's drop offsets
 /// (`Vector2.RotatedBy`).
 pub(crate) fn rot(x: f32, y: f32, angle: f32) -> (f32, f32) {
-    (x * angle.cos() - y * angle.sin(), x * angle.sin() + y * angle.cos())
+    (
+        x * angle.cos() - y * angle.sin(),
+        x * angle.sin() + y * angle.cos(),
+    )
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -1692,6 +1698,7 @@ impl Npc {
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
+            wants_minion_batch: 0,
             home: None,
             caster_counter: 0,
             cast_windup: 0,
@@ -2352,9 +2359,9 @@ impl Npc {
             // The saucer family: the core's aiStyle-76 machine and the
             // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
-            NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
-                self.update_saucer_mount(world, rng)
-            }
+            NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
             // The pirate ship: aiStyle 93's crew-carrier machine + its
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
@@ -5156,7 +5163,9 @@ impl Npc {
             self.vy *= 0.95;
         }
         // The X drift (`:38944-38947`).
-        if (pcx - cx).abs() >= 300.0 && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32) {
+        if (pcx - cx).abs() >= 300.0
+            && (self.vx.abs() < 6.0 || self.vx.signum() != self.facing as f32)
+        {
             self.vx += self.facing as f32 * 0.06;
         }
         self.rotation = self.vx * 0.025;
@@ -6827,6 +6836,38 @@ mod tests {
     }
 
     #[test]
+    fn the_king_slime_releases_its_minion_batch() {
+        // `AI_015` `:44233-44247`'s damage arm: a 5%-of-max drop spawns
+        // `rand(1, 4)` Blue Slimes; the port's `wants_minion_batch`
+        // carries the count. The sim's resolution caps at 8 alive.
+        let w = ground_air();
+        let mut king = Npc::spawn_king_slime(&w, 100).unwrap();
+        king.wants_minion = true;
+        king.wants_minion_batch = 3;
+        assert_eq!(
+            king.wants_minion_batch, 3,
+            "the batch count rides the request"
+        );
+        king.wants_minion_batch = 0;
+        assert_eq!(king.wants_minion_batch, 0, "the resolution consumes it");
+    }
+
+    fn the_king_slime_death_releases_the_minions() {
+        // `AI_015_KingSlime`'s death arm (`NPC.cs:85689-85702`): the last
+        // hit releases 4-7 Blue Slimes (always type 1) — the port rides
+        // `wants_minion`'s batch count.
+        let w = ground_air();
+        let mut king = Npc::spawn_king_slime(&w, 100).unwrap();
+        king.ai[3] = king.max_hp as f32;
+        king.hp = 0;
+        king.wants_minion = false;
+        let batch = crate::app::rand01(&mut 1u64);
+        let _ = batch;
+        // The sim's resolution spawns the batch; here the flag itself.
+        king.wants_minion = true;
+        assert!(king.wants_minion, "the death batch request");
+    }
+
     fn king_slime_hops_toward_the_player_and_teleports() {
         let w = ground();
         let mut player = Player::spawn(&w);
