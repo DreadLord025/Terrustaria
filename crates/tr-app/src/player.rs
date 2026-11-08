@@ -204,6 +204,12 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
+    /// counter `/death` reads (`DeathCommand`).
+    pub deaths_pve: u32,
+    /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
+    /// counter `/pvpdeath` reads (`PVPDeathCommand`).
+    pub deaths_pvp: u32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -638,6 +644,8 @@ impl Player {
         };
         Self {
             dead: false,
+            deaths_pve: 0,
+            deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
             prev_jump_input: false,
@@ -1238,6 +1246,10 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
+        // flag splits the two counters; the port has no PVP, so every
+        // death is PVE.
+        self.deaths_pve = self.deaths_pve.saturating_add(1);
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);

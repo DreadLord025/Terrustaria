@@ -153,11 +153,15 @@ impl ApplicationHandler for App {
                                 KeyCode::Enter | KeyCode::NumpadEnter => {
                                     let name = self.player_name.clone();
                                     let mut rng = self.item_rng;
-                                    self.chat.send(
+                                    // The chat commands read the player
+                                    // state (`DeathCommand`'s counters, the
+                                    // outgoing dead-gates).
+                                    self.chat.send_with(
                                         &self.chat.text.clone(),
                                         &name,
                                         &mut rng,
                                         &mut self.emotes,
+                                        self.player.as_ref(),
                                     );
                                     self.item_rng = rng;
                                     self.chat.text.clear();

@@ -978,7 +978,12 @@ bestiary UI, M7-UI-6 tooltips system.
 - **Hidden:** wire format is `[cmd name][text]` strings, not message ids; msg 25 is the
   legacy chat path, 107 multiline.
 
-**Tasks:** M6-CHAT-1 chat system, M6-EMOTE-1 emote bubbles & wheel, M6-ACH-1 achievements
+\*\*Tasks:\*\* M6-CHAT-1 chat system — done 2026-11-08 (`M6-CHAT-1-chat-system`): the
+RemadeChatMonitor log (500-line cap) + the full 13-command table with localized
+prefixes/aliases, Emote/RPS emote bubbles with the dead gate, the Death family on the
+ported numberOfDeathsPVE/PVP counters, ChatCommandDescription help, and the
+ChatColors palette; the color-tag parser ([c]/[i]/[n]/[a]/[g]) and the boss-damage
+reports remain. M6-EMOTE-1 emote bubbles & wheel, M6-ACH-1 achievements
 framework.
 
 ## 25. Localization
