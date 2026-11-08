@@ -314,6 +314,14 @@ impl Wiring {
         ((z ^ (z >> 31)) % n.max(1) as u64) as i32
     }
 
+    /// `Main.rand.Next(n)` for the app layer's wire rolls (the teleporting
+    /// statues' single candidate pick, `Wiring.cs:2436`/`:2464`): the same
+    /// engine stream, so a statue roll and the flood's rolls interleave in one
+    /// deterministic order.
+    pub fn rand_next(&mut self, n: i32) -> i32 {
+        self.faulty_next(n)
+    }
+
     /// `Wiring.CheckMech` (`Wiring.cs:455-471`): one cooldown entry per tile
     /// position, at most 999 queued. Returns whether the entry was added.
     pub fn check_mech(&mut self, x: i32, y: i32, time: i32) -> bool {
