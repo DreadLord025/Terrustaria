@@ -36,7 +36,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             .collect();
         if let NetRole::Client(client) = &app.net {
             for id in ids {
-                client.send_pickup(id);
+                client.send(&crate::net::C2s::Pickup { drop: id });
             }
         }
         app.items.retain(|it| (it.center() - pc).length() >= 26.0);

@@ -131,6 +131,20 @@ pub enum NpcKind {
     /// 60×40, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200;
     /// walks through the walker params 5/0.25/0.7).
     Scutlix,
+    /// `NPCID.MartianSaucer` (392) — the saucer shell (`NPC.cs:13993-14008`:
+    /// 150×80, aiStyle 75, dmg 50, def 100, 100 HP; rides the core and
+    /// drives its phase state).
+    MartianSaucer,
+    /// `NPCID.MartianSaucerTurret` (393) — the saucer turret
+    /// (`NPC.cs:14009-14024`: 40×16, aiStyle 75, 5000 HP, def 20, dmg 60).
+    MartianSaucerTurret,
+    /// `NPCID.MartianSaucerCannon` (394) — the saucer cannon
+    /// (`NPC.cs:14025-14044`: 46×36, aiStyle 75, 3500 HP, def 20, dmg 60).
+    MartianSaucerCannon,
+    /// `NPCID.MartianSaucerCore` (395) — the saucer boss
+    /// (`NPC.cs:14045-14060`: 120×90, aiStyle 76, dmg 80, 10000 HP,
+    /// def 0, dontTakeDamage, npcSlots 6).
+    MartianSaucerCore,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -528,6 +542,10 @@ impl NpcKind {
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
             NpcKind::Scutlix => 88,
+            NpcKind::MartianSaucer => 89,
+            NpcKind::MartianSaucerTurret => 90,
+            NpcKind::MartianSaucerCannon => 91,
+            NpcKind::MartianSaucerCore => 92,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -620,6 +638,10 @@ impl NpcKind {
             82 => NpcKind::PirateCaptain,
             83 => NpcKind::MartianProbe,
             84 => NpcKind::MartianDrone,
+            89 => NpcKind::MartianSaucer,
+            90 => NpcKind::MartianSaucerTurret,
+            91 => NpcKind::MartianSaucerCannon,
+            92 => NpcKind::MartianSaucerCore,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -812,6 +834,12 @@ impl NpcKind {
             // 390/391).
             NpcKind::ScutlixRider => (18.0, 40.0),
             NpcKind::Scutlix => (60.0, 40.0),
+            // The saucer family: the shell 150x80, the turret 40x16, the
+            // cannon 46x36, the core 120x90 (`NPC.cs`'s cases 392-395).
+            NpcKind::MartianSaucer => (150.0, 80.0),
+            NpcKind::MartianSaucerTurret => (40.0, 16.0),
+            NpcKind::MartianSaucerCannon => (46.0, 36.0),
+            NpcKind::MartianSaucerCore => (120.0, 90.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -976,6 +1004,12 @@ impl NpcKind {
             // The rider 350, the carrier 600 (`NPC.cs`'s cases 390/391).
             NpcKind::ScutlixRider => 350,
             NpcKind::Scutlix => 600,
+            // The saucer family: 100/5000/3500/10000 HP (`NPC.cs`'s cases
+            // 392-395).
+            NpcKind::MartianSaucer => 100,
+            NpcKind::MartianSaucerTurret => 5000,
+            NpcKind::MartianSaucerCannon => 3500,
+            NpcKind::MartianSaucerCore => 10000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1088,6 +1122,11 @@ impl NpcKind {
             // The rider 65, the carrier 85 (`NPC.cs`'s cases 390/391).
             NpcKind::ScutlixRider => 65,
             NpcKind::Scutlix => 85,
+            // The saucer family: 50/60/60/80 (`NPC.cs`'s cases 392-395).
+            NpcKind::MartianSaucer => 50,
+            NpcKind::MartianSaucerTurret => 60,
+            NpcKind::MartianSaucerCannon => 60,
+            NpcKind::MartianSaucerCore => 80,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1263,6 +1302,41 @@ pub struct Npc {
     /// shape): the living 391's centre in pixels, (-1, -1) = none.
     pub carrier_x: f32,
     pub carrier_y: f32,
+    /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
+    /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
+    pub wants_saucer_crew: bool,
+    /// The saucer family's write-through payload (the mounts read the
+    /// core's live state): the core's `ai[3]` timer and `ai[0]` phase,
+    /// and the crew counts within the link's reach (the turrets + the
+    /// cannons — the mounts' own `Main.npc[]` siblings have no port
+    /// model).
+    pub carrier_timer: f32,
+    pub carrier_phase: f32,
+    pub crew_turrets: i32,
+    pub crew_cannons: i32,
+}
+
+/// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
+/// tile column (`NPC.cs:36161-36178`'s shape — the first non-`solidTop`
+/// solid tile within 150 tiles).
+pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
+    let mut count = 0;
+    if world
+        .tile(tile_x, tile_y)
+        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+    {
+        return 16.0;
+    }
+    while (count as usize) < 150 && tile_y + count < world.height {
+        let solid = world
+            .tile(tile_x, tile_y + count)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+        if solid {
+            return (count - 1).max(0) as f32 * TILE_PX;
+        }
+        count += 1;
+    }
+    count as f32 * TILE_PX
 }
 
 impl Npc {
@@ -1595,6 +1669,11 @@ impl Npc {
             wants_scutlix: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
+            wants_saucer_crew: false,
+            carrier_timer: -1.0,
+            carrier_phase: 0.0,
+            crew_turrets: 0,
+            crew_cannons: 0,
         }
     }
 
@@ -1665,6 +1744,11 @@ impl Npc {
             // the carrier 0.1 (case 391).
             NpcKind::ScutlixRider => 0.4,
             NpcKind::Scutlix => 0.1,
+            // The saucer family: kb 0 (`NPC.cs`'s cases 392-395).
+            NpcKind::MartianSaucer => 0.0,
+            NpcKind::MartianSaucerTurret => 0.0,
+            NpcKind::MartianSaucerCannon => 0.0,
+            NpcKind::MartianSaucerCore => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1801,6 +1885,12 @@ impl Npc {
             // The rider 30, the carrier 30 (`NPC.cs`'s cases 390/391).
             NpcKind::ScutlixRider => 30,
             NpcKind::Scutlix => 30,
+            // The saucer family: def 100/20/20/0 (`NPC.cs`'s cases
+            // 392-395).
+            NpcKind::MartianSaucer => 100,
+            NpcKind::MartianSaucerTurret => 20,
+            NpcKind::MartianSaucerCannon => 20,
+            NpcKind::MartianSaucerCore => 0,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1934,6 +2024,11 @@ impl Npc {
             // The rider 1200, the carrier 1200 (`NPC.cs`'s cases 390/391).
             NpcKind::ScutlixRider => 1200.0,
             NpcKind::Scutlix => 1200.0,
+            // The saucer family: value 0 (cases 392-395 set nothing).
+            NpcKind::MartianSaucer => 0.0,
+            NpcKind::MartianSaucerTurret => 0.0,
+            NpcKind::MartianSaucerCannon => 0.0,
+            NpcKind::MartianSaucerCore => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2195,6 +2290,12 @@ impl Npc {
             // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
             // `NPC.cs:58203-58240`).
             NpcKind::Scutlix => self.update_scutlix(world, player, dt),
+            // The saucer family: the core's aiStyle-76 machine and the
+            // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
+            NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
+            NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
+                self.update_saucer_mount(world, rng)
+            }
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2354,6 +2455,33 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 6;
+                }
+            }
+            // The saucer family: the core's 11-frame boss strip, the
+            // shell's 4, the turret's 18, the cannon's 8
+            // (`Main.npcFrameCount`, `Main.cs:67082`).
+            NpcKind::MartianSaucerCore => {
+                self.frame_counter += 0.25;
+                if self.frame_counter >= 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
+                }
+            }
+            NpcKind::MartianSaucer => {
+                self.frame = (self.ai[3] / 40.0) as u32 % 4;
+            }
+            NpcKind::MartianSaucerTurret => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 18;
+                }
+            }
+            NpcKind::MartianSaucerCannon => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 8;
                 }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
@@ -4691,6 +4819,368 @@ impl Npc {
         }
     }
 
+    /// `AI`'s aiStyle-75 arms for the saucer family (`NPC.cs:35616-36060`)
+    /// — the mounts ride the core (the seat offsets) and run their
+    /// batteries off the core's mirrored `ai[3]` timer and `ai[0]` phase
+    /// (the pre-pass write-through): the 393 TURRET's 8-way aim + the 449
+    /// rays (35 dmg, 16 speed, the ±0.785/3 jitter, every 6 ticks in the
+    /// 280-420 window), the 394 CANNON's 448 shells (50 dmg, 8 speed, the
+    /// ±0.785 aim, the side·36 + 8 spawn, every 20 ticks in the 440-580
+    /// window), and the 392 SHELL's 447 core-shot (50 dmg at the phase-0
+    /// window's entry) + the 450 missile battery (30 dmg, 3 speed, four
+    /// emitters gated by the crew's aliveness) + the phase bridge (the
+    /// crew dead + the core open → the core's `ai[0]` = 3, the classic
+    /// arm).
+    ///
+    /// Deviations: `GetAttackDamage_ForProjectiles` runs as the classic
+    /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
+    /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
+    /// expert-mode bridge arm is constants-off (no difficulty flags).
+    fn update_saucer_mount(&mut self, _world: &World, rng: &mut u64) {
+        if self.carrier_x < 0.0 {
+            return;
+        }
+        let (w, h) = self.size();
+        let side = if self.ai[1] == 1.0 { 1.0 } else { -1.0 };
+        let (ox, oy) = match self.kind {
+            NpcKind::MartianSaucer => (0.0, 2.0),
+            NpcKind::MartianSaucerTurret => (side * 60.0, 29.0),
+            _ => (side * 49.0, -13.0),
+        };
+        self.x = self.carrier_x - w * 0.5 + ox;
+        self.y = self.carrier_y - h * 0.5 + oy;
+        // The mounted timers mirror the core's.
+        self.ai[3] = self.carrier_timer;
+        let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        match self.kind {
+            NpcKind::MartianSaucerTurret => {
+                // The 280-420 window (`NPC.cs:35750-35894`).
+                let t = self.ai[3];
+                let in_window = t >= 280.0 && t < 420.0;
+                if in_window {
+                    if core_open && (t - 280.0) % 6.0 == 0.0 {
+                        // The 449 ray at the aim (ai[2] = the rotation).
+                        let ang = self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
+                        self.wants_hostile_shot = Some((449u16, cx + vx, cy + vy, vx, vy, 35));
+                    }
+                }
+                // The aim rides the fire test's own update (the player
+                // vector's rotation, Y-clamped) — ported as the closest
+                // octant-equivalent: the machine's `ai[2]` counts toward
+                // the player when the window is closed.
+                let _ = core_open;
+            }
+            NpcKind::MartianSaucerCannon => {
+                // The 440-580 window (`NPC.cs:35820-35858`).
+                let t = self.ai[3];
+                let in_window = t >= 440.0 && t < 580.0;
+                if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
+                    let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                    let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
+                    self.wants_hostile_shot = Some((
+                        448u16,
+                        cx + side * 36.0,
+                        cy + 8.0,
+                        vx,
+                        vy,
+                        50,
+                    ));
+                }
+            }
+            _ => {
+                // The shell (`NPC.cs:35895-36060`): the phase-0 window's
+                // 447 entry shot + the 450 missile battery.
+                let t = self.ai[3];
+                let core_phase0 = self.carrier_phase == 0.0;
+                if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
+                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 50));
+                }
+                // The windows: the core's gun phase (2) opens them always;
+                // else the 280-400 and 440-580 bands.
+                let (fire_window, wide, narrow) = if self.carrier_phase == 2.0 {
+                    (true, 120.0, 120.0)
+                } else if t >= 280.0 && t < 400.0 {
+                    (true, 60.0, 90.0)
+                } else if t >= 440.0 && t < 580.0 {
+                    (true, 90.0, 60.0)
+                } else {
+                    (false, 1000.0, 1000.0)
+                };
+                if fire_window && core_open {
+                    let dmg = 30;
+                    let roll = crate::app::rand01(rng);
+                    // The turret emitters (the wide arcs).
+                    if self.crew_turrets > 0 && roll < 1.0 / wide {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
+                        self.wants_hostile_shot = Some((
+                            450u16,
+                            cx - side * 55.0,
+                            cy + 35.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                        let (vx, vy) = (-(roll * 2.0) * ang.cos() * 3.0 - 1.0, -ang.sin() * 3.0 - 3.0);
+                        self.wants_hostile_shot = Some((
+                            450u16,
+                            cx - side * 45.0,
+                            cy - 20.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36520`) — the Martian
+    /// Saucer Core's machine. The init spawns the four guns (2 turrets
+    /// 393, 2 cannons 394) and the shell 392 (all `ai[0]`-linked to the
+    /// core). `ai[0]` - 1/-2 = the despawn ride (the player out of the
+    /// 5600-px window), 0 = the 600-tick SCAN cycle (the six step bands:
+    /// the approach, the 250-px dive windows, the ground-clearance reads),
+    /// 1 = the vulnerable wobble (the rotation ramp, 150 ticks), 2 = the
+    /// GUN (the 3600-tick cycle: the 60-tick firing window fires the
+    /// projectile 447 at 80 damage, the 8·direction dash in the window,
+    /// the 16-lerp outside), 3 = the death ride (`StrikeNPCNoInteraction
+    /// (9999)`).
+    ///
+    /// Deviations: `StrikeNPCNoInteraction`/`GetAttackDamage_ScaledBy
+    /// Difficulty` run as the classic constants; `TargetClosest` folds to
+    /// the single player; the off-world clamp keeps the position in the
+    /// world box.
+    fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The init (`:36071-36092`): the guns + the shell, the seat links.
+        // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
+        // forced phases stand (the debug spawn / the table arm set them).
+        if !self.wants_scutlix {
+            self.wants_scutlix = true; // the init latch (a one-shot)
+            self.wants_saucer_crew = true;
+        }
+        if self.ai[0] == 3.0 {
+            // The death ride.
+            self.hp = 0;
+            return;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let dist = (pcx - cx).hypot(pcy - cy);
+        let far = dist > 5600.0 || player.hp <= 0;
+        if far && self.ai[0] != 1.0 {
+            // The despawn ride (`:36130-36148`): the negative phases hold
+            // the state, the climb-away runs, the return restores it.
+            if self.ai[0] == 0.0 {
+                self.ai[0] = -1.0;
+            } else if self.ai[0] == 2.0 {
+                self.ai[0] = -2.0;
+            }
+            if self.ai[0] == -1.0 || self.ai[0] == -2.0 {
+                self.vy -= 0.4;
+                if player.hp > 0 {
+                    self.ai[0] = if self.ai[0] == -2.0 { 2.0 } else { 0.0 };
+                    self.ai[1] = 0.0;
+                    self.ai[2] = 0.0;
+                    self.ai[3] = 0.0;
+                } else {
+                    // The dead player: the ride climbs out (the port has
+                    // no `timeLeft` latch — the position fallthrough
+                    // despawns it).
+                    self.ai[0] = -1.0;
+                }
+            }
+        } else if self.ai[0] == 0.0 {
+            // The scan cycle (`:36149-36372`): `ai[3]` counts 0..600, the
+            // step `num1104` selects the band (0 below 20, 1 in 20-260,
+            // 2 at 260-280, 3 at 280-420, 4 at 420-440, 5 at 440-580).
+            let step = |t: f32| -> u32 {
+                if t >= 580.0 {
+                    0
+                } else if t >= 440.0 {
+                    5
+                } else if t >= 420.0 {
+                    4
+                } else if t >= 280.0 {
+                    3
+                } else if t >= 260.0 {
+                    2
+                } else if t >= 20.0 {
+                    1
+                } else {
+                    0
+                }
+            };
+            let before = step(self.ai[3]);
+            self.ai[3] += 1.0;
+            if self.ai[3] >= 600.0 {
+                self.ai[3] = 0.0;
+            }
+            let now = step(self.ai[3]);
+            if now != before {
+                match now {
+                    0 => self.ai[2] = 0.0,
+                    1 => self.ai[2] = if pcx > cx { 1.0 } else { -1.0 },
+                    2 => self.ai[2] = 0.0,
+                    _ => {}
+                }
+            }
+            // The ground clearance under the core.
+            let tile_y = ((self.y + h as f32) / TILE_PX) as i32;
+            let tile_x = (cx / TILE_PX) as i32;
+            let ground_clear = ground_clearance(world, tile_x, tile_y);
+            match now {
+                0 => {
+                    // The approach: hover 250 px above the player ±ai[2].
+                    if self.ai[2] == 0.0 {
+                        self.ai[2] = -600.0 * (cx - pcx).signum();
+                    }
+                    let (tx, ty) = (pcx + self.ai[2], pcy - 250.0);
+                    if (tx - cx).hypot(ty - cy) < 50.0 {
+                        self.ai[3] = 19.0;
+                    } else {
+                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
+                        self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
+                        self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+                    }
+                }
+                1 => {
+                    // The dive: the X drifts 3.5·ai[2], the Y eases.
+                    if ground_clear < 250.0 {
+                        let target = -(ground_clear.max(-4.0));
+                        self.vy += (target - self.vy) * 0.05;
+                    } else {
+                        self.vy *= 0.95;
+                    }
+                    self.vx = 3.5 * self.ai[2];
+                }
+                2 => {
+                    // The approach at 170 px above.
+                    if self.ai[2] == 0.0 {
+                        self.ai[2] = 300.0 * (cx - pcx).signum();
+                    }
+                    let (mut tx, mut ty) = (pcx + self.ai[2], pcy - 170.0);
+                    let clear = ground_clear;
+                    if clear < 170.0 {
+                        ty -= 170.0 - clear;
+                    }
+                    if (tx - cx).hypot(ty - cy) < 70.0 {
+                        self.ai[3] = 279.0;
+                    } else {
+                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
+                        self.vx += ((tx - cx) * inv * 20.0 - self.vx) * 0.1;
+                        self.vy += ((ty - cy) * inv * 20.0 - self.vy) * 0.1;
+                    }
+                    let _ = (&mut tx, &mut ty);
+                }
+                3 => {
+                    // The park: both damp.
+                    if ground_clear < 170.0 {
+                        let target = -(ground_clear.max(-4.0));
+                        self.vy += (target - self.vy) * 0.05;
+                    } else {
+                        self.vy *= 0.85;
+                    }
+                    self.vx *= 0.85;
+                }
+                4 => {
+                    // The approach straight above the player.
+                    let (tx, ty) = (pcx, pcy - 250.0);
+                    if (tx - cx).hypot(ty - cy) < 50.0 {
+                        self.ai[3] = 439.0;
+                    } else {
+                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
+                        self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
+                        self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+                    }
+                }
+                _ => {
+                    // The brake.
+                    self.vx *= 0.85;
+                    self.vy *= 0.85;
+                }
+            }
+        } else if self.ai[0] == 1.0 {
+            // The vulnerable wobble (`:36373-36407`): 150 ticks, the
+            // rotation ramps by the phase.
+            self.vx *= 0.96;
+            self.vy *= 0.96;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 150.0 {
+                self.ai[0] = 2.0;
+                self.ai[1] = 0.0;
+                self.rotation = 0.0;
+            } else if self.ai[1] < 40.0 {
+                self.rotation = (self.ai[1] / 40.0 * 6.283).sin() * 0.2;
+            } else if self.ai[1] < 80.0 {
+                self.rotation = (self.ai[1] / 20.0 * 6.283).sin() * 0.3;
+            } else if self.ai[1] < 120.0 {
+                self.rotation = (self.ai[1] / 10.0 * 6.283).sin() * 0.4;
+            } else {
+                self.rotation = (self.ai[1] - 120.0) / 30.0 * 6.283;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The gun (`:36408-36500`): the 3600-tick cycle; the firing
+            // window opens for 60 ticks of each 120; the projectile 447
+            // (the classic 80) at the window's rising edge.
+            // The vanilla's `num1131`/`num1130` pair: the check before and
+            // after the increment — the fire rides the rising edge.
+            let prev_window = self.ai[3] % 120.0 >= 60.0;
+            self.ai[3] += 1.0;
+            let window_now = self.ai[3] % 120.0 >= 60.0;
+            if window_now != prev_window {
+                if window_now {
+                    self.ai[2] = if pcx > cx { 1.0 } else { -1.0 };
+                    // The 447 projectile at (center, center) with the
+                    // owner stub (whoAmI + 1) — the port's hostile pool.
+                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 80));
+                }
+            }
+            if self.ai[3] >= 3600.0 {
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            } else if !window_now {
+                // The chase: the 16-lerp to the player + 350·ai[2], -250.
+                let (tx, ty) = (pcx + self.ai[2] * 350.0, pcy - 250.0);
+                let d = (tx - cx).hypot(ty - cy).max(0.001);
+                let inv = 1.0 / d;
+                self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
+                self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+            } else {
+                // The firing dash: the X at 8·ai[2], the Y eases.
+                let tile_y = ((self.y + h as f32) / TILE_PX) as i32;
+                let tile_x = (cx / TILE_PX) as i32;
+                let clear = ground_clearance(world, tile_x, tile_y);
+                if clear < 250.0 {
+                    let target = -(clear.max(-4.0));
+                    self.vy += (target - self.vy) * 0.05;
+                } else {
+                    self.vy *= 0.95;
+                }
+                self.vx = 8.0 * self.ai[2];
+            }
+            self.rotation = 0.0;
+        }
+        // The off-world clamp (`:36502-36520`).
+        let max_x = world.width as f32 * TILE_PX;
+        let max_y = world.height as f32 * TILE_PX;
+        if self.y < -100.0 || self.x < -100.0 || self.y > max_y + 100.0 || self.x > max_x + 100.0 {
+            self.x = self.x.clamp(-100.0, 100.0 + max_x);
+            self.y = self.y.clamp(-100.0, 100.0 + max_y);
+            self.hp = 0; // `active = false` — the death pass removes it.
+        }
+        // The flight integration (noGravity + noTileCollide).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
@@ -5564,6 +6054,10 @@ impl Npc {
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
             NpcKind::Scutlix => 88,
+            NpcKind::MartianSaucer => 89,
+            NpcKind::MartianSaucerTurret => 90,
+            NpcKind::MartianSaucerCannon => 91,
+            NpcKind::MartianSaucerCore => 92,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

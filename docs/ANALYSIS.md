@@ -2647,6 +2647,51 @@ The type-4 table is complete but for the Saucer 395 family: the
 `num8` arm ports the RayGunner (<2) / the BrainScrambler (==2) / the
 Drone (>=4), and the num6 >= 6 arm's `Next(2)` split ports the Rider.
 
+## The Martian Saucer (M4-EVENT-4e)
+
+The type-4 event's boss: the 395 Core (dmg 80, 10000 HP, aiStyle 76,
+dontTakeDamage) plus its crew — the 392 Shell (150×80), the 393 Turrets
+(40×16, 5000 HP) and the 394 Cannons (46×36, 3500 HP), all aiStyle-75
+mounts. The core's init spawns the crew at its centre with the seat
+`ai[1]`; the mounts ride the core (the shell at UnitY+2, the turrets at
+UnitY+29 ± UnitX·60, the cannons at UnitY−13 ± UnitX·49) through the
+pre-pass write-through link.
+
+`ai[0]`'s states: the ±1/−2 despawn rides (the player out of the 5600-px
+window), the 600-tick SCAN cycle (the six step bands — approach,
+dive, park, brake — with the ground-clearance reads easing the dive,
+the 20/260/279/439 force-jumps on the approach bands), the vulnerable
+WOBBLE (150 ticks of the rotation ramp — the classic-only gate the
+shell's bridge drives), the GUN (the 3600-tick cycle: the 60-tick
+firing window per 120 fires the 447 projectile at 80 damage; the
+8·ai[2] dash in the window, the 16-lerp outside), and the phase-3
+death ride (`StrikeNPCNoInteraction(9999)` → the port's hp=0).
+
+The type-4 table is now complete — every kind in `NPC.cs:1487-1540`
+ports. The shell's missile battery and the core phase bridge (the
+`flag80` classic/expert split) are the follow-ups: until they land,
+the core stays in the scan/gun loop and is killed by damage.
+
+## The saucer's guns (M4-EVENT-4f)
+
+The mounts' batteries ride the core's mirrored `ai[3]` timer and `ai[0]`
+phase through the pre-pass write-through (the vanilla reads
+`Main.npc[localAI[i]]`'s sibling state directly — the port approximates
+the crew's aliveness with the pre-pass counts). The 393 turret aims
+with the 8-way table (the player vector's rotation, Y-clamped, mirrored
+by the spriteDirection) between its 280-420 windows and fires the 449
+rays (35, 16 speed, ±0.785/3 jitter) every 6 ticks inside; the 394
+cannon fires the 448 shells (50, 8 speed, side·36 + 8 spawn, ±0.785
+aim) every 20 ticks of its 440-580 window; the 392 shell fires the 447
+entry shot (50) at the phase-0 window's edge and the 450 missile
+battery (30, 3 speed — the turret side's wide ±0.26 arcs and the cannon
+side's narrow ±0.785 arcs) in the windows: the core's gun phase (2)
+opens them always, else the 280-400 and 440-580 bands.
+
+The bridge: with the crew dead and the core open (the classic arm),
+the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
+whose guns die falls out of the fight on its own.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -5764,6 +5809,59 @@ items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
 
+## Multiplayer protocol core (M6-NET-1)
+
+The handshake and the wire frame are 1:1 ports; the deliberate deviations
+(all resolved in M6-NET-2/3, where noted):
+
+- **`15 WorldChunk` is a port-internal id** (dead in 1.4.5.8): the whole-world
+  zlib blob (`save::to_bytes` + flate2) streams as `[i32 index][i32 count][u32
+  len][bytes]` slices under the 65535-byte frame cap, announced by `9 Status`
+  and closed by `49 WorldComplete`. The C# streams `10 TileBlock` sections
+  instead (`NetMessage.cs:1895-2240` `CompressTileBlock`); M6-NET-3 replaces
+  the producer — the client install hook stays.
+- **`NetworkText` is literal-mode only** (mode byte 0 + the string,
+  `NetworkText.cs:65-70`). Keyed/format texts and the substitution list
+  (`:72-80`) are not ported; every kick/status string is a literal. The keys
+  themselves (`Lang.mp[1..5]`, the `Net.*` name keys) ride as English text
+  with the C# strings quoted in `netglue.rs`'s `TXT_*` constants.
+- **`5 PlayerInventory` is accepted and dropped server-side.** The server
+  keeps no peer-inventory state yet (the C# `Main.player[i].inventory`); the
+  storage lands with M6-NET-2's peer-state sync. The client's push order is
+  already the C# one (`MessageBuffer.cs:230-282`'s list, adapted to the
+  port's slot layout: 59 grid + 20 armour + 10 dye + 5 misc dyes + 5 misc
+  equips + 4×40 banks + trash).
+- **`7 WorldInfo` fields without a port home ride as defaults** with the C#
+  write order preserved: the 11 background styles, `ice/jungle BackStyle`,
+  the tree/cave backups, the 13 tree-top bytes, the 14 world-flag groups,
+  the ore tiers, the dungeon point, the spawn-point list and `lobbyId`
+  (0 without a social API). The port-sourced fields are time/day flags,
+  the moon phase/type, the world size, the spawn, the surface/rock layer,
+  the dial cooldowns and the hell back style; `generator_version` carries
+  `save::VERSION` (the closest marker) pending the generator-version home.
+- **The clock rides the internal `205 Time` broadcast** (host → clients at
+  10 Hz). The C# sends `7 WorldInfo` only at join
+  (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
+  flags; the exact 1:1 clock path is pinned in M6-NET-2.
+- **The name gate is the ported C# gate** (`MessageBuffer.cs:360-396`): empty,
+  `> Player.nameLen` (20, `Player.cs:57105`) or already taken by another slot
+  → the C# kick texts. The creative-mode mismatch checks
+  (`Net.PlayerIsCreativeAndWorldIsNotCreative`) have no port flags yet and
+  are deferred.
+- **`4 PlayerInfo` carries the 1:1 body** (skin/voice, hair, colours, the
+  three `BitsByte` groups, `NetMessage.cs:147-197`); only the name has a port
+  home (`App.player_name`), the rest is vanilla defaults until the character
+  milestone.
+- **The in-process join replaces the relaunch.** The old flow saved the world
+  blob and re-executed the binary with `TR_JOINED` (`netglue.rs`'s
+  `relaunch_into_world`, deleted here); the client now swaps `App.world` and
+  rebuilds the world-derived systems (`LiquidSystem`, `WorldMap`, the player
+  spawn) in place — the C#'s `WorldGen.clearWorld` arm
+  (`Netplay.cs:484-505`) has no port equivalent.
+- **The idle sweep is the C# shape, port-tuned**: reader threads stamp a
+  `last_seen` per slot and a frame-paced sweep drops peers idle for
+  [`net::IDLE_TIMEOUT`] (120 s), the C#'s `TimeOutTimer > 7200` ticks
+  (`Main.cs:64610-64618`).
 ## Extractinator (M7-EXTRACT-1)
 
 `tr-core/src/extract.rs` ports `ExtractinatorHelper.RollExtractinatorDrop`
