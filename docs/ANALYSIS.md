@@ -2795,6 +2795,13 @@ rotation's pick (0/1/3 → 2, 2 → 3, 4/6 → 5, the 8-wrap) and phase 2's
 687 breath at 35. The fireball 686, the circle flight and the dash
 ride the attack family's slices.
 
+## Betsy's attacks (M4-EVENT-5j)
+
+The phase arms verbatim: the wind pause, the flame breath (the 600-px
+reposition + the 687 at 35), the fireball volley (the 1500-px
+reposition, the rotated muzzle, the 686 at 35 every 10 ticks), the
+circle flight and the dash.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

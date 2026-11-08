@@ -108,6 +108,9 @@ pub const DARK_MAGE_FLAME: u16 = 675;
 /// `ProjectileID.DD2BetsyBreath` (687) — Betsy's breath
 /// (`AI_110`'s `NewProjectile(..., 687, 35, ...)`).
 pub const BETSY_BREATH: u16 = 687;
+/// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
+/// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
+pub const BETSY_FIREBALL: u16 = 686;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -368,6 +371,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
             // aiStyle-1 breath flight).
             BETSY_BREATH => (12.0, 12.0, 1, -1, TIME_LEFT_DEFAULT, 1, true, false, false),
+            // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
+            // ...)` — the 1500-px leaping shot).
+            BETSY_FIREBALL => (22.0, 22.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {

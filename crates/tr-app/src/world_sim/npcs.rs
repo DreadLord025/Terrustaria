@@ -4748,4 +4748,44 @@ mod dd2_goblin_tests {
         assert!(n.ai[0] > 1.0, "an attack phase was picked");
         assert!(n.ai[3] >= 1.0, "the phase rotation advanced");
     }
+    #[test]
+    fn betsy_flame_breaths_and_volleys_the_fireballs() {
+        // `AI_110_Betsy`'s phases 3-6 (`NPC.cs:61942-62060`): the flame
+        // breath repositions to the 600-px offset and 687s at 35; the
+        // volley repositions to 1500 px and 686s at 35; the circle flight
+        // rotates; the dash lunges.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // Phase 3 (the flame breath).
+        n.ai[0] = 3.0;
+        n.ai[1] = 0.0;
+        let mut saw_breath = false;
+        for _ in 0..50 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw_breath = true;
+                break;
+            }
+        }
+        assert!(saw_breath, "the flame breath fires");
+        // Phase 4 (the volley).
+        let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        m.hp = m.max_hp;
+        m.ai[0] = 4.0;
+        m.ai[1] = 0.0;
+        let mut saw_volley = false;
+        for _ in 0..80 {
+            m.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !m.wants_hostile_shot.is_empty() {
+                saw_volley = true;
+                break;
+            }
+        }
+        assert!(saw_volley, "the volley fires");
+    }
 }

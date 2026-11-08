@@ -5732,22 +5732,154 @@ impl Npc {
                 self.ai[1] = 0.0;
             }
         } else if self.ai[0] == 2.0 {
-            // The breath (`:61929-61945`): the 687 projectile at 35 from
-            // the centre at the velocity; the return to phase 1.
-            let dir = self.facing;
-            self.wants_hostile_shot
-                .push((687u16, cx, cy, self.vx, self.vy, 35));
-            let _ = dir;
-            self.ai[0] = 1.0;
-            self.ai[1] = 0.0;
-            self.ai[2] = 0.0;
-            let _ = rng;
+            // The wind-attack pause (`NPC.cs:61931-61940`): the 30-tick
+            // pause before the return to phase 1 (the flame breath rides
+            // phase 3).
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 30.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 3.0 {
+            // The flame breath (`NPC.cs:61942-61985`): the reposition to
+            // the 600-px past-the-player offset at −250 (the 12-speed
+            // approach, the 16-px snap), the 40-tick arrival, the dash
+            // (the 10-speed lunge + the 687 breath at 35), the 120-tick
+            // ride with the 0.5 accel past 550 px.
+            self.ai[1] += 1.0;
+            let dir = if pcx < cx { 1.0 } else { -1.0 };
+            if self.ai[1] < 40.0 {
+                let (tx, ty) = (pcx + dir * -600.0, pcy - 250.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                if d < 12.0 {
+                    self.x = tx - w * 0.5;
+                    self.y = ty - h * 0.5;
+                } else {
+                    let inv = 12.0 / d;
+                    self.x += dx * inv;
+                    self.y += dy * inv;
+                }
+            } else if self.ai[1] == 40.0 {
+                let dir2 = if pcx > cx { 1.0 } else { -1.0 };
+                self.vx = dir2 * 10.0;
+                self.vy = 0.0;
+                self.facing = dir2 as i32;
+                self.wants_hostile_shot
+                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+            } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
+                self.vx += self.vx.signum() * 0.5;
+            }
+            if self.ai[1] >= 120.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 4.0 {
+            // The fireball volley (`NPC.cs:61986-62045`): the reposition
+            // to the 1500-px offset at −350 (the 13-speed lerp at 1/30),
+            // the aim at the player (the flattened Y, the rotation), the
+            // strafing glide (the X toward the player at 7, the Y toward
+            // the −400 offset at 6) and the 6-shot volley every 10 ticks
+            // from the 140·direction rotated muzzle.
+            if self.ai[1] < 60.0 {
+                let (tx, ty) = (pcx + self.facing as f32 * -1500.0, pcy - 350.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 13.0 / d;
+                self.vx += ((dx * inv) - self.vx) * (1.0 / 30.0);
+                self.vy += ((dy * inv) - self.vy) * (1.0 / 30.0);
+            } else if self.ai[1] == 60.0 {
+                let (mut ax, mut ay) = (pcx - cx, pcy - cy);
+                ay *= 0.25;
+                let d = (ax * ax + ay * ay).sqrt().max(1.0);
+                ax /= d;
+                ay /= d;
+                self.facing = if ax > 0.0 { 1 } else { -1 };
+                self.rotation = ay.atan2(ax);
+                if self.facing == -1 {
+                    self.rotation += std::f32::consts::PI;
+                }
+                self.vx = ax * 12.0;
+                self.vy = ay * 12.0;
+            } else {
+                self.x += (pcx - cx).signum() * 7.0;
+                self.y += (pcy - cy).signum() * 6.0;
+                let n33 = (self.ai[1] - 60.0 + 1.0) as i32;
+                if n33 <= 60 && n33 % 10 == 0 {
+                    let (mx, my) = rot(170.0, 20.0, self.rotation);
+                    self.wants_hostile_shot
+                        .push((686u16, cx + mx, cy + my, self.vx, self.vy, 35));
+                }
+            }
+            if self.ai[1] > 60.0 {
+                self.vy -= 0.1;
+            }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 180.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
+        } else if self.ai[0] == 5.0 {
+            // The circle flight (`NPC.cs:61986-62000`): the velocity rotates
+            // by `num24` (the 60-tick full turn) per side, the upward creep,
+            // the 10-toward-the-player pull, the rotation mirror, the
+            // 60-tick exit at half velocity.
+            let turn = std::f32::consts::TAU / 60.0;
+            let ang = (-turn) * self.facing as f32;
+            let (nx, ny) = rot(self.vx, self.vy, ang);
+            self.vx = nx;
+            self.vy = ny;
+            self.y -= 0.1;
+            self.x += (pcx - cx).signum() * 10.0;
+            self.y += (pcy - cy).signum() * 10.0;
+            self.rotation -= turn * self.facing as f32;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 60.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.vx /= 2.0;
+                self.vy /= 2.0;
+            }
+        } else if self.ai[0] == 6.0 {
+            // The dash (`NPC.cs:62001-62060`): the first segment flies to
+            // the player + (0, −200) at 2× speed until the 350-px contact
+            // or 180 ticks; then the 20-tick 0.95 decay, the 0.98 ride,
+            // the 90-tick exit.
+            if self.ai[1] == 0.0 {
+                let (tx, ty) = (pcx, pcy - 200.0);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let inv = 15.0 / d;
+                self.vx += ((dx * inv) - self.vx) * 0.9;
+                self.vy += ((dy * inv) - self.vy) * 0.9;
+                self.facing = if pcx < cx { 1 } else { -1 };
+                self.ai[2] += 1.0;
+                if (pcx - cx).hypot(pcy - cy) < 350.0 || self.ai[2] >= 180.0 {
+                    self.ai[1] = 1.0;
+                }
+            } else if self.ai[1] < 20.0 {
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                self.ai[1] += 1.0;
+            } else {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                self.ai[1] += 1.0;
+            }
+            if self.ai[1] >= 90.0 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+            }
         }
         // The flight (noGravity + noTileCollide).
         self.x += self.vx;
         self.y += self.vy;
     }
-
     fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
