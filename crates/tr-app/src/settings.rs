@@ -412,6 +412,11 @@ impl Settings {
                 // Player.SmartCursorSettings.SmartBlocksEnabled)`
                 // (`Main.cs:4138`, read back at `:4411`).
                 "UseSmartCursorForCommonBlocks" => me.smart_blocks = boolean(value),
+                // `configuration.Put("CraftFromNearbyChests",
+                // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`), the
+                // `Player.Settings` control pair read back through the same
+                // group; the port wrote no key for it before.
+                "CraftFromNearbyChests" => me.craft_from_nearby_chests = boolean(value),
                 // `configuration.Get("LockOnPriority", ...)` (`Main.cs:4496-4505`):
                 // the stored value clamps to 0..=2 and FocusTarget (0) reloads
                 // as ThreeDS (2), so 0 never survives a boot.
@@ -502,7 +507,8 @@ impl Settings {
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
              \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
-             \"UseSmartCursorForCommonBlocks\": {},\n  \"LockOnPriority\": {},\n  \
+             \"UseSmartCursorForCommonBlocks\": {},\n  \"CraftFromNearbyChests\": {},\n  \
+             \"LockOnPriority\": {},\n  \
              \"ReverseUpDownForArmorSetBonuses\": {},\n  \
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
@@ -557,6 +563,10 @@ impl Settings {
             self.smart_cursor_toggle,
             self.smart_axe_first,
             self.smart_blocks,
+            // `configuration.Put("CraftFromNearbyChests",
+            // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`) — Phase 2
+            // moves it to its `SaveSettings` `Put` position.
+            self.craft_from_nearby_chests,
             self.lock_on_priority,
             // The Task 5 keys, written under the vanilla names (`Main.cs:4145`,
             // `:4141`, `:4142`, `:4220`; `BigProgressBarSystem.cs:231`;
@@ -719,6 +729,7 @@ mod tests {
         s.smart_cursor_toggle = false;
         s.smart_axe_first = true;
         s.smart_blocks = true;
+        s.craft_from_nearby_chests = false;
         s.lock_on_priority = 1;
         s.use_storm_effects = false;
         s.foreground_sunlight = false;
@@ -757,6 +768,7 @@ mod tests {
         assert!(!back.smart_cursor_toggle);
         assert!(back.smart_axe_first);
         assert!(back.smart_blocks);
+        assert!(!back.craft_from_nearby_chests);
         assert_eq!(back.lock_on_priority, 1);
         assert!(!back.use_storm_effects);
         assert!(!back.foreground_sunlight);
@@ -809,6 +821,87 @@ mod tests {
         assert_eq!(s.light_mode, 0, "out of range keeps the default");
     }
 
+    #[test]
+    fn lighting_mode_uses_the_vanilla_ordinal() {
+        // The C# enum is White 0, Retro 1, Trippy 2, Color 3
+        // (`Terraria/Graphics/Light/LightMode.cs:3-9`) while the port's
+        // `LightMode` is Color 0, White 1, Retro 2, Trippy 3
+        // (`tr-core/src/lighting/params.rs:12-17`). The persisted byte is the
+        // C# ordinal, so the two directions below are the whole translation.
+        let cases = [(0u8, 1u8), (1, 2), (2, 3), (3, 0)];
+        for (stored, port) in cases {
+            let text = format!("{{\n \"LightingMode\": {stored}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.light_mode, port, "stored {stored} reads as port {port}");
+
+            let mut w = Settings::default();
+            w.light_mode = port;
+            let json = w.to_json();
+            assert!(
+                json.contains(&format!("\"LightingMode\": {stored},")),
+                "port {port} writes back as {stored}: {json}"
+            );
+        }
+
+        // DW-1.2's fixture: a vanilla-shaped config's Color.
+        let s = Settings::parse("{\n \"LightingMode\": 3\n}");
+        assert_eq!(s.light_mode, 0, "vanilla 3 is Color, the port's 0");
+        let json = Settings::default().to_json();
+        assert!(
+            json.contains("\"LightingMode\": 3,"),
+            "the default Color writes vanilla's 3: {json}"
+        );
+
+        // Out of range (above the enum) keeps the default — vanilla casts
+        // unchecked (`Main.cs:4398-4403`), which is the deviation this arm
+        // avoids. Only u8-parseable values reach the translation; anything the
+        // `-1` byte range cannot hold fails `parse::<u8>()` instead.
+        for bad in ["4", "255", "-1", "\"x\"", "null"] {
+            let text = format!("{{\n \"LightingMode\": {bad}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.light_mode, 0, "{bad} falls back to the default");
+        }
+    }
+
+    #[test]
+    fn craft_from_nearby_chests_round_trips_the_vanilla_key() {
+        // `configuration.Put("CraftFromNearbyChests",
+        // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`) — the field
+        // existed with no key, so it never survived a config round-trip.
+        assert!(Settings::default().craft_from_nearby_chests, "Player.cs:406");
+        for stored in [true, false] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {stored}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.craft_from_nearby_chests, stored);
+            let mut w = Settings::default();
+            w.craft_from_nearby_chests = stored;
+            let json = w.to_json();
+            assert!(
+                json.contains(&format!("\"CraftFromNearbyChests\": {stored},")),
+                "the writer persists the key: {json}"
+            );
+        }
+        // Garbage coerces to false, exactly like the port's other fifteen
+        // boolean arms (`boolean` in `parse`): the whole value token — quotes
+        // included — must equal "true". Vanilla's `Preferences.Get` would
+        // instead keep the field default, its `try`/`catch` swallowing the
+        // `Convert.ChangeType` failure
+        // (`Terraria/IO/Preferences.cs:176-190`); that coercion is port-wide
+        // and pre-existing, so this key follows its siblings rather than
+        // standing alone — Phase 2 owns the boolean-arm semantics.
+        for bad in ["\"maybe\"", "7", "null", "\"True\"", "TRUE!"] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {bad}\n}}");
+            let s = Settings::parse(&text);
+            assert!(!s.craft_from_nearby_chests, "{bad} coerces to false");
+        }
+        // The comparison is case-insensitive; only the bare literal counts.
+        for good in ["true", "True", "TRUE"] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {good}\n}}");
+            let s = Settings::parse(&text);
+            assert!(s.craft_from_nearby_chests, "{good} is truthy");
+        }
+        // A key absent from the file leaves the default alone.
+        assert!(Settings::parse("{}").craft_from_nearby_chests, "Player.cs:406");
     }
 
     #[test]
