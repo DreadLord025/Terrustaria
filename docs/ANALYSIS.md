@@ -6282,6 +6282,37 @@ Deliberate deviations and notes:
   unknown-key behaviour.
 
 
+## Tile sections (M6-NET-3)
+
+The `10`/`20` codecs and the section flow are 1:1 ports; the deviations:
+
+- **`frame_important` rides the wire.** The C# reads its global
+  `Main.tileFrameImportant[]` table on both sides of `10`/`20`; the port's
+  table is per-world (`World::frame_important`) and the reader thread has no
+  world, so the flag rides in a previously-unused bit (`10`'s `b4` bit 0,
+  `20`'s third flag byte bit 4). Two-client only.
+- **`wall_frame` is the one added byte** in `10`'s payload (after the wall
+  low byte): the C# covers it through `CopyFrom` inside a run, the port needs
+  it on the wire so a section's walls render identically.
+- **The chest/sign/tile-entity tail of `CompressTileBlock` is not ported**
+  (`NetMessage.cs:2208-2230`): the port's chests are world chests synced by
+  the item stream and its signs/tile-entities have no sync path yet — the
+  section stream covers tiles, walls, liquids, the four wire colours, paint
+  and the invisible/fullbright quad.
+- **The deflate stream is wire-compatible, not byte-identical**: the port
+  uses flate2's raw deflate (a .NET `DeflateStream` peer decodes it), while
+  byte-for-byte equality would need .NET's encoder internals.
+- **The NPC/chest pushes inside `SendSection` ride the cadence tick**: the
+  C# streams `23` for the section's town NPCs and the chest contents inline
+  (`NetMessage.cs:2715-2753`); the port's 10 Hz tick covers both within a
+  tick of the section arriving.
+- **The per-NPC `netSpam` gate and the section culling of `23` are not
+  ported** (all live NPCs stream each tick); the client's despawn is a 200 ms
+  staleness prune rather than the C#'s life-to-0 broadcast.
+- **`20 SectionRange` replicates the 1x1 edit**: the C# widens door/object
+  edits to their frame group (`SendTileSquare(-1, x, y, 2)`); the port's
+  multi-tile objects arrive as per-tile edits, so the widening waits for the
+  door/object sync. `changeType` rides 0 (no switch family yet).
 ## The Golem family's display (M4-BOSS-19b)
 
 The port draws the Golem family over the extracted sheets' real rows, but
@@ -6348,3 +6379,4 @@ several vanilla details are deliberately not carried:
 - **The step sounds.** `FindFrame` case 668 plays `SoundID.DeerclopsStep`
   at the 4/9 stride rows (`NPC.cs:66833-66836`); `find_frame` runs without
   audio access, so the cue rides the follow-up like the other NPC steps.
+
