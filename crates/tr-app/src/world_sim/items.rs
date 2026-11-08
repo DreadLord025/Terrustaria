@@ -401,6 +401,7 @@ mod shimmer_tests {
     }
 }
 
+#[cfg(test)]
 mod lava_burn_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;

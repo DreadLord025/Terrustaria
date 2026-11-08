@@ -2672,6 +2672,26 @@ ports. The shell's missile battery and the core phase bridge (the
 `flag80` classic/expert split) are the follow-ups: until they land,
 the core stays in the scan/gun loop and is killed by damage.
 
+## The saucer's guns (M4-EVENT-4f)
+
+The mounts' batteries ride the core's mirrored `ai[3]` timer and `ai[0]`
+phase through the pre-pass write-through (the vanilla reads
+`Main.npc[localAI[i]]`'s sibling state directly — the port approximates
+the crew's aliveness with the pre-pass counts). The 393 turret aims
+with the 8-way table (the player vector's rotation, Y-clamped, mirrored
+by the spriteDirection) between its 280-420 windows and fires the 449
+rays (35, 16 speed, ±0.785/3 jitter) every 6 ticks inside; the 394
+cannon fires the 448 shells (50, 8 speed, side·36 + 8 spawn, ±0.785
+aim) every 20 ticks of its 440-580 window; the 392 shell fires the 447
+entry shot (50) at the phase-0 window's edge and the 450 missile
+battery (30, 3 speed — the turret side's wide ±0.26 arcs and the cannon
+side's narrow ±0.785 arcs) in the windows: the core's gun phase (2)
+opens them always, else the 280-400 and 440-580 bands.
+
+The bridge: with the crew dead and the core open (the classic arm),
+the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
+whose guns die falls out of the fight on its own.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

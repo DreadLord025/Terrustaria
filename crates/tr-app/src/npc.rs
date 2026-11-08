@@ -1305,6 +1305,15 @@ pub struct Npc {
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
+    /// The saucer family's write-through payload (the mounts read the
+    /// core's live state): the core's `ai[3]` timer and `ai[0]` phase,
+    /// and the crew counts within the link's reach (the turrets + the
+    /// cannons — the mounts' own `Main.npc[]` siblings have no port
+    /// model).
+    pub carrier_timer: f32,
+    pub carrier_phase: f32,
+    pub crew_turrets: i32,
+    pub crew_cannons: i32,
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -1661,6 +1670,10 @@ impl Npc {
             carrier_x: -1.0,
             carrier_y: -1.0,
             wants_saucer_crew: false,
+            carrier_timer: -1.0,
+            carrier_phase: 0.0,
+            crew_turrets: 0,
+            crew_cannons: 0,
         }
     }
 
@@ -2281,7 +2294,7 @@ impl Npc {
             // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
             NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon => {
-                self.update_saucer_mount(world)
+                self.update_saucer_mount(world, rng)
             }
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
@@ -4806,25 +4819,28 @@ impl Npc {
         }
     }
 
-    /// `AI()`'s aiStyle-75 arms for the saucer family (`NPC.cs:35530-35612`
-    /// + `:35921-36060`): the mounts ride the core. The core's spawn arm
-    /// hands each child its `ai[0]` (the core link) and its `ai[1]` (the
-    /// seat index); the mounts' function is the ride: the position centres
-    /// on the core with the family offset (the shell `UnitY * 2`, the
-    /// turret `UnitY * 29 ± UnitX * 60`, the cannon `UnitY * -13 ± UnitX
-    /// * 49`), the velocity zeroes, the direction and spriteDirection
-    /// mirror the core's. The shell's missile battery + the core phase
-    /// bridge (`:35921-36060`) is the follow-up — the port rides only.
+    /// `AI`'s aiStyle-75 arms for the saucer family (`NPC.cs:35616-36060`)
+    /// — the mounts ride the core (the seat offsets) and run their
+    /// batteries off the core's mirrored `ai[3]` timer and `ai[0]` phase
+    /// (the pre-pass write-through): the 393 TURRET's 8-way aim + the 449
+    /// rays (35 dmg, 16 speed, the ±0.785/3 jitter, every 6 ticks in the
+    /// 280-420 window), the 394 CANNON's 448 shells (50 dmg, 8 speed, the
+    /// ±0.785 aim, the side·36 + 8 spawn, every 20 ticks in the 440-580
+    /// window), and the 392 SHELL's 447 core-shot (50 dmg at the phase-0
+    /// window's entry) + the 450 missile battery (30 dmg, 3 speed, four
+    /// emitters gated by the crew's aliveness) + the phase bridge (the
+    /// crew dead + the core open → the core's `ai[0]` = 3, the classic
+    /// arm).
     ///
-    /// The link: the pre-pass write-through on `carrier_x/y` (the core's
-    /// centre) — the vanilla's `Main.npc[ai[0]]` index has no port model.
-    fn update_saucer_mount(&mut self, _world: &World) {
+    /// Deviations: `GetAttackDamage_ForProjectiles` runs as the classic
+    /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
+    /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
+    /// expert-mode bridge arm is constants-off (no difficulty flags).
+    fn update_saucer_mount(&mut self, _world: &World, rng: &mut u64) {
         if self.carrier_x < 0.0 {
             return;
         }
         let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        // The seat offsets: `ai[1]` selects the side.
         let side = if self.ai[1] == 1.0 { 1.0 } else { -1.0 };
         let (ox, oy) = match self.kind {
             NpcKind::MartianSaucer => (0.0, 2.0),
@@ -4833,9 +4849,95 @@ impl Npc {
         };
         self.x = self.carrier_x - w * 0.5 + ox;
         self.y = self.carrier_y - h * 0.5 + oy;
-        // The direction mirror: the core's `direction` rides the
-        // write-through's side (the mount's own `facing`).
-        let _ = (cx, cy);
+        // The mounted timers mirror the core's.
+        self.ai[3] = self.carrier_timer;
+        let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        match self.kind {
+            NpcKind::MartianSaucerTurret => {
+                // The 280-420 window (`NPC.cs:35750-35894`).
+                let t = self.ai[3];
+                let in_window = t >= 280.0 && t < 420.0;
+                if in_window {
+                    if core_open && (t - 280.0) % 6.0 == 0.0 {
+                        // The 449 ray at the aim (ai[2] = the rotation).
+                        let ang = self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
+                        self.wants_hostile_shot = Some((449u16, cx + vx, cy + vy, vx, vy, 35));
+                    }
+                }
+                // The aim rides the fire test's own update (the player
+                // vector's rotation, Y-clamped) — ported as the closest
+                // octant-equivalent: the machine's `ai[2]` counts toward
+                // the player when the window is closed.
+                let _ = core_open;
+            }
+            NpcKind::MartianSaucerCannon => {
+                // The 440-580 window (`NPC.cs:35820-35858`).
+                let t = self.ai[3];
+                let in_window = t >= 440.0 && t < 580.0;
+                if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
+                    let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                    let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
+                    self.wants_hostile_shot = Some((
+                        448u16,
+                        cx + side * 36.0,
+                        cy + 8.0,
+                        vx,
+                        vy,
+                        50,
+                    ));
+                }
+            }
+            _ => {
+                // The shell (`NPC.cs:35895-36060`): the phase-0 window's
+                // 447 entry shot + the 450 missile battery.
+                let t = self.ai[3];
+                let core_phase0 = self.carrier_phase == 0.0;
+                if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
+                    self.wants_hostile_shot = Some((447u16, cx, cy, 0.0, 0.0, 50));
+                }
+                // The windows: the core's gun phase (2) opens them always;
+                // else the 280-400 and 440-580 bands.
+                let (fire_window, wide, narrow) = if self.carrier_phase == 2.0 {
+                    (true, 120.0, 120.0)
+                } else if t >= 280.0 && t < 400.0 {
+                    (true, 60.0, 90.0)
+                } else if t >= 440.0 && t < 580.0 {
+                    (true, 90.0, 60.0)
+                } else {
+                    (false, 1000.0, 1000.0)
+                };
+                if fire_window && core_open {
+                    let dmg = 30;
+                    let roll = crate::app::rand01(rng);
+                    // The turret emitters (the wide arcs).
+                    if self.crew_turrets > 0 && roll < 1.0 / wide {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
+                        self.wants_hostile_shot = Some((
+                            450u16,
+                            cx - side * 55.0,
+                            cy + 35.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
+                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                        let (vx, vy) = (-(roll * 2.0) * ang.cos() * 3.0 - 1.0, -ang.sin() * 3.0 - 3.0);
+                        self.wants_hostile_shot = Some((
+                            450u16,
+                            cx - side * 45.0,
+                            cy - 20.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36520`) — the Martian

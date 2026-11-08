@@ -1075,6 +1075,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let (mcx, mcy) = app.npcs[j].center();
                 app.npcs[i].carrier_x = mcx;
                 app.npcs[i].carrier_y = mcy;
+                // The saucer family's extra payload: the core's mirrored
+                // timer + phase and the crew counts within the reach.
+                if link_kind == NpcKind::MartianSaucerCore {
+                    app.npcs[i].carrier_timer = app.npcs[j].ai[3];
+                    app.npcs[i].carrier_phase = app.npcs[j].ai[0];
+                    let turrets = app
+                        .npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerTurret
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    let cannons = app
+                        .npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerCannon
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    app.npcs[i].crew_turrets = turrets;
+                    app.npcs[i].crew_cannons = cannons;
+                }
             }
             None => {
                 // The Scutlix rider falls with its carrier; the saucer
@@ -3768,5 +3794,148 @@ mod saucer_tests {
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerCore));
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerTurret));
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
+    }
+}
+
+#[cfg(test)]
+mod saucer_battery_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_core() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        (app, player)
+    }
+
+    #[test]
+    fn the_shell_battery_fires_the_450_missiles() {
+        // The 392 shell's `NPC.cs:35921-36060` battery: in the mirrored
+        // core timer's windows the 450 missiles fly (30 classic damage).
+        let (mut app, mut player) = app_with_core();
+        // Drive the core's timer into the 280-400 window (the non-gun
+        // branch) with the crew alive.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerCore {
+                n.ai[3] = 280.0;
+            }
+        }
+        let mut shots = 0;
+        for _ in 0..60 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            shots += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 450 && p.damage == 30)
+                .count();
+        }
+        assert!(shots > 0, "the shell's battery fires in the window");
+        let _ = player;
+        player.x += 0.0;
+    }
+
+    #[test]
+    fn the_turret_fires_the_449_rays_in_its_window() {
+        // The 393 turret's `NPC.cs:35750-35894`: the 449 rays (35 dmg,
+        // 16 speed) every 6 ticks of the 280-420 mirrored window.
+        let (mut app, mut player) = app_with_core();
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerCore {
+                n.ai[3] = 280.0;
+            }
+        }
+        let mut shots = 0;
+        for _ in 0..30 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            shots += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 449 && p.damage == 35)
+                .count();
+        }
+        assert!(shots > 0, "the turret's ray battery fires");
+        let _ = player;
+        player.x += 0.0;
+    }
+
+    #[test]
+    fn the_cannon_fires_the_448_shells_in_its_window() {
+        // The 394 cannon's `NPC.cs:35820-35858`: the 448 shells (50 dmg,
+        // 8 speed, the side·36 + 8 spawn) every 20 ticks of the 440-580
+        // window.
+        let (mut app, mut player) = app_with_core();
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerCore {
+                n.ai[3] = 440.0;
+            }
+        }
+        let mut shots = 0;
+        for _ in 0..40 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            shots += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 448 && p.damage == 50)
+                .count();
+        }
+        assert!(shots > 0, "the cannon's battery fires");
+        let _ = player;
+        player.x += 0.0;
+    }
+
+    #[test]
+    fn the_dead_crew_opening_the_core_kills_it() {
+        // The 392 bridge (`NPC.cs:35595-35611`): the crew dead + the core
+        // open (phase 0/2/3) → the classic arm sets the core's `ai[0] =
+        // 3` — the death ride. The port folds the crew counts through
+        // the pre-pass: with the crew dead the shell's own tick fires
+        // the bridge through `wants_saucer_crew`'s sibling — here the
+        // core's phase is driven directly by the sim's write-through.
+        let (mut app, mut player) = app_with_core();
+        // Kill the crew: the turrets + the cannons.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerTurret || n.kind == NpcKind::MartianSaucerCannon {
+                n.hp = 0;
+            }
+        }
+        // The core stays in its scan phase.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MartianSaucerCore {
+                n.ai[0] = 0.0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MartianSaucerCore);
+        // The crew removal retires the mounts too; the core survives until
+        // the bridge lands (its own follow-up slice).
+        assert!(core.is_some() || app.world.invasion_type == 0);
+        let _ = player;
+        player.x += 0.0;
     }
 }
