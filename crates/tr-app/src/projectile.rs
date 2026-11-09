@@ -165,6 +165,61 @@ pub const ENCHANTED_BOOMERANG: u16 = 6;
 pub const WOODEN_BOOMERANG: u16 = 52;
 /// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
 pub const ICE_BOOMERANG: u16 = 113;
+/// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
+/// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
+/// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
+/// but ride `AI_099_1_Counterweights` (`:67380`) — the accessory family, not
+/// these ids.
+pub const CODE1_YOYO: u16 = 534;
+pub const WOOD_YOYO: u16 = 541;
+pub const CORRUPT_YOYO: u16 = 542;
+pub const CRIMSON_YOYO: u16 = 543;
+pub const JUNGLE_YOYO: u16 = 544;
+pub const CASCADE_YOYO: u16 = 545;
+pub const CHIK_YOYO: u16 = 546;
+pub const CODE2_YOYO: u16 = 547;
+pub const RALLY_YOYO: u16 = 548;
+pub const YELETS_YOYO: u16 = 549;
+pub const REDS_YOYO: u16 = 550;
+pub const VALKYRIE_YOYO: u16 = 551;
+pub const AMAROK_YOYO: u16 = 552;
+pub const HEL_FIRE_YOYO: u16 = 553;
+pub const KRAKEN_YOYO: u16 = 554;
+/// `ProjectileID.TheEyeOfCthulhu` — the Eye of Cthulhu yoyo (555).
+pub const THE_EYE_OF_CTHULHU_YOYO: u16 = 555;
+pub const FORMAT_C_YOYO: u16 = 562;
+pub const GRADIENT_YOYO: u16 = 563;
+pub const VALOR_YOYO: u16 = 564;
+/// `ProjectileID.Terrarian` (603) and the beams it fires — `TerrarianBeam`
+/// 604 (`Projectile.cs:6071-6083`, aiStyle 115).
+pub const TERRARIAN_YOYO: u16 = 603;
+pub const TERRARIAN_BEAM: u16 = 604;
+/// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
+pub const HIVE_FIVE: u16 = 999;
+/// The whole aiStyle-99 weapon set — the kinds `DefaultToYoyo` covers.
+pub const YOYO_KINDS: [u16; 21] = [
+    CODE1_YOYO,
+    WOOD_YOYO,
+    CORRUPT_YOYO,
+    CRIMSON_YOYO,
+    JUNGLE_YOYO,
+    CASCADE_YOYO,
+    CHIK_YOYO,
+    CODE2_YOYO,
+    RALLY_YOYO,
+    YELETS_YOYO,
+    REDS_YOYO,
+    VALKYRIE_YOYO,
+    AMAROK_YOYO,
+    HEL_FIRE_YOYO,
+    KRAKEN_YOYO,
+    THE_EYE_OF_CTHULHU_YOYO,
+    FORMAT_C_YOYO,
+    GRADIENT_YOYO,
+    VALOR_YOYO,
+    TERRARIAN_YOYO,
+    HIVE_FIVE,
+];
 /// `ProjectileID.Bomb` (`Projectile.cs:1106-1112`).
 pub const BOMB: u16 = 28;
 /// `ProjectileID.Dynamite` (`Projectile.cs:1113-1121`).
@@ -231,6 +286,124 @@ pub struct ProjData {
     pub arrow: bool,
     /// `Projectile.trap`.
     pub trap: bool,
+    /// `Projectile.scale` — the SetDefaults value; the stock 1f except the
+    /// yoyo family's ladder (the yoyo rows carry it for the render row).
+    pub scale: f32,
+}
+
+/// `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`) — the
+/// flight lifetime in **seconds** (`AI_099_2_Yoyos`'s `num2`,
+/// `Projectile.cs:67751`; `num = localAI[0] / 60f` at the default meleeSpeed).
+/// The factory default is **-1f — no timeout**: 547, 550, 551, 554, 555 and
+/// 603 are unlisted and return only on the channel release or the range cap
+/// (a verbatim source quirk, not a gap — recorded in ANALYSIS).
+const YOYO_LIFETIME: &[(u16, f32)] = &[
+    (541, 3.0),
+    (548, 5.0),
+    (542, 7.0),
+    (543, 6.0),
+    (544, 8.0),
+    (534, 9.0),
+    (564, 11.0),
+    (999, 11.0),
+    (545, 13.0),
+    (563, 30.0),
+    (562, 16.0),
+    (553, 12.0),
+    (546, 16.0),
+    (552, 15.0),
+    (549, 14.0),
+];
+
+/// `ProjectileID.Sets.YoyosMaximumRange` (`ProjectileID.cs:426`) — the string
+/// length in pixels (`AI_099_2_Yoyos`'s `num11`, `Projectile.cs:67862`); the
+/// unlisted kinds keep the factory default **200f**.
+const YOYO_MAX_RANGE: &[(u16, f32)] = &[
+    (541, 130.0),
+    (548, 170.0),
+    (542, 195.0),
+    (543, 207.0),
+    (544, 215.0),
+    (534, 220.0),
+    (564, 225.0),
+    (999, 225.0),
+    (545, 235.0),
+    (562, 320.0),
+    (563, 250.0),
+    (546, 275.0),
+    (552, 270.0),
+    (553, 330.0),
+    (547, 280.0),
+    (549, 290.0),
+    (554, 380.0),
+    (550, 370.0),
+    (551, 370.0),
+    (555, 360.0),
+    (603, 400.0),
+];
+
+/// `ProjectileID.Sets.YoyosTopSpeed` (`ProjectileID.cs:427`) — the flight's
+/// top speed in px/tick (`AI_099_2_Yoyos`'s `num9`, `Projectile.cs:67863`);
+/// the unlisted kinds keep the factory default **10f**.
+const YOYO_TOP_SPEED: &[(u16, f32)] = &[
+    (541, 9.0),
+    (548, 11.0),
+    (542, 12.5),
+    (543, 12.0),
+    (544, 13.0),
+    (534, 13.0),
+    (564, 14.0),
+    (999, 14.0),
+    (545, 14.0),
+    (562, 17.0),
+    (563, 16.0),
+    (546, 15.0),
+    (552, 14.0),
+    (553, 15.0),
+    (547, 17.0),
+    (549, 16.0),
+    (554, 22.0),
+    (550, 16.0),
+    (551, 16.0),
+    (555, 16.5),
+    (603, 17.5),
+];
+
+/// The three tables' lookups — the `CreateFloatSet(default, …)` semantics
+/// (`ProjectileID.cs:425-427`): an unlisted kind reads the factory default.
+fn yoyo_table(table: &[(u16, f32)], default: f32, kind: u16) -> f32 {
+    table
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or(default, |(_, v)| *v)
+}
+
+fn yoyo_lifetime(kind: u16) -> f32 {
+    yoyo_table(YOYO_LIFETIME, -1.0, kind)
+}
+
+fn yoyo_max_range(kind: u16) -> f32 {
+    yoyo_table(YOYO_MAX_RANGE, 200.0, kind)
+}
+
+fn yoyo_top_speed(kind: u16) -> f32 {
+    yoyo_table(YOYO_TOP_SPEED, 10.0, kind)
+}
+
+/// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
+/// the SetDefaults body; every other kind (and the unlisted yoyos) keeps the
+/// stock 1f.
+fn set_defaults_scale(kind: u16) -> f32 {
+    match kind {
+        547 => 1.1,
+        550 | 551 => 1.1,
+        554 => 1.2,
+        555 => 1.15,
+        563 => 1.05,
+        564 => 1.075,
+        603 => 1.15,
+        _ => 1.0,
+    }
 }
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
@@ -350,6 +523,32 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
             BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
             DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
+            // The yoyo family (`:6013-6093` + `:9483-9490`): 16×16, aiStyle 99
+            // (`DefaultToYoyo` `:10764-10771` — friendly, `penetrate = -1`),
+            // `extraUpdates = 0`; the C# SetDefaults sets no `timeLeft`, so the
+            // stock 3600 stands and the AI's `timeLeft = 6` re-pin keeps the
+            // slot alive in flight.
+            CODE1_YOYO
+            | WOOD_YOYO
+            | CORRUPT_YOYO
+            | CRIMSON_YOYO
+            | JUNGLE_YOYO
+            | CASCADE_YOYO
+            | CHIK_YOYO
+            | CODE2_YOYO
+            | RALLY_YOYO
+            | YELETS_YOYO
+            | REDS_YOYO
+            | VALKYRIE_YOYO
+            | AMAROK_YOYO
+            | HEL_FIRE_YOYO
+            | KRAKEN_YOYO
+            | THE_EYE_OF_CTHULHU_YOYO
+            | FORMAT_C_YOYO
+            | GRADIENT_YOYO
+            | VALOR_YOYO
+            | TERRARIAN_YOYO
+            | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
@@ -392,6 +591,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         tile_collide,
         arrow,
         trap,
+        scale: set_defaults_scale(kind),
     })
 }
 
@@ -430,6 +630,10 @@ pub struct Projectile {
     /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
     /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
     pub ai: [f32; 3],
+    /// The C# `localAI[0..2]` scratch array — the yoyo family's lifetime tick
+    /// counter (`localAI[0]`, `AI_099_2_Yoyos` `Projectile.cs:67745`) and the
+    /// Terrarian's beam timer (`localAI[1]`, `:67778`).
+    pub local_ai: [f32; 3],
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -439,6 +643,13 @@ pub struct Projectile {
     pub arrow: bool,
     /// `Projectile.trap`.
     pub trap: bool,
+    /// `Projectile.direction` (the C# default 1) — the ±1 sprite direction:
+    /// the yoyo rotation spins by it (`Projectile.cs:68096`) and the pose
+    /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
+    pub direction: i32,
+    /// `Projectile.scale` from `SetDefaults` — the yoyo family's ladder; the
+    /// render row reads it, the AI does not.
+    pub scale: f32,
     bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
@@ -471,11 +682,14 @@ impl Default for Projectile {
             id_static_hit_cooldown: -1,
             extra_updates: 0,
             ai: [0.0; 3],
+            local_ai: [0.0; 3],
             w: SIZE,
             h: SIZE,
             tile_collide: true,
             arrow: false,
             trap: false,
+            direction: 1,
+            scale: 1.0,
             bounces: 0,
             falling_tile: None,
             detonated: false,
@@ -522,6 +736,13 @@ impl Projectile {
             }
         }
     }
+
+    /// The aiStyle-99 yoyo family — `AI_099_2_Yoyos`, `Projectile.cs:67733-
+    /// 68105`. The full state machine (the flight/return/dropped/ghost states,
+    /// the per-yoyo lifetime/range/top-speed tables, the aim-seeking orbit,
+    /// the tile slide, the rotation and the Terrarian's beams) lands with the
+    /// next phase; the data rows and the dispatch arm before it.
+    fn ai_yoyo(&mut self) {}
 
     /// `AI_001`'s generic arm (`Projectile.cs:57572-57583` + the rotation
     /// default `:57725-57728` + the ±16 velocity clamp `:57756-57763`): the
@@ -1121,6 +1342,7 @@ impl ProjectilePool {
             tile_collide: data.tile_collide,
             arrow: data.arrow,
             trap: data.trap,
+            scale: data.scale,
             bounces: 0,
             falling_tile: None,
             detonated: false,
@@ -1160,15 +1382,18 @@ impl ProjectilePool {
                     self.slots[i].ai_shuriken(world);
                 }
                 // The aiStyle dispatch: the arrow/bullet family (aiStyle 1,
-                // `AI()`: `if (this.aiStyle == 1) this.AI_001();`) and the
-                // spear/dart family (aiStyle 14). The falling-tile mode
-                // keeps its custom flight.
+                // `AI()`: `if (this.aiStyle == 1) this.AI_001();`), the
+                // spear/dart family (aiStyle 14) and the yoyo family
+                // (aiStyle 99, `:33156-33163`'s `else if (this.aiStyle == 99)`
+                // → `AI_099_2_Yoyos`). The falling-tile mode keeps its custom
+                // flight.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
                         1 => self.slots[i].ai_arrow(world),
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
+                        99 => self.slots[i].ai_yoyo(),
                         _ => {}
                     }
                 }
@@ -2296,5 +2521,101 @@ mod bomb_tests {
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the gravity tail adds 0.2"
         );
+    }
+
+    #[test]
+    fn the_yoyo_data_is_verbatim() {
+        // `Projectile.cs:6013-6093` + `:9483-9490`: every yoyo kind is 16×16,
+        // aiStyle 99, `penetrate = -1`, `extraUpdates = 0`, tile-colliding,
+        // with the stock `timeLeft`; the scale ladder rides
+        // `set_defaults_scale`.
+        for kind in YOYO_KINDS {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (16.0, 16.0), "kind {kind}");
+            assert_eq!(d.ai_style, 99, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+        }
+        // The scale ladder (`:6028-6067`): 547 1.1, 550/551 1.1, 554 1.2,
+        // 555 1.15, 563 1.05, 564 1.075, 603 1.15, the rest 1.0.
+        let scales = [
+            (CODE2_YOYO, 1.1),
+            (REDS_YOYO, 1.1),
+            (VALKYRIE_YOYO, 1.1),
+            (KRAKEN_YOYO, 1.2),
+            (THE_EYE_OF_CTHULHU_YOYO, 1.15),
+            (GRADIENT_YOYO, 1.05),
+            (VALOR_YOYO, 1.075),
+            (TERRARIAN_YOYO, 1.15),
+            (WOOD_YOYO, 1.0),
+            (HIVE_FIVE, 1.0),
+        ];
+        for (kind, want) in scales {
+            assert_eq!(
+                proj_data(kind).unwrap().scale,
+                want,
+                "kind {kind}'s SetDefaults scale"
+            );
+        }
+    }
+
+    #[test]
+    fn the_yoyo_tables_are_verbatim() {
+        // `ProjectileID.cs:425-427`: the three per-yoyo sets, with the
+        // `CreateFloatSet` defaults for the unlisted kinds.
+        assert_eq!(yoyo_lifetime(WOOD_YOYO), 3.0);
+        assert_eq!(yoyo_lifetime(RALLY_YOYO), 5.0);
+        assert_eq!(yoyo_lifetime(GRADIENT_YOYO), 30.0, "the Gradient's 30 s");
+        assert_eq!(yoyo_lifetime(HIVE_FIVE), 11.0);
+        assert_eq!(
+            yoyo_lifetime(KRAKEN_YOYO),
+            -1.0,
+            "the unlisted kinds keep the -1 default (no timeout)"
+        );
+        assert_eq!(yoyo_max_range(WOOD_YOYO), 130.0);
+        assert_eq!(yoyo_max_range(TERRARIAN_YOYO), 400.0, "the Terrarian's 400");
+        assert_eq!(yoyo_max_range(CODE1_YOYO), 220.0);
+        assert_eq!(
+            yoyo_max_range(KRAKEN_YOYO),
+            380.0,
+            "the Kraken is listed"
+        );
+        assert_eq!(
+            yoyo_max_range(FORMAT_C_YOYO),
+            320.0,
+            "the Format C is listed"
+        );
+        assert_eq!(yoyo_top_speed(WOOD_YOYO), 9.0);
+        assert_eq!(yoyo_top_speed(KRAKEN_YOYO), 22.0);
+        assert_eq!(yoyo_top_speed(TERRARIAN_YOYO), 17.5);
+        // The factory default for an unlisted kind in the range/top-speed
+        // tables (200f / 10f) — a non-yoyo kind reads it too.
+        assert_eq!(yoyo_max_range(SHURIKEN), 200.0);
+        assert_eq!(yoyo_top_speed(SHURIKEN), 10.0);
+    }
+
+    #[test]
+    fn a_yoyo_spawns_through_the_dispatch_arm() {
+        // The aiStyle-99 dispatch runs the arm without touching the other
+        // families (the arm's body lands with the next phase).
+        let mut pool = ProjectilePool::new();
+        let wood = pool
+            .spawn_with_data(WOOD_YOYO, 320.0, 320.0, 0.0, 0.0, 9, 2.5)
+            .expect("the Wood Yoyo data row exists");
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
+            .expect("the Terrarian data row exists");
+        let mut w = world();
+        pool.update(&mut w, &mut [], None, None);
+        assert!(pool.slots[wood].active, "the slot survives its first update");
+        assert!(pool.slots[terrarian].active);
+        assert!(pool.slots[terrarian].local_ai.iter().all(|v| *v == 0.0));
+        assert!(
+            (pool.slots[terrarian].scale - 1.15).abs() < 1e-6,
+            "the Terrarian scale"
+        );
+        assert_eq!(pool.slots[terrarian].direction, 1, "the stock direction");
     }
 }
