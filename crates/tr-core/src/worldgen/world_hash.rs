@@ -141,8 +141,14 @@ mod tests {
     /// the painting) plus the `LihzahrdAltar` re-write (`:21943`) — every
     /// world on every seed changes by design. These are the final M5-TEMPLE
     /// pins.
-    const SEED42_512: u32 = 1248943602;
-    const DEFAULT_WORLD: u32 = 3359703751;
+    /// Re-pinned for M5-STRUCT-5 over the M5-TEMPLE pins: the cave decorations
+    /// land — the spider caves (`Spread.Spider`'s wall 62 over the cave
+    /// pockets, with the pots/piles/stalactite decor), the gem caves (the gem
+    /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
+    /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
+    /// pass — every world on every seed changes by design.
+    const SEED42_512: u32 = 3074238937;
+    const DEFAULT_WORLD: u32 = 4238218118;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

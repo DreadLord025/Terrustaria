@@ -6623,46 +6623,24 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
-## Xorshift core unification (refactor-xorshift-unify)
+## Cave decorations (M5-STRUCT-5)
 
-One xorshift64 core now feeds the worldgen streams and the wind walk alike
-(`crates/tr-core/src/rng.rs`, `pub struct Xorshift64(pub u64)`), replacing two
-private cores and two inlined copies of the same step. Before:
+Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
 
-- **`worldgen/noise.rs`'s `Rng`** — the worldgen contract: raw-XOR seeding
-  (`Rng(seed ^ const)` for the three `pipeline::Streams`, `Rng(seed ^
-  fnv1a64(name))` per pass), the high-32-bit word draw `next_u32`, plus
-  `range`/`chance`/`next_f64`.
-- **`wind.rs`'s private `Rng`** — the splitmix64 seeding (`from_seed`: the
-  `0x9E3779B97F4A7C15` add, the `0xBF58476D1CE4E5B9` and `0x94D049BB133111EB`
-  multiplies, the `0x2545F4914F6CDD1D` all-zero guard) with `next_int` taking
-  `next_u64`'s high half modulo.
-- **The duplicates** — `worldgen/temple.rs`'s `next_double` (= `next_f64`) and
-  `menu/mod.rs::random_name`'s inlined 13/7/17 triple.
+Deliberate deviations, all in the module header:
 
-The step and the word extraction were already identical in both cores, so the
-unified struct carries both draw conventions: `next_u64` returns the full word,
-`next_u32` returns its HIGH 32 bits (the worldgen contract), `from_seed` is the
-splitmix seeding, and `range` (an empty range returns `lo` without a draw —
-wind's `next_int` was this function) / `chance` / `next_f64` round it out. The
-worldgen surface is unchanged: `noise.rs` re-exports the core as `Rng`
-(`pub(crate) use crate::rng::Xorshift64 as Rng`), so every pass's import and the
-seeding contract stay as they were, while `wind.rs`, `temple.rs` and
-`random_name` call the core directly.
+- **The wall-0 gates read the port's pre-laid walls as the C#'s 0.** The port's `fill_terrain` writes a wall under every solid row (dirt 2 / stone 1 / sandstone 187 — `terrain.rs:284-289`); the C# leaves them 0 until `Cave Walls` runs (`WorldGen.cs:17711`, after these passes). Every `wall != 0` test in `nextCount`, `Spread.Spider`, `Spread.Gem` and `Spread.Moss` is therefore evaluated against the baseline set via `BASELINE_WALLS`; only a wall the port actually painted (jungle/mud/hive/gem/moss) counts as "walled". Without this the passes abort on the first cell and place nothing.
+- **The RNG is the port's per-pass xorshift stream**, not the shared `UnifiedRandom`: `Streams::pass_rng("Spider Caves")`, `("Gem Caves")`, `("Moss")`, `("Webs And Honey")`. The draw ORDER is faithful, the byte stream is not (the port's worldgen contract is already xorshift).
+- **`Spread.Spider`'s chest arm uses the port's `place_chest`** — the buried chest's stocked loot is M5-CHEST-gen territory, so the C#'s `chestStyle 15` / `mainItemInChest 939` book is out of this task's scope.
+- **`PlaceTile`-shaped writes use the port's single-tile idiom** (`frame_x = style * 18`, `frame_y = 0`) instead of the C#'s 2x2/3x2 `TileObjectData` frames; the port's framer recomputes object frames at the pipeline end.
+- **`neonMossBiome`/`SpreadGrass` ride the port's one-shot `growth::spread_grass`** (`WorldGen.cs:75146-75270`): the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled, so the sweeps call it per neighbour (arm F) / per qualifying tile (`neonMossBiome`).
+- **Arm D's unbounded loop is capped.** The C#'s `num13` loop (`:17612-17623`) decrements only on a hit and relies on the vanilla cave field always offering another exposed stone cell; the port caps the attempts at `6 * maxTilesX` so a degenerate world cannot spin.
+- **No seed framework**: the port carries no remix / not-the-bees / tenth-anniversary / drunk / for-the-worthy flags, so those arms take the vanilla normal path; the secret-seed `noSpiderCaves` pair (`:269-291`, `:2618`) and `DoNoSpiderCavesILiedMoreSpiderCaves` are out of scope.
+- **No `GenVars.shimmerPosition`/`shimmerSafetyDistance`** in the port (shimmer is not a worldgen liquid yet) — the moss pass's shimmer-exclusion arms (`:17585`, `:17604`, `:17614`) are skipped.
+- **The hive arm of `Webs And Honey` is inert**: it keys on wall 86 (`WallID.HiveUnsafe`), which the port's beehive pass does not paint (`structures.rs:404` uses its own walls). Left as a documented no-op until the beehive wall lands.
+- **The stalactite frame table keeps the arms the port's world can produce** (spiders, the ice family, stone/moss, hive, the sandstone pair, granite, marble) with `CopyPaintAndCoating` folded into the port's frame write; `Main.tileSolid[379] = false` (`:17360`) rides inside the pass's own `solid_tile`.
+- **`Plain` counts**: `count_tiles` is an explicit-stack rewrite of the recursive `nextCount` (the fill carries no RNG, so the traversal order is free), and `Spread.*` walks the frontier lists rather than the C#'s per-level `List`/`HashSet` pair — the visited-set semantics and the `SolidTile`/wall gate are the C#'s.
 
-Byte-exactness is pinned, not assumed: `rng.rs`'s tests replay the
-pre-refactor cores **verbatim** — the worldgen `old_next_u32` (7 seeds × 512
-draws), wind's `old_next_int` over its real call-site ranges (5 seeds, 16
-range windows) and the splitmix chain over the seeds 0..4096 — while the
-suites that consumed the old cores (`deterministic_for_seed`, the worldgen
-replay-pair tests and the wind tests) stay green unchanged.
+Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
-- **Out:** the ported C# stream `FastRandom` (`tile_light/palette.rs`, the
-  48-bit LCG) stays as it is — the `UnifiedRandom` replay, not this core;
-  `audio.rs`'s xorshift64*** (the 12/25/27 triple with the `0x2545F4914F6CDD1D`
-  multiplier) is a different core and stays; the ~13 other copies of the
-  splitmix64 finalizer — `spawner.rs`'s splitmix core misnamed `FastRandom`, the
-  `next_rand`/`rand01` streams of `rain.rs`/`sand.rs`/`chest_gen.rs`/
-  `prefix.rs`/`mount.rs`/`app/frame.rs`, `wiring.rs`'s LCG + finalizer — and
-  `flame.rs`'s second 48-bit LCG copy are recorded as a follow-up engineering
-  row.
+
