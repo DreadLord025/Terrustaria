@@ -6,7 +6,8 @@
 //! the coin slots 50-53, the ammo slots 54-57, then the main grid 0-53 — the
 //! port's `equip.coins` → `equip.ammo` → `App.inventory`. The vanilla's
 //! `ammoCyclingMode` defaults to `None` (no cycling), so the first matching
-//! slot in the order wins.
+//! slot in the order wins; a granted mode rotates the pick behind
+//! `ammoCyclingOffset` instead (`pick`'s `cycling` parameter, Phase 4).
 //!
 //! The drain lives inside `PickAmmo` itself
 //! (`Player.cs:53667-53672`: `if (!flag && item.consumable) item.stack--`) —
@@ -83,34 +84,178 @@ pub enum AmmoSource {
     Grid(usize),
 }
 
+/// `AmmoID.Coin` (71) (`ID/AmmoID.cs:161`-adjacent const block) — the coin-gun
+/// category `PickAmmo_PickAmmoItem` branches on for its `AmmoSlots` first pass.
+const AMMO_COIN: i32 = 71;
+
+/// The slot match `PickAmmo_IterateRange` reads: `item.ammo == sItem.useAmmo
+/// && item.stack > 0` (`Player.cs:53699`) — the predicate both walks share.
+fn is_ammo_match(slot: &ItemSlot, use_ammo: i32) -> bool {
+    slot.count > 0 && crate::registry::get(slot.kind).is_some_and(|d| d.ammo == use_ammo)
+}
+
+/// `PickAmmo_IterateRange`'s tail (`Player.cs:53713-53726`): walk one slot
+/// range and return the index of its `skip`-th match (`skip == 0` → the
+/// first), together with how many matches the range holds. The count is what
+/// the caller carries into the next range when the skip is not consumed
+/// there, because the C# walks ONE 59-slot `inventory` array where the port
+/// has three (coins / ammo / grid). `(None, seen)` means "no match at this
+/// skip; consume `seen` from the skip".
+fn nth_match(slots: &[ItemSlot], use_ammo: i32, mut skip: i32) -> (Option<usize>, usize) {
+    let mut seen = 0usize;
+    for (i, slot) in slots.iter().enumerate() {
+        if is_ammo_match(slot, use_ammo) {
+            if skip == 0 {
+                return (Some(i), seen + 1);
+            }
+            skip -= 1;
+            seen += 1;
+        }
+    }
+    (None, seen)
+}
+
+/// `AmmoSlotOrder_Default` (`Player.cs:57141-57144`) as one walk: the coin
+/// slots 50-53, the ammo slots 54-57, then the grid 0-53 — the port's three
+/// arrays, with the cycler's `skip` carried across them.
+fn pick_ordered(
+    coins: &[ItemSlot],
+    ammo: &[ItemSlot],
+    inventory: &[ItemSlot; INV],
+    use_ammo: i32,
+    skip: i32,
+) -> Option<AmmoSource> {
+    let groups: [(fn(usize) -> AmmoSource, &[ItemSlot]); 3] = [
+        (AmmoSource::Coin as fn(usize) -> AmmoSource, coins),
+        (AmmoSource::Ammo as fn(usize) -> AmmoSource, ammo),
+        (AmmoSource::Grid as fn(usize) -> AmmoSource, inventory),
+    ];
+    let mut skip = skip;
+    for (ctor, slots) in groups {
+        let (hit, seen) = nth_match(slots, use_ammo, skip);
+        if let Some(i) = hit {
+            return Some(ctor(i));
+        }
+        skip -= seen as i32;
+    }
+    None
+}
+
+/// `AmmoSlotOrder_Default`'s matching-stack count — `PickAmmo_IterateRange`'s
+/// `num2` (`Player.cs:53693-53698`) over the whole order, which the C# can sum
+/// in one loop because its inventory is one 59-slot array.
+fn count_ordered(
+    coins: &[ItemSlot],
+    ammo: &[ItemSlot],
+    inventory: &[ItemSlot; INV],
+    use_ammo: i32,
+) -> usize {
+    [coins, ammo, inventory]
+        .iter()
+        .flat_map(|slots| slots.iter())
+        .filter(|slot| is_ammo_match(slot, use_ammo))
+        .count()
+}
+
+/// `PickAmmo_IterateRange`'s cycling pass over ONE range (`Player.cs:53689-53712`):
+/// count the matching stacks (0 → `None`), then take the `offset % count`-th.
+fn pick_cycling(slots: &[ItemSlot], use_ammo: i32, offset: i32) -> Option<usize> {
+    let count = slots.iter().filter(|s| is_ammo_match(s, use_ammo)).count();
+    if count == 0 {
+        return None;
+    }
+    // `this.ammoCyclingOffset % num2` — the offset only ever increments, resets
+    // to 0 (`Update_AmmoCycler`, `Player.cs:28419-28426`) or is drawn
+    // non-negative from `Main.rand` (`:53577`), so the Euclidean remainder is
+    // the C#'s `%` for every reachable value.
+    nth_match(slots, use_ammo, offset.rem_euclid(count as i32)).0
+}
+
+/// `PickAmmo_IterateRange`'s cycling pass over the WHOLE default order
+/// (`allowAmmoCycling: true`, `Player.cs:53752` — the `FullInventory` and
+/// `Random` modes).
+fn pick_ordered_cycling(
+    coins: &[ItemSlot],
+    ammo: &[ItemSlot],
+    inventory: &[ItemSlot; INV],
+    use_ammo: i32,
+    offset: i32,
+) -> Option<AmmoSource> {
+    let count = count_ordered(coins, ammo, inventory, use_ammo);
+    if count == 0 {
+        return None;
+    }
+    pick_ordered(
+        coins,
+        ammo,
+        inventory,
+        use_ammo,
+        offset.rem_euclid(count as i32),
+    )
+}
+
 /// `Player.PickAmmo_PickAmmoItem` + `PickAmmo_IterateRange`
-/// (`Player.cs:53727-53753`, `:53685-53726`): the first slot in the order
-/// whose item's `ammo` field matches the weapon's `useAmmo` and whose stack
-/// is positive. `None` = no ammo — the shot is refused (`canShoot` stays
+/// (`Player.cs:53727-53753`, `:53685-53726`): the slot in the order whose
+/// item's `ammo` field matches the weapon's `useAmmo` and whose stack is
+/// positive. `None` = no ammo — the shot is refused (`canShoot` stays
 /// false, `Player.cs:53462-53466`).
-pub fn pick(inventory: &[ItemSlot; INV], equip: &EquipSlots, use_ammo: i32) -> Option<AmmoSource> {
+///
+/// `cycling` is the shooter's [`AmmoCycling`] (the `Player.ammoCyclingMode` /
+/// `ammoCyclingOffset` pair, `Player.cs:1244`/`:1248`). `None` — or the
+/// `AmmoCyclingMode::None` mode — is the vanilla default and keeps the
+/// pre-cycling behaviour bit-for-bit: the FIRST matching slot in
+/// `AmmoSlotOrder_Default` wins. A granted mode rotates the pick behind the
+/// offset instead (`num = ammoCyclingOffset % num2`, `:53704`):
+/// `AmmoSlots` counts and indexes the coin/ammo ranges alone — coin ammo
+/// through `AmmoSlotOrder_CoinsOnly`, everything else through
+/// `AmmoSlotOrder_AmmoOnly` (`:53729-53745`) — and falls through to the
+/// default order with `allowAmmoCycling: false` when those ranges hold no
+/// match (`:53752`); `FullInventory` and `Random` pass the offset through the
+/// whole default order.
+///
+/// The two Clentaminators' forced index 0 (`num = 0` for 779/5134, `:53708-53711`)
+/// is applied by the caller, which knows the shooter; `pick` stays
+/// shooter-agnostic.
+pub fn pick(
+    inventory: &[ItemSlot; INV],
+    equip: &EquipSlots,
+    use_ammo: i32,
+    cycling: Option<&AmmoCycling>,
+) -> Option<AmmoSource> {
     if use_ammo <= 0 {
         return None;
     }
-    let matches = |slot: &ItemSlot| -> bool {
-        slot.count > 0 && crate::registry::get(slot.kind).is_some_and(|d| d.ammo == use_ammo)
-    };
-    for (i, slot) in equip.coins.iter().enumerate() {
-        if matches(slot) {
-            return Some(AmmoSource::Coin(i));
+    let mode = cycling.map_or(AmmoCyclingMode::None, |c| c.mode);
+    let offset = cycling.map_or(0, |c| c.offset);
+    match mode {
+        AmmoCyclingMode::AmmoSlots => {
+            // `PickAmmo_PickAmmoItem`'s first pass (`:53729-53745`), the only
+            // pass of this mode that rides the offset.
+            let (ctor, slots): (fn(usize) -> AmmoSource, &[ItemSlot]) = if use_ammo == AMMO_COIN {
+                (AmmoSource::Coin as fn(usize) -> AmmoSource, &equip.coins)
+            } else {
+                (AmmoSource::Ammo as fn(usize) -> AmmoSource, &equip.ammo)
+            };
+            if let Some(i) = pick_cycling(slots, use_ammo, offset) {
+                return Some(ctor(i));
+            }
         }
-    }
-    for (i, slot) in equip.ammo.iter().enumerate() {
-        if matches(slot) {
-            return Some(AmmoSource::Ammo(i));
+        AmmoCyclingMode::FullInventory | AmmoCyclingMode::Random => {
+            // `:53752` — the default order with `allowAmmoCycling: true`: the
+            // count is over the WHOLE order, so the offset wraps across the
+            // coin, ammo and grid ranges alike.
+            if let Some(src) =
+                pick_ordered_cycling(&equip.coins, &equip.ammo, inventory, use_ammo, offset)
+            {
+                return Some(src);
+            }
         }
+        // `None` — no cycling: nothing to do before the default walk below.
+        AmmoCyclingMode::None => {}
     }
-    for (i, slot) in inventory.iter().enumerate() {
-        if matches(slot) {
-            return Some(AmmoSource::Grid(i));
-        }
-    }
-    None
+    // The default order, first match (the AmmoSlots fall-through lands here
+    // with `allowAmmoCycling: false`, `Player.cs:53752`).
+    pick_ordered(&equip.coins, &equip.ammo, inventory, use_ammo, 0)
 }
 
 /// The slot read through a [`AmmoSource`].
@@ -722,12 +867,12 @@ mod tests {
         // ammo 54-57, the grid 0-53 — the first `ammo == useAmmo` match wins.
         let inv = inv_with(&[(5, 40, 10), (10, 40, 99)]);
         let equip = equip_with_ammo(&[(0, 40, 3)]);
-        let pick = super::pick(&inv, &equip, 40).expect("ammo exists");
+        let pick = super::pick(&inv, &equip, 40, None).expect("ammo exists");
         assert_eq!(pick, AmmoSource::Ammo(0), "the ammo slot precedes the grid");
 
         // No ammo-slot entry: the grid's first match wins.
         let equip = EquipSlots::empty();
-        let pick = super::pick(&inv, &equip, 40).expect("grid ammo");
+        let pick = super::pick(&inv, &equip, 40, None).expect("grid ammo");
         assert_eq!(pick, AmmoSource::Grid(5), "the grid order is slot order");
 
         // The coin gun's coins: useAmmo 71 matches the coins slots first.
@@ -739,7 +884,7 @@ mod tests {
             count: 30,
             prefix: 0,
         };
-        let pick = super::pick(&coin_inv, &equip, 71).expect("coins");
+        let pick = super::pick(&coin_inv, &equip, 71, None).expect("coins");
         assert_eq!(pick, AmmoSource::Coin(1));
     }
 
@@ -748,12 +893,167 @@ mod tests {
         // The Musket (96) wants Bullet (97); the arrows (ammo 40) don't match.
         let inv = inv_with(&[(3, 40, 99)]);
         let equip = EquipSlots::empty();
-        assert_eq!(super::pick(&inv, &equip, 97), None);
+        assert_eq!(super::pick(&inv, &equip, 97, None), None);
         // An empty stack doesn't match (`item.stack > 0`, `Player.cs:53699`).
         let inv = inv_with(&[(3, 97, 0)]);
-        assert_eq!(super::pick(&inv, &equip, 97), None);
+        assert_eq!(super::pick(&inv, &equip, 97, None), None);
         // useAmmo <= 0 refuses outright (the melee weapons never pick).
-        assert_eq!(super::pick(&inv, &equip, 0), None);
+        assert_eq!(super::pick(&inv, &equip, 0, None), None);
+    }
+
+    /// A cycling state with one field set (the mode defaults to `None`, so the
+    /// struct literal spells the mode and keeps the rest defaulted).
+    fn cycling(mode: AmmoCyclingMode, offset: i32) -> AmmoCycling {
+        AmmoCycling {
+            mode,
+            offset,
+            cooldown: 0,
+        }
+    }
+
+    #[test]
+    fn the_cycling_pick_rotates_behind_the_offset() {
+        // `PickAmmo_IterateRange` (`Player.cs:53685-53726`): with cycling on,
+        // count the matching stacks, `num = offset % count`, skip that many.
+        // Two arrow stacks in the ammo slots: offset 0 takes the first, 1 the
+        // second, and the offset wraps modulo the count (no stack is left
+        // unreachable, and no pick ever runs off the end).
+        let equip = equip_with_ammo(&[(0, 40, 5), (1, 40, 7)]);
+        let inv = inv_with(&[(6, 40, 9)]);
+        let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, 0);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&ammo_slots)),
+            Some(AmmoSource::Ammo(0))
+        );
+        let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, 1);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&ammo_slots)),
+            Some(AmmoSource::Ammo(1))
+        );
+        let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, 2);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&ammo_slots)),
+            Some(AmmoSource::Ammo(0))
+        );
+        let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, 5);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&ammo_slots)),
+            Some(AmmoSource::Ammo(1))
+        );
+        // `FullInventory` counts over the whole default order (coins → ammo →
+        // grid): the third arrow stack in the grid is reachable only through
+        // it, and the offset picks it at 2.
+        let full = cycling(AmmoCyclingMode::FullInventory, 2);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&full)),
+            Some(AmmoSource::Grid(6))
+        );
+        let full = cycling(AmmoCyclingMode::FullInventory, 3);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&full)),
+            Some(AmmoSource::Ammo(0))
+        );
+        let full = cycling(AmmoCyclingMode::FullInventory, 4);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&full)),
+            Some(AmmoSource::Ammo(1))
+        );
+        let full = cycling(AmmoCyclingMode::FullInventory, 5);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&full)),
+            Some(AmmoSource::Grid(6))
+        );
+        // `Random` rides the same order (the offset is the cycler's draw) and
+        // an empty stack never counts (`item.stack > 0`, `:53700`).
+        let equip = equip_with_ammo(&[(0, 40, 0), (1, 40, 7)]);
+        let random = cycling(AmmoCyclingMode::Random, 0);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&random)),
+            Some(AmmoSource::Ammo(1))
+        );
+        let random = cycling(AmmoCyclingMode::Random, 1);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&random)),
+            Some(AmmoSource::Grid(6))
+        );
+    }
+
+    #[test]
+    fn the_cycling_pick_falls_through_and_refuses_empty_ranges() {
+        // `PickAmmo_PickAmmoItem` (`Player.cs:53728-53753`): the AmmoSlots pass
+        // sees no match in the ammo slots, so it falls through to the default
+        // order with `allowAmmoCycling: false` — the FIRST match wins, no
+        // matter the offset.
+        let equip = equip_with_ammo(&[]);
+        let inv = inv_with(&[(2, 40, 3), (7, 40, 4)]);
+        for offset in [0, 1, 5, 99] {
+            let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, offset);
+            assert_eq!(
+                super::pick(&inv, &equip, 40, Some(&ammo_slots)),
+                Some(AmmoSource::Grid(2)),
+                "AmmoSlots' fall-through ignores the offset (offset {offset})"
+            );
+        }
+        // `num2 == 0` → `null` (`:53702-53705`): no matching stack anywhere and
+        // the cycler armed → the shot is refused.
+        let empty = inv_with(&[(3, 97, 9)]);
+        let full = cycling(AmmoCyclingMode::FullInventory, 0);
+        assert_eq!(super::pick(&empty, &equip, 40, Some(&full)), None);
+        // A cycling mode other than `None` never widens the pick: with only a
+        // grid stack the AmmoSlots mode still lands on it.
+        let inv = inv_with(&[(9, 40, 1)]);
+        let random = cycling(AmmoCyclingMode::Random, 7);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&random)),
+            Some(AmmoSource::Grid(9))
+        );
+    }
+
+    #[test]
+    fn the_pick_with_a_disarmed_cycler_is_the_first_match() {
+        // The vanilla default (`Player.ResetEffects` `:18479`): `None` mode —
+        // either passed as `None` or carried on the struct — picks the first
+        // match exactly like the pre-Phase-4 `pick`.
+        let equip = equip_with_ammo(&[(1, 40, 7), (3, 40, 2)]);
+        let inv = inv_with(&[(4, 40, 9)]);
+        let armed = cycling(AmmoCyclingMode::None, 3);
+        assert_eq!(
+            super::pick(&inv, &equip, 40, None),
+            Some(AmmoSource::Ammo(1))
+        );
+        assert_eq!(
+            super::pick(&inv, &equip, 40, Some(&armed)),
+            Some(AmmoSource::Ammo(1)),
+            "the None mode never rotates"
+        );
+        // A coin gun keeps its coins-first order under the AmmoSlots mode
+        // (`AmmoSlotOrder_CoinsOnly`, `Player.cs:57143`).
+        let mut equip = EquipSlots::empty();
+        equip.coins[2] = ItemSlot {
+            kind: 71,
+            name: "Copper Coin",
+            count: 50,
+            prefix: 0,
+        };
+        equip.coins[3] = ItemSlot {
+            kind: 72,
+            name: "Silver Coin",
+            count: 3,
+            prefix: 0,
+        };
+        equip.ammo[0] = ItemSlot {
+            kind: 71,
+            name: "Copper Coin",
+            count: 9,
+            prefix: 0,
+        };
+        let inv = inv_with(&[]);
+        let ammo_slots = cycling(AmmoCyclingMode::AmmoSlots, 1);
+        assert_eq!(
+            super::pick(&inv, &equip, 71, Some(&ammo_slots)),
+            Some(AmmoSource::Coin(3)),
+            "the coin order counts the coin slots"
+        );
     }
 
     #[test]
@@ -761,7 +1061,7 @@ mod tests {
         // `Player.cs:53667-53672`: `stack--`, `TurnToAir` at 0.
         let mut inv = inv_with(&[(3, 97, 2)]);
         let mut equip = EquipSlots::empty();
-        let src = pick(&inv, &equip, 97).unwrap();
+        let src = pick(&inv, &equip, 97, None).unwrap();
         assert!(drain(src, &mut inv, &mut equip));
         assert_eq!(inv[3].count, 1);
         assert!(drain(src, &mut inv, &mut equip));
@@ -773,7 +1073,7 @@ mod tests {
     fn the_drain_hits_the_equip_slots() {
         let mut inv = inv_with(&[]);
         let mut equip = equip_with_ammo(&[(2, 40, 5)]);
-        let src = pick(&inv, &equip, 40).unwrap();
+        let src = pick(&inv, &equip, 40, None).unwrap();
         assert_eq!(src, AmmoSource::Ammo(2));
         assert!(drain(src, &mut inv, &mut equip));
         assert_eq!(equip.ammo[2].count, 4);
