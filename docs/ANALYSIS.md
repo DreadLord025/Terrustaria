@@ -7014,6 +7014,31 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   `!flag` reads the inner ±1 only). The tests pin the vote falling outside the
   window (a ±2 sapling at 27 makes the spot 25 drop and the vote take 23; an
   immediate sapling at 26 widens the block to 23..=29 and the vote takes 22).
+- **The tree-seed profiles are the C#'s struct, minus the wall arm.**
+  `GrowTreeSettings` (`WorldGen.cs:3825-4048`) carries two delegates per
+  profile; no smart-cursor step reads the wall one (the C#'s worldgen callers
+  do), so the port keeps `GroundTest` (as the `GroundTestKind` enum over the
+  three ported functions, `WorldGen.cs:30304-30341`) and documents `WallTest`
+  out pending the `WallID.Sets.AllowsPlantsToGrow` table. The gem trees are
+  one shared profile shape (12/7/4/590) differing only in `TreeTileType`;
+  the ash profile (634/20) has no item entry — `TryGetFromItemId`
+  (`:3853-3884`) lists the nine gem/vanity seeds only, and the ash tree's only
+  door is `TryGetFromTreeId`'s tree tile.
+- **The two `Conversion` tile sets landed through the generator, not by hand.**
+  The ground tests read `TileID.Sets.Conversion.Stone` (`TileID.cs:90` =
+  {1, 25, 117, 203}) and `Conversion.Moss` (`:96` = the 11 moss tiles);
+  `Conversion.Grass` was already generated as `SET_GRASS`. Per the house rule
+  (`AGENTS.md`: never hand-edit `tiledata/`), the sets went through
+  `tools/GenTileData`'s `wantedSets` with a baseline regen first — the
+  baseline is a byte-empty diff and the new run adds exactly the two bitsets
+  (the `mod.rs` re-exports stay hand-written, as the generator documents).
+- **The generator defaults to the primary checkout's path.**
+  `tools/GenTileData/Program.cs`'s root is the hardcoded
+  `C:\Users\DreadLord\Desktop\Terraria-Rust` unless args[0] overrides it, so a
+  task worktree must pass its own root (`dotnet run --project tools/GenTileData
+  -- <worktree-root>`) or the regeneration lands in the shared primary. The
+  baseline run used by this pass confirmed the primary stayed clean (the
+  rewrite is content-identical), but a task should always pass the override.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
