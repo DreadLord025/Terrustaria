@@ -1848,6 +1848,11 @@ fn npc_seed(
         | crate::npc::NpcKind::Mechanic
         | crate::npc::NpcKind::Stylist
         | crate::npc::NpcKind::TaxCollector
+        | crate::npc::NpcKind::Golfer
+        | crate::npc::NpcKind::Zoologist
+        | crate::npc::NpcKind::Princess
+        | crate::npc::NpcKind::DyeTrader
+        | crate::npc::NpcKind::PartyGirl
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
@@ -1887,7 +1892,8 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundGoblin
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
-        | crate::npc::NpcKind::WebbedStylist => {
+        | crate::npc::NpcKind::WebbedStylist
+        | crate::npc::NpcKind::SleepingGolfer => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls

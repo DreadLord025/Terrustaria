@@ -453,6 +453,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Tax Collector",
     },
     BestiaryEntryDef {
+        credit_id: "Golfer",
+        net_id: 588,
+        kind: NpcKind::Golfer,
+        variant: None,
+        quick_unlock: false,
+        name: "Golfer",
+    },
+    BestiaryEntryDef {
+        credit_id: "BestiaryGirl",
+        net_id: 633,
+        kind: NpcKind::Zoologist,
+        variant: None,
+        quick_unlock: false,
+        name: "Zoologist",
+    },
+    BestiaryEntryDef {
+        credit_id: "Princess",
+        net_id: 663,
+        kind: NpcKind::Princess,
+        variant: None,
+        quick_unlock: false,
+        name: "Princess",
+    },
+    BestiaryEntryDef {
+        credit_id: "DyeTrader",
+        net_id: 207,
+        kind: NpcKind::DyeTrader,
+        variant: None,
+        quick_unlock: false,
+        name: "Dye Trader",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyGirl",
+        net_id: 208,
+        kind: NpcKind::PartyGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Party Girl",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -1287,6 +1327,49 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
     )
 }
 
+/// `Main.GetBestiaryProgressReport()`'s completion fraction (the
+/// `BestiaryUI` report): the ported entries past the portrait-only tier
+/// over the whole roster. The Zoologist's shop gates read it
+/// (`Chest.cs:3265`).
+pub fn completion_percent(kills: &KillTracker) -> f32 {
+    let seen = ENTRIES
+        .iter()
+        .filter(|e| unlock_state(e, kills).known())
+        .count();
+    seen as f32 / ENTRIES.len() as f32
+}
+
+/// `Main.cs:65944`'s flag9: every other town NPC present — the C#'s 24
+/// counters; the port folds them to its own town roster (the kinds the
+/// port lacks sit in their own tasks), and the debug override
+/// (`NPC.unlockedPrincessSpawn`) opens it without the roster.
+pub(crate) fn all_town_kinds_present(npcs: &[crate::npc::Npc]) -> bool {
+    let alive = |kind: crate::npc::NpcKind| npcs.iter().any(|n| n.kind == kind && n.hp > 0);
+    use crate::npc::NpcKind as K;
+    [
+        K::Guide,
+        K::Merchant,
+        K::Nurse,
+        K::Dryad,
+        K::ArmsDealer,
+        K::Demolitionist,
+        K::Clothier,
+        K::GoblinTinkerer,
+        K::TravellingMerchant,
+        K::Wizard,
+        K::Mechanic,
+        K::Stylist,
+        K::TaxCollector,
+        K::Golfer,
+        K::Zoologist,
+        K::Angler,
+        K::Painter,
+        K::WitchDoctor,
+    ]
+    .iter()
+    .all(|kind| alive(*kind))
+}
+
 /// The entry an NPC death credits — the death hook's
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
@@ -1316,6 +1399,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3557-3561`), so it
         // never has an entry of its own.
         NpcKind::WebbedStylist => NpcKind::Stylist,
+        // The sleeping Golfer rides the Golfer's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:6072-6075`), so it
+        // never has an entry of its own.
+        NpcKind::SleepingGolfer => NpcKind::Golfer,
         NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
         other => other,
     };

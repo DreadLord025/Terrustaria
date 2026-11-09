@@ -21,6 +21,18 @@
 //! mountains) and, above 0.65 intensity, throw random lightning flashes.
 //! `TR_RAIN=<intensity>` pins the weather for screenshots; `TR_NO_WEATHER` disables
 //! the scheduler.
+//!
+//! M5-SEED-2: the two lightning micro seeds (`moreLightning`/`noLightning`,
+//! `WorldGen.cs:580-586`) gate the storm-lightning roll that
+//! [`Rain::thunder_step`] performs — `noLightning` alone suppresses it,
+//! `moreLightning` alone doubles its rate and lets rain (not only a storm)
+//! arm it. The gates mirror `WorldGen.SpawnStormLightning`
+//! (`WorldGen.cs:71864-71884`), the port's stand-in for the C#'s damaging
+//! strike roll. Deferred with it: the thunder-bolt projectile arms
+//! (`Projectile.cs:12776`'s `1090` heal/colour pair, `:14823`'s `1091`
+//! colour and `:39871`'s `!Main.moreLightningSeed && Main.noLightningSeed`
+//! skip) — the port spawns no thunder-bolt projectile, so those three arms
+//! have no seam yet.
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
@@ -170,6 +182,17 @@ pub struct ThunderInputs {
     /// `Main.worldSurface * 16` (`Main.cs:58764`'s `num2`): the strike's y
     /// clamp.
     pub world_surface_px: f32,
+    /// M5-SEED-2: `Main.IsItRaining` — the `SpawnStormLightning` rain gate
+    /// `moreLightning` relaxes (`WorldGen.cs:71872`: `!IsItStorming &&
+    /// (!flag || !IsItRaining)` → return). A classic world never reads it.
+    pub raining: bool,
+    /// M5-SEED-2: `Main.moreLightningSeed` (`WorldGen.cs:580-582`'s
+    /// `SecretSeed.moreLightning.Enabled` write) — the storm-lightning gates
+    /// `:71866-71881`.
+    pub more_lightning: bool,
+    /// M5-SEED-2: `Main.noLightningSeed` (`WorldGen.cs:584-586`) — the
+    /// suppression arm `:71866-71868`.
+    pub no_lightning: bool,
 }
 
 /// One thunder strike cue (`Main.cs:58747-58766`), produced by
@@ -461,11 +484,40 @@ impl Rain {
                 self.flash = 0.0;
             }
         } else if self.thunder_delay <= 0 && weather.above_rock_layer && weather.atmo >= 1.0 {
+            // M5-SEED-2: the storm-lightning gates of `WorldGen.SpawnStormLightning`
+            // (`WorldGen.cs:71864-71884`), the damaging strike roll the port's
+            // thunder chain stands in for (the port has no thunder-bolt
+            // projectile yet — see the module note). They mirror the C#'s
+            // first three statements:
+            //
+            // - `:71866-71869` — `if (Main.noLightningSeed && !Main.moreLightningSeed)
+            //   return;` suppresses the STORM lightning. The two-set
+            //   combination is NOT suppressed (`flag`, `:71870`, is false),
+            //   so it behaves exactly like a classic world. The graveyard arm
+            //   below is a different chain (`Main.cs:58830-58833`) and carries
+            //   no seed gate in vanilla, so it keeps running.
+            // - `:71872-71874` — `if (!Main.IsItStorming && (!flag || !Main.IsItRaining))
+            //   return;`: the storm arm normally requires `IsItStorming`;
+            //   `moreLightning` alone relaxes it to storming OR raining.
+            // - `:71875-71881` — the base interval (150) is halved under the
+            //   same flag (the port's own chain window, 600/1600, halves the
+            //   same way). The C#'s extra `* Main.cloudAlpha` for a rain
+            //   without a storm has no port input — `ThunderInputs` carries
+            //   no `cloudAlpha`, so the storm case alone is modelled.
+            let more_only = weather.more_lightning && !weather.no_lightning;
+            let storm_gate = !(weather.no_lightning && !weather.more_lightning)
+                && (weather.storming || (more_only && weather.raining));
             // `:58784-58829`: the storming roll. The tier multipliers shrink
             // the delay window with heavier rain and stronger wind targets.
-            if weather.storming {
+            if storm_gate {
                 let mut num3 = 600.0f32;
                 let mut num4 = 1600.0f32;
+                // `:71875-71881`: `num = (int)((float)num / num2)` with
+                // `num2 = 2f` — the moreLightning world strikes twice as often.
+                if more_only {
+                    num3 *= 0.5;
+                    num4 *= 0.5;
+                }
                 if weather.max_raining > 0.8 {
                     num3 *= 0.6;
                     num4 *= 0.8;
@@ -1114,6 +1166,119 @@ mod tests {
         assert_eq!(rain.thunder_distance, 0, "the vanilla drains it with the strike");
         // No delay: no strike, and the stream is untouched.
         assert_eq!(rain.thunder_step(weather), None);
+    }
+
+    // M5-SEED-2: the `moreLightning` / `noLightning` micro seeds
+    // (`WorldGen.cs:580-586`) gate the storm-lightning roll — the port's
+    // `WorldGen.SpawnStormLightning` stand-in (`WorldGen.cs:71864-71884`):
+    // `noLightning` alone suppresses it, `moreLightning` alone doubles its
+    // rate and lets rain (not only a storm) arm it.
+    #[test]
+    fn the_lightning_micro_seeds_gate_the_storm_roll() {
+        // The chain's arming inputs: `Main.atmo == 1` (the surface band) and
+        // a tile centre above the rock layer, with no pending thunder delay.
+        // Every case is counted, not sampled: one arm = the flash's rising
+        // edge after `new_lightning` (`Main.cs:58708-58733`).
+        let storm = ThunderInputs {
+            storming: true,
+            atmo: 1.0,
+            above_rock_layer: true,
+            graveyard_intensity: 0.0,
+            ..Default::default()
+        };
+        let arms = |seed: u64, weather: ThunderInputs| {
+            let mut w = Rain::with_forced(seed, None, false);
+            let mut n = 0u32;
+            let mut up = false;
+            for _ in 0..20_000 {
+                w.thunder_step(weather);
+                if w.flash > 0.0 && !up {
+                    n += 1;
+                }
+                up = w.flash > 0.0;
+            }
+            n
+        };
+        // The classic storm arms (the base rate), `noLightning` alone never
+        // does, and the two-set combination replays the classic exactly.
+        let base = arms(41, storm);
+        assert!(base > 0, "the classic storm roll armed");
+        assert_eq!(
+            arms(
+                41,
+                ThunderInputs {
+                    no_lightning: true,
+                    ..storm
+                }
+            ),
+            0,
+            "noLightning suppresses the storm"
+        );
+        assert_eq!(
+            arms(
+                41,
+                ThunderInputs {
+                    no_lightning: true,
+                    more_lightning: true,
+                    ..storm
+                }
+            ),
+            base,
+            "both-set replays the classic"
+        );
+        // `moreLightning` alone relaxes the gate to storming OR raining, and
+        // halves the window (`:71875-71881`): the rain-only input a classic
+        // world ignores now arms, and the storm arms roughly twice as often.
+        let rain_only = ThunderInputs {
+            storming: false,
+            raining: true,
+            atmo: 1.0,
+            above_rock_layer: true,
+            graveyard_intensity: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(arms(41, rain_only), 0, "rain alone never storms");
+        let boosted = arms(
+            41,
+            ThunderInputs {
+                more_lightning: true,
+                ..rain_only
+            },
+        );
+        assert!(boosted > 0, "moreLightning storms in the rain");
+        let boosted_storm = arms(
+            41,
+            ThunderInputs {
+                more_lightning: true,
+                ..storm
+            },
+        );
+        assert!(
+            boosted_storm > base,
+            "the halved window strikes more often: base {base}, storm {boosted_storm}"
+        );
+        // The graveyard arm is a different chain (`Main.cs:58830-58833`) and
+        // carries no seed gate in vanilla, so `noLightning` must leave it
+        // armed — the suppression applies to the storm roll only.
+        let graveyard = ThunderInputs {
+            storming: false,
+            raining: true,
+            atmo: 1.0,
+            above_rock_layer: true,
+            graveyard_intensity: 1.0,
+            ..Default::default()
+        };
+        assert!(arms(41, graveyard) > 0, "the graveyard chain arms");
+        assert!(
+            arms(
+                41,
+                ThunderInputs {
+                    no_lightning: true,
+                    ..graveyard
+                }
+            ) > 0,
+            "noLightning leaves the graveyard chain alone"
+        );
     }
 
     #[test]

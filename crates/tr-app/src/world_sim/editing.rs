@@ -385,6 +385,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     app.edit_target = Some((tx, ty));
+    // `Player.cs:25446` — the smart cursor re-points the tile target
+    // (`SmartCursorHelper.SmartCursorLookup`) before the mining/placement
+    // arms below run; the vanilla writeback sets `Player.tileTargetX/Y`
+    // alongside `Main.SmartCursorX/Y` (`:157-162`).
+    let (tx, ty) = match super::smart_cursor::repoint(app, tx, ty, (world_pos.x, world_pos.y)) {
+        Some((sx, sy)) => {
+            app.edit_target = Some((sx, sy));
+            (sx, sy)
+        }
+        None => (tx, ty),
+    };
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");
@@ -1443,6 +1454,12 @@ pub(crate) struct DropCtx {
     /// them; ANALYSIS entry, phase 5).
     pub expert_mode: bool,
     pub dont_starve: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — `InitializeSecretSeeds` sets it for the
+    /// `vampirism` micro seed (`WorldGen.cs:555-558`), and
+    /// `SpawnThingsFromPot`'s four arms read it (`:57477`/`:57494`/`:57518`/
+    /// `:57539`). A classic world keeps it false, so the pot rolls are
+    /// unchanged.
+    pub vampirism: bool,
     /// The closest player (`Player.FindClosest` — the local one): the hearts
     /// gate `statLife < statLifeMax2` (:57512) and the torch-stack scan
     /// (:57482-57497, capped at the 20/30 threshold the C# loop breaks at).
@@ -1495,6 +1512,13 @@ fn drop_ctx(app: &App) -> DropCtx {
             .world
             .seeds
             .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
+        // `SecretSeed.vampirism.Enabled` write) — `SpawnThingsFromPot`'s
+        // `:57477`/`:57494`/`:57518`/`:57539` arms.
+        vampirism: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,
@@ -1888,7 +1912,19 @@ fn spawn_things_from_pot(
     if ctx.expert_mode {
         num11 -= 1;
     }
-    let flag5 = ctx.torches < 20;
+    // :57475-57492 — the 50-slot torch-stack scan: `num13 = 20` (30 under
+    // `Main.vampireSeed`, `:57477-57481`) is the loop's break threshold, so
+    // the vampirism world needs 50 % more torches in the inventory before
+    // `flag5` clears.
+    let torch_threshold = if ctx.vampirism { 30 } else { 20 };
+    let flag5 = ctx.torches < torch_threshold;
+    // :57494-57496 — `if (flag5 && Main.vampireSeed) num11 = 1;`: a torchless
+    // player in a vampirism world is FORCED into the torch arm below, past
+    // the hearts. The roll has already been drawn, so the classic stream is
+    // untouched (the C#'s guard short-circuits on a classic world).
+    if flag5 && ctx.vampirism {
+        num11 = 1;
+    }
     // :57498-57516 — the hearts (only while hurt).
     if num11 == 0 && ctx.player_hurt {
         let mut drops = vec![(58, 1)];
@@ -1905,7 +1941,24 @@ fn spawn_things_from_pot(
         }
         return (drops, false);
     }
-    // :57518-57523 — the vampire-seed wood: skipped (no port state).
+    // M5-SEED-2: `:57518-57523` — the vampire-seed wood. `if
+    // (Main.vampireSeed && (flag2 | flag) && WorldGen.genRand.Next(6) == 0)`
+    // → the pot's style wood (9 plain, 2503 for the 4-6 pots, 620 for the
+    // 7-9 ones) × `Main.rand.Next(10, 31)`. `flag` is "below the rock layer"
+    // and `flag2` "above the underworld layer" (`:57090-57095`), so the arm
+    // fires for any cave-or-shallow cell and SKIPS (without its `genRand`
+    // draw) in the deep-underworld band. The `genRand.Next(6)` sits after
+    // the hearts arm, exactly as the C#.
+    if ctx.vampirism && (flag2 || flag) && gen_rand.next_range(0, 6) == 0 {
+        let wood = if (4..=6).contains(&style) {
+            2503
+        } else if (7..=9).contains(&style) {
+            620
+        } else {
+            9
+        };
+        return (vec![(wood, main_rng.next_range(10, 31))], false);
+    }
     // :57531-57591 — the torches (num11 == 1, or 0 while the player is below
     // the torch threshold).
     if num11 == 1 || (num11 == 0 && flag5) {
@@ -2097,6 +2150,12 @@ fn torch_drop(
     let mut num14 = main_rng.next_range(2, 7);
     if ctx.expert_mode {
         num14 += main_rng.next_range(1, 7);
+    }
+    // M5-SEED-2: `:57539-57542` — `if (Main.vampireSeed) num14 +=
+    // Main.rand.Next(2, 7);`, the fourth stack adder in the C# order (after
+    // the base and the expert one, before the per-style adds).
+    if ctx.vampirism {
+        num14 += main_rng.next_range(2, 7);
     }
     let mut torch = 8;
     let mut glowstick = 282;
@@ -5130,6 +5189,112 @@ mod tests {
             num17 as i64,
             "coin total == replayed num17"
         );
+    }
+
+    // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) arms
+    // `SpawnThingsFromPot` four times — the torch threshold 20 → 30
+    // (`:57477-57481`), the `flag5` forced-torch reassignment (`:57494-57497`),
+    // the extra wood drop (`:57518-57523`) and the extra `Next(2, 7)` stack
+    // (`:57539-57542`). Every arm is behind the flag, so a classic world's
+    // pot rolls are byte-identical.
+    #[test]
+    fn test_M5_SEED_2_the_vampirism_arms_change_the_pot_drops() {
+        let classic = pot_ctx();
+        let mut vamp = pot_ctx();
+        vamp.vampirism = true;
+        let surface_y = 100; // above world_surface 200 → `flag` (below rock)
+        // A gen stream that misses the dungeon key (`Next(35)`), the potion
+        // arm (`Next(45)`) AND the vampirism wood arm's `Next(6)`, so the
+        // tests below reach the torch/coin arms.
+        let gen_seed = {
+            let mut found = None;
+            for seed in 0u64..100_000 {
+                let mut g = tr_core::tile_light::FastRandom::new(seed);
+                if g.next_range(0, 35) != 0
+                    && g.next_range(0, 45) != 0
+                    && g.next_range(0, 6) != 0
+                {
+                    found = Some(seed);
+                    break;
+                }
+            }
+            found.expect("a clean gen seed")
+        };
+
+        // (1) The forced-torch arm (`:57494-57497`): a torchless hurt player
+        // whose `num11` rolled 0 (the hearts branch) is reassigned to 1 and
+        // walks into the torch arm instead — the hearts never drop.
+        let mut hurt = pot_ctx();
+        hurt.player_hurt = true;
+        let mut hurt_vamp = pot_ctx();
+        hurt_vamp.player_hurt = true;
+        hurt_vamp.vampirism = true;
+        let heart_seed = main_seed_for_num11(0, 500, false);
+        let (loot, _) = run_pot(&hurt, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| *id == 58), "classic: hearts");
+        let (loot, _) = run_pot(&hurt_vamp, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "vampirism: the single torch row");
+        assert_eq!(loot[0].0, 8, "the forced torch branch");
+        // The stack is the base `Next(2, 7)` PLUS the vampirism adder — it
+        // replayed out of the same stream.
+        let mut state = heart_seed;
+        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let _ = main.next_range(0, 500);
+        let _ = main.next_range(0, 45);
+        let _ = main.next_range(0, 7);
+        assert_eq!(loot[0].1, main.next_range(2, 7) + main.next_range(2, 7));
+
+        // (2) The 20 → 30 threshold (`:57477-57481`): 25 torches clears the
+        // classic scan (flag5 = false → `num11 == 0` falls through to the
+        // coins) but not the vampirism one (flag5 = true → the torch arm).
+        let mut stocked = pot_ctx();
+        stocked.torches = 25;
+        let mut stocked_vamp = pot_ctx();
+        stocked_vamp.torches = 25;
+        stocked_vamp.vampirism = true;
+        let (loot, _) = run_pot(&stocked, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| (71..=74).contains(id)), "coins");
+        let (loot, _) = run_pot(&stocked_vamp, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot[0].0, 8, "25 torches is below the vampirism 30");
+
+        // (3) The extra wood arm (`:57518-57523`): `genRand.Next(6) == 0`
+        // (after the 35/45 draws) with `flag2 | flag` → wood × `Next(10, 31)`.
+        // The deep-underworld band (y > underworld_layer) has neither flag,
+        // so the arm skips and its `genRand` draw is never spent.
+        let mut wood_gen = 0u64;
+        for seed in 1u64..100_000 {
+            let mut g = tr_core::tile_light::FastRandom::new(seed);
+            if g.next_range(0, 35) != 0 && g.next_range(0, 45) != 0 && g.next_range(0, 6) == 0 {
+                wood_gen = seed;
+                break;
+            }
+        }
+        let (loot, _) = run_pot(&vamp, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "the single wood row");
+        assert_eq!(loot[0].0, 9, "the plain pot's wood");
+        assert!(
+            (10..=30).contains(&loot[0].1),
+            "wood 10-30, got {}",
+            loot[0].1
+        );
+        // The deep band: no flag, no wood — with the torch scan satisfied the
+        // `num11 == 0` cell falls through to the coins instead. (A stocked
+        // player must clear the vampirism 30, else the forced-torch arm
+        // above fires first.)
+        let mut deep_vamp = pot_ctx();
+        deep_vamp.vampirism = true;
+        deep_vamp.torches = 30;
+        let (loot, _) = run_pot(&deep_vamp, 0, 900, wood_gen, heart_seed, 0, 0);
+        assert!(
+            loot.iter().all(|(id, _)| (71..=74).contains(id)),
+            "no wood below the underworld layer"
+        );
+        // And the same seed in a classic world: the wood arm never runs, so
+        // the `num11 == 0` cell with a torchless player walks into the
+        // ordinary torch arm instead (`(num11 == 0) & flag5`, `:57590`).
+        let (loot, _) = run_pot(&classic, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1);
+        assert_eq!(loot[0].0, 8, "classic: the ordinary torch row");
     }
 
     // DW-3.3: the style multiplier drives the luck range and the coin scale.

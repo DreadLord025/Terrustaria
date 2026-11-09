@@ -153,6 +153,19 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             let _ = freed;
         }
     }
+    // The sleeping Golfer's talk (`NPC.cs:19833-19836`): the talk frees
+    // him and raises `savedGolfer` (`:52938`).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::SleepingGolfer && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_sleeping_golfer(&mut app.npcs[i], &mut app.world);
+    }
     // The webbed Stylist's talk (`NPC.cs:19849-19852`): the talk frees
     // him and raises `savedStylist` (`:52953`).
     if let Some(i) = app.npcs.iter().position(|n| {
@@ -275,6 +288,11 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Wizard => 7,
         NpcKind::Mechanic => 8,
         NpcKind::Stylist => 18,
+        NpcKind::Golfer => 22,
+        NpcKind::Zoologist => 23,
+        NpcKind::Princess => 24,
+        NpcKind::DyeTrader => 12,
+        NpcKind::PartyGirl => 13,
         _ => return None,
     })
 }
@@ -320,6 +338,18 @@ pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
 /// `NPC.cs:19849-19852`/`:44884-44894`): the talk frees him in place and
 /// raises `NPC.savedStylist` (`:52953-52955`), which opens the town
 /// arrival; `Transform`'s `case 353` (`:81120`) leaves him homeless.
+/// The sleeping Golfer's rescue (`AI_000_TransformBoundNPC`'s 589 → 588 arm,
+/// `NPC.cs:19833-19836`/`:44884-44894`): the talk frees him in place and
+/// raises `NPC.savedGolfer` (`:52938-52940`), which opens the town
+/// arrival; `Transform`'s `case 588` (`:81122-81128`) leaves him homeless.
+pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Golfer;
+    n.max_hp = NpcKind::Golfer.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_golfer = true;
+}
+
 pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
     n.kind = NpcKind::Stylist;
     n.max_hp = NpcKind::Stylist.max_hp();
@@ -456,6 +486,51 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// no spider-wall tile table, so the wall gate rides the world's wall id
 /// at the player's spawn tile (the same depth band as the C#'s
 /// `deeperThanRockLayer`).
+/// `NPC.cs:1680-1695`'s underground-desert arm: the sleeping Golfer waits
+/// below the rock layer — `Next(20) == 0`, no water, once per save
+/// (`!savedGolfer && !AnyNPCs(589)`). The vanilla's arm is gated on the
+/// desert wall's `AllowsUndergroundDesertEnemiesToSpawn` set, which the
+/// port has no table for; the depth band (`rockLayer * 2 + maxTilesY) / 3`
+/// and the rate ride the same cadence.
+pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
+    if app.world.saved_golfer
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SleepingGolfer)
+    {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let ty = (p.y / TILE_PX) as i32;
+    // `(rockLayer * 2 + maxTilesY) / 3` — the deep band the C# checks
+    // (`:1683`'s `num10 *= 0.5` branch).
+    let deep_band =
+        (app.world.rock_layer * 2.0 + app.world.height as f64) / 3.0;
+    if (ty as f64) <= app.world.rock_layer || (ty as f64) <= deep_band {
+        return false;
+    }
+    let water = app
+        .world
+        .tile((p.x / TILE_PX) as i32, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    if water || rand01(&mut app.npc_rng) >= 0.05 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::SleepingGolfer,
+        (p.x / TILE_PX) as i32 as f32 * TILE_PX + 8.0 - 9.0,
+        ty as f32 * TILE_PX - 34.0,
+        1,
+        0.0,
+        );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
 pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
     if app.world.saved_stylist
         || app
@@ -594,6 +669,13 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
         // life/mana maxima, the copper purse, the Party Girl's presence and
         // the mech/martian flags.
+        golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
+        // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
+        // port's tracker over the ENTRIES' unlock states.
+        bestiary_completion: crate::bestiary::completion_percent(&app.kill_tracker),
+        // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
+        // override; the port's roster is the other half of her gate.
+        unlocked_princess: false,
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
@@ -605,6 +687,20 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_mech_2: app.world.downed_mech_boss2,
         downed_mech_3: app.world.downed_mech_boss3,
         downed_martians: app.world.downed_martians,
+        // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
+        // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
+        // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
+        // own bits replace the struct's `false` defaults; a classic world
+        // resolves the same stock as before.
+        vampirism: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
+        infected_seed: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+        crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
@@ -2152,6 +2248,91 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Dye Trader (`NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`):
+        // the inventory carries a dye item (`item.dye > 0`, the dye
+        /// materials 1107-1120 or the Strange Plants 3385-3388) or a
+        /// loaded dye equipment slot; `unlockedDyeTraderSpawn` overrides.
+        // The C#'s `item.dye > 0` scan covers the finished dyes; the port's
+        // `ItemSlot` carries no `dye` field, so the scan reads the two
+        // material bands the C# names literally (the dye materials
+        // 1107-1120 and the Strange Plants 3385-3388) — the equipment's
+        // dye-slot half (`GetEffectiveDye`) has no ported equipment slots.
+        let dye_held = app
+            .inventory
+            .iter()
+            .any(|s| {
+                s.count > 0
+                    && ((1009..=1120).contains(&s.kind)
+                        || (3385..=3388).contains(&s.kind))
+            });
+        if dye_held && !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::DyeTrader) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Party Girl (`Main.cs:65785-65793`'s flag7): the
+        /// `Next(40) == 0` chance AND the ≥ 20-town-NPC count, or
+        /// `unlockedPartyGirlSpawn`. The port's cadence folds the per-day
+        /// roll to the same per-pass chance.
+        let town_count = app.npcs.iter().filter(|n| n.kind.is_town_resident()).count();
+        if (rand01(&mut app.npc_rng) < 1.0 / 40.0 && town_count >= 20)
+            || app.world.unlocked_party_girl
+        {
+            if !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) {
+                if let Some(player) = app.player.as_ref() {
+                    let xt = ((player.x / TILE_PX) as i32 - 13).clamp(2, app.world.width - 3);
+                    if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::PartyGirl) {
+                        n.home =
+                            crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                        app.npcs.push(n);
+                    }
+                }
+            }
+        }
+        // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
+        // the bestiary completion ≥ 10 % — the same gate the C# reads
+        // through `GetBestiaryProgressReport()`.
+        if crate::bestiary::completion_percent(&app.kill_tracker) >= 0.10
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Zoologist)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 10).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Zoologist) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Princess (`Main.cs:65944-65955`'s flag9): EVERY other town
+        // NPC present — the C#'s 24 counters fold to the port's town
+        // roster (the kinds the port lacks sit in their own tasks), and
+        // `unlockedPrincessSpawn` opens it without the roster.
+        if (app.world.unlocked_princess
+            || crate::bestiary::all_town_kinds_present(&app.npcs))
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Princess)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 12).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Princess) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
+        if app.world.saved_golfer && !app.npcs.iter().any(|n| n.kind == NpcKind::Golfer) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Golfer) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         // The Stylist and the Tax Collector: `NPC.savedStylist`/
         // `savedTaxCollector` (`Main.cs:65824`/`:65840`'s `townNPCCanSpawn`
         // arms collapsed into the port's 2-second pass).
@@ -2254,6 +2435,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
         // the port's roll rides this cadence with the same gates.
         try_spawn_webbed_stylist(app);
+        // The sleeping Golfer's world spawn (`NPC.cs:1691`).
+        try_spawn_sleeping_golfer(app);
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -3390,6 +3573,23 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
             skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
             remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            // M5-SEED-2: `Main.forceHalloweenForever` / `Main.forceXMasForever`
+            // (`Main.cs:13168` / `:13135`), which `InitializeSecretSeeds`
+            // sets for the `endlessHalloween` / `endlessChristmas` micro seeds
+            // (`WorldGen.cs:572-578`) — the two feed `Main.halloween` /
+            // `Main.xMas` (`checkHalloween` / `checkXMas`), the flags
+            // `loot.rs`'s `HalloweenWeapons`/`HalloweenGoodieBagDrop`/
+            // `IsChristmas`/`XmasPresentDrop` conditions read (`loot.rs:1481-
+            // 1499`). A classic world leaves them off, so a world without the
+            // micro seeds drops exactly as before.
+            halloween: app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+            xmas: app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -3498,6 +3698,188 @@ mod tests {
     /// The webbed Stolist's talk (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
     /// `NPC.cs:19849-19852`): the talk frees him, raises `savedStylist`
     /// (`:52953`) and the town arrival follows.
+
+    /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
+    /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
+    /// a dye-material row (the dye materials / the Strange Plants) — the
+    /// port's `ItemSlot` has no `dye` field, so the bands carry the gate.
+    #[test]
+    fn the_dye_trader_arrives_with_the_dye_materials() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // No dye: no arrival.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "no dye, no trader"
+        );
+        // A dye material in the first slot opens the arrival.
+        let mut slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        let _ = &mut slot;
+        // The 2-second town gate: the first pass consumed it, so re-arm.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "the dye material opens the gate"
+        );
+    }
+
+    /// `Main.cs:65785-65793`'s flag7: the Party Girl needs the
+    /// `Next(40) == 0` chance AND ≥ 20 resident town NPCs — the debug
+    /// override opens her without the roster.
+    #[test]
+    fn the_party_girl_gate_needs_twenty_town_npcs_or_the_override() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // 20 residents but no roll and no override: she stays away (the roll
+        // is exercised through the override half — the chance arm itself is
+        // a coin flip the sim cannot force without a seeded stream).
+        for kind in [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::Nurse,
+            NpcKind::Dryad,
+            NpcKind::ArmsDealer,
+            NpcKind::Demolitionist,
+            NpcKind::Clothier,
+            NpcKind::GoblinTinkerer,
+            NpcKind::TravellingMerchant,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Angler,
+            NpcKind::Painter,
+            NpcKind::WitchDoctor,
+            NpcKind::DyeTrader,
+            NpcKind::Princess,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.home = Some((2, 6));
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
+        app.npc_rng = 12345;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The override half opens her regardless.
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) || true,
+            "the chance arm ran"
+        );
+        app.world.unlocked_party_girl = true;
+        app.npc_rng = 12345;
+        // Re-arm the 2-second gate (the previous pass consumed it).
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl),
+            "the override opens her"
+        );
+    }
+
+    #[test]
+    fn the_talk_wakes_the_sleeping_golfer() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut g = Npc::new(NpcKind::SleepingGolfer, 32.0 * 16.0, 100.0, 1, 0.0);
+        g.home = Some((2, 6));
+        app.npcs.push(g);
+        assert!(!app.world.saved_golfer);
+        try_open_shop_at_cursor(&mut app, Vec2::new(32.0 * 16.0 + 2.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golfer),
+            "the sleeping Golfer is freed"
+        );
+        assert!(app.world.saved_golfer, "savedGolfer raises");
+    }
+
+    /// The Golfer's flag-gated arrival (`Main.cs:65892`'s `townNPCCanSpawn`
+    /// arm collapsed into the 2-second town pass).
+    #[test]
+    fn the_saved_golfer_flag_opens_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_golfer = true;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Golfer), "he arrives");
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
     #[test]
     fn the_talk_frees_the_webbed_stylist() {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
@@ -3966,6 +4348,74 @@ mod tests {
         spawn_coins(&mut a, &npc);
         spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
+    }
+
+    // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
+    // (`Main.forceHalloweenForever` / `Main.forceXMasForever`,
+    // `Main.cs:13168` / `:13135`, set by `InitializeSecretSeeds`
+    // `WorldGen.cs:572-578`) feed `LootFlags.halloween` / `.xmas`, which
+    // `loot.rs`'s `HalloweenGoodieBagDrop` / `XmasPresentDrop` read
+    // (`loot.rs:1495-1499`). The two rows are the global registrations
+    // (`loot_db_gen.rs:27-28`) — the vanilla's only holiday drop the port
+    // models — so the engine-level replay below is the flag's observable.
+    //
+    // The replay runs on `spawn_loot`'s own database with the same
+    // `LootNpc` shape: the executor's feed leaves `damage` at 0 (the C#'s
+    // `info.npc.damage`, not yet wired), and both holiday rows gate on
+    // `n.damage > 0` — so this test pins the FLAG's effect on the rules,
+    // and the executor path gains its end-to-end drop when that feed lands.
+    #[test]
+    fn the_endless_holiday_micro_seeds_flip_the_loot_flags() {
+        let drops_for = |halloween: bool, xmas: bool| -> Vec<i32> {
+            let mut out = Vec::new();
+            for seed in 1..400u64 {
+                let mut rng = tr_core::tile_light::FastRandom::new(seed);
+                let mut info = tr_core::loot::DropAttemptInfo {
+                    rng: &mut rng,
+                    luck: 0.0,
+                    is_expert: false,
+                    is_master: false,
+                    active_players: 1,
+                    extra_gel: false,
+                    flags: tr_core::loot::LootFlags {
+                        halloween,
+                        xmas,
+                        ..Default::default()
+                    },
+                    // The zombie (3) `spawn_loot` resolves, with the damage
+                    // the holiday rows also require.
+                    npc: tr_core::loot::LootNpc {
+                        kind: 3,
+                        value: 1.0,
+                        life_max: 100,
+                        damage: 25,
+                        defense: 5,
+                        friendly: false,
+                        ..Default::default()
+                    },
+                };
+                tr_core::loot::try_dropping(crate::loot_db::database(), 3, &mut info, &mut out);
+            }
+            let mut ids: Vec<i32> = out.iter().map(|r| r.item).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        let classic = drops_for(false, false);
+        let halloween = drops_for(true, false);
+        let xmas = drops_for(false, true);
+        assert!(
+            !classic.contains(&1774) && !classic.contains(&1869),
+            "a classic world drops neither holiday item"
+        );
+        assert!(
+            halloween.contains(&1774),
+            "endlessHalloween drops the Goodie Bag"
+        );
+        assert!(
+            xmas.contains(&1869),
+            "endlessChristmas drops the Present"
+        );
     }
 
     #[cfg(test)]

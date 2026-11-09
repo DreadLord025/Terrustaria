@@ -56,11 +56,55 @@ fn put(world: &mut World, x: i32, y: i32, kind: u16) {
     t.set_slope(0);
 }
 
+/// M5-SEED-2 `SecretSeed.GenerateBiggerAbandonedHouses`
+/// (`WorldGen.cs:431-447`): `biggerAbandonedHouses` makes every cave house a
+/// big one; the vanilla fallback is a 1-in-3 roll and only under
+/// `errorWorld`:
+///
+/// ```text
+/// if (!SecretSeed.biggerAbandonedHouses.Enabled) {
+///     if (SecretSeed.errorWorld.Enabled) return WorldGen.genRand.Next(3) == 0;
+///     return false;
+/// }
+/// return true;
+/// ```
+///
+/// The port models neither `biggerAbandonedHouses`'s sibling `errorWorld` (its
+/// own M5-SEED-2 seed) nor the 1-in-3 fallback (an extra draw would shift the
+/// classic stream), so the gate is the micro flag alone. Downstream the C#
+/// takes the bigger path in `HouseUtils.CreateRooms` (`:88-91` → the
+/// `CreateRooms_BigAbandonedHouses` chain, `:47-84`) plus the deeper origin
+/// clamp in the pass body (`WorldGen.cs:17070-17081`).
+fn bigger_abandoned_houses(world: &World) -> bool {
+    world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::BIGGER_ABANDONED_HOUSES)
+}
+
 /// `CaveHouseBiome` (`:34-92`): the underground cabin — the wood frame, the
 /// carved interior with the background walls, the wood platform, the chest
 /// and the torches. The chest-chance variants (the ice/jungle/granite/
 /// marble/mushroom/desert) resolve to the plain gold chest (the port's
 /// chests hold no inventories yet).
+///
+/// M5-SEED-2 bigger houses (`WorldGen.cs:17070-17081`, `HouseUtils.cs:88-91`,
+/// `:47-84`, `HouseBuilder.cs:637`): under `GenerateBiggerAbandonedHouses`
+/// the pass always sizes up.
+/// * `WorldGen.cs:17070-17081`: the origin's depth is clamped at least
+///   `GetMaxPossibleRoomsInABigAbandonedHouse() * 10` = 70 tiles below the
+///   band floor — the chained rooms need the headroom.
+/// * `HouseUtils.cs:60-84` (`FindRoom_BigAbandonedHouses`): each room is a
+///   `Next(15, 31)` wide × `Next(8, 13)` tall box, against `FindRoom`'s
+///   `Clamp(…, 15, 30)` × `Clamp(…, 8, 12)`, and up to
+///   `GetRandomizedRoomCountInABigAbandonedHouse()` = `7 - Next(4)` rooms
+///   chain vertically against the vanilla one-plus-two-gated shape.
+/// * `HouseBuilder.cs:637`: the vertical exits find solid ground over the full
+///   50-tile drop (vanilla's `num7 < 50` short-circuit is disabled), so a
+///   bigger house's rooms connect through the deeper stone.
+///
+/// The port carves one room per site, so the wider/deeper bounds map onto the
+/// `hw`/`hh` rolls and the depth clamp onto the y band; a classic world takes
+/// exactly the vanilla rolls.
 pub(crate) fn pass_cave_houses(
     world: &mut World,
     rock_layer: f64,
@@ -68,8 +112,13 @@ pub(crate) fn pass_cave_houses(
 ) -> u32 {
     let count = 8 + rng.range(0, 5) as i32;
     let mut placed = 0u32;
+    let bigger = bigger_abandoned_houses(world);
     let y_lo = world.world_surface as i32 + 40;
     let y_hi = (rock_layer as i32 + 260).min(world.height - 120);
+    // `WorldGen.cs:17070-17081`: the big-house origin is pushed at least
+    // `GetMaxPossibleRoomsInABigAbandonedHouse() * 10` = 70 tiles deeper —
+    // the model's `y_lo` is the C#'s `worldSurfaceHigh + 20` band floor.
+    let y_lo = if bigger { y_lo + 70 } else { y_lo };
     if y_hi <= y_lo {
         return placed;
     }
@@ -80,8 +129,16 @@ pub(crate) fn pass_cave_houses(
             continue;
         }
         let y = rng.range(y_lo, y_hi);
-        let hw = rng.range(5, 9);
-        let hh = rng.range(3, 5);
+        // The wider/deeper room bounds (`HouseUtils.cs:158-163`): the big
+        // house's room is `Next(15, 31)` × `Next(8, 13)` against the vanilla
+        // `Clamp(…, 15, 30)` × `Clamp(…, 8, 12)`, so the port's rolls grow by
+        // one tile on each side. Classic worlds keep `range(5, 9)` /
+        // `range(3, 5)` exactly.
+        let (hw, hh) = if bigger {
+            (rng.range(5, 10), rng.range(3, 6))
+        } else {
+            (rng.range(5, 9), rng.range(3, 5))
+        };
         // `:38-52`: the 25-tile exclusion — the chests and the wires nearby
         // reject the spot.
         let mut blocked = false;
@@ -330,4 +387,96 @@ pub(crate) fn pass_sword_shrines(
         placed += 1;
     }
     placed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seeds::MicroSeedFlags;
+    use crate::worldgen::noise::Rng;
+
+    /// A stone world with the band the cave houses draw in, deep enough for
+    /// the bigger arm's +70 floor shift.
+    fn cave_world(width: i32, height: i32) -> World {
+        let mut w = World::new("mb".into(), width, height);
+        for x in 0..width {
+            for y in 100..height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 130.0;
+        w.rock_layer = 400.0;
+        w
+    }
+
+    /// The wood-frame tiles (27) a placed house leaves behind.
+    fn frame_tiles(world: &World) -> usize {
+        world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 27)
+            .count()
+    }
+
+    #[test]
+    fn the_bigger_house_flag_always_sizes_up() {
+        // `WorldGen.cs:433-447`: `biggerAbandonedHouses` returns true
+        // unconditionally; without it (and without errorWorld, which the port
+        // does not model) the C# returns false.
+        let classic = World::new("mb".into(), 600, 600);
+        let mut flagged = World::new("mb".into(), 600, 600);
+        flagged.micro_seeds |= MicroSeedFlags::BIGGER_ABANDONED_HOUSES;
+        assert!(!bigger_abandoned_houses(&classic));
+        assert!(bigger_abandoned_houses(&flagged));
+    }
+
+    #[test]
+    fn the_bigger_houses_are_wider_and_deeper_than_the_vanilla_ones() {
+        // The pass-level effect: the flagged pass draws the same number of
+        // attempted houses but its room rolls are `range(5, 10)` ×
+        // `range(3, 6)` (the C#'s `Next(15, 31)` × `Next(8, 13)` chained
+        // rooms) against the classic `range(5, 9)` × `range(3, 5)`, so a
+        // seed sweep leaves strictly more wood-frame behind.
+        let width = 900;
+        let mut classic_total = 0usize;
+        let mut bigger_total = 0usize;
+        for seed in 1..=6u64 {
+            let mut classic = cave_world(width, 900);
+            pass_cave_houses(&mut classic, 400.0, &mut Rng(seed));
+            classic_total += frame_tiles(&classic);
+
+            let mut bigger = cave_world(width, 900);
+            bigger.micro_seeds |= MicroSeedFlags::BIGGER_ABANDONED_HOUSES;
+            pass_cave_houses(&mut bigger, 400.0, &mut Rng(seed));
+            bigger_total += frame_tiles(&bigger);
+        }
+        assert!(
+            bigger_total > classic_total,
+            "the bigger houses cover more: bigger {bigger_total} vs classic {classic_total}"
+        );
+    }
+
+    #[test]
+    fn the_classic_house_rolls_are_untouched() {
+        // The byte-identity half: with no micro flag the pass places houses at
+        // exactly the vanilla geometry — a 900-wide world over a seed sweep
+        // reproduces the same frame-tile total as a run that never consults
+        // the flag (the two are the same code path, so this pins the arm's
+        // gate rather than a second implementation).
+        let a = {
+            let mut w = cave_world(900, 900);
+            pass_cave_houses(&mut w, 400.0, &mut Rng(99));
+            frame_tiles(&w)
+        };
+        let b = {
+            let mut w = cave_world(900, 900);
+            w.micro_seeds = MicroSeedFlags::none();
+            pass_cave_houses(&mut w, 400.0, &mut Rng(99));
+            frame_tiles(&w)
+        };
+        assert_eq!(a, b);
+        assert!(a > 0, "the classic pass places houses");
+    }
 }

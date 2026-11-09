@@ -56,10 +56,18 @@ pub fn parse(data: &[u8]) -> Result<World> {
     }
     r.seek(sections[0])?;
     let name = r.string()?;
+    // M5-SEED-2: the seed TEXT rides the `.wld` header (`WorldFile.cs:1959`)
+    // and is the C#'s canonical micro-seed store — `LoadWorldFlags` writes no
+    // micro bytes at all, `WorldFileData.SetSeed` re-derives them on load.
+    // The port mirrors that: parse the `|`-separated secret plaintexts into
+    // `World.micro_seeds` (the classic booleans still come from the flags
+    // block below, so the two sources never disagree).
+    let mut seed_text = String::new();
     if version >= 179 {
-        let _seed = r.string()?;
+        seed_text = r.string()?;
         let _generator_version = r.u64()?;
     }
+    let (micro_seeds, _, _) = crate::seeds::resolve_seed_text(&seed_text);
     if version >= 181 {
         r.skip(16)?; // GUID
     }
@@ -75,6 +83,7 @@ pub fn parse(data: &[u8]) -> Result<World> {
     }
 
     let mut world = World::new(name, width, height);
+    world.micro_seeds = micro_seeds;
     load_header_flags(&mut r, &mut world, version)?;
 
     // --- tile section ------------------------------------------------------

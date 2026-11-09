@@ -87,6 +87,13 @@ pub struct World {
     /// them through [`crate::worldgen::GenOptions`]. Persisted in TRWLD v6
     /// and read from the `.wld` header flags block.
     pub seeds: crate::seeds::SeedFlags,
+    /// M5-SEED-2: the 37 modular micro-seed flags (`WorldGen.SecretSeed`,
+    /// `WorldGen.cs:341-413`) — the `activeSecretSeedCount` population and
+    /// the per-seed gates the worldgen arms and the runtime readers read.
+    /// Persisted in TRWLD v7; `.wld` worlds re-derive them from the seed
+    /// text (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), because
+    /// the C# stores no micro-seed bytes in the file.
+    pub micro_seeds: crate::seeds::MicroSeedFlags,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -291,6 +298,15 @@ pub struct World {
     pub saved_stylist: bool,
     /// `NPC.savedTaxCollector` (`NPC.cs:6285`).
     pub saved_tax_collector: bool,
+    /// `NPC.savedGolfer` (`NPC.cs:6299`): the sleeping Golfer has been
+    /// talked into the Golfer — the 589 spawn arm stops looking.
+    pub saved_golfer: bool,
+    /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
+    /// that opens the Princess's arrival without the full roster.
+    pub unlocked_princess: bool,
+    /// `NPC.unlockedPartyGirlSpawn` (`Main.cs:65792`): the debug
+    /// override that opens the Party Girl's arrival without the roster.
+    pub unlocked_party_girl: bool,
     /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
     /// Collector's purse + its `Player.taxRate` (3600) clock.
     pub tax_money: i32,
@@ -403,6 +419,7 @@ impl World {
             chunk_has: Vec::new(),
             seed: 0,
             seeds: crate::seeds::SeedFlags::default(),
+            micro_seeds: crate::seeds::MicroSeedFlags::default(),
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,
@@ -459,6 +476,9 @@ impl World {
             saved_wizard: false,
             saved_stylist: false,
             saved_tax_collector: false,
+            saved_golfer: false,
+            unlocked_princess: false,
+            unlocked_party_girl: false,
             tax_money: 0,
             tax_timer: 0,
             tax_collector: false,
