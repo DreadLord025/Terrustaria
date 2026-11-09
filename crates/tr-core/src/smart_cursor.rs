@@ -7,11 +7,12 @@
 //! reachable rect and the held item; the module re-points
 //! `App.smart_cursor: Option<(i32, i32)>` when a better spot exists.
 //!
-//! Ported steps, in the C# dispatch order (`:118-156`): `Step_GrassSeeds`
-//! (:266-332), `Step_Moss` (:334-379), `Step_Pigronata` (:969-1025),
-//! `Step_Torch` (:2795-2866 + `IsValidSpotForTorch` :2867-2936),
-//! `Step_LawnMower` (:2895-2939), `Step_PaintRoller` (:772-812),
-//! `Step_PaintBrush` (:727-770), `Step_PaintScrapper` (:678-725),
+//! Ported steps, in the C# dispatch order (`:118-156`): `Step_PumpkinSeeds`
+//! (:1027-1098), `Step_GrassSeeds` (:266-332), `Step_Moss` (:334-379),
+//! `Step_Pigronata` (:969-1025), `Step_Torch` (:2795-2866 +
+//! `IsValidSpotForTorch` :2867-2936), `Step_LawnMower` (:2895-2939),
+//! `Step_PaintRoller` (:772-812), `Step_PaintBrush` (:727-770),
+//! `Step_PaintScrapper` (:678-725), `Step_Acorns` (:2032-2157),
 //! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
 //! `Step_ClayPots` (:381-435) and `Step_StaffOfRegrowth` (:224-264) — the
 //! seed/herb/planting family plus the paint family, gated on item id /
@@ -21,10 +22,11 @@
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
 //! platform/wall/wrench families, `UsingSmartCursorWithContinuity`'s
-//! lock state, the grapple target arms, the inventory-driven paint lookup
-//! (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`), and the
-//! app-side wiring (the reachable rect, the `App.smart_cursor` field, the
-//! settings gate).
+//! lock state, the grapple target arms, `Step_GemCorns` (the
+//! `GrowTreeSettings.Profiles` table, `WorldGen.cs:3825-4048`), the
+//! inventory-driven paint lookup (`Player.FindPaintOrCoating`,
+//! `Player.cs:41927-41944`), and the app-side wiring (the reachable rect,
+//! the `App.smart_cursor` field, the settings gate).
 //!
 //! Edge convention: the C# `Main.tile` array is exactly world-sized
 //! (`Main.cs:66984`) and the reachable rect never touches the border, so
@@ -822,15 +824,148 @@ pub fn step_paint_roller(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// ------------------------------------------------------------ tree-seed step --
+
+/// `SmartCursorHelper.Step_Acorns` (`:2032-2157`): the held acorn (27)
+/// re-points at the closest plantable sapling spot — an open cell above a
+/// fitting ground with no sapling too close. The vanilla's three ground
+/// arms (jungle grass 60, the grass family, the sand family) and the
+/// 15-tile removal pass drop every spot whose ground row stands alone.
+pub fn step_acorns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2037` — the item-kind gate + the focus sentinel + the height gate
+    // (the vanilla never plants at or above the row 20).
+    if l.item.kind != 27 || fx != -1 || fy != -1 || l.start_y <= 20 {
+        return None;
+    }
+    let (num, num2, num3) = (9, 14, 20); // `:2034-2036` — the height budgets
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            // `:2044-2052` — the nine reads; an out-of-world cell skips the
+            // candidate (the port's edge convention — the C#'s array is
+            // exactly world-sized and the rect never reaches the border).
+            let (Some(t), Some(t2), Some(t3), Some(t4), Some(t5)) = (
+                w.tile(i, j),
+                w.tile(i, j - 1),
+                w.tile(i, j + 1),
+                w.tile(i - 1, j),
+                w.tile(i + 1, j),
+            ) else {
+                continue;
+            };
+            // `:2054` — the cell and the one above must be empty (a cut /
+            // replaceable cell passes) and the cell below must be a solid
+            // ground (`SolidTile2`).
+            let occupied = |t: &Tile| {
+                t.active()
+                    && !crate::tileobject::tile_cut(t.kind)
+                    && !crate::tileobject::breakable_when_placing(t.kind)
+            };
+            if occupied(t) || occupied(t2) || !t3.active() || !crate::edit::solid_tile2(w, i, j + 1)
+            {
+                continue;
+            }
+            // `:2058-2060` — the sapling proximity: `flag` the immediate
+            // neighbours, `flag2` the ±2/±3 row.
+            let sapling_at = |x: i32, y: i32| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && crate::growth::is_common_sapling(t.kind))
+            };
+            let flag = sapling_at(i - 1, j) || sapling_at(i + 1, j);
+            let flag2 = flag
+                || sapling_at(i - 2, j)
+                || sapling_at(i + 2, j)
+                || sapling_at(i - 3, j)
+                || sapling_at(i + 3, j);
+            // `:2061-2093` — the three ground arms.
+            match t3.kind {
+                60 => {
+                    // Jungle grass: the 14-row box.
+                    if !flag2
+                        && crate::growth::empty_tile_check(
+                            w,
+                            i - 2,
+                            i + 2,
+                            j - num2 + 1,
+                            j,
+                            Some(20),
+                        )
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                2 | 23 | 109 | 147 | 199 | 477 | 492 | 633 | 661 | 662 => {
+                    // The grass family: the 9-row box, dry only.
+                    if !flag2
+                        && t4.liquid == 0
+                        && t.liquid == 0
+                        && t5.liquid == 0
+                        && crate::growth::empty_tile_check(
+                            w,
+                            i - 2,
+                            i + 2,
+                            j - num + 1,
+                            j,
+                            Some(20),
+                        )
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                53 | 112 | 116 | 234 => {
+                    // The sand family: the 20-row box over one column.
+                    if !flag
+                        && t.liquid == 0
+                        && crate::growth::empty_tile_check(w, i, i, j - num3, j, Some(20))
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // `:2096-2136` — the removal pass: the spot survives only when a cell
+    // beside its ground row is itself an acorn ground (the 15-tile list) —
+    // a ground row standing alone is dropped.
+    cands.retain(|&(x, y)| {
+        [-1, 1].iter().any(|&dx| {
+            w.tile(x + dx, y + 1).is_some_and(|t| {
+                t.active()
+                    && matches!(
+                        t.kind,
+                        2 | 23
+                            | 53
+                            | 60
+                            | 109
+                            | 112
+                            | 116
+                            | 147
+                            | 199
+                            | 234
+                            | 477
+                            | 492
+                            | 633
+                            | 661
+                            | 662
+                    )
+            })
+        })
+    });
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
-/// LawnMower :143 → PaintRoller :146 → PaintBrush :147 → PaintScrapper
-/// :148 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155 →
-/// StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
-/// first step that finds a spot wins — the C# straight-line chain.
+/// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
+/// Torch :142 → LawnMower :143 → PaintRoller :146 → PaintBrush :147 →
+/// PaintScrapper :148 → Acorns :149 → AlchemySeeds :153 → PlanterBox :154
+/// → ClayPots :155 → StaffOfRegrowth :156. Each step's gate refuses a
+/// taken focus, so the first step that finds a spot wins — the C#
+/// straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -840,7 +975,8 @@ pub fn step_paint_roller(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
 pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 12] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 14] = [
+        step_pumpkin_seeds,
         step_grass_seeds,
         step_moss,
         step_pigronata,
@@ -849,6 +985,7 @@ pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Op
         step_paint_roller,
         step_paint_brush,
         step_paint_scrapper,
+        step_acorns,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
@@ -1503,6 +1640,129 @@ mod tests {
             smart_cursor_lookup(&world, &l, -1, -1),
             Some((25, 19)),
             "the scraper step runs inside the lookup chain"
+        );
+    }
+
+    /// An acorn lookup over the fixture's rows 21..=30 (the step's height
+    /// gate refuses `startY <= 20`).
+    fn acorn_lookup(kind: u16, mouse: (f32, f32)) -> Lookup {
+        Lookup {
+            start_y: 21,
+            end_y: 30,
+            ..lookup(item(kind), mouse)
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_finds_the_grass_spot() {
+        // `Step_Acorns` :2061-2093 — the grass-family arm: an open cell
+        // above a grass row with the 9-row box clear replants there.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2); // the grass row (the ground)
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the acorn re-points above the grass row"
+        );
+        // A non-ground row (the fixture's stone) refuses.
+        let mut stone = bare();
+        put_row(&mut stone, 20, 40, 22, 1);
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&stone, &l2, -1, -1),
+            None,
+            "stone is not an acorn ground"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_needs_open_space_above() {
+        // `Step_Acorns` :2054 — a cell occupied by a non-replaceable tile
+        // (the one above or the spot itself) drops the candidate: a solid
+        // row over the whole grass row leaves no plant.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        put_row(&mut world, 20, 40, 20, 1); // the stone row above the spots
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            None,
+            "the occupied cell above blocks the plant"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_removal_pass_needs_a_ground_neighbour() {
+        // `Step_Acorns` :2096-2136 — a ground row standing alone (no acorn
+        // ground beside the spot's own ground cell) is removed.
+        let mut world = bare();
+        put(&mut world, 25, 22, 2); // a lone grass cell under the spot
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            None,
+            "the lone ground is dropped by the removal pass"
+        );
+        // A second grass cell beside it survives.
+        let mut row = bare();
+        put_row(&mut row, 24, 26, 22, 2);
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&row, &l2, -1, -1),
+            Some((25, 21)),
+            "the ground row beside the spot keeps it"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_respects_the_far_saplings() {
+        // `Step_Acorns` :2058-2060 — `flag2 = flag || (±2/±3)`, so ANY
+        // sapling within the ±3 column window blocks the grass arm; the
+        // vote falls on the closest free cell outside the window.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        put(&mut world, 27, 21, 20); // a sapling two columns right of 25
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            Some((23, 21)),
+            "the sapling's ±3 window (24..=27) drops, the vote takes 23"
+        );
+        // An immediate ±1 sapling feeds `flag` and therefore `flag2` — the
+        // blocked window widens to 23..=29 and the vote falls to 22.
+        let mut near = bare();
+        put_row(&mut near, 20, 40, 22, 2);
+        put(&mut near, 26, 21, 20); // a sapling directly beside the spot
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&near, &l2, -1, -1),
+            Some((22, 21)),
+            "the immediate sapling widens the block to the full ±3 window"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_runs_in_the_chain_and_the_pumpkin_fixes_its_place() {
+        // The dispatch order (:137, :149): the pumpkin seed runs before the
+        // grass seeds, the acorn after the paint family — the chain dispatches
+        // both steps.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        let acorn = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            smart_cursor_lookup(&world, &acorn, -1, -1),
+            Some((25, 21)),
+            "the acorn step runs inside the lookup chain"
+        );
+        let mut pumpkins = w();
+        put_row(&mut pumpkins, 20, 40, 20, 2); // grass ground at the fixture's floor row
+        pumpkins.world_surface = 25.0;
+        let l = lookup(placeable(0, 254), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&pumpkins, &l, -1, -1),
+            Some((25, 19)),
+            "the pumpkin-seed step is dispatched before the grass seeds"
         );
     }
 }
