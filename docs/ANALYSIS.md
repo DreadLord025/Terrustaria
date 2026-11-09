@@ -7130,6 +7130,32 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the wall tests run on a 100-row world (the 40-row fixture clamps every row
   to 0 and the walk fails on its first out-of-world read, exactly as the C#
   would).
+- **The continuity locks are the module's first mutable state.** The C#'s
+  `SmartCursorHelper._lockedDesiredDirection`/`_lockedContinuityCoords`
+  (`:55`/`:57`) are static fields; the port models them as a
+  `ContinuityState` the caller holds across lookups, and
+  `smart_cursor_lookup` takes `&mut ContinuityState` — it runs the reset
+  (`:66-67`: the use button held, the smart cursor on, the held item a
+  platform) and lets `Step_Platforms` write both locks mid-chain
+  (`:1383-1384`). `tile_target_desired` is the public read the C#'s
+  `Player.PlaceThing_Tiles` gate (`Player.cs:39721`) consults; the
+  `LockedDesiredDirection` arrow (`Main.cs:46643`) stays an app-side render
+  concern.
+- **The platform step works FROM the platform cells, not from empty ones.**
+  `Step_Platforms`' `flag` (`:1337-1343`) is `!IsPlatform(i, j)` and the cell
+  is skipped while the flag stands — so a plain empty cell is only a
+  candidate through the horizontal-join exception (an active, non-solid cell
+  beside a platform row, with the mouse bearing horizontal). The candidate
+  written to `_targets` is one step beyond the platform cell in the desired
+  direction, and the vote's second key (`num5 > num3`) picks the direction
+  most along the mouse's bearing on distance ties.
+- **`GetDesiredDirectionFrom` keeps the C#'s two truncations.** The bearing
+  is `ToRotation`'s atan2 (`Utils.cs:1655-1658`), shifted to [0, 2π), bucketed
+  into eighths with the half-bucket offset, then `(int)`-truncated, scaled
+  back to an angle, converted through `ToRotationVector2` × 1.5 and
+  truncated once more by `ToPoint` (`:1817-1820`) — so the diagonal buckets
+  land on ±1/±1 (the ±1.41 vectors truncate inward) and the flat ones on
+  ±1/0 and 0/±1. A standing lock replaces the whole computation (`:1434`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
