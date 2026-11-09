@@ -4092,9 +4092,12 @@ impl Npc {
             0
         };
         match self.kind {
+            // `case 36` (`NPC.cs:66773-66778`): the same red-hat pin as
+            // the head (`NPC.cs`'s `RedHatSkeletronAdjustmentsEnabled`),
+            // so row 0 always rides in the port. The strip is 2 rows
+            // (`Main.npcFrameCount[36]` = 2): the normal hand and its
+            // red-hat row.
             NpcKind::SkeletronHand => {
-                // The hand's single frame (`NPC.cs` has no FindFrame case
-                // for type 36 — the strip is one frame).
                 self.frame = 0;
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
@@ -4143,10 +4146,6 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 2;
                 }
-            }
-            NpcKind::WallOfFleshEye => {
-                // The single frame — no FindFrame case for type 114.
-                self.frame = 0;
             }
             // The frost trio: the 4/5/7-frame strips (the same walker
             // accumulator).
@@ -4648,15 +4647,23 @@ impl Npc {
                 }
             }
             // The hungry (3 frames) / the leech segments (1).
+            // Case 115 — the Hungry (`NPC.cs:74995-75017`): the 3-row
+            // strip (`Main.npcFrameCount[115]` = 3, `Main.cs:67082`) rides
+            // a 15-tick sequence 0/1/2/1 (the bands at 3/6/12/15) — not
+            // the v1's free 8-tick strip.
             NpcKind::Hungry => {
-                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
-                if self.frame_counter >= 8.0 {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 3.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 6.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 15.0 {
+                    self.frame = 1;
+                }
+                if self.frame_counter >= 15.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 3 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
                 }
             }
             NpcKind::LeechHead | NpcKind::LeechBody => {
@@ -5124,11 +5131,31 @@ impl Npc {
             NpcKind::TheDestroyer => {
                 // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
             }
-            NpcKind::WallOfFlesh => {
-                // `Main.npcFrameCount[113]` = 1 (`Main.cs:67082`).
+            // `case 113/114` (`NPC.cs:73516-73537`): the Wall of Flesh and
+            // its mirror eye share the machine — the plain phase
+            // (`ai[2] == 0`) cycles the 2-row strip
+            // (`Main.npcFrameCount[113]` = [114] = 2, `Main.cs:67082` —
+            // the v1 claimed 1 for both) every 12 ticks, while every other
+            // phase holds row 0 with the counter parked at -60.
+            NpcKind::WallOfFlesh | NpcKind::WallOfFleshEye => {
+                if self.ai[2] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 12.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = (self.frame + 1) % 2;
+                    }
+                } else {
+                    self.frame = 0;
+                    self.frame_counter = -60.0;
+                }
             }
+            // `case 35` (`NPC.cs:66767-66772`): the head's row is 0 except
+            // under the red-hat (Halloween) adjustment, which pins row 1 —
+            // the port does not model the red hat, so row 0 always rides.
+            // `Main.npcFrameCount[35]` = 2, the sheet is the portrait row
+            // plus the red-hat row.
             NpcKind::SkeletronHead => {
-                // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
+                self.frame = 0;
             }
             NpcKind::QueenBee => {
                 // `case 222` (`NPC.cs`): NPC_222's strip is TWELVE rows
@@ -13794,11 +13821,9 @@ mod tests {
 
 
 
-
     /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
     /// two rows flip once past 30 ticks and wrap — the headless twin of the
     /// screenshot pair (the port's draw rides the same rows).
-
 
 
 
@@ -14433,7 +14458,6 @@ mod tests {
         assert_eq!(p.kind.humanoid_frame_count(), 16, "the peon's rows");
     }
 
-
     #[test]
     fn the_swimmers_flap_wet_and_flop_dry() {
         // `FindFrame`'s case 55/57/58 (`NPC.cs:74181-74226`) + case 65
@@ -14473,7 +14497,6 @@ mod tests {
         s.find_frame();
         assert_eq!(s.frame, 1, "the beached shark holds the row");
     }
-
 
     #[test]
     fn the_bats_flap_the_count_minus_one_cycle_and_tilt() {
@@ -14517,7 +14540,6 @@ mod tests {
         assert_eq!(b2.facing, -1, "the leftward flight faces left");
     }
 
-
     #[test]
     fn the_casters_pose_by_facing_and_the_imp_snaps_the_cast_strip() {
         // `FindFrame`'s case 29/32/45 group (`NPC.cs:77019-77055`): the
@@ -14553,7 +14575,6 @@ mod tests {
         assert_eq!(imp.frame, 9, "the cast holds the last row");
     }
 
-
     #[test]
     fn the_worm_segments_keep_the_single_frame_and_chain_rotation() {
         // `FindFrame` has no case for 7..15 and `Main.npcFrameCount` 7..15
@@ -14580,7 +14601,6 @@ mod tests {
             assert_eq!(s.frame, 0, "the {kind:?} segment never advances");
         }
     }
-
 
     #[test]
     fn the_hovers_cycle_the_strip_at_the_eight_tick_stride() {
@@ -14612,7 +14632,6 @@ mod tests {
         h.find_frame();
         assert_eq!(h.frame, 1, "the second row holds");
     }
-
 
     #[test]
     fn the_golem_family_stats_and_maps() {
@@ -15126,7 +15145,6 @@ mod tests {
         assert_eq!(c.frame, 5, "the recoil tail: 7 - (170 - 160) / 5 = 5");
     }
 
-
     #[test]
     fn the_prime_head_cycles_its_rows_and_the_phase_pins_the_wide_row() {
         // `case 127` (`NPC.cs:74498-74538`): the hover alternates rows 0/1
@@ -15283,7 +15301,6 @@ mod tests {
             pr.rotation
         );
     }
-
 
     #[test]
     fn the_twins_beat_their_wing_rows_over_the_twenty_tick_cycle() {
@@ -15515,9 +15532,88 @@ mod tests {
         q.find_frame();
         assert!(q.frame >= 4, "the flight half always rides: {}", q.frame);
     }
+
+    #[test]
+    fn the_king_slime_rides_the_six_row_strip() {
+        // Case 50 (`NPC.cs:73380-73414`): the airborne snap to row 4 and
+        // the held 5, the landing's fall back to 4, the grounded walk's
+        // 0..3 with the `num2` boosts.
+        let mut k = bare(NpcKind::KingSlime);
+        k.vy = 0.5;
+        k.find_frame();
+        assert_eq!(k.frame, 4, "the first airborne tick snaps to row 4");
+        for _ in 0..4 {
+            k.find_frame();
+        }
+        assert_eq!(k.frame, 5, "the air holds row 5");
+        k.vy = 0.0;
+        k.find_frame();
+        assert_eq!(k.frame, 4, "the landing falls back to row 4");
+        for _ in 0..9 {
+            k.find_frame();
+            assert!(k.frame <= 4, "the grounded walk rides 0..4: {}", k.frame);
+        }
+        assert_eq!(k.frame, 0, "the walk wraps at row 4");
+    }
+
+    #[test]
+    fn the_wall_of_flesh_and_its_eye_share_the_mouth_cycle() {
+        // `case 113/114` (`NPC.cs:73516-73537`): the plain phase
+        // (`ai[2] == 0`) cycles the 2-row strip every 12 ticks; every other
+        // phase holds row 0 with the counter parked at -60.
+        let mut w = bare(NpcKind::WallOfFlesh);
+        w.ai[2] = 0.0;
+        for _ in 0..11 {
+            w.find_frame();
+        }
+        assert_eq!(w.frame, 0, "11 ticks hold row 0");
+        w.find_frame();
+        assert_eq!(w.frame, 1, "the 12th tick advances");
+        for _ in 0..12 {
+            w.find_frame();
+        }
+        assert_eq!(w.frame, 0, "the strip wraps at npcFrameCount's 2");
+        // The mouth phases pin row 0 and park the counter.
+        w.ai[2] = 1.0;
+        w.frame = 1;
+        w.find_frame();
+        assert_eq!((w.frame, w.frame_counter), (0, -60.0), "the phase pins row 0");
+        // The mirror eye rides the same case.
+        let mut e = bare(NpcKind::WallOfFleshEye);
+        e.ai[2] = 0.0;
+        for _ in 0..12 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 1, "the eye cycles its 2 rows");
+    }
+
+    #[test]
+    fn the_hungry_rides_the_fifteen_tick_sequence() {
+        // `case 115` (`NPC.cs:74995-75017`): the 3-row strip rides a 15-tick
+        // sequence 0/1/2/1 (the bands at 3/6/12/15), then the counter
+        // resets — not the v1's free 8-tick strip.
+        let mut h = bare(NpcKind::Hungry);
+        // The bands: [0,3) -> row 0, [3,6) -> row 1, [6,12) -> row 2,
+        // [12,15) -> row 1, and the 15th tick resets the counter.
+        // The 15th tick resets the counter while the row still holds the
+        // band's value — row 0 arrives on the next tick.
+        for (ticks, want) in [
+            (2usize, 0u32),
+            (3, 1),
+            (6, 2),
+            (3, 1),
+            (1, 1),
+            (1, 0),
+        ] {
+            for _ in 0..ticks {
+                h.find_frame();
+            }
+            assert_eq!(h.frame, want, "the band after {} ticks", ticks);
+        }
+        assert_eq!(h.frame_counter, 1.0, "the reset lands and the counter re-runs");
+    }
 }
 
-#[cfg(test)]
 mod shard_stat_tests {
     use super::*;
 

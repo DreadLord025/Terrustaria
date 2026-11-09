@@ -1316,33 +1316,24 @@ pub(crate) fn draw_npcs(
             // sampling a 912-px slice of the sheet as "one frame").
             NpcKind::QueenBee => boss_draw(assets.queen_bee.as_ref(), 12, n, w, h),
             // The Skeletron head: the single-frame 80x102 sheet.
-            NpcKind::SkeletronHead => (
-                assets.skeletron_head.as_ref(),
-                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
-                [80.0, 102.0],
-                [n.x, n.y],
-            ),
+                        // NPC_35 is 114x264 — two 132-px rows (`Main.npcFrameCount[35]` =
+            // 2: the portrait row plus the red-hat row); the v1 drew an
+            // 80x102 box quad from `t.h`.
+            NpcKind::SkeletronHead => boss_draw(assets.skeletron_head.as_ref(), 2, n, w, h),
             // The WoF: the single-frame sheet over the 120x120 hitbox.
-            NpcKind::WallOfFlesh => (
-                assets.wof.as_ref(),
-                assets.wof.as_ref().map_or(120.0, |t| t.h),
-                [120.0, 120.0],
-                [n.x, n.y],
-            ),
+                        // NPC_113 is 142x212 — two 106-px rows
+            // (`Main.npcFrameCount[113]` = 2, `Main.cs:67082`; the v1 read
+            // `t.h` as the frame height and drew a 120x120 box quad).
+            NpcKind::WallOfFlesh => boss_draw(assets.wof.as_ref(), 2, n, w, h),
             // The hungry: `Main.npcFrameCount[115] = 3` frames of 30×30; the
             // leech segments: 1 frame of 14×14.
-            NpcKind::Hungry => (
-                assets.hungry.as_ref(),
-                assets.hungry.as_ref().map_or(30.0, |t| t.h / 3.0),
-                [30.0, 30.0],
-                [n.x, n.y],
-            ),
-            NpcKind::LeechHead | NpcKind::LeechBody => (
-                assets.leech.as_ref(),
-                assets.leech.as_ref().map_or(14.0, |t| t.h),
-                [14.0, 14.0],
-                [n.x, n.y],
-            ),
+                        // NPC_115 is 44x114 — three 38-px rows
+            // (`Main.npcFrameCount[115]` = 3); the v1 kept the row height but
+            // drew a 30x30 box quad.
+            NpcKind::Hungry => boss_draw(assets.hungry.as_ref(), 3, n, w, h),
+                        // NPC_117 is 18x30 — one frame (`Main.npcFrameCount[117]` = 1); the
+            // v1 drew a 14x14 box quad.
+            NpcKind::LeechHead | NpcKind::LeechBody => boss_draw(assets.leech.as_ref(), 1, n, w, h),
             // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 let (tex, frames) = match n.kind {
@@ -1700,12 +1691,9 @@ pub(crate) fn draw_npcs(
                 )
             }
             // The Destroyer: the single-frame 48x48 sheet.
-            NpcKind::TheDestroyer => (
-                assets.destroyer.as_ref(),
-                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
-                [48.0, 48.0],
-                [n.x, n.y],
-            ),
+                        // NPC_134 is 50x102 — one frame (`Main.npcFrameCount[134]` = 1, no
+            // `FindFrame` case); the v1 drew a 48x48 box quad at `t.h`.
+            NpcKind::TheDestroyer => boss_draw(assets.destroyer.as_ref(), 1, n, w, h),
             // The Prime: the head's 6-row strip (NPC_127 is 140x940 —
             // 156-px rows, `Main.npcFrameCount[127]` = 6, `Main.cs:67082`;
             // the v1 read `t.h` and sampled the whole strip as one frame
@@ -1823,20 +1811,13 @@ pub(crate) fn draw_npcs(
                 )
             }
             // The Skeletron's hand: the 52x52 single-frame sheet.
-            NpcKind::SkeletronHand => (
-                assets.skeletron_hand.as_ref(),
-                assets.skeletron_hand.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),
+                        // NPC_36 is 58x156 — two 78-px rows (`Main.npcFrameCount[36]` = 2);
+            // the v1 drew a 52x52 box quad.
+            NpcKind::SkeletronHand => boss_draw(assets.skeletron_hand.as_ref(), 2, n, w, h),
             // The WoF's mirror eye: the 100x100 sheet (the vanilla's
             // `WorldofFleshEye` texture).
-            NpcKind::WallOfFleshEye => (
-                assets.wof_eye.as_ref(),
-                assets.wof_eye.as_ref().map_or(100.0, |t| t.h),
-                [100.0, 100.0],
-                [n.x, n.y],
-            ),
+                        // NPC_114 is 130x212 — two 106-px rows (`Main.npcFrameCount[114]` = 2).
+            NpcKind::WallOfFleshEye => boss_draw(assets.wof_eye.as_ref(), 2, n, w, h),
             // The Prime's limbs (`Main.npcFrameCount` 128/129/130/131 =
             // 1/2/2/1, `Main.cs:67082`): the cannon 38x76, the saw's 2
             // rows of 78, the vice's 2 rows of 70, the laser 40x62 — each
@@ -2046,15 +2027,10 @@ pub(crate) fn draw_npcs(
             // sheet-derived origin would (`107 - 166/2`).
             NpcKind::EyeOfCthulhu => boss_draw(assets.eye_of_cthulhu.as_ref(), 6, n, w, h),
             // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
-            NpcKind::ServantOfCthulhu => (
-                assets.servant_of_cthulhu.as_ref(),
-                assets
-                    .servant_of_cthulhu
-                    .as_ref()
-                    .map_or(20.0, |t| t.h / 2.0),
-                [20.0, 20.0],
-                [n.x, n.y],
-            ),
+                        // NPC_5 is 20x64 — two 32-px frames
+            // (`Main.npcFrameCount[5]` = 2); the v1 kept the row height but
+            // drew a 20x20 quad.
+            NpcKind::ServantOfCthulhu => boss_draw(assets.servant_of_cthulhu.as_ref(), 2, n, w, h),
         };
         let Some(tex) = tex else {
             continue;

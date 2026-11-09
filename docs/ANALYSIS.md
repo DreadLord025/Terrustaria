@@ -2973,6 +2973,43 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
 
+## The WoF family and the WoF-side mobs (M4-NPC-3r)
+
+- **`case 113/114`** (`NPC.cs:73516-73537`) is shared by the Wall of Flesh
+  and its mirror eye: the plain phase (`ai[2] == 0`) cycles the 2-row strip
+  every 12 ticks; every other phase pins row 0 with the counter parked at
+  -60. The v1's "single frame — no case" comments hid a real animation
+  (the WoF's mouth).
+- **`case 115`** (the Hungry, `NPC.cs:74995-75017`): the 3-row strip rides
+  a 15-tick sequence 0/1/2/1 — the bands at 3/6/12/15 with the counter
+  reset landing exactly on the 15th tick (the row catches up on the next).
+- **The Skeletron head/hand** (`case 35`/`case 36`, `NPC.cs:66767-66778`)
+  have no normal-state animation at all: their only case arm pins row 1
+  under the red-hat (Halloween) adjustment, so row 0 always rides in this
+  port. The sheets are 2-row (the red-hat row is the second).
+- Sheets measured and drawn through `boss_draw`: NPC_113 142x212,
+  NPC_114 130x212, NPC_35 114x264, NPC_36 58x156, NPC_5 20x64, NPC_115
+  44x114, NPC_117 18x30, NPC_134 50x102 — the v1 either read `t.h` as the
+  frame height (a whole-strip "frame") or drew box-sized quads at the box
+  corner.
+
+Screenshot: `hungry_wof.png` (the Hungry at its real 44x38 frame),
+SHA256-stable across three runs.
+
+## The King Slime (M4-NPC-3q)
+
+The King Slime's draw carried the right numbers as v1 magic: `[n.x - 38.0,
+n.y - 25.0]` over a hard-coded `120.0` frame height, which is the generic
+anchor (`[x + 49 - 87, y + 92 + 4 - 60]`) plus a 1-px fudge. Replaced with
+`boss_draw`'s derived 174x120 rows (NPC_50 measured 174x720, six 120-px
+rows over the 98x92 box), so the sheet's real geometry drives the draw.
+`case 50`'s machine (`NPC.cs:73380-73414`) verified 1:1: the air snaps to
+row 4 and holds 5, the landing falls back to 4, the grounded walk rides
+0..3 with the `num2` boosts.
+
+Screenshot: `king_slime.png` (the slime at its real 174x120 frame standing
+on the grass), SHA256-stable across three runs.
+
 ## The Plantera and the Brain (M4-NPC-3o)
 
 `case 262` (Plantera) and `case 266` (the Brain of Cthulhu) are the same

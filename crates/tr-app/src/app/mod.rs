@@ -1773,6 +1773,11 @@ impl App {
                         // The Queen Bee (M4-NPC-3p).
                         "queenbee" => NpcKind::QueenBee,
                         "kingslime" => NpcKind::KingSlime,
+                        // The boss parts (M4-NPC-3r).
+                        "wof" => NpcKind::WallOfFlesh,
+                        "wofeye" => NpcKind::WallOfFleshEye,
+                        "hungry" => NpcKind::Hungry,
+                        "skeletronhead" => NpcKind::SkeletronHead,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
