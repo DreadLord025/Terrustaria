@@ -7110,6 +7110,26 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   pool does not lift the water total (and vice versa) — the port compares
   `liquid_kind()` and sums `liquid`; an out-of-world cell reads as liquid 0
   of kind `Water`, which only ever contributes a zero.
+- **The wall step's line walk keeps the C#'s sequential-if clamps.**
+  `Collision.CanHitWithCheck` (`Collision.cs:493-518`) clamps its two centre
+  tiles with four sequential `if`s (`if (num <= 1) num = 1; if (num >= maxTilesX) num = maxTilesX - 1;` …), which on a world shorter than 40 rows pushes a row to 0 — past the lower bound the first `if` set. The port reproduces the sequence verbatim; a Rust `clamp(1, maxTilesY - 40)` would PANIC on the port's small test worlds (min > max) and, worse, hide the vanilla's row-0 behaviour.
+- **`can_hit_with_check` lives in-module until the app-side collision lands.**
+  The C#'s `Collision.cs` maps to the app's `collision.rs`, which `tr-core`
+  cannot reach; the smart-cursor slice needs the walk from the Rust core, so
+  the overload is ported inside `smart_cursor.rs` (with the
+  `DelegateMethods.NotDoorStand` check as a closure and the C#'s inline
+  "solid full block" test as `solid_full`). When the app-side Collision port
+  arrives, the walk moves next to its LOS siblings and this entry flips to
+  done.
+- **The player hitbox is a caller-passed seam, like the settings.** The wall
+  step reads `providedInfo.position` + `player.width/height` as its line
+  walk's origin (`Step_Walls` :1100-1102); the player entity is app-side, so
+  `Lookup::player_position`/`player_width`/`player_height` arrive from the
+  caller. The default fixture parks the player at the tile (30, 22) — the
+  walk's own `maxTilesY - 40` clamp needs a real world height, which is why
+  the wall tests run on a 100-row world (the 40-row fixture clamps every row
+  to 0 and the walk fails on its first out-of-world read, exactly as the C#
+  would).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
