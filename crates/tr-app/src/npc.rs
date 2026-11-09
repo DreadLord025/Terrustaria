@@ -232,6 +232,38 @@ pub enum NpcKind {
     /// 15144-15156: 22×56, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the
     /// 573 fan).
     Predictor,
+    /// `NPCID.StardustSpiderBig` (409) — the stardust pillar's spawner
+    /// (`NPC.cs:15061-15075`: 34×42, aiStyle 3, 800 HP, dmg 70, def 40,
+    /// kb 0.4; its 60-tick cycle spawns the 410 rather than firing).
+    StardustSpiderBig,
+    /// `NPCID.StardustSpiderSmall` (410) — the kamikaze spider
+    /// (`NPC.cs:15074-15087`: 22×22, aiStyle 26, 200 HP, dmg 80, def 10,
+    /// kb 0.3; the 240-tick burst then self-destruct).
+    StardustSpiderSmall,
+    /// `NPCID.StardustSoldier` (411) — the stardust pillar's shooter
+    /// (`NPC.cs:15049-15059`: 22×56, aiStyle 3, 700 HP, dmg 80, def 34,
+    /// kb 0.4; the 330-tick cycle's 537).
+    StardustSoldier,
+    /// `NPCID.SolarDrakomire` (415) — the solar pillar's mount
+    /// (`NPC.cs:15319-15329`: 60×40, aiStyle 3, 800 HP, dmg 55, def 32,
+    /// kb 0.2; the 4/0.1/0.95 jump assist, hidden under a rider).
+    SolarDrakomire,
+    /// `NPCID.SolarDrakomireRider` (416) — the rider (`NPC.cs:15331-15342`:
+    /// 18×40, aiStyle 75, 800 HP, dmg 80, def 28, kb 0.2; it spawns and
+    /// rides the 415 mount, then `Transform(518)`s when it dies).
+    SolarDrakomireRider,
+    /// `NPCID.SolarSroller` (417) — the solar pillar's roller-at (`NPC.cs`
+    /// `:15355-15367`: 46×52, aiStyle 39, 700 HP, dmg 80, def 34, kb 0;
+    /// the ball state's ×1.8 damage and the doubled defense).
+    SolarSroller,
+    /// `NPCID.SolarCorite` (418) — the solar pillar's charger
+    /// (`NPC.cs:15368-15380`: 38×38, aiStyle 74, 600 HP, dmg 70, def 26,
+    /// kb 0.2; the approach/dash/implosion cycle).
+    SolarCorite,
+    /// `NPCID.SolarSolenian` (419) — the solar pillar's walker
+    /// (`NPC.cs:15382-15392`: 22×56, aiStyle 3, 800 HP, dmg 90, def 30,
+    /// kb 0.4; the 6/0.15/0.85 walk).
+    SolarSelenian,
     /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
     /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
@@ -737,6 +769,14 @@ impl NpcKind {
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
             NpcKind::VortexHeadcrab => 129,
+            NpcKind::StardustSpiderBig => 133,
+            NpcKind::StardustSpiderSmall => 134,
+            NpcKind::StardustSoldier => 135,
+            NpcKind::SolarDrakomire => 136,
+            NpcKind::SolarDrakomireRider => 137,
+            NpcKind::SolarSroller => 138,
+            NpcKind::SolarCorite => 139,
+            NpcKind::SolarSelenian => 140,
             NpcKind::NebulaFloater => 130,
             NpcKind::BrainSuckler => 131,
             NpcKind::Predictor => 132,
@@ -812,6 +852,22 @@ impl NpcKind {
             NpcKind::VortexHunter => 426,
             NpcKind::VortexAlien => 427,
             NpcKind::VortexHeadcrab => 428,
+NpcKind::StardustSpiderBig => 133,
+NpcKind::StardustSpiderSmall => 134,
+NpcKind::StardustSoldier => 135,
+NpcKind::SolarDrakomire => 136,
+NpcKind::SolarDrakomireRider => 137,
+NpcKind::SolarSroller => 138,
+NpcKind::SolarCorite => 139,
+NpcKind::SolarSelenian => 140,
+            NpcKind::StardustSpiderBig => 409,
+            NpcKind::StardustSpiderSmall => 410,
+            NpcKind::StardustSoldier => 411,
+            NpcKind::SolarDrakomire => 415,
+            NpcKind::SolarDrakomireRider => 416,
+            NpcKind::SolarSroller => 417,
+            NpcKind::SolarCorite => 418,
+            NpcKind::SolarSelenian => 419,
             NpcKind::NebulaFloater => 420,
             NpcKind::BrainSuckler => 421,
             NpcKind::Predictor => 424,
@@ -901,6 +957,14 @@ impl NpcKind {
             127 => NpcKind::VortexHunter,
             128 => NpcKind::VortexAlien,
             129 => NpcKind::VortexHeadcrab,
+            133 => NpcKind::StardustSpiderBig,
+            134 => NpcKind::StardustSpiderSmall,
+            135 => NpcKind::StardustSoldier,
+            136 => NpcKind::SolarDrakomire,
+            137 => NpcKind::SolarDrakomireRider,
+            138 => NpcKind::SolarSroller,
+            139 => NpcKind::SolarCorite,
+            140 => NpcKind::SolarSelenian,
             130 => NpcKind::NebulaFloater,
             131 => NpcKind::BrainSuckler,
             132 => NpcKind::Predictor,
@@ -1167,6 +1231,14 @@ impl NpcKind {
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
             NpcKind::VortexHeadcrab => (24.0, 26.0),
+            NpcKind::StardustSpiderBig => (34.0, 42.0),
+            NpcKind::StardustSpiderSmall => (22.0, 22.0),
+            NpcKind::StardustSoldier => (22.0, 56.0),
+            NpcKind::SolarDrakomire => (60.0, 40.0),
+            NpcKind::SolarDrakomireRider => (18.0, 40.0),
+            NpcKind::SolarSroller => (46.0, 52.0),
+            NpcKind::SolarCorite => (38.0, 38.0),
+            NpcKind::SolarSelenian => (22.0, 56.0),
             NpcKind::NebulaFloater => (40.0, 40.0),
             NpcKind::BrainSuckler => (44.0, 44.0),
             NpcKind::Predictor => (22.0, 56.0),
@@ -1507,6 +1579,14 @@ impl NpcKind {
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
             NpcKind::VortexHeadcrab => 200,
+            NpcKind::StardustSpiderBig => 800,
+            NpcKind::StardustSpiderSmall => 200,
+            NpcKind::StardustSoldier => 700,
+            NpcKind::SolarDrakomire => 800,
+            NpcKind::SolarDrakomireRider => 800,
+            NpcKind::SolarSroller => 700,
+            NpcKind::SolarCorite => 600,
+            NpcKind::SolarSelenian => 800,
             NpcKind::NebulaFloater => 1300,
             NpcKind::BrainSuckler => 330,
             NpcKind::Predictor => 700,
@@ -1677,6 +1757,14 @@ impl NpcKind {
             | NpcKind::SolarTower => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
+            NpcKind::StardustSpiderBig => 70,
+            NpcKind::StardustSpiderSmall => 80,
+            NpcKind::StardustSoldier => 80,
+            NpcKind::SolarDrakomire => 55,
+            NpcKind::SolarDrakomireRider => 80,
+            NpcKind::SolarSroller => 80,
+            NpcKind::SolarCorite => 70,
+            NpcKind::SolarSelenian => 90,
             NpcKind::NebulaFloater => 75,
             NpcKind::BrainSuckler => 70,
             NpcKind::Predictor => 80,
@@ -1980,6 +2068,10 @@ pub struct Npc {
     /// The Brain Suckler's attached obstruct request (`AI()`'s aiStyle-85
     /// phase 5, `NPC.cs:37159`'s `AddBuff(163, 59)`): the sim applies the
     /// Obstructed buff to the player.
+    /// The SolarCorite's implosion request (`AI()`'s aiStyle-74 arm,
+    /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
+    /// damage scaled by difficulty).
+    pub wants_blast: bool,
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
@@ -2401,6 +2493,7 @@ impl Npc {
             wants_dutchman_drop: None,
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
+            wants_blast: false,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -2515,6 +2608,14 @@ impl Npc {
             NpcKind::NebulaBeast => 0.2,
             // The vortex trio's kb: 0.3/0.5/1.0 (`NPC.cs`'s rows; the headcrab
             // keeps the class default 1.0).
+            NpcKind::StardustSpiderBig => 0.4,
+            NpcKind::StardustSpiderSmall => 0.3,
+            NpcKind::StardustSoldier => 0.4,
+            NpcKind::SolarDrakomire => 0.2,
+            NpcKind::SolarDrakomireRider => 0.2,
+            NpcKind::SolarSroller => 0.0,
+            NpcKind::SolarCorite => 0.2,
+            NpcKind::SolarSelenian => 0.4,
             NpcKind::NebulaFloater => 0.5,
             NpcKind::BrainSuckler => 0.5,
             NpcKind::Predictor => 0.6,
@@ -2712,6 +2813,14 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
+            NpcKind::StardustSpiderBig => 40,
+            NpcKind::StardustSpiderSmall => 10,
+            NpcKind::StardustSoldier => 34,
+            NpcKind::SolarDrakomire => 32,
+            NpcKind::SolarDrakomireRider => 28,
+            NpcKind::SolarSroller => 34,
+            NpcKind::SolarCorite => 26,
+            NpcKind::SolarSelenian => 30,
             NpcKind::NebulaFloater => 20,
             NpcKind::BrainSuckler => 34,
             NpcKind::Predictor => 30,
@@ -2836,6 +2945,14 @@ impl Npc {
             NpcKind::VortexHunter => 1200.0,
             NpcKind::VortexAlien => 400.0,
             NpcKind::VortexHeadcrab => 100.0,
+            NpcKind::StardustSpiderBig => 900.0,
+            NpcKind::StardustSpiderSmall => 30.0,
+            NpcKind::StardustSoldier => 900.0,
+            NpcKind::SolarDrakomire => 700.0,
+            NpcKind::SolarDrakomireRider => 700.0,
+            NpcKind::SolarSroller => 700.0,
+            NpcKind::SolarCorite => 800.0,
+            NpcKind::SolarSelenian => 900.0,
             NpcKind::NebulaFloater => 400.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
@@ -3241,6 +3358,17 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The stardust/solar tower mobs: the spider pair, the soldier,
+            // the drakomire mount + its rider, the sroller, the corite and
+            // the selenian.
+            NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
+            NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
+            NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
+            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
+            NpcKind::SolarDrakomireRider => self.update_solar_drakomire_rider(world, player),
+            NpcKind::SolarSroller => self.update_solar_sroller(world, player),
+            NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
+            NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
             // suckler's aiStyle-85 hover + attachment, the predictor's
             // 573 fan.
@@ -3790,6 +3918,33 @@ impl Npc {
                     NpcKind::NebulaBeast => 12,
                     NpcKind::VortexRifleman => 13,
                     _ => 10,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The tower mobs' strips: the spiders 4/11 rows, the soldier 5,
+            // the drakomire 1, its rider 10, the sroller 10, the corite 15
+            // and the selenian 8.
+            NpcKind::StardustSpiderBig
+            | NpcKind::StardustSpiderSmall
+            | NpcKind::StardustSoldier
+            | NpcKind::SolarDrakomire
+            | NpcKind::SolarDrakomireRider
+            | NpcKind::SolarSroller
+            | NpcKind::SolarCorite
+            | NpcKind::SolarSelenian => {
+                let count = match self.kind {
+                    NpcKind::SolarDrakomire => 1,
+                    NpcKind::SolarCorite => 15,
+                    NpcKind::StardustSpiderBig => 4,
+                    NpcKind::StardustSpiderSmall => 11,
+                    NpcKind::SolarDrakomireRider => 10,
+                    NpcKind::SolarSroller => 10,
+                    NpcKind::SolarSelenian => 8,
+                    _ => 5,
                 };
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
@@ -7705,6 +7860,393 @@ impl Npc {
     /// Deviations: the 242-dust bursts are unmodelled; the teleport-spot
     /// search folds the vanilla's 40×24 probe into the first non-solid
     /// tile near the aim; the owned-574 shave rides a per-kind request.
+    /// `AI_003_Fighters`'s StardustSpiderBig arm (`NPC.cs:59069`'s shooter
+    /// list, the 409 rows at `:59155-59160`/`:59255-59257`/`:59585-59589`/
+    /// `:59746-59750`) — the 60-tick cycle fires no projectile: it spawns
+    /// the 410 small spider at its centre with the carried velocity, and
+    /// its walk runs the 2-px cap over the 0.5 accel.
+    fn update_stardust_spider_big(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire at the half-cooldown: the 410 spawn request.
+        if self.ai[1] * 2.0 >= 60.0 && self.ai[2] > 0.0 {
+            // `:59585-59589`'s spawn: the 410 spider at the centre with the
+            // carried velocity.
+            self.wants_sphere.push((NpcKind::StardustSpiderSmall, cx, cy));
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 700.0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 60.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 2.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 409 (`NPC.cs:70684-70703`): the 4-row strip's
+        // wind-up row on the shot window, the walk accumulator otherwise.
+        if self.vy == 0.0 && self.ai[1] <= 30.0 && self.ai[1] > 0.0 {
+            self.frame = 3;
+        } else {
+            self.frame_counter += 1.0;
+            if self.frame_counter >= 6.0 {
+                self.frame_counter = 0.0;
+                self.frame = (self.frame + 1) % 2;
+            }
+        }
+    }
+
+    /// `AI_026_Unicorns`'s StardustSpiderSmall arm (`NPC.cs:62470-62494` +
+    /// `:62706-62713`) — the aiStyle-26 walker at the 6-px/0.2-accel with
+    /// the kamikaze: the 240-tick counter (or a player 800 px below within
+    /// a 20-px column) fires three 538s (50) and the spider dies.
+    fn update_stardust_spider_small(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        self.ai[1] += 1.0;
+        let mut armed = self.ai[1] >= 240.0;
+        if !armed && self.vy == 0.0 {
+            armed = (pcx - cx).abs() < 20.0 && pcy > cy && (pcx - cx).hypot(pcy - cy) < 800.0;
+        }
+        if armed {
+            // `:62486-62492`'s three-shot burst + the self-destruct.
+            for _ in 0..3 {
+                let vx = (crate::app::rand01(rng) - 0.5) * 2.0;
+                let vy = -4.0 - 10.0 * crate::app::rand01(rng);
+                self.wants_hostile_shot.push((538u16, cx, cy, vx, vy, 50));
+            }
+            self.hp = 0;
+            return;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 6.0,
+                jump: -8.0,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 410 (`NPC.cs:70705-70715`): the 11-row strip's
+        // |vx|-driven accumulator.
+        self.frame_counter += self.vx.abs();
+        if self.frame_counter >= 10.0 {
+            self.frame_counter -= 10.0;
+            self.frame = (self.frame + 1) % 11;
+        }
+    }
+
+    /// `AI_003_Fighters`'s StardustSoldier arm (`NPC.cs:59069`'s shooter
+    /// list, the 411 rows at `:59076-59081`/`:59151-59153`/`:59193`/
+    /// `:59271-59274`/`:59470-59473`/`:59574-59577`/`:59741-59745`) — the
+    /// 330-tick cycle fires the 537 (60, the classic constant of
+    /// `GetAttackDamage_ForProjectiles(60, 45)`) from the muzzle at the
+    /// 1-px speed over the aim spread, and its walk runs the 2-px cap.
+    ///
+    /// Deviations: the [120, 240) aerodynamic window (`:59624-59633`)'s
+    /// velocity drag folds into the walker; the `ai[2]` re-pick by the
+    /// velocity ratio is unmodelled.
+    fn update_stardust_soldier(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire at the 220th tick (the half-cooldown of 330).
+        if self.ai[1] * 2.0 >= 330.0 && self.ai[2] > 0.0 {
+            let (mut ax, mut ay) = (dx, dy);
+            let jit = 40.0;
+            ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+            ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+            let len = (ax * ax + ay * ay).sqrt().max(0.001);
+            ax = ax / len * 1.0;
+            ay = ay / len * 1.0;
+            self.wants_hostile_shot.push((537u16, cx + 2.0, cy - 12.0, ax, ay, 60));
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 700.0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 330.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 2.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 411 (`NPC.cs:70643-70675`): the shoot pose on
+        // the [120, 240) window, the walk rows otherwise.
+        if self.ai[1] >= 120.0 && self.ai[1] < 240.0 {
+            self.frame = 4;
+        } else {
+            self.frame_counter += (self.vx != 0.0) as i32 as f32 + 1.0;
+            if self.frame_counter > 6.0 {
+                self.frame_counter = 0.0;
+                self.frame = (self.frame + 1).clamp(2, 4);
+            }
+        }
+    }
+
+    /// `AI_003_Fighters`'s SolarDrakomire arm (`NPC.cs:58214-58219`'s
+    /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
+    /// with the mob-specific speed, hidden while a 416 rides it.
+    fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 4.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `:58426-58430`'s hide: the mount hides while a rider links to it —
+        // the vanilla's `hide` has no port field (the pre-pass owns the
+        // link), so the mount stays visible.
+    }
+
+    /// `AI()`'s aiStyle-75 block's SolarDrakomireRider arm (`NPC.cs`:
+    /// 35523-35537`'s mount spawn + `:35662-35679`'s attach anchor +
+    /// `:36060-36061`'s `Transform(518)`) — the rider rides its 415 mount
+    /// at the `(-spriteDirection * 10, -30)` offset and becomes the
+    /// SolarSrawler (518) when the mount dies.
+    fn update_solar_drakomire_rider(&mut self, _world: &World, _player: &Player) {
+        if self.carrier_timer <= 0.0 {
+            // `:36060-36061`'s metamorph: the port's in-place kind swap
+            // (518 stays out of this slice — the vanilla's
+            // `SolarSrawler` row is `NPC.cs:15344-15354`).
+            self.hp = 0;
+            return;
+        }
+        // `:35663-35679`'s anchor ride.
+        self.x = self.carrier_x - self.size().0 * 0.5 + self.sprite_dir as f32 * -10.0;
+        self.y = self.carrier_y - self.size().1 * 0.5 - 30.0;
+        self.sprite_dir = self.carrier_phase as i32;
+        self.vx = 0.0;
+        self.vy = 0.0;
+    }
+
+    /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29394-29421`'s
+    /// ball entry + `:29422-29488`'s lunge + `:29532-29580`'s ball state +
+    /// `:29634-29668`'s unroll) — the sroller winds up, collapses into a
+    /// ball (the ×1.8 damage, the doubled defense, kb 0), rolls for
+    /// `ai[2]` in [2, 4] revolutions, then unrolls.
+    ///
+    /// Deviations: the dust/gore bursts and the `ai[3]` FX layer are
+    /// unmodelled; the roll's spin rides the port's rotation.
+    fn update_solar_sroller(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        match self.ai[0] as i32 {
+            0 => {
+                // `:29267-29276`'s aggro counter and the jump reach.
+                self.ai[1] += 4.0;
+                if self.ai[1] >= 400.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 1.0;
+                }
+                crate::npc_ai::walker_step(
+                    self,
+                    world,
+                    pcx,
+                    pcy,
+                    crate::npc_ai::WalkerParams {
+                        speed: 1.0,
+                        jump: -6.2,
+                        aggro_x: 80.0 * TILE_PX,
+                        aggro_y: 40.0 * TILE_PX,
+                    },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            1 => {
+                // `:29394-29419`'s wind-up: at the 30th tick the sroller
+                // collapses into the ball (the 32-px height) and rolls for
+                // `rand(2, 4)` revolutions.
+                self.ai[1] += 0.5;
+                if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[2] = 2.0 + 2.0 * crate::app::rand01(&mut 7u64);
+                    self.ai[0] = 6.0;
+                }
+            }
+            6 => {
+                // `:29532-29580`'s ball state: the doubled defense, kb 0
+                // and the rolling spin over the revolutions.
+                self.defense_override = Some(68);
+                self.vx = (if self.facing >= 0 { 1.0 } else { -1.0 })
+                    * (5.0 + (self.ai[2] * 0.6).min(4.0));
+                self.rotation += self.vx * 0.05;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 60.0 * self.ai[2] {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 5.0;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            _ => {
+                // `:29634-29668`'s unroll: restore the height and rest.
+                self.rotation = 0.0;
+                self.vx = 0.0;
+                self.defense_override = None;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+        }
+    }
+
+    /// `AI()`'s aiStyle-74 block's SolarCorite arm (`NPC.cs:35238-35276`'s
+    /// parameter set + the four `ai[0]` states + `:35447-35497`'s
+    /// implosion) — the corite approaches (8/175/175/600/80/60/20), the
+    /// charge releases into the dash (9 px), the dash exits into the
+    /// cooldown, and the 64-px contact (or the state-3 arm) triggers the
+    /// 192-box implosion (80 damage scaled) that kills it.
+    ///
+    /// Deviations: the dust/lighting arms and the sound cue are
+    /// unmodelled; the implosion's 3-tick delay rides the port's own.
+    fn update_solar_corite(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let dist = (pcx - cx).hypot(pcy - cy);
+        match self.ai[0] as i32 {
+            3 => {
+                // `:35447-35497`'s implosion: the 192-box, the zeroed
+                // velocity and the 3-tick delay before the death.
+                self.vx = 0.0;
+                self.vy = 0.0;
+                self.damage_override = Some(80);
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 3.0 {
+                    self.wants_blast = true;
+                    self.hp = 0;
+                }
+            }
+            2 => {
+                // `:35393-35405`'s dash exit.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 150.0 && dist > 60.0 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 45.0;
+                }
+                if self.vx * self.vx + self.vy * self.vy < 0.49 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 45.0;
+                }
+            }
+            4 => {
+                // `:35427-35436`'s cooldown.
+                self.ai[1] -= 3.0;
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                if self.ai[1] <= 0.0 {
+                    self.ai[0] = 0.0;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            1 => {
+                // `:35358-35390`'s charge: at the 20th tick the dash fires
+                // at the 9-px speed.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = 0.0;
+                    let (dx, dy) = (pcx - cx, pcy - cy);
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.vx = dx / d * 9.0;
+                    self.vy = dy / d * 9.0;
+                }
+            }
+            _ => {
+                // The approach (`:35320-35350`'s 8-px fly at the 175/175
+                // bands).
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 && dist < 80.0 {
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                }
+                let (dx, dy) = (pcx - cx, pcy - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                self.vx += (dx / d * 8.0 - self.vx) * 0.075;
+                self.vy += (dy / d * 8.0 - self.vy) * 0.075;
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+        }
+        self.rotation = self.vy.atan2(self.vx) + std::f32::consts::PI * 0.5;
+        let _ = (world, h);
+    }
+
+    /// `AI_003_Fighters`'s SolarSelenian arm (`NPC.cs:58220-58224`'s
+    /// 6/0.15/0.85 walk) — the selenian rides the walker with its own
+    /// speed and the roller's drag.
+    fn update_solar_selenian(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 6.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -10105,6 +10647,14 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::StardustSpiderBig => 409,
+            NpcKind::StardustSpiderSmall => 410,
+            NpcKind::StardustSoldier => 411,
+            NpcKind::SolarDrakomire => 415,
+            NpcKind::SolarDrakomireRider => 416,
+            NpcKind::SolarSroller => 417,
+            NpcKind::SolarCorite => 418,
+            NpcKind::SolarSelenian => 419,
             NpcKind::NebulaFloater => 420,
             NpcKind::BrainSuckler => 421,
             NpcKind::Predictor => 424,
