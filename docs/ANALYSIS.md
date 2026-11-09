@@ -3584,6 +3584,23 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Angler quest (M4-TOWN-15)
+
+The quest state lives on the statics in the C# (`Main.anglerQuest`,
+`anglerQuestFinished`, `anglerWhoFinishedToday`, `Player.anglerQuestsFinished`); the port
+carries the first three on the World (the name list collapses to the single-player
+`angler_quest_turned_in`) and the counter on the Player. Deliberate gaps, all documented in the
+row: the quest **chat text** (`Main.NPCChatText_DoAnglerQuest`'s `Lang.AnglerQuestChat` result and
+`NPC.GetChat`'s 369 dialog tree at `NPC.cs:94758-94760`) is not ported — the port has no NPC
+dialog UI; the reward's accessory filter scans the inventory only (the C# also walks the armor,
+the four banks and the three loadouts — the port has none); the price adjustment is pinned at
+1.0 (the vanilla reads `currentShoppingSettings.PriceAdjustment`, which the town roster's mood
+rows never change); the `crimson` gate reads `false` (the World carries no evil-kind field, so
+the corruption-side quest rows always re-roll exactly like a corruption world); the world-file
+save fields (`IO/WorldFile.cs:1329-1335`/`:2152-2166`) and the 74/75/76 messages land with
+M6-SAVE-1/M6-NET; the Sleeping Angler's world spawn rides the port's 2-second town cadence
+instead of the vanilla's `SpawnAnNPC` ladder position (same gates, same `Next(20)`).
+
 ## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
 
 The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks
@@ -7400,23 +7417,6 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
-- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
-  The C# has no candidate list and no final `InTileBounds` commit gate for
-  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
-  and the vote compares the FINAL `(num2, k)` positions (the column's base).
-  The port keeps both off: a trunk column at the rect's bottom row votes its
-  base at the row below the rect. The trunk arm's right/left frame shifts are
-  also asymmetric in the C# (the right arms test `num2 + 1`, the left
-  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
-  CURRENT cell (the earlier shift may already have moved it).
-- **The axe step runs at two call sites, per the settings toggle.**
-  `SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`) moves the axe
-  step before or after the pickaxe family in the chain; the port calls it at
-  both C# sites (before the force-cursor step with the flag off, after the
-  chain with it on) and exposes the flag on `Lookup::smart_axe_after_pickaxe`
-  (app-side setting, caller-passed). The pickaxe family itself
-  (`Step_Pickaxe_MineShinies`/`MineSolids`) is unported, so the "after" site
-  follows the force-cursor step today.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:

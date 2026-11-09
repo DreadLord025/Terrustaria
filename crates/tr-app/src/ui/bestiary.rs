@@ -431,6 +431,8 @@ fn portrait_data(
         NpcKind::WitchDoctor => 40,       // NPC_228
         NpcKind::Clothier => 41,          // NPC_54
         NpcKind::TravellingMerchant => 110, // NPC_368
+        NpcKind::Angler => 111, // NPC_369
+        NpcKind::SleepingAngler => 112, // NPC_376
         NpcKind::EyeOfCthulhu => 42,      // NPC_4
         NpcKind::QueenBee => 43,          // NPC_222
         NpcKind::SkeletronHead => 44,     // NPC_35
@@ -638,6 +640,8 @@ fn portrait_data(
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::TravellingMerchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Angler, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::SleepingAngler, _) => (sheet_i, 8.0, 34.0, 8.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
