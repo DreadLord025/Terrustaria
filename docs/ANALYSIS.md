@@ -8980,3 +8980,63 @@ body, and the `SpawnStormLightning` gates).
 - `DoRainbowStuff`'s frame re-writes and the thunder-bolt projectile arms
   of `moreLightning`/`noLightning` (`Projectile.cs:12776/14823/39871`).
  2397c90 (M5-SEED-2: the docs — the ROADMAP row, the ANALYSIS section and the PORT_MAP rows)
+
+## Yoyo on-hit effects (M4-PROJ-4b)
+
+The yoyo family's hit-damage and hit-spawn arms, ported into the pool's
+`damage_pve`.
+
+### The shared counter
+
+`Player.yoyoHitCounter` (`Player.cs:1220`'s `-1` start) lives on the port's
+`Player` with `every_some_yoyo_hits(amount, countUp)` — the C#'s
+`Player.EverySomeYoyoHits` (`Player.cs:4308-4316`). Three properties that
+shaped the whole task:
+
+1. **It is never reset.** No `ResetEffects` arm, no death/throw reset, no
+   per-projectile reset — the counter is monotonic for the life of the
+   `Player` object (the port therefore writes no reset code either).
+2. **It is per-player, not per-projectile.** Every yoyo the player owns
+   shares it.
+3. **The -1 start shifts the schedule.** `-1 % 7 == -1` (C#'s truncated
+   remainder, and Rust's `i32 %` matches it), so the first hit never fires
+   — and the counter's *0* makes the **second** hit fire for every period.
+   The doubling and the spawn therefore land on hits 2, 9, 16, … (555) and
+   2, 5, 8, … (546), not 7/3.
+
+### The hook order
+
+The C# evaluates the doublings **before** `StrikeNPC`
+(`Projectile.cs:13389-13396`) and the spawns **after** it
+(`:13707-13809`) — and both read the same counter value on one hit. The
+port folds that into `damage_pve`'s per-NPC loop: the doubling peeks
+(`countUp: false`) into the `dmg` local just before
+`hurt_from_projectile`, and `yoyo_on_hit` increments inside the `landed`
+block. Getting these in one place is what keeps the periods aligned.
+
+### The arms
+
+| yoyo | effect | detail |
+|---|---|---|
+| 555 (TheEyeOfCthulhu) | `dmg * 2` every 7th hit | pre-strike peek |
+| 546 (Chik) | `dmg * 2` every 3rd hit | pre-strike peek |
+| 545 (Cascade) | spawns 1125 every 2nd hit | `damage * 2`, the `ai1` floor `dist/200` with the C#'s 208-seeded scan degenerate, the `localNPCImmunity` **-1** sentinel, the `ai[0] != -2` dropped-yoyo guard |
+| 554 (Kraken) | spawns 3× 1135 every 4th | `damage * 0.5`, `l ∈ {-2, 0, 2}` at ±0.05 turns |
+| 546 (Chik) | spawns 5× 1134 every 3rd | `ai0 = 1` for the four followers, the idStatic-20 stamp |
+| 555 (TheEyeOfCthulhu) | spawns 1130 every 7th | `damage * 2`, 14-tile initial speed, `ai1` floor 80/200, the -1 sentinel |
+
+The four shots carry their `SetDefaults` rows verbatim (1125:
+32×32/aiStyle-189/`penetrate = 4`/local-immunity −1; 1130:
+100×100/aiStyle-210/`timeLeft = 600`/local −1; 1134:
+6×6/aiStyle-24/`penetrate = 1`/idStatic-20; 1135:
+100×100/aiStyle-210/idStatic-10), and `AI_210_YoyoShots` ports the shared
+fade lifecycle of 1130/1135: the 0.92 velocity decay, the
+`MultiLerp`-driven alpha ramp (255→0 over 20 ticks) and the 20-tick
+owner-local `Kill`.
+
+Deviations: the counterweight on-hit spawn path (`Player.Counterweight`,
+`Player.cs:12356-12415` — the yoyo-glove/counterweight scan) is a separate
+accessory arm and stays deferred; `AI_210`'s one-shot sound and frame cycle
+are the render row's (the port's cue table has no `Item20`); the spawned
+shots' own aiStyle-189 (1125) and aiStyle-24 (1134) families are their own
+tasks — the shots exist with their data, their children-AIs do not run.
