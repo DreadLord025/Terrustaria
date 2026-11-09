@@ -19,9 +19,13 @@
 //! `Step_EmptyBuckets` (:622-676), `Step_BlocksLines` (:814-888, over the
 //! caller-passed `Lookup::smart_blocks_enabled`), `Step_Walls`
 //! (:1100-1164, over the caller-passed player hitbox and the
-//! `Collision.CanHitWithCheck` line walk) and `Step_Platforms`
+//! `Collision.CanHitWithCheck` line walk), `Step_Platforms`
 //! (:1324-1389, over the [`ContinuityState`] locks and
-//! [`tile_target_desired`]'s placement gate) — the seed/herb/planting
+//! [`tile_target_desired`]'s placement gate) and the wire family
+//! (`Step_WireCutter` :1455-1493, `Step_Actuators` :582-620,
+//! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030 and
+//! `Step_MulticolorWrench` :1725-1877, the last two over the caller-passed
+//! `Lookup::tool_mode`/`actuation_rod_lock`) — the seed/herb/planting
 //! family plus the paint family, gated on item id / `createTile` /
 //! `createWall` and shared with the closest-to-mouse vote. The paint steps
 //! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
@@ -76,6 +80,23 @@ pub const PAINT_SCRAPER_ITEMS: [u16; 2] = [1100, 1545];
 /// `ItemID.Count` (`ItemID.cs:14861`): the item-id count the placement
 /// gates' range checks read.
 pub const ITEM_COUNT: u16 = 6196;
+
+/// `WiresUI.Settings.MultiToolMode` (`WiresUI.cs:13-21`): the multi-wrench's
+/// channel flags, carried as the raw bitfield the C# enum stores.
+pub mod multi_tool_mode {
+    /// `MultiToolMode.Red` — the first wire channel.
+    pub const RED: u8 = 1;
+    /// `MultiToolMode.Green` — the third wire channel.
+    pub const GREEN: u8 = 2;
+    /// `MultiToolMode.Blue` — the second wire channel.
+    pub const BLUE: u8 = 4;
+    /// `MultiToolMode.Yellow` — the fourth wire channel.
+    pub const YELLOW: u8 = 8;
+    /// `MultiToolMode.Actuator`.
+    pub const ACTUATOR: u8 = 0x10;
+    /// `MultiToolMode.Cutter`.
+    pub const CUTTER: u8 = 0x20;
+}
 
 /// The held-item fields the smart-cursor steps read (the C# reads them off
 /// `SmartCursorUsageInfo.item`).
@@ -144,6 +165,16 @@ pub struct Lookup {
     /// held state — the continuity-lock reset reads it. Input is app-side,
     /// so the caller passes it.
     pub use_item_held: bool,
+    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`): the multi-wrench's
+    /// channel flags (`MultiToolMode`, :13-21). The app's wiring UI owns
+    /// the setting, so the caller passes it.
+    pub tool_mode: u8,
+    /// `player.ActuationRodLock` (`Player.cs:2616`) — the actuation rod's
+    /// channel lock (app-side player state, caller-passed).
+    pub actuation_rod_lock: bool,
+    /// `player.ActuationRodLockSetting` (`Player.cs:2618`) — the lock's
+    /// target actuation state.
+    pub actuation_rod_lock_setting: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -1550,17 +1581,262 @@ pub fn step_platforms(
     Some((px, py))
 }
 
+// ------------------------------------------------------------- wire family --
+
+/// The C#'s `Tile.wire()`/`wire2()`/`wire3()`/`wire4()` (`Tile.cs:623/640/657/
+/// 437`) — the port's sparse `WireState` per channel (`wiring.rs`).
+fn wire_at(w: &crate::World, x: i32, y: i32, color: crate::wiring::WireColor) -> bool {
+    w.wires.get(x, y, color)
+}
+
+/// The four channels (`Step_WireCutter` :1467 / `Step_Actuators` :594): any
+/// wire at the cell.
+fn has_any_wire(w: &crate::World, x: i32, y: i32) -> bool {
+    use crate::wiring::WireColor;
+    wire_at(w, x, y, WireColor::Red)
+        || wire_at(w, x, y, WireColor::Blue)
+        || wire_at(w, x, y, WireColor::Green)
+        || wire_at(w, x, y, WireColor::Yellow)
+}
+
+/// The C#'s wrench-channel number → the wire colour (the C#'s `num` 1..4
+/// maps `Step_ColoredWrenches` :1931-2006 onto wire/wire2/wire3/wire4).
+fn wrench_channel(num: i32) -> crate::wiring::WireColor {
+    use crate::wiring::WireColor;
+    match num {
+        1 => WireColor::Red,
+        2 => WireColor::Blue,
+        3 => WireColor::Green,
+        _ => WireColor::Yellow,
+    }
+}
+
+/// `SmartCursorHelper.Step_WireCutter` (`:1455-1493`): the held wire cutter
+/// (510) re-points at the closest wired or actuated cell.
+pub fn step_wire_cutter(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1457` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 510 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1467` — any wire colour or the actuator.
+            if has_any_wire(w, i, j) || t.actuator() {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_Actuators` (`:582-620`): the held actuator (849)
+/// re-points at the closest active wired cell that has no actuator yet.
+pub fn step_actuators(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:584` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 849 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:594` — wired, not actuated, active.
+            if has_any_wire(w, i, j) && !t.actuator() && t.active() {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_ActuationRod` (`:1495-1535`): the held actuation
+/// rod (3620) re-points at the closest actuated cell — the rod's channel
+/// lock (`Player.cs:2616/:2618`, caller-passed) restricts the actuation
+/// states it toggles.
+pub fn step_actuation_rod(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1497-1498` — the lock reads happen before the gate in the C# (no
+    // side effects; the port keeps the order).
+    let (rod_lock, rod_lock_setting) = (l.actuation_rod_lock, l.actuation_rod_lock_setting);
+    // `:1500` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 3620 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1509` — actuated, and the lock accepts its state.
+            if t.active() && t.actuator() && (!rod_lock || rod_lock_setting == t.inactive()) {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_ColoredWrenches` (`:1879-2030`): the held
+/// colour wrench (509/850/851/3612) re-points beside a cell that already
+/// carries the matching wire — the line extends from its ends.
+pub fn step_colored_wrenches(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1881` — the four item kinds + the focus sentinel.
+    if !(l.item.kind == 509 || l.item.kind == 850 || l.item.kind == 851 || l.item.kind == 3612)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    // `:1886-1902` — the item → channel map.
+    let num = match l.item.kind {
+        509 => 1,
+        850 => 2,
+        851 => 3,
+        _ => 4,
+    };
+    let color = wrench_channel(num);
+    // `:1904-1918` — the screen target already carries the wrench's own
+    // channel → the scan stands down (the C#'s four arms each test the
+    // channel that matches `num`).
+    let held = wire_at(w, l.screen_target.0, l.screen_target.1, color);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !held {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if w.tile(i, j).is_none() {
+                    continue;
+                }
+                // `:1924` — the cell carries the wrench's channel (the C#'s
+                // four `||` arms over `!channel || num != n`).
+                if !wire_at(w, i, j, color) {
+                    continue;
+                }
+                // `:1931-2006` — the four neighbours lacking the channel
+                // become the candidates (an out-of-world neighbour is
+                // skipped, as the C#'s border reads never happen).
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    if !wire_at(w, i + dx, j + dy, color) {
+                        cands.push((i + dx, j + dy));
+                    }
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_MulticolorWrench` (`:1725-1877`): the held
+/// multi-wrench (3625) re-points by the selected channels
+/// (`WiresUI.Settings.ToolMode`, `WiresUI.cs:23`) — the cutter arm targets
+/// the wired cells themselves, the placement arm their free neighbours.
+pub fn step_multicolor_wrench(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+) -> Option<(i32, i32)> {
+    // `:1727` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 3625 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:1732-1746` — the hovered cell's channels.
+    let mut hovered: u8 = 0;
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(1)) {
+        hovered |= multi_tool_mode::RED;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(2)) {
+        hovered |= multi_tool_mode::BLUE;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(3)) {
+        hovered |= multi_tool_mode::GREEN;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(4)) {
+        hovered |= multi_tool_mode::YELLOW;
+    }
+    // `:1748` — the hovered cell already matches the placement channels →
+    // the scan stands down (the C#'s `toolMode & ~Cutter == multiToolMode`).
+    let tool_mode = l.tool_mode;
+    let matches = (tool_mode & !multi_tool_mode::CUTTER) == hovered;
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !matches {
+        // `:1750-1756` — the channel arms + the cutter arm.
+        let (red, blue, green, yellow) = (
+            tool_mode & multi_tool_mode::RED != 0,
+            tool_mode & multi_tool_mode::BLUE != 0,
+            tool_mode & multi_tool_mode::GREEN != 0,
+            tool_mode & multi_tool_mode::YELLOW != 0,
+        );
+        let cutter = tool_mode & multi_tool_mode::CUTTER != 0;
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if w.tile(i, j).is_none() {
+                    continue;
+                }
+                // `:1764-1770` — the cutter arm: the cell itself.
+                if cutter
+                    && ((wire_at(w, i, j, wrench_channel(1)) && red)
+                        || (wire_at(w, i, j, wrench_channel(2)) && blue)
+                        || (wire_at(w, i, j, wrench_channel(3)) && green)
+                        || (wire_at(w, i, j, wrench_channel(4)) && yellow))
+                {
+                    cands.push((i, j));
+                } else {
+                    // `:1773` — a selected channel must be present.
+                    if !((wire_at(w, i, j, wrench_channel(1)) && red)
+                        || (wire_at(w, i, j, wrench_channel(2)) && blue)
+                        || (wire_at(w, i, j, wrench_channel(3)) && green)
+                        || (wire_at(w, i, j, wrench_channel(4)) && yellow))
+                    {
+                        continue;
+                    }
+                    // `:1776-1849` — the free neighbours per selected
+                    // channel (the C#'s non-short-circuit bool `&` reads as
+                    // `&&` over pure operands).
+                    for channel in [1, 2, 3, 4] {
+                        let on = match channel {
+                            1 => red,
+                            2 => blue,
+                            3 => green,
+                            _ => yellow,
+                        };
+                        if on {
+                            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                                if !wire_at(w, i + dx, j + dy, wrench_channel(channel)) {
+                                    cands.push((i + dx, j + dy));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// Platforms :134 → Walls :136 → PumpkinSeeds :137 → GrassSeeds :138 →
-/// Moss :139 → Pigronata :140 → Torch :142 → LawnMower :143 → BlocksLines
-/// :145 → PaintRoller :146 → PaintBrush :147 → PaintScrapper :148 → Acorns
-/// :149 → GemCorns :150 → EmptyBuckets :151 → AlchemySeeds :153 →
-/// PlanterBox :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's gate
-/// refuses a taken focus, so the first step that finds a spot wins — the
-/// C# straight-line chain.
+/// ColoredWrenches :129 → MulticolorWrench :130 → ActuationRod :132 →
+/// WireCutter :133 → Platforms :134 → Walls :136 → PumpkinSeeds :137 →
+/// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
+/// LawnMower :143 → BlocksLines :145 → PaintRoller :146 → PaintBrush :147
+/// → PaintScrapper :148 → Acorns :149 → GemCorns :150 → EmptyBuckets :151
+/// → Actuators :152 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
+/// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
+/// first step that finds a spot wins — the C# straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -1595,7 +1871,11 @@ pub fn smart_cursor_lookup(
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 18] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 23] = [
+        step_colored_wrenches,
+        step_multicolor_wrench,
+        step_actuation_rod,
+        step_wire_cutter,
         step_walls,
         step_pumpkin_seeds,
         step_grass_seeds,
@@ -1610,6 +1890,7 @@ pub fn smart_cursor_lookup(
         step_acorns,
         step_gem_corns,
         step_empty_buckets,
+        step_actuators,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
@@ -1709,6 +1990,9 @@ mod tests {
             paint_coating_lookup: 0,
             smart_blocks_enabled: false,
             use_item_held: false,
+            tool_mode: 0,
+            actuation_rod_lock: false,
+            actuation_rod_lock_setting: false,
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -2880,6 +3164,206 @@ mod tests {
             smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((31, 18)),
             "the platform step runs inside the lookup chain"
+        );
+    }
+
+    /// A red wire at the cell (the port's sparse `WireState`).
+    fn red_wire_at(w: &mut crate::World, x: i32, y: i32) {
+        w.wires.set(x, y, crate::wiring::WireColor::Red, true);
+    }
+
+    #[test]
+    fn test_smart_1_the_wire_cutter_finds_the_wired_cell() {
+        // `Step_WireCutter` :1467 — any wire colour or the actuator makes a
+        // cell a cutter target; a clean cell does not.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(510), mouse_at(25, 19));
+        assert_eq!(
+            step_wire_cutter(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the cutter re-points at the wired cell"
+        );
+        // The actuator alone is a target too (the C#'s `||` arm).
+        let mut actuated = bare();
+        let i = actuated.index(25, 19);
+        actuated.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+        assert_eq!(
+            step_wire_cutter(&actuated, &l, -1, -1),
+            Some((25, 19)),
+            "the cutter re-points at the actuated cell"
+        );
+        // Nothing wired and no actuator — the step no-ops.
+        let clean = bare();
+        assert_eq!(
+            step_wire_cutter(&clean, &l, -1, -1),
+            None,
+            "a clean cell is not a cutter target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_actuator_step_wants_the_wired_unactuated_cell() {
+        // `Step_Actuators` :594 — wired, not actuated, active.
+        let mut world = bare();
+        put(&mut world, 25, 19, 1);
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(849), mouse_at(25, 19));
+        assert_eq!(
+            step_actuators(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the actuator re-points at the wired active cell"
+        );
+        // Already actuated — not a target.
+        let mut done = bare();
+        put(&mut done, 25, 19, 1);
+        red_wire_at(&mut done, 25, 19);
+        let i = done.index(25, 19);
+        done.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+        assert_eq!(
+            step_actuators(&done, &l, -1, -1),
+            None,
+            "the actuated cell is not an actuator target"
+        );
+        // Wired but inactive — the `active()` half refuses.
+        let mut inert = bare();
+        red_wire_at(&mut inert, 25, 19);
+        assert_eq!(
+            step_actuators(&inert, &l, -1, -1),
+            None,
+            "the inactive cell is not an actuator target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_actuation_rod_respects_the_lock() {
+        // `Step_ActuationRod` :1509 — the rod's channel lock (Player.cs:2616/
+        // :2618, caller-passed) filters the actuation states it toggles.
+        let mut world = bare();
+        let i = world.index(25, 19);
+        world.tiles[i].flags |= crate::tile::FLAG_ACTIVE | crate::tile::FLAG_ACTUATOR;
+        // Lock off — every actuated cell is a target.
+        let off = lookup(item(3620), mouse_at(25, 19));
+        assert_eq!(
+            step_actuation_rod(&world, &off, -1, -1),
+            Some((25, 19)),
+            "the rod re-points at the actuated cell"
+        );
+        // Lock on, setting wants the actuated (false) state — the cell's
+        // `inActive()` is false, so it matches.
+        let locked_false = Lookup {
+            actuation_rod_lock: true,
+            actuation_rod_lock_setting: false,
+            ..lookup(item(3620), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_actuation_rod(&world, &locked_false, -1, -1),
+            Some((25, 19)),
+            "the locked rod accepts the matching state"
+        );
+        // Lock on, setting wants the inert (true) state — mismatch, no target.
+        let locked_true = Lookup {
+            actuation_rod_lock: true,
+            actuation_rod_lock_setting: true,
+            ..lookup(item(3620), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_actuation_rod(&world, &locked_true, -1, -1),
+            None,
+            "the locked rod refuses the mismatched state"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_colored_wrench_extends_the_line() {
+        // `Step_ColoredWrenches` :1924-2006 — the wrench re-points beside a
+        // cell that carries its channel, into a neighbour lacking it.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(509), mouse_at(25, 19)); // the red wrench
+        assert_eq!(
+            step_colored_wrenches(&world, &l, -1, -1),
+            Some((24, 19)),
+            "the red wrench re-points at the free neighbour"
+        );
+        // The screen target already carries the channel — the scan stands
+        // down (:1904-1918).
+        let mut hovered = bare();
+        red_wire_at(&mut hovered, 25, 19);
+        red_wire_at(&mut hovered, 30, 19); // the fixture's screen target
+        let l2 = lookup(item(509), mouse_at(25, 19));
+        assert_eq!(
+            step_colored_wrenches(&hovered, &l2, -1, -1),
+            None,
+            "the hovered channel disables the wrench scan"
+        );
+        // A different channel's wrench ignores the red wire.
+        let l3 = lookup(item(850), mouse_at(25, 19)); // the blue wrench
+        assert_eq!(
+            step_colored_wrenches(&world, &l3, -1, -1),
+            None,
+            "the blue wrench wants blue wire"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_multicolor_wrench_cutter_and_placement_arms() {
+        // `Step_MulticolorWrench` :1764-1849 — the cutter arm targets the
+        // wired cells themselves, the placement arm their free neighbours.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        // Cutter + red: the wired cell itself.
+        let cutter = Lookup {
+            tool_mode: multi_tool_mode::RED | multi_tool_mode::CUTTER,
+            ..lookup(item(3625), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_multicolor_wrench(&world, &cutter, -1, -1),
+            Some((25, 19)),
+            "the cutter arm re-points at the wired cell"
+        );
+        // Red only (placement): the free neighbour.
+        let place = Lookup {
+            tool_mode: multi_tool_mode::RED,
+            ..lookup(item(3625), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_multicolor_wrench(&world, &place, -1, -1),
+            Some((24, 19)),
+            "the placement arm re-points at the free neighbour"
+        );
+        // The hovered cell matches the placement channels — the scan stands
+        // down (:1748).
+        let mut hovered = bare();
+        red_wire_at(&mut hovered, 25, 19);
+        red_wire_at(&mut hovered, 30, 19); // the fixture's screen target
+        assert_eq!(
+            step_multicolor_wrench(&hovered, &place, -1, -1),
+            None,
+            "the matching hover disables the multi-wrench scan"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_wire_family_runs_in_the_chain() {
+        // The dispatch order (:129-133, :152): the wire tools run at their
+        // C# places — the chain dispatches them.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let cutter = lookup(item(510), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &cutter, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the wire cutter runs inside the lookup chain"
+        );
+        let mut wired = bare();
+        put(&mut wired, 25, 19, 1);
+        red_wire_at(&mut wired, 25, 19);
+        let actuator = lookup(item(849), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&wired, &actuator, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the actuator step runs inside the lookup chain"
         );
     }
 }
