@@ -3724,6 +3724,19 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Bestiary sheet slots (M4-TOWN-19-fix)
+
+`ui/bestiary.rs`'s `portrait_data` carried 66 hand-written
+`bestiary_npc_sheets[N]` reads for the height fallbacks; each refactor that
+inserted a sheet shifted them, and the release build panicked on
+`NpcKind::SolarDrakomireRider`'s stale 156 (the vec had 156 slots). The
+derived `Lookups::bestiary_sheet_index` + `BESTIARY_NPC_SHEET_IDS` replaced
+the table; this fix routes every read through `entry_sheet(lookups,
+sheet_i)`, so the portraits always read their own sheet and a drift can only
+ever degrade to the `.unwrap_or(h)` fallback instead of a panic. The
+`BESTIARY_NPC_SHEET_IDS` ↔ `bestiary_npc_sheets` vec order alignment is now
+guarded by a test (each entry's net id appears exactly once).
+
 ## Zoologist/Princess (M4-TOWN-19)
 
 Both are late-roster town NPCs. Deviations: the Zoologist's shop has the
