@@ -394,8 +394,7 @@ fn portrait_data(
     // boss rows' and finally the martian sheets' inserts shifted it).
     let sheet_i = lookups
         .bestiary_sheet_index(entry.net_id as u16)
-        .unwrap_or(0);;
-    let white = [1.0, 1.0, 1.0, 1.0];
+        .unwrap_or(0);;    let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
         (NpcKind::Golem, _) => (sheet_i, 140.0, 140.0, 140.0, white),
         (NpcKind::GolemHead, _) => (sheet_i, 70.0, 70.0, 70.0, white),
@@ -492,6 +491,8 @@ fn portrait_data(
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::TravellingMerchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Angler, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::SleepingAngler, _) => (sheet_i, 8.0, 34.0, 8.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
@@ -705,8 +706,7 @@ fn portrait_data(
             let h = lookups
                 .bestiary_npc_sheets
                 .get(sheet_i)
-                .and_then(|s| *s)
-                .map(|s| s.height as f32)
+                .and_then(|s| *s)                .map(|s| s.height as f32)
                 .unwrap_or(364.0);
             (sheet_i, h, 174.0, h, white)
         }

@@ -156,12 +156,13 @@ mod tests {
     /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
     /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
     /// pass — every world on every seed changes by design.
-    // M5-DESERT-structures (2026-11-09): the `Dunes` pass and the `Full
-    // Desert` underground desert changed the generated worlds; the pins are
-    // re-taken after the merge of that branch (the merged content is what
-    // they describe).
-    const SEED42_512: u32 = 1040332190;
-    const DEFAULT_WORLD: u32 = 3467491710;
+    // M5-DUNGEON (2026-11-09): the pipeline's `Dungeon` step moved from the
+    // shape-level approximation (`biomes::pass_dungeon`) to the faithful
+    // crawler (`worldgen/dungeon.rs::generate_dungeon`), so the generated
+    // worlds carry the crawler's halls/rooms instead of the corridor
+    // approximation.
+    const SEED42_512: u32 = 608156777;
+    const DEFAULT_WORLD: u32 = 3295755475;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

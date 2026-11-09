@@ -1842,6 +1842,8 @@ fn npc_seed(
         | crate::npc::NpcKind::WitchDoctor
         | crate::npc::NpcKind::Clothier
         | crate::npc::NpcKind::TravellingMerchant
+        | crate::npc::NpcKind::Angler
+        | crate::npc::NpcKind::SleepingAngler
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
@@ -1978,7 +1980,9 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustWormHead
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
         | crate::npc::NpcKind::NebulaBeast
