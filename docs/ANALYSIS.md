@@ -7415,6 +7415,38 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
+- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
+  The C# has no candidate list and no final `InTileBounds` commit gate for
+  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
+  and the vote compares the FINAL `(num2, k)` positions (the column's base).
+  The port keeps both off: a trunk column at the rect's bottom row votes its
+  base at the row below the rect. The trunk arm's right/left frame shifts are
+  also asymmetric in the C# (the right arms test `num2 + 1`, the left
+  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
+  CURRENT cell (the earlier shift may already have moved it). The axe step
+  runs at two call sites, per the `SmartAxeAfterPickaxe` settings toggle
+  (`Player.cs:333`, caller-passed on `Lookup`).
+- **`hit_line` is ported in-module until the app-side Collision lands.** The
+  C#'s `Collision.HitLine` (`Collision.cs:780-969`) is a Bresenham-ish walker
+  whose `ignoreX`/`ignoreY` arms turn off the perpendicular hit checks (the
+  mine step passes the walk's own direction so the side it came from never
+  blocks) and whose `ignoreTargets` (the grapple hooks) never block. The
+  port keeps the sequential-if clamps (a true `clamp` panics on the port's
+  small test worlds, where `maxY - 40 < 1`), the C#'s catch arm as a
+  `Result` error returning the START cell, and the two floating-point
+  fractional strides (`num5`/`num6`) exactly. When the app-side Collision
+  port arrives, the walker moves next to its LOS siblings.
+- **`Step_Pickaxe_MineSolids`' beam is a start-grid → end-grid walk.** The
+  step fills `_points` from the player's edge and `_endpoints` from the
+  mouse's edge (the `InWorld(num8, num9, 40)` fluff gate on the endpoints —
+  the port checks `40..=width-40`/`40..=height-40`, `WorldGen.cs:9688-9696`),
+  then pops the pair head and walks it with `HitLine`, adding every hit
+  twice (the off-endpoint hit and the full-solid re-hit — the C#'s two adds,
+  the grapple targets excluded). The unkillable targets are dropped with
+  `edit::can_kill_tile` (the same `|_, _| false` chest-store convention as
+  the force-cursor step), and the vote runs from the player's centre — on a
+  client the neighbouring miners perturb that centre by ±12 px per parity
+  (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:

@@ -26,21 +26,24 @@
 //! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030,
 //! `Step_MulticolorWrench` :1725-1877 (the last two over the caller-passed
 //! `Lookup::tool_mode`/`actuation_rod_lock`), `Step_MinecartTracks`
-//! (:1166-1322, over the caller-passed player centre) and
+//! (:1166-1322, over the caller-passed player centre), `Step_Axe`
+//! (:2582-2690, over the held item's axe power) and
 //! `Step_ForceCursorToAnyMinableThing` (:2229-2268, over the caller-passed
-//! gamepad state and the held item's pick/axe/hammer power) — the
-//! seed/herb/planting family plus the paint family, gated on item id /
-//! `createTile` / `createWall` and shared with the closest-to-mouse vote.
+//! gamepad state and the held item's pick/axe/hammer power) and
+//! `Step_Pickaxe_MineShinies` (:2270-2348, over the held item's pick power)
+//! and `Step_Pickaxe_MineSolids` (:2350-2580, over the caller-passed player
+//! state and the `hit_line` beam walker) — the seed/herb/planting family
+//! plus the paint family, gated on item id / `createTile` / `createWall`
+//! and shared with the closest-to-mouse vote.
 //! The paint steps read the caller-passed
 //! `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
-//! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
-//! platform/wall/wrench families, `UsingSmartCursorWithContinuity`'s
-//! lock state, the grapple target arms, the inventory-driven paint lookup
-//! (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`), and the
-//! app-side wiring (the reachable rect, the `App.smart_cursor` field, the
-//! settings gate).
+//! Out of scope (documented in the ROADMAP row): the pickaxe/hammer/gamepad
+//! solids, `UsingSmartCursorWithContinuity`'s lock state, the grapple target
+//! arms, the inventory-driven paint lookup (`Player.FindPaintOrCoating`,
+//! `Player.cs:41927-41944`), and the app-side wiring (the reachable rect,
+//! the `App.smart_cursor` field, the settings gate).
 //!
 //! Edge convention: the C# `Main.tile` array is exactly world-sized
 //! (`Main.cs:66984`) and the reachable rect never touches the border, so
@@ -190,6 +193,11 @@ pub struct Lookup {
     /// force-cursor step refuses on a gamepad (input is app-side, so the
     /// caller passes it).
     pub using_gamepad: bool,
+    /// `Player.SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`):
+    /// the settings toggle that places the axe step before or after the
+    /// pickaxe steps in the chain. The app persists it, so the caller
+    /// passes it.
+    pub smart_axe_after_pickaxe: bool,
     /// The gamepad's navigator/thumbsticks read as idle
     /// (`Step_Pickaxe_MineSolids` :2359-2368): the mine step re-points the
     /// mouse straight ahead of the player while no direction is held.
@@ -2117,13 +2125,219 @@ pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     None
 }
 
+// ---------------------------------------------------------------- axe step --
+
+/// `SmartCursorHelper.Step_Axe` (`:2582-2690`): the held axe re-points at
+/// the closest axe tile's BASE — the step walks a tree/cactus/vine column
+/// down to its bottom tile first, so the whole column falls with one swing.
+/// Unlike the other steps it keeps its own walk bounds and has no final
+/// rect gate: the winner may stand outside the reachable rect.
+pub fn step_axe(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2588-2590` — the C#'s two decompiler artifacts (`_ =
+    // screenTargetX/Y`) are dropped.
+    // `:2592` — the axe-power gate + the focus sentinel.
+    if l.item.axe <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:2599` — the inactive cell skips.
+            if !t.active() {
+                continue;
+            }
+            // `:2603` — the axe tile, minus the step's ignore set.
+            if !crate::tileobject::tile_axe(t.kind) || crate::tileobject::ignore_smart_axe(t.kind) {
+                continue;
+            }
+            let (mut num2, mut k) = (i, j);
+            let kind = t.kind;
+            // `:2611-2635` — the tree-trunk arm: the branch-side shifts move
+            // `num2` onto the trunk before the walk-down (each guarded by the
+            // C#'s own InTileBounds asymmetry — the right arms check
+            // `num2 + 1`, the left `num2 - 1`).
+            if crate::tileobject::is_a_tree_trunk(kind) {
+                if in_tile_bounds(num2 + 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fy_ >= 198 && fx_ == 44) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 66 && fy_ <= 44) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 44 && (132..=176).contains(&fy_)) {
+                        num2 += 1;
+                    }
+                }
+            }
+            if crate::tileobject::is_a_tree_trunk(kind)
+                && in_tile_bounds(num2 - 1, k, l.start_x, l.start_y, l.end_x, l.end_y)
+            {
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fy_ >= 198 && fx_ == 66) {
+                    num2 -= 1;
+                }
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fx_ == 88 && (66..=110).contains(&fy_)) {
+                    num2 -= 1;
+                }
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fx_ == 22 && (132..=176).contains(&fy_)) {
+                    num2 -= 1;
+                }
+            }
+            // `:2637-2645` — the trunk walk-down: while the cell and the one
+            // below carry the column and the next row is in the rect, descend.
+            if crate::tileobject::is_a_tree_trunk(kind) {
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    if t.active()
+                        && t.kind == kind
+                        && below.is_some_and(|b| b.kind == kind)
+                        && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y)
+                    {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2647-2669` — the cactus (80) arm: the same shape with the
+            // cactus's own frame rows.
+            if kind == 80 {
+                if in_tile_bounds(num2 + 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, _)| fx_ == 54) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 108 && fy_ == 36) {
+                        num2 += 1;
+                    }
+                }
+                if in_tile_bounds(num2 - 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, _)| fx_ == 36) {
+                        num2 -= 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 108 && fy_ == 18) {
+                        num2 -= 1;
+                    }
+                }
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    if t.active()
+                        && t.kind == 80
+                        && below.is_some_and(|b| b.kind == 80)
+                        && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y)
+                    {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2671-2679` — the vine/mushroom arm (323/72): walk-down only.
+            if kind == 323 || kind == 72 {
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    let same =
+                        (t.active() && t.kind == 323 && below.is_some_and(|b| b.kind == 323))
+                            || (t.active() && t.kind == 72 && below.is_some_and(|b| b.kind == 72));
+                    if same && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y) {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2681-2688` — the vote on the final (num2, k) — no list, no
+            // final rect gate (the C# keeps both off).
+            let dist = dist_to_mouse(num2, k, l.mouse);
+            if best_dist == -1.0 || dist < best_dist {
+                best_dist = dist;
+                best = Some((num2, k));
+            }
+        }
+    }
+    best
+}
+
+// ------------------------------------------------------------- shinies step --
+
+/// `TileID.Sets.SmartCursorPickaxePriorityOverride` (`TileID.cs:507`,
+/// `CreateIntSet(0, 12 → 1, 665 → 1, 639 → 1)`): the per-tile priority the
+/// pickaxe's shiny scan tracks — the C# is an `int[]` over `TileID.Count`,
+/// the port a per-id map.
+const SMART_CURSOR_PICKAXE_PRIORITY: [(u16, i32); 3] = [(12, 1), (665, 1), (639, 1)];
+
+/// The tile's priority override (0 when the set does not carry it — the
+/// C#'s array default).
+fn pickaxe_priority_override(kind: u16) -> i32 {
+    SMART_CURSOR_PICKAXE_PRIORITY
+        .iter()
+        .find(|(id, _)| *id == kind)
+        .map(|(_, v)| *v)
+        .unwrap_or(0)
+}
+
+/// `SmartCursorHelper.Step_Pickaxe_MineShinies` (`:2270-2348`): the held
+/// pickaxe re-points at the closest rare tile the priority override flags.
+pub fn step_pickaxe_mine_shinies(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+) -> Option<(i32, i32)> {
+    // `:2283` — the pick-power gate + the focus sentinel.
+    if l.item.pick <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:2285-2290` — the C#'s `if (item.type != 1333 && ...)` arm is a
+    // decompiler artifact with no side effects (dropped).
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:2295-2297` — the C#'s `_ = Main.tile[i±1, j]; _ = Main.tile[i, j+1];`
+            // reads are decompiler artifacts with no side effects (dropped).
+            if !t.active() {
+                continue;
+            }
+            // `:2298-2312` — every override-carrying tile is a candidate.
+            // The C# also tracks the maximum priority (`num`), but the only
+            // consumer of it — the two `_targets2` loops at :2315-2327 —
+            // iterates the just-cleared list, so both are provably empty in
+            // vanilla and the priority filter is inert. The port implements
+            // the OBSERVABLE behaviour (the closest of all override tiles),
+            // not the intended one, and does not emulate C#'s
+            // foreach-mutation hazard.
+            if pickaxe_priority_override(t.kind) > 0 {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
 // ------------------------------------------------------------ line walker --
 
 /// The C#'s "solid full block" test as HitLine reads it
 /// (`Collision.cs:784`-style: `!inActive() && active() && tileSolid &&
 /// !tileSolidTop`).
 fn hit_line_solid(t: &Tile) -> bool {
-    !t.inactive() && t.active() && crate::tiledata::TILE_SOLID.has(t.kind)
+    !t.inactive()
+        && t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
         && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
 }
 
@@ -2223,10 +2437,7 @@ fn hit_line(
                         && !ignore_targets.contains(&(vx, vy - 1))
                         && !ignore_targets.contains(&(vx, vy + 1))
                     {
-                        if ignore_y != -1
-                            && num11 < 0
-                            && hit_line_solid(above)
-                        {
+                        if ignore_y != -1 && num11 < 0 && hit_line_solid(above) {
                             return Ok((vx, vy - 1));
                         }
                         if ignore_y != 1 && num11 > 0 && hit_line_solid(below) {
@@ -2327,10 +2538,11 @@ pub fn step_pickaxe_mine_solids(
     // `:2359-2368` — the gamepad override: with the sticks idle the mouse
     // is re-pointed straight ahead of the player (the direction × 1000 px).
     let mut mouse = l.mouse;
-    if l.using_gamepad
-        && l.gamepad_idle
-    {
-        mouse = (player_center(l).0 + l.direction as f32 * 1000.0, player_center(l).1);
+    if l.using_gamepad && l.gamepad_idle {
+        mouse = (
+            player_center(l).0 + l.direction as f32 * 1000.0,
+            player_center(l).1,
+        );
     }
     let center = player_center(l);
     // `:2370-2381` — the axis snap: an axis beyond 3× the other zeroes its
@@ -2412,7 +2624,9 @@ pub fn step_pickaxe_mine_solids(
         }
         if num2 != 0 {
             for m in 0..num10 {
-                if w.tile(((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9).is_some() {
+                if w.tile(((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9)
+                    .is_some()
+                {
                     endpoints.push((((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9));
                 }
             }
@@ -2465,8 +2679,11 @@ pub fn step_pickaxe_mine_solids(
         // miners perturb the vote centre by ±12 px per parity.
         let mut vote = center;
         if l.is_mp_client {
-            let (num13, num14, num15) =
-                (l.mp_miners.near_before, l.mp_miners.far_before, l.mp_miners.near_after);
+            let (num13, num14, num15) = (
+                l.mp_miners.near_before,
+                l.mp_miners.far_before,
+                l.mp_miners.near_after,
+            );
             if num13 > 0 {
                 vote.0 += if num13 % 2 == 1 { 12.0 } else { -12.0 };
                 if num14 % 2 == 1 {
@@ -2499,15 +2716,20 @@ pub fn step_pickaxe_mine_solids(
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// ForceCursorToAnyMinableThing :122 → ColoredWrenches :129 →
-/// MulticolorWrench :130 → ActuationRod :132 → WireCutter :133 →
-/// Platforms :134 → MinecartTracks :135 → Walls :136 → PumpkinSeeds :137
+/// Axe :118 (or :125 with `SmartAxeAfterPickaxe`) →
+/// ForceCursorToAnyMinableThing :122 → PickaxeMineShinies :123 →
+/// PickaxeMineSolids :124 → ColoredWrenches :129 →
+/// MulticolorWrench :130 → ActuationRod :132 →
+/// WireCutter :133 → Platforms :134 → MinecartTracks :135 → Walls :136 →
+/// PumpkinSeeds :137
 /// → GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
 /// LawnMower :143 → BlocksLines :145 → PaintRoller :146 → PaintBrush :147
 /// → PaintScrapper :148 → Acorns :149 → GemCorns :150 → EmptyBuckets :151
 /// → Actuators :152 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
 /// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
-/// first step that finds a spot wins — the C# straight-line chain.
+/// first step that finds a spot wins — the C# straight-line chain. The
+/// axe step is called at BOTH C# call sites, before or after the pickaxe
+/// family per the setting (the pickaxe family itself is unported).
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -2537,13 +2759,23 @@ pub fn smart_cursor_lookup(
         return None;
     }
     let mut focus = (fx, fy);
+    // `:118-121` — the axe step's first call site: with
+    // `SmartAxeAfterPickaxe` off (the default), the axe runs before the
+    // force-cursor step.
+    if !l.smart_axe_after_pickaxe {
+        if let Some(p) = step_axe(w, l, focus.0, focus.1) {
+            focus = p;
+        }
+    }
     // `:134` — the platform step runs first in the C#'s chain and is the
     // only step that writes the continuity state.
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 25] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 27] = [
         step_force_cursor,
+        step_pickaxe_mine_shinies,
+        step_pickaxe_mine_solids,
         step_colored_wrenches,
         step_multicolor_wrench,
         step_actuation_rod,
@@ -2571,6 +2803,14 @@ pub fn smart_cursor_lookup(
     ];
     for step in steps {
         if let Some(p) = step(w, l, focus.0, focus.1) {
+            focus = p;
+        }
+    }
+    // `:125-128` — the axe step's second call site: with
+    // `SmartAxeAfterPickaxe` on, the axe runs after the pickaxe steps
+    // (the chain's position once the pickaxe family lands).
+    if l.smart_axe_after_pickaxe {
+        if let Some(p) = step_axe(w, l, focus.0, focus.1) {
             focus = p;
         }
     }
@@ -2667,6 +2907,12 @@ mod tests {
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
             using_gamepad: false,
+            smart_axe_after_pickaxe: false,
+            gamepad_idle: false,
+            grav_dir: 1.0,
+            direction: 1,
+            is_mp_client: false,
+            mp_miners: MpMinerCounts::default(),
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -4265,4 +4511,309 @@ mod tests {
             "the force-cursor step runs inside the lookup chain"
         );
     }
+
+    /// An axe item with the given axe power.
+    fn axe_item(axe: i32) -> ItemPort {
+        ItemPort {
+            kind: 1,
+            create_tile: -1,
+            create_wall: -1,
+            place_style: 0,
+            pick: 0,
+            axe,
+            hammer: 0,
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_finds_the_tree_bottom() {
+        // `Step_Axe` :2681-2688 — the step walks a trunk column down to its
+        // bottom and votes on that base.
+        let mut world = bare();
+        for y in 10..=19 {
+            put(&mut world, 25, y, 5); // the trunk column
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the axe re-points at the trunk's base"
+        );
+        // The gate: an axe-less item skips the step, and a non-axe tile is
+        // not a target.
+        let no_axe = lookup(axe_item(0), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &no_axe, -1, -1),
+            None,
+            "the axe gate holds"
+        );
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_axe(&stone, &l, -1, -1),
+            None,
+            "stone is not an axe tile"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_trunk_arm_shifts_to_the_branch() {
+        // `Step_Axe` :2615-2619 — a trunk tile with the branch frame
+        // (frameX 44, frameY 198) shifts the base one column right before
+        // the walk.
+        let mut world = bare();
+        put(&mut world, 25, 19, 5);
+        frame_x_at(&mut world, 25, 19, 44);
+        let i = world.index(25, 19);
+        world.tiles[i].frame_y = 198;
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((26, 19)),
+            "the branch frame moves the base right"
+        );
+        // The plain trunk keeps its own column.
+        let mut plain = bare();
+        put(&mut plain, 25, 19, 5);
+        assert_eq!(
+            step_axe(&plain, &l, -1, -1),
+            Some((25, 19)),
+            "the plain trunk keeps its column"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_cactus_arm_shifts_sideways() {
+        // `Step_Axe` :2649-2665 — the cactus (80) arm: frameX 54 shifts
+        // right, frameX 36 shifts left.
+        let mut right = bare();
+        put(&mut right, 25, 19, 80);
+        frame_x_at(&mut right, 25, 19, 54);
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&right, &l, -1, -1),
+            Some((26, 19)),
+            "the cactus frame 54 shifts the base right"
+        );
+        let mut left = bare();
+        put(&mut left, 25, 19, 80);
+        frame_x_at(&mut left, 25, 19, 36);
+        assert_eq!(
+            step_axe(&left, &l, -1, -1),
+            Some((24, 19)),
+            "the cactus frame 36 shifts the base left"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_walks_the_vine_column() {
+        // `Step_Axe` :2671-2679 — the vine/mushroom tiles (323/72) walk down
+        // with no frame arms.
+        let mut world = bare();
+        for y in 14..=19 {
+            put(&mut world, 25, y, 323);
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 14));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the vine column walks to its base"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_ignores_the_fallen_log() {
+        // `Step_Axe` :2603 — the fallen log (488) is an axe tile the step
+        // ignores (`TileID.Sets.IgnoreSmartCursorPriorityAxe`).
+        let mut world = bare();
+        put(&mut world, 25, 19, 488);
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            None,
+            "the fallen log is ignored by the axe step"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_runs_before_the_pickaxe_family() {
+        // The dispatch order (:118-121): with `SmartAxeAfterPickaxe` off
+        // (the default), the axe runs at the chain's head.
+        let mut world = bare();
+        for y in 10..=19 {
+            put(&mut world, 25, y, 5);
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the axe step runs inside the lookup chain"
+        );
+        // With the setting on, the axe's second call site runs after the
+        // chain — the same tree still lands on its base.
+        let after = Lookup {
+            smart_axe_after_pickaxe: true,
+            ..lookup(axe_item(1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            smart_cursor_lookup(&world, &after, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the axe step runs at its second call site too"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_shinies_finds_the_override_tiles() {
+        // `Step_Pickaxe_MineShinies` :2298-2312 — the three priority-
+        // override tiles (12/665/639, TileID.cs:507) are the step's only
+        // targets; the C#'s priority filter is inert (the `_targets2` loops
+        // iterate the just-cleared list), so the closest override tile
+        // wins.
+        let mut world = bare();
+        put(&mut world, 25, 19, 12); // the override tile
+        let l = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_pickaxe_mine_shinies(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the pickaxe re-points at the override tile"
+        );
+        let mut rare = bare();
+        put(&mut rare, 25, 19, 665);
+        put(&mut rare, 26, 19, 639);
+        assert_eq!(
+            step_pickaxe_mine_shinies(&rare, &l, -1, -1),
+            Some((25, 19)),
+            "both override ids are candidates, the closest wins"
+        );
+        // A plain tile is not a target.
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_pickaxe_mine_shinies(&stone, &l, -1, -1),
+            None,
+            "a plain tile is not a shiny target"
+        );
+        // The gates: pick power and the focus sentinel.
+        let no_pick = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(step_pickaxe_mine_shinies(&world, &no_pick, -1, -1), None);
+        assert_eq!(step_pickaxe_mine_shinies(&world, &l, 12, 12), None);
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_shinies_step_runs_in_the_chain() {
+        // The dispatch order (:123): the shiny step runs between the force
+        // cursor and the wrenches — the chain dispatches it.
+        let mut world = bare();
+        put(&mut world, 25, 19, 12);
+        let l = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the shinies step runs inside the lookup chain"
+        );
+    }
+
+    /// A big world (200×150) — the mine-solids beam needs the world-fluff
+    /// margin (`InWorld(x, y, 40)`) around its endpoints.
+    fn big() -> crate::World {
+        let mut w = crate::World::new("big".into(), 200, 150);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    /// The default lookups park the player near the origin; the beam tests
+    /// park them mid-world with the mouse to the right.
+    fn beam_lookup(pick: i32, mouse: (f32, f32)) -> Lookup {
+        Lookup {
+            player_position: (480.0, 660.0),
+            // A rect that covers the beam (the player's row and the
+            // target cells): the default fixture rect (y 10..19) sits
+            // above the beam and the C#'s InTileBounds commit gate would
+            // reject every target.
+            start_x: 20,
+            start_y: 30,
+            end_x: 90,
+            end_y: 70,
+            ..lookup(pickaxe(1, pick), mouse)
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_solids_finds_the_tower() {
+        // `Step_Pickaxe_MineSolids` :2449-2488 — the horizontal beam from
+        // the player to the mouse keeps every solid hit (the stone at
+        // (35, 41) is closest to the player's centre).
+        let mut world = big();
+        put(&mut world, 35, 41, 1); // the stone on the beam
+        let l = beam_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            step_pickaxe_mine_solids(&world, &l, -1, -1),
+            Some((35, 41)),
+            "the beam mines the stone on its way"
+        );
+        // No stones — the beam reaches its endpoint and nothing is a
+        // target.
+        let clear = big();
+        assert_eq!(
+            step_pickaxe_mine_solids(&clear, &l, -1, -1),
+            None,
+            "an empty beam has no target"
+        );
+        // The gates: pick power and the focus sentinel.
+        let no_pick = beam_lookup(0, (760.0, 681.0));
+        assert_eq!(step_pickaxe_mine_solids(&world, &no_pick, -1, -1), None);
+        assert_eq!(step_pickaxe_mine_solids(&world, &l, 12, 12), None);
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_solids_drops_the_unkillable() {
+        // `:2489-2501` — a stone standing under a chest (21) refuses the
+        // `CanKillTile` container arm, so the beam has no target there.
+        let mut world = big();
+        put(&mut world, 35, 41, 1); // the stone on the beam
+        put(&mut world, 35, 40, 21); // the chest standing on it
+        let l = beam_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            step_pickaxe_mine_solids(&world, &l, -1, -1),
+            None,
+            "the stone under the chest is unkillable"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_solids_gamepad_arm_repoints_the_mouse() {
+        // `:2359-2368` — with the gamepad sticks idle the mouse is
+        // re-pointed straight ahead of the player (direction × 1000), so
+        // the beam lies purely horizontal even for a mouse above the
+        // player.
+        let mut world = big();
+        put(&mut world, 35, 660 / 16 + 0, 1); // the stone on the player's row
+        // The player's beam row: num5 = (660 + 0.1) / 16 = 41.
+        let pad = Lookup {
+            using_gamepad: true,
+            gamepad_idle: true,
+            direction: 1,
+            ..beam_lookup(1, (760.0, 681.0))
+        };
+        assert_eq!(
+            step_pickaxe_mine_solids(&world, &pad, -1, -1),
+            Some((35, 41)),
+            "the gamepad arm re-points the beam straight ahead"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_solids_runs_in_the_chain() {
+        // The dispatch order (:124): the mine-solids step runs between the
+        // shinies step and the wrenches — the chain dispatches it.
+        let mut world = big();
+        put(&mut world, 35, 41, 1);
+        let l = beam_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((35, 41)),
+            "the mine-solids step runs inside the lookup chain"
+        );
+    }
+
 }
