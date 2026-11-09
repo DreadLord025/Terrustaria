@@ -21,6 +21,18 @@ pub struct ShopFlags {
     pub zone_jungle: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
+    /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
+    /// and mana maxima, the copper purse, the Party Girl's presence, the
+    /// mech bosses and the martian invasion.
+    pub life_max_400: bool,
+    pub mana_max_200: bool,
+    pub coins_over_gold: bool,
+    pub party_girl_present: bool,
+    pub downed_mech_any: bool,
+    pub downed_mech_1: bool,
+    pub downed_mech_2: bool,
+    pub downed_mech_3: bool,
+    pub downed_martians: bool,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -37,6 +49,15 @@ impl Default for ShopFlags {
             zone_jungle: false,
             downed_boss2: false,
             downed_boss3: false,
+            life_max_400: false,
+            mana_max_200: false,
+            coins_over_gold: false,
+            party_girl_present: false,
+            downed_mech_any: false,
+            downed_mech_1: false,
+            downed_mech_2: false,
+            downed_mech_3: false,
+            downed_martians: false,
             travel_stock: [0; 40],
         }
     }
@@ -74,6 +95,27 @@ pub enum StockWhen {
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
     MoonPhasePair(u8),
+    /// The ODD moon phases only (`Chest.cs:2085`'s
+    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
+    MoonPhaseOdd,
+    /// `statLifeMax >= 400` (`:2704`) — the Life Hair Dye row.
+    LifeMax400,
+    /// `statManaMax >= 200` (`:2709`) — the Mana Hair Dye row.
+    ManaMax200,
+    /// The purse's copper total ≥ 1,000,000 (`:2743`) — the Money Hair
+    /// Dye row.
+    CoinsOverGold,
+    /// The moon-phase/day parity pair (`:2747`): even phase + day OR odd
+    /// phase + night — the Time Hair Dye row.
+    MoonPhaseDayParity,
+    /// `NPC.AnyNPCs(208)` (`:2762`) — the Party Hair Dye row.
+    PartyGirlPresent,
+    /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
+    DownedMechAll,
+    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
+    DownedMechAny,
+    /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
+    DownedMartians,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -237,6 +279,80 @@ pub fn setup_shop(
             row(4437, StockWhen::MoonPhasePair(2)),
             row(4439, StockWhen::MoonPhasePair(3)),
             row(4440, StockWhen::MoonPhasePair(3)),
+        ],
+        // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
+        // hair-dye family — the two always-on rows, the life/mana/money
+        // gates, the moon-phase parity, the hardmode + Party Girl +
+        // mech/martian rows; the multiplayer team dye (1982) and the
+        // graveyard mirror (5577) sit constants-off.
+        18 => vec![
+            row(1990, StockWhen::Always),
+            row(1979, StockWhen::Always),
+            row(1977, StockWhen::LifeMax400),
+            row(1978, StockWhen::ManaMax200),
+            row(1980, StockWhen::CoinsOverGold),
+            row(1981, StockWhen::MoonPhaseDayParity),
+            row(1983, StockWhen::HardMode),
+            row(1984, StockWhen::PartyGirlPresent),
+            row(1985, StockWhen::DownedMechAll),
+            row(1986, StockWhen::DownedMechAny),
+            row(2863, StockWhen::DownedMartians),
+            row(3259, StockWhen::DownedMartians),
+            row(5104, StockWhen::Always),
+        ],
+        // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
+        // magic rows always, the hardmode blood-moon deck (5461) and the
+        // halloween hat (1739) constants-off (the port has neither
+        // season).
+        7 => vec![
+            row(487, StockWhen::Always),
+            row(496, StockWhen::Always),
+            row(500, StockWhen::Always),
+            row(507, StockWhen::Always),
+            row(508, StockWhen::Always),
+            row(531, StockWhen::Always),
+            row(149, StockWhen::Always),
+            row(576, StockWhen::Always),
+            row(3186, StockWhen::Always),
+        ],
+        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
+        // family's rows; the graveyard goggles (4409) constants-off and
+        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
+        // pair (1/3/5/7).
+        8 => vec![
+            row(509, StockWhen::Always),
+            row(850, StockWhen::Always),
+            row(851, StockWhen::Always),
+            row(3612, StockWhen::Always),
+            row(510, StockWhen::Always),
+            row(530, StockWhen::Always),
+            row(513, StockWhen::Always),
+            row(538, StockWhen::Always),
+            row(529, StockWhen::Always),
+            row(541, StockWhen::Always),
+            row(542, StockWhen::Always),
+            row(543, StockWhen::Always),
+            row(852, StockWhen::Always),
+            row(853, StockWhen::Always),
+            row(4261, StockWhen::Always),
+            row(3707, StockWhen::Always),
+            row(2739, StockWhen::Always),
+            row(849, StockWhen::Always),
+            row(1263, StockWhen::Always),
+            row(3616, StockWhen::Always),
+            row(3725, StockWhen::Always),
+            row(2799, StockWhen::Always),
+            row(3619, StockWhen::Always),
+            row(3627, StockWhen::Always),
+            row(3629, StockWhen::Always),
+            row(585, StockWhen::Always),
+            row(584, StockWhen::Always),
+            row(583, StockWhen::Always),
+            row(4484, StockWhen::Always),
+            row(4485, StockWhen::Always),
+            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
+            // port's town count reads the Angler's presence.
+            row(2295, StockWhen::MoonPhaseOdd),
         ],
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
@@ -862,6 +978,17 @@ pub fn resolve_stock_moon(
             StockWhen::BloodMoonCorruption => flags.blood_moon,
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
+            StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
+            StockWhen::LifeMax400 => flags.life_max_400,
+            StockWhen::ManaMax200 => flags.mana_max_200,
+            StockWhen::CoinsOverGold => flags.coins_over_gold,
+            StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
+            StockWhen::PartyGirlPresent => flags.party_girl_present,
+            StockWhen::DownedMechAll => {
+                flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
+            }
+            StockWhen::DownedMechAny => flags.hard_mode && flags.downed_mech_any,
+            StockWhen::DownedMartians => flags.hard_mode && flags.downed_martians,
         })
         .map(|e| e.item)
         .collect()
