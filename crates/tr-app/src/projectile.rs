@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -87,6 +87,30 @@ pub const MARTIAN_RAY: u16 = 438;
 /// `ProjectileID.Arrow`-family hostile arrow (180) — the pirate Deadeye's
 /// (`Projectile.cs:3922-3933`: 4x4, aiStyle 1, hostile, penetrate -1,
 /// light 0.5, alpha 255, scale 1.2).
+/// `ProjectileID.PhantasmalEye` (452) — the Moon Lord hand's eye
+/// volley (`Projectile.cs:5240-5249`: 14x14, aiStyle 82, hostile,
+/// timeLeft 600).
+pub const PHANTASMAL_EYE: u16 = 452;
+/// `ProjectileID.PhantasmalSphere` (454) — the flood orb
+/// (`Projectile.cs:5259-5269`: 40x40, aiStyle 83, hostile,
+/// tileCollide false, timeLeft 600).
+pub const PHANTASMAL_SPHERE: u16 = 454;
+/// `ProjectileID.PhantasmalDeathray` (455) — the head's sweeping
+/// deathray (`Projectile.cs:5270-5280`: 36x36, aiStyle 84, hostile,
+/// tileCollide false, timeLeft 600).
+pub const PHANTASMAL_DEATHRAY: u16 = 455;
+/// `ProjectileID.MoonLeech` (456) — the head's leech seeker
+/// (`Projectile.cs:5281-5291`: 16x16, aiStyle 85, hostile,
+/// tileCollide false, timeLeft 600).
+pub const MOON_LEECH: u16 = 456;
+/// `ProjectileID.PhantasmalBolt` (462) — the retargeting lasers
+/// (`Projectile.cs:5329-5339`: 8x8, aiStyle 1, hostile,
+/// extraUpdates 3, tileCollide false, ignoreWater).
+pub const PHANTASMAL_BOLT: u16 = 462;
+/// `ProjectileID.BlowupSmokeMoonlord` (622) — the core's death-drama
+/// smoke (`Projectile.cs:6691-6698`: 10x10, aiStyle 1, extraUpdates
+/// 2, timeLeft 3600).
+pub const BLOWUP_SMOKE_MOONLORD: u16 = 622;
 pub const PIRATE_ARROW: u16 = 180;
 /// `ProjectileID.DD2JavelinHostile` (662) — the javelin throwers' spear
 /// (`Projectile.cs:7122-7130`: 16x16, aiStyle 1, hostile, penetrate -1;
@@ -608,6 +632,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // family's four consts ride the origin/main set).
             SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
+            // The Moon Lord family (`Projectile.cs`'s SetDefaults
+            // rows): the 452/454/455/456 hostile set (timeLeft 600,
+            // penetrate -1 except the bolt) and the drama smoke 622.
+            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false),
+            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false),
+            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false),
+            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false),
+            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true),
+            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false),
             // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
             // and the Corsair's musket ball 82 (10x10, aiStyle 1).
             PIRATE_ARROW => (4.0, 4.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false),
@@ -664,6 +697,10 @@ pub struct Projectile {
     pub kind: u16,
     /// `Projectile.owner`; 255 = unset.
     pub owner: u8,
+    /// `ProjectileKey.generation` (`DataStructures/ProjectileKey.cs:16-31`):
+    /// bumped on every spawn into a slot so a wire consumer can tell a fresh
+    /// projectile from a stale one occupying the same index.
+    pub generation: u16,
     pub pos: Vec2,
     pub vel: Vec2,
     pub rot: f32,
@@ -732,6 +769,7 @@ impl Default for Projectile {
             active: false,
             kind: 0,
             owner: 255,
+            generation: 0,
             pos: Vec2::ZERO,
             vel: Vec2::ZERO,
             rot: 0.0,
@@ -770,6 +808,7 @@ impl Projectile {
             active: true,
             kind: SHURIKEN,
             owner: 0,
+            generation: 0,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
             damage: 10,
@@ -1566,6 +1605,84 @@ impl ProjectilePool {
     }
 
     /// Sets the slot's crit flag (the throw path rolls it at spawn time).
+    /// The `ProjectileKey` a slot's current occupant would travel under
+    /// (`Projectile.cs:10854`'s key mint).
+    pub fn key_of(&self, slot: usize) -> i32 {
+        let p = &self.slots[slot];
+        crate::net::projectile_key(p.owner, slot, p.generation)
+    }
+
+    /// The `29` despawn: the slot dies only when the key matches its current
+    /// occupant (`MessageBuffer.cs:1825-1850`'s key lookup).
+    pub fn kill_remote(&mut self, slot: usize, owner: u8, generation: u16) {
+        if slot >= MAX_PROJECTILES {
+            return;
+        }
+        let p = &mut self.slots[slot];
+        if p.active && p.owner == owner && p.generation == generation {
+            p.active = false;
+            p.time_left = 0;
+        }
+    }
+
+    /// Creates or patches a slot from a `27 Projectile` body
+    /// (`NewProjectileSetup` + the field assignment,
+    /// `MessageBuffer.cs:1729-1755`): a key match patches in place, anything
+    /// else (a fresh spawn, a recycled index) re-creates the slot with the
+    /// wire's owner and generation.
+    pub fn upsert_remote(&mut self, st: &crate::net::ProjectileState) {
+        let (owner, slot, generation) = crate::net::projectile_key_parts(st.key);
+        if slot >= MAX_PROJECTILES {
+            return;
+        }
+        let matches = self.slots[slot].active
+            && self.slots[slot].owner == owner
+            && self.slots[slot].generation == generation;
+        if !matches {
+            let mut p = Projectile {
+                active: true,
+                kind: st.kind.max(0) as u16,
+                owner,
+                generation,
+                ..Default::default()
+            };
+            p.pos = Vec2::new(st.x, st.y);
+            p.vel = Vec2::new(st.vx, st.vy);
+            p.damage = st.damage as i32;
+            p.knock_back = st.knock_back;
+            if let Some(v) = st.ai0 {
+                p.ai[0] = v;
+            }
+            if let Some(v) = st.ai1 {
+                p.ai[1] = v;
+            }
+            if let Some(v) = st.ai2 {
+                p.ai[2] = v;
+            }
+            self.slots[slot] = p;
+            let base = slot * 256;
+            self.local_immunity[base..base + 256].fill(0);
+            return;
+        }
+        let p = &mut self.slots[slot];
+        p.pos = Vec2::new(st.x, st.y);
+        p.vel = Vec2::new(st.vx, st.vy);
+        if st.kind >= 0 {
+            p.kind = st.kind as u16;
+        }
+        p.damage = st.damage as i32;
+        p.knock_back = st.knock_back;
+        if let Some(v) = st.ai0 {
+            p.ai[0] = v;
+        }
+        if let Some(v) = st.ai1 {
+            p.ai[1] = v;
+        }
+        if let Some(v) = st.ai2 {
+            p.ai[2] = v;
+        }
+    }
+
     pub fn set_crit(&mut self, slot: usize, crit: bool) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.crit = crit;
@@ -1655,7 +1772,9 @@ impl ProjectilePool {
         // shots (the box/flight/penetrate/extraUpdates) — the port routes
         // the data-carrying spawn, so the hostile kinds move like the
         // player's (the pre-base spawn path left them inert).
-        let slot = self.spawn_with_data(kind, pos.x, pos.y, vel.x, vel.y, damage, knock_back)?;
+        let slot = self.spawn_with_data_owned(
+            kind, 255, pos.x, pos.y, vel.x, vel.y, damage, knock_back, 0.0, 0.0,
+        )?;
         self.slots[slot].friendly = false;
         Some(slot)
     }
@@ -1767,7 +1886,26 @@ impl ProjectilePool {
         damage: i32,
         knock_back: f32,
     ) -> Option<usize> {
-        self.spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, 0.0, 0.0)
+        self.spawn_with_data_owned(kind, 0, x, y, vx, vy, damage, knock_back, 0.0, 0.0)
+    }
+
+    /// `spawn_with_data` with the wire owner threaded through — the port's
+    /// equivalent of `Projectile.NewProjectile`'s `owner` argument: the local
+    /// player's id for a client's own shots (the host relays them as `27`).
+    pub fn spawn_with_data_owned(
+        &mut self,
+        kind: u16,
+        owner: u8,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+        ai1: f32,
+    ) -> Option<usize> {
+        self.spawn_with_data_ai_owned(kind, owner, x, y, vx, vy, damage, knock_back, ai0, ai1)
     }
 
     /// `spawn_with_data` with the C# `NewProjectile`'s `ai0/ai1` arguments
@@ -1776,6 +1914,25 @@ impl ProjectilePool {
     pub fn spawn_with_data_ai(
         &mut self,
         kind: u16,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+        ai1: f32,
+    ) -> Option<usize> {
+        self.spawn_with_data_ai_owned(kind, 0, x, y, vx, vy, damage, knock_back, ai0, ai1)
+    }
+
+    /// `spawn_with_data_ai` with the wire owner; the slot's generation bumps
+    /// so a stale `27` for a recycled index cannot be mistaken for the new
+    /// projectile.
+    pub fn spawn_with_data_ai_owned(
+        &mut self,
+        kind: u16,
+        owner: u8,
         x: f32,
         y: f32,
         vx: f32,
@@ -1797,7 +1954,8 @@ impl ProjectilePool {
         self.slots[slot] = Projectile {
             active: true,
             kind,
-            owner: 0,
+            owner,
+            generation: self.slots[slot].generation.wrapping_add(1),
             pos: Vec2::new(x, y),
             rot: 0.0,
             vel: Vec2::new(vx, vy),
@@ -1840,10 +1998,21 @@ impl ProjectilePool {
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
         rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+        hostile_local: bool,
     ) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
+                continue;
+            }
+            // `Projectile.Update`'s first line (`Projectile.cs:17210`): only
+            // the owner's machine simulates. A slot is locally simulated when
+            // its owner is this machine's player id, or — on the host /
+            // single-player — the server-owned hostile shots (owner 255).
+            let simulated =
+                self.slots[i].owner == local_owner || (self.slots[i].owner == 255 && hostile_local);
+            if !simulated {
                 continue;
             }
             // `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`):
@@ -2169,7 +2338,7 @@ impl ProjectilePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -2209,7 +2378,7 @@ mod tests {
             0.0,
         );
         assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
-        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
         // The friendly shuriken at the same spot never hurts the player.
@@ -2232,6 +2401,8 @@ mod tests {
             Some(&mut player2),
             YoyoInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
     }
@@ -2243,7 +2414,7 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
     }
 
     #[test]
@@ -2294,7 +2465,7 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             !pool.slots()[slot].active,
             "penetrate 1 → dead after the hit"
@@ -2438,7 +2609,7 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -2460,7 +2631,7 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -2480,7 +2651,7 @@ mod falling_tests {
     // build the world, then pass it mutably.
 
     fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
-        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
         let i = w.index(x, y);
         w.tiles[i] = Tile {
             kind: 1,
@@ -2495,7 +2666,7 @@ mod falling_tests {
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -2515,7 +2686,7 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -2532,7 +2703,7 @@ mod falling_tests {
         let mut pool = ProjectilePool::new();
         let mut w = world();
         put_solid(&mut w, 10, 24);
-        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
         for y in [21, 22] {
             let i = w.index(10, y);
             w.tiles[i] = Tile {
@@ -2558,7 +2729,7 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -2568,7 +2739,7 @@ mod falling_tests {
 #[cfg(test)]
 mod arrow_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -2646,13 +2817,13 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(
             pool.slots[0].vel.y, 0.0,
             "no gravity for the first 14 ticks"
         );
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -2676,7 +2847,7 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2698,7 +2869,7 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2718,10 +2889,10 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the 6th tick adds 0.2"
@@ -2732,7 +2903,7 @@ mod arrow_tests {
 #[cfg(test)]
 mod boomerang_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -2784,10 +2955,10 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -2814,7 +2985,7 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -2852,7 +3023,7 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -2878,7 +3049,7 @@ mod boomerang_tests {
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2891,7 +3062,7 @@ mod boomerang_tests {
 #[cfg(test)]
 mod bomb_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -2939,7 +3110,7 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
@@ -2970,7 +3141,7 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots[0].active);
         assert!(
@@ -3010,7 +3181,7 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -3029,14 +3200,14 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
             "no gravity before tick 5"
         );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -3129,7 +3300,7 @@ mod bomb_tests {
             .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
             .expect("the Terrarian data row exists");
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(pool.slots[wood].active, "the slot survives its first update");
         assert!(pool.slots[terrarian].active);
         assert_eq!(
@@ -3209,6 +3380,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((420.0, 320.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
         }
         let p = &pool.slots[0];
@@ -3236,6 +3409,8 @@ mod yoyo_tests {
             None,
             inputs(Some((620.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(
             (pool.slots[0].ai[0], pool.slots[0].ai[1]),
@@ -3261,6 +3436,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((380.0, 320.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
         }
         assert_eq!(pool.slots[0].local_ai[0], 180.0);
@@ -3272,6 +3449,8 @@ mod yoyo_tests {
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(pool.slots[0].local_ai[0], 181.0);
         assert_eq!(pool.slots[0].ai[0], -1.0, "returned at tick 181");
@@ -3291,6 +3470,8 @@ mod yoyo_tests {
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         pool.update(
             &mut w,
@@ -3299,6 +3480,8 @@ mod yoyo_tests {
             None,
             inputs(Some((380.0, 320.0)), false),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(pool.slots[0].ai[0], -1.0);
         assert_eq!(pool.slots[0].ai[1], 0.0);
@@ -3322,6 +3505,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((450.0, 320.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
         }
         // The owner retreats left: the yoyo sits ~130 px right of the owner's
@@ -3333,6 +3518,8 @@ mod yoyo_tests {
             None,
             inputs(Some((450.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(pool.slots[0].ai[0], -1.0, "the forced return");
     }
@@ -3354,6 +3541,8 @@ mod yoyo_tests {
             None,
             inputs(Some((320.0, 320.0)), false),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "released");
         assert!(
@@ -3378,6 +3567,8 @@ mod yoyo_tests {
             None,
             inputs(Some((2500.0, 320.0)), false),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert!(!pool.slots[slot].active, "the 2500 px stray dies");
     }
@@ -3397,6 +3588,8 @@ mod yoyo_tests {
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert_eq!(pool.slots[0].time_left, 5, "re-pinned to 6 then decremented");
         pool.update(
@@ -3410,6 +3603,8 @@ mod yoyo_tests {
                 player_dead: true,
             },
         &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
         );
         assert!(!pool.slots[0].active, "the owner's death kills the string");
     }
@@ -3429,6 +3624,8 @@ mod yoyo_tests {
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
+            0,
+            true,
         );
         assert!(!pool.slots[slot].active, "the NaN kill");
     }
@@ -3456,6 +3653,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((600.0, 448.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
             assert!(pool.slots[slot].active, "the yoyo survives the wall");
         }
@@ -3485,6 +3684,8 @@ mod yoyo_tests {
                 None,
                 YoyoInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
             );
         }
         let p = &pool.slots[slot];
@@ -3513,6 +3714,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((380.0, 320.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
         }
         assert!(
@@ -3533,6 +3736,8 @@ mod yoyo_tests {
                 None,
                 YoyoInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
             );
         }
         assert_eq!(pool.slots[slot].direction, -1, "the nudge points left");
@@ -3562,7 +3767,7 @@ mod yoyo_tests {
         // its expiry sweeps the pair into the return, where the owner's catch
         // collects them — the assertions below read the final state.
         for _ in 0..200 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed());
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
         }
         assert!(
             pool.slots[second].local_ai[0] > pool.slots[first].local_ai[0],
@@ -3602,7 +3807,7 @@ mod yoyo_tests {
         let mut max_first = 0.0f32;
         let mut max_second = 0.0f32;
         for _ in 0..30 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed());
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
             max_first = max_first.max(pool.slots[first].vel.length());
             max_second = max_second.max(pool.slots[second].vel.length());
         }
@@ -3627,6 +3832,8 @@ mod yoyo_tests {
                 None,
                 inputs(Some((120.0, 320.0)), true),
                 &mut fast_seed(),
+                0,
+                true,
             );
         }
         assert_eq!(pool.slots[0].direction, -1, "the pose's direction");
@@ -3659,7 +3866,7 @@ mod yoyo_tests {
         let aim = inputs(Some((400.0, 312.0)), true);
         let mut beam = None;
         for _ in 0..6 {
-            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed());
+            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed(), 0, true);
             beam = beam.or_else(|| {
                 (0..MAX_PROJECTILES).find(|&i| {
                     pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM
@@ -3682,7 +3889,7 @@ mod yoyo_tests {
         // not recycled by a later spawn.
         pool.slots[terrarian].active = false;
         for _ in 0..59 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
         }
         assert!(!pool.slots[beam].active, "the beam fades out and dies");
         assert_eq!(pool.slots[beam].alpha, 255, "the full fade");
@@ -3698,7 +3905,7 @@ mod yoyo_tests {
                 .spawn_with_data_ai(WOOD_YOYO, 432.0, 320.0, 0.0, 0.0, 9, 2.5, -2.0, 0.0)
                 .unwrap();
             let mut w = world();
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed());
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
             pool.slots[slot].penetrate
         };
         let a = roll_once();

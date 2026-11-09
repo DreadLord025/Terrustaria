@@ -58,28 +58,42 @@ Every screen sets three constants, reproduced in `menu::Page::layout`:
 
 ## Settings (`settings.rs`)
 
-`Main.SaveSettings` writes `config.json` in the game root; this port writes the same keys
-to `Documents/My Games/Terrustaria/config.json` and reads them back on start (unknown keys
-ignored, missing keys keep their default):
+`Main.SaveSettings` writes `config.json` in the game root; this port writes to
+`Documents/My Games/Terrustaria/config.json` and reads it back **once** at start
+(`main.rs` loads it and threads it into `App::new` and `Menu::new`; the menu holds
+a working clone and the close copies the edited values back into `App.settings`).
+Unknown keys are ignored and missing keys keep their default, which is the vanilla
+`static Main()` set (volumes `1f`, `Event Progress Bar: On`, `Pause When Unfocused:
+On`, `Frame Skip Subtle`, …), so a fresh install shows the original's out-of-box
+labels. The writer uses the **vanilla key names** (so a vanilla `config.json` is
+readable) and `parse` additionally accepts this port's older spellings
+(`PickupText`, `MusicVolume`, `HidePassword`, …) as aliases:
 
-`AutoSave`, `AutoPause`, `MapEnabled`, `HidePassword`, `SettingPlayWhenUnfocused`,
-`PickupText`, `InvasionProgressMode`, `PlacementPreview`, `HighlightNewItems`,
-`MouseShowBuildingGrid`, `GamepadInstructions`, `BackgroundParallax`,
-`FrameSkipMode`, `LightingMode`, `Quality`, `BackgroundEnabled`, `BloodAndGore`,
-`MinersWobble`, `TilesSwayInWind`, `UseStormEffect`, `UseHeatDistortion`,
-`ForegroundSunlightEffects`, `WaveQuality`, `FlashyEffectsWorld`, `UseScreenShake`,
-`Zoom`, `MusicVolume`, `SoundVolume`, `AmbientVolume`, `MapScale`, `MouseColor`
-(R/G/B dict), `MouseBorderColor` (R/G/B/A dict), `SmartCursorToggle`,
-`UseSmartAxeAfterSmartPickaxe`, `UseSmartCursorForCommonBlocks`, `LockOnPriority`,
+`AutoSave`, `AutoPause`, `Language`, `MapEnabled`, `HidePasswords`,
+`PlayWhenUnfocused`, `ShowItemText`, `InvasionBarMode`, `PlacementPreview`,
+`HighlightNewItems`, `MouseShowBuildingGrid`,
+`GamepadDisableInstructionsDisplay`, `BackgroundParallax`, `FrameSkipMode`,
+`LightingMode` (persisted as the C# ordinal: `White 0, Retro 1, Trippy 2, Color 3`),
+`GraphicsQuality`, `BackgroundEnabled`, `GoreVisualsAllowed`,
+`SettingsEnabled_MinersWobble`, `SettingsEnabled_TilesSwayInWind`,
+`UseStormEffect`, `UseHeatDistortion`, `ForegroundSunlightEffects`, `WaveQuality`,
+`FlashyEffectsWorld`, `UseScreenShake`, `Zoom`, `VolumeMusic`, `VolumeSound`,
+`VolumeAmbient`, `MapScale`, `MouseColor` (R/G/B dict), `MouseBorderColor`
+(R/G/B/A dict), `SmartCursorToggle`, `UseSmartAxeAfterSmartPickaxe`,
+`UseSmartCursorForCommonBlocks`, `CraftFromNearbyChests`, `LockOnPriority`,
 `ReverseUpDownForArmorSetBonuses`, `DisableLeftShiftTrashCan`, `DisableQuickTrash`,
 `PlayerResourcesSet`, `PortraitPreference`, `ShowBossBarHealthText`,
 `FlashyEffectsInterface`, `MinimapFrame`.
 
 The renderer reads `LightingMode` (applied when the menu closes, through
 `LightMode::ALL`), `BackgroundEnabled` (the parallax layer gate in `draw_sky`) and
-`MapEnabled` (minimap/full map). The rest is stored and shown in the labels, ready for the
-systems that will consume it (volumes for `audio`, `PlacementPreview` for the outline,
-`FrameSkipMode` for the loop).
+`MapEnabled` (minimap/full map); the volumes feed `audio`/`sound` (including
+M1.4-BG-20's ambience chain), `ShowBossBarHealthText` gates the boss bar's
+`current / max` numbers and `MapScale` scales the minimap panel. The rest is stored
+and shown in the labels, ready for the systems that will consume it — the flags
+whose system the port does not have yet (`blood` without a gore system, the
+smart-cursor flags without the outline) stay stored-only and are recorded in
+`docs/ANALYSIS.md` → "Menu sub-screens (P5)".
 
 ## Menu sub-screens (P5)
 

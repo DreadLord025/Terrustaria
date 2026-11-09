@@ -204,11 +204,8 @@ impl tr_core::loot::DropRng for RainLootRng<'_> {
 
 impl Rain {
     pub fn new(seed: u64) -> Self {
-        let forced = std::env::var("TR_RAIN")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            .map(|v| v.clamp(0.0, 1.75));
-        let start_calm = std::env::var_os("TR_NO_WEATHER").is_some();
+        let forced = crate::env::rain_forced().map(|v| v.clamp(0.0, 1.75));
+        let start_calm = crate::env::no_weather();
         Self::with_forced(seed, forced, start_calm)
     }
 

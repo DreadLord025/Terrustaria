@@ -58,7 +58,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // yoyo rolls (`Projectile.cs:67746`'s jitter, `:67886`'s beam rolls,
     // `:68041`'s penetrate roll) draw from the app's item stream — the
     // port's `Main.rand` analogue, the same stream the throw's crit roll
-    // uses.
+    // uses. Only this machine's projectiles simulate here — a peer's shots
+    // ride the `27` wire (`Projectile.cs:17210`'s owner gate), and the
+    // server-owned hostile shots (owner 255) only on the host / single-player
+    // (`spawn_hostile`).
+    let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let mut rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
@@ -68,6 +72,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.player.as_mut(),
             inputs,
             &mut rng,
+            local_owner,
+            hostile_local,
         );
     });
     app.projectile_step.cap_backlog();

@@ -77,6 +77,15 @@ mod tests {
     /// `liquids` (its own `pass_rng("Corruption")` stream), and the
     /// frame-important 26/31 boot statics landed — every world on every
     /// seed changes by design (the ANALYSIS section lands in Phase 7).
+    /// Re-pinned for M5-BIOME-2: the three micro-biome passes land — the
+    /// faithful `GlowingMushroomPatches` (`ShroomPatch` walk + the
+    /// `SpreadGrass(59, 70)` sweep + the tidy sweep) on its own
+    /// `pass_rng("GlowingMushroomPatches")` stream, the marble slab caves
+    /// (`MarbleBiome` port) on `pass_rng("Marble")` and the granite pressure
+    /// simulation (`GraniteBiome` port) on `pass_rng("Granite")`, and the
+    /// granite step moves after the cave carve (the vanilla order — its
+    /// CanPlace gate needs the pre-carved caves). Every world on every seed
+    /// changes by design (the ANALYSIS section lands with the branch).
     /// `SEED42_512` is UNCHANGED by the phase-4 move: on a 512-wide world
     /// the evil pass runs nothing (the sub-vanilla width gate skips it —
     /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
@@ -141,8 +150,14 @@ mod tests {
     /// the painting) plus the `LihzahrdAltar` re-write (`:21943`) — every
     /// world on every seed changes by design. These are the final M5-TEMPLE
     /// pins.
-    const SEED42_512: u32 = 1248943602;
-    const DEFAULT_WORLD: u32 = 3359703751;
+    /// Re-pinned for M5-STRUCT-5 over the M5-TEMPLE pins: the cave decorations
+    /// land — the spider caves (`Spread.Spider`'s wall 62 over the cave
+    /// pockets, with the pots/piles/stalactite decor), the gem caves (the gem
+    /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
+    /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
+    /// pass — every world on every seed changes by design.
+    const SEED42_512: u32 = 1555134907;
+    const DEFAULT_WORLD: u32 = 2136037719;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

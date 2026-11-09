@@ -1255,8 +1255,7 @@ pub(crate) fn draw_sky(
     // the rock bands, the animated magma and the underworld black box below it. (A
     // per-column gradient used to hang a dark "wall" underneath every player-placed
     // row of blocks.)
-    static BG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !*BG.get_or_init(|| std::env::var_os("TR_NO_BG").is_some()) {
+    if !crate::env::no_bg() {
         draw_background(
             r,
             camera,

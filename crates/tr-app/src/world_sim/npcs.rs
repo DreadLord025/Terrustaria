@@ -1212,6 +1212,76 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
+    // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
+    // PRE-pass: each 397/396/400/401 finds its core, mirrors the core's
+    // centre into `carrier_x/y`, and drops the link (so the machine
+    // self-kills) when the core died. The leech blob's anchor is the
+    // head (`AI_082`'s `:36630-36640`) — its `ai[0]` holds the head's
+    // index + 1 in the vanilla; the port links by kind instead.
+    for i in 0..app.npcs.len() {
+        let kind = app.npcs[i].kind;
+        if kind != NpcKind::MoonLordHand
+            && kind != NpcKind::MoonLordHead
+            && kind != NpcKind::MoonLordFreeEye
+            && kind != NpcKind::MoonLordLeechBlob
+        {
+            continue;
+        }
+        let want = if kind == NpcKind::MoonLordLeechBlob {
+            NpcKind::MoonLordHead
+        } else {
+            NpcKind::MoonLordCore
+        };
+        let core = app.npcs.iter().position(|m| m.kind == want && m.hp > 0);
+        match core {
+            Some(ci) => {
+                let (ccx, ccy) = app.npcs[ci].center();
+                app.npcs[i].carrier_x = ccx;
+                app.npcs[i].carrier_y = ccy;
+                app.npcs[i].carrier_timer = 1.0;
+                app.npcs[i].moon_core_alive = true;
+            }
+            None => {
+                app.npcs[i].moon_core_alive = false;
+                app.npcs[i].carrier_timer = 0.0;
+                app.npcs[i].hp = 0;
+            }
+        }
+    }
+    // The core's part bookkeeping (`AI_077`'s `:41229-41232` +
+    // `:41251-41291`): the three stored slots mirror the live parts (the
+    // hands split by their `ai[2]` slot), so the core's loss check — a
+    // missing part opens the death ride — reads them.
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind != NpcKind::MoonLordCore {
+            continue;
+        }
+        let mut slots = [-1i32, -1, -1];
+        for (slot, want) in [
+            (0usize, NpcKind::MoonLordHand),
+            (1usize, NpcKind::MoonLordHand),
+            (2usize, NpcKind::MoonLordHead),
+        ] {
+            for j in 0..app.npcs.len() {
+                if app.npcs[j].kind != want || app.npcs[j].hp <= 0 {
+                    continue;
+                }
+                let hand_slot = app.npcs[j].ai[2] as i32;
+                let fits = if want == NpcKind::MoonLordHand {
+                    hand_slot == slot as i32
+                } else {
+                    // The head has no `ai[2]` slot of its own.
+                    hand_slot == 0
+                };
+                if fits && slots[slot] < 0 {
+                    slots[slot] = j as i32;
+                }
+            }
+        }
+        app.npcs[i].moon_parts = slots;
+    }
+    // The Scutlix rider's carrier write-through
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
@@ -1243,6 +1313,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as i32;
             app.npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = app.npcs[i].sprite_dir;
+            let ship_rot = app.npcs[i].rotation;
+            for m in app.npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
@@ -1270,10 +1351,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_x = mcx;
                 app.npcs[i].carrier_y = mcy;
                 // The saucer family's extra payload: the core's mirrored
-                // timer + phase and the crew counts within the reach.
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
                 if link_kind == NpcKind::MartianSaucerCore {
                     app.npcs[i].carrier_timer = app.npcs[j].ai[3];
                     app.npcs[i].carrier_phase = app.npcs[j].ai[0];
+                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
+                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
                     let turrets = app
                         .npcs
                         .iter()
@@ -1604,6 +1690,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.world.downed_tower_solar = true;
                 app.world.tower_active_solar = false;
             }
+            // `DoDeathEvents`'s 398 row (`NPC.cs:79397-79404`): the core's
+            // death clears the lunar apocalypse (the vanilla's
+            // `SetEventFlagCleared(ref downedMoonlord, 10)`).
+            NpcKind::MoonLordCore => {
+                app.world.downed_moon_lord = true;
+            }
             NpcKind::NebulaTower => {
                 app.world.downed_tower_nebula = true;
                 app.world.tower_active_nebula = false;
@@ -1767,6 +1859,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
+    // tick sets `wants_limbs` and the sim resolves it here — the four
+    // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
+    // -1, the saw +1, the vice -1 with `ai[3] = 150`, the laser +1 with
+    // `ai[3] = 150`). The v1 set the flag but never drained it, so no
+    // limb ever existed outside the direct-call test.
+    let mut limbs = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::SkeletronPrime || !n.wants_limbs {
+            continue;
+        }
+        n.wants_limbs = false;
+        let (hw, hh) = n.size();
+        let (ccx, ccy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        let seats: [(NpcKind, i32, bool); 4] = [
+            (NpcKind::PrimeCannon, -1, false),
+            (NpcKind::PrimeSaw, 1, false),
+            (NpcKind::PrimeVice, -1, true),
+            (NpcKind::PrimeLaser, 1, true),
+        ];
+        for (kind, side, timed) in seats {
+            let (w, h) = kind.size();
+            let mut limb = Npc::new(kind, ccx - w * 0.5, ccy - h * 0.5, side, 0.0);
+            limb.ai[0] = side as f32;
+            if timed {
+                limb.ai[3] = 150.0;
+            }
+            limb.hp = limb.max_hp;
+            limbs.push(limb);
+        }
+    }
+    app.npcs.append(&mut limbs);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -2124,6 +2248,89 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     for crew in spawned_crew {
         app.npcs.extend(crew);
+    }
+    // The Moon Lord's spawn-in (`AI_077`'s `:41209-41232`): the two hands
+    // (`ai[2]` 0/1) at the core's centre + seat*800 - 400 / -100 and the
+    // head 400 px above, all carrying the core's index in `ai[3]`.
+    for i in 0..app.npcs.len() {
+        if !app.npcs[i].wants_moon_parts {
+            continue;
+        }
+        app.npcs[i].wants_moon_parts = false;
+        let (cw, ch) = app.npcs[i].size();
+        let ccx = app.npcs[i].x + cw * 0.5;
+        let ccy = app.npcs[i].y + ch * 0.5;
+        let core_i = i as i32;
+        let mut parts: Vec<Npc> = Vec::new();
+        for seat in 0..2 {
+            let mut hand = Npc::new(
+                NpcKind::MoonLordHand,
+                ccx + (seat as f32) * 800.0 - 400.0,
+                ccy - 100.0,
+                seat as i32,
+                0.0,
+            );
+            hand.hp = hand.max_hp;
+            hand.ai[2] = seat as f32;
+            hand.ai[3] = core_i as f32;
+            hand.carrier_x = ccx;
+            hand.carrier_y = ccy;
+            hand.carrier_timer = 1.0;
+            hand.moon_core_alive = true;
+            parts.push(hand);
+        }
+        let mut head = Npc::new(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0, 0.0);
+        head.hp = head.max_hp;
+        head.ai[3] = core_i as f32;
+        head.carrier_x = ccx;
+        head.carrier_y = ccy;
+        head.carrier_timer = 1.0;
+        head.moon_core_alive = true;
+        parts.push(head);
+        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`).
+        let base = app.npcs.len() as i32;
+        app.npcs[i].moon_parts = [base, base + 1, base + 2];
+        app.npcs.extend(parts);
+        break;
+    }
+    // The Moon Leech clot request (`AI_079`'s `:42303-42318`): a leeched
+    // player spawns the 401 clot at its centre, with the head's index in
+    // `ai[0]` (+1, the vanilla's sign convention) and the leech key in
+    // `ai[1]`.
+    for i in 0..app.npcs.len() {
+        let (kind, ccx, ccy) = {
+            let n = &app.npcs[i];
+            (n.kind, n.center().0, n.center().1)
+        };
+        let _ = (ccx, ccy);
+        if kind != NpcKind::MoonLordHead || !app.npcs[i].wants_moon_leech {
+            continue;
+        }
+        app.npcs[i].wants_moon_leech = false;
+        let head_i = i as i32;
+        // The head's own leech projectiles ride the projectile pool; the
+        // port spawns the clot for every leeched player the sim knows of.
+        let mut clots: Vec<Npc> = Vec::new();
+        if let Some(player) = app.player.as_ref() {
+            let buffed = player.buffs.find_buff_index(145).is_some();
+            if buffed {
+                let mut clot = Npc::new(
+                    NpcKind::MoonLordLeechBlob,
+                    player.center().0,
+                    player.center().1,
+                    1,
+                    0.0,
+                );
+                clot.hp = clot.max_hp;
+                clot.ai[0] = head_i as f32 + 1.0;
+                clot.carrier_x = ccx;
+                clot.carrier_y = ccy;
+                clot.carrier_timer = 1.0;
+                clot.moon_core_alive = true;
+                clots.push(clot);
+            }
+        }
+        app.npcs.extend(clots);
     }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
     // the payload's pirate spawns with the drop velocity (the vanilla's
@@ -4195,6 +4402,90 @@ mod saucer_tests {
         );
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
     }
+
+    #[test]
+    fn the_mounts_inherit_the_cores_rotation_and_sprite_direction() {
+        // `AI`'s aiStyle-75/93 mount blocks (`NPC.cs:35625-35651` /
+        // `:35669-35676` / `:38718-38726`): every mount copies its
+        // carrier's `rotation` (the whole saucer family tilts as one body)
+        // and `spriteDirection` — the cannon takes its seat's side
+        // (`num1056`) instead. The port's pre-pass writes the pair through
+        // `carrier_rot`/`carrier_facing` and the machine lands them.
+        let (mut app, mut player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        core.rotation = 0.31;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let _ = &mut player;
+        for n in app.npcs.iter().filter(|n| n.kind.is_martian()) {
+            if n.kind == NpcKind::MartianSaucerCore {
+                continue;
+            }
+            assert!(
+                (n.rotation - 0.31).abs() < 0.001,
+                "{:?} inherits the core's rotation: {}",
+                n.kind,
+                n.rotation
+            );
+        }
+        // The cannon flips with its seat; the shell and the turret take
+        // the core's own direction (its `spriteDirection` default -1).
+        let seat_dir = |kind: NpcKind, seat: i32| -> i32 {
+            app.npcs
+                .iter()
+                .find(|n| n.kind == kind && n.ai[1] == seat as f32)
+                .unwrap()
+                .sprite_dir
+        };
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 1), 1, "seat 1 faces right");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 0), -1, "seat 0 faces left");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerTurret, 0), -1, "the turret takes the core's");
+        assert_eq!(seat_dir(NpcKind::MartianSaucer, 0), -1, "the shell takes the core's");
+    }
+
+    #[test]
+    fn the_turret_aims_at_the_player_outside_the_burst() {
+        // `AI`'s 393 arm (`NPC.cs:35873-35880`): outside the 280-420 burst
+        // the vanilla re-derives `ai[2]` from the player vector's rotation
+        // with the Y clamped at 0 — the value `FindFrame` case 393's 9 aim
+        // rows decode.
+        let (mut app, mut player) = app_with_player();
+        player.x += 40.0 * TILE_PX; // the player to the RIGHT of the saucer
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let turret = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerTurret)
+            .unwrap();
+        // The player is right (and likely below): the aim angle points
+        // into the +X half, never upward (the Y clamp).
+        assert!(
+            turret.ai[2].abs() <= std::f32::consts::FRAC_PI_2,
+            "the aim never points upward: {}",
+            turret.ai[2]
+        );
+        assert!(turret.ai[2].cos() > 0.0, "aiming right: {}", turret.ai[2]);
+        // `FindFrame` case 393's cascade decodes the angle into the 6/8
+        // right-side rows (a shallow aim reads 6, a near-horizontal 8) —
+        // either way the sheet now aims at the player instead of pinning
+        // row 0 (the v1 left `ai[2]` unwritten).
+        let row = if turret.ai[2].cos() > turret.ai[2].sin() * 2.0 {
+            8
+        } else {
+            6
+        };
+        assert!(row == 6 || row == 8, "the right-side aim rows are 6/8: {row}");
+        assert!(
+            (3..=8).contains(&row),
+            "the aim never lands on the upward rows 1/2/7: {row}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -4478,6 +4769,79 @@ mod dutchman_tests {
                     | NpcKind::PirateDeckhand
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod prime_limb_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_prime_head_spawns_its_four_limbs_with_the_vanilla_seats() {
+        // `AI_032`'s init (`NPC.cs:27635-27661`): the head's first tick
+        // sets `wants_limbs` and the sim resolves it — the four limbs at
+        // the head's centre with the seat signs (the cannon -1, the saw
+        // +1, the vice -1 and the laser +1, the last two with
+        // `ai[3] = 150`). The v1 set the flag but never drained it.
+        let (mut app, mut player) = app_with_player();
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The head rides inside the 300x200 test world, 20 tiles above the
+        // surface (an out-of-world spawn would hit the head's own
+        // off-world clamp on the first tick).
+        let mut head = Npc::new(NpcKind::SkeletronPrime, 160.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let kinds: Vec<(NpcKind, i32, f32, i32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind.is_prime_limb())
+            .map(|n| (n.kind, n.ai[0] as i32, n.ai[3], n.hp))
+            .collect();
+        assert_eq!(kinds.len(), 4, "the four limbs spawn: {kinds:?}");
+        for (kind, seat, ai3, hp) in kinds {
+            assert!(hp > 0, "{kind:?} spawns alive");
+            match kind {
+                NpcKind::PrimeCannon => assert_eq!(seat, -1),
+                NpcKind::PrimeSaw => assert_eq!(seat, 1),
+                NpcKind::PrimeVice => assert_eq!((seat, ai3), (-1, 150.0)),
+                NpcKind::PrimeLaser => assert_eq!((seat, ai3), (1, 150.0)),
+                _ => unreachable!(),
+            }
+        }
+        // The anchor write-through feeds the tether: the limbs ride it.
+        assert!(app.world.prime_present, "the head anchors the world's Prime fields");
+        assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
     }
 }
 
@@ -5453,6 +5817,307 @@ mod tower_shield_tests {
 }
 
 #[cfg(test)]
+mod moon_lord_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    /// The link fields the sim's pre-pass owns — a part driven directly in
+    /// a test sets them by hand.
+    fn linked(kind: NpcKind, x: f32, y: f32, slot: i32) -> Npc {
+        let mut n = Npc::new(kind, x, y, slot, 0.0);
+        n.hp = n.max_hp;
+        n.carrier_x = 150.0 * TILE_PX;
+        n.carrier_y = 100.0 * TILE_PX;
+        n.carrier_timer = 1.0;
+        n.moon_core_alive = true;
+        n
+    }
+
+    #[test]
+    fn the_moon_lord_family_round_trips_its_rows() {
+        // The five parts (`NPC.cs`'s cases 396/397/398/400/401): the port
+        // ids 122-126, the sizes, the hp and the defenses of the vanilla
+        // rows.
+        for (kind, id, w, h, hp, def) in [
+            (NpcKind::MoonLordHead, 122u16, 38.0, 56.0, 45000, 50),
+            (NpcKind::MoonLordHand, 123, 46.0, 66.0, 25000, 40),
+            (NpcKind::MoonLordCore, 124, 46.0, 66.0, 50000, 70),
+            (NpcKind::MoonLordFreeEye, 125, 60.0, 60.0, 100, 0),
+            (NpcKind::MoonLordLeechBlob, 126, 30.0, 30.0, 400, 0),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), 0.0);
+        }
+        // The core alone carries a value (`NPC.cs:14130`: 1 platinum).
+        assert_eq!(Npc::new(NpcKind::MoonLordCore, 0.0, 0.0, 1, 0.0).value(), 1_000_000.0);
+        assert_eq!(Npc::new(NpcKind::MoonLordHead, 0.0, 0.0, 1, 0.0).value(), 0.0);
+    }
+
+    #[test]
+    fn the_core_spawns_its_parts_on_the_60th_tick() {
+        // `AI_077`'s spawn-in (`NPC.cs:41193-41235`): the 60-tick windup
+        // opens the hands (`ai[2]` 0/1) + the head request; the sim
+        // resolves it into the three NPCs at the core's offsets.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand)
+            .count();
+        let heads = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHead)
+            .count();
+        assert_eq!(hands, 2, "the two hands");
+        assert_eq!(heads, 1, "the head");
+        let slots: Vec<i32> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordCore)
+            .flat_map(|n| n.moon_parts)
+            .collect();
+        assert_eq!(slots.len(), 3, "the core's three slots");
+        // The hands' slots split by `ai[2]` and both stay alive (their
+        // pre-pass link found the core).
+        let alive_hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand && n.hp > 0)
+            .count();
+        assert_eq!(alive_hands, 2, "the hands keep their link");
+    }
+
+    #[test]
+    fn the_hands_hover_their_side_slots_and_fire_the_eyes() {
+        // `AI_078`'s sequencer (`NPC.cs:41600-41626`): the row's first
+        // attack is the hover, and the Phantasmal Eyes' 452 (30) fires on
+        // the 4-tick cadence inside the eyelid window.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        hand.ai[2] = 0.0;
+        // The sequencer picks the attack from the table, so the timer
+        // lands inside the Phantasmal Eyes attack on a shot tick.
+        hand.ai[1] = 101.0;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..16 {
+            hand.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !hand.wants_hostile_shot.is_empty() {
+                saw = hand.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the 452 fires on its cadence");
+        let _ = player.center();
+    }
+
+    #[test]
+    fn the_hands_left_slot_sits_left_of_the_core() {
+        // `:41642`'s anchor: the slot-0 hand's hover slot is the core's
+        // centre + (−350, −100) — the port's hand pulls toward it.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        hand.ai[2] = 0.0;
+        hand.ai[0] = 0.0; // the hover
+        let before = hand.center().0;
+        let mut rng = 7u64;
+        for _ in 0..60 {
+            hand.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let after = hand.center().0;
+        assert!(
+            after < 150.0 * TILE_PX && after > before,
+            "the left hand holds its left slot: {} -> {}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn the_head_sits_on_the_400px_slot_and_deathrays() {
+        // `AI_079`'s sequencer (`NPC.cs:42104-42133`): the head rides the
+        // fixed 400-px slot over the core, and its phantom deathray (455,
+        // 75) fires on the 180th tick of the attack.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let (ccx, ccy) = (150.0 * TILE_PX, 100.0 * TILE_PX);
+        let mut head = linked(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0);
+        head.ai[0] = 1.0; // the phantom deathray attack
+        // The head row's deathray slot starts at the 825th elapsed tick;
+        // its 180th in-attack tick (the shot) is the timer's 1005th.
+        head.ai[1] = 1004.0;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..4 {
+            head.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = head.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the deathray fires");
+        assert_eq!(s.0, 455, "the PhantasmalDeathray");
+        assert_eq!(s.5, 75, "the classic damage constant");
+        let (w, h) = head.size();
+        assert!(
+            (head.y + h * 0.5 - (ccy - 400.0)).abs() < 1.0,
+            "the head's fixed slot"
+        );
+    }
+
+    #[test]
+    fn the_cores_drama_ends_in_the_downed_flag() {
+        // `AI_077`'s crash drama (`NPC.cs:41307-41445`): the 600-tick
+        // ride ends with `life = 0`, and the death pass raises
+        // `downed_moon_lord` (`NPC.cs:79397-79404`).
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        let mut rng = 7u64;
+        let mut smoke = 0usize;
+        let mut dead = false;
+        for _ in 0..620 {
+            core.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            smoke += core.wants_hostile_shot.len();
+            core.wants_hostile_shot.clear();
+            if core.hp <= 0 {
+                dead = true;
+                break;
+            }
+        }
+        assert!(dead, "the drama ends the core");
+        assert!(smoke > 0, "the drama's 622 smoke: {}", smoke);
+
+        // The flag leg through the sim.
+        let (mut app, _p) = app_player();
+        let mut c = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        c.hp = 0;
+        app.npcs.push(c);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord, "the downed flag");
+    }
+
+    #[test]
+    fn the_leeched_player_grows_a_clot_that_drains() {
+        // `AI_079`'s leech summon + `AI_082`'s drain (`NPC.cs:42303-42318`
+        // / `:36658-36690`): a leeched player grows the 401 clot at its
+        // centre, and the clot's 90-tick glide ends in the drain request.
+        let (mut app, mut player) = app_player();
+        // The head needs its core alive for the pre-pass link (the vanilla
+        // parts self-kill without one).
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        player.buffs.add_buff(145, 840);
+        app.player = Some(player.clone());
+        app.npcs.push(linked(
+            NpcKind::MoonLordHead,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX - 400.0,
+            0,
+        ));
+        app.npcs[1].wants_moon_leech = true;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let clots = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordLeechBlob)
+            .count();
+        assert_eq!(clots, 1, "the leeched player grows the clot");
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordLeechBlob)
+            .expect("the clot");
+        let head_i = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordHead)
+            .expect("the head") as f32;
+        assert_eq!(app.npcs[idx].ai[0], head_i + 1.0, "the head's index + 1");
+        let world = fixture();
+        let mut drained = false;
+        for _ in 0..91 {
+            app.npcs[idx].update_rng(&world, &mut player, 1.0 / 60.0, &mut 7u64);
+            if app.npcs[idx].wants_moon_leech {
+                drained = true;
+                break;
+            }
+        }
+        assert!(drained, "the clot requests its drain");
+    }
+
+    #[test]
+    fn the_true_eye_drifts_and_fires_the_ring() {
+        // `AI_081`'s sequencer (`NPC.cs:42476-42493`): the ring attack (3)
+        // throws the 452 (35) volley every 10 ticks inside the 150-tick
+        // window.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let (ccx, ccy) = (150.0 * TILE_PX, 100.0 * TILE_PX);
+        let mut eye = linked(NpcKind::MoonLordFreeEye, ccx - 300.0, ccy - 200.0, 1);
+        // The sequencer picks the attack from the table, so the timer
+        // lands inside the ring attack (elapsed 384) on its first
+        // volley tick (45).
+        eye.ai[1] = 428.0;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..4 {
+            eye.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = eye.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the eye's volley fires");
+        assert_eq!(s.0, 452, "the PhantasmalEye");
+        assert_eq!(s.5, 35, "the eye's classic damage constant");
+    }
+}#[cfg(test)]
 mod pillar_mob_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -5550,3 +6215,251 @@ mod pillar_mob_tests {
     }
 }
 
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_shards_round_trip_their_stats() {
+        // The five shards (`NPC.cs`'s cases 406/407/423/425/429) round-trip
+        // their ids and carry their rows.
+        for (kind, id, w, h, hp, def, kb) in [
+            (NpcKind::StardustCellBig, 121u16, 44.0, 44.0, 300, 50, 0.3),
+            (NpcKind::StardustCellSmall, 116, 22.0, 22.0, 300, 0, 0.4),
+            (NpcKind::StardustJellyfishBig, 117, 40.0, 60.0, 1500, 38, 0.03),
+            (NpcKind::NebulaBeast, 118, 50.0, 44.0, 850, 46, 0.2),
+            (NpcKind::VortexRifleman, 119, 30.0, 56.0, 800, 40, 0.4),
+            (NpcKind::VortexSoldier, 120, 22.0, 56.0, 700, 34, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_stardust_cell_grows_into_the_big() {
+        // `AI()`'s aiStyle-95: the 300-tick scale ramp — the ai[0] counter
+        // grows to the cap (the Transform to the BigCell rides the next
+        // slice).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.ai[0] - 120.0).abs() < 0.01, "the ramp's counter: {}", n.ai[0]);
+    }
+
+    #[test]
+    fn the_jellyfish_shoots_the_539_on_the_70_tick_cycle() {
+        // `AI()`'s aiStyle-96: the 70-tick cycle fires the 539 (60 damage)
+        // from the |X| >= 1.5 ring.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustJellyfishBig,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = false;
+        for _ in 0..75 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(saw, "the 539 fires on the cycle");
+    }
+
+    #[test]
+    fn the_cell_transforms_into_the_big_on_the_300th_tick() {
+        // `AI()`'s aiStyle-95 cap (`NPC.cs:39394-39401`): `Transform(405)`
+        // — the port swaps the kind in place and the growth ramps the scale
+        // 1.0 → 1.3.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.scale - 1.15).abs() < 0.01, "the mid-ramp scale: {}", n.scale);
+        for _ in 0..160 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.kind, NpcKind::StardustCellBig, "the transform");
+        assert_eq!(n.scale, 1.0, "the grown form resets its scale");
+    }
+
+    #[test]
+    fn the_nebula_beast_charges_and_fires_the_575() {
+        // `AI_026_Unicorns`' NebulaBeast arm (`NPC.cs:62497-62557`): the
+        // charge opens on the 180-tick grounded idle inside the 500-px
+        // reach, the 575 (50) fires at the 30-tick wind-up, the 60-tick
+        // release re-arms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaBeast, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut charged = false;
+        let mut saw = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[2] == 1.0 && !charged {
+                charged = true;
+            }
+            if charged && !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(charged, "the charge opened");
+        assert!(saw, "the 575 fired");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 575, "the projectile");
+        assert_eq!(shot.5, 50, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_rifleman_fires_the_four_shot_577_salvo() {
+        // `AI_003_Fighters`' VortexRifleman arm (`NPC.cs:58463-58621`): the
+        // ai[3] timer rearms to −120 on the first tick, arms on the 800-px
+        // horizontal line of sight, and its 30th tick fires the four 577s
+        // at 75 with the −150 cooldown behind them.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexRifleman,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 162.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[3], -119.0, "the −120 rearm ticks once");
+        // The salvo's own tick: the test pre-arms the timer to the last
+        // arming step (the vanilla's −120 ladder would take 150 ticks and
+        // the port's walker reaches the player first).
+        n.rifleman_rearmed = true;
+        n.ai[3] = 29.0;
+        let mut saw = 0usize;
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the salvo is four shots");
+        for (id, dmg) in n.wants_hostile_shot.iter().map(|s| (s.0, s.5)) {
+            assert_eq!(id, 577);
+            assert_eq!(dmg, 75);
+        }
+        assert_eq!(n.ai[3], 31.0, "the windup holds past the shot");
+    }
+
+    #[test]
+    fn the_star_cell_approaches_through_the_sighted_phase() {
+        // `AI()`'s aiStyle-85 block (`NPC.cs:36930-37012`): phase 0 picks
+        // the approach on the line of sight and phase 1 steers at the
+        // 8 + dist/100 speed over the 50-tick smoothing.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustCellBig, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the sighted approach holds");
+        assert!(
+            n.vx > 0.0 && n.vx <= 8.6,
+            "the approach's velocity: {}",
+            n.vx
+        );
+        assert!(
+            (n.x + n.size().0 * 0.5) > 2422.0,
+            "the cell closed on the player"
+        );
+    }
+}

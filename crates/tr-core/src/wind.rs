@@ -11,8 +11,9 @@
 //! Deliberate simplifications:
 //! * The original draws randomness from `Main.rand` (`UnifiedRandom`) for the
 //!   target walk and from `FastRandom.CreateWithRandomSeed()` in
-//!   `ResetWindCounter`. A private xorshift64 replaces both; the *order* of the
-//!   draws is the original one, so a seed fully determines the history.
+//!   `ResetWindCounter`. The shared xorshift64 core (`crate::rng::Xorshift64`)
+//!   replaces both; the *order* of the draws is the original one, so a seed
+//!   fully determines the history.
 //! * This module is the single-player/server branch. Client sync, the menu
 //!   pause, the creative-power freeze and Lantern Night are folded into
 //!   [`Wind::frozen`]; when frozen only the current speed still eases towards
@@ -38,48 +39,9 @@ const WIND_TAU: f64 = 6.283_185_482_025_146_5;
 const GRASS_PERIOD: f32 = 180.0;
 const TREE_PERIOD: f32 = 240.0;
 
-/// Deterministic stand-in for `Main.rand` / `FastRandom`.
-///
-/// xorshift64 with a splitmix64-derived seed so that seed 0 is valid. The
-/// original RNGs are not reproducible from a `u32`, so the exact stream is
-/// intentionally different; only the draw order and ranges mirror the C#.
-#[derive(Clone, Debug)]
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u32) -> Self {
-        let mut z = (seed as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^= z >> 31;
-        if z == 0 {
-            z = 0x2545_F491_4F6C_DD1D;
-        }
-        Self(z)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    /// `UnifiedRandom.Next(min, max)`: `min` inclusive, `max` exclusive.
-    /// The modulo takes the HIGH 32 bits — xorshift64's low bits are weak
-    /// when the stream is sampled every few calls (the wind walk), which
-    /// skewed the extreme-wind tier rolls toward the calm branch.
-    fn next_int(&mut self, min: i32, max: i32) -> i32 {
-        debug_assert!(max > min);
-        let range = (max - min) as u64;
-        min + ((self.next_u64() >> 32) % range) as i32
-    }
-}
-
 /// `Main.WindSpeedCurrent` / `Main.WindSpeedTarget` / `Main.windCounter` /
 /// `Main.extremeWindCounter` plus the state `GetWindCycle` needs from the world.
+use crate::rng::Xorshift64;
 use crate::tiledata::TileSet;
 use crate::world::World;
 
@@ -95,7 +57,13 @@ pub struct Wind {
     pub counter: i32,
     /// `Main.extremeWindCounter`: ticks until the next target re-roll.
     extreme_counter: i32,
-    rng: Rng,
+    /// The shared xorshift64 core (splitmix64 seeding, so seed 0 is valid).
+    /// `UnifiedRandom.Next(min, max)` was `min` inclusive, `max` exclusive and
+    /// the modulo took the HIGH 32 bits — xorshift64's low bits are weak when
+    /// the stream is sampled every few calls (the wind walk), which skewed the
+    /// extreme-wind tier rolls toward the calm branch (see
+    /// [`Xorshift64::next_u32`]'s doc).
+    rng: Xorshift64,
     /// `Main.worldSurface`, in tile rows. `+inf` disables the altitude gate.
     pub world_surface: f64,
     /// `Main.remixWorld`: flips the altitude gate.
@@ -124,10 +92,10 @@ impl Wind {
     /// `ResetWindCounter(resetExtreme: true)` (`WorldGen.cs:6949`,
     /// `Main.cs:58698-58706`).
     pub fn new(seed: u32) -> Self {
-        let mut rng = Rng::new(seed);
-        let speed_current = rng.next_int(-800, 801) as f32 * 0.001;
-        let counter = rng.next_int(900, 2701);
-        let extreme_counter = rng.next_int(10, 31);
+        let mut rng = Xorshift64::from_seed(seed);
+        let speed_current = rng.range(-800, 801) as f32 * 0.001;
+        let counter = rng.range(900, 2701);
+        let extreme_counter = rng.range(10, 31);
         Self {
             speed_current,
             speed_target: speed_current,
@@ -233,12 +201,12 @@ impl Wind {
             let direction = if self.speed_target < 0.0 { -1.0 } else { 1.0 };
 
             // `Main.rand.Next(4)`, else `Next(2)`, else the ±100 branch.
-            self.speed_target += if self.rng.next_int(0, 4) == 0 {
-                self.rng.next_int(-25, 26) as f32 * 0.001
-            } else if self.rng.next_int(0, 2) == 0 {
-                self.rng.next_int(-50, 51) as f32 * 0.001
+            self.speed_target += if self.rng.range(0, 4) == 0 {
+                self.rng.range(-25, 26) as f32 * 0.001
+            } else if self.rng.range(0, 2) == 0 {
+                self.rng.range(-50, 51) as f32 * 0.001
             } else {
-                self.rng.next_int(-100, 101) as f32 * 0.001
+                self.rng.range(-100, 101) as f32 * 0.001
             };
             if !strong_wind && self.speed_target.abs() > 0.35 {
                 self.speed_target = 0.35 * self.speed_target.signum();
@@ -248,37 +216,37 @@ impl Wind {
             self.extreme_counter -= 1;
             if self.extreme_counter <= 0 {
                 self.reset_wind_counter(true);
-                if self.rng.next_int(0, 30) < 13 {
-                    if self.rng.next_int(0, 2) == 0 {
+                if self.rng.range(0, 30) < 13 {
+                    if self.rng.range(0, 2) == 0 {
                         self.speed_target = 0.0;
                         // Direct override after ResetWindCounter.
-                        self.counter = self.rng.next_int(7200, 28801);
+                        self.counter = self.rng.range(7200, 28801);
                     } else {
-                        self.speed_target = self.rng.next_int(-200, 201) as f32 * 0.001;
+                        self.speed_target = self.rng.range(-200, 201) as f32 * 0.001;
                     }
-                } else if self.rng.next_int(0, 20) < 13 {
-                    self.speed_target = self.rng.next_int(-400, 401) as f32 * 0.001;
+                } else if self.rng.range(0, 20) < 13 {
+                    self.speed_target = self.rng.range(-400, 401) as f32 * 0.001;
                 } else {
-                    self.speed_target = self.rng.next_int(-850, 851) as f32 * 0.001;
+                    self.speed_target = self.rng.range(-850, 851) as f32 * 0.001;
                 }
                 if !strong_wind && self.speed_target.abs() > 0.35 {
                     self.speed_target = 0.35 * self.speed_target.signum();
                 }
                 if self.speed_target.abs() > 0.3 {
-                    self.extreme_counter += self.rng.next_int(5, 11);
+                    self.extreme_counter += self.rng.range(5, 11);
                 }
                 if self.speed_target.abs() > 0.5 {
-                    self.extreme_counter += self.rng.next_int(10, 21);
+                    self.extreme_counter += self.rng.range(10, 21);
                 }
                 if self.speed_target.abs() > 0.7 {
-                    self.extreme_counter += self.rng.next_int(15, 31);
+                    self.extreme_counter += self.rng.range(15, 31);
                 }
             } else {
                 self.reset_wind_counter(false);
             }
 
             // `if (rand.Next(3) != 0 && direction flipped) target *= -1f;`
-            if self.rng.next_int(0, 3) != 0
+            if self.rng.range(0, 3) != 0
                 && ((direction < 0.0 && self.speed_target > 0.0)
                     || (direction > 0.0 && self.speed_target < 0.0))
             {
@@ -298,9 +266,9 @@ impl Wind {
     /// `Main.ResetWindCounter`: `windCounter = rand(900, 2701)` and optionally
     /// `extremeWindCounter = rand(10, 31)` (`Main.cs:58698-58706`).
     fn reset_wind_counter(&mut self, reset_extreme: bool) {
-        self.counter = self.rng.next_int(900, 2701);
+        self.counter = self.rng.range(900, 2701);
         if reset_extreme {
-            self.extreme_counter = self.rng.next_int(10, 31);
+            self.extreme_counter = self.rng.range(10, 31);
         }
     }
 
@@ -844,15 +812,15 @@ mod rng_probe {
     use super::*;
     #[test]
     fn probe_roll_distribution() {
-        let mut rng = Rng::new(0xDEAD_BEEF);
+        let mut rng = Xorshift64::from_seed(0xDEAD_BEEF);
         // Warm up like a real session (~50 walks x 3 rolls + resets).
         for _ in 0..200 {
-            rng.next_int(-100, 101);
-            rng.next_int(0, 30);
+            rng.range(-100, 101);
+            rng.range(0, 30);
         }
         let mut counts = [0u32; 30];
         for _ in 0..3000 {
-            let r = rng.next_int(0, 30);
+            let r = rng.range(0, 30);
             counts[r as usize] += 1;
         }
         let small = counts[0..13].iter().sum::<u32>();

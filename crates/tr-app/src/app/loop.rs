@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{deterministic_pointer_park, mouse_pin, App};
+use crate::app::App;
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -87,18 +87,13 @@ impl ApplicationHandler for App {
             self.world.width as f32 * TILE_PX * 0.5,
             self.world.spawn_y as f32 * TILE_PX,
         );
-        if let Ok(cam) = std::env::var("TR_CAM") {
-            let mut it = cam.split(',').map(|v| v.trim().parse::<f32>());
-            if let (Some(Ok(x)), Some(Ok(y))) = (it.next(), it.next()) {
-                self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
-            }
+        if let Some((x, y)) = crate::env::camera_pin() {
+            self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
         }
         self.zoom = self.settings.zoom;
-        if let Ok(z) = std::env::var("TR_ZOOM") {
-            if let Ok(z) = z.parse::<f32>() {
-                self.zoom = z.clamp(0.25, 8.0);
-                self.zoom_pinned = true;
-            }
+        if let Some(z) = crate::env::zoom_pin() {
+            self.zoom = z.clamp(0.25, 8.0);
+            self.zoom_pinned = true;
         }
         if self.follow_player {
             if let Some(p) = &self.player {
@@ -113,7 +108,7 @@ impl ApplicationHandler for App {
         // M1.4-BG-18 phase 2 harness: `TR_POST=1` routes frames through the post
         // pipeline (passthrough until phase 3 ports filter passes). The noise
         // image rides along so filter bindings hold the real content texture.
-        if std::env::var_os("TR_POST").is_some() {
+        if crate::env::post_capture() {
             let gpu = self.gpu.as_ref().expect("gpu");
             let mut post = tr_render::PostPipeline::new(gpu);
             post.resize(gpu, gpu.config.width, gpu.config.height);
@@ -469,7 +464,9 @@ impl ApplicationHandler for App {
                 }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
-                if mouse_pin().is_none() && !deterministic_pointer_park() {
+                if crate::env::mouse_pin().is_none()
+                    && !crate::env::deterministic_pointer_park()
+                {
                     self.mouse_pos = p;
                 }
                 // The menu reads the pinned pointer when `TR_MOUSE` is set, so
