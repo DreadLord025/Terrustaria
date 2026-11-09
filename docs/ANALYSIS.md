@@ -6787,7 +6787,36 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
-## Cave decorations (M5-STRUCT-5)
+## Projectile + strike sync (M6-NET-5)
+
+The projectile and strike messages are 1:1 ports; the deviations:
+
+- **This build's msg 17 is TileChange, not CreateProjectile.** The spawn+update
+  payloads are unified in `27` (`NetMessage.cs:780-841`) with the
+  `ProjectileKey`'s owner/slot/generation packing, and the despawn is `29`
+  (`MessageBuffer.cs:1825-1850`). The roadmap's earlier "17 CreateProjectile"
+  row was wrong; the port's tile edits ride `20` (ported in M6-NET-3) and no
+  `17` body is implemented.
+- **The host owns the server's hostile shots (owner 255)** instead of the
+  single-player quirk (owner 0), so a peer's slot index can never collide
+  with the host's player id.
+- **The strike's damage is the sender's value, not the server's recompute.**
+  The C#'s `StrikeNPC_Inner` recomputes through `CalculateDamageNPCsTake`;
+  the port applies the strike as sent (the host validates the generation and
+  the target) and the pending-damage/ack accounting (`msg 162`,
+  `NPC.PushPendingDamage`) is not ported — the client's local prediction is
+  replaced by the relayed strike.
+- **The client applies the strike's hp/hurt_cd/flash, not the full inner.**
+  Knockback rides the `23` snapshots (the C# applies it locally through
+  `StrikeNPC_Inner`).
+- **The section culling of `27` is not ported**: the host broadcasts every
+  changed projectile of its own (the budget-gated diff covers the spam
+  control), and the `netImportant` set (type 12/pets/aiStyle 11) rides as
+  ordinary traffic — the port's section stream (M6-NET-3) already covers the
+  tiles.
+- **The projectile `netSpam` budget is the C#'s numbers, port-tuned**: 60
+  budget, 5 cost, refill 10 per net tick (the C#'s 1/tick at 60 Hz); a
+  parked projectile retries on the next tick (`netUpdate2`'s park).## Cave decorations (M5-STRUCT-5)
 
 Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
 
@@ -6806,5 +6835,6 @@ Deliberate deviations, all in the module header:
 - **`Plain` counts**: `count_tiles` is an explicit-stack rewrite of the recursive `nextCount` (the fill carries no RNG, so the traversal order is free), and `Spread.*` walks the frontier lists rather than the C#'s per-level `List`/`HashSet` pair — the visited-set semantics and the `SolidTile`/wall gate are the C#'s.
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
+
 
 

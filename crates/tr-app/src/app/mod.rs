@@ -359,6 +359,14 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// The `27` projectile sync: the last-sent state per key (the
+    /// change-detection diff) and the per-projectile send budget in ticks
+    /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
+    pub(crate) net_proj_last: HashMap<i32, net::ProjectileState>,
+    pub(crate) net_proj_spam: HashMap<i32, i32>,
+    /// The host slot id per client-npc index (the `28 NPCStrike` target and
+    /// the `23` order), parallel to `npcs` on a joining client.
+    pub(crate) net_npc_slots: Vec<u32>,
     /// The `82` module cadence counter and the last ping send stamp (the
     /// client's RTT diagnostic, `NetPingModule`).
     pub(crate) net_module_beat: u32,
@@ -2283,6 +2291,9 @@ impl App {
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
             net_module_beat: 0,
+            net_proj_last: HashMap::new(),
+            net_proj_spam: HashMap::new(),
+            net_npc_slots: Vec::new(),
             net_ping_at: None,
             net_rtt_ms: 0,
             join_target,

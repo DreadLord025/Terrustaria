@@ -1105,9 +1105,9 @@ pub(crate) mod front_flow_tests {
     use crate::world_sim::step::FixedStepper;
     use std::collections::{HashMap, HashSet, VecDeque};
     use std::time::Instant;
-    use tr_core::World;
     use tr_core::lighting::{LightMap, LightMode};
     use tr_core::liquid::LiquidSystem;
+    use tr_core::World;
 
     use crate::menu::Page as P;
 
@@ -1533,6 +1533,9 @@ pub(crate) mod front_flow_tests {
             net_ps_last: crate::net::PlayerState::default(),
             net_beat: 0,
             net_module_beat: 0,
+            net_proj_last: std::collections::HashMap::new(),
+            net_proj_spam: std::collections::HashMap::new(),
+            net_npc_slots: Vec::new(),
             net_ping_at: None,
             net_rtt_ms: 0,
             join_target: None,
@@ -2361,7 +2364,10 @@ pub(crate) mod front_flow_tests {
         app.coins = 100; // the 2000-value pickaxe costs 666
         app.reforge_click();
         assert_eq!(app.coins, 100);
-        assert_eq!(app.reforge_slot.prefix, 0, "the failed charge re-rolls nothing");
+        assert_eq!(
+            app.reforge_slot.prefix, 0,
+            "the failed charge re-rolls nothing"
+        );
 
         // The funded click: the charge, the roll (Prefix(-2) — never none,
         // on the swords table), the top-tier cooldown.
@@ -2375,7 +2381,10 @@ pub(crate) mod front_flow_tests {
             "the pickaxe rolls from the swords table"
         );
         if p == 81 {
-            assert_eq!(app.reforge_cooldown, 60, "the top tier arms the 60-tick lock");
+            assert_eq!(
+                app.reforge_cooldown, 60,
+                "the top tier arms the 60-tick lock"
+            );
         } else {
             assert_eq!(app.reforge_cooldown, 0);
         }
@@ -2403,7 +2412,10 @@ pub(crate) mod front_flow_tests {
         };
         app.reforge_slot_click();
         assert_eq!(app.reforge_slot.kind, 41);
-        assert_eq!(app.reforge_slot.prefix, 3, "the carried prefix moves with the item");
+        assert_eq!(
+            app.reforge_slot.prefix, 3,
+            "the carried prefix moves with the item"
+        );
         assert_eq!(app.mouse_item.kind, 1, "the pickaxe returns to the cursor");
 
         // The stack split into the EMPTY slot (the fixture's pickaxe goes
