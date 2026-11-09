@@ -28,9 +28,10 @@
 //! `Lookup::tool_mode`/`actuation_rod_lock`), `Step_MinecartTracks`
 //! (:1166-1322, over the caller-passed player centre) and
 //! `Step_ForceCursorToAnyMinableThing` (:2229-2268, over the caller-passed
-//! gamepad state and the held item's pick/axe/hammer power) — the
-//! seed/herb/planting family plus the paint family, gated on item id /
-//! `createTile` / `createWall` and shared with the closest-to-mouse vote.
+//! gamepad state and the held item's pick/axe/hammer power) and
+//! `Step_Pickaxe_MineShinies` (:2270-2348, over the held item's pick power)
+//! — the seed/herb/planting family plus the paint family, gated on item id
+//! / `createTile` / `createWall` and shared with the closest-to-mouse vote.
 //! The paint steps read the caller-passed
 //! `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
@@ -2086,12 +2087,73 @@ pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     None
 }
 
+// ------------------------------------------------------------- shinies step --
+
+/// `TileID.Sets.SmartCursorPickaxePriorityOverride` (`TileID.cs:507`,
+/// `CreateIntSet(0, 12 → 1, 665 → 1, 639 → 1)`): the per-tile priority the
+/// pickaxe's shiny scan tracks — the C# is an `int[]` over `TileID.Count`,
+/// the port a per-id map.
+const SMART_CURSOR_PICKAXE_PRIORITY: [(u16, i32); 3] = [(12, 1), (665, 1), (639, 1)];
+
+/// The tile's priority override (0 when the set does not carry it — the
+/// C#'s array default).
+fn pickaxe_priority_override(kind: u16) -> i32 {
+    SMART_CURSOR_PICKAXE_PRIORITY
+        .iter()
+        .find(|(id, _)| *id == kind)
+        .map(|(_, v)| *v)
+        .unwrap_or(0)
+}
+
+/// `SmartCursorHelper.Step_Pickaxe_MineShinies` (`:2270-2348`): the held
+/// pickaxe re-points at the closest rare tile the priority override flags.
+pub fn step_pickaxe_mine_shinies(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+) -> Option<(i32, i32)> {
+    // `:2283` — the pick-power gate + the focus sentinel.
+    if l.item.pick <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:2285-2290` — the C#'s `if (item.type != 1333 && ...)` arm is a
+    // decompiler artifact with no side effects (dropped).
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:2295-2297` — the C#'s `_ = Main.tile[i±1, j]; _ = Main.tile[i, j+1];`
+            // reads are decompiler artifacts with no side effects (dropped).
+            if !t.active() {
+                continue;
+            }
+            // `:2298-2312` — every override-carrying tile is a candidate.
+            // The C# also tracks the maximum priority (`num`), but the only
+            // consumer of it — the two `_targets2` loops at :2315-2327 —
+            // iterates the just-cleared list, so both are provably empty in
+            // vanilla and the priority filter is inert. The port implements
+            // the OBSERVABLE behaviour (the closest of all override tiles),
+            // not the intended one, and does not emulate C#'s
+            // foreach-mutation hazard.
+            if pickaxe_priority_override(t.kind) > 0 {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// ForceCursorToAnyMinableThing :122 → ColoredWrenches :129 →
-/// MulticolorWrench :130 → ActuationRod :132 → WireCutter :133 →
+/// ForceCursorToAnyMinableThing :122 → PickaxeMineShinies :123 →
+/// ColoredWrenches :129 → MulticolorWrench :130 → ActuationRod :132 →
+/// WireCutter :133 →
 /// Platforms :134 → MinecartTracks :135 → Walls :136 → PumpkinSeeds :137
 /// → GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
 /// LawnMower :143 → BlocksLines :145 → PaintRoller :146 → PaintBrush :147
@@ -2133,8 +2195,9 @@ pub fn smart_cursor_lookup(
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 25] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 26] = [
         step_force_cursor,
+        step_pickaxe_mine_shinies,
         step_colored_wrenches,
         step_multicolor_wrench,
         step_actuation_rod,
@@ -3854,6 +3917,57 @@ mod tests {
             smart_cursor_lookup(&world, &pick, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the force-cursor step runs inside the lookup chain"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_shinies_finds_the_override_tiles() {
+        // `Step_Pickaxe_MineShinies` :2298-2312 — the three priority-
+        // override tiles (12/665/639, TileID.cs:507) are the step's only
+        // targets; the C#'s priority filter is inert (the `_targets2` loops
+        // iterate the just-cleared list), so the closest override tile
+        // wins.
+        let mut world = bare();
+        put(&mut world, 25, 19, 12); // the override tile
+        let l = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_pickaxe_mine_shinies(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the pickaxe re-points at the override tile"
+        );
+        let mut rare = bare();
+        put(&mut rare, 25, 19, 665);
+        put(&mut rare, 26, 19, 639);
+        assert_eq!(
+            step_pickaxe_mine_shinies(&rare, &l, -1, -1),
+            Some((25, 19)),
+            "both override ids are candidates, the closest wins"
+        );
+        // A plain tile is not a target.
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_pickaxe_mine_shinies(&stone, &l, -1, -1),
+            None,
+            "a plain tile is not a shiny target"
+        );
+        // The gates: pick power and the focus sentinel.
+        let no_pick = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(step_pickaxe_mine_shinies(&world, &no_pick, -1, -1), None);
+        assert_eq!(step_pickaxe_mine_shinies(&world, &l, 12, 12), None);
+    }
+
+    #[test]
+    fn test_smart_1_the_mine_shinies_step_runs_in_the_chain() {
+        // The dispatch order (:123): the shiny step runs between the force
+        // cursor and the wrenches — the chain dispatches it.
+        let mut world = bare();
+        put(&mut world, 25, 19, 12);
+        let l = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the shinies step runs inside the lookup chain"
         );
     }
 }
