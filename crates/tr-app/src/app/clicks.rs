@@ -247,11 +247,10 @@ impl App {
         // `SoundEngine.PlaySound(7)` — the grant sound
         // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
         self.audio.play("Grab");
-        // `AchievementsHelper.NotifyItemCraft` — the station craft feeds the
-        // ItemCraftCondition rows (BENCHED).
-        let _ = self
-            .achievements
-            .notify(achievements::CondKind::ItemCraft);
+        // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
+        // crafted item's id rides the event, so `BENCHED`'s workbench set
+        // matches the crafted item and not any craft.
+        let _ = self.achievements.notify_craft(kind);
         self.ui_left_press = false;
         true
     }
@@ -320,6 +319,63 @@ impl App {
                 self.ui_left_press = false;
             }
         }
+    }
+
+    /// The achievements menu's clicks (`UIAchievementsMenu`'s
+    /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
+    /// the overlay, a category toggle flips the filter, the wheel scrolls
+    /// the list. Consumes the press on every hit.
+    pub(crate) fn handle_achievements_clicks(&mut self) {
+        let left = self.ui_left_press;
+        if !left {
+            return;
+        }
+        if self.achievements_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            // `OnActivate`'s `Main.gameMenu` arm decides the container's Top.
+            let game_menu = self.menu.is_some();
+            let panel = ui::achievements::panel_rect(screen, game_menu);
+            // The Back panel closes the state (`GoBackClick` -> `IngameFancyUI.Close()`).
+            if ui::achievements::back_hit(&panel, self.mouse_pos) {
+                self.achievements_open = false;
+                self.achievements_categories = [true; 4];
+                self.achievements_scroll = 0.0;
+                self.ui_left_press = false;
+                return;
+            }
+            // `FilterList` — a toggle flips and the list rebuilds.
+            if let Some(j) = ui::achievements::category_at(&panel, self.mouse_pos) {
+                self.achievements_categories[j] = !self.achievements_categories[j];
+                self.achievements_scroll = 0.0;
+                self.ui_left_press = false;
+                return;
+            }
+            self.ui_left_press = false;
+        }
+    }
+
+    /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
+    /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
+    /// vanilla control; the port's wheel is the documented stand-in).
+    pub(crate) fn scroll_achievements(&mut self, delta: f32) {
+        if !self.achievements_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let game_menu = self.menu.is_some();
+        let panel = ui::achievements::panel_rect(screen, game_menu);
+        let list = ui::achievements::list_rect(&panel);
+        let rows = self
+            .achievements
+            .list
+            .iter()
+            .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
+            .count();
+        let max = ui::achievements::max_scroll(rows, &list);
+        self.achievements_scroll = (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0))
+            .clamp(0.0, max);
     }
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
@@ -1016,6 +1072,19 @@ impl App {
                         }
                     }
                 }
+            }
+            // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
+            // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
+            // the legacy menu live behind the overlay (the vanilla state
+            // draws over the menu's world backdrop) and opens
+            // `UIAchievementsMenu`'s `OnActivate` state: every category
+            // toggle on, the scroll at the top.
+            Action::Achievements => {
+                self.achievements_open = true;
+                self.achievements_scroll = 0.0;
+                self.achievements_categories = [true; 4];
+                // The menu row's `SoundEngine.PlaySound(10)` already fired in
+                // `Menu::click`.
             }
             Action::Join { addr, password } => match net::Client::connect(&addr) {
                 Ok(client) => {
