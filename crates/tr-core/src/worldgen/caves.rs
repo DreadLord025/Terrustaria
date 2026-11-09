@@ -197,6 +197,10 @@ pub(crate) fn ores_and_shinies(
     // mutable `world` borrow stays free for the walkers.
     let flags = world.seeds;
     let tiers = roll_tiers(rng, flags);
+    // The setup roll is per-world state in vanilla (`GenerateWorld`'s once
+    // per world, `Main.cs:11266-11297`), so it rides the World for the save
+    // (M6-SAVE-1f) and the App's runtime copy reads it back.
+    world.ore_tiers = tiers;
     let bands = band_table(&tiers, layers, width, height, crimson);
     let area = (width * height) as f64;
     for &(kind, density, y0, y1, s0, s1, t0, t1) in &bands {
