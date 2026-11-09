@@ -7,6 +7,11 @@
 //! place, so the original per-format error behaviour is preserved (`anyhow`
 //! bail for `.wld`/`.trwld`, `Ok(None)` rejection for the `.map` prefix,
 //! `io::Error` for the `.map` body).
+//!
+//! The `.trwld` **header prefix** reader ([`read_trwld_header`]) also lives
+//! here: it is the header half of the `save.rs` parse, shared by the save
+//! listing (`ui/save_list.rs`) and anyone that needs the world's name/size
+//! without loading the tile body.
 
 /// A little-endian cursor over a borrowed byte slice.
 pub struct Reader<'a> {
@@ -114,6 +119,70 @@ impl<'a> Reader<'a> {
         }
         self.take(len)
     }
+}
+
+/// The `.trwld` container magic (`save.rs:16` writes it) — the port's own
+/// format, not a decompiled constant.
+pub const TRWLD_MAGIC: &[u8; 8] = b"TRWLD01\0";
+
+/// The `.trwld` header prefix — the part of the save header every consumer
+/// needs before the tile body (magic, version, seed, name, size).
+///
+/// The port's own container format (`tr_core::save`), not a decompiled layout:
+/// `save.rs:126-142` writes/reads it, `Main.cs` has no counterpart — the
+/// listing stands in for `WorldFileData` (`WorldFileData.cs:75`'s `IsValid`
+/// is `LoadStatus == Ok`, the port's `valid` below).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrwldHeader {
+    /// The world name; `None` when the prefix is truncated before it.
+    pub name: Option<String>,
+    /// The world width; 1 when the prefix is truncated (`FromInvalidWorld`'s
+    /// 1x1 world, `WorldFileData.cs:357`).
+    pub width: i32,
+    /// The prefix parses and passes the plausibility guard.
+    pub valid: bool,
+}
+
+/// Reads the `.trwld` header prefix over `data`, applying the same guards
+/// `tr_core::save::parse` applies (`save.rs:126-142`): the 8-byte magic, a
+/// version of 0 or beyond `version_ceiling` refused (vanilla refuses later
+/// versions the same way, `WorldFile.cs:190-194`, `StatusID.LaterVersion`),
+/// and the width/height plausibility band. The tile body is never read.
+pub fn read_trwld_header(data: &[u8], version_ceiling: u32) -> TrwldHeader {
+    let mut r = Reader::new(data);
+    // magic (`save.rs:128-130`)
+    if r.take(8) != Some(TRWLD_MAGIC.as_slice()) {
+        return TrwldHeader { name: None, width: 1, valid: false };
+    }
+    let Some(version) = r.u32() else {
+        return TrwldHeader { name: None, width: 1, valid: false };
+    };
+    if version == 0 || version > version_ceiling {
+        return TrwldHeader { name: None, width: 1, valid: false };
+    }
+    // seed (`save.rs:135`) — not needed past here.
+    if r.take(8).is_none() {
+        return TrwldHeader { name: None, width: 1, valid: false };
+    }
+    let Some(name_len) = r.u32() else {
+        return TrwldHeader { name: None, width: 1, valid: false };
+    };
+    let name = r
+        .take(name_len as usize)
+        .map(String::from_utf8_lossy)
+        .map(|s| s.into_owned());
+    let Some(width) = r.i32() else {
+        return TrwldHeader { name, width: 1, valid: false };
+    };
+    let Some(height) = r.i32() else {
+        return TrwldHeader { name, width: 1, valid: false };
+    };
+    // The plausibility guard `save.rs:140-142` — a world the port cannot load
+    // stays listed but not valid.
+    if width <= 0 || height <= 0 || width > 20_000 || height > 20_000 {
+        return TrwldHeader { name, width: 1, valid: false };
+    }
+    TrwldHeader { name, width, valid: true }
 }
 
 /// A little-endian writer over an owned buffer, the counterpart of [`Reader`]
@@ -264,5 +333,64 @@ mod tests {
             Reader::new(&bad_utf8).cs_string_lossy(),
             Some(String::from("\u{fffd}\u{fffd}"))
         );
+    }
+
+    /// Builds the `.trwld` header prefix for the reader tests (magic, version,
+    /// seed, name, width, height) — the shape `ui/save_list.rs`'s test writer
+    /// hands the listing.
+    fn trwld_header_bytes(version: u32, name: &str, width: i32, height: i32) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"TRWLD01\0");
+        buf.extend_from_slice(&version.to_le_bytes());
+        buf.extend_from_slice(&0u64.to_le_bytes());
+        buf.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        buf.extend_from_slice(name.as_bytes());
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf
+    }
+
+    #[test]
+    fn trwld_header_parses_the_prefix() {
+        let data = trwld_header_bytes(2, "Alpha", 6400, 1800);
+        let h = read_trwld_header(&data, 4);
+        assert_eq!(h.name.as_deref(), Some("Alpha"));
+        assert_eq!(h.width, 6400);
+        assert!(h.valid, "the prefix passes every guard");
+    }
+
+    #[test]
+    fn trwld_header_rejects_the_bad_guards() {
+        // Garbage fails the magic (`WorldFileData.FromInvalidWorld`).
+        assert!(!read_trwld_header(b"not a world at all", 4).valid);
+        // Version 0 and versions past the ceiling are refused
+        // (`save.rs:131-134`, `WorldFile.cs:190-194`'s `StatusID.LaterVersion`).
+        assert!(!read_trwld_header(&trwld_header_bytes(0, "X", 4200, 1200), 4).valid);
+        assert!(!read_trwld_header(&trwld_header_bytes(5, "X", 4200, 1200), 4).valid);
+        // Implausible sizes fail the plausibility guard (`save.rs:140-142`).
+        assert!(!read_trwld_header(&trwld_header_bytes(2, "X", 0, 1800), 4).valid);
+        assert!(!read_trwld_header(&trwld_header_bytes(2, "X", 4200, 0), 4).valid);
+        assert!(!read_trwld_header(&trwld_header_bytes(2, "X", 20_001, 1800), 4).valid);
+    }
+
+    #[test]
+    fn trwld_header_truncation_reports_the_partial_state() {
+        // Truncated before the size block: the name is known, the width falls
+        // back to `FromInvalidWorld`'s 1x1 (`WorldFileData.cs:357`).
+        let mut short = trwld_header_bytes(2, "Alpha", 4200, 1200);
+        short.truncate(short.len() - 4);
+        let h = read_trwld_header(&short, 4);
+        assert_eq!(h.name.as_deref(), Some("Alpha"));
+        assert_eq!(h.width, 1);
+        assert!(!h.valid);
+        // Truncated before the name: nothing is known.
+        let mut shorter = trwld_header_bytes(2, "Alpha", 4200, 1200);
+        shorter.truncate(20);
+        let h = read_trwld_header(&shorter, 4);
+        assert_eq!(h.name, None);
+        assert_eq!(h.width, 1);
+        assert!(!h.valid);
+        // An empty buffer (an unreadable file in the listing).
+        assert!(!read_trwld_header(&[], 4).valid);
     }
 }
