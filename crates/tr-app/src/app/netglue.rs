@@ -1971,6 +1971,11 @@ fn npc_seed(
         | crate::npc::NpcKind::SolarDrakomireRider
         | crate::npc::NpcKind::SolarSroller
         | crate::npc::NpcKind::SolarCorite
+        | crate::npc::NpcKind::SolarCrawltipedeHead
+        | crate::npc::NpcKind::SolarCrawltipedeBody
+        | crate::npc::NpcKind::SolarCrawltipedeTail
+        | crate::npc::NpcKind::StardustWormHead
+        | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::StardustCellSmall

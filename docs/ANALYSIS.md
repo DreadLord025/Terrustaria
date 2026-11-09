@@ -7579,3 +7579,37 @@ Deviations: the dust/gore `HitEffect` rows, the corite's lighting/sound
 arms, the sroller's `ai[3]` FX layer and the tower spawn tables are
 unmodelled; the sroller's height collapse (46×52 → the ball) rides the
 defense/damage overrides rather than a box change.
+
+## The pillar worms (M4-EVENT-14)
+
+The Crawltipede (412/413/414) is the Solar tower's worm: the head
+`ai[3] = whoAmI` + `realLife = whoAmI` (`:51369-51392`), `num34 = 30`
+segments, `num36 = 413` swapped to `414` at index 29, each segment
+linking forward (`ai[0]`) and back (`ai[1]`), `CopyInterrelations` from
+its predecessor. The port's worm pass carries the same shape (`worm_id`,
+`seg_index`, `worm_left`), so the chain rides it with the crawltipede's
+30-segment budget and the 10/0.3 steering pair. The death guards kill a
+segment whose link died (`!Main.npc[ai[1]].active || aiStyle mismatch` →
+`life = 0; HitEffect(); checkDead()`), and the body/tail don't count for
+the enemy cap (`dontCountMe`) while the tail takes ×10 damage
+(`takenDamageMultiplier = 10`, consumed in `StrikeNPC_Inner`).
+
+The StardustWormHead (402) is a lone mega-worm (no segments in this
+build — 403/404 have no `SetDefaults` rows) whose aiStyle-6 arm
+(`:51030-51073`) runs the 600-tick cycle: `ai[2]++`, the
+`Remap(ai[2], 285, 570, 1, 0.5)` deceleration while `ai[2] <= 570`, the
+mark fire at 570 (`SpawnStardustMark_StardustWorm`) with the velocity
+re-normalised to 6, and the reset at 600. Its own movement pair is
+`num45 = 9` / `num46 = 0.3` (`:51740-51743`).
+
+`SpawnStardustMark_StardustWorm` (`:43909-43993`) picks from the list
+405/402/407 (capped at 2 / 3 / 1 alive) and throws the 540 marker
+projectile with `ai[0] = -num5 * 10f` and `ai[1] = 0.5..1.0f` which
+spawns the chosen NPC on its way; the port folds the hop into the sim's
+resolve (`wants_stardust_mark`) because the 540 projectile AI is not
+ported.
+
+Deviations: the dust arms, the ground-avoidance tile scan
+(`:51784-51798`) and the same-type repulsion of the crawltipede are
+unmodelled (the port's worm pass has its own steering), the 540
+projectile hop and the mark's 3-5 chain-length roll are unmodelled.

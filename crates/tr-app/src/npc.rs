@@ -264,6 +264,26 @@ pub enum NpcKind {
     /// (`NPC.cs:15382-15392`: 22×56, aiStyle 3, 800 HP, dmg 90, def 30,
     /// kb 0.4; the 6/0.15/0.85 walk).
     SolarSelenian,
+    /// `NPCID.SolarCrawltipedeHead` (412) — the solar tower's crawltipede
+    /// head (`NPC.cs:15265-15281`: 20×20, aiStyle 6, 10000 HP, dmg 120,
+    /// def 1000, kb 0, dontTakeDamage; the 30-segment chain).
+    SolarCrawltipedeHead,
+    /// `NPCID.SolarCrawltipedeBody` (413) — the chain's bodies (`NPC.cs`
+    /// `:15283-15299`: 20×20, aiStyle 6, 10000 HP, dmg 80, def 1000, kb
+    /// 0, dontCountMe/dontTakeDamage).
+    SolarCrawltipedeBody,
+    /// `NPCID.SolarCrawltipedeTail` (414) — the chain's tail (`NPC.cs`:
+    /// 15301-15317: 20×20, aiStyle 6, 10000 HP, dmg 50, def 0, kb 0,
+    /// dontCountMe, `takenDamageMultiplier = 10`).
+    SolarCrawltipedeTail,
+    /// `NPCID.StardustWormHead` (402) — the stardust tower's worm head
+    /// (`NPC.cs:15004-15021`: 32×32, aiStyle 6, 1200 HP, dmg 80, def 10,
+    /// kb 0, noGravity/noTileCollide, netAlways; the mark fire).
+    StardustWormHead,
+    /// `NPCID.SolarSpearman` (518) — the rider's unmounted form
+    /// (`NPC.cs:15343-15353`: 22×56, aiStyle 3, 1000 HP, dmg 80, def 28,
+    /// kb 0.4; the 5/0.1/0.95 walk).
+    SolarSpearman,
     /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
     /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
@@ -776,6 +796,31 @@ impl NpcKind {
             NpcKind::SolarDrakomireRider => 137,
             NpcKind::SolarSroller => 138,
             NpcKind::SolarCorite => 139,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
             NpcKind::SolarSelenian => 140,
             NpcKind::NebulaFloater => 130,
             NpcKind::BrainSuckler => 131,
@@ -863,6 +908,11 @@ NpcKind::SolarSelenian => 140,
             NpcKind::StardustSpiderBig => 409,
             NpcKind::StardustSpiderSmall => 410,
             NpcKind::StardustSoldier => 411,
+            NpcKind::SolarCrawltipedeHead => 412,
+            NpcKind::SolarCrawltipedeBody => 413,
+            NpcKind::SolarCrawltipedeTail => 414,
+            NpcKind::StardustWormHead => 402,
+            NpcKind::SolarSpearman => 518,
             NpcKind::SolarDrakomire => 415,
             NpcKind::SolarDrakomireRider => 416,
             NpcKind::SolarSroller => 417,
@@ -964,6 +1014,31 @@ NpcKind::SolarSelenian => 140,
             137 => NpcKind::SolarDrakomireRider,
             138 => NpcKind::SolarSroller,
             139 => NpcKind::SolarCorite,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
             140 => NpcKind::SolarSelenian,
             130 => NpcKind::NebulaFloater,
             131 => NpcKind::BrainSuckler,
@@ -1075,6 +1150,9 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeTail
         )
     }
 
@@ -1087,6 +1165,7 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
         )
     }
 
@@ -1101,6 +1180,7 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeBody
         )
     }
 
@@ -1119,6 +1199,12 @@ NpcKind::SolarSelenian => 140,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
             NpcKind::LeechBody => NpcKind::LeechBody,
+            // The crawltipede chain (`:51375-51381`'s per-index kind):
+            // the bodies self-chain and the tail closes it.
+            NpcKind::SolarCrawltipedeHead => NpcKind::SolarCrawltipedeBody,
+            NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail => {
+                NpcKind::SolarCrawltipedeTail
+            }
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -1127,6 +1213,12 @@ NpcKind::SolarSelenian => 140,
     /// steering accel) per family (`:51670-51706`).
     pub fn worm_tunables(self) -> (f32, f32) {
         match self {
+            // The stardust worm head's 9/0.3 (`:51740-51743`) and the
+            // crawltipede chain's 10/0.3 (`:51779-51880`).
+            NpcKind::StardustWormHead => (9.0, 0.3),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (10.0, 0.3),
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
@@ -1238,6 +1330,31 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SolarDrakomireRider => (18.0, 40.0),
             NpcKind::SolarSroller => (46.0, 52.0),
             NpcKind::SolarCorite => (38.0, 38.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
             NpcKind::SolarSelenian => (22.0, 56.0),
             NpcKind::NebulaFloater => (40.0, 40.0),
             NpcKind::BrainSuckler => (44.0, 44.0),
@@ -1586,6 +1703,31 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SolarDrakomireRider => 800,
             NpcKind::SolarSroller => 700,
             NpcKind::SolarCorite => 600,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
             NpcKind::SolarSelenian => 800,
             NpcKind::NebulaFloater => 1300,
             NpcKind::BrainSuckler => 330,
@@ -1764,6 +1906,31 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SolarDrakomireRider => 80,
             NpcKind::SolarSroller => 80,
             NpcKind::SolarCorite => 70,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
             NpcKind::SolarSelenian => 90,
             NpcKind::NebulaFloater => 75,
             NpcKind::BrainSuckler => 70,
@@ -2072,6 +2239,10 @@ pub struct Npc {
     /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
     /// damage scaled by difficulty).
     pub wants_blast: bool,
+    /// The StardustWormHead's mark request (`AI_006`'s 402 arm,
+    /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
+    /// resolves the 405/402/407 pick (the 540 hop unmodelled).
+    pub wants_stardust_mark: bool,
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
@@ -2494,6 +2665,7 @@ impl Npc {
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
             wants_blast: false,
+        wants_stardust_mark: false,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -2615,6 +2787,31 @@ impl Npc {
             NpcKind::SolarDrakomireRider => 0.2,
             NpcKind::SolarSroller => 0.0,
             NpcKind::SolarCorite => 0.2,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
             NpcKind::SolarSelenian => 0.4,
             NpcKind::NebulaFloater => 0.5,
             NpcKind::BrainSuckler => 0.5,
@@ -2630,6 +2827,10 @@ impl Npc {
             NpcKind::VortexHeadcrab => 1.0,
             NpcKind::VortexRifleman => 0.4,
             NpcKind::VortexSoldier => 0.6,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
             // The tavernkeeper 0.5, the crystal 0.
             NpcKind::DD2Bartender => 0.5,
             NpcKind::DD2EterniaCrystal => 0.0,
@@ -2722,6 +2923,12 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
+            // The pillar worms: kb 0 across the chain (`NPC.cs`'s rows
+            // 412-414) and the stardust worm head.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
             _ => 0.4,
         }
     }
@@ -2820,6 +3027,31 @@ impl Npc {
             NpcKind::SolarDrakomireRider => 28,
             NpcKind::SolarSroller => 34,
             NpcKind::SolarCorite => 26,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
             NpcKind::SolarSelenian => 30,
             NpcKind::NebulaFloater => 20,
             NpcKind::BrainSuckler => 34,
@@ -2953,6 +3185,36 @@ impl Npc {
             NpcKind::SolarSroller => 700.0,
             NpcKind::SolarCorite => 800.0,
             NpcKind::SolarSelenian => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
             NpcKind::NebulaFloater => 400.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
@@ -3358,6 +3620,31 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The crawltipede chain rides the worm pass entirely.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => {}
+            // The pillar worms: the crawltipede chain rides the worm pass
+            // (aiStyle 6) and the stardust worm head's own machine; the
+            // spearman rides the walker.
+            NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
+            NpcKind::SolarSpearman => {
+                let (pcx, pcy) = player.center();
+                crate::npc_ai::walker_step(
+                    self,
+                    world,
+                    pcx,
+                    pcy,
+                    crate::npc_ai::WalkerParams {
+                        speed: 5.0,
+                        jump: -6.2,
+                        aggro_x: 80.0 * TILE_PX,
+                        aggro_y: 40.0 * TILE_PX,
+                    },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
             // The stardust/solar tower mobs: the spider pair, the soldier,
             // the drakomire mount + its rider, the sroller, the corite and
             // the selenian.
@@ -3935,9 +4222,19 @@ impl Npc {
             | NpcKind::SolarDrakomireRider
             | NpcKind::SolarSroller
             | NpcKind::SolarCorite
+            | NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail
+            | NpcKind::StardustWormHead
+            | NpcKind::SolarSpearman
             | NpcKind::SolarSelenian => {
                 let count = match self.kind {
                     NpcKind::SolarDrakomire => 1,
+                    NpcKind::SolarCrawltipedeHead
+                    | NpcKind::SolarCrawltipedeBody
+                    | NpcKind::SolarCrawltipedeTail
+                    | NpcKind::StardustWormHead => 1,
+                    NpcKind::SolarSpearman => 10,
                     NpcKind::SolarCorite => 15,
                     NpcKind::StardustSpiderBig => 4,
                     NpcKind::StardustSpiderSmall => 11,
@@ -8247,6 +8544,46 @@ impl Npc {
         );
     }
 
+    /// `AI_006_Worms`'s StardustWormHead arm (`NPC.cs:51030-51073`) — the
+    /// 600-tick cycle: the [285, 570] remap decelerates the worm 1 → 0.5,
+    /// at 570 it fires the mark (`SpawnStardustMark_StardustWorm`) and
+    /// re-normalises the velocity to 6, at 600 the counter resets.
+    ///
+    /// Deviations: the dust arm (`:51043-51054`) is unmodelled; the mark's
+    /// 540 projectile hop folds into a direct spawn (the port has no 540
+    /// AI) and the caps live in the sim's resolve.
+    fn update_stardust_worm_head(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The steering toward the player (`:51670-51743`'s 9/0.3 pair).
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+        self.vx += (dx / d * 9.0 - self.vx) * 0.3;
+        self.vy += (dy / d * 9.0 - self.vy) * 0.3;
+        // The cycle.
+        self.ai[2] += 1.0;
+        let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+        if speed >= 1.0 && self.ai[2] <= 570.0 {
+            // `:51035-51037`'s remap over `ai[2] ∈ [285, 570]`.
+            let t = ((self.ai[2] - 285.0) / 285.0).clamp(0.0, 1.0);
+            let f = 1.0 - 0.5 * t;
+            self.vx *= f;
+            self.vy *= f;
+        }
+        if self.ai[2] == 570.0 {
+            self.wants_stardust_mark = true;
+            let sp = (self.vx * self.vx + self.vy * self.vy).sqrt().max(0.001);
+            self.vx = self.vx / sp * 6.0;
+            self.vy = self.vy / sp * 6.0;
+        }
+        if self.ai[2] >= 600.0 {
+            self.ai[2] = 0.0;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -10650,6 +10987,11 @@ impl Npc {
             NpcKind::StardustSpiderBig => 409,
             NpcKind::StardustSpiderSmall => 410,
             NpcKind::StardustSoldier => 411,
+            NpcKind::SolarCrawltipedeHead => 412,
+            NpcKind::SolarCrawltipedeBody => 413,
+            NpcKind::SolarCrawltipedeTail => 414,
+            NpcKind::StardustWormHead => 402,
+            NpcKind::SolarSpearman => 518,
             NpcKind::SolarDrakomire => 415,
             NpcKind::SolarDrakomireRider => 416,
             NpcKind::SolarSroller => 417,
