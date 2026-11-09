@@ -321,6 +321,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
     }
 }
 
+/// `NPCDebuffImmunityData.ImmuneToWhips` — the 11 `NPCID.cs` rows
+/// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
+/// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
+/// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
+/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
+/// the pirate ship are on the ported roster — the whip tag gate
+/// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+pub fn whip_immune(kind: NpcKind) -> bool {
+    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+}
+
 impl NpcBuffs {
     /// `SetDefaults`' immunity application (`NPC.cs:17823-17833`): the kind's
     /// `DebuffImmunitySets` entry, then the derived rules — immune 20 ⇒

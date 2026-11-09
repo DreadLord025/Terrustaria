@@ -238,7 +238,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42822`), so the press/release edges stay current even on
-    // frames where the cursor is over the HUD or a panel.
+    // frames where the cursor is over the HUD or a panel. The *previous*
+    // frame's edges are captured before the overwrite: the use gates below
+    // must compare this frame's press against last frame's state (the C#
+    // `controlUseItem && releaseUseItem` pair), not against the same frame's.
+    let prev_mine_down = app.mine_prev_down;
+    let prev_mine_released = app.mine_released;
+    let prev_place_down = app.place_prev_down;
+    let prev_place_released = app.place_released;
     app.place_prev_down = app.place_down;
     app.mine_prev_down = app.mine_down;
     app.place_released = !app.place_down;
@@ -467,6 +474,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
+        let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            || (prev_mine_released && !prev_mine_down);
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
         // fires at `ItemTimeIsZero` mid-swing, not on the press.
@@ -543,9 +552,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
-                    let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                    let crit =
-                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
+                    // The whips are the exception: `DefaultToWhip` sets no
+                    // melee/ranged/magic flag, so the C# crit block
+                    // (`Projectile.cs:12892-12899`) never fires for them —
+                    // the vanilla whip crits only through the tag's
+                    // `CritChance` (deviation in ANALYSIS).
+                    let crit = if tr_core::whip::is_whip(proj) {
+                        false
+                    } else {
+                        let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit)
+                    };
                     let slot = app.projectiles.spawn_with_data_owned(
                         proj,
                         app.local_id as u8,
@@ -560,6 +577,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
+                        // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
+                        // the whip's tag row off the firing item + the
+                        // prefix's `bonusTagDamage`, plus
+                        // `AI_165_Whip`'s `timeToFlyOut` inputs (the prefixed
+                        // `itemAnimationMax` — 27/28/30/35 per whip).
+                        let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+                            held.kind
+                        } else {
+                            0
+                        };
+                        let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+                        let animation_max =
+                            held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+                        app.projectiles
+                            .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                     }
                     if def.consumable {
                         app.inventory[app.selected].count =
@@ -891,7 +923,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.attack_cd = app.attack_cd.max(0.2);
     }
     let swing_over = app.swing <= 0.0;
-    let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
+    let reuse_ready = auto_reuse || (prev_place_released && !prev_place_down);
     let starting = swing_over && reuse_ready;
     let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
     // Tile interactions (`Player.Update` order: LookForTileInteractions
@@ -901,20 +933,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // the press edge. A handled interaction consumes the click; anything else
     // falls through to the place path unchanged.
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;
     }
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::chest::try_open_chest_at_cursor(app, world_pos)
     {
         return;
     }
-    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+    if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
     // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
@@ -1459,7 +1491,10 @@ fn drop_ctx(app: &App) -> DropCtx {
         // M5-SEED-1: `Main.dontStarveWorld` (`editing.rs`'s fruit/pot
         // branches, `:1437-1474`) — the world's own flag replaces the
         // hard-coded false.
-        dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        dont_starve: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,
@@ -4174,6 +4209,91 @@ mod tests {
         for _ in 0..n {
             update_editing(app, 1.0 / 60.0, MINE_SCREEN);
         }
+    }
+
+    /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
+    /// the tag row, the whip never self-crits, and the swing lasts the item's
+    /// `useAnimation`.
+    fn whip_app(kind: u16) -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: "whip",
+            count: 1,
+            prefix: 0,
+        };
+        // The press edge is the test's: `mine_down` flips to true on the
+        // frame under test (`Player.cs:42733`'s release-then-press gate).
+        app.mine_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn the_whip_press_swings_once_and_spawns_the_tagged_slot() {
+        // The BlandWhip (4672 → 841): `autoReuse = false`, `useAnimation` 30,
+        // `DefaultToWhip`'s slice, `crit` never rolled for the whip itself.
+        let mut app = whip_app(4672);
+        // One idle frame sets the edge state (`mine_prev_down` = false,
+        // `mine_released` = true); the press on the next frame fires.
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let spawned: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(spawned.len(), 1, "one whip projectile");
+        let p = spawned[0];
+        assert_eq!(p.kind, 841);
+        assert_eq!(p.tag_effect_type, 4672, "the tag row rides the slot");
+        assert!(!p.crit, "the whip never self-crits");
+        assert_eq!(p.local_hit_cooldown, -1, "the one-hit-per-NPC sentinel");
+        // `timeToFlyOut = itemAnimationMax(30) * MaxUpdates(2)`.
+        assert_eq!(
+            p.whip_settings.map(|s| s.time_fly_out),
+            Some(60.0),
+            "the swing lives the useAnimation × MaxUpdates"
+        );
+        // The swing timer matches the item's `useAnimation` (30 ticks = 0.5 s).
+        assert!((app.swing_max - 0.5).abs() < 1e-6, "the 30-tick swing");
+        // The reuse lock: a held press does not throw a second whip.
+        app.mine_released = false;
+        mine_frames(&mut app, 60);
+        let still = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert!(still <= 1, "one swing per press edge (the past whip ended)");
+    }
+
+    #[test]
+    fn the_prefixed_minion_tag_damage_reaches_the_slot() {
+        // The minion prefixes 69-72 add `Item.bonusTagDamage`
+        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
+        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        let mut app = whip_app(4678);
+        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the SwordWhip");
+        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        assert_eq!(p.bonus_tag_damage, want);
     }
 
     fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {

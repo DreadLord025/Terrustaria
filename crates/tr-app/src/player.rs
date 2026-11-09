@@ -219,6 +219,14 @@ pub struct Player {
     pub angler_quests_finished: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
+    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
+    /// prefer while it stands. The consumers are the minion AIs
+    /// (M4-PROJ-8); the whip pass only writes it.
+    pub minion_attack_target_npc: i16,
+    /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
+    /// player applied (`tag_effects.rs`, M4-PROJ-7).
+    pub tag_effects: crate::tag_effects::TagEffectStack,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -671,9 +679,7 @@ impl Player {
         // failure chat needs the monitor, which the join path has not built
         // yet); the revive prints like the C#.
         let (sx, sy) = match world.bed_spawn {
-            Some((bx, by))
-                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
-            {
+            Some((bx, by)) if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() => {
                 // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
                 // the spawn cell's top.
                 (
@@ -693,6 +699,8 @@ impl Player {
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
+            tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -1565,6 +1573,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:24591`: the tag stack's update right after the buff head —
+        // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
+        self.tag_effects.update_tick();
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
