@@ -85,30 +85,6 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Hallow,
             },
         ],
-        // `Register(124)` (`PersonalityDatabasePopulator.cs:52-56`):
-        // the Mechanic likes the Snow, dislikes the Underground.
-        NpcKind::Mechanic => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Snow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Underground,
-            },
-        ],
-        // `Register(108)` (`PersonalityDatabasePopulator.cs:127-131`):
-        // the Wizard likes the Hallow, dislikes the Ocean.
-        NpcKind::Wizard => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Hallow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Ocean,
-            },
-        ],
         // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`):
         // the Tinkerer likes the Underground, dislikes the Jungle.
         NpcKind::GoblinTinkerer => &[

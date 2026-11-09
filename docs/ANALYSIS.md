@@ -3584,21 +3584,6 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
-## Wizard/Mechanic (M4-TOWN-16)
-
-The pair and their bound forms port the 1.4.5.8 spawn/transform/shop slice. Deliberate gaps, all
-in the ROADMAP row: the attack machines (`AI_007_TownEntities`'s `ai[0] == 10` arm for 124,
-`NPC.cs:54450-54459`, and `ai[0] == 14` for 108, `:54865-54875` + the 108's multi-projectile
-`SelectRandom(1,1,1,1,2,2,3)` at `:54927`) wait for the town-attack task; the Wizard's
-hardmode blood-moon deck (5461) and halloween hat (1739) and the Mechanic's graveyard goggles
-(4409) are constants-off (no season/graveyard stock gates yet); the Mechanic's Rod gate reads the
-moon phase only — the C# also needs `NPC.AnyNPCs(369)` (the Angler), which the port's shop
-engine carries through `StockWhen::PlayerHasItem`-style flags only, so the Angler-presence half
-sits with the town-count gate's follow-up; the bound Mechanic's depth band rides the player's
-tile without the Dungeon biome gate (`NPC.cs:2643-2652`'s `hardDungeon` branch); the
-`hasTownNPC`-style flags the C# counts for the arrival (`num10`/`num12`, `Main.cs:65651-65658`)
-fold into the port's per-kind absence check.
-
 ## Angler quest (M4-TOWN-15)
 
 The quest state lives on the statics in the C# (`Main.anglerQuest`,
@@ -6754,6 +6739,26 @@ Deviations and accepted changes:
   lives in `world_hash.rs`; the executed pipeline grew 44 → 50 steps
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
+
+## Dungeon crawler wiring (M5-DUNGEON)
+
+The pipeline's `Dungeon` step moved from the shape-level approximation
+(`biomes::pass_dungeon` — a 5-wide tower, the 3-wide shaft and three
+corridor levels) to the faithful crawler (`worldgen/dungeon.rs`
+— `MakeDungeon`'s setup, the `LegacyDungeonLayoutProvider`'s room/hall
+walk, the hall/room brick+carve geometry), on its own
+`pass_rng("Dungeon")` hall seed; the retired approximation is kept for its
+tests. The world-hash pins are re-taken (`SEED42_512 = 608156777`,
+`DEFAULT_WORLD = 3295755475`) — the same accepted-world-change class as the
+M5-OCEAN/M5-DESERT stream shifts.
+
+The row's remaining scope is re-stated: the entrance-hall precalculation
+(`MakeDungeon_GenerateNextEntranceHall_Precalculated` plus the
+`DungeonGlobal*` feature passes — spikes/doors/platforms/chests/lights/
+traps/furniture), the biome styles (`dungeonGenerationStyles` — populated
+only under the `dualDungeons` secret seed, so M5-SEED-1/2's), the room
+chest/book-shelf/pit-trap features (M5-CHEST-gen's) and the Lihzahrd brick
+phase.
 
 ## Grass growth's enclosure gate (M5-SPREAD-1)
 

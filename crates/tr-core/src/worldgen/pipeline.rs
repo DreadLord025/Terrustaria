@@ -36,6 +36,7 @@ use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::dungeon;
 use super::evil;
 use super::islands;
 use super::liquids;
@@ -1748,8 +1749,16 @@ fn step_dungeon(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    biomes::pass_dungeon(world, &map.heights, gv.spans(), &mut streams.rng);
+    // The faithful crawler (`DungeonCrawler.MakeDungeon` +
+    // `LegacyDungeonLayoutProvider` + the hall/room walkers,
+    // `worldgen/dungeon.rs::generate_dungeon`) replaces the shape-level
+    // approximation (`biomes::pass_dungeon` — retired with this move, its
+    // tests keep it honest). The hall seed rides the pass's own stream; the
+    // `rng → pass_rng("Dungeon")` shift is this phase's accepted world change.
+    let dungeon_x = gv.spans().dungeon_x;
+    let surface_row = gv.map().heights[dungeon_x as usize];
+    let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
+    dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
 }
 
 fn step_ocean_caves(
