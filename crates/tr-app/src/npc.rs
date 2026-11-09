@@ -483,6 +483,16 @@ pub enum NpcKind {
     /// — no shop: his tax timer rides the player's coin purse
     /// (`Main.cs:64994`) — M4-TOWN-17.
     TaxCollector,
+    /// `NPCID.Golfer` (588) — the golf seller (`NPC.cs:16638-16651`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[588]` = 25, `Main.cs:67142`) — the shop index 22
+    /// (`Chest.cs:3156`) — M4-TOWN-18.
+    Golfer,
+    /// `NPCID.GolferRescue` (589) — the underground-desert tied Golfer
+    /// (`NPC.cs:16652-16665`: 18x34, aiStyle 0 the bound stand, rarity 1,
+    /// `npcFrameCount[589]` = 13) — `Sets.BoundTownNPCs`
+    /// (`NPCID.cs:10441`); the talk transforms 589 → 588.
+    SleepingGolfer,
     /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
     /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
@@ -996,6 +1006,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Stylist => 160,
             NpcKind::WebbedStylist => 161,
             NpcKind::TaxCollector => 162,
+            NpcKind::Golfer => 163,
+            NpcKind::SleepingGolfer => 164,
         }
     }
 
@@ -1182,6 +1194,8 @@ NpcKind::SolarSelenian => 140,
             160 => NpcKind::Stylist,
             161 => NpcKind::WebbedStylist,
             162 => NpcKind::TaxCollector,
+            163 => NpcKind::Golfer,
+            164 => NpcKind::SleepingGolfer,
             _ => return None,
         })
     }
@@ -1211,6 +1225,7 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::Mechanic
                 | NpcKind::Stylist
                 | NpcKind::TaxCollector
+                | NpcKind::Golfer
         )
     }
 
@@ -1335,6 +1350,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Stylist => (18.0, 40.0),
             NpcKind::WebbedStylist => (18.0, 34.0),
             NpcKind::TaxCollector => (18.0, 40.0),
+            NpcKind::Golfer => (18.0, 40.0),
+            NpcKind::SleepingGolfer => (18.0, 34.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1572,6 +1589,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Stylist => 353,
             NpcKind::WebbedStylist => 354,
             NpcKind::TaxCollector => 441,
+            NpcKind::Golfer => 588,
+            NpcKind::SleepingGolfer => 589,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1702,6 +1721,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Mechanic => 250,
             NpcKind::Stylist => 250,
             NpcKind::WebbedStylist => 250,
+            NpcKind::Golfer => 250,
+            NpcKind::SleepingGolfer => 250,
             NpcKind::TaxCollector => 250,
             NpcKind::BoundMechanic => 250,
             NpcKind::SleepingAngler => 250,
@@ -1929,6 +1950,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Mechanic => 10,
             NpcKind::Stylist => 10,
             NpcKind::WebbedStylist => 10,
+            NpcKind::Golfer => 10,
+            NpcKind::SleepingGolfer => 10,
             NpcKind::TaxCollector => 10,
             NpcKind::BoundMechanic => 10,
             NpcKind::SleepingAngler => 10,
@@ -3036,6 +3059,8 @@ impl Npc {
             NpcKind::Mechanic => 0.5,
             NpcKind::Stylist => 0.5,
             NpcKind::WebbedStylist => 0.5,
+            NpcKind::Golfer => 0.5,
+            NpcKind::SleepingGolfer => 0.5,
             NpcKind::TaxCollector => 0.5,
             NpcKind::BoundMechanic => 0.5,
             NpcKind::SleepingAngler => 0.5,
@@ -3279,6 +3304,8 @@ impl Npc {
             NpcKind::Mechanic => 15,
             NpcKind::Stylist => 15,
             NpcKind::WebbedStylist => 15,
+            NpcKind::Golfer => 15,
+            NpcKind::SleepingGolfer => 15,
             NpcKind::TaxCollector => 15,
             NpcKind::BoundMechanic => 15,
             NpcKind::SleepingAngler => 15,
@@ -3522,6 +3549,8 @@ impl Npc {
             NpcKind::Mechanic => 0.0,
             NpcKind::Stylist => 0.0,
             NpcKind::WebbedStylist => 0.0,
+            NpcKind::Golfer => 0.0,
+            NpcKind::SleepingGolfer => 0.0,
             NpcKind::TaxCollector => 0.0,
             NpcKind::BoundMechanic => 0.0,
             NpcKind::SleepingAngler => 0.0,
@@ -3682,6 +3711,7 @@ impl Npc {
             | NpcKind::Mechanic
             | NpcKind::Stylist
             | NpcKind::TaxCollector
+            | NpcKind::Golfer
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3705,6 +3735,7 @@ impl Npc {
             NpcKind::BoundWizard => {}
             NpcKind::BoundMechanic => {}
             NpcKind::WebbedStylist => {}
+            NpcKind::SleepingGolfer => {}
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
                 self.update_goblin(world, player)
             }
@@ -4039,6 +4070,7 @@ impl Npc {
             // own — the shared town body's rows stand.
             NpcKind::Wizard | NpcKind::Mechanic => {}
             NpcKind::Stylist | NpcKind::TaxCollector => {}
+            NpcKind::Golfer => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -5119,6 +5151,10 @@ impl Npc {
             // The webbed Stylist: `Main.npcFrameCount[354]` = 1
             // (`Main.cs:67119`) and no `FindFrame` case — one row.
             NpcKind::WebbedStylist => {}
+            // The sleeping Golfer: `Main.npcFrameCount[589]` = 13
+            // (`Main.cs:67142`) and `FindFrame` has no case for the bound
+            // form — the still stand's row stands.
+            NpcKind::SleepingGolfer => {}
             NpcKind::SleepingAngler => {
                 // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
                 // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
@@ -11298,6 +11334,8 @@ impl Npc {
             NpcKind::Stylist => 160,
             NpcKind::WebbedStylist => 161,
             NpcKind::TaxCollector => 162,
+            NpcKind::Golfer => 163,
+            NpcKind::SleepingGolfer => 164,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13724,6 +13762,80 @@ mod tests {
     /// two rows flip once past 30 ticks and wrap — the headless twin of the
     /// screenshot pair (the port's draw rides the same rows).
 
+
+
+    #[test]
+    fn the_golfer_kinds_stats_roundtrip_and_shop() {
+        // `SetDefaults` 588 (`NPC.cs:16638-16651`) and 589 (`:16652-16665`):
+        // the town twin's numbers on both, the sleeping body's 18x34, the
+        // kind<->u16 round-trips, the Golfer's shop (`NPCInteractions.cs:509`'s
+        // `Shop(588, 22)`), the town flag (589 is `Sets.BoundTownNPCs`,
+        // `NPCID.cs:10441`) and the bestiary row.
+        for (kind, id) in [
+            (NpcKind::Golfer, 588u16),
+            (NpcKind::SleepingGolfer, 589),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+        }
+        assert_eq!(NpcKind::Golfer.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::SleepingGolfer.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(NpcKind::Golfer.to_u16(), 163);
+        assert_eq!(NpcKind::from_u16(163), Some(NpcKind::Golfer));
+        assert_eq!(NpcKind::SleepingGolfer.to_u16(), 164);
+        assert_eq!(NpcKind::from_u16(164), Some(NpcKind::SleepingGolfer));
+        assert!(NpcKind::Golfer.is_town_resident());
+        assert!(!NpcKind::SleepingGolfer.is_town_resident());
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Golfer),
+            Some(22)
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Golfer, SlimeVariant::Blue).net_id, 588);
+    }
+
+    /// `Chest.SetupShop`'s case 22 (`Chest.cs:3156-3262`): the Golfer's always
+    /// rows and the score-gated tiers — the vanilla mixes `>=` and `>` per row
+    /// (`:3169` vs `:3186`), which the port's `StockWhen::GolfScore` carries.
+    #[test]
+    fn the_golfer_shop_scores_its_clubs_and_trophies() {
+        let base = crate::shop::resolve_stock(22, &crate::shop::ShopFlags::default(), &[]);
+        for id in [
+            4587, 4590, 4589, 4588, 4083, 4084, 4085, 4086, 4087, 4088, 4089, 3989, 4095, 4040, 4319,
+            4320, 4135, 4138, 4136, 4137, 4049,
+        ] {
+            assert!(base.contains(&id), "the always row {id}");
+        }
+        for id in [4039, 4591, 4265, 4601, 4264, 4658] {
+            assert!(!base.contains(&id), "the gated {id} stays off at score 0");
+        }
+        let mid = crate::shop::ShopFlags {
+            golfer_score: 600,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(22, &mid, &[]);
+        assert!(rows.contains(&4039), "the iron set at >= 500");
+        assert!(rows.contains(&4265), "the golf chest at > 500");
+        assert!(rows.contains(&4599), "the bronze trophy at > 500");
+        assert!(!rows.contains(&4591), "no mythril set under 1000");
+        assert!(!rows.contains(&4600), "no silver trophy under 1000");
+        let high = crate::shop::ShopFlags {
+            golfer_score: 1500,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(22, &high, &[]);
+        assert!(rows.contains(&4591), "the mythril set at > 1000");
+        assert!(!rows.contains(&4595), "no titanium set under 2000");
+        let master = crate::shop::ShopFlags {
+            golfer_score: 2500,
+            ..Default::default()
+        };
+        let phase1 = crate::shop::resolve_stock_moon(22, &master, &[], 1);
+        assert!(phase1.contains(&4658), "the phase-1 painting");
+        assert!(!phase1.contains(&4659), "not the phase-3 painting");
+        let phase3 = crate::shop::resolve_stock_moon(22, &master, &[], 3);
+        assert!(phase3.contains(&4659), "the phase-3 painting");
+    }
 
     #[test]
     fn the_stylist_and_tax_collector_kinds_stats_roundtrip_and_shops() {

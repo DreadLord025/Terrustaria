@@ -177,6 +177,10 @@ pub(crate) struct NpcAssets {
     pub(crate) webbed_stylist: Option<BgTex>,
     /// `NPC_441.xnb` — the Tax Collector's town sheet (25 rows, `:67128`).
     pub(crate) tax_collector: Option<BgTex>,
+    /// `NPC_588.xnb` — the Golfer's town sheet (25 rows, `Main.cs:67142`).
+    pub(crate) golfer: Option<BgTex>,
+    /// `NPC_589.xnb` — the sleeping Golfer's sheet (`:67142`).
+    pub(crate) sleeping_golfer: Option<BgTex>,
     /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
     pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
@@ -386,6 +390,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         stylist: sky_tex(atlas, "NPC_353", None),
         webbed_stylist: sky_tex(atlas, "NPC_354", None),
         tax_collector: sky_tex(atlas, "NPC_441", None),
+        golfer: sky_tex(atlas, "NPC_588", None),
+        sleeping_golfer: sky_tex(atlas, "NPC_589", None),
         sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
@@ -1247,6 +1253,17 @@ pub(crate) fn draw_npcs(
             // `Main.cs:67128`) ride the same humanoid anchor.
             NpcKind::Stylist => humanoid_draw(assets.stylist.as_ref(), 23, n, w, h),
             NpcKind::TaxCollector => humanoid_draw(assets.tax_collector.as_ref(), 25, n, w, h),
+            // The Golfer: the same humanoid shape over NPC_588 — 25 rows
+            // (`Main.cs:67142`).
+            NpcKind::Golfer => humanoid_draw(assets.golfer.as_ref(), 25, n, w, h),
+            // The sleeping Golfer: NPC_589's sheet over the flat 18x34
+            // body.
+            NpcKind::SleepingGolfer => (
+                assets.sleeping_golfer.as_ref(),
+                assets.sleeping_golfer.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
             // The webbed Stylist: one row over the flat 18x34 body.
             NpcKind::WebbedStylist => (
                 assets.webbed_stylist.as_ref(),

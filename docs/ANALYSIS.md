@@ -3724,6 +3724,20 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Golfer (M4-TOWN-18)
+
+The pair and its shop. The whole shop's variable stock keys off
+`Player.golferScoreAccumulated` (`Chest.cs:3158`), which only the golf system
+grows (`GolfHelper.PutBallInCup` → `AccumulateGolfingScore`, `Player.cs:4932`);
+the port carries the score on the shop flags and the accumulator, so the rows
+are faithful but stay at their score-0 tier until M4-GOLF-1 ports the balls,
+cups and `GolfState` scoring. The bound-Golfer spawn's desert-wall gate
+(`SpawnTileOrAboveHasAnyWallInSet(..., AllowsUndergroundDesertEnemiesToSpawn)`,
+`NPC.cs:1680`) has no port table yet, so the port spawns it from the depth band
+and rate alone. The Golfer's attack machine (projectile 721, `NPC.cs:54378`) and
+the 480-tick shot lifetime (`:54868`) ride the town-attack task; the chatter
+tiers (`GolferQuestsChatter*`, `NPC.cs:94792`) ride M6-LOCALIZE.
+
 ## Stylist/Tax Collector (M4-TOWN-17)
 
 The three kinds and the Tax Collector's coin system. Deliberate gaps: the tax
@@ -8594,3 +8608,43 @@ Out: the remaining C# sections — signs (no port store), the angler quest state
 (no port fields), the TownManager rooms, the weighted pressure plates (no port
 store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
 bestiary's Sights/Chats sub-blocks — each needs its own scope.
+
+expert duration stays classic until the difficulty modes land.
+
+## The Vortex ritual projectiles (M4-EVENT-17)
+
+The vortex tower's ritual arms (the port's `update_ancient_cultist`'s
+`:39273-39336` machine) throw two markers, both carried by the pool's
+aiStyle-108 machine.
+
+- **579 (the portal)** and **578 (the lightning)** share a 32×32 box with
+  `tileCollide = false` and `ignoreWater`. The marker's timeline
+  (`Projectile.cs:33679-33988`) is `ai[0] <= 50` (the wind-up, dust only),
+  `<= 90` (the charge: `scale = (ai[0] - 50)/40`, `alpha = 255 -
+  255·scale`, `rotation -= π/20`), `<= 120` (the full charge: `scale = 1`,
+  `alpha = 0`, `rotation -= π/60`) and the dissolve (`scale = 1 -
+  (ai[0] - 120)/60`, `alpha = 255 - 255·scale`, `rotation -= π/30`, dying
+  at `alpha >= 255`). The 578's first tick stores the aim rotation
+  (`Player.FindClosest`'s centre → `ai[1]`, the zero fallback `UnitY`).
+- **At the 90th tick** the 578 spawns the **580 VortexLightning** — the aim
+  vector × 8 behind the centre, damage 50 (`:33841`'s call), knockback 1,
+  `ai0 = ai[1]` (the bolt's spin) and `ai1 = rand(80)` (the wand's seed);
+  the 579 spawns **two VortexAliens (427)** at its centre with
+  `-UnitY.RotatedByRandom(2π) * rand(4, 9) - UnitY * 2`.
+- **580 (aiStyle 88, 14×14, `extraUpdates = 4`, `ignoreWater`)** runs the
+  ritual bolt: the `localAI[0] == 0 && ai[0] >= 900` wrap latch
+  (`ai[0] -= 1000`, `localAI[0] = -1`), then the moving arm integrates the
+  velocity and stops it on a solid tile (`:32308`), the stopped arm dies
+  after `extraUpdates * 2` ticks (`:32156-32174`) and the moving arm's
+  wand (`:32195-32249`) draws the per-step lateral jitter with the
+  100-roll rejection (`Y <= -0.02`, `|X| <= 40`) and accumulates
+  `localAI[0]`.
+- The resolution seam: the projectile can't grow the NPC vec, so the 579's
+  aliens ride the M4-EVENT-16 intent (`wants_mark_spawn`, now carrying
+  the (kind, x, y, vx, vy) payload) out to the world_sim's
+  `drain_mark_spawns`; the 580's spawn rides `wants_ritual_bolt`.
+
+Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
+dusts), the sounds and the light are unmodelled; the wand's
+`UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
+late-stage clone spawn (`:32251-32257`) is unmodelled.
