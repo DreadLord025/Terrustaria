@@ -602,6 +602,8 @@ pub(crate) struct App {
     pub(crate) projectile_step: FixedStepper,
     /// `TR_THROW` debug hook: throw one shuriken at startup.
     pub(crate) dev_throw: bool,
+    /// `TR_SUMMON` debug hook: spawn the Hornet + Frost Hydra draw pair.
+    pub(crate) summon_shot: bool,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     pub(crate) world_key: Option<WorldFrameKey>,
     /// `Main.hellBlackBoxBottom` (`Main.cs:2463`): world Y of the hell floor line the
@@ -1010,9 +1012,8 @@ impl App {
                 self.reforge_slot.kind,
                 self.reforge_slot.prefix,
             ) {
-                self.inventory[i].count =
-                    (self.inventory[i].count + self.reforge_slot.count)
-                        .min(crate::registry::max_stack(self.reforge_slot.kind));
+                self.inventory[i].count = (self.inventory[i].count + self.reforge_slot.count)
+                    .min(crate::registry::max_stack(self.reforge_slot.kind));
                 self.reforge_slot = EMPTY_SLOT;
             }
         }
@@ -1414,9 +1415,7 @@ impl App {
                 }
             }
         }
-        let follow_player = player.is_some()
-            && !crate::env::cam_set()
-            && !crate::env::pan_set();
+        let follow_player = player.is_some() && !crate::env::cam_set() && !crate::env::pan_set();
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
@@ -1655,9 +1654,7 @@ impl App {
                     );
                     b.hp = b.max_hp;
                     npcs.push(b);
-                } else if let Some(n) =
-                    Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
-                {
+                } else if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
                     npcs.push(n);
                 }
             }
@@ -1731,8 +1728,7 @@ impl App {
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
-                    let mut n =
-                        Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
+                    let mut n = Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
                     n.hp = n.max_hp;
                     // The saucer family's `FindFrame` cases read the core's
                     // mirrored `ai[3]` clock; give the spawn a mid-band value
@@ -1801,28 +1797,26 @@ impl App {
             // (`draw_slot`'s existing item draw — verified, not reinvented).
             // The store's `ItemSlot`s since the M3-CHEST-INT upgrade — the
             // same kinds/counts, so the screenshot pixels are unchanged.
-            tr_chest_store[idx]
-                .slots
-                .extend_from_slice(&[
-                    crate::item::ItemSlot {
-                        kind: 9,
-                        name: crate::registry::name(9),
-                        count: 6,
-                        prefix: 0,
-                    },
-                    crate::item::ItemSlot {
-                        kind: 166,
-                        name: crate::registry::name(166),
-                        count: 42,
-                        prefix: 0,
-                    },
-                    crate::item::ItemSlot {
-                        kind: 71,
-                        name: crate::registry::name(71),
-                        count: 3,
-                        prefix: 0,
-                    },
-                ]);
+            tr_chest_store[idx].slots.extend_from_slice(&[
+                crate::item::ItemSlot {
+                    kind: 9,
+                    name: crate::registry::name(9),
+                    count: 6,
+                    prefix: 0,
+                },
+                crate::item::ItemSlot {
+                    kind: 166,
+                    name: crate::registry::name(166),
+                    count: 42,
+                    prefix: 0,
+                },
+                crate::item::ItemSlot {
+                    kind: 71,
+                    name: crate::registry::name(71),
+                    count: 3,
+                    prefix: 0,
+                },
+            ]);
             Some((idx as i32, cx, cy))
         } else {
             None
@@ -2331,6 +2325,7 @@ impl App {
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: crate::env::dev_throw(),
+            summon_shot: crate::env::summon_shot(),
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
@@ -2752,7 +2747,12 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
 pub(crate) fn build_atlas(
     world: &World,
     assets_dir: &Path,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -3143,23 +3143,17 @@ mod tr_hooks {
             with_pin("TR_PLACE", "x,y,18;5,19,4", || crate::env::place_ops()).len(),
             1
         );
-        assert!(
-            with_pin("TR_PLACE", "", || crate::env::place_ops()).is_empty()
-        );
+        assert!(with_pin("TR_PLACE", "", || crate::env::place_ops()).is_empty());
     }
 
     #[test]
     fn tr_toggle_parsing_default_count() {
-        let ops = with_pin("TR_TOGGLE", "2026,198;7,9,3", || {
-            crate::env::toggle_ops()
-        });
+        let ops = with_pin("TR_TOGGLE", "2026,198;7,9,3", || crate::env::toggle_ops());
         assert_eq!(ops.len(), 2);
         assert_eq!((ops[0].x, ops[0].y, ops[0].n), (2026, 198, 1));
         assert_eq!((ops[1].x, ops[1].y, ops[1].n), (7, 9, 3));
         // Wrong arity is dropped; a negative count clamps to 0 presses.
-        assert!(
-            with_pin("TR_TOGGLE", "1,2,3,4", || crate::env::toggle_ops()).is_empty()
-        );
+        assert!(with_pin("TR_TOGGLE", "1,2,3,4", || crate::env::toggle_ops()).is_empty());
         assert_eq!(
             with_pin("TR_TOGGLE", "1,2,-5", || crate::env::toggle_ops())[0].n,
             0
@@ -3175,7 +3169,10 @@ mod tr_hooks {
         apply_tr_fill(&mut w, "0,20,40,1,1");
         apply_tr_fill(&mut w, "0,16,40,1,1");
         assert!(w.tile(10, 20).unwrap().active(), "fill wrote the floor");
-        apply_tr_places(&mut w, &with_pin("TR_PLACE", "10,19,10", crate::env::place_ops));
+        apply_tr_places(
+            &mut w,
+            &with_pin("TR_PLACE", "10,19,10", crate::env::place_ops),
+        );
         assert!(w.tile(10, 19).unwrap().active() && w.tile(10, 17).unwrap().active());
         // `place` guarantees the frame_important bit (Decision #4).
         assert!(w.frame_important[10]);
@@ -3298,7 +3295,10 @@ mod tr_hooks {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "5,6,82,0,18", crate::env::tile_ops));
+        apply_tr_tiles(
+            &mut w,
+            &with_pin("TR_TILES", "5,6,82,0,18", crate::env::tile_ops),
+        );
         let t = w.tile(5, 6).unwrap();
         assert_eq!(t.kind, 82);
         assert_eq!((t.frame_x, t.frame_y), (0, 18));
@@ -3332,7 +3332,10 @@ mod tr_hooks {
             }
         }
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops));
+        apply_tr_tiles(
+            &mut w,
+            &with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops),
+        );
         for x in 10..13 {
             for y in 10..12 {
                 assert_eq!(
@@ -3444,7 +3447,10 @@ mod dye_pin_tests {
         assert_eq!(crate::env::parse_tr_dye(""), [0; 10]);
         assert_eq!(crate::env::parse_tr_dye("nope,x")[..2], [0, 0]);
         // Overlong lists clip to the ten dye slots.
-        assert_eq!(crate::env::parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
+        assert_eq!(
+            crate::env::parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9],
+            10
+        );
     }
 
     #[test]

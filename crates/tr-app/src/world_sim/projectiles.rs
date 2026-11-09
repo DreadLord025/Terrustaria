@@ -26,6 +26,42 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
         app.dev_throw = false;
     }
+    if app.summon_shot {
+        if let Some(p) = &app.player {
+            let (cx, cy) = p.center();
+            // The DW-1.4 pair (M4-PROJ-8 Phase 1): a Hornet (373) + a Frost
+            // Hydra (308) ride the generic active-slot draw pass
+            // (`frame.rs`'s `p.draw` loop — the plan's Decision Log: presence
+            // via the placeholder draw, not per-kind art). Damage 0 keeps the
+            // PVE walk a no-op; the unported aiStyles 62/53 dispatch no arm,
+            // so both slots hold position for the capture.
+            app.projectiles.spawn_with_data_ai_owned(
+                crate::projectile::HORNET,
+                0,
+                cx - 24.0,
+                cy - 48.0,
+                0.0,
+                0.0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            );
+            app.projectiles.spawn_with_data_ai_owned(
+                crate::projectile::FROST_HYDRA,
+                0,
+                cx + 24.0,
+                cy - 48.0,
+                0.0,
+                0.0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
+        app.summon_shot = false;
+    }
     // The boomerangs' return seek reads the owner's center (`AI_003`'s
     // `Main.player[owner]` inputs).
     let owner = app.player.as_ref().map(|p| {
@@ -45,12 +81,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             )
         }),
-        channel: app.player.is_some()
-            && app.mine_down
-            && {
-                let held = app.inventory[app.selected];
-                held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
-            },
+        channel: app.player.is_some() && app.mine_down && {
+            let held = app.inventory[app.selected];
+            held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
+        },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
     };
     // The closure's disjoint field captures keep the step borrow

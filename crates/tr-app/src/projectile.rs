@@ -44,7 +44,7 @@ use std::collections::HashMap;
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -351,6 +351,22 @@ pub struct ProjData {
     /// `:466`): the Terrarian pair's slice (`:6068-6069`, `:6081-6082`).
     pub uses_id_static: bool,
     pub id_static_hit_cooldown: i32,
+    /// The summon identification (M4-PROJ-8): `Projectile.minion` +
+    /// `Projectile.minionSlots` (the stock false / 0f, `Projectile.cs:775-776`).
+    pub minion: bool,
+    pub sentry: bool,
+    /// `Projectile.minionSlots` — the per-tick slot budget the pool's
+    /// accumulate block adds (`:16719`); 0.5 for the spider family (never
+    /// rounded to an integer count).
+    pub minion_slots: f32,
+    /// `Projectile.netImportant` (`:706`'s stock false) — carried on the
+    /// summon rows (the plan constraint); the MP bookkeeping consumer is out
+    /// of scope (module doc).
+    pub net_important: bool,
+    /// `Projectile.ignoreWater` (`:752`'s stock false) — carried on the summon
+    /// rows; the `wet = false` spawn write (`:10886-10889`) lands with the
+    /// projectile-liquid work.
+    pub ignore_water: bool,
 }
 
 /// `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`) — the
@@ -451,6 +467,56 @@ fn yoyo_max_range(kind: u16) -> f32 {
 fn yoyo_top_speed(kind: u16) -> f32 {
     yoyo_table(YOYO_TOP_SPEED, 10.0, kind)
 }
+
+/// `ProjectileID.Sets.MinionSacrificable` (`ID/ProjectileID.cs:529`) — the
+/// minion kinds the summon use-path may kill to free slots (Phase 6's
+/// `FreeUpPetsAndMinions` sort loop). Verbatim C# list order; the lookup is
+/// order-free (a `CreateBoolSet` set).
+pub const MINION_SACRIFICABLE: &[u16] = &[
+    191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
+    831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625, 626, 627, 628,
+];
+
+/// `ProjectileID.Sets.SentryShot` (`ID/ProjectileID.cs:432`) — the shots the
+/// sentry bodies spawn. Verbatim C# data carried now so the identification
+/// sets land once; the shot consumers ride the later projectile-family tasks.
+pub const SENTRY_SHOT: &[u16] = &[
+    680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
+];
+
+/// The summon kinds (M4-PROJ-8) — the C# constant names from
+/// `ID/ProjectileID.cs`. The rows below dispatch on them and Phases 3-6
+/// branch on the ids.
+pub const FROST_HYDRA: u16 = 308;
+pub const HORNET: u16 = 373;
+pub const FLYING_IMP: u16 = 375;
+pub const RETANIMINI: u16 = 387;
+pub const SPAZMAMINI: u16 = 388;
+pub const TEMPEST: u16 = 407;
+pub const UFO_MINION: u16 = 423;
+pub const STARDUST_CELL: u16 = 613;
+pub const STARDUST_GUARDIAN: u16 = 623;
+pub const STORM_TIGER_1: u16 = 833;
+pub const STORM_TIGER_2: u16 = 834;
+pub const STORM_TIGER_3: u16 = 835;
+pub const ABIGAIL: u16 = 963;
+pub const QUEEN_SPIDER: u16 = 377;
+pub const MOONLORD_TURRET: u16 = 641;
+pub const RAINBOW_CRYSTAL: u16 = 643;
+pub const FLAME_BURST_TOWER_1: u16 = 663;
+pub const FLAME_BURST_TOWER_2: u16 = 665;
+pub const FLAME_BURST_TOWER_3: u16 = 667;
+pub const BALLISTRA_TOWER_1: u16 = 677;
+pub const BALLISTRA_TOWER_2: u16 = 678;
+pub const BALLISTRA_TOWER_3: u16 = 679;
+pub const LIGHTNING_AURA_1: u16 = 688;
+pub const LIGHTNING_AURA_2: u16 = 689;
+pub const LIGHTNING_AURA_3: u16 = 690;
+pub const EXPLOSIVE_TRAP_1: u16 = 691;
+pub const EXPLOSIVE_TRAP_2: u16 = 692;
+pub const EXPLOSIVE_TRAP_3: u16 = 693;
+pub const HOUNDIUS_SHOOTIUS: u16 = 966;
+pub const DEAD_CELLS_BARNACLE: u16 = 1025;
 
 /// The Terrarian's beam scan's `Collision.CanHit` gate (`Projectile.cs:67804`,
 /// `Collision.cs:381+`): the two centers' tile walk. The C# `CanHit` is a
@@ -669,7 +735,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
             // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
-            TERRARIAN_BEAM => (14.0, 14.0, 115, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            TERRARIAN_BEAM => (
+                14.0,
+                14.0,
+                115,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+            ),
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
@@ -787,6 +863,63 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` dropped — its local-immunity pair
             // (`localNPCHitCooldown = 60`) rides the overlay below.
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false),
+            // The summon rows (M4-PROJ-8 Phase 1) — the verbatim `SetDefaults`
+            // slices for the 12 minion kinds and the 18 sentry kinds. The
+            // damage/knockback stay the spawner's input; `extraUpdates`/`arrow`
+            // /`trap` keep the stocks (no summon arm sets them). `timeLeft`:
+            // the minions ride `timeLeft *= 5` on the stock 3600 (`:787`) =
+            // 18000; the sentries set the `SentryLifeTime` 36000 (`:300`).
+            // The aiStyle-62 flying minions (`Projectile.cs:4563` Hornet,
+            // `:4587` FlyingImp, `:4878` Tempest, `:4960` UFOMinion, `:6598`
+            // StardustCellMinion, `:9100` AbigailMinion) — UFO/Cell keep the
+            // stock `tileCollide = true` (their arms set no tileCollide line).
+            HORNET => (24.0, 26.0, 62, -1, 18000, 0, false, false, false),
+            FLYING_IMP => (34.0, 26.0, 62, -1, 18000, 0, false, false, false),
+            TEMPEST => (28.0, 40.0, 62, -1, 18000, 0, false, false, false),
+            UFO_MINION => (28.0, 28.0, 62, -1, 18000, 0, true, false, false),
+            STARDUST_CELL => (24.0, 24.0, 62, -1, 18000, 0, true, false, false),
+            ABIGAIL => (30.0, 48.0, 62, -1, 18000, 0, false, false, false),
+            // The 0.5-slot spider minions (`Projectile.cs:4707` Retanimini,
+            // `:4723` Spazmamini) — aiStyle 66, the slot budget halves.
+            RETANIMINI | SPAZMAMINI => (40.0, 20.0, 66, -1, 18000, 0, false, false, false),
+            // The Stardust Guardian (`Projectile.cs:6709`) — aiStyle 120, the
+            // 0-slot pet-grade minion.
+            STARDUST_GUARDIAN => (50.0, 80.0, 120, -1, 18000, 0, false, false, false),
+            // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
+            // — aiStyle 67; these three arms set neither tileCollide nor
+            // ignoreWater (the stock true / false).
+            STORM_TIGER_1 => (26.0, 20.0, 67, -1, 18000, 0, true, false, false),
+            STORM_TIGER_2 | STORM_TIGER_3 => (20.0, 30.0, 67, -1, 18000, 0, true, false, false),
+            // The sentries: the aiStyle-53 placeable staff sentries —
+            // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
+            // `coldDamage` lines have no port consumer, the module doc),
+            // QueenSpider (`:4615`), HoundiusShootius (`:9143`); the Moon
+            // Lord turret pair (`:6916`/`:6929` — aiStyle 123); the DD2
+            // towers (`:7130-7151` FlameBurstTower T1-T3 — aiStyle 130, the
+            // per-type box overrides T2 28×58 / T3 28×60; `:7241`
+            // BallistraTower T1-T3 — aiStyle 134; `:7325` LightningAura
+            // T1-T3 — aiStyle 137, penetrate -1 + the local pair; `:7340`
+            // ExplosiveTrap T1-T3 — aiStyle 138, penetrate -1); DeadCells
+            // Barnacle (`:9707` — aiStyle 197).
+            FROST_HYDRA => (80.0, 74.0, 53, 1, 36000, 0, true, false, false),
+            QUEEN_SPIDER => (66.0, 50.0, 53, 1, 36000, 0, true, false, false),
+            HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false),
+            MOONLORD_TURRET | RAINBOW_CRYSTAL => {
+                (32.0, 32.0, 123, 1, 36000, 0, false, false, false)
+            }
+            FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false),
+            FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false),
+            FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false),
+            BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2 | BALLISTRA_TOWER_3 => {
+                (26.0, 54.0, 134, 1, 36000, 0, false, false, false)
+            }
+            LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => {
+                (16.0, 16.0, 137, -1, 36000, 0, false, false, false)
+            }
+            EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3 => {
+                (16.0, 16.0, 138, -1, 36000, 0, false, false, false)
+            }
+            DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false),
             _ => return None,
         };
     // The `SetDefaults` inner ifs that add the local-immunity pair on top of
@@ -799,8 +932,37 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
         85 => (true, -1),
         932 => (true, 60),
+        // The summon rows' local pairs: the Guardian (`Projectile.cs:6721-
+        // 6722`), the Storm Tigers (`:8096-8097`/`:8110-8111`/`:8124-8125`),
+        // Abigail (`:9111-9112`), the Lightning Auras (`:7332-7333`).
+        STARDUST_GUARDIAN => (true, 5),
+        STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 => (true, 10),
+        ABIGAIL => (true, 20),
+        LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
+    // The summon identification (M4-PROJ-8 Phase 1): the
+    // `minion`/`minionSlots` slice of the arms above. Everything else keeps
+    // the stock `minion = false` / `minionSlots = 0f`
+    // (`Projectile.cs:775-776`).
+    let (minion, sentry, minion_slots) = match kind {
+        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL => (true, false, 1.0),
+        RETANIMINI | SPAZMAMINI => (true, false, 0.5),
+        STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
+            (true, false, 0.0)
+        }
+        FROST_HYDRA | QUEEN_SPIDER | MOONLORD_TURRET | RAINBOW_CRYSTAL | FLAME_BURST_TOWER_1
+        | FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 | BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2
+        | BALLISTRA_TOWER_3 | LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3
+        | EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3 | HOUNDIUS_SHOOTIUS
+        | DEAD_CELLS_BARNACLE => (false, true, 0.0),
+        _ => (false, false, 0.0),
+    };
+    // Every summon arm sets `netImportant = true`; `ignoreWater = true`
+    // everywhere but the Storm Tiger family (the stock false there).
+    let net_important = minion || sentry;
+    let ignore_water =
+        (minion || sentry) && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3);
     Some(ProjData {
         w,
         h,
@@ -814,14 +976,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         uses_local_immunity,
         local_hit_cooldown,
         scale: set_defaults_scale(kind),
-        // `DefaultToYoyo` sets no immunity slice (`:10764-10771`) — only the
-        // Terrarian pair carries the idStatic-10 (`:6068-6069`, `:6081-6082`).
-        uses_id_static: matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM),
-        id_static_hit_cooldown: if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM) {
-            10
-        } else {
-            -1
+        // `DefaultToYoyo` sets no immunity slice (`:10764-10771`) — the
+        // Terrarian pair's idStatic-10 (`:6068-6069`, `:6081-6082`) plus the
+        // summon rows' (Tempest `:4888-4889`, Retanimini `:4716-4717`,
+        // Spazmamini `:4732-4733`).
+        uses_id_static: matches!(
+            kind,
+            TERRARIAN_YOYO | TERRARIAN_BEAM | TEMPEST | RETANIMINI | SPAZMAMINI
+        ),
+        id_static_hit_cooldown: match kind {
+            TERRARIAN_YOYO | TERRARIAN_BEAM | TEMPEST => 10,
+            RETANIMINI => 16,
+            SPAZMAMINI => 12,
+            _ => -1,
         },
+        minion,
+        sentry,
+        minion_slots,
+        net_important,
+        ignore_water,
     })
 }
 
@@ -896,6 +1069,26 @@ pub struct Projectile {
     /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
     /// end-of-tick explosion pass (`Kill()`'s bomb path).
     pub detonated: bool,
+    /// The summon identification (M4-PROJ-8): `Projectile.minion` /
+    /// `Projectile.sentry` (the stock false, `Projectile.cs:700`/`:775`) —
+    /// the flags the pool's per-tick minion/sentry block (`:16704-16740`,
+    /// Phase 3) and the AI dispatch branch on.
+    pub minion: bool,
+    pub sentry: bool,
+    /// `Projectile.minionSlots` — the slot budget this occupant consumes
+    /// (`:16719`'s `slotsMinions += this.minionSlots`); 0.5 for the spiders.
+    pub minion_slots: f32,
+    /// `Projectile.minionPos` (`:398`) — the pool's write (`:16711`, Phase 3)
+    /// orders the draw pass; carried as a plain field until the draw phase.
+    pub minion_pos: u16,
+    /// `Projectile.originalDamage` (`:352`) — the UNSCALED summon damage the
+    /// per-tick recompute reads (`:16704-16707`); the spawn seam sets it from
+    /// the summon spawn sites' post-spawn writes (`Player.cs:49601`/`:48209`).
+    pub original_damage: i32,
+    /// `Projectile.netImportant` (stock false, `:706`).
+    pub net_important: bool,
+    /// `Projectile.ignoreWater` (stock false, `:752`).
+    pub ignore_water: bool,
 }
 
 impl Default for Projectile {
@@ -933,6 +1126,13 @@ impl Default for Projectile {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            minion: false,
+            sentry: false,
+            minion_slots: 0.0,
+            minion_pos: 0,
+            original_damage: 0,
+            net_important: false,
+            ignore_water: false,
         }
     }
 }
@@ -2116,6 +2316,24 @@ impl ProjectilePool {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            // The summon slice (M4-PROJ-8 Phase 1) — the identification flags
+            // and the water/net markers ride the row; `minion_pos` stays the
+            // stock 0 until the pool's per-tick block writes it
+            // (`Projectile.cs:16711`, Phase 3). `originalDamage` is the
+            // summon spawn sites' post-spawn write — the unscaled damage the
+            // pool's recompute reads (`Player.cs:49601`/`:48209` →
+            // `Projectile.cs:16704-16707`); the non-summon kinds keep the
+            // stock 0 (`Projectile.cs:790`).
+            minion: data.minion,
+            sentry: data.sentry,
+            minion_slots: data.minion_slots,
+            net_important: data.net_important,
+            ignore_water: data.ignore_water,
+            original_damage: if data.minion || data.sentry {
+                damage
+            } else {
+                0
+            },
             ..Default::default()
         };
         let base = slot * 256;
@@ -2187,10 +2405,12 @@ impl ProjectilePool {
                                 (p.owner, p.kind)
                             };
                             let flag = self.slots[..i].iter().any(|p| {
-                                p.active && p.owner == slot_owner && p.kind == slot_kind && p.ai[0] >= -1.0
+                                p.active
+                                    && p.owner == slot_owner
+                                    && p.kind == slot_kind
+                                    && p.ai[0] >= -1.0
                             });
-                            let tick =
-                                self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
+                            let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
                             // `:67764-67771` — the sweep flips the whole
                             // owner's aiStyle-99 set with `ai[0] >= 0f` to the
                             // return state.
@@ -2474,7 +2694,7 @@ impl ProjectilePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -2514,7 +2734,16 @@ mod tests {
             0.0,
         );
         assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
-        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w.clone(),
+            &mut [],
+            Some((pcx, pcy)),
+            Some(&mut player),
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
         // The friendly shuriken at the same spot never hurts the player.
@@ -2550,7 +2779,16 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            world,
+            std::slice::from_mut(npc),
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
     }
 
     #[test]
@@ -2601,7 +2839,16 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut world,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             !pool.slots()[slot].active,
             "penetrate 1 → dead after the hit"
@@ -2745,7 +2992,16 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -2767,7 +3023,16 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut world,
+            &mut [],
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -2787,7 +3052,7 @@ mod falling_tests {
     // build the world, then pass it mutably.
 
     fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
-        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
         let i = w.index(x, y);
         w.tiles[i] = Tile {
             kind: 1,
@@ -2802,7 +3067,16 @@ mod falling_tests {
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -2822,7 +3096,16 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -2839,7 +3122,7 @@ mod falling_tests {
         let mut pool = ProjectilePool::new();
         let mut w = world();
         put_solid(&mut w, 10, 24);
-        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
         for y in [21, 22] {
             let i = w.index(10, y);
             w.tiles[i] = Tile {
@@ -2865,7 +3148,16 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -2875,7 +3167,7 @@ mod falling_tests {
 #[cfg(test)]
 mod arrow_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -2953,13 +3245,31 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(
             pool.slots[0].vel.y, 0.0,
             "no gravity for the first 14 ticks"
         );
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -2983,7 +3293,16 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3005,7 +3324,16 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3025,10 +3353,28 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the 6th tick adds 0.2"
@@ -3039,7 +3385,7 @@ mod arrow_tests {
 #[cfg(test)]
 mod boomerang_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -3091,10 +3437,28 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((320.0, 320.0)),
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -3121,7 +3485,16 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((100.0, 260.0)),
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -3159,7 +3532,16 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((80.0, 308.0)),
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -3185,7 +3567,16 @@ mod boomerang_tests {
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((100.0, 200.0)),
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3198,7 +3589,7 @@ mod boomerang_tests {
 #[cfg(test)]
 mod bomb_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -3246,7 +3637,16 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
@@ -3277,7 +3677,16 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[0].active);
         assert!(
@@ -3317,7 +3726,16 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -3336,14 +3754,32 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
             "no gravity before tick 5"
         );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -3405,11 +3841,7 @@ mod bomb_tests {
         assert_eq!(yoyo_max_range(WOOD_YOYO), 130.0);
         assert_eq!(yoyo_max_range(TERRARIAN_YOYO), 400.0, "the Terrarian's 400");
         assert_eq!(yoyo_max_range(CODE1_YOYO), 220.0);
-        assert_eq!(
-            yoyo_max_range(KRAKEN_YOYO),
-            380.0,
-            "the Kraken is listed"
-        );
+        assert_eq!(yoyo_max_range(KRAKEN_YOYO), 380.0, "the Kraken is listed");
         assert_eq!(
             yoyo_max_range(FORMAT_C_YOYO),
             320.0,
@@ -3436,8 +3868,20 @@ mod bomb_tests {
             .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
             .expect("the Terrarian data row exists");
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
-        assert!(pool.slots[wood].active, "the slot survives its first update");
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(
+            pool.slots[wood].active,
+            "the slot survives its first update"
+        );
         assert!(pool.slots[terrarian].active);
         assert_eq!(
             pool.slots[terrarian].local_ai[0], 1.0,
@@ -3525,8 +3969,15 @@ mod yoyo_tests {
         let cx = p.pos.x + p.w * 0.5;
         let cy = p.pos.y + p.h * 0.5;
         let dist = ((cx - 420.0).powi(2) + (cy - 320.0).powi(2)).sqrt();
-        assert!(dist < 12.0, "the yoyo hovers at the aim point (dist {dist})");
-        assert!(p.vel.length() < 0.5, "the hover damps: {:?}", p.vel.length());
+        assert!(
+            dist < 12.0,
+            "the yoyo hovers at the aim point (dist {dist})"
+        );
+        assert!(
+            p.vel.length() < 0.5,
+            "the hover damps: {:?}",
+            p.vel.length()
+        );
         assert_eq!(p.local_ai[0], 60.0, "60 ticks of lifetime clock");
         assert_eq!((p.ai[0], p.ai[1]), (420.0, 320.0), "the clamped aim");
     }
@@ -3621,7 +4072,10 @@ mod yoyo_tests {
         );
         assert_eq!(pool.slots[0].ai[0], -1.0);
         assert_eq!(pool.slots[0].ai[1], 0.0);
-        assert!(!pool.slots[0].tile_collide, "the return drops tile collision");
+        assert!(
+            !pool.slots[0].tile_collide,
+            "the return drops tile collision"
+        );
     }
 
     #[test]
@@ -3681,10 +4135,7 @@ mod yoyo_tests {
             true,
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "released");
-        assert!(
-            !pool.slots[slot].active,
-            "caught within the 23.5 px radius"
-        );
+        assert!(!pool.slots[slot].active, "caught within the 23.5 px radius");
         assert_eq!(pool.slots[slot].time_left, 0);
     }
 
@@ -3727,7 +4178,10 @@ mod yoyo_tests {
             0,
             true,
         );
-        assert_eq!(pool.slots[0].time_left, 5, "re-pinned to 6 then decremented");
+        assert_eq!(
+            pool.slots[0].time_left, 5,
+            "re-pinned to 6 then decremented"
+        );
         pool.update(
             &mut w,
             &mut [],
@@ -3738,7 +4192,7 @@ mod yoyo_tests {
                 channel: true,
                 player_dead: true,
             },
-        &mut tr_core::tile_light::FastRandom::new(7),
+            &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
         );
@@ -3903,7 +4357,16 @@ mod yoyo_tests {
         // its expiry sweeps the pair into the return, where the owner's catch
         // collects them — the assertions below read the final state.
         for _ in 0..200 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
         }
         assert!(
             pool.slots[second].local_ai[0] > pool.slots[first].local_ai[0],
@@ -3943,7 +4406,16 @@ mod yoyo_tests {
         let mut max_first = 0.0f32;
         let mut max_second = 0.0f32;
         for _ in 0..30 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
             max_first = max_first.max(pool.slots[first].vel.length());
             max_second = max_second.max(pool.slots[second].vel.length());
         }
@@ -4002,18 +4474,29 @@ mod yoyo_tests {
         let aim = inputs(Some((400.0, 312.0)), true);
         let mut beam = None;
         for _ in 0..6 {
-            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some((320.0, 312.0)),
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
             beam = beam.or_else(|| {
-                (0..MAX_PROJECTILES).find(|&i| {
-                    pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM
-                })
+                (0..MAX_PROJECTILES)
+                    .find(|&i| pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM)
             });
         }
         let beam = beam.expect("the 6-tick beam spawn");
         // The retarget: the near slime at (438, 320) — the beam's velocity
         // points right and down by the 6.4 px/tick (8 × 0.8) aim.
         let v = pool.slots[beam].vel;
-        assert!(v.x > 0.0 && v.y > 0.0, "the beam retargets at the slime: {v:?}");
+        assert!(
+            v.x > 0.0 && v.y > 0.0,
+            "the beam retargets at the slime: {v:?}"
+        );
         assert!(
             v.length() > 5.0 && v.length() < 8.0,
             "the 8 px/tick aim after the ×0.8 damp: {}",
@@ -4025,7 +4508,16 @@ mod yoyo_tests {
         // not recycled by a later spawn.
         pool.slots[terrarian].active = false;
         for _ in 0..59 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut fast_seed(),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[beam].active, "the beam fades out and dies");
         assert_eq!(pool.slots[beam].alpha, 255, "the full fade");
@@ -4041,7 +4533,16 @@ mod yoyo_tests {
                 .spawn_with_data_ai(WOOD_YOYO, 432.0, 320.0, 0.0, 0.0, 9, 2.5, -2.0, 0.0)
                 .unwrap();
             let mut w = world();
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut fast_seed(),
+                0,
+                true,
+            );
             pool.slots[slot].penetrate
         };
         let a = roll_once();
@@ -4345,5 +4846,696 @@ mod ammo_proj_tests {
         assert_eq!((p.w, p.h), (10.0, 10.0));
         assert_eq!(p.extra_updates, 5);
         assert_eq!(p.damage, 10);
+    }
+}
+
+#[cfg(test)]
+mod summon_tests {
+    use super::*;
+    use tr_core::tile::Tile;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    /// The 12 minion kinds (M4-PROJ-8 Phase 1's rows) — the aiStyle-62 family
+    /// plus the aiStyle-66/67/120 flag-minions.
+    const MINION_KINDS: [u16; 12] = [
+        HORNET,
+        FLYING_IMP,
+        TEMPEST,
+        UFO_MINION,
+        STARDUST_CELL,
+        ABIGAIL,
+        RETANIMINI,
+        SPAZMAMINI,
+        STARDUST_GUARDIAN,
+        STORM_TIGER_1,
+        STORM_TIGER_2,
+        STORM_TIGER_3,
+    ];
+
+    /// The 18 sentry kinds — the aiStyle-53 staff sentries, the Moon Lord
+    /// turret pair, the four DD2 tower families and the Dead Cells barnacle.
+    const SENTRY_KINDS: [u16; 18] = [
+        FROST_HYDRA,
+        QUEEN_SPIDER,
+        HOUNDIUS_SHOOTIUS,
+        MOONLORD_TURRET,
+        RAINBOW_CRYSTAL,
+        FLAME_BURST_TOWER_1,
+        FLAME_BURST_TOWER_2,
+        FLAME_BURST_TOWER_3,
+        BALLISTRA_TOWER_1,
+        BALLISTRA_TOWER_2,
+        BALLISTRA_TOWER_3,
+        LIGHTNING_AURA_1,
+        LIGHTNING_AURA_2,
+        LIGHTNING_AURA_3,
+        EXPLOSIVE_TRAP_1,
+        EXPLOSIVE_TRAP_2,
+        EXPLOSIVE_TRAP_3,
+        DEAD_CELLS_BARNACLE,
+    ];
+
+    /// DW-1.1: the 30 summon rows carry the verbatim `SetDefaults` slice —
+    /// the box, aiStyle, penetrate, the `timeLeft` override (18000 for the
+    /// `*= 5` minions, `SentryLifeTime` 36000 for the sentries) and the
+    /// identification flags. Data-verbatim pattern
+    /// (`the_family_data_map_is_verbatim`, `arrow_tests`).
+    #[test]
+    fn test_DW_1_1_the_summon_rows_are_verbatim() {
+        // (kind, w, h, ai_style, penetrate, time_left, tile_collide, minion,
+        //  sentry, minion_slots) — every value read off the C# arm cited in
+        // the row's comment.
+        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 30] = [
+            // `Projectile.cs:4563-4573` (373) / `:4587-4597` (375) /
+            // `:4878-4890` (407) / `:4960-4971` (423) / `:6598-6608` (613) /
+            // `:9100-9113` (963) / `:4707-4718` (387) / `:4723-4734` (388) /
+            // `:6709-6723` (623) / `:8091-8098` (833) / `:8105-8112` (834) /
+            // `:8119-8126` (835).
+            (HORNET, 24.0, 26.0, 62, -1, 18000, false, true, false, 1.0),
+            (
+                FLYING_IMP, 34.0, 26.0, 62, -1, 18000, false, true, false, 1.0,
+            ),
+            (TEMPEST, 28.0, 40.0, 62, -1, 18000, false, true, false, 1.0),
+            (
+                UFO_MINION, 28.0, 28.0, 62, -1, 18000, true, true, false, 1.0,
+            ),
+            (
+                STARDUST_CELL,
+                24.0,
+                24.0,
+                62,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                1.0,
+            ),
+            (ABIGAIL, 30.0, 48.0, 62, -1, 18000, false, true, false, 0.0),
+            (
+                RETANIMINI, 40.0, 20.0, 66, -1, 18000, false, true, false, 0.5,
+            ),
+            (
+                SPAZMAMINI, 40.0, 20.0, 66, -1, 18000, false, true, false, 0.5,
+            ),
+            (
+                STARDUST_GUARDIAN,
+                50.0,
+                80.0,
+                120,
+                -1,
+                18000,
+                false,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_1,
+                26.0,
+                20.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_2,
+                20.0,
+                30.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_3,
+                20.0,
+                30.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            // `Projectile.cs:3997-4007` (308) / `:4615-4622` (377) /
+            // `:9143-9150` (966) / `:6916-6927` (641) / `:6929-6938` (643) /
+            // `:7130-7151` (663/665/667) / `:7241-7249` (677-679) /
+            // `:7325-7339` (688-690) / `:7340-7352` (691-693) /
+            // `:9707-9714` (1025).
+            (
+                FROST_HYDRA,
+                80.0,
+                74.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                QUEEN_SPIDER,
+                66.0,
+                50.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                HOUNDIUS_SHOOTIUS,
+                18.0,
+                60.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                MOONLORD_TURRET,
+                32.0,
+                32.0,
+                123,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                RAINBOW_CRYSTAL,
+                32.0,
+                32.0,
+                123,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_1,
+                30.0,
+                54.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_2,
+                28.0,
+                58.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_3,
+                28.0,
+                60.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_1,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_2,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_3,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_1,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_2,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_3,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_1,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_2,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_3,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                DEAD_CELLS_BARNACLE,
+                42.0,
+                38.0,
+                197,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+        ];
+        for (kind, w, h, ai, pen, tl, tc, minion, sentry, slots) in rows {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("no row for kind {kind}"));
+            assert_eq!((d.w, d.h), (w, h), "the box for kind {kind}");
+            assert_eq!(d.ai_style, ai, "the aiStyle for kind {kind}");
+            assert_ne!(d.ai_style, 0, "no summon row dispatches aiStyle 0");
+            assert_eq!(d.penetrate, pen, "the penetrate for kind {kind}");
+            assert_eq!(d.time_left, tl, "the timeLeft for kind {kind}");
+            assert_eq!(d.tile_collide, tc, "the tileCollide for kind {kind}");
+            assert_eq!(d.minion, minion, "the minion flag for kind {kind}");
+            assert_eq!(d.sentry, sentry, "the sentry flag for kind {kind}");
+            assert_eq!(d.minion_slots, slots, "the minionSlots for kind {kind}");
+            assert!(d.net_important, "the netImportant for kind {kind}");
+            // The stocks no summon arm touches.
+            assert!(!d.arrow, "the stock arrow for kind {kind}");
+            assert!(!d.trap, "the stock trap for kind {kind}");
+            assert_eq!(d.extra_updates, 0, "the stock extraUpdates for kind {kind}");
+            assert_eq!(d.scale, 1.0, "the stock scale for kind {kind}");
+        }
+        // `ignoreWater = true` on every summon arm but the Storm Tigers
+        // (`:8091/:8105/:8119` set neither tileCollide nor ignoreWater).
+        for kind in MINION_KINDS {
+            let d = proj_data(kind).unwrap();
+            assert_eq!(
+                d.ignore_water,
+                !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3),
+                "the ignoreWater for kind {kind}"
+            );
+        }
+        for kind in SENTRY_KINDS {
+            assert!(proj_data(kind).unwrap().ignore_water, "kind {kind}");
+        }
+        // The idStatic pairs: Tempest 10 (`:4888-4889`), Retanimini 16
+        // (`:4716-4717`), Spazmamini 12 (`:4732-4733`).
+        let tempest = proj_data(TEMPEST).unwrap();
+        assert!(tempest.uses_id_static);
+        assert_eq!(tempest.id_static_hit_cooldown, 10);
+        let retanimini = proj_data(RETANIMINI).unwrap();
+        assert!(retanimini.uses_id_static);
+        assert_eq!(retanimini.id_static_hit_cooldown, 16);
+        let spazmamini = proj_data(SPAZMAMINI).unwrap();
+        assert!(spazmamini.uses_id_static);
+        assert_eq!(spazmamini.id_static_hit_cooldown, 12);
+        // The local pairs: Guardian 5 (`:6721-6722`), Storm Tigers 10
+        // (`:8096-8097` etc.), Abigail 20 (`:9111-9112`), Lightning Auras 3
+        // (`:7332-7333`).
+        let guardian = proj_data(STARDUST_GUARDIAN).unwrap();
+        assert!(guardian.uses_local_immunity);
+        assert_eq!(guardian.local_hit_cooldown, 5);
+        for kind in [STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {kind}");
+        }
+        let abigail = proj_data(ABIGAIL).unwrap();
+        assert!(abigail.uses_local_immunity);
+        assert_eq!(abigail.local_hit_cooldown, 20);
+        for kind in [LIGHTNING_AURA_1, LIGHTNING_AURA_2, LIGHTNING_AURA_3] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 3, "kind {kind}");
+        }
+        // The arms without an immunity slice keep the pool defaults
+        // (`:464`/`:466`).
+        let hornet = proj_data(HORNET).unwrap();
+        assert!(!hornet.uses_local_immunity);
+        assert_eq!(hornet.local_hit_cooldown, -2);
+        assert!(!hornet.uses_id_static);
+        assert_eq!(hornet.id_static_hit_cooldown, -1);
+        let hydra = proj_data(FROST_HYDRA).unwrap();
+        assert!(!hydra.uses_local_immunity);
+        assert!(!hydra.uses_id_static);
+        // The shot families are NOT this phase's rows (the sentry shots land
+        // with the later projectile-family tasks) — 374/376/389/614 the
+        // minion shots, 378/379 the Queen Spider's SentryShots.
+        for kind in [374, 376, 389, 614, 378, 379] {
+            assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
+        }
+    }
+
+    /// DW-1.2: the spawned slot carries the identification slice, the
+    /// `timeLeft` override and the `originalDamage` the pool's recompute
+    /// reads; a non-summon spawn keeps the stocks.
+    #[test]
+    fn test_DW_1_2_spawn_carries_the_summon_slice() {
+        let mut pool = ProjectilePool::new();
+        // The Hornet (`Player.SpawnMinionOnCursor`'s shape — the unscaled
+        // damage in, `originalDamage` carried out).
+        let hornet = pool
+            .spawn_with_data_ai_owned(HORNET, 0, 100.0, 200.0, 0.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[hornet];
+        assert!(p.minion);
+        assert!(!p.sentry);
+        assert_eq!(p.minion_slots, 1.0);
+        assert_eq!(p.time_left, 18000, "the `timeLeft *= 5` override");
+        assert_eq!(p.original_damage, 10, "the unscaled spawn damage");
+        assert_eq!(p.damage, 10);
+        assert!(p.net_important);
+        assert!(p.ignore_water);
+        assert!(!p.tile_collide);
+        assert_eq!(p.minion_pos, 0, "the pool block writes it (Phase 3)");
+        // The Frost Hydra sentry — `SentryLifeTime`.
+        let hydra = pool
+            .spawn_with_data_ai_owned(FROST_HYDRA, 0, 160.0, 200.0, 0.0, 0.0, 25, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[hydra];
+        assert!(!p.minion);
+        assert!(p.sentry);
+        assert_eq!(p.minion_slots, 0.0);
+        assert_eq!(p.time_left, 36000);
+        assert_eq!(p.original_damage, 25);
+        assert_eq!(p.penetrate, 1, "the sentry body's stock penetrate");
+        // The half-slot spider: exactly 0.5 — never rounded to an integer
+        // count (the plan's edge case).
+        let spider = pool
+            .spawn_with_data_ai_owned(RETANIMINI, 0, 220.0, 200.0, 0.0, 0.0, 8, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[spider];
+        assert_eq!(p.minion_slots, 0.5);
+        assert_eq!(p.minion_slots.fract(), 0.5, "fractional, not rounded");
+        assert!(p.uses_id_static_immunity, "the Retanimini idStatic pair");
+        assert_eq!(p.id_static_hit_cooldown, 16);
+        // The 0-slot Storm Tiger keeps `ignore_water = false` (the C# arm
+        // sets neither flag).
+        let tiger = pool
+            .spawn_with_data_ai_owned(STORM_TIGER_1, 0, 280.0, 200.0, 0.0, 0.0, 8, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[tiger];
+        assert!(p.minion);
+        assert_eq!(p.minion_slots, 0.0);
+        assert!(p.net_important);
+        assert!(!p.ignore_water);
+        // A non-summon spawn keeps the stocks: no flags, `originalDamage` 0
+        // (the C# spawn sites for the other families never write it).
+        let arrow = pool
+            .spawn_with_data_ai_owned(WOODEN_ARROW, 0, 320.0, 200.0, 4.0, 0.0, 5, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[arrow];
+        assert!(!p.minion);
+        assert!(!p.sentry);
+        assert_eq!(p.minion_slots, 0.0);
+        assert_eq!(p.original_damage, 0);
+        assert!(!p.net_important);
+        assert!(!p.ignore_water);
+    }
+
+    /// DW-1.2's dirty variant (the plan's edge case): a summon row whose
+    /// aiStyle has no ported arm dispatches nothing — the slot holds
+    /// position while its `timeLeft` runs down (the Hornet's aiStyle 62 and
+    /// the Guardian's 120 are Phase 4/5 work).
+    #[test]
+    fn test_edge_unported_ai_style_holds_position() {
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut w = world();
+        let hornet = pool
+            .spawn_with_data_ai_owned(HORNET, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let guardian = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_GUARDIAN,
+                0,
+                480.0,
+                320.0,
+                0.0,
+                -1.0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        for _ in 0..5 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let p = &pool.slots[hornet];
+        assert!(p.active, "the minion outlives the 5 ticks");
+        assert_eq!(
+            (p.pos.x, p.pos.y),
+            (320.0, 320.0),
+            "no arm ran: the slot holds position"
+        );
+        assert_eq!(p.time_left, 18000 - 5, "the bookkeeping still runs");
+        assert_eq!(p.minion_pos, 0);
+        let p = &pool.slots[guardian];
+        assert!(p.active);
+        assert_eq!((p.pos.x, p.pos.y), (480.0, 320.0));
+        assert_eq!(p.time_left, 18000 - 5);
+    }
+
+    /// DW-1.3: the two identification sets match the C# lists
+    /// element-for-element (`CreateBoolSet` semantics — the lookup is
+    /// order-free, so the test compares sorted sequences and pins the
+    /// verbatim counts).
+    #[test]
+    fn test_DW_1_3_the_sets_match_the_csharp() {
+        // `ProjectileID.Sets.MinionSacrificable` (`ID/ProjectileID.cs:529`).
+        let sacrificable: [u16; 36] = [
+            191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755,
+            758, 759, 831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625,
+            626, 627, 628,
+        ];
+        assert_eq!(MINION_SACRIFICABLE.len(), 36);
+        let mut ported = MINION_SACRIFICABLE.to_vec();
+        ported.sort_unstable();
+        let mut csharp = sacrificable.to_vec();
+        csharp.sort_unstable();
+        assert_eq!(ported, csharp, "element-for-element against the C# set");
+        // The membership facts the later phases lean on: the port's own
+        // minion kinds are sacrifice-candidates (Phase 6's kill loop), the
+        // dragon chain rides along even though its AI is excluded.
+        for kind in [
+            HORNET,
+            FLYING_IMP,
+            TEMPEST,
+            UFO_MINION,
+            STARDUST_CELL,
+            ABIGAIL,
+        ] {
+            assert!(MINION_SACRIFICABLE.contains(&kind), "kind {kind}");
+        }
+        for kind in [625u16, 626, 627, 628] {
+            assert!(MINION_SACRIFICABLE.contains(&kind), "kind {kind}");
+        }
+        // `ProjectileID.Sets.SentryShot` (`ID/ProjectileID.cs:432`).
+        let sentry_shot: [u16; 14] = [
+            680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
+        ];
+        assert_eq!(SENTRY_SHOT.len(), 14);
+        let mut ported_shots = SENTRY_SHOT.to_vec();
+        ported_shots.sort_unstable();
+        let mut csharp_shots = sentry_shot.to_vec();
+        csharp_shots.sort_unstable();
+        assert_eq!(ported_shots, csharp_shots);
+        // The Queen Spider's shots (378/379) and Abigail's (967) — the
+        // SentryShot consumers the later tasks wire.
+        for kind in [378u16, 379, 967] {
+            assert!(SENTRY_SHOT.contains(&kind), "kind {kind}");
+        }
+    }
+
+    /// The new fields leave every pre-existing row on the pool defaults —
+    /// the no-behaviour-change freeze (the
+    /// `test_the_resolved_rows_leave_the_existing_spawns_untouched`
+    /// precedent, widened to the summon slice).
+    #[test]
+    fn the_summon_fields_leave_the_existing_rows_untouched() {
+        for kind in [
+            WOODEN_ARROW,
+            FLAME_ARROW,
+            MUSKET_BALL,
+            POISON_DART,
+            TRAP_SPEAR,
+            BOMB,
+        ] {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.minion, "kind {kind}");
+            assert!(!d.sentry, "kind {kind}");
+            assert_eq!(d.minion_slots, 0.0, "kind {kind}");
+            assert!(!d.net_important, "kind {kind}");
+            assert!(!d.ignore_water, "kind {kind}");
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 100.0, 200.0, 2.0, 0.0, 7, 0.0, 0.0, 0.0)
+                .unwrap();
+            let p = &pool.slots[slot];
+            assert!(!p.minion);
+            assert!(!p.sentry);
+            assert_eq!(p.minion_slots, 0.0);
+            assert_eq!(p.original_damage, 0, "kind {kind}");
+            assert_eq!(p.minion_pos, 0);
+            assert!(!p.net_important);
+            assert!(!p.ignore_water);
+        }
+    }
+
+    /// The seeded determinism pair (the Test Plan's determinism rule): two
+    /// identical 60-tick runs over a mixed summon pool settle into identical
+    /// state.
+    #[test]
+    fn the_summon_pool_state_is_deterministic() {
+        let run = || {
+            let mut pool = ProjectilePool::new();
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut w = world();
+            pool.spawn_with_data_ai_owned(HORNET, 0, 300.0, 300.0, 0.5, 0.0, 9, 0.0, 0.0, 0.0);
+            pool.spawn_with_data_ai_owned(RETANIMINI, 0, 340.0, 300.0, -0.5, 0.0, 9, 0.0, 0.0, 0.0);
+            pool.spawn_with_data_ai_owned(FROST_HYDRA, 0, 380.0, 300.0, 0.0, 0.0, 9, 0.0, 0.0, 0.0);
+            for _ in 0..60 {
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    YoyoInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            (
+                pool.slots[0].clone(),
+                pool.slots[1].clone(),
+                pool.slots[2].clone(),
+            )
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a.0.pos, b.0.pos);
+        assert_eq!(a.0.time_left, b.0.time_left);
+        assert_eq!(a.1.pos, b.1.pos);
+        assert_eq!(a.2.time_left, b.2.time_left);
+        assert!(a.2.active, "the sentry outlives 60 ticks");
     }
 }
