@@ -67,7 +67,16 @@ impl App {
                 .pairs()
                 .map(|(banner, kills)| BannerKill { banner, kills })
                 .collect();
-            let side = save::WorldSide { chests, banners };
+            // `NPCKillsTracker.Save` (`NPCKillsTracker.cs:59-70`): the bestiary
+            // kill counts ride the world file's section 10 in vanilla; the port
+            // had them on the `.trplayer` sidecar, whose line stays written
+            // below for builds that read it (the back-compat fallback).
+            let bestiary: Vec<save::BestiaryKill> = self
+                .kill_tracker
+                .pairs()
+                .map(|(id, kills)| save::BestiaryKill { credit_id: id.to_string(), kills })
+                .collect();
+            let side = save::WorldSide { chests, banners, bestiary };
             match save::save(&self.world_path, &self.world, &side) {
                 Ok(()) => log::info!("saved {}", self.world_path.display()),
                 Err(e) => log::warn!("save failed: {e:#}"),
@@ -133,6 +142,7 @@ impl App {
 mod chest_save_tests {
     use super::*;
     use crate::assets;
+    use crate::player::Player;
     use std::path::PathBuf;
     use crate::item::{ItemSlot, EMPTY_SLOT};
     use crate::registry;
@@ -333,7 +343,7 @@ mod chest_save_tests {
         ];
         let app = app_for(
             world,
-            save::WorldSide { chests: records, banners: Vec::new() },
+            save::WorldSide { chests: records, banners: Vec::new(), bestiary: Vec::new() },
             PathBuf::new(),
         );
 
@@ -391,6 +401,75 @@ mod chest_save_tests {
         let mut world2 = chest_rig();
         let control = app_for(world2.clone(), save::WorldSide::default(), PathBuf::new());
         assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
+    }
+
+    /// DW-2.4: the bestiary tally's save → load round-trip through the App
+    /// path — the `NPCKillsTracker.Save` counts the kill pass accumulates ride
+    /// the world file now (the vanilla's section-10 home; the port had them on
+    /// the `.trplayer` sidecar), and the loaded side seeds the tracker.
+    #[test]
+    fn dw_2_4_a_saved_bestiary_tally_round_trips_through_the_app() {
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-dw-2-4-bestiary-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(world, save::WorldSide::default(), path.clone());
+        // The kill pass's registration (`world_sim/npcs.rs`'s death hook):
+        // two credit ids, one of them past the 999999999 clamp range's floor.
+        for _ in 0..9 {
+            app.kill_tracker.register_kill("BlueSlime");
+        }
+        app.kill_tracker.register_kill("KingSlime");
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, side) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(side.bestiary.len(), 2, "one record per tallied credit id");
+        let back = app_for(world, side, path);
+        assert_eq!(back.kill_tracker.get_kill_count("BlueSlime"), 9);
+        assert_eq!(back.kill_tracker.get_kill_count("KingSlime"), 1);
+
+        // The control: a fresh App starts empty — the records carried the tally.
+        let control = app_for(chest_rig(), save::WorldSide::default(), PathBuf::new());
+        assert_eq!(control.kill_tracker.get_kill_count("BlueSlime"), 0);
+    }
+
+    /// DW-2.4 (the back-compat fallback): a world saved before v9 (the
+    /// version field patched) carries no bestiary section, and the player
+    /// sidecar's kill line still seeds the tracker — the deviation's original
+    /// home stays the fallback for migrated builds.
+    #[test]
+    fn dw_2_4_a_v8_world_falls_back_to_the_sidecar_kills() {
+        let path = std::env::temp_dir().join("tr-dw-2-4-sidecar-fallback.trwld");
+        let _ = std::fs::remove_file(&path);
+        // A v8 payload: the current writer's stream with the version patched.
+        let mut app = app_for(chest_rig(), save::WorldSide::default(), path.clone());
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+        let mut bytes = std::fs::read(&path).expect("the v9 payload on disk");
+        bytes[8..12].copy_from_slice(&8u32.to_le_bytes());
+        std::fs::write(&path, &bytes).expect("the v8 payload rewritten");
+
+        // The sidecar with the vintage kill line (`persist::save`'s kills arg).
+        let player = Player::spawn(&chest_rig());
+        let inv: [(u16, u32); 50] = std::array::from_fn(|_| (0, 0));
+        let kills = vec![("Pinky".to_string(), 4), ("BlueSlime".to_string(), 25)];
+        persist::save(&path, &player, inv, 0, [0, 0, 0], &[0; 10], &kills)
+            .expect("the sidecar writes");
+
+        let (world, side) = crate::app::load_world(&path).expect("the v8 world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert!(side.bestiary.is_empty(), "no section below v9");
+        let back = app_for(world, side, path);
+        assert_eq!(
+            back.kill_tracker.get_kill_count("Pinky"),
+            4,
+            "the sidecar's line seeds the tracker"
+        );
+        assert_eq!(back.kill_tracker.get_kill_count("BlueSlime"), 25);
     }
 }
 

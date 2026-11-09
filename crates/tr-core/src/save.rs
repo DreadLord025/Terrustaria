@@ -28,15 +28,18 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `SaveWorldFlags` byte block, `WorldFile.cs:1238-1250`, as the port's own u16
 /// bitmask; the C# `.wld` stores the nine booleans and re-derives the seed from the
 /// stored seed *text*), so the v6 block below is re-assembled as v7. v8 appended the
-/// banner kill counts (`BannerSystem.Save`, `BannerSystem.cs:172-186`).
-pub const VERSION: u32 = 8;
+/// banner kill counts (`BannerSystem.Save`, `BannerSystem.cs:172-186`); v9 appended the
+/// bestiary kill counts (`NPCKillsTracker.Save`, `NPCKillsTracker.cs:59-70`).
+pub const VERSION: u32 = 9;
 
-/// The v7+ sections' payload — the world chests and the banner kill counts.
-/// New sections grow this struct rather than the entry points' return tuples.
+/// The v7+ sections' payload — the world chests, the banner kill counts and
+/// the bestiary kill counts. New sections grow this struct rather than the
+/// entry points' return tuples.
 #[derive(Default)]
 pub struct WorldSide {
     pub chests: Vec<ChestRecord>,
     pub banners: Vec<BannerKill>,
+    pub bestiary: Vec<BestiaryKill>,
 }
 
 /// One banner's kill count — the C# `BannerSystem.Save` shape (`int32` per
@@ -46,6 +49,15 @@ pub struct WorldSide {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BannerKill {
     pub banner: i32,
+    pub kills: i32,
+}
+
+/// One bestiary entry's kill count — the C# `NPCKillsTracker.Save` shape
+/// (the persistent-id string + `int32` per entry, `NPCKillsTracker.cs:59-70`);
+/// both stores key by the credit id, so each record carries its string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BestiaryKill {
+    pub credit_id: String,
     pub kills: i32,
 }
 
@@ -258,6 +270,19 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     for banner in &side.banners {
         w.write_all(&banner.banner.to_le_bytes())?;
         w.write_all(&banner.kills.to_le_bytes())?;
+    }
+    // v9: the bestiary kill counts — `NPCKillsTracker.Save`'s shape
+    // (`NPCKillsTracker.cs:59-70`): a u32 count, then per entry the
+    // persistent-id string (the file's u32 length + UTF-8 convention) and
+    // the count. The vanilla rides them in the world file's section 10; the
+    // port had them on the `.trplayer` sidecar (the recorded deviation), and
+    // that line stays the back-compat fallback.
+    w.write_all(&(side.bestiary.len() as u32).to_le_bytes())?;
+    for entry in &side.bestiary {
+        let id = entry.credit_id.as_bytes();
+        w.write_all(&(id.len() as u32).to_le_bytes())?;
+        w.write_all(id)?;
+        w.write_all(&entry.kills.to_le_bytes())?;
     }
     Ok(())
 }
@@ -546,6 +571,12 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 8 {
         side.banners = read_banners_v8(&mut r)?;
     }
+    // v9: the bestiary kill counts (the C#'s world-file section 10 — the
+    // side sections' counting order is the C#'s `SaveWorld_Version2` order
+    // wherever the port has the state).
+    if version >= 9 {
+        side.bestiary = read_bestiary_v9(&mut r)?;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -558,6 +589,19 @@ fn read_banners_v8(r: &mut Reader<'_>) -> Result<Vec<BannerKill>> {
         let banner = r.i32()?;
         let kills = r.i32()?;
         out.push(BannerKill { banner, kills });
+    }
+    Ok(out)
+}
+
+/// The v9 bestiary reader — the exact inverse of the v9 write.
+fn read_bestiary_v9(r: &mut Reader<'_>) -> Result<Vec<BestiaryKill>> {
+    let count = r.u32()? as usize;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let id_len = r.u32()? as usize;
+        let credit_id = String::from_utf8_lossy(r.take(id_len)?).into_owned();
+        let kills = r.i32()?;
+        out.push(BestiaryKill { credit_id, kills });
     }
     Ok(out)
 }
@@ -740,7 +784,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        assert_eq!(&buf[8..12], &[8, 0, 0, 0], "the writer emits the current v8");
+        assert_eq!(&buf[8..12], &[9, 0, 0, 0], "the writer emits the current v9");
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -766,13 +810,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v8 (the flags/wires/TE/chests/banners
-        // tail) is now the current format, so the gate pins 9.
+        // current one (`save.rs` version gate). v9 (the flags/wires/TE/chests/banners/
+        // bestiary tail) is now the current format, so the gate pins 10.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&9u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 9 is unsupported");
+        buf[8..12].copy_from_slice(&10u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 10 is unsupported");
     }
 
     #[test]
@@ -820,7 +864,7 @@ mod tests {
         // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
         // fixed flags block + four empty colour counts + one empty entity
         // count sit after it — [presence][x: i32][y: i32] — poison the x.
-        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 4) - 9;
+        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4) - 9;
         buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
         assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
@@ -834,10 +878,10 @@ mod tests {
         w.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v7 block of an empty-wire/entity/chest world: the fixed flags
-        // block + four empty colour counts + one empty entity count + one
-        // empty chest count.
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4));
+        // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
+        // fixed flags block + four empty colour counts + one empty entity count +
+        // one empty chest count + one empty banner count + one empty bestiary count.
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -870,13 +914,13 @@ mod tests {
 
     /// A `WorldSide` carrying only the chest records (the v7 tests).
     fn chest_side(chests: &[ChestRecord]) -> WorldSide {
-        WorldSide { chests: chests.to_vec(), banners: Vec::new() }
+        WorldSide { chests: chests.to_vec(), banners: Vec::new(), bestiary: Vec::new() }
     }
 
     /// The v6 block's u16 bitmask, read back out of the written buffer — the
     /// two bytes ahead of the fixed v7 flags block.
     fn back_flags(buf: &[u8]) -> u16 {
-        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4) - 2;
+        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4) - 2;
         u16::from_le_bytes([buf[tail], buf[tail + 1]])
     }
 
@@ -1071,7 +1115,7 @@ mod tests {
         ];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        assert_eq!(&buf[8..12], &[8, 0, 0, 0], "the writer emits the current v8");
+        assert_eq!(&buf[8..12], &[9, 0, 0, 0], "the writer emits the current v9");
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
         assert_eq!(back_chests, chests);
@@ -1142,6 +1186,7 @@ mod tests {
                 BannerKill { banner: 71, kills: 0 },
                 BannerKill { banner: 1569, kills: 999_999_999 },
             ],
+            bestiary: Vec::new(),
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1164,6 +1209,7 @@ mod tests {
                 slots: vec![ChestItem { stack: 3, kind: 19, prefix: 0 }],
             }],
             banners: vec![BannerKill { banner: 3331, kills: 7 }],
+            bestiary: Vec::new(),
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1181,6 +1227,7 @@ mod tests {
         let side = WorldSide {
             chests: Vec::new(),
             banners: vec![BannerKill { banner: 3331, kills: 7 }],
+            bestiary: Vec::new(),
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1199,6 +1246,7 @@ mod tests {
                 BannerKill { banner: 71, kills: 0 },
                 BannerKill { banner: 1569, kills: 12 },
             ],
+            bestiary: Vec::new(),
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1208,6 +1256,82 @@ mod tests {
         let (_, back) = parse(&a).unwrap();
         assert_eq!(back.banners.len(), 3);
         assert_eq!(back.banners[0].banner, 3331);
+    }
+
+    #[test]
+    fn dw_2_4_the_bestiary_counts_round_trip_in_v9() {
+        // DW-2.4: the v9 tail carries `NPCKillsTracker.Save`'s counts
+        // (the credit-id string + int32, `NPCKillsTracker.cs:59-70`) — the
+        // vanilla's world-file section; the port had them on the `.trplayer`
+        // sidecar, and that line stays the back-compat fallback.
+        let mut w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            bestiary: vec![
+                BestiaryKill { credit_id: "BlueSlime".into(), kills: 137 },
+                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
+                BestiaryKill { credit_id: " EyeofCthulhu".into(), kills: 1 },
+            ],
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        let (back, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.bestiary, side.bestiary);
+    }
+
+    #[test]
+    fn dw_2_4_a_v8_payload_loads_no_bestiary() {
+        // DW-2.4: a v8 payload (the version field patched) parses with the
+        // chests and banners intact and no bestiary — the sidecar fallback is
+        // the load path's decision (app-side).
+        let mut w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: vec![BannerKill { banner: 69, kills: 50 }],
+            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf[8..12].copy_from_slice(&8u32.to_le_bytes());
+        let (back, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.banners, side.banners, "the banners still load");
+        assert!(back_side.bestiary.is_empty(), "no bestiary below v9");
+    }
+
+    #[test]
+    fn dw_2_4_a_truncated_bestiary_section_bails() {
+        // DW-2.4 (dirty): the bestiary section is self-delimiting; a payload
+        // cut mid-record is a structural error.
+        let mut w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf.truncate(buf.len() - 2); // inside the record
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn dw_2_4_the_bestiary_section_is_deterministic() {
+        // DW-2.4: the same records written twice are byte-equal.
+        let mut w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            bestiary: vec![
+                BestiaryKill { credit_id: "BlueSlime".into(), kills: 7 },
+                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
+            ],
+        };
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &side).unwrap();
+        write_world(&mut b, &w, &side).unwrap();
+        assert_eq!(a, b);
     }
 }
 

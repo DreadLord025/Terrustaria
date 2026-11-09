@@ -2095,7 +2095,18 @@ impl App {
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             kill_tracker: {
                 let mut tracker = tr_core::bestiary::KillTracker::new();
-                tracker.load_pairs(loaded_kills.into_iter());
+                // M6-SAVE-1d: the world file's v9 section is the vanilla home
+                // (`NPCKillsTracker.Save`); a world saved before v9 carries none,
+                // and the `.trplayer` sidecar's line (`loaded_kills`) stays the
+                // back-compat fallback — a player who migrated from an older build
+                // keeps their tally.
+                let world_kills: Vec<(String, i32)> = side
+                    .bestiary
+                    .into_iter()
+                    .map(|b| (b.credit_id, b.kills))
+                    .collect();
+                let kills = if world_kills.is_empty() { loaded_kills } else { world_kills };
+                tracker.load_pairs(kills.into_iter());
                 tracker
             },
             bestiary_open: crate::env::bestiary_open(),
