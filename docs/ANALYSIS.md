@@ -2908,6 +2908,71 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+### The EoC task's loss and re-land (M4-NPC-3n)
+
+The smart-cursor agent's `5075a462` "sync" merge resolved its conflicts by
+taking its own branch's wholesale tree, which predated `07c1d4e4` — main
+lost the entire M4-NPC-3m task (the case-4 `find_frame`, the 110x166
+frames, the `halfSize` override, the `eoc` hook name and the ROADMAP
+row). The AGENTS.md hazard ("another agent's merge reverts a finished
+feature — verify your markers after every merge") caught it in the audit
+log (`git show origin/main:... | grep -c`), and the work was cherry-picked
+back on this branch. The lesson joins the 2026-11-08 incidents list: a
+"sync" merge whose message says it restores dropped work is exactly where
+someone else's finished work gets dropped again.
+
+## The draw-anchor overrides (M4-NPC-3n)
+
+`Main.cs:23048`'s switch overrides the per-kind draw anchor in two ways,
+and the port now models both:
+
+- `halfSize` (the origin point that lands on the anchor) shifts the frame
+  by `override − frame_h / 2`: the EoC/Twins' (55, 107) gives +24/+7, and
+  the Plantera head's absolute 77 (over its 86-px row's 43) gives +34.
+- `num47`/`num46` are flat pixel nudges: the Plantera head's +26, the
+  Brain's `+50 · scale`, the DD2 group's negative shifts (the
+  javelineers' −8, the bombers' −5, the Wither Beasts' −3).
+
+`npc_anchor_nudge` sums them and is applied once after the draw match, so
+every generic-anchored kind takes its own value; the towers, the saucer
+family and the Deerclops compute their own positions in dedicated
+`DrawNPCDirect` arms and are excluded, exactly like the C#. The still
+unported arms (626/627's wet dual switch, 692's `num46 = wet ? 10 : 6`,
+688/694's direction terms, 469's ai[2]-gated +14, and the DD2 sprite
+effects/flip toggles) are the follow-ups.
+
+## The Eye of Cthulhu's display (M4-NPC-3m)
+
+The EoC's `find_frame` arm ran an 8-tick strip over all six rows of its
+sheet, and its comment described a "pupil blink" that does not exist in
+the decompile. `case 4/125/126` (`NPC.cs:76905-76926`) is ONE shared
+machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
+
+- The 20-tick counter walks the bands rows 0/1/2 (splits at 7/14/21,
+  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 onto the
+  phase-2 rows 3/4/5. The Twins ported this in M4-NPC-3k; the EoC was
+  still on the v1 strip, so the boss and its summonable twins animated
+  differently.
+- **The sheet is 110x996** (six 166-px rows, `Main.npcFrameCount[4] = 6`)
+  and the v1 squeezed each row into a 110-px quad at the box's corner —
+  a horizontally stretched, vertically cropped eye. `boss_draw` now
+  takes the real 110x166 frames at the generic anchor (the same shape
+  the Twins ride, whose 200-px rows come off the same helper).
+- **The `halfSize` override** (`Main.cs:23051-23056`): the C#'s draw sets
+  `halfSize = (55, 107)` for all three kinds — the point that lands on
+  the NPC's anchor. For a 166-px row the sheet-derived half is 83, so the
+  override pushes the frame's centre 24 px lower (the Twins' 200-px rows:
+  7 px). `boss_half_size` folds that into the anchor as
+  `override − frame_h/2`, which is the shift the C#'s formula produces.
+- The rest of the C#'s override switch (the Plantera head's absolute 77
+  with `num47 += 26`, the Brain's `+50·scale`, the small walkers' +4/+8,
+  the DD2 families' negative nudges, the 626/627 wet switch) stays the
+  documented follow-up — the `case 4/125/126` trio is the only override
+  that is a plain (55, 107).
+
+Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
+SHA256-stable across runs.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -8387,46 +8452,3 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
-
-## The lunar battery projectiles (M4-EVENT-16)
-
-The Moon Lord's and the pillars' shots run through six aiStyles, all ported
-in `projectile.rs`'s pool dispatch.
-
-- **452 PhantasmalEye (aiStyle 82)** drifts in three legs: 45 ticks, then
-  the drift angle negates; 90 more, then `ai[1]` becomes the target player
-  index; then the homing — the 14-px target over the 0.6 lerp with the Y
-  floor of 6 and an accel that ramps 0.4 → 0 as `ai[2]` ages 0→90, killing
-  at 30 px. Every leg's drift rotates `velocity.X` off `ai[1]`, clamps to
-  ±6, drifts Y by −0.08 (−0.2 when rising) and floors at −7.
-- **454 PhantasmalSphere (aiStyle 83)** fades its alpha by 6 and sets
-  `scale = 1 - alpha/255`; while `ai[0] < 30` it locks its position to
-  `Main.npc[ai[1]].Center - halfbox - velocity` (the hand's held charge),
-  then decays at 0.96 and cycles its 2 frames. The damage suppression
-  (`Projectile.cs:15406-15412`) rides the same window.
-- **455 PhantasmalDeathray (aiStyle 84)** derives its position from the
-  host every tick — the (27, 59) ellipse for the Moon Lord head, (30, 30)
-  for the True Eye — scaled by the host's `localAI[1]` open factor and
-  rotated by its `localAI[0]` aim. Its heading sweeps by `ai[0]` per tick
-  (the ±2π/540 the head's spawn sets), it lives 180 ticks with the
-  `sin(t·π/180)·10` scale curve, and its length smooths toward the port's
-  tile ray at 0.5 (0.75 when the host can't see its player).
-- **456 MoonLeech (aiStyle 85)** runs the outbound leg at the 16-px cap
-  toward its player, applies buff 145 (840 classic / 960 expert) once at
-  the 20-px contact, and after 330 ticks (or the player's death) flips
-  `ai[0]` negative for the return leg that dies at the head.
-- **540 StardustMark (aiStyle 103)** fades in over 30 ticks and spawns the
-  NPC id carried in `localAI[0]` (the tower's mark: 405/402/407 picked
-  from the culled list), then fades out. The port's pool can't grow the NPC
-  vec, so the spawn rides `wants_mark_spawn` out to `drain_mark_spawns`.
-- **574 NebulaEye (aiStyle 102)** is dragged along its host's frame delta
-  while `ai[0] < 180`, homing at the ±0.15/±0.075 accel clamped to 6 px.
-- **629 TowerDamageBolt (aiStyle 122)** homes at 5 px toward the host tower
-  in `ai[0]` and dies with it; on contact the dispatch spends the tower's
-  `ShieldStrengthTower*` (clamped at 0) — the M4-EVENT-7 shield's drain.
-
-Deviations: the pool's spawn carries no `ai[1]` whoAmI, so the machines
-link their host by kind (the nearest living MoonLordHead/FreeEye,
-MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
-the 452's `Player.FindClosest` folds into the owner's centre; the 456's
-expert duration stays classic until the difficulty modes land.
