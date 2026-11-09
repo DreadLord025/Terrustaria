@@ -36,8 +36,8 @@ fn manager() -> &'static Mutex<LanguageManager> {
 /// json resources, in probe order.
 fn source_dirs() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Some(dir) = std::env::var_os("TR_LOCALE") {
-        out.push(PathBuf::from(dir));
+    if let Some(dir) = crate::env::locale_dir() {
+        out.push(dir);
     }
     // The repo layout: `assets/Content` + `decompiled/` side by side.
     if let Some(content) = crate::assets::content_dir() {

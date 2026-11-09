@@ -139,6 +139,68 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
 /// `WorldGen.IsTileTypeFitForTree` (`:29695-29710`).
 pub const TREE_SOILS: [u16; 12] = [2, 23, 60, 70, 109, 147, 199, 477, 492, 633, 661, 662];
 
+/// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
+/// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields: the
+/// app's weather clock passes the live values.
+#[derive(Clone, Copy, Default)]
+pub struct WeatherCtx {
+    /// `Main.raining`.
+    pub raining: bool,
+    /// `Main.cloudAlpha`.
+    pub cloud_alpha: f32,
+    /// `Main.remixWorld`.
+    pub remix_world: bool,
+}
+
+/// `WorldGen.IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+/// per-style condition an herb may be harvested with a seed in hand —
+/// style 0 daybloom (day), 1 moonglow (night), 3 deathweed (night +
+/// blood moon / full moon), 4 waterleaf (rain or any cloud), 5 fireblossom
+/// (dry or below the surface, late afternoon).
+pub fn is_alchemy_plant_harvestable(world: &World, style: i32, y: i32, wx: &WeatherCtx) -> bool {
+    if style == 0 && world.day_time {
+        return true;
+    }
+    if style == 1 && !world.day_time {
+        return true;
+    }
+    if style == 3 && !world.day_time && (world.blood_moon || world.moon_phase == 0) {
+        return true;
+    }
+    if style == 4 && (wx.raining || wx.cloud_alpha > 0.0) {
+        return true;
+    }
+    if style == 5 {
+        let mut flag = y as f64 > world.world_surface;
+        if wx.remix_world {
+            flag = y < world.height - 350;
+        }
+        // The C# `(!Main.raining | flag)` is the bitwise bool `|` — both
+        // operands are pure, so `||` is equivalent.
+        if ((!wx.raining || flag) && world.time > 40500.0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+/// the grown herbs 83/84 carry the seed-harvest arm — 84 always is, and
+/// 83 when its style's condition holds (the plain herb 82 never is).
+pub fn is_harvestable_herb_with_seed(
+    world: &World,
+    kind: u16,
+    style: i32,
+    y: i32,
+    wx: &WeatherCtx,
+) -> bool {
+    match kind {
+        82 => false,
+        83 | 84 => kind == 84 || is_alchemy_plant_harvestable(world, style, y, wx),
+        _ => false,
+    }
+}
+
 pub fn is_tile_type_fit_for_tree(kind: u16) -> bool {
     TREE_SOILS.contains(&kind)
 }
@@ -1155,5 +1217,68 @@ mod tests {
         // The frozen time picks nothing.
         let picks = update_world(&mut w, 1, false, true, true, &mut rng);
         assert_eq!(picks, 0);
+    }
+
+    #[test]
+    fn the_alch_harvest_matrix_runs_the_style_conditions() {
+        // `IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+        // per-style gates, against a daytime world under the surface
+        // (world_surface = 100 in the 4200×400 fixture).
+        let mut w = world();
+        let dry = WeatherCtx::default();
+        let rainy = WeatherCtx {
+            raining: true,
+            ..WeatherCtx::default()
+        };
+        // style 0 (daybloom): day only.
+        w.day_time = true;
+        assert!(is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        w.day_time = false;
+        assert!(!is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        // style 1 (moonglow): night only.
+        assert!(is_alchemy_plant_harvestable(&w, 1, 120, &dry));
+        // style 3 (deathweed): night + (blood moon or full moon) — the
+        // fixture's moon_phase 0 is the full moon.
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.moon_phase = 4;
+        assert!(!is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = true;
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = false;
+        // style 4 (waterleaf): rain or any cloud.
+        assert!(!is_alchemy_plant_harvestable(&w, 4, 120, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &rainy));
+        let cloudy = WeatherCtx {
+            cloud_alpha: 0.1,
+            ..WeatherCtx::default()
+        };
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &cloudy));
+        // style 5 (fireblossom): late afternoon (the C#'s
+        // `Main.time > 40500.0` is strict) + the rain/height arm — the
+        // herb harvests when it is not raining, or when it sits BELOW the
+        // surface (`y > worldSurface`, the rows the rain does not reach).
+        w.time = 40501.0;
+        assert!(is_alchemy_plant_harvestable(&w, 5, 90, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 5, 120, &rainy));
+        assert!(!is_alchemy_plant_harvestable(&w, 5, 90, &rainy));
+        // An unknown style never harvests.
+        assert!(!is_alchemy_plant_harvestable(&w, 2, 90, &dry));
+    }
+
+    #[test]
+    fn the_seed_harvest_arm_covers_the_grown_herbs() {
+        // `IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+        // 83/84 — 84 always, 83 through its style, 82 never.
+        let mut w = world();
+        w.day_time = true;
+        let dry = WeatherCtx::default();
+        assert!(!is_harvestable_herb_with_seed(&w, 82, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 84, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        w.day_time = false;
+        assert!(!is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 1, 90, &dry));
+        // A non-herb kind never harvests.
+        assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
     }
 }
