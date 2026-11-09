@@ -1232,6 +1232,22 @@ impl NpcKind {
         }
     }
 
+    /// The kinds whose display flip rides the dedicated `sprite_dir`
+    /// (`NPC.spriteDirection`, `NPC.cs:6515`) rather than the motion
+    /// `facing`: the martian family (the Scutlix pair's inverted write,
+    /// the saucer mounts' inheritance), the Prime family (the limbs'
+    /// `-(int)ai[0]` seat write, the head's and the Twins' never-written
+    /// default -1 — `Main.cs:23124-23128` reads it as the flip) and the
+    /// Twins.
+    pub fn flips_on_sprite_dir(self) -> bool {
+        self.is_martian()
+            || self.is_prime_limb()
+            || matches!(
+                self,
+                NpcKind::SkeletronPrime | NpcKind::Retinazer | NpcKind::Spazmatism
+            )
+    }
+
     /// The Prime's four limbs (`NPCID` 128-131, `aiStyle 33-36`) — the
     /// kinds `AI_032`'s init spawns and the dock tether drives.
     pub fn is_prime_limb(self) -> bool {
@@ -4006,16 +4022,29 @@ impl Npc {
                 }
             }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
-                // `Main.npcFrameCount[125/126]` = 2 (`Main.cs:67082`).
+                // `case 125/126` (`NPC.cs:76906-76924`): the Twins' sheets
+                // are 6 rows of 200 (`Main.npcFrameCount[125/126]` = 6,
+                // `Main.cs:67082` — the v1's comment claimed 2 and ran an
+                // 8-tick strip over rows 0/1), laid out as the two 3-row
+                // wing-beats of the spawn (0-2) and the live (3-5) phases.
+                // The 20-tick counter walks the bands 0/1/2 and the
+                // `ai[0] > 1` hover-anchor offset (the AI's own write —
+                // `AI_022`'s `NPC.cs:24758`) parks the pair on rows 3-5.
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
+                let mut row = if self.frame_counter < 7.0 {
+                    0
+                } else if self.frame_counter < 14.0 {
+                    1
+                } else if self.frame_counter < 21.0 {
+                    2
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    0
+                };
+                if self.ai[0] > 1.0 {
+                    row += 3;
                 }
+                self.frame = row;
             }
             NpcKind::SkeletronPrime => {
                 // `case 127` (`NPC.cs:74498-74538`): the head's 6-row strip
@@ -7433,6 +7462,13 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        // The hover anchor (`AI_022`'s `NPC.cs:24758`): the vanilla keeps
+        // the twin's arrival band in `ai[0] = position.X` and
+        // `FindFrame`'s case 125/126 reads it back as the +3 row offset —
+        // the live wing-beat rows 3-5. The port's simplified hover has no
+        // arrival state, so the anchor write stands in for it (the value
+        // is any live pixel X, which is > 1 past the spawn tick).
+        self.ai[0] = self.x;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -8991,6 +9027,7 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
     }
     h
+
 }
 
 #[cfg(test)]
@@ -12242,6 +12279,78 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn the_twins_beat_their_wing_rows_over_the_twenty_tick_cycle() {
+        // `case 125/126` (`NPC.cs:76906-76924`): the 20-tick counter walks
+        // the bands rows 0/1/2 and the `ai[0] > 1` hover anchor offsets
+        // them to the live rows 3/4/5 (`Main.npcFrameCount[125/126]` = 6 —
+        // NPC_125/126 are 110x1200, 200-px rows). The v1 ran an 8-tick
+        // 2-row strip.
+        let mut t = bare(NpcKind::Retinazer);
+        // Pre-anchor (the spawn ticks before the AI writes `ai[0]`): the
+        // spawn rows 0/1/2.
+        t.ai[0] = 0.0;
+        for _ in 0..6 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 0, "the first band holds row 0");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 1, "the second band advances to row 1");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 2, "the third band advances to row 2");
+        t.find_frame();
+        assert_eq!((t.frame, t.frame_counter), (0, 0.0), "the 21st tick wraps");
+        // Live: the machine's `ai[0] = position.X` write flips the pair
+        // onto the phase-2 rows.
+        t.ai[0] = 3200.0;
+        for _ in 0..6 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 3, "the anchor's +3 parks the live rows");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 4);
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 5);
+        t.find_frame();
+        assert_eq!(t.frame, 3, "the live beat wraps 5 -> 3");
+        // The Spazmatism shares the case.
+        let mut s2 = bare(NpcKind::Spazmatism);
+        s2.ai[0] = 100.0;
+        s2.find_frame();
+        assert_eq!(s2.frame, 3, "the second twin rides the same rows");
+    }
+
+    #[test]
+    fn the_twin_machine_writes_the_hover_anchor() {
+        // `AI_022`'s `NPC.cs:24758`: the hover anchor `ai[0] = position.X`
+        // is what `FindFrame` reads back as the +3 row offset — the port's
+        // simplified machine writes it once per tick.
+        let mut w = ground_air();
+        let mut tw = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        tw.hp = tw.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 20.0 * 16.0;
+        let x_before = tw.x;
+        tw.update_twin(&w, &player);
+        assert!(
+            (tw.ai[0] - x_before).abs() < 0.001,
+            "the anchor rides the position: {} vs {}",
+            tw.ai[0],
+            x_before
+        );
+        tw.find_frame();
+        assert_eq!(tw.frame, 3, "the anchor lands the live rows on the same tick");
+    }
 }
 
 #[cfg(test)]
@@ -12264,4 +12373,6 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 }
