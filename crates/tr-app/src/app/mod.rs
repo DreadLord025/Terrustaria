@@ -1377,7 +1377,7 @@ impl App {
     pub(crate) fn new(
         settings: settings::Settings,
         world: World,
-        side: save::WorldSide,
+        chests: Vec<save::ChestRecord>,
         world_path: PathBuf,
         atlas: Atlas,
         font_atlas: Option<tr_render::FontAtlas>,
@@ -1927,12 +1927,7 @@ impl App {
         // `merge_store`, whose collision rule drops a rolled anchor a saved
         // chest already claims (so the saved slots win, exactly the anchor this
         // branch exists for).
-        let seeded_chests = crate::chest_gen::store_from_records(&world, &side.chests);
-        // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
-        // v8 section's recorded counts restore the tally; the vanilla rides
-        // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> =
-            side.banners.iter().map(|b| (b.banner, b.kills)).collect();
+        let seeded_chests = crate::chest_gen::store_from_records(&world, &chests);
         let world_chests = crate::chest_gen::merge_store(
             crate::chest_gen::merge_store(world_chests, seeded_chests),
             tr_chest_store,
@@ -1942,8 +1937,7 @@ impl App {
         // each named record resolves through the same `FindChest` read the open
         // path takes. A record whose anchor did not survive (the cull, or a
         // merge collision) simply lands nowhere.
-        let chest_names: HashMap<usize, String> = side
-            .chests
+        let chest_names: HashMap<usize, String> = chests
             .iter()
             .filter(|r| !r.name.is_empty())
             .filter_map(|r| {
@@ -2101,18 +2095,7 @@ impl App {
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             kill_tracker: {
                 let mut tracker = tr_core::bestiary::KillTracker::new();
-                // M6-SAVE-1d: the world file's v9 section is the vanilla home
-                // (`NPCKillsTracker.Save`); a world saved before v9 carries none,
-                // and the `.trplayer` sidecar's line (`loaded_kills`) stays the
-                // back-compat fallback — a player who migrated from an older build
-                // keeps their tally.
-                let world_kills: Vec<(String, i32)> = side
-                    .bestiary
-                    .into_iter()
-                    .map(|b| (b.credit_id, b.kills))
-                    .collect();
-                let kills = if world_kills.is_empty() { loaded_kills } else { world_kills };
-                tracker.load_pairs(kills.into_iter());
+                tracker.load_pairs(loaded_kills.into_iter());
                 tracker
             },
             bestiary_open: crate::env::bestiary_open(),
@@ -2150,11 +2133,7 @@ impl App {
                 }
                 sys
             },
-            banners: {
-                let mut banners = banners::BannerSystem::default();
-                banners.load_pairs(seeded_banners);
-                banners
-            },
+            banners: banners::BannerSystem::default(),
             town_look_timer: 0.0,
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
@@ -2382,12 +2361,12 @@ impl App {
 /// Returns the world with its v7 chest records (`SaveChests`'s save-side twin,
 /// `WorldFile.cs:1606-1676`); a `.wld` has none in the port, so its store
 /// re-rolls from the chest tiles alone (`App::new`'s `chest_gen` pass).
-pub(crate) fn load_world(world_path: &Path) -> Result<(World, save::WorldSide)> {
+pub(crate) fn load_world(world_path: &Path) -> Result<(World, Vec<save::ChestRecord>)> {
     let t0 = Instant::now();
-    let (mut world, side) = if world_path.extension().is_some_and(|e| e == "trwld") {
+    let (mut world, chests) = if world_path.extension().is_some_and(|e| e == "trwld") {
         save::load(&world_path)?
     } else {
-        (wld::load(&world_path)?, save::WorldSide::default())
+        (wld::load(&world_path)?, Vec::new())
     };
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
@@ -2572,7 +2551,7 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, save::WorldSide)> 
         world.time,
         if world.day_time { "day" } else { "night" }
     );
-    Ok((world, side))
+    Ok((world, chests))
 }
 
 // --- Deterministic load hooks for the object screenshots --------------------
@@ -3081,7 +3060,7 @@ pub(crate) fn terrstaria_world() -> Result<PathBuf> {
             seed,
             ..Default::default()
         });
-        save::save(&path, &world, &save::WorldSide::default())?;
+        save::save(&path, &world, &[])?;
         log::info!(
             "generated '{}' (seed {seed}) in {:.0} ms -> {}",
             world.name,
@@ -3402,13 +3381,13 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(&path, &World::new("pins".into(), 32, 32), &[]).unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
         unsafe { std::env::set_var("TR_SUNDIAL", "1") };
         unsafe { std::env::set_var("TR_MOONDIAL", "1") };
-        let (world, side) = load_world(&path).expect("scratch world loads");
+        let (world, chests) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
         let _ = std::fs::remove_file(&path);
@@ -3421,8 +3400,7 @@ mod tr_hooks {
             world.fast_forward_to_dusk,
             "TR_MOONDIAL arms the dusk fast-forward"
         );
-        assert!(side.chests.is_empty(), "the scratch world has no chest records");
-        assert!(side.banners.is_empty(), "the scratch world has no banner records");
+        assert!(chests.is_empty(), "the scratch world has no chest records");
         assert_eq!(
             (world.sundial_cooldown, world.moondial_cooldown),
             (0, 0),
@@ -3440,8 +3418,8 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
-        let (world, side) = load_world(&path).expect("scratch world loads");
+        save::save(&path, &World::new("pins".into(), 32, 32), &[]).unwrap();
+        let (world, chests) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);

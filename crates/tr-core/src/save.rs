@@ -27,39 +27,8 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// branch instead carries the classic secret-seed flags (`World.seeds` — the
 /// `SaveWorldFlags` byte block, `WorldFile.cs:1238-1250`, as the port's own u16
 /// bitmask; the C# `.wld` stores the nine booleans and re-derives the seed from the
-/// stored seed *text*), so the v6 block below is re-assembled as v7. v8 appended the
-/// banner kill counts (`BannerSystem.Save`, `BannerSystem.cs:172-186`); v9 appended the
-/// bestiary kill counts (`NPCKillsTracker.Save`, `NPCKillsTracker.cs:59-70`).
-pub const VERSION: u32 = 9;
-
-/// The v7+ sections' payload — the world chests, the banner kill counts and
-/// the bestiary kill counts. New sections grow this struct rather than the
-/// entry points' return tuples.
-#[derive(Default)]
-pub struct WorldSide {
-    pub chests: Vec<ChestRecord>,
-    pub banners: Vec<BannerKill>,
-    pub bestiary: Vec<BestiaryKill>,
-}
-
-/// One banner's kill count — the C# `BannerSystem.Save` shape (`int32` per
-/// banner id, `BannerSystem.cs:172-186`); the port stores the counts sparsely
-/// (a `BTreeMap` by banner id) where the vanilla keeps a dense array, so each
-/// record carries its id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BannerKill {
-    pub banner: i32,
-    pub kills: i32,
-}
-
-/// One bestiary entry's kill count — the C# `NPCKillsTracker.Save` shape
-/// (the persistent-id string + `int32` per entry, `NPCKillsTracker.cs:59-70`);
-/// both stores key by the credit id, so each record carries its string.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BestiaryKill {
-    pub credit_id: String,
-    pub kills: i32,
-}
+/// stored seed *text*), so the v6 block below is re-assembled as v7.
+pub const VERSION: u32 = 7;
 
 /// One item inside a chest record — the C# `SaveChests` slot shape
 /// (`int16 stack`, then `int32 itemType` + `byte prefix` while the stack is
@@ -135,7 +104,7 @@ pub fn default_player_path(name: &str) -> Option<PathBuf> {
     Some(default_players_dir()?.join(format!("{safe}.plr")))
 }
 
-pub fn save(path: &Path, world: &World, side: &WorldSide) -> Result<()> {
+pub fn save(path: &Path, world: &World, chests: &[ChestRecord]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
@@ -144,7 +113,7 @@ pub fn save(path: &Path, world: &World, side: &WorldSide) -> Result<()> {
         let file =
             std::fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
         let mut w = std::io::BufWriter::new(file);
-        write_world(&mut w, world, side)?;
+        write_world(&mut w, world, chests)?;
         w.flush()?;
     }
     std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
@@ -152,13 +121,13 @@ pub fn save(path: &Path, world: &World, side: &WorldSide) -> Result<()> {
 }
 
 /// Serialises a world to memory (multiplayer world transfer).
-pub fn to_bytes(world: &World, side: &WorldSide) -> Result<Vec<u8>> {
+pub fn to_bytes(world: &World, chests: &[ChestRecord]) -> Result<Vec<u8>> {
     let mut out = Vec::new();
-    write_world(&mut out, world, side)?;
+    write_world(&mut out, world, chests)?;
     Ok(out)
 }
 
-fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()> {
+fn write_world(w: &mut impl Write, world: &World, chests: &[ChestRecord]) -> Result<()> {
     w.write_all(MAGIC)?;
     w.write_all(&VERSION.to_le_bytes())?;
     w.write_all(&world.seed.to_le_bytes())?;
@@ -245,7 +214,6 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&sec.into_inner())?;
     // v7: the world chests — `SaveChests`'s shape (`WorldFile.cs:1606-1676`):
     // a u32 count, then per chest the anchor, the name and the slots.
-    let chests = &side.chests;
     w.write_all(&(chests.len() as u32).to_le_bytes())?;
     for chest in chests {
         w.write_all(&chest.x.to_le_bytes())?;
@@ -263,26 +231,6 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
                 w.write_all(&[slot.prefix])?;
             }
         }
-    }
-    // v8: the banner kill counts — a u32 count, then per banner the id and
-    // the count (the port's sparse map where the vanilla writes a dense array).
-    w.write_all(&(side.banners.len() as u32).to_le_bytes())?;
-    for banner in &side.banners {
-        w.write_all(&banner.banner.to_le_bytes())?;
-        w.write_all(&banner.kills.to_le_bytes())?;
-    }
-    // v9: the bestiary kill counts — `NPCKillsTracker.Save`'s shape
-    // (`NPCKillsTracker.cs:59-70`): a u32 count, then per entry the
-    // persistent-id string (the file's u32 length + UTF-8 convention) and
-    // the count. The vanilla rides them in the world file's section 10; the
-    // port had them on the `.trplayer` sidecar (the recorded deviation), and
-    // that line stays the back-compat fallback.
-    w.write_all(&(side.bestiary.len() as u32).to_le_bytes())?;
-    for entry in &side.bestiary {
-        let id = entry.credit_id.as_bytes();
-        w.write_all(&(id.len() as u32).to_le_bytes())?;
-        w.write_all(id)?;
-        w.write_all(&entry.kills.to_le_bytes())?;
     }
     Ok(())
 }
@@ -449,19 +397,18 @@ fn write_tile(w: &mut impl Write, t: &Tile) -> Result<()> {
     Ok(())
 }
 
-pub fn load(path: &Path) -> Result<(World, WorldSide)> {
+pub fn load(path: &Path) -> Result<(World, Vec<ChestRecord>)> {
     let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     parse(&data).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// The side sections of a parsed save — the chests and the banners alone
-/// (the world is parsed and dropped, so callers that only walk the stores
-/// keep one entry point).
-pub fn parse_side(data: &[u8]) -> Result<WorldSide> {
-    parse(data).map(|(_, side)| side)
+/// The chests of a parsed save — the v7 section alone (the world is parsed
+/// and dropped, so callers that only walk the store keep one entry point).
+pub fn parse_chests(data: &[u8]) -> Result<Vec<ChestRecord>> {
+    parse(data).map(|(_, chests)| chests)
 }
 
-pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
+pub fn parse(data: &[u8]) -> Result<(World, Vec<ChestRecord>)> {
     let mut r = Reader::new(data);
     if r.take(8)? != MAGIC {
         bail!("not a TRWLD save");
@@ -553,7 +500,7 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     // the earlier tails. The wire/TE/chest sections are self-delimiting
     // (count + records), so a truncated one bails like every other structural
     // failure.
-    let mut side = WorldSide::default();
+    let mut chests = Vec::new();
     if version >= 7 {
         read_flags_v6(&mut r, &mut world)?;
         world.wires = WireState::read(&mut r.0).ok_or_else(|| eof(r.0.pos()))?;
@@ -563,47 +510,10 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         // the port keeps the store's implicit-air compression instead of the
         // vanilla fixed `maxItems`, and drops the vanilla's pre-count validity
         // sweep: the anchors are re-checked by the app when the store is built).
-        side.chests = read_chests_v7(&mut r)?;
-    }
-    // v8: the banner kill counts (`BannerSystem.Save`'s `int32` per banner id,
-    // `BannerSystem.cs:172-186` — the vanilla rides the world-flags block; the
-    // port keeps the counts sparse, so each record carries its banner id).
-    if version >= 8 {
-        side.banners = read_banners_v8(&mut r)?;
-    }
-    // v9: the bestiary kill counts (the C#'s world-file section 10 — the
-    // side sections' counting order is the C#'s `SaveWorld_Version2` order
-    // wherever the port has the state).
-    if version >= 9 {
-        side.bestiary = read_bestiary_v9(&mut r)?;
+        chests = read_chests_v7(&mut r)?;
     }
     world.revision = 0;
-    Ok((world, side))
-}
-
-/// The v8 banners reader — the exact inverse of the v8 write.
-fn read_banners_v8(r: &mut Reader<'_>) -> Result<Vec<BannerKill>> {
-    let count = r.u32()? as usize;
-    let mut out = Vec::with_capacity(count.min(4096));
-    for _ in 0..count {
-        let banner = r.i32()?;
-        let kills = r.i32()?;
-        out.push(BannerKill { banner, kills });
-    }
-    Ok(out)
-}
-
-/// The v9 bestiary reader — the exact inverse of the v9 write.
-fn read_bestiary_v9(r: &mut Reader<'_>) -> Result<Vec<BestiaryKill>> {
-    let count = r.u32()? as usize;
-    let mut out = Vec::with_capacity(count.min(4096));
-    for _ in 0..count {
-        let id_len = r.u32()? as usize;
-        let credit_id = String::from_utf8_lossy(r.take(id_len)?).into_owned();
-        let kills = r.i32()?;
-        out.push(BestiaryKill { credit_id, kills });
-    }
-    Ok(out)
+    Ok((world, chests))
 }
 
 /// The v7 chests reader — the exact inverse of the v7 write.
@@ -752,7 +662,7 @@ mod tests {
         w.set_invisible_block(3, 0, true);
         w.set_extras_at(w.index(7, 7), 0);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.width, 64);
         assert_eq!(back.name, "Test");
@@ -783,8 +693,8 @@ mod tests {
         w.sundial_cooldown = 5;
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        assert_eq!(&buf[8..12], &[9, 0, 0, 0], "the writer emits the current v9");
+        write_world(&mut buf, &w, &[]).unwrap();
+        assert_eq!(&buf[8..12], &[7, 0, 0, 0], "the writer emits the current v7");
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -799,7 +709,7 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf.truncate(buf.len() - 3);
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
@@ -810,13 +720,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v9 (the flags/wires/TE/chests/banners/
-        // bestiary tail) is now the current format, so the gate pins 10.
+        // current one (`save.rs` version gate). v6 (the flags/wires/TE tail)
+        // is now the current format, so the gate pins 7.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&10u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 10 is unsupported");
+        write_world(&mut buf, &w, &[]).unwrap();
+        buf[8..12].copy_from_slice(&8u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 8 is unsupported");
     }
 
     #[test]
@@ -826,12 +736,12 @@ mod tests {
         let mut w = World::new("Test".into(), 64, 48);
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.bed_spawn, Some((30, 20)));
         w.bed_spawn = None;
         buf.clear();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
 
@@ -845,7 +755,7 @@ mod tests {
         w.spawn_y = 20;
         w.bed_spawn = Some((30, 22));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf[8..12].copy_from_slice(&4u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.bed_spawn, None);
@@ -860,11 +770,11 @@ mod tests {
         let mut w = World::new("Test".into(), 64, 48);
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
         // fixed flags block + four empty colour counts + one empty entity
         // count sit after it — [presence][x: i32][y: i32] — poison the x.
-        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4) - 9;
+        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4) - 9;
         buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
         assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
@@ -877,14 +787,13 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         w.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
-        // fixed flags block + four empty colour counts + one empty entity count +
-        // one empty chest count + one empty banner count + one empty bestiary count.
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4));
+        write_world(&mut buf, &w, &[]).unwrap();
+        // The v7 block of an empty-wire/entity/chest world: the fixed flags
+        // block + four empty colour counts + one empty entity count + one
+        // empty chest count.
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
-        let (back, side) = parse(&buf).unwrap();
-        let chests = side.chests;
+        let (back, chests) = parse(&buf).unwrap();
         assert_eq!(back.seeds, w.seeds);
         assert!(!back.downed_eoc, "the v7 flags stay default");
         assert!(!back.wires.get(1, 1, WireColor::Red));
@@ -900,27 +809,22 @@ mod tests {
         // a seed world survives the save/load.
         let mut classic = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
-        write_world(&mut buf, &classic, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &classic, &[]).unwrap();
         assert_eq!(back_flags(&buf), 0, "a classic world writes no seed bits");
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.seeds, crate::seeds::SeedFlags::none());
         classic.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
         buf.clear();
-        write_world(&mut buf, &classic, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &classic, &[]).unwrap();
         assert_eq!(back_flags(&buf), crate::seeds::SeedFlags::FOR_THE_WORTHY);
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.seeds, classic.seeds);
     }
 
-    /// A `WorldSide` carrying only the chest records (the v7 tests).
-    fn chest_side(chests: &[ChestRecord]) -> WorldSide {
-        WorldSide { chests: chests.to_vec(), banners: Vec::new(), bestiary: Vec::new() }
-    }
-
     /// The v6 block's u16 bitmask, read back out of the written buffer — the
     /// two bytes ahead of the fixed v7 flags block.
     fn back_flags(buf: &[u8]) -> u16 {
-        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4) - 2;
+        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4) - 2;
         u16::from_le_bytes([buf[tail], buf[tail + 1]])
     }
 
@@ -993,7 +897,7 @@ mod tests {
         let pylon = w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 8, 8);
 
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         let (back, _chests) = parse(&buf).unwrap();
         // The set flags round-trip and the unset ones stay default.
         assert!(back.blood_moon && back.downed_eoc && back.downed_golem && back.saved_goblin);
@@ -1046,7 +950,7 @@ mod tests {
         w.wires.set(1, 1, WireColor::Red, true);
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
         buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4));
@@ -1068,7 +972,7 @@ mod tests {
         w.wires.set(1, 1, WireColor::Red, true);
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf.truncate(buf.len() - 2); // inside the TE record
         assert!(parse(&buf).is_err());
     }
@@ -1088,8 +992,8 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 7, 3);
         let mut a = Vec::new();
         let mut b = Vec::new();
-        write_world(&mut a, &w, &WorldSide::default()).unwrap();
-        write_world(&mut b, &w, &WorldSide::default()).unwrap();
+        write_world(&mut a, &w, &[]).unwrap();
+        write_world(&mut b, &w, &[]).unwrap();
         assert_eq!(a, b);
     }
 
@@ -1114,10 +1018,9 @@ mod tests {
             ChestRecord { x: 40, y: 9, name: String::new(), slots: Vec::new() },
         ];
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        assert_eq!(&buf[8..12], &[9, 0, 0, 0], "the writer emits the current v9");
-        let (back, side) = parse(&buf).unwrap();
-        let back_chests = side.chests;
+        write_world(&mut buf, &w, &chests).unwrap();
+        assert_eq!(&buf[8..12], &[7, 0, 0, 0], "the writer emits the current v7");
+        let (back, back_chests) = parse(&buf).unwrap();
         assert_eq!(back_chests, chests);
     }
 
@@ -1129,10 +1032,9 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         let chests = vec![ChestRecord { x: 3, y: 4, name: "Wooden Chest".into(), slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }] }];
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
+        write_world(&mut buf, &w, &chests).unwrap();
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
-        let (back, side) = parse(&buf).unwrap();
-        let back_chests = side.chests;
+        let (back, back_chests) = parse(&buf).unwrap();
         assert!(back_chests.is_empty());
         assert!(!back_chests.iter().any(|c| c.x == 3 && c.y == 4));
     }
@@ -1149,7 +1051,7 @@ mod tests {
             slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }],
         }];
         let mut buf = Vec::new();
-        write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
+        write_world(&mut buf, &w, &chests).unwrap();
         buf.truncate(buf.len() - 3); // inside the item record
         assert!(parse(&buf).is_err());
     }
@@ -1164,174 +1066,11 @@ mod tests {
         ];
         let mut a = Vec::new();
         let mut b = Vec::new();
-        write_world(&mut a, &w, &chest_side(&chests)).unwrap();
-        write_world(&mut b, &w, &chest_side(&chests)).unwrap();
+        write_world(&mut a, &w, &chests).unwrap();
+        write_world(&mut b, &w, &chests).unwrap();
         assert_eq!(a, b);
         let (_, back) = parse(&a).unwrap();
-        assert_eq!(back.chests[0].name, "Ivy Chest");
-        assert_eq!(back.chests[1].name, "Water Chest");
-    }
-
-    #[test]
-    fn dw_2_3_the_banner_counts_round_trip_in_v8() {
-        // DW-2.3: the v8 tail carries `BannerSystem.Save`'s kill counts
-        // (`int32` per banner id, `BannerSystem.cs:172-186`) as the port's
-        // sparse records — including a zeroed banner and the 999999999-range
-        // counts the bestiary tracker caps at.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: vec![
-                BannerKill { banner: 3331, kills: 50 },
-                BannerKill { banner: 71, kills: 0 },
-                BannerKill { banner: 1569, kills: 999_999_999 },
-            ],
-            bestiary: Vec::new(),
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        let (back, back_side) = parse(&buf).unwrap();
-        assert_eq!(back_side.banners, side.banners);
-        assert!(back_side.chests.is_empty());
-    }
-
-    #[test]
-    fn dw_2_3_a_v7_payload_loads_no_banners() {
-        // DW-2.3: a v7 payload (the version field patched) parses with the
-        // chests intact and no banners — the v8 tail sits unread, the same
-        // back-compat contract as the earlier tails.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: vec![ChestRecord {
-                x: 4,
-                y: 5,
-                name: "Gold Chest".into(),
-                slots: vec![ChestItem { stack: 3, kind: 19, prefix: 0 }],
-            }],
-            banners: vec![BannerKill { banner: 3331, kills: 7 }],
-            bestiary: Vec::new(),
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        buf[8..12].copy_from_slice(&7u32.to_le_bytes());
-        let (back, back_side) = parse(&buf).unwrap();
-        assert_eq!(back_side.chests, side.chests, "the chests still load");
-        assert!(back_side.banners.is_empty(), "no banners below v8");
-    }
-
-    #[test]
-    fn dw_2_3_a_truncated_banner_section_bails() {
-        // DW-2.3 (dirty): the banners section is self-delimiting; a payload
-        // cut mid-record is a structural error.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: vec![BannerKill { banner: 3331, kills: 7 }],
-            bestiary: Vec::new(),
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the banner record
-        assert!(parse(&buf).is_err());
-    }
-
-    #[test]
-    fn dw_2_3_the_banner_section_is_deterministic() {
-        // DW-2.3: the same records written twice are byte-equal.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: vec![
-                BannerKill { banner: 3331, kills: 7 },
-                BannerKill { banner: 71, kills: 0 },
-                BannerKill { banner: 1569, kills: 12 },
-            ],
-            bestiary: Vec::new(),
-        };
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        write_world(&mut a, &w, &side).unwrap();
-        write_world(&mut b, &w, &side).unwrap();
-        assert_eq!(a, b);
-        let (_, back) = parse(&a).unwrap();
-        assert_eq!(back.banners.len(), 3);
-        assert_eq!(back.banners[0].banner, 3331);
-    }
-
-    #[test]
-    fn dw_2_4_the_bestiary_counts_round_trip_in_v9() {
-        // DW-2.4: the v9 tail carries `NPCKillsTracker.Save`'s counts
-        // (the credit-id string + int32, `NPCKillsTracker.cs:59-70`) — the
-        // vanilla's world-file section; the port had them on the `.trplayer`
-        // sidecar, and that line stays the back-compat fallback.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: Vec::new(),
-            bestiary: vec![
-                BestiaryKill { credit_id: "BlueSlime".into(), kills: 137 },
-                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
-                BestiaryKill { credit_id: " EyeofCthulhu".into(), kills: 1 },
-            ],
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        let (back, back_side) = parse(&buf).unwrap();
-        assert_eq!(back_side.bestiary, side.bestiary);
-    }
-
-    #[test]
-    fn dw_2_4_a_v8_payload_loads_no_bestiary() {
-        // DW-2.4: a v8 payload (the version field patched) parses with the
-        // chests and banners intact and no bestiary — the sidecar fallback is
-        // the load path's decision (app-side).
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: vec![BannerKill { banner: 69, kills: 50 }],
-            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        buf[8..12].copy_from_slice(&8u32.to_le_bytes());
-        let (back, back_side) = parse(&buf).unwrap();
-        assert_eq!(back_side.banners, side.banners, "the banners still load");
-        assert!(back_side.bestiary.is_empty(), "no bestiary below v9");
-    }
-
-    #[test]
-    fn dw_2_4_a_truncated_bestiary_section_bails() {
-        // DW-2.4 (dirty): the bestiary section is self-delimiting; a payload
-        // cut mid-record is a structural error.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: Vec::new(),
-            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
-        };
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
-        assert!(parse(&buf).is_err());
-    }
-
-    #[test]
-    fn dw_2_4_the_bestiary_section_is_deterministic() {
-        // DW-2.4: the same records written twice are byte-equal.
-        let mut w = World::new("Test".into(), 32, 32);
-        let side = WorldSide {
-            chests: Vec::new(),
-            banners: Vec::new(),
-            bestiary: vec![
-                BestiaryKill { credit_id: "BlueSlime".into(), kills: 7 },
-                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
-            ],
-        };
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        write_world(&mut a, &w, &side).unwrap();
-        write_world(&mut b, &w, &side).unwrap();
-        assert_eq!(a, b);
+        assert_eq!(back[0].name, "Ivy Chest");
+        assert_eq!(back[1].name, "Water Chest");
     }
 }
-
