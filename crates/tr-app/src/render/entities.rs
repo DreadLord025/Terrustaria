@@ -1451,11 +1451,13 @@ pub(crate) fn draw_npcs(
             // the overhanging art 47 px into the ground) — `tower_draw`
             // computes it (the other agent's merge had all four kinds ride
             // the shared `towers` sheet — NPC_493 — at the box's corner).
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower => {
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower
+            | NpcKind::DD2LanePortal => {
                 let tex = match n.kind {
                     NpcKind::StardustTower => assets.tower_stardust.as_ref(),
                     NpcKind::NebulaTower => assets.tower_nebula.as_ref(),
                     NpcKind::SolarTower => assets.tower_solar.as_ref(),
+                    NpcKind::VortexTower => assets.tower_vortex.as_ref(),
                     _ => assets.tower_vortex.as_ref(),
                 };
                 tower_draw(tex, n, w, h)

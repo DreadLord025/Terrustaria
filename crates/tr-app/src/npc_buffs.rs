@@ -304,6 +304,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
         | NpcKind::VortexTower
+        | NpcKind::DD2LanePortal
         | NpcKind::StardustCellBig
         | NpcKind::VortexTower
         | NpcKind::StardustCellSmall

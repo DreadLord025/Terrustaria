@@ -705,17 +705,29 @@ fn portrait_data(
         // was the Stardust row for every kind).
         (
             NpcKind::StardustTower
-            | NpcKind::NebulaTower
-            | NpcKind::SolarTower
-            | NpcKind::VortexTower,
-            _,
+                | NpcKind::NebulaTower
+                | NpcKind::SolarTower
+                | NpcKind::VortexTower,
+            _
         ) => {
             let h = lookups
                 .bestiary_npc_sheets
                 .get(sheet_i)
-                .and_then(|s| *s)                .map(|s| s.height as f32)
+                .and_then(|s| *s)
+                .map(|s| s.height as f32)
                 .unwrap_or(364.0);
             (sheet_i, h, 174.0, h, white)
+        }
+        // The Old One's Army's lane gate (M4-EVENT-18): the single 78x130
+        // NPC_549 frame — the body's own size (`NPC.cs`'s case 549).
+        (NpcKind::DD2LanePortal, _) => {
+            let h = lookups
+                .bestiary_npc_sheets
+                .get(sheet_i)
+                .and_then(|s| *s)
+                .map(|s| s.height as f32)
+                .unwrap_or(130.0);
+            (sheet_i, h, 78.0, h, white)
         }
         // The shards' portraits.
         (NpcKind::StardustCellBig, _) => {

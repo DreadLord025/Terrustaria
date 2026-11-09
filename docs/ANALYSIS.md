@@ -8634,3 +8634,47 @@ Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
 dusts), the sounds and the light are unmodelled; the wand's
 `UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
 late-stage clone spawn (`:32251-32257`) is unmodelled.
+
+## The Old One's Army's lane spawn (M4-EVENT-18)
+
+The etherian portal (549) is the gate every lane's monster climbs out of,
+and its pick is the whole wave's spawn table — three difficulties, each a
+per-wave `switch` with its own caps and rolls.
+
+- **The gate's machine** (`AI()`'s aiStyle-106 block, `NPC.cs:40970-41047`)
+  is a counter plus an idle timer. `ai[0]++` runs only while
+  `!EnemySpawningIsOnHold` (the event's `_timeLeftUntilSpawningBegins`), and
+  at `ai[0] >= LaneSpawnRate` the gate asks for a spawn; the 3x reset is
+  written _before_ the modulo test, so the reset frame's `0 % rate == 0`
+  opens an attempt too. `localAI[0]` caps at 180, and at 180 the arm either
+  returns (with `dontTakeDamage = true`) while `NPC.AnyNPCs(548)` — the
+  etherian crystal — stands, or flips `ai[1]`, zeroes `ai[0]` and enters the
+  fade: `scale = Lerp(1, 0.05, GetLerpValue(500, 600, ai[0]))`, dying at
+  `ai[0] >= 550`. The lane side rides `ai[2]` (`leftGate = ai[2] == 0`), and
+  `LaneSpawnRate` is the wave's own rate — the tier-1 table's
+  90/60/55/50/40, the tier-2's 90/70/60/55/50/45/42 and the tier-3's
+  85/75/60/60/55/60/90.
+- **The picks are three separate functions**
+  (`Difficulty_1/2/3_SpawnMonsterFromGate`). Two traps mattered when porting
+  them. First, the C#'s short-circuit: a branch whose _first_ condition is a
+  cap check does not draw its `Main.rand.Next` at all when the cap is full,
+  so the port's roll order has to match condition for condition — several
+  arms had the roll hoisted ahead of the cap. Second, the `num`/`num8`/
+  `num9` pair: the squire branch always spawns the squire and _also_ the
+  second body on a roll (the 556 beside the 553, the 557 beside the 554),
+  which `LaneSpawn` carries as `first`/`second`.
+- **The bosses each have their own shape.** The Dark Mage (564, tier-1 wave
+  5) rides a separate `if ((!leftGate || Next(2) == 0) && kills > required ·
+  0.5 && !AnyNPCs(564))` — but the `if/else if` chain that follows it
+  re-assigns `num4` whenever it fires, so the boss only survives when the
+  goblins already sit at their cap. The Ogre (576, tier-2 wave 7) heads the
+  chain instead. Tier-3 wave 6 runs _two independent chains_: the second
+  (`:1708`) always executes and overwrites the first's pick.
+- **The resolve** lives in the sim, which owns the NPC vec and therefore the
+  live pool the caps count (`NPC.CountNPCS`). `FindProperDifficulty` picks
+  the tier from `hardMode` / `downedMechBossAny` / `downedGolem`,
+  `GetInvasionStatus` supplies the kill pair, and the pick's kinds spawn at
+  the gate's bottom. The port's DD2 roster is partial — the wyvern, the
+  archers, the drakes, the mystics, the ogres, the hounds, the sapper and
+  the glider have no kind yet, so those picks drop out until they land
+  (`nid_of`/`dd2_pool_id`).

@@ -197,6 +197,11 @@ pub enum NpcKind {
     /// Stardust sheet and the vortex had neither kind nor art. Its
     /// internal slot is 146 (112-145 are taken).
     VortexTower,
+        /// `NPCID.DD2LanePortal` (549) — the Old One's Army's lane gate
+        /// (`NPC.cs:16033-16053`: 78×130, aiStyle 106, 5 HP, def 20, damage
+        /// 0, noGravity/noTileCollide/dontTakeDamage, netAlways; `ai[2]`
+        /// picks the lane side).
+        DD2LanePortal,
     /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
     /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
     /// kb 0.3; the aiStyle-85 hover machine).
@@ -840,9 +845,11 @@ impl NpcKind {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
-            NpcKind::VortexTower => 146,
             NpcKind::SolarTower => 115,
             NpcKind::VortexTower => 146,
+            NpcKind::DD2LanePortal => 147,
+            NpcKind::StardustCellBig => 121,
+            NpcKind::StardustCellSmall => 116,
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
             NpcKind::VortexHeadcrab => 129,
@@ -890,7 +897,7 @@ impl NpcKind {
             NpcKind::VortexHunter => 426,
             NpcKind::VortexAlien => 427,
             NpcKind::VortexHeadcrab => 428,
-            NpcKind::StardustCellBig => 121,
+            NpcKind::DD2LanePortal => 549,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
             NpcKind::NebulaBeast => 118,
@@ -1064,9 +1071,9 @@ NpcKind::SolarSelenian => 140,
             112 => NpcKind::AncientCultist,
             113 => NpcKind::StardustTower,
             114 => NpcKind::NebulaTower,
-            146 => NpcKind::VortexTower,
             115 => NpcKind::SolarTower,
             146 => NpcKind::VortexTower,
+            147 => NpcKind::DD2LanePortal,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
             118 => NpcKind::NebulaBeast,
@@ -1412,6 +1419,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => (130.0, 270.0),
+            // The lane gate: 78x130 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => (78.0, 130.0),
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
             NpcKind::VortexHeadcrab => (24.0, 26.0),
@@ -1810,6 +1819,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20000,
+            // The lane gate: 5 HP (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 5,
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
             NpcKind::VortexHeadcrab => 200,
@@ -2024,6 +2035,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 0,
+            // The lane gate: damage 0 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
             NpcKind::StardustSpiderBig => 70,
@@ -2372,6 +2385,13 @@ pub struct Npc {
     /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
     /// damage scaled by difficulty).
     pub wants_blast: bool,
+    /// `AI`'s aiStyle-106 arm (`NPC.cs:40999`'s `SpawnMonsterFromGate`)
+    /// request: the lane gate asks for its wave's pick — the sim
+    /// resolves it through the dd2 tables.
+    pub wants_dd2_spawn: bool,
+    /// `NPC.cs:40972`'s `leftGate` reading: `ai[2] == 0f` is the left
+    /// lane, `1f` the right — the resolved pick rides this flag.
+    pub wants_lane_right: bool,
     /// The StardustWormHead's mark request (`AI_006`'s 402 arm,
     /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
     /// resolves the 405/402/407 pick (the 540 hop unmodelled).
@@ -2799,6 +2819,8 @@ impl Npc {
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
             wants_blast: false,
+            wants_dd2_spawn: false,
+            wants_lane_right: false,
         wants_stardust_mark: false,
             wants_obstruct: false,
             wants_moon_leech: false,
@@ -2903,7 +2925,6 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
-            | NpcKind::VortexTower => 0.0,
             | NpcKind::VortexTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
@@ -3166,6 +3187,8 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20,
+            // The lane gate: def 20 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 20,
             // The shards' defense: 50/0/38/46/40/34.
             NpcKind::StardustSpiderBig => 40,
             NpcKind::StardustSpiderSmall => 10,
@@ -3331,6 +3354,8 @@ impl Npc {
             // `NPC.cs:14130`: the core alone carries a value (1 platinum
             // = 1000000 copper); the parts are value 0.
             NpcKind::VortexHunter => 1200.0,
+            NpcKind::NebulaFloater => 400.0,
+            NpcKind::DD2LanePortal => 0.0,
             NpcKind::VortexAlien => 400.0,
             NpcKind::VortexHeadcrab => 100.0,
             NpcKind::StardustSpiderBig => 900.0,
@@ -3372,7 +3397,8 @@ impl Npc {
             NpcKind::StardustWormHead => 700.0,
             NpcKind::SolarSpearman => 900.0,
             NpcKind::VortexTower => 0.0,
-            NpcKind::NebulaFloater => 400.0,
+            // The lane gate: value 0 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 0.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
             NpcKind::MoonLordCore => 1_000_000.0,
@@ -3458,6 +3484,7 @@ impl Npc {
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             NpcKind::VortexTower => 0.0, // the C# value = 0 for the pillars
+            NpcKind::DD2LanePortal => 0.0,
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -3798,6 +3825,10 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The Old One's Army's lane gate: aiStyle 106 — the sim's
+            // gate pass owns its spawn timer (it needs the pool + the
+            // dd2 state), the machine here is the idle body.
+            NpcKind::DD2LanePortal => self.update_dd2_lane(world, player),
             // The crawltipede chain rides the worm pass entirely.
             NpcKind::SolarCrawltipedeHead
             | NpcKind::SolarCrawltipedeBody
@@ -4400,6 +4431,11 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => {
+                self.frame = 0;
+            }
+            // The Old One's Army's lane gate: `ai[1]` drives its scale
+            // fade in the sim's gate pass; the machine here is 1-frame.
+            NpcKind::DD2LanePortal => {
                 self.frame = 0;
             }
             // The shards: the walker accumulator over their strips — the
@@ -7903,6 +7939,64 @@ impl Npc {
         );
     }
 
+    /// `AI`'s aiStyle-106 block (`NPC.cs:40970-41047`) — the Old One's
+    /// Army's lane gate: the `ai[0]` counter opens a spawn attempt every
+    /// `LaneSpawnRate` frames and resets at three times the rate, the
+    /// lane's side rides `ai[2]` (`leftGate`), and after 180 frames of
+    /// `localAI[0]` the gate fades (`scale = Lerp(1, 0.05, 500→600)`) and
+    /// dies at 550 — unless the crystal (`AnyNPCs(548)`) still stands, which
+    /// parks the arm.
+    ///
+    /// Deviations: the dust/light/sound arms and the netUpdate are
+    /// unmodelled; the spawn itself rides `wants_dd2_spawn` (the pool and
+    /// the dd2 tables live outside the machine).
+    fn update_dd2_lane(&mut self, world: &World, _player: &Player) {
+        // `:40972`'s lane side.
+        self.wants_lane_right = self.ai[2] == 1.0;
+        if self.ai[1] == 0.0 {
+            // `:40988-40991`'s counter, parked by `EnemySpawningIsOnHold`.
+            if !crate::world_sim::npcs::enemy_spawning_on_hold(world) {
+                self.ai[0] += 1.0;
+            }
+            let rate = crate::world_sim::npcs::lane_spawn_rate(world) as f32;
+            if self.ai[0] >= rate {
+                // `:40994-40997`'s reset runs first, so the reset frame's
+                // `0 % rate == 0` still opens an attempt.
+                if self.ai[0] >= rate * 3.0 {
+                    self.ai[0] = 0.0;
+                }
+                if (self.ai[0] as i32) % (rate as i32) == 0 {
+                    self.wants_dd2_spawn = true;
+                }
+            }
+            // `:41008-41016`'s idle timer, clamped at 180.
+            self.caster_counter += 1;
+            if self.caster_counter > 180 {
+                self.caster_counter = 180;
+            }
+            if self.caster_counter >= 180 {
+                // `:41014-41017`'s crystal guard: the AI returns with the
+                // gate unkillable while the crystal stands.
+                if world.dd2_crystal_alive {
+                    self.dont_take_damage = true;
+                    return;
+                }
+                self.ai[1] = 1.0;
+                self.ai[0] = 0.0;
+                self.dont_take_damage = true;
+            }
+        } else if self.ai[1] == 1.0 {
+            // `:41020-41042`'s fade, then the death at 550.
+            self.ai[0] += 1.0;
+            let t = ((self.ai[0] - 500.0) / 100.0).clamp(0.0, 1.0);
+            self.scale = 1.0 + (0.05 - 1.0) * t;
+            if self.ai[0] >= 550.0 {
+                self.dont_take_damage = false;
+                self.hp = 0;
+            }
+        }
+    }
+
     /// `AI_077_MoonLordCore` (`NPC.cs:41157-41575`) — the Moon Lord's
     /// heart: the spawn-in (`ai[0] == -1`), the cruise (`ai[0] == 0/1`),
     /// the 600-tick crash drama (`ai[0] == 2`), the despawn
@@ -11246,6 +11340,7 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::DD2LanePortal => 549,
             NpcKind::StardustSpiderBig => 409,
             NpcKind::StardustSpiderSmall => 410,
             NpcKind::StardustSoldier => 411,
