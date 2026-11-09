@@ -49,8 +49,8 @@ pub(crate) struct PlayerAssets {
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
-    pub(crate) mount_back: [Option<BgTex>; 50],
-    pub(crate) mount_front: [Option<BgTex>; 50],
+    pub(crate) mount_back: [Option<BgTex>; 59],
+    pub(crate) mount_front: [Option<BgTex>; 59],
 }
 
 impl Default for PlayerAssets {
@@ -71,8 +71,8 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
-            mount_back: [None; 50],
-            mount_front: [None; 50],
+            mount_back: [None; 59],
+            mount_front: [None; 59],
         }
     }
 }
