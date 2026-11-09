@@ -330,15 +330,16 @@ fn kill_plan_cells(
     }
 }
 
-/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:70111-70131`): an active, solid,
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:69957-69969`, the indexed
+/// overload :70111-70131): an `nactive` (active, non-actuated), solid,
 /// non-solidTop, non-halfBrick, slopeless tile. Out-of-world cells are not
-/// solid (the C# try/catch turns the OOB into `false`). The C# `!inActive()`
-/// term is vacuous here — the port has no actuated-tile flag.
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+/// solid (the C# try/catch turns the OOB into `false`).
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };
     t.active()
+        && !t.inactive()
         && td::TILE_SOLID.has(t.kind)
         && !td::TILE_SOLID_TOP.has(t.kind)
         && !t.half_brick()
