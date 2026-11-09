@@ -901,6 +901,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Eternia Crystal",
     },
     BestiaryEntryDef {
+        credit_id: "DD2LanePortal",
+        net_id: 549,
+        kind: NpcKind::DD2LanePortal,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Portal",
+    },
+    BestiaryEntryDef {
         credit_id: "AncientCultist",
         net_id: 439, // `NPCID.CultistBoss` (439) — 422 is the Vortex PILLAR's
         // id (`NPCID.LunarTowerVortex`); the entry carried the pillar's id

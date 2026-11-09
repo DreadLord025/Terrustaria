@@ -255,6 +255,13 @@ pub struct World {
     /// death-flag) sets it (`:79346`'s event-flag family); the weapon
     /// rosters clear with the event's stop.
     pub dd2_lost: bool,
+    /// `DD2Event.LaneSpawnRate` (`:1813`) — the lane gate's spawn interval
+    /// in frames (the wave roster's rate).
+    pub dd2_lane_rate: i32,
+    /// `NPC.AnyNPCs(548)` (`NPC.cs:41014`): whether the etherian crystal
+    /// still stands — the lane gates' aiStyle-106 arm parks their fade while
+    /// it does.
+    pub dd2_crystal_alive: bool,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -434,6 +441,8 @@ impl World {
             dd2_wave_kills: 0.0,
             dd2_spawn_hold: 300,
             dd2_lost: false,
+            dd2_lane_rate: crate::dd2::LANE_SPAWN_RATE,
+            dd2_crystal_alive: false,
             tower_shield_solar: 0,
             tower_shield_vortex: 0,
             tower_shield_nebula: 0,

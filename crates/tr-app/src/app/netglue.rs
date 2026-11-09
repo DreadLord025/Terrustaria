@@ -1996,6 +1996,7 @@ fn npc_seed(
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
         | crate::npc::NpcKind::VortexTower
+        | crate::npc::NpcKind::DD2LanePortal
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall
