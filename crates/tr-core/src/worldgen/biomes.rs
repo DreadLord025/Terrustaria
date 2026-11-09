@@ -679,9 +679,9 @@ pub(crate) fn pass_mud_caves_to_jungle_grass(world: &mut World) {
 /// `Conversion.Grass`, `TileID.cs:86` — and no trees exist during
 /// generation, so `TryConvertingOrKillingTreesAbove...` is a no-op) and the
 /// 3x3 recursion with the `grassSpread < 1000` cap (`:75251-75263`).
-/// (`growth.rs::spread_grass` carries an earlier slice whose neighbour gate
-/// is inverted vs the C# — see the phase discovery; its consumers are
-/// outside this phase's file scope.)
+/// (`growth.rs::spread_grass` carried an earlier slice whose neighbour gate
+/// was inverted vs the C#; fixed 2026-11-09 by M5-SPREAD-1 — both growth
+/// consumers now share the C# `flag` semantics.)
 fn spread_jungle_grass(
     world: &mut World,
     i: i32,
