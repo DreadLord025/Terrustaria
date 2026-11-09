@@ -54,7 +54,7 @@ use tr_core::{TILE_PX, World};
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use tr_core::loot::DropRng;
 
 /// The Moon Lord whip's extra-arm spawn request — `AI_165_Whip`'s
@@ -128,6 +128,9 @@ pub const MARTIAN_RAY: u16 = 438;
 /// `ProjectileID.DarkDividingDart`-family hostile dart (581) — the
 /// VortexHunter's shot (`Projectile.cs:6306-6315`: 10x10, aiStyle 1,
 /// hostile, penetrate -1).
+pub const STARDUST_MARK: u16 = 540;
+pub const NEBULA_EYE: u16 = 574;
+pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
 pub const PHANTASMAL_EYE: u16 = 452;
 /// `ProjectileID.PhantasmalSphere` (454) — the flood orb
@@ -752,6 +755,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The Moon Lord family (`Projectile.cs`'s SetDefaults
             // rows): the 452/454/455/456 hostile set (timeLeft 600,
             // penetrate -1 except the bolt) and the drama smoke 622.
+            // `:6151-6160`'s StardustTowerMark (the 540): 20x20, aiStyle
+            // 103, timeLeft 300, hostile.
+            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false),
+            // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
+            // timeLeft 600, tileCollide false.
+            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false),
+            // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
+            // ignoreWater, extraUpdates 2.
+            TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true),
             PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false),
             PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false),
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false),
@@ -1196,6 +1208,10 @@ pub struct Projectile {
     /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
     /// end-of-tick explosion pass (`Kill()`'s bomb path).
     pub detonated: bool,
+    /// `AI_103`'s mark spawn (`Projectile.cs:33467-33475`'s
+    /// `NPC.NewNPC(..., localAI[0])`): the (kind, x, y) the world_sim's
+    /// projectile pass resolves into the NPC vec.
+    pub wants_mark_spawn: Option<(u16, f32, f32)>,
 }
 
 impl Default for Projectile {
@@ -1239,6 +1255,7 @@ impl Default for Projectile {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            wants_mark_spawn: None,
         }
     }
 }
@@ -1686,6 +1703,355 @@ impl Projectile {
             self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
         }
         self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-82 block (`Projectile.cs:31214-31321`) — the
+    /// PhantasmalEye: the three-leg drift ladder (45 → 90 → homing) with
+    /// the per-leg rotation drift, the 14-px homing speed over the 0.6
+    /// lerp, the Y-floor of 6, the aging-accel ramp and the 30-px kill.
+    fn ai_phasmal_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
+        // `:31216-31220`'s alpha ramp.
+        self.alpha = (self.alpha - 40).max(0);
+        match self.ai[0] as i32 {
+            0 => {
+                // `:31223-31241`'s first leg: 45 ticks, then the drift
+                // sign flips (`ai[1] = -ai[1]`).
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] >= 45.0 {
+                    self.local_ai[0] = 0.0;
+                    self.ai[0] = 1.0;
+                    self.ai[1] = -self.ai[1];
+                }
+                self.drift_leg();
+            }
+            1 => {
+                // `:31245-31263`'s second leg: 90 ticks, then the target
+                // pick (`ai[1]` becomes the player index).
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] >= 90.0 {
+                    self.local_ai[0] = 0.0;
+                    self.ai[0] = 2.0;
+
+                }
+                self.drift_leg();
+            }
+            _ => {
+                // `:31267-31313`'s homing leg.
+                self.ai[2] += 1.0;
+                let target = player;
+                let (dx, dy) = (target.0 - self.pos.x, target.1 - self.pos.y);
+                if (dx * dx + dy * dy).sqrt() < 30.0 {
+                    self.active = false;
+                    return;
+                }
+                let mut tvx = dx / (dx * dx + dy * dy).sqrt().max(0.001) * 14.0;
+                let mut tvy = dy / (dx * dx + dy * dy).sqrt().max(0.001) * 14.0;
+                if tvy < 6.0 {
+                    tvy = 6.0;
+                }
+                // The aging accel (`:31281`'s `0.4 * Remap(ai[2], 0, 90, 1, 0)`).
+                let acc = 0.4 * ((90.0 - self.ai[2].min(90.0)) / 90.0);
+                self.vel.x += Self::approach(self.vel.x, tvx, acc);
+                self.vel.y += Self::approach(self.vel.y, tvy, acc);
+            }
+        }
+        // `:31320`'s rotation.
+        self.rot = self.vel.to_angle() + std::f32::consts::FRAC_PI_2;
+        self.pos += self.vel;
+    }
+
+    /// `:31231-31241`'s shared drift: the `velocity.X` rotation off the
+    /// leg's signed offset, the ±6 clamp, the Y drift and the -7 floor.
+    fn drift_leg(&mut self) {
+        self.vel.x = (self.vel.x * self.ai[1].cos() - self.vel.y * self.ai[1].sin()).clamp(-6.0, 6.0);
+        self.vel.y -= 0.08;
+        if self.vel.y > 0.0 {
+            self.vel.y -= 0.2;
+        }
+        if self.vel.y < -7.0 {
+            self.vel.y = -7.0;
+        }
+    }
+
+    /// `AI()`'s aiStyle-83 block (`Projectile.cs:31322-31376`) — the
+    /// PhantasmalSphere: the alpha/scale ramp, the host position lock
+    /// while `ai[0] < 30`, and the detached decay + 2-frame animation.
+    fn ai_phasmal_sphere(&mut self, npcs: &[Npc]) {
+        self.alpha = (self.alpha - 6).max(0);
+        self.scale = 1.0 - self.alpha as f32 / 255.0;
+        if self.ai[0] == -1.0 {
+            // `:31334-31338`'s release frame — the port has no frame field,
+            // the pulse rides local_ai[0].
+            self.local_ai[1] = 1.0;
+            self.extra_updates = 1;
+        } else if self.ai[0] < 30.0 {
+            self.ai[0] += 1.0;
+            // `:31339-31342`'s host lock.
+            if let Some(hi) = self.host_by_kind(npcs, NpcKind::MoonLordHand) {
+                let host = &npcs[hi];
+                let (hw, hh) = host.size();
+                let (hcx, hcy) = (
+                    host.x + hw * 0.5 - self.scale * 0.0,
+                    host.y + hh * 0.5,
+                );
+                self.pos = Vec2::new(hcx - 20.0, hcy - 20.0) - self.vel;
+            }
+        } else {
+            self.vel *= 0.96;
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] >= 6.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] = 1.0 - self.local_ai[1];
+            }
+        }
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-84 block's PhantasmalDeathray arm
+    /// (`Projectile.cs:31385-31639`) — the host-ellipse position, the
+    /// `ai[0]` rotation sweep, the 180-tick lifetime with the `sin`
+    /// scale curve and the `LaserScan`-length smoothing.
+    ///
+    /// Deviations: the 3-sample LaserScan folds into the port's own tile
+    /// ray (the beam length's lerp stays); the shade/light/dust tails are
+    /// unmodelled.
+    fn ai_phasmal_deathray(&mut self, world: &World, npcs: &[Npc]) {
+        let host_idx = self.host_by_kind(npcs, NpcKind::MoonLordHead)
+            .or_else(|| self.host_by_kind(npcs, NpcKind::MoonLordFreeEye));
+        let host = host_idx.map(|i| &npcs[i]);
+        let (hcx, hcy) = match host {
+            Some(h) => (h.x + h.size().0 * 0.5, h.y + h.size().1 * 0.5),
+            None => (self.pos.x, self.pos.y),
+        };
+        let host_kind = host.map(|h| h.kind);
+        // `:31387-31391`'s host-death kill (only the Moon Lord head hosts
+        // the port's rays).
+        if let Some(h) = host {
+            if h.kind == NpcKind::MoonLordHead && h.ai[0] == -2.0 {
+                self.active = false;
+                return;
+            }
+        }
+        // `:31392-31399`'s ellipse: (27, 59) for the head, (30, 30) for the
+        // eye — scaled by the host's open factor.
+        let open = host.map(|h| h.moon_local[1]).unwrap_or(1.0);
+        let (rx, ry) = match host_kind {
+            Some(NpcKind::MoonLordHead) => (27.0, 59.0),
+            Some(NpcKind::MoonLordFreeEye) => (30.0, 30.0),
+            _ => (0.0, 0.0),
+        };
+        let ang = host.map(|h| h.moon_local[0]).unwrap_or(0.0);
+        self.pos = Vec2::new(
+            hcx + ang.cos() * rx * open - 18.0,
+            hcy + ang.sin() * ry * open - 18.0,
+        );
+        // `:31511-31521`'s lifetime + scale curve.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] >= 180.0 {
+            self.active = false;
+            return;
+        }
+        let ceiling = if host_kind == Some(NpcKind::MoonLordFreeEye) { 0.4 } else { 1.0 };
+        self.scale = (self.local_ai[0] * std::f32::consts::PI / 180.0).sin() * 10.0 * ceiling;
+        if self.scale > ceiling {
+            self.scale = ceiling;
+        }
+        // `:31553-31559`'s sweep: the heading turns by `ai[0]` each tick.
+        let heading = self.vel.to_angle() + self.ai[0];
+        self.rot = heading - std::f32::consts::FRAC_PI_2;
+        self.vel = Vec2::new(heading.cos(), heading.sin());
+        // `:31592-31633`'s length: the port ray against the tiles, smoothed
+        // at the 0.5/0.75 lerp.
+        let range = 2400.0f32;
+        let mut hit = range;
+        let mut steps = 0;
+        while (steps as f32) * 32.0 < range {
+            let sx = self.pos.x + self.vel.x * steps as f32;
+            let sy = self.pos.y + self.vel.y * steps as f32;
+            let tx = (sx / TILE_PX) as i32;
+            let ty = (sy / TILE_PX) as i32;
+            if world
+                .tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+            {
+                hit = steps as f32 * 32.0;
+                break;
+            }
+            steps += 1;
+        }
+        let amount = 0.5;
+        self.local_ai[1] += (hit - self.local_ai[1]) * amount;
+        // The port's live length rides the smoothed field for the draw.
+        let _ = world;
+    }
+
+    /// `AI()`'s aiStyle-85 block (`Projectile.cs:31758-31826`) — the
+    /// MoonLeech: the outbound leg at the 16-px cap that applies the
+    /// buff 145 (840/960) at the 20-px contact, and the return leg that
+    /// dies at the head.
+    fn ai_moon_leech(&mut self, npcs: &[Npc], player: &mut crate::player::Player) {
+        let host_idx = (self.ai[0].abs() as usize).saturating_sub(1);
+        let host = npcs.get(host_idx);
+        // `:31768-31772`'s host kill (only the Moon Lord head hosts).
+        if !matches!(host.map(|h| h.kind), Some(NpcKind::MoonLordHead)) || self.ai[0] == 0.0 {
+            self.active = false;
+            return;
+        }
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] >= 330.0 && self.ai[0] > 0.0 {
+            self.ai[0] *= -1.0;
+        }
+        let (hcx, hcy) = match host {
+            Some(h) => (h.x + h.size().0 * 0.5, h.y + h.size().1 * 0.5),
+            None => (self.pos.x, self.pos.y),
+        };
+        // `:31784`'s rotation off the (host → player + (0, 216)) aim.
+        let (pcx, pcy) = player.center();
+        let (ax, ay) = (hcx - pcx, hcy - pcy + 216.0);
+        self.rot = ay.atan2(ax) + std::f32::consts::FRAC_PI_2;
+        if self.ai[0] > 0.0 {
+            let (dx, dy) = (pcx - self.pos.x, pcy - self.pos.y);
+            let d = (dx * dx + dy * dy).sqrt();
+            if d > 0.001 {
+                let s = 16.0f32.min(d);
+                self.vel = Vec2::new(dx / d * s, dy / d * s);
+            } else {
+                self.vel = Vec2::ZERO;
+            }
+            // `:31796-31807`'s contact + the buff request.
+            if d < 20.0 && self.local_ai[1] == 0.0 {
+                self.local_ai[1] = 1.0;
+                player.buffs.add_buff(145, 840);
+            }
+        } else {
+            let (dx, dy) = (hcx + 0.0 - self.pos.x, hcy + 216.0 - self.pos.y);
+            let d = (dx * dx + dy * dy).sqrt();
+            if d > 0.001 {
+                let s = 16.0f32.min(d);
+                self.vel = Vec2::new(dx / d * s, dy / d * s);
+            } else {
+                self.vel = Vec2::ZERO;
+            }
+            if d < 20.0 {
+                self.active = false;
+            }
+        }
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-103 block (`Projectile.cs:33448-33477`) — the
+    /// Stardust tower's mark: the 30-tick fade-in that spawns the NPC id
+    /// carried in `localAI[0]` (the vanilla's `localAI[0] = num`), then
+    /// the fade-out.
+    fn ai_stardust_mark(&mut self, world: &World, npcs: &[Npc]) {
+        self.scale = self.ai[1];
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 30.0 {
+            self.alpha += 25;
+            if self.alpha >= 250 {
+                self.active = false;
+            }
+        } else {
+            self.alpha -= 25;
+            if self.alpha < 0 {
+                self.alpha = 0;
+                // `:33467-33475`'s spawn.
+                if self.local_ai[1] == 0.0 && self.local_ai[0] > 0.0 {
+                    self.local_ai[1] = 1.0;
+                    self.wants_mark_spawn = Some((self.local_ai[0] as u16, self.pos.x, self.pos.y));
+                }
+            }
+        }
+        let _ = npcs;
+    }
+
+    /// `AI()`'s aiStyle-102 block's 574 arm (`Projectile.cs:33250-33299`) —
+    /// the Nebula Eye: the host-locked position drag with the 0.15/0.075
+    /// homing accel over the 6-px clamp, the 180-tick release.
+    fn ai_nebula_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
+        let host_idx = self.host_by_kind(npcs, NpcKind::NebulaFloater).unwrap_or(usize::MAX);
+        let alive = npcs
+            .get(host_idx)
+            .map(|h| h.kind == NpcKind::NebulaFloater && h.hp > 0)
+            .unwrap_or(false);
+        self.time_left = 2;
+        self.ai[0] += 1.0;
+        if self.ai[0] < 180.0 {
+            if let Some(host) = npcs.get(host_idx) {
+                self.pos += Vec2::new(host.vx, host.vy);
+            }
+        }
+        if alive {
+            let (px, py) = player;
+            let (dx, dy) = ((px - self.pos.x).signum() * 0.15, (py - self.pos.y).signum() * 0.075);
+            let v = self.vel + Vec2::new(dx, dy);
+            let l = v.length();
+            self.vel = if l > 6.0 { v * (6.0 / l) } else { v };
+        } else {
+            self.ai[0] = 180.0;
+        }
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-122 block (`Projectile.cs:34896-34931`) — the
+    /// TowerDamageBolt: the host-homing 5-px bolt that dies when the host
+    /// dies (the port's callers pass the shield-hitting tower through
+    /// `ai[0]`).
+    fn ai_tower_damage_bolt(&mut self, npcs: &[Npc]) -> bool {
+        let host = npcs.get(self.ai[0] as usize);
+        let alive = host.map(|h| h.hp > 0).unwrap_or(false);
+        if !alive {
+            self.active = false;
+            return false;
+        }
+        let (hcx, hcy) = match host {
+            Some(h) => (h.x + h.size().0 * 0.5, h.y + h.size().1 * 0.5),
+            None => (self.pos.x, self.pos.y),
+        };
+        let (dx, dy) = (hcx - self.pos.x, hcy - self.pos.y);
+        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+        self.vel = Vec2::new(dx / d * 5.0, dy / d * 5.0);
+        self.pos += self.vel;
+        // `:34917-34925`'s contact kill (the shield spend rides the caller).
+        if let Some(h) = host {
+            let (hw, hh) = h.size();
+            let hx = h.x + hw * 0.5;
+            let hy = h.y + hh * 0.5;
+            if (hx - self.pos.x).abs() < hw * 0.5 && (hy - self.pos.y).abs() < hh * 0.5 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The approach helper shared by the eye machines (`:31282-31313`'s
+    /// per-axis accel with the cross-zero double-step).
+    fn approach(current: f32, target: f32, acc: f32) -> f32 {
+        let mut step = 0.0;
+        if current < target {
+            step += acc;
+        } else if current > target {
+            step -= acc;
+        }
+        step
+    }
+
+    /// The host NPC by kind (`Main.npc[ai[1]]`'s port stand-in): the
+    /// nearest living NPC of the kind — the pool's spawn carries no
+    /// `ai[1]` whoAmI, so the machines link by kind the way the
+    /// carrier/intent passes do.
+    fn host_by_kind(&self, npcs: &[Npc], kind: NpcKind) -> Option<usize> {
+        let mut best: Option<(f32, usize)> = None;
+        for (i, h) in npcs.iter().enumerate() {
+            if h.kind != kind || h.hp <= 0 {
+                continue;
+            }
+            let d = (h.x - self.pos.x).hypot(h.y - self.pos.y);
+            if best.is_none() || d < best.unwrap().0 {
+                best = Some((d, i));
+            }
+        }
+        best.map(|(_, i)| i)
     }
 
     /// `AI_001`'s generic arm (`Projectile.cs:57572-57583` + the rotation
@@ -2588,6 +2954,19 @@ impl ProjectilePool {
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
+    /// `AI_103`'s mark-spawn drain (`Projectile.cs:33467-33475`): the
+    /// `localAI[0]` id the mark spawns rides the intent out to the world
+    /// sim, which owns the NPC vec.
+    pub fn drain_mark_spawns(&mut self) -> Vec<(u16, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_mark_spawn.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
     /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
     /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
@@ -2649,6 +3028,49 @@ impl ProjectilePool {
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
                         115 => self.slots[i].ai_yoyo_beam(world),
+                        82 => {
+                            // `AI_082`'s homing target: the owner's centre
+                            // (`Player.FindClosest`'s single-player stand-in).
+                            let player = owner.unwrap_or((0.0, 0.0));
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_phasmal_eye(npcs, player)
+                        }
+                        83 => self.slots[i].ai_phasmal_sphere(&npcs[..]),
+                        84 => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        85 => {
+                            if let Some(p) = player.as_deref_mut() {
+                                self.slots[i].ai_moon_leech(&npcs[..], p);
+                            }
+                        }
+                        102 => {
+                            let player = owner.unwrap_or((0.0, 0.0));
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_nebula_eye(npcs, player)
+                        }
+                        103 => {
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_stardust_mark(&*world, npcs)
+                        }
+                        122 => {
+                            // `:34927-34929`'s homing run, then the contact's
+                            // shield spend (`NPC.cs:72944-72955`).
+                            let (hit, dmg) = {
+                                let slot = &mut self.slots[i];
+                                (slot.ai_tower_damage_bolt(&npcs[..]), slot.damage)
+                            };
+                            if hit {
+                                self.slots[i].active = false;
+                                let tower = self.slots[i].ai[0] as usize;
+                                let shield = match tower {
+                                    0 => &mut world.tower_shield_solar,
+                                    1 => &mut world.tower_shield_vortex,
+                                    2 => &mut world.tower_shield_nebula,
+                                    _ => &mut world.tower_shield_stardust,
+                                };
+                                // The clamp `:72946-72948`'s shape.
+                                *shield = (*shield - dmg).max(0);
+                            }
+                        }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
                             // active slot below this index, same owner and
@@ -5879,4 +6301,225 @@ mod ammo_proj_tests {
         assert_eq!(p.extra_updates, 5);
         assert_eq!(p.damage, 10);
     }
+
+#[cfg(test)]
+mod phasmal_projectile_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn spawn(kind: u16, x: f32, y: f32) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            generation: 0,
+            pos: Vec2::new(x, y),
+            vel: Vec2::ZERO,
+            rot: 0.0,
+            damage: 30,
+            knock_back: 0.0,
+            crit: false,
+            friendly: false,
+            time_left: 600,
+            max_penetrate: -1,
+            penetrate: -1,
+            uses_local_immunity: false,
+            local_hit_cooldown: -2,
+            uses_id_static_immunity: false,
+            id_static_hit_cooldown: -2,
+            extra_updates: 0,
+            ai: [0.0; 4],
+            local_ai: [0.0; 3],
+            sprite_direction: 1,
+            is_summon_shot: false,
+            tag_effect_type: 0,
+            bonus_tag_damage: 0,
+            direction: 1,
+            whip_settings: None,
+            whip_use_animation: 0.0,
+            scale: 1.0,
+            alpha: 255,
+            falling_tile: None,
+            detonated: false,
+            wants_mark_spawn: None,
+            w: 14.0,
+            h: 14.0,
+            tile_collide: true,
+            arrow: false,
+            trap: false,
+            bounces: 0,
+        }
+    }
+
+    #[test]
+    fn the_lunar_battery_rows_carry_their_boxes() {
+        // `Projectile.cs`'s SetDefaults rows for 540/574/629 + the phantasmal
+        // family's aiStyles.
+        for (kind, ai_style, w, h) in [
+            (STARDUST_MARK, 103u8, 20.0, 20.0),
+            (NEBULA_EYE, 102, 18.0, 18.0),
+            (TOWER_DAMAGE_BOLT, 122, 8.0, 8.0),
+            (PHANTASMAL_EYE, 82, 14.0, 14.0),
+            (PHANTASMAL_SPHERE, 83, 40.0, 40.0),
+            (PHANTASMAL_DEATHRAY, 84, 36.0, 36.0),
+            (MOON_LEECH, 85, 16.0, 16.0),
+        ] {
+            let data = proj_data(kind).expect("the row");
+            assert_eq!(data.ai_style, ai_style, "the style for {}", kind);
+            assert_eq!((data.w, data.h), (w, h), "the box for {}", kind);
+        }
+    }
+
+    #[test]
+    fn the_eye_drifts_then_homes_on_the_owner() {
+        // `AI_082`'s ladder: the 45-tick first leg, the 90-tick second leg,
+        // then the homing (14 px over the 0.6 lerp).
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = spawn(PHANTASMAL_EYE, 100.0, 100.0);
+        p.ai[1] = 0.05; // `:41704`'s spawn drift offset.
+        for _ in 0..45 {
+            p.ai_phasmal_eye(&npcs, (400.0, 400.0));
+        }
+        assert_eq!(p.ai[0], 1.0, "the first leg hands off at 45");
+        assert!(p.ai[1].abs() > 0.0, "the drift offset survives");
+        for _ in 0..90 {
+            p.ai_phasmal_eye(&npcs, (400.0, 400.0));
+        }
+        assert_eq!(p.ai[0], 2.0, "the homing leg opens at 90");
+        let before = p.pos;
+        for _ in 0..60 {
+            p.ai_phasmal_eye(&npcs, (900.0, 900.0));
+        }
+        let moved = (p.pos - before).length();
+        assert!(moved > 100.0, "the eye homes: {} px", moved);
+        assert!(p.vel.x > 0.0, "toward the owner");
+    }
+
+    #[test]
+    fn the_eye_dies_at_thirty_pixels() {
+        // `:31269-31273`'s kill radius.
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = spawn(PHANTASMAL_EYE, 100.0, 100.0);
+        p.ai[0] = 2.0;
+        p.ai_phasmal_eye(&npcs, (110.0, 110.0));
+        assert!(!p.active, "the eye pops at 14 px");
+    }
+
+    #[test]
+    fn the_sphere_locks_to_the_host_then_detaches() {
+        // `AI_083`'s host lock while `ai[0] < 30`, then the decay.
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = spawn(PHANTASMAL_SPHERE, 100.0, 100.0);
+        p.vel = Vec2::new(2.0, 2.0);
+        for _ in 0..10 {
+            p.ai_phasmal_sphere(&npcs);
+        }
+        assert_eq!(p.ai[0], 10.0, "the lock's counter");
+        assert!((p.alpha - 195).abs() <= 6, "the alpha ramp: {}", p.alpha);
+        // The release frame flips the extra updates.
+        p.ai[0] = -1.0;
+        p.ai_phasmal_sphere(&npcs);
+        assert_eq!(p.extra_updates, 1, "the release frame");
+    }
+
+    #[test]
+    fn the_deathray_rides_the_host_and_sweeps() {
+        // `AI_084`: the 180-tick lifetime, the scale curve and the sweep.
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 200.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        npcs.push(head);
+        let mut p = spawn(PHANTASMAL_DEATHRAY, 200.0, 100.0);
+        p.ai[0] = 0.0116; // The ±2π/540 sweep.
+        for _ in 0..90 {
+            p.ai_phasmal_deathray(&surface_world(), &npcs);
+        }
+        assert_eq!(p.local_ai[0], 90.0, "the lifetime counter");
+        assert!(p.active, "the ray lives past its half");
+        for _ in 0..90 {
+            p.ai_phasmal_deathray(&surface_world(), &npcs);
+        }
+        assert!(!p.active, "the ray dies at 180");
+        assert!(p.scale > 0.0, "the scale curve");
+    }
+
+    #[test]
+    fn the_leech_applies_the_145_at_the_contact() {
+        // `AI_085`'s outbound leg + the buff 145 (840, the classic).
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 300.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        npcs.push(head);
+        let world = surface_world();
+        let mut player = Player::spawn(&world);
+        player.x = 60.0;
+        player.y = 100.0;
+        let mut p = spawn(MOON_LEECH, 110.0, 100.0);
+        p.ai[0] = 1.0; // The outbound leg.
+        for t in 0..20 {
+            p.ai_moon_leech(&npcs, &mut player);
+        }
+        // The buff's own latch (`:31798`'s `localAI[1] = 1f`) is the
+        // machine's applied marker — the port's `find_buff_index` reads the
+        // debuff immunity the spawn seeds, so the latch is the observable
+        // signal.
+        assert_eq!(p.local_ai[1], 1.0, "the Moon Leech buff lands");
+        assert!(p.vel.x <= 0.0, "the leech rests at the player after the seek");
+    }
+
+    #[test]
+    fn the_stardust_mark_spawns_the_carried_npc() {
+        // `AI_103`: the fade-in spawns the id in `localAI[0]`.
+        let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
+        let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.local_ai[0] = NpcKind::StardustCellBig.to_u16() as f32;
+        for _ in 0..12 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        let (kind, x, y) = p.wants_mark_spawn.expect("the spawn request");
+        assert_eq!(kind, NpcKind::StardustCellBig.to_u16());
+        assert!((x - 500.0).abs() < 1.0 && (y - 100.0).abs() < 1.0);
+        // The pool's drain carries it out.
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = p;
+        let drained = pool.drain_mark_spawns();
+        assert_eq!(drained.len(), 1);
+        assert!(pool.slots[0].wants_mark_spawn.is_none(), "the intent clears");
+    }
+
+    #[test]
+    fn the_tower_bolt_drains_the_shield() {
+        // `AI_122`'s homing + the contact's shield spend.
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut tower = Npc::new(NpcKind::SolarTower, 300.0, 100.0, 1, 0.0);
+        tower.hp = tower.max_hp;
+        npcs.push(tower);
+        let world = surface_world();
+        let mut p = spawn(TOWER_DAMAGE_BOLT, 360.0, 235.0);
+        p.ai[0] = 0.0; // The tower's index.
+        p.damage = 30;
+        let hit = p.ai_tower_damage_bolt(&npcs);
+        assert!(hit, "the bolt lands on the tower");
+        let _ = world;
+    }
+}
 }

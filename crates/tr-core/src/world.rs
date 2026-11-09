@@ -277,6 +277,24 @@ pub struct World {
     /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
     /// talked into the Angler — the 376 spawn arms stop looking.
     pub saved_angler: bool,
+    /// `NPC.savedWizard` (`NPC.cs:6289`) / `NPC.savedMech` (`NPC.cs:6291`):
+    /// the bound Wizard/Mechanic rescue flags (`:52948`/`:52951`).
+    pub saved_wizard: bool,
+    /// `NPC.savedStylist` (`NPC.cs:6295`).
+    pub saved_stylist: bool,
+    /// `NPC.savedTaxCollector` (`NPC.cs:6285`).
+    pub saved_tax_collector: bool,
+    /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
+    /// Collector's purse + its `Player.taxRate` (3600) clock.
+    pub tax_money: i32,
+    pub tax_timer: i32,
+    /// `NPC.taxCollector` (`NPC.cs:6083`): a live Tax Collector exists — the
+    /// `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
+    /// the sim sets it each pass.
+    pub tax_payers: i32,
+    /// tax pump runs while true (`Main.cs:64995`).
+    pub tax_collector: bool,
+    pub saved_mech: bool,
     /// `Main.anglerQuest` (`Main.cs:1785`): the INDEX into the 41-entry
     /// quest-fish pool (`Main.cs:67032`'s `anglerQuestItemNetIDs`).
     pub angler_quest: u8,
@@ -429,6 +447,14 @@ impl World {
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
             saved_angler: false,
+            saved_wizard: false,
+            saved_stylist: false,
+            saved_tax_collector: false,
+            tax_money: 0,
+            tax_timer: 0,
+            tax_collector: false,
+            tax_payers: 0,
+            saved_mech: false,
             angler_quest: 0,
             angler_quest_finished: false,
             angler_quest_turned_in: false,
