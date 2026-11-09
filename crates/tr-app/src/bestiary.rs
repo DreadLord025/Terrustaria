@@ -853,6 +853,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Nebula Pillar",
     },
     BestiaryEntryDef {
+        credit_id: "VortexTower",
+        net_id: 422,
+        kind: NpcKind::VortexTower,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Pillar",
+    },
+    BestiaryEntryDef {
         credit_id: "SolarTower",
         net_id: 517,
         kind: NpcKind::SolarTower,

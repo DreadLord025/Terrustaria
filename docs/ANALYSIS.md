@@ -7036,65 +7036,6 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
-<<<<<<< HEAD
-## Ammo mastery layer (M3-ITEM-6)
-
-Port of the M3-ITEM-3 "Out" list: `Player.PickAmmo`'s mastery half
-(`Player.cs:53458-53749`) — the pair table, the projToShoot resolution chain,
-the not-consume arms, the `gunProj` dontConsume four, the volley specials and
-the ammo-cycling modes. Deliberate deviations and traps:
-
-- **The four `gunProj` weapons read their data from a wire-side id-keyed table,
-  not the registry.** `ItemID.Sets.gunProj` (`ItemID.cs:1327` — the VortexBeater
-  3475 / Phantasm 3540 / DD2PhoenixBow 3854 / Celeb2 3930) makes `PickAmmo` run
-  with `dontConsume = true` (`Player.cs:47071`): the pick still gates on having
-  ammo, but the ammo's damage/speed fuse is discarded (`:47069-47081`) and the
-  spawn uses the fixed gun projectile (615/630/705/714, `:48986-49018`). No drain
-  anywhere in the shoot path — the only drain sits behind `!flag` with `flag`
-  seeded true (verified by reading the whole of `ItemCheck_Shoot`). All four
-  carry placeholder rows in the scaled `itemdata.rs` class (`use_ammo: 0`), so
-  the wire keys their vanilla defs (`Item.cs:31159`/`:31728`/`:34048`/`:34741`)
-  by id; the `tools/GenItemData` fix is a separate M3-ITEM-1 follow-up.
-- **The 1.4.5.8 tick semantics the windows read.** On the press tick
-  `ItemCheck_StartActualUse` sets `itemAnimation = itemAnimationMax` and leaves
-  `itemTime` at 0; the same tick's decrements run and the shot gate
-  (`itemAnimation > 0 && ItemTimeIsZero`) fires the first shot at
-  `itemAnimation == max - 1` — which IS `ItemAnimationJustStarted`
-  (`Player.cs:4066`). The port arms one tick on the press frame to land there
-  and derives the three window booleans in integer ticks (its item timers are
-  per-frame seconds — the C# compares integers). Derived counts: the Clockwork
-  434 (12/4) fires at anim 11/7/3 with the first consuming; the Fairy Queen 4953
-  (30/2) fires 15 shots with the four free ones at anim 29/27/25/23; the
-  Clentaminator (30/5) / Flamethrower (30/6) sprays consume on the first shot
-  only; the Acorn Slingshot 5629's `flag = false` is the chain's last arm and
-  clears the Ammo Box / Ammo Reservation saves (order trap).
-- **The `gunProj` four still spend their own `Main.rand` draw** even though the
-  save is discarded — the arms run unconditionally (`:53579-53594`) — so the
-  golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
-  shooter.
-- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
-  (`useAmmo = 0` → `PickAmmo` never runs) — not ported; the Snowball Cannon
-  1319's remix arm is parked (no celebration-seed stand-in in the port); the
-  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
-  and not ported.
-- **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
-  `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
-  the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
-  ×1.1 scales the weapon's own value only (it precedes `KnockBack +=
-  item.knockBack`, `:53568`) and the NanoBullet 285's ×1.25 scales the FUSED
-  damage (the wire applies the weapon's part too).
-- **The projectile rows land with the unported AI styles** (147 Celebration,
-  75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
-  — the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
-  territory. The visual-only vanilla fields (alpha/scale/ignoreWater/drawLayer/
-  hide) have no port consumer and are dropped; the Snowman rockets' `scale = 0.9`
-  keeps the 14x14 box. `ProjData` gained `uses_local_immunity` +
-  `local_hit_cooldown` (the runtime already carried both) for the immunity pairs.
-- **`ammo.rs` is ~1800 lines** — a single C# function's port (the pair table,
-  the resolution chain and the roll chain share the module); the plan's
-  fallback split behind the same `pub` surface is deferred to a refactor-shaped
-  follow-up.
-=======
 ## The yoyo family (M4-PROJ-4)
 
 - **The lifetime table's -1 default is verbatim, not a gap.**
@@ -7159,7 +7100,64 @@ the ammo-cycling modes. Deliberate deviations and traps:
   `hasVanityEffects`, `handOffSlot`, `vanity`, `mountType`) stay
   committed as improved-but-incomplete and are the follow-up row's
   scope (M3-EQUIP-3 consumes the accessory flags).
->>>>>>> origin/main
+
+## Ammo mastery layer (M3-ITEM-6)
+
+Port of the M3-ITEM-3 "Out" list: `Player.PickAmmo`'s mastery half
+(`Player.cs:53458-53749`) — the pair table, the projToShoot resolution chain,
+the not-consume arms, the `gunProj` dontConsume four, the volley specials and
+the ammo-cycling modes. Deliberate deviations and traps:
+
+- **The four `gunProj` weapons read their data from a wire-side id-keyed table,
+  not the registry.** `ItemID.Sets.gunProj` (`ItemID.cs:1327` — the VortexBeater
+  3475 / Phantasm 3540 / DD2PhoenixBow 3854 / Celeb2 3930) makes `PickAmmo` run
+  with `dontConsume = true` (`Player.cs:47071`): the pick still gates on having
+  ammo, but the ammo's damage/speed fuse is discarded (`:47069-47081`) and the
+  spawn uses the fixed gun projectile (615/630/705/714, `:48986-49018`). No drain
+  anywhere in the shoot path — the only drain sits behind `!flag` with `flag`
+  seeded true (verified by reading the whole of `ItemCheck_Shoot`). All four
+  carry placeholder rows in the scaled `itemdata.rs` class (`use_ammo: 0`), so
+  the wire keys their vanilla defs (`Item.cs:31159`/`:31728`/`:34048`/`:34741`)
+  by id; the `tools/GenItemData` fix is a separate M3-ITEM-1 follow-up.
+- **The 1.4.5.8 tick semantics the windows read.** On the press tick
+  `ItemCheck_StartActualUse` sets `itemAnimation = itemAnimationMax` and leaves
+  `itemTime` at 0; the same tick's decrements run and the shot gate
+  (`itemAnimation > 0 && ItemTimeIsZero`) fires the first shot at
+  `itemAnimation == max - 1` — which IS `ItemAnimationJustStarted`
+  (`Player.cs:4066`). The port arms one tick on the press frame to land there
+  and derives the three window booleans in integer ticks (its item timers are
+  per-frame seconds — the C# compares integers). Derived counts: the Clockwork
+  434 (12/4) fires at anim 11/7/3 with the first consuming; the Fairy Queen 4953
+  (30/2) fires 15 shots with the four free ones at anim 29/27/25/23; the
+  Clentaminator (30/5) / Flamethrower (30/6) sprays consume on the first shot
+  only; the Acorn Slingshot 5629's `flag = false` is the chain's last arm and
+  clears the Ammo Box / Ammo Reservation saves (order trap).
+- **The `gunProj` four still spend their own `Main.rand` draw** even though the
+  save is discarded — the arms run unconditionally (`:53579-53594`) — so the
+  golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
+  shooter.
+- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
+  (`useAmmo = 0` → `PickAmmo` never runs) — not ported; the Snowball Cannon
+  1319's remix arm is parked (no celebration-seed stand-in in the port); the
+  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
+  and not ported.
+- **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
+  `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
+  the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
+  ×1.1 scales the weapon's own value only (it precedes `KnockBack +=
+  item.knockBack`, `:53568`) and the NanoBullet 285's ×1.25 scales the FUSED
+  damage (the wire applies the weapon's part too).
+- **The projectile rows land with the unported AI styles** (147 Celebration,
+  75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
+  — the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
+  territory. The visual-only vanilla fields (alpha/scale/ignoreWater/drawLayer/
+  hide) have no port consumer and are dropped; the Snowman rockets' `scale = 0.9`
+  keeps the 14x14 box. `ProjData` gained `uses_local_immunity` +
+  `local_hit_cooldown` (the runtime already carried both) for the immunity pairs.
+- **`ammo.rs` is ~1800 lines** — a single C# function's port (the pair table,
+  the resolution chain and the roll chain share the module); the plan's
+  fallback split behind the same `pub` surface is deferred to a refactor-shaped
+  follow-up.
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
@@ -7417,23 +7415,6 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
-- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
-  The C# has no candidate list and no final `InTileBounds` commit gate for
-  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
-  and the vote compares the FINAL `(num2, k)` positions (the column's base).
-  The port keeps both off: a trunk column at the rect's bottom row votes its
-  base at the row below the rect. The trunk arm's right/left frame shifts are
-  also asymmetric in the C# (the right arms test `num2 + 1`, the left
-  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
-  CURRENT cell (the earlier shift may already have moved it).
-- **The axe step runs at two call sites, per the settings toggle.**
-  `SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`) moves the axe
-  step before or after the pickaxe family in the chain; the port calls it at
-  both C# sites (before the force-cursor step with the flag off, after the
-  chain with it on) and exposes the flag on `Lookup::smart_axe_after_pickaxe`
-  (app-side setting, caller-passed). The pickaxe family itself
-  (`Step_Pickaxe_MineShinies`/`MineSolids`) is unported, so the "after" site
-  follows the force-cursor step today.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -8145,3 +8126,48 @@ Deviations: the dust arms, the ground-avoidance tile scan
 (`:51784-51798`) and the same-type repulsion of the crawltipede are
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
+
+## The lunar chain (M4-EVENT-15)
+
+The apocalypse is a state chain, not a machine: the cultist's death →
+`WorldGen.TriggerLunarApocalypse` (the four towers) → the towers' deaths
+→ `WorldGen.UpdateLunarApocalypse` + `StartImpendingDoom` → the countdown
+tick → the Moon Lord's spawn.
+
+- **The cultist's death** (`DoDeathEvents`'s 439 row,
+  `NPC.cs:79393-79395`) clears `downedAncientCultist` and raises the
+  apocalypse. The port's `AncientCultist` is the tower-shaped kind (its
+  machine is the aiStyle-94 tower machine), so the vanilla's 439 row maps
+  onto it directly.
+- **`TriggerLunarApocalypse`** (`WorldGen.cs:86626-86691`) draws the four
+  tower ids `{517, 422, 507, 493}` without replacement into the four world
+  slots at `maxTilesX / 5 * (1 + j)`; the ±100-tile jitter retries 30
+  times against the vertical clearance scan, with the
+  `(num2 - 40) * 16` fallback when all fail. All four `TowerActive*` flags,
+  `LunarApocalypseIsUp` and the four `ShieldStrengthTower*` (to
+  `ShieldStrengthTowerMax` — 100, halved post-Moon-Lord) raise together.
+  The port's fresh worktree brings the four towers up in the same
+  draw-out order and clears the slot with its own tile lookup.
+- **The towers' deaths** (`NPC.cs:79321-79344`) set the `downedTower*`,
+  clear the `TowerActive*` and call `UpdateLunarApocalypse`, then
+  `MessageLunarApocalypse` (`WorldGen.cs:86778-86801`) picks
+  `Lang.misc[43 + down]` from the inactive count.
+- **`UpdateLunarApocalypse`** (`:86693-86748`) re-derives the four flags
+  from the live NPCs (plus the 398/396/397/400 boss family) and, when all
+  four are down and the boss isn't up, `StartImpendingDoom(3600)`.
+- **`StartImpendingDoom`** (`:86750-86760`) ends the apocalypse, arms
+  `MaxMoonLordCountdown`/`MoonLordCountdown` and (in the vanilla)
+  `GetRidOfCultists` kills the 437/438/439 ritual kinds — constants-off
+  in the port (its ritual support isn't ported).
+- **The countdown tick** (`Main.cs:64987-64994`) decrements once per world
+  update and at zero calls `NPC.SpawnOnPlayer(Player.FindClosest(maxTilesX
+  / 2, worldSurface / 2), 398)`; the port's single player stands in. The
+  Celestial Sigil's route (`Player.cs:44028-44034`) is the same function
+  with the item's 720 (`NPC.cs:6037`'s `ItemMoonlordCountdownTime`) and
+  the Golem/hardmode/danger gates the vanilla's `CanStartInvasion`-like
+  family uses.
+
+Deviations: the Moon Lord's boss bar/head textures, the `MoonLordShake`
+scene filter, the music ducking and the countdown UI are unmodelled; the
+`GetRidOfCultists` ritual-cleanup arm is constants-off; the remix/no-
+surface branch of the tower-place retry is constants-off.

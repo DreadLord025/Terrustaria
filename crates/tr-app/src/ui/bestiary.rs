@@ -512,6 +512,7 @@ fn portrait_data(
         NpcKind::StardustTower => 105,    // NPC_493
         NpcKind::NebulaTower => 106,      // NPC_507
         NpcKind::SolarTower => 107,       // NPC_517
+        NpcKind::VortexTower => 108,      // NPC_422
         NpcKind::StardustCellSmall => 114, // NPC_406
         NpcKind::StardustJellyfishBig => 115, // NPC_407
         NpcKind::NebulaBeast => 116,      // NPC_423
@@ -842,7 +843,10 @@ fn portrait_data(
             (sheet_i, h, 130.0, h, white)
         }
         // The towers: the 1-frame NPC_493/507/517 strips.
-        (NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower, _) => {
+        (NpcKind::StardustTower
+        | NpcKind::NebulaTower
+        | NpcKind::VortexTower
+        | NpcKind::SolarTower, _) => {
             let h = lookups.bestiary_npc_sheets[111]
                 .map(|s| s.height as f32)
                 .unwrap_or(270.0);

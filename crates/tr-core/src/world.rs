@@ -222,6 +222,18 @@ pub struct World {
     pub lunar_shield_power_normal: i32,
     /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
     pub downed_moon_lord: bool,
+    /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
+
+    pub downed_ancient_cultist: bool,
+
+    /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
+    /// phase (`WorldGen.cs:86687`'s write, `:86752`'s clear).
+    pub lunar_apocalypse_is_up: bool,
+    /// `NPC.MoonLordCountdown` / `NPC.MaxMoonLordCountdown`
+    /// (`NPC.cs:6031-6033`) — the countdown to the Moon Lord's spawn
+    /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
+    pub moon_lord_countdown: i32,
+    pub max_moon_lord_countdown: i32,
         /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
     pub tower_active_solar: bool,
     pub tower_active_vortex: bool,
@@ -385,6 +397,10 @@ impl World {
             tower_shield_stardust: 0,
             lunar_shield_power_normal: 100,
             downed_moon_lord: false,
+            downed_ancient_cultist: false,
+            lunar_apocalypse_is_up: false,
+            moon_lord_countdown: 0,
+            max_moon_lord_countdown: 3600,
             tower_active_solar: false,
             tower_active_vortex: false,
             tower_active_nebula: false,
