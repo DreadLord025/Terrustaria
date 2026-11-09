@@ -205,25 +205,39 @@ pub fn is_tile_type_fit_for_tree(kind: u16) -> bool {
     TREE_SOILS.contains(&kind)
 }
 
+/// `TileID.Sets.CommonSapling` (`TileID.cs:493`): the sapling tiles — the
+/// ash-tree sapling 20, the gem saplings 590, the sakura 595 and the
+/// willow 615. `EmptyTileCheck`'s `ignoreID` arm and the smart-cursor
+/// seed steps' proximity gates read it.
+pub const COMMON_SAPLINGS: [u16; 4] = [20, 590, 595, 615];
+
+/// Membership in [`COMMON_SAPLINGS`] (`TileID.Sets.CommonSapling`,
+/// `TileID.cs:493`).
+pub fn is_common_sapling(kind: u16) -> bool {
+    COMMON_SAPLINGS.contains(&kind)
+}
+
 /// `WorldGen.EmptyTileCheck(startX, endX, startY, endY, ignoreID = 20)`
-/// (`:31453-31520`'s shape): every cell in the box is inactive (or the
-/// ignored sapling kind — `TileID.Sets.CommonSapling[20]` makes flag=true).
+/// (`:31453-31520`): every cell in the box is inactive — or a
+/// `CommonSapling` when the passed `ignoreID` is itself a sapling (the
+/// C#'s two-part flag arm, `:31471-31475` + `:31501`).
 pub fn empty_tile_check(
     world: &World,
     start_x: i32,
     end_x: i32,
     start_y: i32,
     end_y: i32,
-    ignore: Option<u16>,
+    ignore_id: Option<u16>,
 ) -> bool {
     if start_x < 0 || end_x >= world.width as i32 || start_y < 0 || end_y >= world.height as i32 {
         return false;
     }
+    let flag = ignore_id.is_some_and(is_common_sapling);
     for x in start_x..=end_x {
         for y in start_y..=end_y {
             let t = world.tile(x, y);
             if let Some(t) = t {
-                if t.active() && Some(t.kind) != ignore {
+                if t.active() && !(flag && is_common_sapling(t.kind)) {
                     return false;
                 }
             }

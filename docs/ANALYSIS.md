@@ -6985,6 +6985,35 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   a `kind == 184` LongMoss tile, `fullbright_block()` or
   `invisible_block()`, OR-ed with the wall arm behind the cell
   (`wallColor() > 0`, `fullbright_wall` or `invisible_wall`).
+- **`empty_tile_check`'s ignore arm was corrected to the C#'s two-part
+  flag.** The C# arms are `flag = ignoreID != -1 && CommonSapling[ignoreID]`
+  (`WorldGen.cs:31471-31475`) and `if (flag && !CommonSapling[cell.type])`
+  (`:31501`): when the ignoreID is a sapling, EVERY `CommonSapling`
+  {20, 590, 595, 615} cell passes the box. The port had compared the single
+  passed kind, so a gem/sakura/willow sapling (590/595/615) wrongly blocked the
+  box; the seed steps pass `ignore = Some(20)` (and `Step_GemCorns` will pass
+  the profile's sapling), so the corrected arm matters for them. The worldgen
+  callers (`growth.rs`' tree arm) pass the same `Some(20)` and never see a
+  590/595/615 cell — worldgen spawns only the common sapling — so their
+  behaviour is unchanged.
+- **`Step_PumpkinSeeds` was ported but never dispatched.** The seed/herb pass
+  landed the step (`:1027-1098`) without adding it to the chain's array, so no
+  held pumpkin seed could reach it; it now runs at its C# place (`:137`, before
+  `Step_GrassSeeds` `:138`). Nothing else in the repo called the step, so the
+  omission had no runtime effect — but the ported tests for it were only
+  reachable directly. Found while wiring `Step_Acorns`: the chain's arity and
+  order now mirror the C# exactly (12 → 14 steps).
+- **`Step_Acorns`'s ground gate is `SolidTile2`, not `SolidTile`.** The step's
+  `:2054` reads `WorldGen.SolidTile2(tile3)` (`:70134-70147` — the
+  solid-top-tolerant overload, widened to `pub(crate)` for the port), unlike
+  the pigronata's `SolidTile`; the two C# overloads differ on exactly that, and
+  the port keeps both.
+- **The sapling window is `flag2 = flag || (±2/±3)`, so the immediate ±1
+  neighbours block the grass arm too.** The C#'s `:2058-2060` defines `flag2`
+  over `flag`, so the effective blocked window is ±3 columns (the sand arm's
+  `!flag` reads the inner ±1 only). The tests pin the vote falling outside the
+  window (a ±2 sapling at 27 makes the spot 25 drop and the vote take 23; an
+  immediate sapling at 26 widens the block to 23..=29 and the vote takes 22).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
