@@ -6696,6 +6696,26 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Dungeon crawler wiring (M5-DUNGEON)
+
+The pipeline's `Dungeon` step moved from the shape-level approximation
+(`biomes::pass_dungeon` — a 5-wide tower, the 3-wide shaft and three
+corridor levels) to the faithful crawler (`worldgen/dungeon.rs`
+— `MakeDungeon`'s setup, the `LegacyDungeonLayoutProvider`'s room/hall
+walk, the hall/room brick+carve geometry), on its own
+`pass_rng("Dungeon")` hall seed; the retired approximation is kept for its
+tests. The world-hash pins are re-taken (`SEED42_512 = 608156777`,
+`DEFAULT_WORLD = 3295755475`) — the same accepted-world-change class as the
+M5-OCEAN/M5-DESERT stream shifts.
+
+The row's remaining scope is re-stated: the entrance-hall precalculation
+(`MakeDungeon_GenerateNextEntranceHall_Precalculated` plus the
+`DungeonGlobal*` feature passes — spikes/doors/platforms/chests/lights/
+traps/furniture), the biome styles (`dungeonGenerationStyles` — populated
+only under the `dualDungeons` secret seed, so M5-SEED-1/2's), the room
+chest/book-shelf/pit-trap features (M5-CHEST-gen's) and the Lihzahrd brick
+phase.
+
 ## Grass growth's enclosure gate (M5-SPREAD-1)
 
 `growth::spread_grass` carried an inverted neighbour gate: it refused the
