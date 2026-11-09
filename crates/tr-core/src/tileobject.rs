@@ -518,6 +518,16 @@ const TILE_TABLE: &[u16] = &[
     603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 619, 629, 632, 640, 643, 644, 645, 710,
 ];
 
+/// `Main.tileHammer` (`Main.cs:7204-7207`, 4 ids): the tiles only a
+/// hammer breaks.
+const TILE_HAMMER: &[u16] = &[26, 695, 31, 696];
+
+/// `Main.tileAxe` (`Main.cs:7208-7223`, 16 ids): the tiles only an axe
+/// breaks (the tree trunks and the vanity/gem tops).
+const TILE_AXE: &[u16] = &[
+    5, 72, 80, 488, 704, 323, 596, 616, 634, 589, 584, 588, 586, 587, 585, 583,
+];
+
 /// `TileObjectData.anchorInvalidTiles` shared by the chest
 /// (`TileObjectData.cs:2112-2116`, applied at :3466).
 const CHEST_ANCHOR_INVALID: &[u16] = &[127, 138, 664, 665, 484, 711, 712, 713, 714, 715, 716];
@@ -1399,6 +1409,16 @@ pub fn tile_cut(kind: u16) -> bool {
 /// Membership in [`BREAKABLE_WHEN_PLACING`] (`Player.cs:41303`).
 pub fn breakable_when_placing(kind: u16) -> bool {
     BREAKABLE_WHEN_PLACING.contains(&kind)
+}
+
+/// Membership in [`TILE_HAMMER`] (`Main.tileHammer`, `Main.cs:7204-7207`).
+pub fn tile_hammer(kind: u16) -> bool {
+    TILE_HAMMER.contains(&kind)
+}
+
+/// Membership in [`TILE_AXE`] (`Main.tileAxe`, `Main.cs:7208-7223`).
+pub fn tile_axe(kind: u16) -> bool {
+    TILE_AXE.contains(&kind)
 }
 
 /// Membership in [`IS_A_DRIP_TILE`] (`Player.cs:41310`).
