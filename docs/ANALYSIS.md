@@ -7039,6 +7039,26 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   -- <worktree-root>`) or the regeneration lands in the shared primary. The
   baseline run used by this pass confirmed the primary stayed clean (the
   rewrite is content-identical), but a task should always pass the override.
+- **The smart-blocks setting is a seam, like the paint lookup.**
+  `Step_BlocksLines`' gate reads `Player.SmartCursorSettings.SmartBlocksEnabled`
+  (`Player.cs:331`); the app owns the toggle (`settings_ui`/`menu` persist it),
+  so the port's `Lookup::smart_blocks_enabled` is caller-passed. The steps'
+  callers do not exist yet, so the seam's default (`false`) keeps the step
+  inert until the wiring lands.
+- **`collision_empty_tile` implements the tile arm it previously stubbed.**
+  The clay-pot filter ran with `ignoreTiles: true`, so the early port's
+  always-true body was exact there; `Step_BlocksLines`' commit filter runs
+  with the default `ignoreTiles: false` (`Collision.cs:1372-1374`), where an
+  occupied tile must fail — the port now checks it and leaves the player/NPC
+  hitbox arms (the two loops over `Main.player`/`Main.npc`) to the app-side
+  wiring, which is why `Step_BlocksLines`' vote can still accept a cell an
+  entity stands in until that lands.
+- **`Step_EmptyBuckets`' liquid box counts the same kind only.** The sum
+  (`:644`) adds `Main.tile[k, l].liquid` only when the neighbour's
+  `liquidType()` matches the centre cell's, so a lava pocket inside a water
+  pool does not lift the water total (and vice versa) — the port compares
+  `liquid_kind()` and sums `liquid`; an out-of-world cell reads as liquid 0
+  of kind `Water`, which only ever contributes a zero.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
