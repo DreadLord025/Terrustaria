@@ -5,12 +5,21 @@
 //! wood-tree walls.
 //!
 //! Simplifications against the source, all recorded here:
-//! * The secret-seed variants other than the drunk arms (the 1.4.5 micro
-//!   seeds `extra`/`error`, the bees, remix, anniversary and tenth-anniversary
-//!   ladders), the skyblock/remix layouts and the dungeon-wall checks are not
-//!   modelled. The M5-SEED-1 drunk arms are: the tree-count ladder
-//!   (`WorldGen.cs:15504`, `num4 += (int)(2.0 * num3)`) and the per-side
-//!   patch count (`:15628`, `num8 += genRand.Next(2, 5)`).
+//! * The secret-seed variants other than the drunk and M5-SEED-2
+//!   `extraLivingTrees` arms (the 1.4.5 micro seed `error`, the bees, remix,
+//!   anniversary and tenth-anniversary ladders), the skyblock/remix layouts and
+//!   the dungeon-wall checks are not modelled. The M5-SEED-1 drunk arms are the
+//!   tree-count ladder (`WorldGen.cs:15504`, `num4 += (int)(2.0 * num3)`) and
+//!   the per-side patch count (`:15628`, `num8 += genRand.Next(2, 5)`); the
+//!   M5-SEED-2 `extraLivingTrees` arms (`:15494-15499`, `:15588-15592`,
+//!   `:15620-15623`) are the `num4 += 30*num3` / `3*num3` count ladder with the
+//!   `Variations.extraLivingTreesReducedAmount` switch (`:217-231`), the
+//!   `num = 150` spawn-exclusion half-width, the cloud tiles
+//!   (189/196/460/717/718/719) no longer invalidating a site, the
+//!   `GenVars.numMCaves` ±50 veto being skipped, and the per-side patch count
+//!   `num8 += genRand.Next(5, 11)`. They are flag-gated on
+//!   [`crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES`], so a classic world
+//!   (and a drunk world) keeps exactly its M5-SEED-1 draws.
 //! * `WorldGen.cs:15554` / `:15624` — drunk's other two "arms" are pure
 //!   exclusions: drunk is barred from the `notTheBees && tenthAnniversaryWorldGen`
 //!   branches of the anchor ground-type test (`:15554`'s
@@ -34,26 +43,69 @@ pub(crate) const TILE_LIVING_WOOD: u16 = 191;
 pub(crate) const TILE_LEAVES: u16 = 192;
 pub(crate) const WALL_LIVING_WOOD: u16 = 244;
 
+/// `SecretSeed.Variations.extraLivingTreesReducedAmount`
+/// (`WorldGen.cs:217-231`): the halved count when the seed list is crowded —
+/// `activeSecretSeedCount < 6` reads `noSurface.Enabled`, otherwise `true`:
+///
+/// ```text
+/// if (SecretSeed.extraLivingTrees.Enabled) {
+///     if (SecretSeed.activeSecretSeedCount < 6) return SecretSeed.noSurface.Enabled;
+///     return true;
+/// }
+/// return false;
+/// ```
+///
+/// `activeSecretSeedCount` counts both registries, so the port folds the
+/// classic `SeedFlags` population in through
+/// [`crate::seeds::active_secret_seed_count`]. The port carries no `noSurface`
+/// arm yet, so its `activeSecretSeedCount < 6` branch reads `false` — the
+/// documented deviation; the `>= 6` branch is exact.
+fn extra_living_trees_reduced_amount(world: &World) -> bool {
+    if crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds) < 6 {
+        // `SecretSeed.noSurface.Enabled` — the port's `NO_SURFACE` bit. The
+        // seed's *behaviour* (M5-SEED-2's `noSurface` body) is another
+        // agent's file; the flag itself is registered here.
+        world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+    } else {
+        true
+    }
+}
+
 /// `WorldGen.cs:15482-15515`: the full-tree count — `num3` (the world-width
 /// unit), the base roll, the zero rescue and the seed-count ladder's arms.
 /// The draws stay in vanilla's order (the base roll, then the rescue, then
 /// the ladder's own addition) so a classic world's stream is untouched.
 ///
-/// The ladder is an if/else-if chain in the C#
-/// (`extraLivingTrees` `:15494` / `notTheBees && anniversary && !drunk`
-/// `:15500` / `drunk` `:15504` / `tenthAnniversaryWorld` `:15508` /
-/// `remixWorldGen` `:15512`); the port carries the drunk arm only — the
-/// micro seeds and the bees/anniversary arms are their own seeds' scope.
+/// The ladder is an if/else-if chain in the C# (`extraLivingTrees` `:15494` /
+/// `notTheBees && anniversary && !drunk` `:15500` / `drunk` `:15504` /
+/// `tenthAnniversaryWorld` `:15508` / `remixWorldGen` `:15512`); the port
+/// carries the `extraLivingTrees` and drunk arms.
 fn living_tree_count(world: &World, rng: &mut Rng) -> i32 {
     let num3 = world.width as f64 / 4200.0;
     let mut count = rng.range(0, (2.0 * num3) as i32 + 1);
     if count == 0 && rng.chance(2) {
         count += 1;
     }
-    // `WorldGen.cs:15504-15507`: the drunk arm — `num4 += (int)(2.0 * num3)`,
-    // two extra trees per 4200-column world-width unit. Flag-gated, so a
-    // classic world takes exactly the two draws above and nothing more.
-    if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+    // `WorldGen.cs:15494-15499`: the extraLivingTrees arm —
+    // `num4 += (int)(30.0 * num3)`, or `+ (int)(3.0 * num3)` under
+    // `Variations.extraLivingTreesReducedAmount`. Flag-gated (and ahead of the
+    // drunk arm, exactly as the C# chain orders it), so a classic and a drunk
+    // world take the same two draws above and nothing more.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+    {
+        let per_tree = if extra_living_trees_reduced_amount(world) {
+            3.0
+        } else {
+            30.0
+        };
+        count += (per_tree * num3) as i32;
+    } else if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        // `WorldGen.cs:15504-15507`: the drunk arm — `num4 += (int)(2.0 * num3)`,
+        // two extra trees per 4200-column world-width unit.
         count += (2.0 * num3) as i32;
     }
     count
@@ -64,15 +116,38 @@ fn living_tree_count(world: &World, rng: &mut Rng) -> i32 {
 /// (`extraLivingTrees` +`Next(5, 11)` `:15620`, `notTheBees && anniversary &&
 /// !drunk` +`Next(3, 7)` `:15624`, `drunk || anniversary` +`Next(2, 5)`
 /// `:15628`, `remixWorldGen` +`Next(1, 6)` `:15632`, `errorWorld`
-/// +`Next(1, 4)` `:15636`); the port carries the drunk arm only.
+/// +`Next(1, 4)` `:15636`); the port carries the extraLivingTrees and drunk
+/// arms.
 fn patch_tree_count(world: &World, rng: &mut Rng) -> i32 {
     let mut attempts = rng.range(0, 4);
-    // `WorldGen.cs:15628-15631`: `else if (drunkWorldGen ||
-    // Main.tenthAnniversaryWorld) num8 += genRand.Next(2, 5)`.
-    if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+    // `WorldGen.cs:15620-15623`: `if (SecretSeed.extraLivingTrees.Enabled)
+    // num8 += genRand.Next(5, 11)` — six extra attempts per side.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+    {
+        attempts += rng.range(5, 11);
+    } else if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        // `WorldGen.cs:15628-15631`: `else if (drunkWorldGen ||
+        // Main.tenthAnniversaryWorld) num8 += genRand.Next(2, 5)`.
         attempts += rng.range(2, 5);
     }
     attempts
+}
+
+/// `WorldGen.cs:15482` / `:15496`: the spawn-area exclusion half-width,
+/// `num = 200` — narrowed to `num = 150` under `extraLivingTrees`. Factored
+/// out of the pass so the arm is directly testable; the anchor and the patch
+/// gate both read it.
+fn living_tree_exclusion(world: &World) -> i32 {
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+    {
+        150
+    } else {
+        200
+    }
 }
 
 /// The "Living Trees" pass (`WorldGen.cs:15476-15715`). The beach anchors
@@ -87,8 +162,7 @@ pub(crate) fn plant_living_trees(
     desert: (i32, i32),
 ) {
     let count = living_tree_count(world, rng);
-    // `WorldGen.cs:15482`: the spawn-area exclusion half-width.
-    let exclusion = 200;
+    let exclusion = living_tree_exclusion(world);
     #[cfg(test)]
     let mut placed_trees = 0u32;
     let half = world.width / 2;
@@ -101,6 +175,15 @@ pub(crate) fn plant_living_trees(
         (right_beach_start, left_beach_end)
     };
     let anchor_hi = anchor_hi.max(anchor_lo + 1);
+    // M5-SEED-2: the C#'s anchor loop closes with the 50×50 site scan
+    // (`WorldGen.cs:15566-15595`, the ebonstone/cloud switch) and the
+    // `GenVars.numMCaves` ±50 proximity veto (`:15597-15608`). The site scan
+    // is folded into `grow_living_tree`'s clearance scan (the port has no
+    // separate anchor scan); the mCave veto is NOT ported — the port has no
+    // `Mountinater` pass and therefore no `GenVars.mCaveX/mCaveY` anchors, so
+    // neither the veto nor its `extraLivingTrees` skip (`:15598-15599`) can
+    // fire. Recorded as a compact-model deviation; adding a veto would reject
+    // sites on classic worlds, which the byte-identity contract forbids.
     for _ in 0..count {
         // `WorldGen.cs:15543-15546`: the anchor attempts, up to maxTilesX/2.
         let mut anchor = None;
@@ -114,7 +197,11 @@ pub(crate) fn plant_living_trees(
             // `WorldGen.cs:15546`: scan down to the first active tile. The
             // port starts at the height-map row — the sky carries the
             // floating islands now, and the C#'s from-zero scan (empty C#
-            // skies) would anchor on the island discs.
+            // skies) would anchor on the island discs. The `extraLivingTrees`
+            // arm that would reset the scan's start row to
+            // `FindLowestCloud() + 1` (`:15497`) is not ported: the port has
+            // no cloud line, and its own anchor already sits below the
+            // island discs.
             let column_top = surface[x as usize];
             let mut y: i32 = column_top;
             while y <= column_top + 20
@@ -289,11 +376,26 @@ pub(crate) fn grow_living_tree(
     let hollow = width >= 4;
 
     // `WorldGen.cs:28080-28101`: the clearance scan (50 tiles wide, 20 tall).
+    //
+    // M5-SEED-2 `extraLivingTrees` (`WorldGen.cs:15577-15592`): the C#'s anchor
+    // site scan rejects the cloud family {189, 196, 460, 717, 718, 719} unless
+    // the seed is enabled ("clouds no longer invalidate a site"). The port has
+    // no separate anchor scan — the site gate is this one, which is where the
+    // floating-island discs land — so the arm is folded in here: under the flag
+    // the cloud family is tolerated, anything else active still rejects. A
+    // classic (and a drunk) world takes the unchanged rule.
+    let cloud_ok = world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES);
     let (x0, x1) = if patch { (i - 20, i + 20) } else { (i - 50, i + 50) };
     for k in x0..=x1 {
         for l in 20..j - 5 {
             if let Some(t) = world.tile(k, l) {
                 if t.active() && (!patch || !matches!(t.kind, 2 | 0 | 1 | 191 | 192)) {
+                    // `case 189: case 196: case 460: case 717: case 718: case 719:`.
+                    if cloud_ok && matches!(t.kind, 189 | 196 | 460 | 717 | 718 | 719) {
+                        continue;
+                    }
                     return false;
                 }
             }
@@ -856,6 +958,156 @@ mod tests {
         assert!(
             drunk_total > classic_total,
             "drunk {drunk_total} wood tiles vs classic {classic_total}"
+        );
+    }
+
+    /// A 4200-wide world (num3 = 1.0) carrying the `extraLivingTrees` micro
+    /// seed and nothing else — the port stands in for `activeSecretSeedCount`.
+    fn extra_trees_world() -> World {
+        let mut world = World::new("lt".into(), 4200, 1200);
+        world.micro_seeds |= crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES;
+        world
+    }
+
+    #[test]
+    fn the_extra_living_trees_count_ladder_adds_thirty_per_world_unit() {
+        // `WorldGen.cs:15494-15499`: `num4 += (int)(30.0 * num3)` when
+        // `!Variations.extraLivingTreesReducedAmount`. A lone
+        // `extraLivingTrees` world has count 1 (< 6), and the port's noSurface
+        // bit is clear, so the variation is FALSE — the 30 arm.
+        let classic = World::new("lt".into(), 4200, 1200);
+        let extra = extra_trees_world();
+        for seed in [1u64, 7, 42, 5162020] {
+            let base = living_tree_count(&classic, &mut Rng(seed));
+            let added = living_tree_count(&extra, &mut Rng(seed));
+            assert_eq!(added, base + 30, "seed {seed}");
+        }
+        // The reduced arm (3 per world unit) when the seed list is crowded:
+        // the port reaches `activeSecretSeedCount >= 6` with five more micro
+        // bits beside `extraLivingTrees`.
+        let mut crowded = extra_trees_world();
+        crowded.micro_seeds |= crate::seeds::MicroSeedFlags::PAINT_EVERYTHING_GRAY
+            | crate::seeds::MicroSeedFlags::ERROR_WORLD
+            | crate::seeds::MicroSeedFlags::RAINS_FOR_A_YEAR
+            | crate::seeds::MicroSeedFlags::RANDOM_SPAWN
+            | crate::seeds::MicroSeedFlags::ADD_TELEPORTERS;
+        assert_eq!(crowded.micro_seeds.count(), 6);
+        for seed in [1u64, 7, 42, 5162020] {
+            let base = living_tree_count(&classic, &mut Rng(seed));
+            let reduced = living_tree_count(&crowded, &mut Rng(seed));
+            assert_eq!(reduced, base + 3, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn the_extra_living_trees_patch_ladder_adds_five_to_ten() {
+        // `WorldGen.cs:15620-15623`: `num8 += genRand.Next(5, 11)` on top of
+        // the `Next(4)` per-side count.
+        let classic = World::new("lt".into(), 4200, 1200);
+        let extra = extra_trees_world();
+        for seed in [1u64, 5, 9] {
+            let base = patch_tree_count(&classic, &mut Rng(seed));
+            let added = patch_tree_count(&extra, &mut Rng(seed));
+            assert!(
+                (5..=10).contains(&(added - base)),
+                "seed {seed}: {base} + {added}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_extra_living_trees_exclusion_band_narrows_to_150() {
+        // `WorldGen.cs:15482` / `:15496`: `num = 200` → `num = 150`. The band
+        // gate itself, read directly (the classic world is the control), plus
+        // the pass-level effect: a canopy can hang 50 tiles over the band, so
+        // no living wood may appear inside `half - (exclusion - 50)`.
+        let classic = World::new("lt".into(), 4200, 1200);
+        let extra = extra_trees_world();
+        assert_eq!(living_tree_exclusion(&classic), 200);
+        assert_eq!(living_tree_exclusion(&extra), 150);
+        let surface = flat_surface(4200);
+        let wood_in_band = |world: &World, lo: i32, hi: i32| -> usize {
+            (lo..hi)
+                .flat_map(|x| {
+                    (0..1200).filter_map(move |y| {
+                        world
+                            .tile(x, y)
+                            .filter(|t| t.active() && matches!(t.kind, 191 | 192))
+                    })
+                })
+                .count()
+        };
+        for seed in 1..=8u64 {
+            let mut flagged = grassland(4200, 1200);
+            flagged.micro_seeds |= crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES;
+            plant_living_trees(&mut flagged, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            assert_eq!(
+                wood_in_band(&flagged, 2050, 2151),
+                0,
+                "seed {seed}: living wood inside the flagged 150 band"
+            );
+            let mut classic_world = grassland(4200, 1200);
+            plant_living_trees(&mut classic_world, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            assert_eq!(
+                wood_in_band(&classic_world, 2000, 2201),
+                0,
+                "seed {seed}: living wood inside the classic 200 band"
+            );
+        }
+    }
+
+    #[test]
+    fn the_extra_living_trees_world_grows_more_living_wood() {
+        // Both ladders wired into the pass, with the classic worlds as the
+        // control on the same seeds.
+        let mut classic_total = 0usize;
+        let mut extra_total = 0usize;
+        let surface = flat_surface(4200);
+        for seed in 1..=8u64 {
+            let mut classic = grassland(4200, 1200);
+            plant_living_trees(&mut classic, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            classic_total += living_wood(&classic);
+
+            let mut extra = grassland(4200, 1200);
+            extra.micro_seeds |= crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES;
+            plant_living_trees(&mut extra, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            extra_total += living_wood(&extra);
+        }
+        assert!(
+            extra_total > classic_total,
+            "extraLivingTrees {extra_total} wood tiles vs classic {classic_total}"
+        );
+    }
+
+    #[test]
+    fn the_cloud_family_no_longer_blocks_an_extra_trees_site() {
+        // `WorldGen.cs:15577-15592`: the anchor site scan's
+        // `case 189/196/460/717/718/719` arm stops rejecting when
+        // `extraLivingTrees` is on. The port folds the site gate into
+        // `grow_living_tree`'s clearance scan, so a cloud strip at the left
+        // edge of the scan window (rows above the anchor) rejects the classic
+        // site while the flagged one grows. The strip sits 48 columns left of
+        // the anchor, outside the trunk's own reach, so it cannot abort the
+        // body for any other reason.
+        let mut classic = grassland(4200, 1200);
+        let mut extra = grassland(4200, 1200);
+        extra.micro_seeds |= crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES;
+        for l in 150..190 {
+            let i = classic.index(1150, l);
+            classic.tiles[i].kind = 189;
+            classic.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            let j = extra.index(1150, l);
+            extra.tiles[j].kind = 189;
+            extra.tiles[j].flags |= crate::tile::FLAG_ACTIVE;
+        }
+        let (x, anchor_y) = (1200, 199);
+        assert!(
+            !grow_living_tree(&mut classic, &mut Rng(1), x, anchor_y, false),
+            "the classic world must reject the cloud-blocked site"
+        );
+        assert!(
+            grow_living_tree(&mut extra, &mut Rng(1), x, anchor_y, false),
+            "the extraLivingTrees world must accept it"
         );
     }
 }

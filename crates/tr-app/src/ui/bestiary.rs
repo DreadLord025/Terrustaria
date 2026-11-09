@@ -360,7 +360,7 @@ fn draw_portrait(
     box_h: f32,
 ) {
     let (sheet_i, frame_h, w, h, tint) = portrait_data(entry, lookups);
-    let Some(sheet) = entry_sheet(lookups, sheet_i) else {
+    let Some(sheet) = lookups.bestiary_npc_sheets[sheet_i] else {
         return;
     };
     let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
@@ -371,20 +371,6 @@ fn draw_portrait(
         (cx - w * 0.5, top - h - 8.0)
     };
     draw_sheet_frame(r, lookups, &sheet, 0, [x, y, w, h], tint);
-}
-
-/// The bestiary sheet at a slot, or None when the slot is past the vec.
-/// The portrait heights read the ENTRY'S OWN sheet through the derived
-/// index: the hand-maintained literals drifted through four refactors
-/// (the frost trio, the boss rows, the martians, the town roster) and one
-/// panicked a release build with an index past the vec. Bounds-safe by
-/// construction, semantically the drawn sheet.
-fn entry_sheet<'a>(lookups: &'a Lookups, sheet_i: usize) -> Option<tr_render::SheetRect> {
-    lookups
-        .bestiary_npc_sheets
-        .get(sheet_i)
-        .and_then(|s| s.as_ref())
-        .copied()
 }
 
 /// The portrait parameters — the `NpcAssets` table's sizes
@@ -439,7 +425,7 @@ fn portrait_data(
         }
         // The hungry (3 frames) / the leech segments (1).
         (NpcKind::Hungry, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[47]
                 .map(|s| s.height as f32 / 3.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
@@ -448,7 +434,7 @@ fn portrait_data(
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[42]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(110.0);
             (sheet_i, h, 100.0, h, white)
@@ -459,7 +445,7 @@ fn portrait_data(
         (NpcKind::WanderingEye, _) => {
             // The 4-frame sheet's frame height rides the sheet itself
             // (`draw_npcs`'s `t.h / 4`).
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[2]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(24.0);
             (sheet_i, h, 38.0, h, white)
@@ -537,19 +523,19 @@ fn portrait_data(
         (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
         (NpcKind::SnowmanGangsta, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[48]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 26.0, h, white)
         }
         (NpcKind::SnowBalla, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[49]
                 .map(|s| s.height as f32 / 5.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 26.0, h, white)
         }
         (NpcKind::MysterySnowman, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[50]
                 .map(|s| s.height as f32 / 7.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 26.0, h, white)
@@ -560,27 +546,27 @@ fn portrait_data(
         | (NpcKind::GrayGrunt, _)
         | (NpcKind::MartianEngineer, _)
         | (NpcKind::GigaZapper, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[51]
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::MartianWalker, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[52]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(110.0);
             (sheet_i, h, 34.0, h, white)
         }
         // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
         (NpcKind::MartianProbe, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[76]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(72.0);
             (sheet_i, h, 42.0, h, white)
         }
         // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
         (NpcKind::MartianDrone, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[77]
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
@@ -588,21 +574,21 @@ fn portrait_data(
         // The shooters: the 9-frame NPC_381/382 strips over the 18x40
         // frames.
         (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[78]
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
         (NpcKind::ScutlixRider, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[80]
                 .map(|s| s.height as f32 / 5.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
         (NpcKind::Scutlix, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[81]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 60.0, h, white)
@@ -610,38 +596,38 @@ fn portrait_data(
         // The saucer family: the shell 4-frame, the turret 18-frame, the
         // cannon 8-frame, the core 11-frame strips.
         (NpcKind::MartianSaucer, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[82]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(80.0);
             (sheet_i, h, 150.0, h, white)
         }
         (NpcKind::MartianSaucerTurret, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[83]
                 .map(|s| s.height as f32 / 18.0)
                 .unwrap_or(16.0);
             (sheet_i, h, 40.0, h, white)
         }
         (NpcKind::MartianSaucerCannon, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[84]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(36.0);
             (sheet_i, h, 46.0, h, white)
         }
         (NpcKind::MartianSaucerCore, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[85]
                 .map(|s| s.height as f32 / 11.0)
                 .unwrap_or(90.0);
             (sheet_i, h, 120.0, h, white)
         }
         // The Dutchman: the 1-frame ship strip + the cannons' 9-frame.
         (NpcKind::FlyingDutchman, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[86]
                 .map(|s| s.height as f32)
                 .unwrap_or(120.0);
             (sheet_i, h, 350.0, h, white)
         }
         (NpcKind::FlyingDutchmanCannon, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[87]
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
@@ -649,7 +635,7 @@ fn portrait_data(
         // The DD2 goblins: the 14-frame NPC_552-554 strips over the 18x40
         // frames.
         (NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[88]
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
@@ -664,55 +650,55 @@ fn portrait_data(
             | NpcKind::DD2SkeletonT3,
             _,
         ) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[91]
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[94]
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(52.0);
             (sheet_i, h, 26.0, h, white)
         }
         // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
         (NpcKind::DD2DarkMage, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[99]
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(62.0);
             (sheet_i, h, 34.0, h, white)
         }
         // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
         (NpcKind::DD2Betsy, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[100]
                 .map(|s| s.height as f32 / 11.0)
                 .unwrap_or(90.0);
             (sheet_i, h, 190.0, h, white)
         }
         // The WitherBeast: the 14-frame NPC_568 strip over the 18x40 frames.
         (NpcKind::DD2WitherBeast, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[101]
                 .map(|s| s.height as f32 / 14.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
         (NpcKind::DD2Bartender, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[102]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         // The crystal: the NPC_548 strip over the 40x40 frames.
         (NpcKind::DD2EterniaCrystal, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[103]
                 .map(|s| s.height as f32)
                 .unwrap_or(40.0);
             (sheet_i, h, 40.0, h, white)
         }
         // The cultist: the 1-frame NPC_422 strip over the 130x270 frames.
         (NpcKind::AncientCultist, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[104]
                 .map(|s| s.height as f32)
                 .unwrap_or(270.0);
             (sheet_i, h, 130.0, h, white)
@@ -737,31 +723,31 @@ fn portrait_data(
         }
         // The shards' portraits.
         (NpcKind::StardustCellBig, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[119]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(44.0);
             (sheet_i, h, 44.0, h, white)
         }
         (NpcKind::StardustCellSmall, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[114]
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(22.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::StardustJellyfishBig, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[115]
                 .map(|s| s.height as f32 / 5.0)
                 .unwrap_or(60.0);
             (sheet_i, h, 40.0, h, white)
         }
         (NpcKind::NebulaBeast, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[116]
                 .map(|s| s.height as f32 / 12.0)
                 .unwrap_or(44.0);
             (sheet_i, h, 50.0, h, white)
         }
         (NpcKind::VortexRifleman | NpcKind::VortexSoldier, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[117]
                 .map(|s| s.height as f32 / 13.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 30.0, h, white)
@@ -772,146 +758,146 @@ fn portrait_data(
         // The nebula trio's portraits over the 420 sheet's rows.
         // The tower mobs' portraits over the 409 sheet's rows.
         (NpcKind::StardustSpiderBig, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[132]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(42.0);
             (sheet_i, h, 34.0, h, white)
         }
         (NpcKind::StardustSpiderSmall, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[138]
                 .map(|s| s.height as f32 / 11.0)
                 .unwrap_or(22.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::StardustSoldier, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[144]
                 .map(|s| s.height as f32 / 5.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::SolarDrakomire, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[150]
                 .map(|s| s.height as f32 / 1.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 60.0, h, white)
         }
         (NpcKind::SolarDrakomireRider, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[156]
                 .map(|s| s.height as f32 / 13.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::SolarSroller, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[162]
                 .map(|s| s.height as f32 / 10.0)
                 .unwrap_or(52.0);
             (sheet_i, h, 46.0, h, white)
         }
         (NpcKind::SolarCorite, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[168]
                 .map(|s| s.height as f32 / 15.0)
                 .unwrap_or(38.0);
             (sheet_i, h, 38.0, h, white)
         }
         // The pillar worms' portraits over the 412 sheet's rows.
         (NpcKind::SolarCrawltipedeHead, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[139]
                 .map(|s| s.height as f32 / 1.0)
                 .unwrap_or(20.0);
             (sheet_i, h, 20.0, h, white)
         }
         (NpcKind::SolarCrawltipedeBody, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[140]
                 .map(|s| s.height as f32 / 1.0)
                 .unwrap_or(20.0);
             (sheet_i, h, 20.0, h, white)
         }
         (NpcKind::SolarCrawltipedeTail, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[141]
                 .map(|s| s.height as f32 / 1.0)
                 .unwrap_or(20.0);
             (sheet_i, h, 20.0, h, white)
         }
         (NpcKind::StardustWormHead, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[142]
                 .map(|s| s.height as f32 / 1.0)
                 .unwrap_or(32.0);
             (sheet_i, h, 32.0, h, white)
         }
         (NpcKind::SolarSpearman, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[143]
                 .map(|s| s.height as f32 / 10.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::SolarSelenian, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[174]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::NebulaFloater, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[128]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 40.0, h, white)
         }
         (NpcKind::BrainSuckler, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[129]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(44.0);
             (sheet_i, h, 44.0, h, white)
         }
         (NpcKind::Predictor, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[130]
                 .map(|s| s.height as f32 / 12.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::VortexHunter, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[125]
                 .map(|s| s.height as f32 / 15.0)
                 .unwrap_or(62.0);
             (sheet_i, h, 50.0, h, white)
         }
         (NpcKind::VortexAlien, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[126]
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(28.0);
             (sheet_i, h, 40.0, h, white)
         }
         (NpcKind::VortexHeadcrab, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[127]
                 .map(|s| s.height as f32 / 5.0)
                 .unwrap_or(26.0);
             (sheet_i, h, 24.0, h, white)
         }
         (NpcKind::MoonLordHead, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[120]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(56.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::MoonLordHand, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[121]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(66.0);
             (sheet_i, h, 46.0, h, white)
         }
         (NpcKind::MoonLordCore, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[122]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(66.0);
             (sheet_i, h, 46.0, h, white)
         }
         (NpcKind::MoonLordFreeEye, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[123]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(60.0);
             (sheet_i, h, 60.0, h, white)
         }
         (NpcKind::MoonLordLeechBlob, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[124]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
@@ -920,13 +906,13 @@ fn portrait_data(
         | (NpcKind::PirateCaptainsMate, _)
         | (NpcKind::PirateArcher, _)
         | (NpcKind::PirateCorsair, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[53]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::PirateCaptain, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[54]
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
@@ -935,31 +921,31 @@ fn portrait_data(
         // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
         // display boxes (the frame height rides each sheet).
         (NpcKind::GoblinThief, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[64]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinWarrior, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[65]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinArcher, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[66]
                 .map(|s| s.height as f32 / 16.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinPeon, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[67]
                 .map(|s| s.height as f32 / 21.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::GoblinSummoner, _) => {
-            let h = entry_sheet(lookups, sheet_i)
+            let h = lookups.bestiary_npc_sheets[68]
                 .map(|s| s.height as f32 / 20.0)
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)

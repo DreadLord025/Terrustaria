@@ -4,12 +4,16 @@
 //! plateau, desert dunes, the flattened lake span and the ocean beach ramps);
 //! [`fill_terrain`] paints the dirt/sand/stone/ash columns under it and derives
 //! the `world_surface` / `rock_layer` anchors from `TerrainPass.ApplyPass`.
+//!
+//! M5-SEED-2: [`fill_terrain`] carries the `surfaceIsInSpace` terrain
+//! parameters (see the `space_*` bindings there for the C# band mapping).
 
 use super::noise::Noise;
 use super::{
     TILE_ASH, TILE_DIRT, TILE_GRASS, TILE_HARDENED_SAND, TILE_ICE, TILE_SAND, TILE_SANDSTONE,
     TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
 };
+use crate::seeds::MicroSeedFlags;
 use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
 
@@ -217,6 +221,49 @@ pub(crate) fn fill_terrain(
     let in_desert = |x: i32| desert_enabled && x >= desert_start && x < desert_end;
     // Mean surface height, used as the anchor for cave/ore placement below.
     let avg_surface = surface.iter().sum::<i32>() as f64 / width as f64;
+    // --- M5-SEED-2 `surfaceIsInSpace` (TerrainPass.cs:116-119, :187-191) ----
+    //
+    // The C# shapes the surface row `num3` with the clamp band
+    // `[maxTilesY * num10, maxTilesY * num11]` — `num10 = 0.17`,
+    // `num11 = 0.26` — and the seed takes two arms:
+    //
+    //   double num11 = 0.26;
+    //   if (WorldGen.SecretSeed.surfaceIsInSpace.Enabled) num11 = 0.2199999988079071;
+    //   ...                                              // :116-119
+    //   else if (num3 > (double)Main.maxTilesY * num11) { num3 = ...; num2 = 0; }
+    //   ...
+    //   if (surfaceIsInSpace.Enabled && !noSurface.Enabled)
+    //       TerrainPass.FillColumn(i, num3 - (double)Main.maxTilesY * 0.08, num4);
+    //   else
+    //       TerrainPass.FillColumn(i, num3, num4);      // :187-191
+    //
+    // so the surface row is allowed 0.04 * height higher and the solid column
+    // starts 0.08 * height above that row. `DoSurfaceIsInSpace`
+    // (`WorldGen.cs:2069-2085`, the cloud-wall wipe above `Main.worldSurface`)
+    // lives in `micro_surface.rs` — this is the terrain half only.
+    //
+    // Mapping onto the port's compact parameters: the height map's band is
+    // `.clamp(80, height - 340)` (`surface_height_map`), so `height - 340` is
+    // the model's `num11 * maxTilesY` analogue (a flat offset that keeps the
+    // underground deep enough for the compact cave/ore bands, NOT a fraction of
+    // the height), and the C#'s 0.26 → 0.22 delta — 0.04 of the world height —
+    // is subtracted from it below. Because the model's surface never reaches
+    // that ceiling on any supported size, the ceiling arm does not bind in
+    // practice: the load-bearing arm is the 8 % headroom, which raises the
+    // terrain top to `heights[x] - 0.08 * height` (0.22 * height on a default
+    // 1200-tall world, whose mean surface is 0.30 * height). Recorded as a
+    // compact-model deviation (ANALYSIS).
+    let space = world.micro_seeds.contains(MicroSeedFlags::SURFACE_IS_IN_SPACE);
+    let space_headroom = if space {
+        (height as f64 * 0.08) as i32
+    } else {
+        0
+    };
+    let space_band = if space {
+        (height - 340 - (height as f64 * 0.04) as i32).max(8)
+    } else {
+        height - 340
+    };
     // `TerrainPass.ApplyPass`: `Main.worldSurface = (int)(max(surfaceY) + 25.0)` — the
     // *deepest* column of the pre-carve surface, 25 tiles below it, not the mean. The
     // underground backdrop (`DrawBackground_DirtBackground`) and the surface parallax
@@ -242,9 +289,22 @@ pub(crate) fn fill_terrain(
     let snow_start = width * 2 / 3;
 
     for x in 0..width {
-        let top = surface[x as usize];
+        // `recorded` is the height-map row — the port's analogue of the C#'s
+        // `num3` (the surface row the anchors and the layer bands derive
+        // from). `top` is the fill's first solid row: `FillColumn`'s first
+        // argument, which `surfaceIsInSpace` raises by the 8 % headroom
+        // (`TerrainPass.cs:187-191`). A classic world has
+        // `headroom == 0` and a non-binding band, so `top == recorded` and the
+        // column is painted exactly as before.
+        let recorded = surface[x as usize];
+        let top = (recorded - space_headroom).min(space_band).max(2);
         let dirt_depth = 16 + (noise.value(x as f32 * 0.05, 3.0) * 6.0) as i32;
-        let rock_line = (top + dirt_depth) as f64;
+        // The dirt → stone transition stays on the anchor row, as the C#'s
+        // rock line `num4` tracks `num3` and not the shifted fill top (the
+        // vanilla dirt sheet under a `surfaceIsInSpace` world is therefore
+        // `0.06 * height + dirt_depth` thick, and the port's stays
+        // `dirt_depth + headroom`).
+        let rock_line = (recorded + dirt_depth) as f64;
         rock_low = rock_low.min(rock_line);
         rock_high = rock_high.max(rock_line);
         for y in 0..height {
@@ -265,14 +325,14 @@ pub(crate) fn fill_terrain(
                         TILE_GRASS
                     };
                 } else if x >= snow_start && y < rock_layer as i32 {
-                    // The `IceBiome` pass (`WorldGen.cs`): the snow band's
+                    // The `IceBiome` pass (`WorldGen`): the snow band's
                     // underground is the ice shell down to the rock layer.
                     tile.kind = TILE_ICE;
-                } else if y < top + dirt_depth {
+                } else if y < recorded + dirt_depth {
                     tile.kind = if desert { TILE_SAND } else { TILE_DIRT };
-                } else if desert && y < top + dirt_depth + 14 {
+                } else if desert && y < recorded + dirt_depth + 14 {
                     tile.kind = TILE_HARDENED_SAND;
-                } else if desert && y < top + dirt_depth + 30 {
+                } else if desert && y < recorded + dirt_depth + 30 {
                     tile.kind = TILE_SANDSTONE;
                 } else if y < hell_top {
                     tile.kind = TILE_STONE;
@@ -347,5 +407,71 @@ mod tests {
         assert!(layers.surface_low > 20.0, "band 11");
         assert_eq!(layers.world_surface, raw_max + 25.0);
         assert_eq!(layers.hell_top, 630);
+    }
+
+    /// M5-SEED-2 `surfaceIsInSpace` (`TerrainPass.cs:187-191`): the fill gains
+    /// 8 % of the world height of headroom above the surface row — the terrain
+    /// top rises, the layers stay on the anchor row, and the classic fill is
+    /// unchanged.
+    #[test]
+    fn surface_is_in_space_raises_the_fill_by_eight_percent_of_the_height() {
+        let (width, height) = (400, 800);
+        let noise = Noise { seed: 42 };
+        let mut classic = World::new("t".into(), width, height);
+        classic.micro_seeds = MicroSeedFlags::none();
+        let map = surface_height_map(width, height, &noise, 140, width - 140);
+        let layers = fill_terrain(&mut classic, width, height, &noise, &map);
+        // The classic column starts exactly at the height-map row.
+        let top = map.heights[200];
+        let ground_classic = classic
+            .tile(200, top)
+            .is_some_and(|t| t.active() && t.kind == TILE_GRASS);
+
+        let mut space = World::new("t".into(), width, height);
+        space.micro_seeds = crate::seeds::MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_IN_SPACE);
+        let layers_space = fill_terrain(&mut space, width, height, &noise, &map);
+        let headroom = (height as f64 * 0.08) as i32;
+        assert_eq!(headroom, 64, "8 % of a 800-tall world");
+        // The grass row now sits a full headroom above the anchor.
+        assert!(ground_classic, "the classic column starts at the anchor");
+        assert!(
+            space
+                .tile(200, top - headroom)
+                .is_some_and(|t| t.active() && t.kind == TILE_GRASS),
+            "the flagged column's grass row is a headroom higher"
+        );
+        assert!(
+            space.tile(200, top).is_some_and(|t| t.active()),
+            "the rows between the two are solid fill"
+        );
+        assert!(
+            space.tile(200, top - headroom - 1).is_some_and(|t| !t.active()),
+            "nothing above the new top row"
+        );
+        // The layer anchors stay on the height-map row (the C#'s `num5`/`num6`
+        // read `num3`, not the shifted fill top).
+        assert_eq!(layers_space.world_surface, layers.world_surface);
+        assert_eq!(layers_space.rock_high, layers.rock_high);
+        // The band ceiling arm does not bind here: the model's surface never
+        // approaches `height - 340`.
+        assert!(top < height - 340 - (height as f64 * 0.04) as i32);
+    }
+
+    /// The classic fill is byte-identical: the same map over two worlds (one
+    /// with no micro flags, one with an unrelated bit set) paints the same
+    /// tiles.
+    #[test]
+    fn the_classic_fill_ignores_the_unrelated_micro_flags() {
+        let (width, height) = (400, 800);
+        let noise = Noise { seed: 42 };
+        let map = surface_height_map(width, height, &noise, 140, width - 140);
+        let mut a = World::new("t".into(), width, height);
+        let mut b = World::new("t".into(), width, height);
+        b.micro_seeds = MicroSeedFlags::from(MicroSeedFlags::DIG_EXTRA_HOLES);
+        let la = fill_terrain(&mut a, width, height, &noise, &map);
+        let lb = fill_terrain(&mut b, width, height, &noise, &map);
+        assert_eq!(a.tiles, b.tiles);
+        assert_eq!(la.world_surface, lb.world_surface);
+        assert_eq!(la.rock_layer, lb.rock_layer);
     }
 }

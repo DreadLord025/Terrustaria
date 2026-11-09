@@ -39,7 +39,7 @@ pub const SPREADS_CRIMSON: [u16; 10] = [199, 662, 203, 234, 399, 401, 200, 352, 
 
 /// `Convert`'s tile map (`:55139-55205`): the source kind → the converted
 /// kind per the evil flavour.
-fn convert_tile(kind: u16, corruption: bool) -> Option<u16> {
+pub(crate) fn convert_tile(kind: u16, corruption: bool) -> Option<u16> {
     Some(match (kind, corruption) {
         // The grass family (the Conversion.Grass set: 2, 477, 60, 69...):
         // the corrupt grass 23 / the crimson grass 199.
@@ -105,7 +105,7 @@ fn convert_tile(kind: u16, corruption: bool) -> Option<u16> {
 
 /// The natural-wall slice of `WallID.Sets.Conversion` (`:55090-55135`): the
 /// stone wall 1 → 192/3, the dirt wall 2 → 193/69.
-fn convert_wall(wall: u16, corruption: bool) -> Option<u16> {
+pub(crate) fn convert_wall(wall: u16, corruption: bool) -> Option<u16> {
     Some(match (wall, corruption) {
         // The stone wall: the ebonstone 3 / the crimson 192.
         (1, c) => {
@@ -387,7 +387,7 @@ pub fn hard_update_world(
 /// 164, the hallowed sandstone 403, the hallowed hardened sand 402 — and
 /// the purify arm (the corrupt/crimson jungle grass 661/662 → the jungle
 /// grass 60).
-fn convert_tile_hallow(kind: u16) -> Option<u16> {
+pub(crate) fn convert_tile_hallow(kind: u16) -> Option<u16> {
     Some(match kind {
         2 => 109,
         1 | 25 | 203 => 117,
@@ -404,7 +404,7 @@ fn convert_tile_hallow(kind: u16) -> Option<u16> {
 /// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
 /// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
 /// hallowed stone wall 28.
-fn convert_wall_hallow(wall: u16) -> Option<u16> {
+pub(crate) fn convert_wall_hallow(wall: u16) -> Option<u16> {
     Some(match wall {
         187 => 222,
         3 | 83 => 28,

@@ -12,7 +12,7 @@ use tr_core::World;
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
 /// these; the party/custom-seed gates sit constants-off).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
     pub night: bool,
@@ -43,6 +43,18 @@ pub struct ShopFlags {
     /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
     /// that opens the Princess's arrival without the full roster.
     pub unlocked_princess: bool,
+    /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
+    /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
+    /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
+    pub vampirism: bool,
+    /// `Main.infectedSeed` (`WorldGen.cs:560-562`, the `worldIsInfected`
+    /// micro seed) — the Dryad arm's second conjunct (`Chest.cs:1733`).
+    pub infected_seed: bool,
+    /// `WorldGen.crimson` — the world's evil type; the Dryad's vampirism row
+    /// picks the Crimson Torch (4386) over the Corrupt one (4385)
+    /// (`Chest.cs:1735-1740`). The port persists no world-evil type (see
+    /// [`ShopFlags::from_world`]), so the caller fills it like the zones.
+    pub crimson_world: bool,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -71,7 +83,34 @@ impl Default for ShopFlags {
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
+            vampirism: false,
+            infected_seed: false,
+            crimson_world: false,
             travel_stock: [0; 40],
+        }
+    }
+}
+
+impl ShopFlags {
+    /// M5-SEED-2: the world-side feed of the custom-seed half — the two
+    /// statics `Chest.SetupShop`'s vampirism gates read live
+    /// (`Main.vampireSeed`/`Main.infectedSeed`, set by
+    /// `InitializeSecretSeeds` `WorldGen.cs:555-562`). The shop-open seam
+    /// (the port has no shop UI call yet) starts from this and fills the
+    /// scene flags; a classic world is exactly [`ShopFlags::default`].
+    ///
+    /// `crimson_world` stays false: the port persists no world-evil type
+    /// (the same gap `loot.rs`'s `LootFlags.crimson_world` documents), so the
+    /// Dryad's 4385/4386 split rides the caller's own field.
+    pub fn from_world(world: &World) -> Self {
+        Self {
+            vampirism: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
+            infected_seed: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+            ..Self::default()
         }
     }
 }
@@ -100,6 +139,16 @@ pub enum StockWhen {
     /// The blood-moon corruption rows (`Chest.cs:1570-1593`'s else branch —
     /// the crimson variants ride the world's crimson flag, constants-off).
     BloodMoonCorruption,
+    /// M5-SEED-2: `Chest.cs:3403-3406`'s Bestiary Girl tail — `Main.vampireSeed
+    /// && !Main.infectedSeed` adds one Torch (8) after the moon-phase rows.
+    VampirismNotInfected,
+    /// M5-SEED-2: `Chest.cs:1733-1742`'s Dryad tail — `!Main.hardMode &&
+    /// Main.vampireSeed && Main.infectedSeed` adds the Torch (8).
+    VampirismInfected,
+    /// The Dryad tail's `WorldGen.crimson` split — the Crimson Torch (4386).
+    VampirismInfectedCrimson,
+    /// The Dryad tail's other half — the Corrupt Torch (4385).
+    VampirismInfectedCorrupt,
     /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
     /// metrics' underworld flag reaches the shop call.
     ZoneUnderworld,
@@ -308,6 +357,13 @@ pub fn setup_shop(
             row(4437, StockWhen::MoonPhasePair(2)),
             row(4439, StockWhen::MoonPhasePair(3)),
             row(4440, StockWhen::MoonPhasePair(3)),
+            // M5-SEED-2: `:1733-1742`'s vampirism tail — the case's LAST rows,
+            // after the `moonPhase / 2` flower-seed pairs: `!Main.hardMode &&
+            // Main.vampireSeed && Main.infectedSeed` adds the Torch (8) and
+            // then the world-evil torch (`WorldGen.crimson` → 4386, else 4385).
+            row(8, StockWhen::VampirismInfected),
+            row(4386, StockWhen::VampirismInfectedCrimson),
+            row(4385, StockWhen::VampirismInfectedCorrupt),
         ],
         // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
         // hair-dye family — the two always-on rows, the life/mana/money
@@ -386,7 +442,10 @@ pub fn setup_shop(
         // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
         // bestiary tools — the progress-gated rows ride
         /// `BestiaryUnlockProgressReport.CompletionPercent`
-        /// (`:3265`), the lumen/solar rows the flags they name.
+        /// (`:3265`), the lumen/solar rows the flags they name. The case's
+        // vampirism tail (`Main.vampireSeed && !Main.infectedSeed` → one
+        /// Torch 8, `Chest.cs:3403-3406`) closes the list — the M5-SEED-2
+        /// arm, folded into this one arm so the match keeps one entry.
         23 => vec![
             row(4767, StockWhen::Always),
             row(5253, StockWhen::MoonPhaseNight0),
@@ -399,6 +458,8 @@ pub fn setup_shop(
             row(4871, StockWhen::BestiaryCompletion(0.30)),
             row(4907, StockWhen::BestiaryCompletion(0.30)),
             row(4676, StockWhen::BestiaryCompletion(0.10)),
+            // The vampirism tail (`Chest.cs:3403-3406`).
+            row(8, StockWhen::VampirismNotInfected),
         ],
         // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
         /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
@@ -1099,6 +1160,22 @@ pub fn resolve_stock_moon(
             StockWhen::ZoneJungle => flags.zone_jungle,
             StockWhen::PlayerHasItem(id) => inventory_ids.contains(&id),
             StockWhen::BloodMoonCorruption => flags.blood_moon,
+            StockWhen::VampirismNotInfected => flags.vampirism && !flags.infected_seed,
+            StockWhen::VampirismInfected => {
+                !flags.hard_mode && flags.vampirism && flags.infected_seed
+            }
+            StockWhen::VampirismInfectedCrimson => {
+                !flags.hard_mode
+                    && flags.vampirism
+                    && flags.infected_seed
+                    && flags.crimson_world
+            }
+            StockWhen::VampirismInfectedCorrupt => {
+                !flags.hard_mode
+                    && flags.vampirism
+                    && flags.infected_seed
+                    && !flags.crimson_world
+            }
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
             StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
@@ -1328,6 +1405,66 @@ mod tests {
         assert_eq!(sell_price(88, 0.75), 10667);
         // The Guide-in-the-forest multiplier from the happiness tests.
         assert_eq!(buy_price(88, 0.89), 35600);
+    }
+
+    // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
+    // (`WorldGen.cs:555-562`) arm two shops — the Dryad's
+    // `!hardMode && vampireSeed && infectedSeed` tail (`Chest.cs:1733-1742`)
+    // and the Bestiary Girl's `vampireSeed && !infectedSeed` torch
+    // (`Chest.cs:3403-3406`). Both gates read the world, so a classic world
+    // resolves neither shop's extra rows.
+    #[test]
+    fn the_vampirism_arms_add_the_torch_rows_under_the_flag() {
+        let classic = ShopFlags::default();
+        let vamp = ShopFlags {
+            vampirism: true,
+            ..ShopFlags::default()
+        };
+        let both = ShopFlags {
+            vampirism: true,
+            infected_seed: true,
+            ..ShopFlags::default()
+        };
+        // The Dryad (shop 3): the torch rows are the case's LAST rows, after
+        // the flower-seed pairs, and only while the world is not in hardmode.
+        let base = resolve_stock_moon(3, &classic, &[], 0);
+        assert!(!base.contains(&8), "the Dryad sells no torch by default");
+        assert!(!base.contains(&4385) && !base.contains(&4386));
+        let seeded = resolve_stock_moon(3, &both, &[], 0);
+        let tail = seeded.len() - base.len();
+        assert_eq!(tail, 2, "the torch plus the world-evil torch");
+        assert!(seeded.contains(&8), "the Torch 8");
+        assert!(seeded.contains(&4385), "the Corrupt Torch (no crimson flag)");
+        assert!(!seeded.contains(&4386), "the Crimson Torch stays out");
+        // `WorldGen.crimson` flips the split.
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..both
+        };
+        let rows = resolve_stock_moon(3, &crimson, &[], 0);
+        assert!(rows.contains(&4386) && !rows.contains(&4385), "the crimson split");
+        // Hardmode closes the arm entirely (`:1733`'s `!Main.hardMode`).
+        let hard = ShopFlags {
+            hard_mode: true,
+            ..both
+        };
+        let hard_rows = resolve_stock_moon(3, &hard, &[], 0);
+        assert!(!hard_rows.contains(&8) && !hard_rows.contains(&4385));
+        // A vampirism-only world (no `infectedSeed`): the Dryad arm stays off
+        // and the Bestiary Girl's opens instead.
+        let girl = resolve_stock(23, &vamp, &[]);
+        assert!(girl.contains(&8), "the Bestiary Girl's vampirism torch: {girl:?}");
+        assert!(
+            !resolve_stock(23, &classic, &[]).contains(&8),
+            "a classic world gets no vampirism torch"
+        );
+        assert!(
+            !resolve_stock(23, &both, &[]).contains(&8),
+            "`!infectedSeed` is required"
+        );
+        // The world-side feed: a classic world is the default.
+        let w = World::new("t".into(), 200, 200);
+        assert_eq!(ShopFlags::from_world(&w), ShopFlags::default());
     }
 }
 

@@ -897,6 +897,32 @@ fn neon_moss_x(rng: &mut Rng, width: i32, flags: crate::seeds::SeedFlags) -> i32
     x
 }
 
+/// M5-SEED-2 `SecretSeed.Variations.noSpiderCavesActuallyNoSpiderCaves`
+/// (`WorldGen.cs:270-278`): the `noSpiderCaves` world actually loses its
+/// spider caves when the secret-seed list is short:
+///
+/// ```text
+/// if (SecretSeed.noSpiderCaves.Enabled) return SecretSeed.activeSecretSeedCount < 4;
+/// return false;
+/// ```
+///
+/// The pass body is gated on the negation (`WorldGen.cs:17358`: `if
+/// (!Skyblock.denyAllGeneration && !SecretSeed.Variations.
+/// noSpiderCavesActuallyNoSpiderCaves)`), so a long list (or no
+/// `noSpiderCaves` at all — the other agent's `ILied` wall sweep,
+/// `:280-289`) keeps the pass. `activeSecretSeedCount` counts both registries,
+/// hence the classic `SeedFlags` fold through
+/// [`crate::seeds::active_secret_seed_count`].
+fn no_spider_caves_actually_no_spider_caves(world: &World) -> bool {
+    if !world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES)
+    {
+        return false;
+    }
+    crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds) < 4
+}
+
 /// `Spider Caves` (`WorldGen.cs:17356-17427`).
 pub(crate) fn pass_spider_caves(
     world: &mut World,
@@ -905,6 +931,13 @@ pub(crate) fn pass_spider_caves(
     world_surface: f64,
     hell_top: f64,
 ) -> u32 {
+    // `WorldGen.cs:17358`: the pass is skipped whole under
+    // `Variations.noSpiderCavesActuallyNoSpiderCaves` — the M5-SEED-2 seed
+    // was a lie for short secret-seed lists. A classic world reads no micro
+    // flag and runs exactly as before.
+    if no_spider_caves_actually_no_spider_caves(world) {
+        return 0;
+    }
     let mut placed = 0u32;
     let max_spider_count = 3500;
     let retries = world.width / 2;
@@ -1280,6 +1313,36 @@ mod tests {
         assert!(placed >= 1, "the pass placed a spider cave");
         let spider = w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
         assert!(spider >= 500, "the spider wall covers the cave ({spider})");
+    }
+
+    #[test]
+    fn the_no_spider_caves_variation_skips_the_whole_pass() {
+        // `WorldGen.cs:17358` + `Variations.noSpiderCavesActuallyNoSpiderCaves`
+        // (`:270-278`): a lone `noSpiderCaves` world
+        // (`activeSecretSeedCount = 1 < 4`) runs no spider caves at all.
+        let mut w = flat_world(900, 900, 60);
+        carve_pocket(&mut w, 300, 520, 300, 10);
+        w.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES;
+        let mut rng = Rng(0xABCD);
+        let (rock, surface) = (w.rock_layer, w.world_surface);
+        let placed = pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0);
+        assert_eq!(placed, 0, "the pass is skipped whole");
+        assert_eq!(w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count(), 0);
+        // A crowded secret-seed list (count >= 4) keeps the pass running — the
+        // other agent's `ILied` arm territory. The three extra bits beside
+        // `noSpiderCaves` reach the threshold.
+        let mut crowded = flat_world(900, 900, 60);
+        carve_pocket(&mut crowded, 300, 520, 300, 10);
+        crowded.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES
+            | crate::seeds::MicroSeedFlags::ERROR_WORLD
+            | crate::seeds::MicroSeedFlags::RAINS_FOR_A_YEAR
+            | crate::seeds::MicroSeedFlags::RANDOM_SPAWN;
+        assert!(crowded.micro_seeds.count() >= 4);
+        let mut rng2 = Rng(0xABCD);
+        let (rock2, surface2) = (crowded.rock_layer, crowded.world_surface);
+        let ran = pass_spider_caves(&mut crowded, &mut rng2, rock2, surface2, 780.0);
+        assert!(ran >= 1, "the crowded world still runs the pass");
+        assert!(crowded.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count() >= 500);
     }
 
     #[test]

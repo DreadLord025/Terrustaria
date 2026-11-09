@@ -2031,35 +2031,7 @@ selection state and its play path closes the front flow rather than loading the
 entry (spec §9.4), so a double-click resolves to the same flow a Play button
 click does.
 
-Corrected deviations (both were geometry the layout pass would have got right,
-and a third was the click gate the geometry feeds):
-
-* **The state-change click lockout never expired (fix-world-select-clicks).**
-  `App::enter_front` arms `UserInterface`'s 200 ms post-`SetState` disable
-  (`ResetState`, `:178`, ported at `ui/pointer.rs:141`), but the *only* countdown
-  site sat inside `frame()`'s `if self.menu.is_none() && self.front.is_none()`
-  branch — the in-game regime — so `PointerState::tick` never ran while a front
-  screen (`Main.menuMode == 888`) was live. `click_disabled_ms` therefore stayed
-  at 200.0 and `clicks_disabled()` was permanently true, which dropped every
-  press twice: once at `app/loop.rs:422` (no `PointerEvent` produced) and again
-  at `handle_front_click` (`UserInterface.cs:214-218`, the gate the click tables
-  run behind). **Every** row of **every** front screen — world select's cards,
-  New/Back/Favorite/Rename/Delete, and the character-select twins — was dead
-  until the app was restarted. The C# decrements unconditionally:
-  `Main.UpdateUIStates` (`Main.cs:17039`/`:17487-17492`) reaches
-  `MenuUI.Update` on every frame, and `UserInterface.cs:203-204` clears the
-  countdown before reading the gate. The port now calls
-  `App::tick_pointer_clock` from `frame()` on every frame, outside the
-  in-game branch, with a citation naming the C# reach. This replaces the older
-  note here that the 200 ms disable "is armed on the enter direction only
-  (`enter_front`), not on the leave direction the C#'s `SetState(null)` also
-  resets" — neither direction decayed.
-  The existing double-click test had masked it by hand-ticking the lockout away
-  (`app.pointer.tick(300.0)`); it now advances the real `frame()` seam.
-  The screen geometry itself was never implicated: `world_select::card_hit`
-  (`ui/world_select.rs:506`), the layout shared with char_select (`:42`, `:185`)
-  and the framework's `get_element_at` (`ui/framework.rs:64`) are all 1:1 with
-  `UIWorldListItem.cs:94-158` and `UIElement.cs:324-352`.
+Corrected deviations (both were geometry the layout pass would have got right):
 
 * **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
   `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
@@ -2101,12 +2073,9 @@ Open gaps (deliberately out, each with its reason):
   `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
   `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
   `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
-  exit sites have no `leave_front` seam, so the 200 ms disable is never re-armed
-  on the leave direction the C#'s `SetState(null)` also resets
-  (`open_keyboard_with_tail` at `app/mod.rs:1159` and the mode-40 `No` restore at
-  `app/clicks.rs:990` set `front` without going through `enter_front`) — the
-  inverse of the latch fixed in the corrected-deviations list above, and
-  harmless because the countdown now always expires.
+  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
+  enter direction only (`enter_front`), not on the leave direction the C#'s
+  `SetState(null)` also resets.
 * **Snap points / gamepad** (already recorded as out of scope) and
   `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
 
@@ -3004,20 +2973,6 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
 
-## The King Slime (M4-NPC-3q)
-
-The King Slime's draw carried the right numbers as v1 magic: `[n.x - 38.0,
-n.y - 25.0]` over a hard-coded `120.0` frame height, which is the generic
-anchor (`[x + 49 - 87, y + 92 + 4 - 60]`) plus a 1-px fudge. Replaced with
-`boss_draw`'s derived 174x120 rows (NPC_50 measured 174x720, six 120-px
-rows over the 98x92 box), so the sheet's real geometry drives the draw.
-`case 50`'s machine (`NPC.cs:73380-73414`) verified 1:1: the air snaps to
-row 4 and holds 5, the landing falls back to 4, the grounded walk rides
-0..3 with the `num2` boosts.
-
-Screenshot: `king_slime.png` (the slime at its real 174x120 frame standing
-on the grass), SHA256-stable across three runs.
-
 ## The Plantera and the Brain (M4-NPC-3o)
 
 `case 262` (Plantera) and `case 266` (the Brain of Cthulhu) are the same
@@ -3768,19 +3723,6 @@ Deviations:
 - **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
-
-## Bestiary sheet slots (M4-TOWN-19-fix)
-
-`ui/bestiary.rs`'s `portrait_data` carried 66 hand-written
-`bestiary_npc_sheets[N]` reads for the height fallbacks; each refactor that
-inserted a sheet shifted them, and the release build panicked on
-`NpcKind::SolarDrakomireRider`'s stale 156 (the vec had 156 slots). The
-derived `Lookups::bestiary_sheet_index` + `BESTIARY_NPC_SHEET_IDS` replaced
-the table; this fix routes every read through `entry_sheet(lookups,
-sheet_i)`, so the portraits always read their own sheet and a drift can only
-ever degrade to the `.unwrap_or(h)` fallback instead of a panic. The
-`BESTIARY_NPC_SHEET_IDS` ↔ `bestiary_npc_sheets` vec order alignment is now
-guarded by a test (each entry's net id appears exactly once).
 
 ## Zoologist/Princess (M4-TOWN-19)
 
@@ -5313,19 +5255,6 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   `j / num3 >= 0.25` while the `Next(13)`/`Next(9)`/`Next(5)` draws stay in
   their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
   anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
-
-- **The smart-cursor grapple targets** (`SmartCursorHelper.cs:106-116`'s
-  `_grappleTargets` fill, threaded into `Step_Pickaxe_MineSolids`' walk
-  `:2475-2483`): the reach-rect off-screen gate rebuilds the hook cells from
-  the player's grappling projectiles (the centers over 16), and the walk's
-  solid re-add skips them - a hook latched on a stone drops that stone from
-  the beam's targets. The engine carries the list on the `Lookup` (the
-  uniform step-dispatch array's only shared input) and the app fills it from
-  the port's single `App.grapple` (`grapple_target_cells` - the C#'s
-  `(int)cx / 16` truncation, verified on the negative side). The C#'s
-  `player.grappling` array (per-hook-projectile) has no port equivalent; the
-  port's one-hook model yields 0 or 1 cell, which is the vanilla behaviour
-  for the single-hook items (`Player.QuickGrapple`'s `num7 = 1` recycle).
 
 ## Structures (M1.4-WGEN-2)
 
@@ -8804,3 +8733,118 @@ pass), the `UseBlockColors(TileColorCache)` arm, the neighborhood recursion
 (`repeat` with the `grassSpread < 1000` cap — the port's world-wide growth
 loop is its equivalent, the cap recorded here), and the vines/moss arms
 (`GrowMoreVines`, `SpreadGrassWalls`, `MossConversion`) still open.
+  party, the Constant's starving/darkness engine, skyblock.
+
+## Micro seeds (M5-SEED-2)
+
+The 1.4.5 modular registry (`WorldGen.SecretSeed`) and the arms that landed
+on `M5-SEED-2-micro-seeds`.
+
+### The registry and the hash
+
+**There are 37 micro-seeds, not 38** — `WorldGen.cs:341-413` declares 37
+fields and the static ctor `:3022-3058` is 37 `SecretSeed.Register(...)`
+lines; the "38" in the earlier notes is `AllSecretSeeds` (`:339`) or the
+`Register` method definition (`:483`). The port's `MICRO_SEED_ORDER`
+carries all 37 in registration order (which is also the `AllSecretSeeds`
+walk order, so a future first-match tie-break matches).
+
+Recognition is the hash, not a word list: `SecretSeed.Check`
+(`WorldGen.cs:468-481`) normalises the text (`[^a-z0-9]`, lower-cased),
+hashes it and compares to the stored code. `Utilities/Secrets.cs:16-26`:
+`CryptRaw(utf8, salt, 4)` (BCrypt cost 4, the game's static salt decoded
+from `"fT2JQQzNMJl2NRoMbo9RjA=="` = `7d3d89410ccd30997635 51a0c6e8f518c`),
+then 1000 rounds of the deterministic `Utils.Swap` shuffle, then a second
+`CryptRaw`, then standard Base64. The port is
+`crates/tr-core/src/bcrypt.rs` — the full `CryptRaw` (the pi-derived
+P/S tables transcribed mechanically from `BCrypt.cs:186-296`,
+`Encipher`/`StreamToWord`/`Key`/`EKSKey`/`CryptRaw` verbatim).
+
+Two things about the hash that cost the most debugging time and are now
+pinned by tests:
+
+1. **The additions wrap at 32 bits twice.** The C#'s
+   `((S0 + S1) ^ S2) + S3` is unchecked u32 arithmetic; a u64 intermediate
+   carries past the first overflow and every later byte diverges.
+2. **`EKSKey`'s salt offset is a single counter across BOTH schedules**
+   (`BCrypt.cs:110-133`) — resetting it before the S loop flips the state.
+   (`Key` also had a duplicated P-encipher loop in the first draft.)
+
+The golden vectors prove the semantics: `to_secret("pumpkinseason") ==
+"Z4Odmvd5lScy/KGXHUO2nvqA9l3KRvm8"` (halloweenGen's registered code —
+the word the game itself reveals in `SetSeedToRandomWithCurrentEvents`,
+`WorldFileData.cs:409`) and `to_secret("arachnophobia") ==
+"SPlOdka0fv8wUovao6u3VB7ZS+IbcPDu"` (noSpiderCaves). Those also prove the
+port's key walk is the game's non-NUL-terminated one: the stock `bcrypt`
+crate treats the key as NUL-terminated and would differ.
+
+### Storage and the wire
+
+`SeedFlags` (a `u16` mirror of `serializedSeedsSum`) is left byte-identical;
+the 37 flags live in a new `MicroSeedFlags` (u64) beside it. They ride
+`World.micro_seeds` / `GenOptions.micro_flags`, TRWLD **v7** (the u64
+appended after the v6 u16; a v6 file loads as a classic world) and the
+`.wld` seed text — the C# writes **no** micro-seed bytes at all
+(`SaveWorldFlags`, `WorldFile.cs:1238-1250`), and recovers them from the
+text at load (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), which
+is what `wld.rs` now does instead of discarding the string. The port
+cannot reproduce `GetFullSeedText`'s `size.difficulty.evil.sum.` prefix
+form (no seed text is persisted) — recorded as the one deviation.
+
+`InitializeSecretSeeds` (`WorldGen.cs:553-587`) maps eight of the 37 onto
+`Main.*` statics (vampirism → `vampireSeed`, endlessHalloween →
+`forceHalloweenForever`, …). The port reads those eight directly from the
+flags at their use sites instead of a static pass, and the worldgen arms
+read `MicroSeedFlags` directly — the net effect for each arm is the same
+flag value.
+
+### The arms
+
+Ported (all gated, classic worlds byte-identical): `DoDigExtraHoles` and
+the `surfaceIsInSpace` terrain parameters (the vanilla Grass slot,
+`WorldGen.cs:12423`); `extraLivingTrees`
+(`:15494-15623` + `extraLivingTreesReducedAmount`),
+`extraFloatingIslands` (`:12942-13119` + its two Variations),
+`biggerAbandonedHouses` (`:433-447`), `noSpiderCaves`' pass skip and the
+`ILied` wall sweep (`:17358`, `:2618-2630`); the surface conversions
+`DoSurfaceIsDesert` (+ Finish), `DoSurfaceIsInSpace`,
+`DoSurfaceIsMushrooms`, `DoWorldIsFrozen`, `DoNoInfection`,
+`DoHallowOnSurface`, `DoWorldIsInfected`, `DoStartInHardmode` and
+`DoPooEverywhere` — the three Convert-driven ones go through
+`spread.rs`'s opened `convert_tile`/`convert_wall`/`convert_tile_hallow`/
+`convert_wall_hallow` (the port's own conversion tables, applied per cell
+with the C#'s per-column type decision, including the drunk
+`GenVars.crimsonLeft` half split); the `actuallyNoTraps` kill and
+treasure-ring sweeps; the `paintEverythingGray`/`Negative` and
+`coatEverythingEcho`/`Illuminant` sweeps with all nine `Variations`
+predicates ported (`WorldGen.cs:43-337`, the count gates reading
+`active_secret_seed_count`); `DoRainbowStuff`'s kinds; and the runtime
+arms (the endless-holiday loot + spawner arms, vampirism's shop/pot/
+regen/Zoologist, `halloweenGen`'s `PlacePumpkin`/`GrowPumpkin`/surface
+body, and the `SpawnStormLightning` gates).
+
+### Deferred families (each a whole subsystem)
+
+- `noSurface` (`DoNoSurface` + `DoNoSurfaceFillTheTop` + the ~25 pass
+  gates + the missing SpawnPoint/RandomizeWorldSpawn family);
+- `roundLandmasses` / `errorWorld` (`DoRoundLandMasses`,
+  `DoErrorWorldShuffleBlocks`, the chest half, the missing shimmer-tile
+  table);
+- `extraLiquid` (`DoExtraLiquidAddLiquid`/`AddBubbleBlocks`/`Finish` — the
+  port has no worldgen `QuickWater` settle);
+- `dualDungeons` (a second dungeon generator + the bounds system ~35 sites
+  read — overlaps M5-DUNGEON);
+- `teamBasedSpawns` (`ExtraSpawnPointManager`), `randomSpawn`
+  (`RandomizeWorldSpawn`/`Spawn_IsAreaValidSpawn`), `addTeleporters`
+  (`TeleporterGenerator`), `graveyardBloodmoonStart` (the port has no
+  graveyard biome);
+- the chest/NPC rows inside the ported passes (the port generates chests
+  as tiles without inventories: echo's 1-in-25 item 4409, the frozen
+  finish's Present 1869 + the Guide→Santa swap, `DoPortalGunInChests`);
+- `rainsForAYear`'s world side (`Main.rainTime`/`cloudAlpha` live in
+  tr-app's `Rain`, which the worldgen cannot reach);
+- the `DoSurfaceIsMushrooms` `Convert(k, l, 3, 0)` arms (no mushroom
+  conversion table in the port — the direct-equivalent writes are ported);
+- `DoRainbowStuff`'s frame re-writes and the thunder-bolt projectile arms
+  of `moreLightning`/`noLightning` (`Projectile.cs:12776/14823/39871`).
+ 2397c90 (M5-SEED-2: the docs — the ROADMAP row, the ANALYSIS section and the PORT_MAP rows)
