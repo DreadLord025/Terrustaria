@@ -8355,3 +8355,38 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## .trwld v10 — the town NPCs (M6-SAVE-1e)
+
+The town roster moved into the world file — the vanilla's `SaveNPCs` block B
+(`WorldFile.cs:1703-1750`). The port had no persistence at all: every load
+respawned the Guide homeless (the recorded workaround) and the other town
+kinds' homes/names never survived.
+
+- **The shape.** A `u32` count, then per record the kind, the given name
+  (the file's u32 length + UTF-8), the pixel position, the homeless flag and
+  the home tile. The port's internal `NpcKind` id rides where the vanilla
+  writes the netID (the record doc), the `Npc` struct gained the
+  `GivenName` field (`NPC.cs:6497`; empty = the kind's static name, exactly
+  the vanilla's give-it-a-name-at-first-save convention).
+- **The load rule.** `App::new` restores the records through the town
+  spawner (`Npc::spawn_town` + the record's position/home/name) whenever the
+  save carries any; a recordless world (a fresh world, or a pre-v10 save)
+  keeps the vanilla-gen homeless-Guide arrival. The arrival pass's absence
+  checks never double-spawn a restored kind (pinned: exactly one Guide and
+  one Merchant on reload while the other kinds still arrive).
+- **The scope.** `SaveNPCs`'s block A (the shimmered-town list) and block C
+  (`NPCID.Sets.SavesAndLoads` passives) ride the C# arrays the port does not
+  model — recorded as Out. The variation-index `BitsByte` and
+  `homelessDespawn` are skipped for the same reason.
+- Tests: `dw_2_5_the_town_npcs_round_trip_in_v10`,
+  `dw_2_5_a_v9_payload_loads_no_npcs`, `dw_2_5_a_truncated_npc_section_bails`,
+  `dw_2_5_the_npc_section_is_deterministic`, and the app pair
+  `dw_2_5_a_town_npc_round_trips_through_the_app` /
+  `dw_2_5_a_recordless_world_spawns_the_guide`. Suite 2698 / 0.
+
+Out: the remaining C# sections — signs (no port store), `SavedOreTiers`
+(worldgen-local — needs a `World` field), the angler quest state (no port
+fields), the TownManager rooms, the weighted pressure plates (no port store),
+the creative powers/research — each needs its own scope, together with the
+`SaveNPCs` blocks A/C arms listed above.
