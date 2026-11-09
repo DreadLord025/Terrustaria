@@ -1356,6 +1356,29 @@ pub(crate) fn draw_npcs(
                 [38.0, 38.0],
                 [n.x, n.y],
             ),
+            // The pillar worms: the crawltipede chain's 20x20 single
+            // frames (the vanilla assembles the chain from the head's
+            // spawn) and the stardust worm head.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(20.0, |t| t.h / 1.0),
+                [20.0, 20.0],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustWormHead => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(32.0, |t| t.h / 1.0),
+                [32.0, 32.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarSpearman => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 10.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
             NpcKind::SolarSelenian => (
                 assets.tower_mobs.as_ref(),
                 assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 8.0),
