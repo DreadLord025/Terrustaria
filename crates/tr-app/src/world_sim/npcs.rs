@@ -5817,6 +5817,187 @@ mod tower_shield_tests {
 }
 
 #[cfg(test)]
+mod nebula_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_nebula_trio_round_trips_its_rows() {
+        // The three nebula pillar mobs (`NPC.cs`'s cases 420/421/424):
+        // the port ids 130-132, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::NebulaFloater, 130u16, 40.0, 40.0, 1300, 75, 20, 0.5),
+            (NpcKind::BrainSuckler, 131, 44.0, 44.0, 330, 70, 34, 0.5),
+            (NpcKind::Predictor, 132, 22.0, 56.0, 700, 80, 30, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_floater_emits_the_574_on_its_60_tick_cadence() {
+        // `AI()`'s aiStyle-97 block (`NPC.cs:39485-39496`): the first 180
+        // ticks throw the 574 (0 damage) every 60 from the ±π/2 (4, 2.5)
+        // ring resampled until |X| >= 1.5.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..62 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the 574 fires");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 574, "the projection");
+        assert_eq!(shot.5, 0, "the zero-damage emission");
+    }
+
+    #[test]
+    fn the_floater_teleports_on_the_480th_tick() {
+        // `:39566-39615`'s teleport cycle: the 480-tick counter arms the
+        // 20-tick fade, and the hop lands the floater at the chosen tile.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 470.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (before_x, before_y) = (n.x, n.y);
+        let mut rng = 7u64;
+        let mut hopped = false;
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[1] > 0.0 {
+                hopped = true;
+                break;
+            }
+        }
+        assert!(hopped, "the teleport is armed");
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(
+            (n.x - before_x).abs() > 16.0 || (n.y - before_y).abs() > 16.0,
+            "the floater moved: {} -> {}, {} -> {}",
+            before_x,
+            n.x,
+            before_y,
+            n.y
+        );
+    }
+
+    #[test]
+    fn the_suckler_attaches_under_40px_and_obstructs() {
+        // `AI()`'s aiStyle-85 421 arm (`NPC.cs:37013-37033` + the phase-5
+        // ride): under 40 px of the player's Top the suckler snaps, arms
+        // `ai[0] = 5` and asks for the Obstructed buff (163, 59).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::BrainSuckler, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the approach phase
+        player.x = 150.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut obstructed = false;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_obstruct {
+                obstructed = true;
+                break;
+            }
+        }
+        assert_eq!(n.ai[0], 5.0, "the attached state");
+        assert!(obstructed, "the obstruct buff request");
+        assert!((n.vx).abs() < 0.01, "the attached velocity zeroes");
+    }
+
+    #[test]
+    fn the_predictor_fires_the_573_fan() {
+        // `AI_003_Fighters`'s 424 arm (`NPC.cs:59159-59192`/`:59475`/`:59578`):
+        // the 180-tick cycle fires four 573s (60) in the `(-3 + 2*i) * 0.15`
+        // fan from the muzzle `(direction * 4, -6)`.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::Predictor, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the four-shot fan");
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 573, "the nebula piercer");
+            assert_eq!(shot.5, 60, "the classic damage constant");
+            assert!(
+                (shot.1 - (cx + n.sprite_dir as f32 * 4.0)).abs() < 8.0,
+                "the muzzle X: {}",
+                shot.1
+            );
+            assert!((shot.2 - (cy - 6.0)).abs() < 8.0, "the muzzle Y: {}", shot.2);
+        }
+    }
+}
+
+#[cfg(test)]
 mod vortex_trio_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;

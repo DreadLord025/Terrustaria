@@ -237,6 +237,10 @@ pub(crate) struct NpcAssets {
     /// `NPC_426` — the VortexHunter (15 rows of 50x62), `NPC_427` —
     /// the VortexAlien (9 rows of 40x28), `NPC_428` — the
     /// VortexHeadcrab (5 rows of 24x26).
+    /// `NPC_420` — the NebulaFloater (6 rows of 40x40), `NPC_421` — the
+    /// BrainSuckler (6 rows of 44x44), `NPC_424` — the Predictor (12
+    /// rows of 22x56).
+    pub(crate) nebula_trio: Option<BgTex>,
     pub(crate) vortex_trio: Option<BgTex>,
     pub(crate) moon_lord_parts: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
@@ -358,6 +362,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        nebula_trio: sky_tex(atlas, "NPC_420", None),
         vortex_trio: sky_tex(atlas, "NPC_426", None),
         moon_lord_parts: sky_tex(atlas, "NPC_396", None),
         prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
@@ -1296,6 +1301,26 @@ pub(crate) fn draw_npcs(
                 assets.vortex_trio.as_ref(),
                 assets.vortex_trio.as_ref().map_or(26.0, |t| t.h / 15.0),
                 [24.0, 26.0],
+                [n.x, n.y],
+            ),
+            // The nebula trio: the floater 40x40 / the suckler 44x44 / the
+            // predictor 22x56 over the 420 sheet's 6 rows.
+            NpcKind::NebulaFloater => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(40.0, |t| t.h / 6.0),
+                [40.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::BrainSuckler => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(44.0, |t| t.h / 6.0),
+                [44.0, 44.0],
+                [n.x, n.y],
+            ),
+            NpcKind::Predictor => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(56.0, |t| t.h / 6.0),
+                [22.0, 56.0],
                 [n.x, n.y],
             ),
             NpcKind::VortexRifleman | NpcKind::VortexSoldier => (

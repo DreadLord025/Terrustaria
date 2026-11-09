@@ -269,6 +269,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::VortexHunter
         | NpcKind::VortexAlien
         | NpcKind::VortexHeadcrab
+        | NpcKind::NebulaFloater
+        | NpcKind::BrainSuckler
+        | NpcKind::Predictor
         | NpcKind::StardustCellBig
         | NpcKind::StardustCellSmall
         | NpcKind::StardustJellyfishBig
