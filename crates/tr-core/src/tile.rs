@@ -96,6 +96,13 @@ impl Tile {
         self.flags & FLAG_FULLBRIGHT != 0
     }
 
+    /// `Tile.actuator` (`Tile.cs:691-694`): the actuator bit — an actuated
+    /// tile renders inert and stops being solid.
+    #[inline]
+    pub fn actuator(&self) -> bool {
+        self.flags & FLAG_ACTUATOR != 0
+    }
+
     /// `Tile.topSlope`: slope 1 or 2.
     #[inline]
     pub fn top_slope(&self) -> bool {
