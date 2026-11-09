@@ -54,7 +54,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
     };
     // The closure's disjoint field captures keep the step borrow
-    // (`projectile_step`) apart from the pool/world/npcs/player set.
+    // (`projectile_step`) apart from the pool/world/npcs/player set. The
+    // yoyo rolls (`Projectile.cs:67746`'s jitter, `:67886`'s beam rolls,
+    // `:68041`'s penetrate roll) draw from the app's item stream — the
+    // port's `Main.rand` analogue, the same stream the throw's crit roll
+    // uses.
+    let mut rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -62,6 +67,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             owner,
             app.player.as_mut(),
             inputs,
+            &mut rng,
         );
     });
     app.projectile_step.cap_backlog();

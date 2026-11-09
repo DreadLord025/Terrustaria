@@ -289,6 +289,10 @@ pub struct ProjData {
     /// `Projectile.scale` — the SetDefaults value; the stock 1f except the
     /// yoyo family's ladder (the yoyo rows carry it for the render row).
     pub scale: f32,
+    /// `usesIDStaticNPCImmunity` + `idStaticNPCHitCooldown` (the stock -1,
+    /// `:466`): the Terrarian pair's slice (`:6068-6069`, `:6081-6082`).
+    pub uses_id_static: bool,
+    pub id_static_hit_cooldown: i32,
 }
 
 /// `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`) — the
@@ -388,6 +392,53 @@ fn yoyo_max_range(kind: u16) -> f32 {
 
 fn yoyo_top_speed(kind: u16) -> f32 {
     yoyo_table(YOYO_TOP_SPEED, 10.0, kind)
+}
+
+/// The Terrarian's beam scan's `Collision.CanHit` gate (`Projectile.cs:67804`,
+/// `Collision.cs:381+`): the two centers' tile walk. The C# `CanHit` is a
+/// box-vs-box LOS; the port walks the centers' segment against the solid,
+/// non-platform tiles (the same `tileSolid` shape `ai_spear`'s scan uses) —
+/// the approximation is recorded in ANALYSIS.
+fn yoyo_can_hit(world: &World, x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+    let steps = ((x2 - x1).abs().max((y2 - y1).abs()) / 8.0).ceil() as i32;
+    for s in 0..=steps.max(1) {
+        let t = s as f32 / steps.max(1) as f32;
+        let tx = (x1 + (x2 - x1) * t) / TILE_PX;
+        let ty = (y1 + (y2 - y1) * t) / TILE_PX;
+        let Some(tile) = world.tile(tx as i32, ty as i32) else {
+            continue;
+        };
+        if tile.active()
+            && tr_core::tiledata::TILE_SOLID.has(tile.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(tile.kind)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// The Terrarian's beam spawn — `AI_099_2_Yoyos`'s
+/// `Projectile.NewProjectile(…, 604, …)` (`Projectile.cs:67815`). The arm
+/// runs on one slot (it cannot reach the pool's slot array), so the spawn
+/// rides out like `Wiring`'s trap requests; the idStatic-10 slice is the
+/// beam's own `proj_data`.
+pub(crate) struct YoyoBeamRequest {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub knock_back: f32,
+}
+
+/// What one yoyo AI tick hands back to the pool: the owner-wide lifetime
+/// sweep (`Projectile.cs:67764-67771`) and the Terrarian's beam request —
+/// both write across the pool's slot array.
+#[derive(Default)]
+struct YoyoTick {
+    sweep: bool,
+    beam: Option<YoyoBeamRequest>,
 }
 
 /// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
@@ -549,6 +600,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | VALOR_YOYO
             | TERRARIAN_YOYO
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
+            // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
+            TERRARIAN_BEAM => (14.0, 14.0, 115, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
@@ -592,6 +646,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         arrow,
         trap,
         scale: set_defaults_scale(kind),
+        // `DefaultToYoyo` sets no immunity slice (`:10764-10771`) — only the
+        // Terrarian pair carries the idStatic-10 (`:6068-6069`, `:6081-6082`).
+        uses_id_static: matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM),
+        id_static_hit_cooldown: if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM) {
+            10
+        } else {
+            -1
+        },
     })
 }
 
@@ -650,6 +712,10 @@ pub struct Projectile {
     /// `Projectile.scale` from `SetDefaults` — the yoyo family's ladder; the
     /// render row reads it, the AI does not.
     pub scale: f32,
+    /// `Projectile.alpha` (the stock 0) — the render fade; the yoyo ghost sets
+    /// 255 (`:68034`) and the Terrarian beam's 115 arm fades it out
+    /// (`:34431-34436`).
+    pub alpha: i32,
     bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
@@ -690,6 +756,7 @@ impl Default for Projectile {
             trap: false,
             direction: 1,
             scale: 1.0,
+            alpha: 0,
             bounces: 0,
             falling_tile: None,
             detonated: false,
@@ -740,36 +807,104 @@ impl Projectile {
     /// The aiStyle-99 yoyo family — `AI_099_2_Yoyos`, `Projectile.cs:67733-
     /// 68105`: the single-yoyo string lifecycle (the lifetime clock, the
     /// flight with the aim-seeking orbit, the return, the dropped and ghost
-    /// states, the rotation) plus the generic tile slide. The double-yoyo
-    /// `flag`, the lifetime sweep, the Terrarian's beams (this signature's
-    /// NPC slice), the per-type specials and the RNG rolls land with the next
-    /// phase; the accessory terms (yoyoString/magicString/meleeSpeed) stay at
-    /// their base values until M3-EQUIP-3.
+    /// states, the rotation) plus the generic tile slide, the double-yoyo
+    /// `flag` arm, the lifetime sweep, the Terrarian's beam timer and the
+    /// per-type specials. The accessory terms (yoyoString/magicString/
+    /// meleeSpeed) stay at their base values until M3-EQUIP-3.
+    ///
+    /// Returns the [`YoyoTick`] — the pool-side effects the arm cannot write
+    /// itself (the sweep and the beam spawn).
+    #[allow(clippy::too_many_arguments)]
     fn ai_yoyo(
         &mut self,
         world: &World,
-        _npcs: &[Npc],
+        npcs: &[Npc],
         owner: Option<(f32, f32)>,
+        flag: bool,
         inputs: YoyoInputs,
-    ) {
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> YoyoTick {
         let cx = self.pos.x + self.w * 0.5;
         let cy = self.pos.y + self.h * 0.5;
+        let mut tick = YoyoTick::default();
 
-        // `:67745-67774` — the lifetime clock: `localAI[0]++`, the seconds
+        // `:67745-67774` — the lifetime clock: `localAI[0]++` (the double
+        // yoyo's jitter draws from the seeded stream), the seconds
         // (`/ 60f` — the division by `((1 + meleeSpeed) / 2)` is 1/1 at the
-        // port's default meleeSpeed) against the per-yoyo table; the
-        // `yoyoString` ×1.5 arm and the owner-wide sweep follow M3-EQUIP-3.
+        // port's default meleeSpeed) against the per-yoyo table.
         self.local_ai[0] += 1.0;
+        if flag {
+            // `:67746-67749`.
+            self.local_ai[0] += rng.next_range(10, 31) as f32 * 0.1;
+        }
         let lifetime = yoyo_lifetime(self.kind);
         if lifetime != -1.0 && self.local_ai[0] / 60.0 > lifetime {
             self.ai[0] = -1.0;
+            // `:67764-67773` — the owner-wide sweep rides the tick out (this
+            // slot included; setting it here is idempotent).
+            tick.sweep = true;
+        }
+
+        // `:67776-67818` — the Terrarian's beam timer. The `ai[0] != 3f` gate
+        // is verbatim from the source (an aim exactly at x = 3 is the only
+        // state it excludes — ANALYSIS).
+        if self.kind == TERRARIAN_YOYO && self.ai[0] != 3.0 {
+            self.local_ai[1] += 1.0;
+            if self.local_ai[1] >= 6.0 {
+                // The three rolls (`:67786-67793`): the ±1.0 direction, the
+                // 0.1..4.0 speed (doubled a third of the time).
+                let mut jx = 0.0f32;
+                let mut jy = 0.0f32;
+                while jx == 0.0 && jy == 0.0 {
+                    jx = rng.next_range(-100, 101) as f32;
+                    jy = rng.next_range(-100, 101) as f32;
+                }
+                let jl = (jx * jx + jy * jy).sqrt();
+                let mut mag = rng.next_range(10, 41) as f32 * 0.1;
+                if rng.next_range(0, 3) == 0 {
+                    mag *= 2.0;
+                }
+                // `:67795-67796` — the quarter of the yoyo's own velocity.
+                let mut bx = self.vel.x * 0.25 + jx / jl * mag;
+                let mut by = self.vel.y * 0.25 + jy / jl * mag;
+                // `:67797-67813` — the closest chasable NPC within the 400 px
+                // manhattan distance behind the `CanHit` gate retargets the
+                // beam at 8 px/tick straight at it.
+                let mut closest = 400.0f32;
+                for n in npcs.iter() {
+                    if n.hp <= 0 {
+                        continue;
+                    }
+                    let (nx, ny) = n.center();
+                    let d = (cx - nx).abs() + (cy - ny).abs();
+                    if d < closest && yoyo_can_hit(world, cx, cy, nx, ny) {
+                        closest = d;
+                        let l = d.max(f32::EPSILON);
+                        bx = (nx - cx) / l * 8.0;
+                        by = (ny - cy) / l * 8.0;
+                    }
+                }
+                // `:67814` — the ×0.8 damp, the spawn at the center minus the
+                // beam velocity (`:67815`).
+                bx *= 0.8;
+                by *= 0.8;
+                tick.beam = Some(YoyoBeamRequest {
+                    x: cx - bx,
+                    y: cy - by,
+                    vx: bx,
+                    vy: by,
+                    damage: self.damage,
+                    knock_back: self.knock_back,
+                });
+                self.local_ai[1] = 0.0;
+            }
         }
 
         // `:67824-67828` — the owner's death kills the string.
         if inputs.player_dead {
             self.active = false;
             self.time_left = 0;
-            return;
+            return tick;
         }
 
         // `:67829-67852` — the pose block's `direction` write (the ±2 px X
@@ -791,7 +926,7 @@ impl Projectile {
         if !self.vel.x.is_finite() || !self.vel.y.is_finite() {
             self.active = false;
             self.time_left = 0;
-            return;
+            return tick;
         }
 
         // `:67857` — the keep-alive.
@@ -805,11 +940,19 @@ impl Projectile {
         let mut speed = yoyo_top_speed(self.kind);
         let mut arrive = 3.0f32;
         let range = yoyo_max_range(self.kind);
+        // `:67864-67867` — the Kraken's ×0.75 top speed under the double.
+        if self.kind == KRAKEN_YOYO && flag {
+            speed *= 0.75;
+        }
         // The yoyoString range boost (`num11 * 1.25f + 30f`) and the
         // meleeSpeed division (`(1 + meleeSpeed * 3f) / 4f`) are 1/1 at the
         // defaults — M3-EQUIP-3 flips them.
         accel = (14.0 - speed / 2.0).max(1.0);
         arrive = 5.0 + speed / 2.0;
+        // `:67894-67897` — the double yoyo's wider arrive radius.
+        if flag {
+            arrive += 20.0;
+        }
 
         // `:67898-68021` — the flight state. The orphan guard: without the
         // player link the slot cannot fly.
@@ -899,22 +1042,48 @@ impl Projectile {
                     let py = self.vel.y;
                     self.vel.x = (px * (accel - 1.0) + vx) / accel;
                     self.vel.y = (py * (accel - 1.0) + vy) / accel;
+                } else if flag {
+                    // `:68003-68011` — the double yoyo's 0.6-speed floor keeps
+                    // the pair moving while it orbits.
+                    if self.vel.length() < speed * 0.6 {
+                        let l = self.vel.length();
+                        let mut nx = if l > 0.0 { self.vel.x / l } else { 0.0 };
+                        let mut ny = if l > 0.0 { self.vel.y / l } else { 0.0 };
+                        nx *= speed * 0.6;
+                        ny *= speed * 0.6;
+                        let px = self.vel.x;
+                        let py = self.vel.y;
+                        self.vel.x = (px * (accel - 1.0) + nx) / accel;
+                        self.vel.y = (py * (accel - 1.0) + ny) / accel;
+                    }
                 } else {
-                    // The hover (`:68012-68015`); the double-yoyo `flag`'s
-                    // 0.6-speed floor lands with the next phase.
+                    // The hover (`:68012-68015`).
                     self.vel *= 0.8;
+                }
+                // `:68016-68020` — the floor's second arm, outside the far
+                // state.
+                if flag && !flag3 && self.vel.length() < speed * 0.6 {
+                    let l = self.vel.length();
+                    let s = speed * 0.6 / l.max(f32::EPSILON);
+                    self.vel *= s;
                 }
             }
         }
 
-        // `:68032-68036` — the Magic String's ghost: no damage. (Its spawn
-        // path rides M3-EQUIP-3's magicString flag.)
+        // `:68032-68036` — the Magic String's ghost: no damage, full alpha.
+        // (Its spawn path rides M3-EQUIP-3's magicString flag.)
         if self.ai[0] == -3.0 {
             self.damage = 0;
+            self.alpha = 255;
         }
 
         // `:68037-68077` — the dropped twin; else `:68078-68095` — the return.
         if self.ai[0] == -2.0 {
+            // `:68039-68042` — the roll only while the penetrate sits below
+            // zero (`Main.rand.Next(3, 7)`).
+            if self.penetrate < 0 {
+                self.penetrate = rng.next_range(3, 7);
+            }
             self.vel.y += 0.3;
             if self.vel.length() > 16.0 {
                 let s = 16.0 / self.vel.length();
@@ -960,9 +1129,9 @@ impl Projectile {
             }
         }
 
-        // `:68096-68103` — the rotation. The Kraken's `direction` spin in
-        // every state lands with the next phase.
-        if self.ai[0] == -2.0 {
+        // `:68096-68103` — the rotation: 0.45 × direction for the dropped twin
+        // and the Kraken (it always spins), 0.45 for the rest.
+        if self.ai[0] == -2.0 || self.kind == KRAKEN_YOYO {
             self.rot += 0.45 * self.direction as f32;
         } else {
             self.rot += 0.45;
@@ -986,6 +1155,46 @@ impl Projectile {
                 self.h,
                 fall,
                 fall,
+            );
+            self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        self.pos += self.vel;
+        tick
+    }
+
+    /// The aiStyle-115 arm — the Terrarian's beams (`AI()`'s inline
+    /// `else if (this.aiStyle == 115)`, `Projectile.cs:34414-34437`): the
+    /// 0.985 damp, the velocity-driven rotation ±0.08, and the 30-tick alpha
+    /// fade that kills it. The `Lighting.AddLight` (`:34416`) is the render
+    /// row's — a documented skip.
+    fn ai_yoyo_beam(&mut self, world: &World) {
+        self.vel *= 0.985;
+        self.rot += self.vel.x * 0.2;
+        if self.vel.x > 0.0 {
+            self.rot += 0.08;
+        } else {
+            self.rot -= 0.08;
+        }
+        self.ai[1] += 1.0;
+        if self.ai[1] > 30.0 {
+            self.alpha += 10;
+            if self.alpha >= 255 {
+                self.alpha = 255;
+                self.active = false;
+                self.time_left = 0;
+            }
+        }
+        // The generic movement: the beam keeps `tileCollide`, so the
+        // `HandleMovement` slide applies.
+        if self.tile_collide {
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                true,
+                true,
             );
             self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
         }
@@ -1600,8 +1809,8 @@ impl ProjectilePool {
             penetrate: data.penetrate,
             uses_local_immunity: false,
             local_hit_cooldown: -2,
-            uses_id_static_immunity: false,
-            id_static_hit_cooldown: -1,
+            uses_id_static_immunity: data.uses_id_static,
+            id_static_hit_cooldown: data.id_static_hit_cooldown,
             extra_updates: data.extra_updates,
             ai: [ai0, ai1, 0.0],
             w: data.w,
@@ -1630,6 +1839,7 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
     ) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
@@ -1651,17 +1861,58 @@ impl ProjectilePool {
                 }
                 // The aiStyle dispatch: the arrow/bullet family (aiStyle 1,
                 // `AI()`: `if (this.aiStyle == 1) this.AI_001();`), the
-                // spear/dart family (aiStyle 14) and the yoyo family
-                // (aiStyle 99, `:33156-33163`'s `else if (this.aiStyle == 99)`
-                // → `AI_099_2_Yoyos`). The falling-tile mode keeps its custom
-                // flight.
+                // spear/dart family (aiStyle 14), the yoyo family (aiStyle 99,
+                // `:33156-33163`'s `else if (this.aiStyle == 99)` →
+                // `AI_099_2_Yoyos`) and the yoyo beams (aiStyle 115,
+                // `:34414-34437`). The falling-tile mode keeps its custom flight.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
                         1 => self.slots[i].ai_arrow(world),
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
-                        99 => self.slots[i].ai_yoyo(world, npcs, owner, inputs),
+                        115 => self.slots[i].ai_yoyo_beam(world),
+                        99 => {
+                            // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
+                            // active slot below this index, same owner and
+                            // kind, `ai[0] >= -1f` — the double yoyo (the Yoyo
+                            // Glove's second copy).
+                            let (slot_owner, slot_kind) = {
+                                let p = &self.slots[i];
+                                (p.owner, p.kind)
+                            };
+                            let flag = self.slots[..i].iter().any(|p| {
+                                p.active && p.owner == slot_owner && p.kind == slot_kind && p.ai[0] >= -1.0
+                            });
+                            let tick =
+                                self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
+                            // `:67764-67771` — the sweep flips the whole
+                            // owner's aiStyle-99 set with `ai[0] >= 0f` to the
+                            // return state.
+                            if tick.sweep {
+                                for p in self.slots.iter_mut() {
+                                    if p.active
+                                        && p.owner == slot_owner
+                                        && YOYO_KINDS.contains(&p.kind)
+                                        && p.ai[0] >= 0.0
+                                    {
+                                        p.ai[0] = -1.0;
+                                    }
+                                }
+                            }
+                            // `:67815` — the Terrarian's beam spawn.
+                            if let Some(b) = tick.beam {
+                                self.spawn_with_data(
+                                    TERRARIAN_BEAM,
+                                    b.x,
+                                    b.y,
+                                    b.vx,
+                                    b.vy,
+                                    b.damage,
+                                    b.knock_back,
+                                );
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1958,7 +2209,7 @@ mod tests {
             0.0,
         );
         assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
-        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default());
+        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
         // The friendly shuriken at the same spot never hurts the player.
@@ -1980,6 +2231,7 @@ mod tests {
             Some((pcx2, pcy2)),
             Some(&mut player2),
             YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
     }
@@ -1991,7 +2243,7 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default());
+        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
     }
 
     #[test]
@@ -2042,7 +2294,7 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default());
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(
             !pool.slots()[slot].active,
             "penetrate 1 → dead after the hit"
@@ -2186,7 +2438,7 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None, None, YoyoInputs::default());
+            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -2208,7 +2460,7 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None, None, YoyoInputs::default());
+        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -2243,7 +2495,7 @@ mod falling_tests {
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -2263,7 +2515,7 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -2306,7 +2558,7 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -2394,13 +2646,13 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert_eq!(
             pool.slots[0].vel.y, 0.0,
             "no gravity for the first 14 ticks"
         );
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -2424,7 +2676,7 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2446,7 +2698,7 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2466,10 +2718,10 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the 6th tick adds 0.2"
@@ -2532,10 +2784,10 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default());
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default());
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -2562,7 +2814,7 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default());
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -2600,7 +2852,7 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default());
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -2626,7 +2878,7 @@ mod boomerang_tests {
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default());
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -2687,7 +2939,7 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
@@ -2718,7 +2970,7 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert!(!pool.slots[0].active);
         assert!(
@@ -2758,7 +3010,7 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -2777,14 +3029,14 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
             "no gravity before tick 5"
         );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default());
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -2877,7 +3129,7 @@ mod bomb_tests {
             .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
             .expect("the Terrarian data row exists");
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default());
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7));
         assert!(pool.slots[wood].active, "the slot survives its first update");
         assert!(pool.slots[terrarian].active);
         assert_eq!(
@@ -2885,8 +3137,8 @@ mod bomb_tests {
             "the lifetime clock ticks on the first update"
         );
         assert_eq!(
-            pool.slots[terrarian].local_ai[1], 0.0,
-            "the beam timer waits for its phase"
+            pool.slots[terrarian].local_ai[1], 1.0,
+            "the Terrarian's beam timer ticks on the first update"
         );
         assert!(
             (pool.slots[terrarian].scale - 1.15).abs() < 1e-6,
@@ -2899,6 +3151,7 @@ mod bomb_tests {
 #[cfg(test)]
 mod yoyo_tests {
     use super::*;
+    use crate::npc::{Npc, NpcKind};
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
@@ -2933,6 +3186,12 @@ mod yoyo_tests {
         }
     }
 
+    /// The seeded stream the rolls draw from — a fresh FastRandom per tick
+    /// batch so the determinism pairs replay identically.
+    fn fast_seed() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
     #[test]
     fn the_flight_orbits_the_clamped_aim_point() {
         // `:67932-67950` (the clamp) + `:67985-68015` (the seek + hover). The
@@ -2949,6 +3208,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((420.0, 320.0)), true),
+                &mut fast_seed(),
             );
         }
         let p = &pool.slots[0];
@@ -2975,6 +3235,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((620.0, 320.0)), true),
+            &mut fast_seed(),
         );
         assert_eq!(
             (pool.slots[0].ai[0], pool.slots[0].ai[1]),
@@ -2999,6 +3260,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                &mut fast_seed(),
             );
         }
         assert_eq!(pool.slots[0].local_ai[0], 180.0);
@@ -3009,6 +3271,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            &mut fast_seed(),
         );
         assert_eq!(pool.slots[0].local_ai[0], 181.0);
         assert_eq!(pool.slots[0].ai[0], -1.0, "returned at tick 181");
@@ -3027,6 +3290,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            &mut fast_seed(),
         );
         pool.update(
             &mut w,
@@ -3034,6 +3298,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), false),
+            &mut fast_seed(),
         );
         assert_eq!(pool.slots[0].ai[0], -1.0);
         assert_eq!(pool.slots[0].ai[1], 0.0);
@@ -3056,6 +3321,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((450.0, 320.0)), true),
+                &mut fast_seed(),
             );
         }
         // The owner retreats left: the yoyo sits ~130 px right of the owner's
@@ -3066,6 +3332,7 @@ mod yoyo_tests {
             Some((120.0, 320.0)),
             None,
             inputs(Some((450.0, 320.0)), true),
+            &mut fast_seed(),
         );
         assert_eq!(pool.slots[0].ai[0], -1.0, "the forced return");
     }
@@ -3086,6 +3353,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((320.0, 320.0)), false),
+            &mut fast_seed(),
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "released");
         assert!(
@@ -3109,6 +3377,7 @@ mod yoyo_tests {
             Some((0.0, 320.0)),
             None,
             inputs(Some((2500.0, 320.0)), false),
+            &mut fast_seed(),
         );
         assert!(!pool.slots[slot].active, "the 2500 px stray dies");
     }
@@ -3127,6 +3396,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            &mut fast_seed(),
         );
         assert_eq!(pool.slots[0].time_left, 5, "re-pinned to 6 then decremented");
         pool.update(
@@ -3139,6 +3409,7 @@ mod yoyo_tests {
                 channel: true,
                 player_dead: true,
             },
+        &mut tr_core::tile_light::FastRandom::new(7),
         );
         assert!(!pool.slots[0].active, "the owner's death kills the string");
     }
@@ -3157,6 +3428,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            &mut fast_seed(),
         );
         assert!(!pool.slots[slot].active, "the NaN kill");
     }
@@ -3183,6 +3455,7 @@ mod yoyo_tests {
                 Some((416.0, 448.0)),
                 None,
                 inputs(Some((600.0, 448.0)), true),
+                &mut fast_seed(),
             );
             assert!(pool.slots[slot].active, "the yoyo survives the wall");
         }
@@ -3211,6 +3484,7 @@ mod yoyo_tests {
                 Some((500.0, 448.0)),
                 None,
                 YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
             );
         }
         let p = &pool.slots[slot];
@@ -3238,6 +3512,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                &mut fast_seed(),
             );
         }
         assert!(
@@ -3257,6 +3532,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
             );
         }
         assert_eq!(pool.slots[slot].direction, -1, "the nudge points left");
@@ -3265,5 +3541,169 @@ mod yoyo_tests {
             "0.45 x direction: {}",
             pool.slots[slot].rot
         );
+    }
+
+    #[test]
+    fn the_lifetime_sweep_returns_the_pair_together() {
+        // `:67764-67771`: the double yoyo's jitter (`:67746-67749`) ages its
+        // clock faster; when IT expires the sweep flips the whole owner's
+        // aiStyle-99 set with `ai[0] >= 0f` — including the un-aged first
+        // yoyo, whose own clock never reaches its lifetime.
+        let mut pool = ProjectilePool::new();
+        let first = pool
+            .spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let second = pool
+            .spawn_with_data(WOOD_YOYO, 316.0, 316.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let aim = inputs(Some((400.0, 320.0)), true);
+        // Both yoyos fly out to the aim; the double's jitter ages it faster;
+        // its expiry sweeps the pair into the return, where the owner's catch
+        // collects them — the assertions below read the final state.
+        for _ in 0..200 {
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed());
+        }
+        assert!(
+            pool.slots[second].local_ai[0] > pool.slots[first].local_ai[0],
+            "the double's clock runs ahead: {} vs {}",
+            pool.slots[second].local_ai[0],
+            pool.slots[first].local_ai[0]
+        );
+        assert_eq!(pool.slots[second].ai[0], -1.0, "the double expired");
+        assert_eq!(
+            pool.slots[first].ai[0], -1.0,
+            "the sweep returned the first yoyo"
+        );
+        assert!(
+            pool.slots[first].local_ai[0] <= 180.0,
+            "the first yoyo never reached its own lifetime ({})",
+            pool.slots[first].local_ai[0]
+        );
+    }
+
+    #[test]
+    fn the_kraken_halves_its_speed_under_the_double_and_spins_by_direction() {
+        // `:67864-67867` — the Kraken's `num9 *= 0.75f` under the flag; and
+        // `:68096-68098` — the Kraken's rotation is 0.45 × direction in every
+        // state (flying left the pose block sets direction = -1).
+        let mut pool = ProjectilePool::new();
+        let first = pool
+            .spawn_with_data(KRAKEN_YOYO, 312.0, 312.0, 0.0, 0.0, 120, 4.3)
+            .unwrap();
+        let second = pool
+            .spawn_with_data(KRAKEN_YOYO, 316.0, 316.0, 0.0, 0.0, 120, 4.3)
+            .unwrap();
+        let mut w = world();
+        // The aim inside the range so the far arms (`:67964`'s speed ×2)
+        // never engage — the caps under test are the Kraken's 22 and the
+        // double's 16.5.
+        let aim = inputs(Some((420.0, 312.0)), true);
+        let mut max_first = 0.0f32;
+        let mut max_second = 0.0f32;
+        for _ in 0..30 {
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed());
+            max_first = max_first.max(pool.slots[first].vel.length());
+            max_second = max_second.max(pool.slots[second].vel.length());
+        }
+        assert!(
+            max_first > 16.6,
+            "the lone Kraken's 22 px/tick cap: {max_first}"
+        );
+        assert!(
+            max_second <= 16.6,
+            "the double's 16.5 px/tick cap: {max_second}"
+        );
+        // The direction rotation — the aim left of the owner, so the pose
+        // block writes direction = -1 and the Kraken spins backwards.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(KRAKEN_YOYO, 312.0, 312.0, 0.0, 0.0, 120, 4.3)
+            .unwrap();
+        for _ in 0..20 {
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                inputs(Some((120.0, 320.0)), true),
+                &mut fast_seed(),
+            );
+        }
+        assert_eq!(pool.slots[0].direction, -1, "the pose's direction");
+        assert!(
+            pool.slots[0].rot < 0.0,
+            "the Kraken spins by direction: {}",
+            pool.slots[0].rot
+        );
+    }
+
+    #[test]
+    fn the_terrarian_fires_beams_on_its_timer() {
+        // `:67776-67818` — the 6-tick timer spawns 604 retargeted at the
+        // nearest chasable NPC behind the `CanHit` gate; `:34414-34437` — the
+        // beam damps 0.985 a tick and fades out at 30.
+        let mut pool = ProjectilePool::new();
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 312.0, 312.0, 0.0, 0.0, 190, 6.5)
+            .unwrap();
+        assert!(
+            pool.slots[terrarian].uses_id_static_immunity
+                && pool.slots[terrarian].id_static_hit_cooldown == 10,
+            "the Terrarian's idStatic-10 slice"
+        );
+        let mut npcs = vec![
+            Npc::new(NpcKind::Slime, 430.0, 312.0, 1, 0.0),
+            Npc::new(NpcKind::Slime, 312.0, 312.0 - 400.0, 1, 0.0),
+        ];
+        let mut w = world();
+        let aim = inputs(Some((400.0, 312.0)), true);
+        let mut beam = None;
+        for _ in 0..6 {
+            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed());
+            beam = beam.or_else(|| {
+                (0..MAX_PROJECTILES).find(|&i| {
+                    pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM
+                })
+            });
+        }
+        let beam = beam.expect("the 6-tick beam spawn");
+        // The retarget: the near slime at (438, 320) — the beam's velocity
+        // points right and down by the 6.4 px/tick (8 × 0.8) aim.
+        let v = pool.slots[beam].vel;
+        assert!(v.x > 0.0 && v.y > 0.0, "the beam retargets at the slime: {v:?}");
+        assert!(
+            v.length() > 5.0 && v.length() < 8.0,
+            "the 8 px/tick aim after the ×0.8 damp: {}",
+            v.length()
+        );
+        // The beam's own life: the damp, then the fade-out kill. `:34428`'s
+        // `ai[1] > 30f` starts the fade; alpha climbs 10 a tick to the 255
+        // kill at ~56 ticks. The Terrarian stops firing so the beam's slot is
+        // not recycled by a later spawn.
+        pool.slots[terrarian].active = false;
+        for _ in 0..59 {
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed());
+        }
+        assert!(!pool.slots[beam].active, "the beam fades out and dies");
+        assert_eq!(pool.slots[beam].alpha, 255, "the full fade");
+    }
+
+    #[test]
+    fn the_dropped_twins_penetrate_roll_is_seeded() {
+        // `:68039-68042` — the roll is drawn from the seeded stream; two
+        // identical runs land the same value (3..7 exclusive).
+        let roll_once = || {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 432.0, 320.0, 0.0, 0.0, 9, 2.5, -2.0, 0.0)
+                .unwrap();
+            let mut w = world();
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed());
+            pool.slots[slot].penetrate
+        };
+        let a = roll_once();
+        let b = roll_once();
+        assert_eq!(a, b, "the seeded pair rolls identically");
+        assert!((3..7).contains(&a), "the 3..7 roll: {a}");
     }
 }
