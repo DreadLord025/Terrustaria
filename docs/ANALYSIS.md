@@ -6696,6 +6696,38 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Chest loot rows + the family probes (M5-CHEST-gen)
+
+The remaining `AddBuriedChest` tail rows landed 2026-11-09 with two
+corrections to the earlier partial port:
+
+- **The voice-change row was mis-ported.** The 1/12 row at `:37543-37547`
+  calls `WorldGen.AddVoiceChangeItemToChest` → `Item.GetRandomVoiceItem`
+  (`Item.cs:49427-49450`) — a fourteen-item table (`Next(14)` picking
+  5499/5500-5509/5484/5485/5534) with `Prefix(-1)`. The partial port had
+  hard-coded 2195 there (2195 is `flag13`'s guaranteed Lihzahrd Furnace,
+  `:37419-37422`, a different row).
+- **Three family probes read walls the port never writes.** The skyware
+  probe read 216/187 (the vanilla's cloud walls) — the port's floating-island
+  houses write `WALL_CLOUD` = 73 (`islands.rs:26`/`:133`), and the probe now
+  reads that; reading 216 also made it fire inside the underground desert,
+  whose shell wall is 216 (`desert.rs`). The dungeon probe read wall 24 —
+  the port's dungeon pass writes 7/8/9 (`biomes.rs:1754`) and the probe now
+  reads `tr_core::scene::is_dungeon_wall`. The pyramid probe's 187/216 pair
+  is now both written (the pyramid shell 187, the desert hive 216), so it
+  stands.
+- **The anchor gate widened.** The load-time sweep required `frame_x == 0`,
+  so every styled chest was skipped; the left chest cell now decodes as
+  `frame_x / 18` (the port's tile-object frame convention,
+  `tileobject.rs:2072-2082`) and the gate keeps the left half only (the
+  right half is `18 + 18 * style`, also a multiple of 18 — hence the
+  no-chest-to-the-left check). The style feeds the temple rows (16) and will
+  feed the water (17) / jungle (10) families as their chests land.
+- **Odds corrected:** the ice family's Ice Machine is 1/7 (was 1/2) and the
+  Fish 1/50 is new; the skyware pottery row moved from the `wood_family`
+  approximation at 1/2 to the C#'s `flag12` gate (unconditional) plus the
+  Cloud stack.
+
 ## Desert passes (M5-DESERT-structures)
 
 The `Dunes` carver and the `Full Desert` underground desert landed
