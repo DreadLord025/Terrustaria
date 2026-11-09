@@ -66,6 +66,9 @@ pub mod id {
     pub const PLAYER_ACTIVE: u8 = 14; // MessageBuffer.cs:1061-1088
     pub const TILE_BLOCK: u8 = 10; // NetMessage.cs:424-426 / MessageBuffer.cs:889-894
     pub const NET_MODULE: u8 = 82; // NetPacket.cs:19-42 / MessageBuffer.cs:3243-3245
+    pub const NPC_STRIKE: u8 = 28; // NetMessage.cs:844-850 / MessageBuffer.cs:1766-1817
+    pub const PROJECTILE: u8 = 27; // NetMessage.cs:780-841 / MessageBuffer.cs:1711-1763
+    pub const PROJECTILE_DEAD: u8 = 29; // NetMessage.cs case 29 / MessageBuffer.cs:1825-1850
     pub const SECTION_RANGE: u8 = 20; // NetMessage.cs:543-644 / MessageBuffer.cs:1335-1443
     pub const PLAYER_HP: u8 = 16; // MessageBuffer.cs:1095-1112
     pub const PASSWORD_REQUEST: u8 = 37; // MessageBuffer.cs:2203-2216 — no body
@@ -1259,6 +1262,16 @@ pub enum C2s {
         module: u16,
         body: Vec<u8>,
     },
+    /// `28 NPCStrike` — this client's hit on an NPC (`NPC.StrikeNPC`'s
+    /// `fromNet: false` send, `NPC.cs:81218`).
+    NpcStrike(NpcStrike),
+    /// `27 Projectile` — this client's own projectile state (the owner's
+    /// machine simulates and sends, `Projectile.cs:17210-17244`).
+    Projectile(Box<ProjectileState>),
+    /// `29` — one of this client's projectiles is gone.
+    ProjectileDead {
+        key: i32,
+    },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1317,6 +1330,18 @@ pub enum S2c {
         module: u16,
         body: Vec<u8>,
     },
+    /// `27 Projectile` — one projectile's spawn/update state
+    /// (`NetMessage.cs:780-841`).
+    Projectile(Box<ProjectileState>),
+    /// `29` — the projectile is gone (`NetMessage.cs`'s case 29; a NaN
+    /// position deactivates it silently).
+    ProjectileDead {
+        key: i32,
+        x: f32,
+        y: f32,
+    },
+    /// `28 NPCStrike` — a validated strike, relayed by the host.
+    NpcStrike(NpcStrike),
     /// `10 TileBlock` — one section's tile snapshot (the C#'s
     /// `SendSection`, `NetMessage.cs:2697-2712`).
     TileBlock(Box<TileBlock>),
@@ -1369,6 +1394,9 @@ impl C2s {
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::PlayerState(_) => id::PLAYER_STATE,
             Self::NetModule { .. } => id::NET_MODULE,
+            Self::NpcStrike(_) => id::NPC_STRIKE,
+            Self::Projectile(_) => id::PROJECTILE,
+            Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1410,6 +1438,15 @@ impl C2s {
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::Pickup { drop } => w.u32(*drop),
             Self::NetModule { module, body } => w.u16(*module).raw(body),
+            Self::NpcStrike(st) => st.write_to(w),
+            Self::Projectile(p) => return p.frame(),
+            Self::ProjectileDead { key } => {
+                return NetWriter::open(id::PROJECTILE_DEAD)
+                    .i32(*key)
+                    .f32(f32::NAN)
+                    .f32(f32::NAN)
+                    .finish();
+            }
         };
         w.finish()
     }
@@ -1473,6 +1510,9 @@ impl C2s {
                 module: r.u16()?,
                 body: r.rest()?.to_vec(),
             },
+            id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
+            id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
+            id::PROJECTILE_DEAD => Self::ProjectileDead { key: r.i32()? },
             _ => return None,
         })
     }
@@ -1491,6 +1531,9 @@ impl S2c {
             Self::TileBlock(_) => id::TILE_BLOCK,
             Self::SectionRange(_) => id::SECTION_RANGE,
             Self::NetModule { .. } => id::NET_MODULE,
+            Self::Projectile(_) => id::PROJECTILE,
+            Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
+            Self::NpcStrike(_) => id::NPC_STRIKE,
             Self::WorldComplete => id::WORLD_COMPLETE,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
@@ -1516,6 +1559,14 @@ impl S2c {
                 return NetWriter::open(id::NET_MODULE)
                     .u16(*module)
                     .raw(body)
+                    .finish();
+            }
+            Self::Projectile(p) => return p.frame(),
+            Self::ProjectileDead { key, x, y } => {
+                return NetWriter::open(id::PROJECTILE_DEAD)
+                    .i32(*key)
+                    .f32(*x)
+                    .f32(*y)
                     .finish();
             }
             _ => {}
@@ -1558,9 +1609,14 @@ impl S2c {
             Self::Left { id } => w.u32(*id),
             Self::PlayerState(ps) => ps.write_to(w),
             Self::Time { time, day } => w.f64(*time).bool(*day),
+            Self::NpcStrike(st) => st.write_to(w),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             // Returned early above; unreachable through the builder chain.
-            Self::TileBlock(_) | Self::SectionRange(_) | Self::NetModule { .. } => unreachable!(),
+            Self::TileBlock(_)
+            | Self::SectionRange(_)
+            | Self::NetModule { .. }
+            | Self::Projectile(_)
+            | Self::ProjectileDead { .. } => unreachable!(),
         };
         w.finish()
     }
@@ -1606,6 +1662,13 @@ impl S2c {
                 module: r.u16()?,
                 body: r.rest()?.to_vec(),
             },
+            id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
+            id::PROJECTILE_DEAD => Self::ProjectileDead {
+                key: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            },
+            id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
             id::WORLD_COMPLETE => Self::WorldComplete,
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
@@ -2234,6 +2297,195 @@ impl SectionRange {
     }
 }
 
+// ---------------------------------------------------------------------------
+// msg 27 / 29 — the projectile spawn+update and the despawn
+// ---------------------------------------------------------------------------
+
+/// `ProjectileKey`'s packing (`DataStructures/ProjectileKey.cs:16-31`):
+/// bits 0-7 the spawner (the owner), 8-17 the slot index, 18-31 the
+/// generation. The port's pool slots are stable, so the key rides as the
+/// same layout.
+pub fn projectile_key(owner: u8, slot: usize, generation: u16) -> i32 {
+    ((generation as i32) << 18) | ((slot as i32) << 8) | owner as i32
+}
+
+/// The inverse split of [`projectile_key`].
+pub fn projectile_key_parts(key: i32) -> (u8, usize, u16) {
+    let owner = (key & 0xFF) as u8;
+    let slot = ((key >> 8) & 0x3FF) as usize;
+    let generation = ((key >> 18) & 0x3FFF) as u16;
+    (owner, slot, generation)
+}
+
+/// `msg 27`'s body (`NetMessage.cs:780-841`): the key, the position/velocity,
+/// the type and the flag-gated extras. Absent conditional fields read as zero.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjectileState {
+    /// The `ProjectileKey` — see [`projectile_key`].
+    pub key: i32,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub kind: i16,
+    /// `ai[0]` — non-None when flags1 bit 0.
+    pub ai0: Option<f32>,
+    /// `ai[1]` — non-None when flags1 bit 1.
+    pub ai1: Option<f32>,
+    /// `bannerIdToRespondTo` — flags1 bit 3.
+    pub banner_id: u16,
+    /// flags1 bit 4.
+    pub damage: i16,
+    /// flags1 bit 5.
+    pub knock_back: f32,
+    /// flags1 bit 6.
+    pub original_damage: i16,
+    /// `ai[2]` — flags2 bit 0.
+    pub ai2: Option<f32>,
+}
+
+impl ProjectileState {
+    fn flags1(&self) -> u8 {
+        let mut b = 0u8;
+        if self.ai0.is_some() {
+            b |= 0x01;
+        }
+        if self.ai1.is_some() {
+            b |= 0x02;
+        }
+        if self.ai2.is_some() {
+            b |= 0x04;
+        }
+        if self.banner_id != 0 {
+            b |= 0x08;
+        }
+        if self.damage != 0 {
+            b |= 0x10;
+        }
+        if self.knock_back != 0.0 {
+            b |= 0x20;
+        }
+        if self.original_damage != 0 {
+            b |= 0x40;
+        }
+        b
+    }
+
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let flags2 = self.ai2.is_some();
+        let mut w = w
+            .i32(self.key)
+            .f32(self.x)
+            .f32(self.y)
+            .f32(self.vx)
+            .f32(self.vy)
+            .i16(self.kind)
+            .bitsbyte(BitsByte(self.flags1()));
+        if flags2 {
+            w = w.bitsbyte(BitsByte(0x01));
+        }
+        if let Some(v) = self.ai0 {
+            w = w.f32(v);
+        }
+        if let Some(v) = self.ai1 {
+            w = w.f32(v);
+        }
+        if self.banner_id != 0 {
+            w = w.u16(self.banner_id);
+        }
+        if self.damage != 0 {
+            w = w.i16(self.damage);
+        }
+        if self.knock_back != 0.0 {
+            w = w.f32(self.knock_back);
+        }
+        if self.original_damage != 0 {
+            w = w.i16(self.original_damage);
+        }
+        if let Some(v) = self.ai2 {
+            w = w.f32(v);
+        }
+        w
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let key = r.i32()?;
+        let x = r.f32()?;
+        let y = r.f32()?;
+        let vx = r.f32()?;
+        let vy = r.f32()?;
+        let kind = r.i16()?;
+        let f1 = r.bitsbyte()?.0;
+        let f2 = if f1 & 0x04 != 0 { r.bitsbyte()?.0 } else { 0 };
+        Some(Self {
+            key,
+            x,
+            y,
+            vx,
+            vy,
+            kind,
+            ai0: if f1 & 0x01 != 0 { Some(r.f32()?) } else { None },
+            ai1: if f1 & 0x02 != 0 { Some(r.f32()?) } else { None },
+            banner_id: if f1 & 0x08 != 0 { r.u16()? } else { 0 },
+            damage: if f1 & 0x10 != 0 { r.i16()? } else { 0 },
+            knock_back: if f1 & 0x20 != 0 { r.f32()? } else { 0.0 },
+            original_damage: if f1 & 0x40 != 0 { r.i16()? } else { 0 },
+            ai2: if f2 & 0x01 != 0 { Some(r.f32()?) } else { None },
+        })
+    }
+
+    /// Builds the frame `[u16 len][u8 27][body]`.
+    pub fn frame(&self) -> Vec<u8> {
+        self.write_to(NetWriter::open(id::PROJECTILE)).finish()
+    }
+}
+
+/// `msg 28`'s body (`NetMessage.cs:844-850`): the NPC slot, the generation,
+/// the damage, the knockback, the hit direction (offset by one on the wire)
+/// and the crit flag.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcStrike {
+    /// The NPC's slot index.
+    pub npc: u8,
+    /// The generation the sender struck — the host drops a mismatch
+    /// (`MessageBuffer.cs:1781-1784`).
+    pub generation: u8,
+    pub damage: i16,
+    pub knock_back: f32,
+    /// The wire value is `hitDirection + 1`; `0xFF` wraps to 0 for the -1
+    /// sentinel (`NetMessage.cs:847`).
+    pub hit_direction: i8,
+    pub crit: bool,
+}
+
+impl NpcStrike {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.u8(self.npc)
+            .u8(self.generation)
+            .i16(self.damage)
+            .f32(self.knock_back)
+            .u8(self.hit_direction.wrapping_add(1) as u8)
+            .bool(self.crit)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let npc = r.u8()?;
+        let generation = r.u8()?;
+        let damage = r.i16()?;
+        let knock_back = r.f32()?;
+        let hit_direction = (r.u8()? as i8).wrapping_sub(1);
+        let crit = r.bool()?;
+        Some(Self {
+            npc,
+            generation,
+            damage,
+            knock_back,
+            hit_direction,
+            crit,
+        })
+    }
+}
+
 // ===========================================================================
 // Transport — the game-thread-facing queues
 // ===========================================================================
@@ -2847,6 +3099,32 @@ mod tests {
                 tile: 7,
             },
             C2s::Pickup { drop: 3 },
+            C2s::NpcStrike(NpcStrike {
+                npc: 7,
+                generation: 2,
+                damage: -13,
+                knock_back: 5.5,
+                hit_direction: -1,
+                crit: true,
+            }),
+            C2s::Projectile(Box::new(ProjectileState {
+                key: projectile_key(3, 42, 9),
+                x: 16.0,
+                y: -32.5,
+                vx: 1.5,
+                vy: -2.0,
+                kind: 4,
+                ai0: Some(0.25),
+                ai1: None,
+                banner_id: 0,
+                damage: 12,
+                knock_back: 3.0,
+                original_damage: 0,
+                ai2: Some(-1.0),
+            })),
+            C2s::ProjectileDead {
+                key: projectile_key(255, 7, 1),
+            },
         ];
         for msg in &msgs {
             let frame = msg.encode();
@@ -2983,6 +3261,34 @@ mod tests {
                 name: "a".into(),
             },
             S2c::Left { id: 1 },
+            S2c::Projectile(Box::new(ProjectileState {
+                key: projectile_key(0, 5, 2),
+                x: 1.0,
+                y: 2.0,
+                vx: 0.5,
+                vy: -0.5,
+                kind: 6,
+                ai0: None,
+                ai1: Some(1.0),
+                banner_id: 3,
+                damage: 9,
+                knock_back: 0.0,
+                original_damage: 9,
+                ai2: None,
+            })),
+            S2c::ProjectileDead {
+                key: projectile_key(1, 4, 3),
+                x: 8.0,
+                y: 9.0,
+            },
+            S2c::NpcStrike(NpcStrike {
+                npc: 3,
+                generation: 1,
+                damage: 40,
+                knock_back: 2.5,
+                hit_direction: 1,
+                crit: false,
+            }),
             S2c::PlayerState(Box::new(PlayerState {
                 player_id: 1,
                 flags_a: BitsByte(0b0100_0000),
