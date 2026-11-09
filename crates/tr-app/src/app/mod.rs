@@ -422,6 +422,9 @@ pub(crate) struct App {
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
     pub(crate) edit_target: Option<(i32, i32)>,
+    /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
+    /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
+    pub(crate) smart_cursor: tr_core::smart_cursor::ContinuityState,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -2294,6 +2297,7 @@ impl App {
             mine_target: None,
             mine_timer: 0.0,
             edit_target: None,
+            smart_cursor: Default::default(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,
