@@ -4683,6 +4683,10 @@ impl Npc {
             // Case 50 — King Slime (`NPC.cs:73380-73414`): airborne snaps to
             // frame 4, holds it 4 steps, then frame 5; landing returns to 4 and
             // the grounded cycle runs frames 0..=3 (never reaching 4).
+            // Case 50 — King Slime (`NPC.cs:73380-73414`): the 6-row strip
+            // (`Main.npcFrameCount[50]` = 6, NPC_50 = 174x720, 120-px rows);
+            // the air snaps up to row 4 and holds 5, the landing falls back
+            // to 4, the grounded walk rides 0..3 with the `num2` boosts.
             NpcKind::KingSlime => {
                 if self.vy != 0.0 {
                     if self.frame < 4 {
@@ -15344,6 +15348,29 @@ mod tests {
         q.find_frame();
         assert!(q.frame >= 4, "the flight half always rides: {}", q.frame);
     }
+
+    #[test]
+    fn the_king_slime_rides_the_six_row_strip() {
+        // Case 50 (`NPC.cs:73380-73414`): the airborne snap to row 4 and
+        // the held 5, the landing's fall back to 4, the grounded walk's
+        // 0..3 with the `num2` boosts.
+        let mut k = bare(NpcKind::KingSlime);
+        k.vy = 0.5;
+        k.find_frame();
+        assert_eq!(k.frame, 4, "the first airborne tick snaps to row 4");
+        for _ in 0..4 {
+            k.find_frame();
+        }
+        assert_eq!(k.frame, 5, "the air holds row 5");
+        k.vy = 0.0;
+        k.find_frame();
+        assert_eq!(k.frame, 4, "the landing falls back to row 4");
+        for _ in 0..9 {
+            k.find_frame();
+            assert!(k.frame <= 4, "the grounded walk rides 0..4: {}", k.frame);
+        }
+        assert_eq!(k.frame, 0, "the walk wraps at row 4");
+    }
 }
 
 #[cfg(test)]
@@ -15366,6 +15393,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 
