@@ -461,6 +461,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Golfer",
     },
     BestiaryEntryDef {
+        credit_id: "BestiaryGirl",
+        net_id: 633,
+        kind: NpcKind::Zoologist,
+        variant: None,
+        quick_unlock: false,
+        name: "Zoologist",
+    },
+    BestiaryEntryDef {
+        credit_id: "Princess",
+        net_id: 663,
+        kind: NpcKind::Princess,
+        variant: None,
+        quick_unlock: false,
+        name: "Princess",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -1285,6 +1301,49 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
+}
+
+/// `Main.GetBestiaryProgressReport()`'s completion fraction (the
+/// `BestiaryUI` report): the ported entries past the portrait-only tier
+/// over the whole roster. The Zoologist's shop gates read it
+/// (`Chest.cs:3265`).
+pub fn completion_percent(kills: &KillTracker) -> f32 {
+    let seen = ENTRIES
+        .iter()
+        .filter(|e| unlock_state(e, kills).known())
+        .count();
+    seen as f32 / ENTRIES.len() as f32
+}
+
+/// `Main.cs:65944`'s flag9: every other town NPC present — the C#'s 24
+/// counters; the port folds them to its own town roster (the kinds the
+/// port lacks sit in their own tasks), and the debug override
+/// (`NPC.unlockedPrincessSpawn`) opens it without the roster.
+pub(crate) fn all_town_kinds_present(npcs: &[crate::npc::Npc]) -> bool {
+    let alive = |kind: crate::npc::NpcKind| npcs.iter().any(|n| n.kind == kind && n.hp > 0);
+    use crate::npc::NpcKind as K;
+    [
+        K::Guide,
+        K::Merchant,
+        K::Nurse,
+        K::Dryad,
+        K::ArmsDealer,
+        K::Demolitionist,
+        K::Clothier,
+        K::GoblinTinkerer,
+        K::TravellingMerchant,
+        K::Wizard,
+        K::Mechanic,
+        K::Stylist,
+        K::TaxCollector,
+        K::Golfer,
+        K::Zoologist,
+        K::Angler,
+        K::Painter,
+        K::WitchDoctor,
+    ]
+    .iter()
+    .all(|kind| alive(*kind))
 }
 
 /// The entry an NPC death credits — the death hook's

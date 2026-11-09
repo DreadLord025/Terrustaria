@@ -422,10 +422,16 @@ pub fn attempt_grow_tree_from_sapling(
                 try_growing_tree_by_type(world, 634, x, y, rng);
                 true
             } else if (6..=9).contains(&style) {
-                // The C#'s underground gate parks with the underground
-                // dispatcher; the port's overground call grows the palm
-                // shape through the worldgen palms — documented deviation.
-                false
+                // The C#'s underground gate (`:72844-72847`): the
+                // underground call only proceeds on the notTheBees/remix
+                // seeds; the port's overground call always proceeds.
+                if underground
+                    && !world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+                    && !world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+                {
+                    return false;
+                }
+                try_growing_tree_by_type(world, 323, x, y, rng)
             } else {
                 if underground {
                     false
@@ -979,6 +985,72 @@ pub fn update_world_grass_growth(
 /// type match, the surface rule `j >= worldSurface && dirt == 0`, the +-1
 /// solid-neighbour scan with the lava exception, the flower-27 exclusion)
 /// + the write. The infection Convert()/wall arms ride the next slice.
+/// `WorldGen.GrowTreeSettings.Profiles.TryGetFromTreeId` (`:3853-3884`): the
+/// tree tile kind to its profile (the gem trees 583-589, the sakura 596, the
+/// willow 616, the ash 634).
+fn profile_for_tree(kind: u16) -> Option<GrowTreeSettings> {
+    Some(match kind {
+        583..=589 => GrowTreeSettings::GEM_TREE_RUBY,
+        596 => GrowTreeSettings::VANITY_TREE_SAKURA,
+        616 => GrowTreeSettings::VANITY_TREE_WILLOW,
+        634 => GrowTreeSettings::TREE_ASH,
+        _ => return None,
+    })
+}
+
+/// `WorldGen.TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+/// (`:54802-54860`): the tree standing on the spread cell is killed when the
+/// new floor type fails the tree's profile ground test — a forest tree 5
+/// survives only a grass/jungle/snow/mushroom ground, a palm 323 only sand,
+/// and the profile trees their `GroundTest`'s kind.
+///
+/// The 596/616 `ConvertTreeAndGround` arm (the sakura/willow re-grounding to
+/// a vanilla tree on a grass conversion) is the port's Out — the tree-
+/// conversion machinery is not ported.
+fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_floor: u16) {
+    if new_floor as usize >= crate::tiledata::TILE_COUNT {
+        return;
+    }
+    let Some(t) = world.tile(i, j) else {
+        return;
+    };
+    if !t.active() {
+        return;
+    }
+    let Some(above) = world.tile(i, j - 1) else {
+        return;
+    };
+    if !above.active() {
+        return;
+    }
+    let tree_kind = above.kind;
+    if !crate::tree::is_tree(tree_kind) && tree_kind != 323 {
+        return;
+    }
+    let mut ground_ok = true;
+    match tree_kind {
+        // The C#'s `Conversion.Grass` (2/23/199/109/477/492) + `JungleGrass`
+        // (60/661/662) + `Snow` (147) + `MushroomGrass` (70) sets — the port's
+        // `SET_GRASS` is the first; the rest are the literal members (no port
+        // sets carry them).
+        5 => {
+            ground_ok = crate::tiledata::SET_GRASS.has(new_floor)
+                || matches!(new_floor, 60 | 661 | 662 | 147 | 70);
+        }
+        323 => {
+            ground_ok = crate::tiledata::SET_CONVERSION_SAND.has(new_floor);
+        }
+        _ => {}
+    }
+    if let Some(profile) = profile_for_tree(tree_kind) {
+        ground_ok = profile.ground.test(new_floor);
+    }
+    if !ground_ok {
+        let idx = world.index(i, j - 1);
+        world.tiles[idx] = crate::tile::Tile::default();
+    }
+}
+
 pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     let Some(t) = world.tile(i, j) else {
         return;
@@ -1022,16 +1094,50 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     {
         return;
     }
-    let idx = world.index(i, j);
-    world.tiles[idx] = crate::tile::Tile {
-        kind: grass,
-        flags: FLAG_ACTIVE,
-        ..Default::default()
-    };
-    if world.frame_important.len() <= grass as usize {
-        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    // `flag2 = dirt > 0 && TileID.Sets.Conversion.Grass[dirt]` (`:75207`) and
+    // the conversion dispatch (`:75208-75221`): spreading a conversion grass
+    // over a conversion-grass dirt converts the cell through the flavor's
+    // map instead of the plain type write — corruption for 23/661, crimson
+    // for 199/662, hallow for 109. Everything else takes the plain write,
+    // preceded by the tree-invalidity kill.
+    let conversion_dirt = matches!(dirt, 2 | 23 | 199 | 109 | 477 | 492);
+    if conversion_dirt && matches!(grass, 23 | 661) {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Corruption,
+            false,
+        );
+    } else if conversion_dirt && matches!(grass, 199 | 662) {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Crimson,
+            false,
+        );
+    } else if conversion_dirt && grass == 109 {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Hallow,
+            false,
+        );
+    } else {
+        kill_invalid_tree_above(world, i, j, grass);
+        let idx = world.index(i, j);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: grass,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        if world.frame_important.len() <= grass as usize {
+            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        }
+        world.frame_important[grass as usize] = true;
     }
-    world.frame_important[grass as usize] = true;
 }
 
 /// `WorldGen.SolidTile` (`:70111-70131`) — the growth module's own copy of the
@@ -1136,6 +1242,160 @@ fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) -> bool
         return true;
     }
     false
+}
+
+/// `TileID.Sets.IsVine` (`TileID.cs:531`) — the vine kinds the density count
+/// reads.
+const IS_VINE: &[u16] = &[52, 382, 62, 115, 205, 528, 636, 638];
+
+/// `Collision.CanHitLine`'s LOS over the two tile centres: the port's own
+/// Bresenham walk (the shared `smart_cursor` helper is module-private; the C#
+/// call passes 1x1 boxes, so the walk runs centre-to-centre).
+fn can_hit_line(world: &World, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
+    let steep = (y2 - y1).abs() > (x2 - x1).abs();
+    let (mut ax, mut ay, mut bx, mut by) = (x1, y1, x2, y2);
+    if steep {
+        std::mem::swap(&mut ax, &mut ay);
+        std::mem::swap(&mut bx, &mut by);
+    }
+    let dx = (bx - ax).abs();
+    let dy = (by - ay).abs();
+    let sx = if ax < bx { 1 } else { -1 };
+    let sy = if ay < by { 1 } else { -1 };
+    let mut err = dx / 2;
+    let mut i = ax;
+    loop {
+        let (px, py) = if steep { (ay, i) } else { (i, ay) };
+        if world
+            .tile(px, py)
+            .is_some_and(|t| t.active() && growth_solid_kind(t.kind))
+        {
+            return false;
+        }
+        if i == bx {
+            break;
+        }
+        err -= dy;
+        if err < 0 {
+            ay += sy;
+            err += dx;
+        }
+        i += sx;
+    }
+    true
+}
+
+fn growth_solid_kind(kind: u16) -> bool {
+    (kind as usize) < crate::tiledata::TILE_COUNT
+        && crate::tiledata::TILE_SOLID.has(kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(kind)
+}
+
+/// `WorldGen.GrowMoreVines` (`:45586-45621`): the vine-density cap around
+/// `(x, y)` — the ±4/±6/±10 box's vine count, the LOS-weighted accumulation
+/// below the source and the 60 budget (÷5 on the mushroom vine 528).
+fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
+    if x < 30 || y < 30 || x >= world.width - 30 || y >= world.height - 30 {
+        return false;
+    }
+    let (lo_x, lo_y, hi_y, mut num4) = (4, 6, 10, 60);
+    if world.tile(x, y).is_some_and(|t| t.kind == 528) {
+        num4 /= 5;
+    }
+    let mut num5 = 0;
+    for i in (x - lo_x)..=(x + lo_x) {
+        for j in (y - lo_y)..=(y + hi_y) {
+            if world.tile(i, j).is_some_and(|t| t.active() && IS_VINE.contains(&t.kind)) {
+                num5 += 1;
+                if j > y && can_hit_line(world, x, y, i, j) {
+                    let weight = if world.tile(i, j).is_some_and(|t| t.kind == 528) {
+                        20
+                    } else {
+                        2
+                    };
+                    num5 += (j - y) * weight;
+                }
+                if num5 > num4 {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `UpdateWorld_UndergroundTile`'s vine arms (`:73310-73470`): the jungle,
+/// mushroom, corrupt, crimson and ash families grow their vine one row below
+/// at the vanilla odds (the 1/5 jungle arm, the 70/7 odds for the rest,
+/// 7 when the tile is already the vine kind), behind the free-below gate, the
+/// 10-row look-up through the family grass and `GrowMoreVines`' density.
+pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+    let kind = world.tile(i, j).map(|t| (t.active(), t.kind, t.bottom_slope()));
+    let Some((active, kind, bottom_slope)) = kind else {
+        return;
+    };
+    if !active || bottom_slope {
+        return;
+    }
+    // The free-below gate: the cell below the source must be inactive and dry
+    // (the C#'s `!active() && !anyLava()` `:73313`).
+    let below_clear = world
+        .tile(i, j + 1)
+        .is_some_and(|t| !t.active() && t.liquid == 0);
+    if !below_clear {
+        return;
+    }
+    // `(grass, vine, odds, gate)` per family (`:73311-73499`).
+    let (grass, vine, odds, gated) = match kind {
+        60 | 62 => (60, 62, 5, true),
+        633 | 638 => (633, 638, 70, false),
+        70 | 528 => (70, 528, 70, false),
+        661 | 636 => (661, 636, 70, false),
+        662 | 205 => (662, 205, 70, false),
+        _ => return,
+    };
+    let odds = if kind == vine {
+        if gated {
+            odds
+        } else {
+            7
+        }
+    } else {
+        odds
+    };
+    if rng.next(odds) != 0 {
+        return;
+    }
+    if !grow_more_vines(world, i, j) {
+        return;
+    }
+    // The 10-row look-up: the family grass below (a bottom slope aborts).
+    let mut flag = false;
+    let mut n = j;
+    while n > j - 10 {
+        let t = world.tile(i, n);
+        if t.is_some_and(|t| t.bottom_slope()) {
+            flag = false;
+            break;
+        }
+        if t.is_some_and(|t| t.active() && t.kind == grass && !t.bottom_slope()) {
+            flag = true;
+            break;
+        }
+        n -= 1;
+    }
+    if !flag {
+        return;
+    }
+    if let Some(t) = world.tile_mut(i, j + 1) {
+        t.kind = vine;
+        t.flags = FLAG_ACTIVE;
+        t.liquid = 0;
+    }
+    if world.frame_important.len() <= vine as usize {
+        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[vine as usize] = true;
 }
 
 /// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
@@ -1426,6 +1686,64 @@ pub fn update_world(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The underground vine arms (`:73310-73470`): the jungle grass with the
+    /// vine below it grows the vine one row down at the 1/5 arm, behind the
+    /// free-below gate, the 10-row look-up and `GrowMoreVines`' density.
+    #[test]
+    fn the_vine_arms_grow_below_their_grass() {
+        // A jungle-grass column 30..32 with the free cell below (33), far
+        // enough from the world edges for GrowMoreVines' InWorld(30).
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 100.0;
+        for y in 30..=32 {
+            let i = w.index(100, y);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 60,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut grew = 0;
+        let mut runs = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            grow_vine_arm(&mut w, 100, 32, &mut rng);
+            runs += 1;
+            grew += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 62)
+                .count();
+        }
+        assert!(grew > 0, "the jungle arm grows the vine 62 ({grew} over {runs})");
+
+        // The control: the same column with the vine already one below takes
+        // the 70-odds arm of the family (the vine kind's own odds).
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 100.0;
+        for (y, kind) in [(30, 60), (31, 60), (32, 62), (33, 60)] {
+            let i = w.index(100, y);
+            w.tiles[i] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut grew2 = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            grow_vine_arm(&mut w, 100, 33, &mut rng);
+            grew2 += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 62)
+                .count();
+        }
+        assert!(grew2 > 0, "the vine's own arm extends it ({grew2})");
+    }
 
     /// The bamboo arm (`:72154-72156` + `PlaceBamboo` `:58391-58445`): a
     /// bamboo 571 with a free cell above grows a stalk at the vanilla gates —
@@ -1775,6 +2093,57 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn the_palm_sapling_grows_the_leaning_trunk() {
+        // `AttemptToGrowTreeFromSapling`'s style-6-9 arm (`:72838-72848`) →
+        // `TryGrowingTreeByType(323)` → `GrowPalmTree` (`:27116-27202`): the
+        // sand ground, the 10-20 height roll, the base 66-column, the top
+        // 22·Next(4,7) column and the lean walk's frameY offsets.
+        let mut w = world();
+        for dx in -3i32..=3 {
+            put(&mut w, 100 + dx, 220, 53, 0);
+        }
+        put(&mut w, 100, 219, 20, 6 * 54); // the style-6 sapling frame
+        let mut rng = FastRandom::new(11);
+        let grew = attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng);
+        assert!(grew, "the palm sapling grows on sand");
+        assert!(
+            w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 323 && t.frame_x == 66),
+            "the base wrote the 66-column palm"
+        );
+        let trunk: Vec<(i16, i16)> = (195..=219)
+            .filter(|&row| w.tile(100, row).is_some_and(|t| t.active() && t.kind == 323))
+            .map(|row| {
+                let t = w.tile(100, row).unwrap();
+                (t.frame_x, t.frame_y)
+            })
+            .collect();
+        assert!(
+            (10..=20).contains(&trunk.len()),
+            "the trunk spans the height roll ({})",
+            trunk.len()
+        );
+        let top = trunk[0];
+        assert!(matches!(top.0, 88 | 110 | 132), "the top column {top:?}");
+    }
+
+    #[test]
+    fn the_palm_sapling_refuses_the_wrong_ground() {
+        // A sapling over non-sand ground never grows a palm (the ground
+        // test at `:27147-27149`).
+        let mut w = world();
+        for dx in -3i32..=3 {
+            put(&mut w, 100 + dx, 220, 2, 0); // forest grass, not sand
+        }
+        put(&mut w, 100, 219, 20, 6 * 54);
+        let mut rng = FastRandom::new(11);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng),
+            "the non-sand ground refuses the palm"
+        );
+    }
+
     #[test]
     fn the_sakura_sapling_grows_the_vanity_tree() {
         // `AttemptToGrowTreeFromSapling`'s 595 arm (`:72850-72861`) →
@@ -2026,6 +2395,53 @@ mod tests {
         // A non-herb kind never harvests.
         assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
     }
+
+    /// DW-2.8: the SpreadGrass conversion dispatch (WorldGen.cs:75207-75221):
+    /// a conversion-grass dirt (the Conversion.Grass set) spreads through the
+    /// flavor's map, a plain write otherwise, and the tree-invalidity kill
+    /// rides the plain arm.
+    #[test]
+    fn spread_grass_2_the_conversion_dispatch_and_the_tree_kill() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        let idx = w.index(10, 20);
+        w.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        let tree_idx = w.index(10, 19);
+        w.tiles[tree_idx] = Tile { kind: 5, flags: FLAG_ACTIVE, ..Default::default() };
+        // Jungle grass over the wood grass: the plain write (60 is not a
+        // conversion dirt), and the forest tree survives a jungle ground.
+        spread_grass(&mut w, 10, 20, 2, 60);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 60);
+        assert!(w.tile(10, 19).is_some_and(|t| t.active()), "jungle keeps the tree");
+        // Sand under the same tree kills it — the tree arm.
+        let mut w2 = World::new("t".into(), 64, 64);
+        w2.world_surface = 30.0;
+        let idx = w2.index(10, 20);
+        w2.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        let tree_idx = w2.index(10, 19);
+        w2.tiles[tree_idx] = Tile { kind: 5, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w2, 10, 20, 2, 112);
+        assert_eq!(w2.tile(10, 20).unwrap().kind, 112);
+        assert!(!w2.tile(10, 19).is_some_and(|t| t.active()), "sand kills the forest tree");
+    }
+
+    /// DW-2.8: the conversion arm — the corruption spread over a
+    /// conversion-grass dirt takes the flavor's Convert (whose map turns the
+    /// wood grass 2 into the corruption grass 23), and the walls are left
+    /// alone (the SpreadGrass call passes walls: false).
+    #[test]
+    fn spread_grass_2_the_conversion_arm_converts_through_the_flavor() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        let idx = w.index(10, 20);
+        w.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w, 10, 20, 2, 23);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 23, "the corruption map lands");
+        let wall_idx = w.index(11, 21);
+        w.tiles[wall_idx].wall = 1;
+        spread_grass(&mut w, 10, 20, 2, 23);
+        assert_eq!(w.tile(11, 21).unwrap().wall, 1, "the walls stay (walls: false)");
+    }
 }
 
 /// `WallID.Sets.AllowsPlantsToGrow` (`WallID.cs:97`): the wall set
@@ -2059,6 +2475,11 @@ pub fn try_growing_tree_by_type(
         596 => GrowTreeSettings::VANITY_TREE_SAKURA,
         616 => GrowTreeSettings::VANITY_TREE_WILLOW,
         634 => GrowTreeSettings::TREE_ASH,
+        // The palms ride their own port (`grow_palm_tree` below), not a
+        // settings profile — the kind-20 styles 6-9 arm's target.
+        323 => {
+            return grow_palm_tree(world, x, y, rng);
+        }
         _ => return false,
     };
     grow_tree_with_settings(world, x, y, profile, rng)
@@ -2269,4 +2690,122 @@ fn write_tree_frame(
     t.set_paint(paint);
     t.frame_x = fx as i16;
     t.frame_y = fy as i16;
+}
+
+/// `WorldGen.GrowPalmTree` (`WorldGen.cs:27116-27202`) — the palm trunk on
+/// tile 323 (the kind-20 styles 6-9 sapling arm's target). The twin port
+/// `worldgen::ocean::grow_palm_tree` rides the worldgen `Rng` stream
+/// (`oceancave`/`AddTrees`); the growth pass keeps its own `FastRandom`
+/// stream, so the arm is ported locally here (the `growth::spread_grass` /
+/// `evil::spread_grass` precedent) — same maths, same frame table.
+///
+/// `treeHeightAddon`/`ignoreWalls` park (every ported caller passes 0 /
+/// false) and the `RangeFrame`/`NetMessage` closing arms do not exist in
+/// the port (documented in ANALYSIS).
+pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> bool {
+    if i < 0 || y < 0 || i >= world.width || y >= world.height {
+        return false;
+    }
+    let mut num = y;
+    // The 20-walk (`:27124-27129`).
+    while world
+        .tile(i, num)
+        .is_some_and(|t| t.active() && t.kind == 20)
+    {
+        num += 1;
+        if world.tile(i, num).is_none() {
+            return false;
+        }
+    }
+    let ground = match world.tile(i, num) {
+        Some(t) if t.active() && !t.half_brick() && t.slope() == 0 => t,
+        _ => return false,
+    };
+    // `BlockColorAndCoating` (`:27134`): the ground's paint rides the trunk.
+    // The tenthAnniversary colour roll (`:27135-27138`) parks with M5-SEED-1.
+    let paint = ground.paint();
+    // The wall test + the liquid gate (`:27142-27146`).
+    let wall_ok = world
+        .tile(i, num - 1)
+        .is_some_and(|t| ALLOWS_PLANTS_TO_GROW.contains(&t.wall));
+    if world.tile(i, num - 1).is_some_and(|t| t.liquid != 0) || !wall_ok {
+        return false;
+    }
+    // The sand ground (`:27147-27149`).
+    if !matches!(ground.kind, 53 | 234 | 116 | 112) {
+        return false;
+    }
+    // The clear boxes (`:27150-27157`).
+    if !empty_tile_check(world, i, i, num - 2, num - 1, Some(20)) {
+        return false;
+    }
+    let num2 = 20;
+    if !empty_tile_check(world, i - 1, i + 1, num - num2, num - 3, Some(20)) {
+        return false;
+    }
+    // The height roll and the lean (`:27158-27159`).
+    let num3 = rng.next_range(10, 21);
+    let num4 = rng.next_range(-8, 9) * 2;
+    let mut num5: i16 = 0;
+    for j in 0..num3 {
+        if j == 0 {
+            // The base (`:27168-27176`): the 66-column, the straight frameY.
+            let idx = world.index(i, num - 1);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = 66;
+            t.frame_y = 0;
+            continue;
+        }
+        if j == num3 - 1 {
+            // The top (`:27177-27185`): the 22·Next(4, 7) column.
+            let fx = 22 * rng.next_range(4, 7);
+            let idx = world.index(i, num - 1 - j);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = num5;
+            continue;
+        }
+        // The middle (`:27186-27200`): the lean advance first, then the
+        // 22·Next(0, 3) column — the vanilla draw order.
+        {
+            // The lean walk (`:27175-27183`): the decompiled guard is an
+            // always-true chain (`… || true`), so the advance fires whenever
+            // the fraction `j / num3` is at or above 0.25 — the `Next(13)` /
+            // `Next(9)` / `Next(5)` draws stay in their short-circuit order
+            // (they advance while the branch's rolls happen in vanilla).
+            let num6 = j as f64 / num3 as f64;
+            if num6 >= 0.25 {
+                let mut done = false;
+                if num6 < 0.5 && rng.next(13) == 0 {
+                    done = true;
+                }
+                if !done && num6 < 0.7 && rng.next(9) == 0 {
+                    done = true;
+                }
+                if !done && !(num6 < 0.95) {
+                    done = true;
+                }
+                if !done && rng.next(5) != 0 {
+                    done = true;
+                }
+                // the trailing `|| true` — the group is always true.
+                num5 += (num4.signum() * 2) as i16;
+            }
+        }
+            let fx = 22 * rng.next_range(0, 3);
+            let idx = world.index(i, num - 1 - j);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = num5;
+        }
+    true
 }

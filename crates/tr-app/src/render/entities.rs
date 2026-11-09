@@ -181,6 +181,10 @@ pub(crate) struct NpcAssets {
     pub(crate) golfer: Option<BgTex>,
     /// `NPC_589.xnb` — the sleeping Golfer's sheet (`:67142`).
     pub(crate) sleeping_golfer: Option<BgTex>,
+    /// `NPC_633.xnb` — the Zoologist's town sheet (23 rows, `Main.cs:67147`).
+    pub(crate) zoologist: Option<BgTex>,
+    /// `NPC_663.xnb` — the Princess's town sheet (`:67152`).
+    pub(crate) princess: Option<BgTex>,
     /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
     pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
@@ -392,6 +396,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         tax_collector: sky_tex(atlas, "NPC_441", None),
         golfer: sky_tex(atlas, "NPC_588", None),
         sleeping_golfer: sky_tex(atlas, "NPC_589", None),
+        zoologist: sky_tex(atlas, "NPC_633", None),
+        princess: sky_tex(atlas, "NPC_663", None),
         sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
@@ -1256,6 +1262,10 @@ pub(crate) fn draw_npcs(
             // The Golfer: the same humanoid shape over NPC_588 — 25 rows
             // (`Main.cs:67142`).
             NpcKind::Golfer => humanoid_draw(assets.golfer.as_ref(), 25, n, w, h),
+            // The Zoologist and the Princess: the same humanoid shape over
+            // NPC_633/663 — 23 rows each (`Main.cs:67147`/`:67152`).
+            NpcKind::Zoologist => humanoid_draw(assets.zoologist.as_ref(), 23, n, w, h),
+            NpcKind::Princess => humanoid_draw(assets.princess.as_ref(), 23, n, w, h),
             // The sleeping Golfer: NPC_589's sheet over the flat 18x34
             // body.
             NpcKind::SleepingGolfer => (

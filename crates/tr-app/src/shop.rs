@@ -37,6 +37,12 @@ pub struct ShopFlags {
     /// Golfer shop's score gates — the port has no golf system yet, so it
     /// reads 0 until one lands (the gated rows stay hidden).
     pub golfer_score: i32,
+    /// The Zoologist's shop gates (`Chest.cs:3265`): the bestiary unlock
+    /// report's completion percent.
+    pub bestiary_completion: f32,
+    /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
+    /// that opens the Princess's arrival without the full roster.
+    pub unlocked_princess: bool,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -63,6 +69,8 @@ impl Default for ShopFlags {
             downed_mech_3: false,
             downed_martians: false,
             golfer_score: 0,
+            bestiary_completion: 0.0,
+            unlocked_princess: false,
             travel_stock: [0; 40],
         }
     }
@@ -121,6 +129,15 @@ pub enum StockWhen {
     DownedMechAny,
     /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
     DownedMartians,
+    /// `Main.moonPhase == 0 && !Main.dayTime` (`Chest.cs:3271`).
+    MoonPhaseNight0,
+    /// The Zoologist's shop gates (`Chest.cs:3275-3310`): the bestiary
+    /// completion tiers (the C# compares floats directly).
+    BestiaryCompletion(f32),
+    /// `Main.hardMode && NPC.downedMoonlord` (`Chest.cs:3432`).
+    HardModeMoonlord,
+    /// `NPC.downedSlimeKing && NPC.downedQueenSlime` (`:3428`).
+    DownedBothSlimes,
     /// The Golfer shop's painting pair (`Chest.cs:3238-3260`): the score
     /// `>= 2000` gate AND the moon-phase pair, exactly one of four.
     GolfPainting(u8),
@@ -365,6 +382,49 @@ pub fn setup_shop(
             // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
             // port's town count reads the Angler's presence.
             row(2295, StockWhen::MoonPhaseOdd),
+        ],
+        // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
+        // bestiary tools — the progress-gated rows ride
+        /// `BestiaryUnlockProgressReport.CompletionPercent`
+        /// (`:3265`), the lumen/solar rows the flags they name.
+        23 => vec![
+            row(4767, StockWhen::Always),
+            row(5253, StockWhen::MoonPhaseNight0),
+            row(5635, StockWhen::BestiaryCompletion(0.45)),
+            row(4759, StockWhen::BestiaryCompletion(0.10)),
+            row(4672, StockWhen::BestiaryCompletion(0.03)),
+            row(4829, StockWhen::Always),
+            row(4830, StockWhen::BestiaryCompletion(0.25)),
+            row(4910, StockWhen::BestiaryCompletion(0.45)),
+            row(4871, StockWhen::BestiaryCompletion(0.30)),
+            row(4907, StockWhen::BestiaryCompletion(0.30)),
+            row(4676, StockWhen::BestiaryCompletion(0.10)),
+        ],
+        // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
+        /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
+        /// hat (the tenth-anniversary rows sit constants-off).
+        24 => vec![
+            row(5071, StockWhen::Always),
+            row(5072, StockWhen::Always),
+            row(5073, StockWhen::Always),
+            row(5076, StockWhen::Always),
+            row(5077, StockWhen::Always),
+            row(5078, StockWhen::Always),
+            row(5079, StockWhen::Always),
+            row(5080, StockWhen::Always),
+            row(5081, StockWhen::Always),
+            row(5082, StockWhen::Always),
+            row(5083, StockWhen::Always),
+            row(5084, StockWhen::Always),
+            row(5085, StockWhen::Always),
+            row(5086, StockWhen::Always),
+            row(5087, StockWhen::Always),
+            row(5310, StockWhen::Always),
+            row(5222, StockWhen::Always),
+            row(5228, StockWhen::Always),
+            row(5266, StockWhen::DownedBothSlimes),
+            row(5044, StockWhen::HardModeMoonlord),
+            row(5088, StockWhen::Always),
         ],
         // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
         // gear — the clubs, the cup flags, the tees/balls, the signs, the
@@ -1055,6 +1115,10 @@ pub fn resolve_stock_moon(
             StockWhen::GolfPainting(pair) => {
                 flags.golfer_score >= 2000 && moon_phase / 2 == pair as u32
             }
+            StockWhen::MoonPhaseNight0 => moon_phase == 0 && flags.night,
+            StockWhen::BestiaryCompletion(min) => flags.bestiary_completion >= min,
+            StockWhen::HardModeMoonlord => false, // `downedMoonlord` is not ported yet
+            StockWhen::DownedBothSlimes => false, // `downedQueenSlime` is not ported yet
             StockWhen::GolfScore(min, inclusive) => {
                 if inclusive {
                     flags.golfer_score >= min

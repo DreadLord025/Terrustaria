@@ -289,6 +289,8 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Mechanic => 8,
         NpcKind::Stylist => 18,
         NpcKind::Golfer => 22,
+        NpcKind::Zoologist => 23,
+        NpcKind::Princess => 24,
         _ => return None,
     })
 }
@@ -666,6 +668,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // life/mana maxima, the copper purse, the Party Girl's presence and
         // the mech/martian flags.
         golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
+        // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
+        // port's tracker over the ENTRIES' unlock states.
+        bestiary_completion: crate::bestiary::completion_percent(&app.kill_tracker),
+        // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
+        // override; the port's roster is the other half of her gate.
+        unlocked_princess: false,
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
@@ -2085,8 +2093,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
-        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s
-        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
+        // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
+        // the bestiary completion ≥ 10 % — the same gate the C# reads
+        // through `GetBestiaryProgressReport()`.
+        if crate::bestiary::completion_percent(&app.kill_tracker) >= 0.10
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Zoologist)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 10).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Zoologist) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Princess (`Main.cs:65944-65955`'s flag9): EVERY other town
+        // NPC present — the C#'s 24 counters fold to the port's town
+        // roster (the kinds the port lacks sit in their own tasks), and
+        // `unlockedPrincessSpawn` opens it without the roster.
+        if (app.world.unlocked_princess
+            || crate::bestiary::all_town_kinds_present(&app.npcs))
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Princess)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 12).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Princess) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
         if app.world.saved_golfer && !app.npcs.iter().any(|n| n.kind == NpcKind::Golfer) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 - 11).clamp(2, app.world.width - 3);

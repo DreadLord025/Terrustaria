@@ -3755,6 +3755,18 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Zoologist/Princess (M4-TOWN-19)
+
+Both are late-roster town NPCs. Deviations: the Zoologist's shop has the
+fairy-torch row (`Chest.BestiaryGirl_IsFairyTorchAvailable`, `:3544`), the
+tower/solar-gated rows and the remaining completion tiers outside the ported
+subset; the Princess's shop carries the tenth-anniversary block (a custom
+seed) and the slime-kings/Moon-Lord rows gated on `downedQueenSlime`
+(no field) and `downedMoonlord` (unported). The Princess's arrival counts the
+vanilla's 24 per-type town counters (`Main.cs:65651-65706`); the port folds
+them to its own roster through `bestiary::all_town_kinds_present`, so she
+arrives when the ported roster is complete rather than the vanilla's 24.
+
 ## Golfer (M4-TOWN-18)
 
 The pair and its shop. The whole shop's variable stock keys off
@@ -5259,6 +5271,21 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   underground dispatcher = GROWTH-2); the kind-20 styles 6-9 palms park
   (no `GrowPalmTree` port); the paint cache copies the ground's paint (the
   C#'s `UseBlockColors` coating bits ride the port's paint field alone).
+
+- **The palm sapling arm** (`GrowPalmTree`, `WorldGen.cs:27116-27202`, wired
+  through `AttemptToGrowTreeFromSapling`'s kind-20 styles 6-9 arm
+  `:72838-72848` → `TryGrowingTreeByType(323)`): the palm trunk grows on the
+  sand ground (53/234/116/112) behind the 2×1 ground box + the 3-wide
+  `num - num2..num - 3` box, the 10-20 height roll, the base 66-column, the
+  top 22·Next(4,7) column and the middle 22·Next(0,3) columns with the lean
+  walk's frameY offsets. The twin port `worldgen::ocean::grow_palm_tree`
+  rides the worldgen `Rng` stream; the growth pass keeps its `FastRandom`
+  per-consumer stream, so the arm is ported locally here (the
+  `growth::spread_grass`/`evil::spread_grass` precedent). The decompiled lean
+  guard is an always-true chain (`… || true`) — the advance fires at
+  `j / num3 >= 0.25` while the `Next(13)`/`Next(9)`/`Next(5)` draws stay in
+  their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
+  anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
 
 ## Structures (M1.4-WGEN-2)
 
@@ -7721,6 +7748,30 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the force-cursor step), and the vote runs from the player's centre — on a
   client the neighbouring miners perturb that centre by ±12 px per parity
   (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
+- **The app wiring runs the lookup once per frame in the editing path.**
+  `world_sim/smart_cursor.rs`'s `repoint` is the `Player.cs:25446` call
+  site: it builds the core `Lookup` from the App (the held item via
+  `registry::get/place_tile/place_wall`, the player's position/hitbox, the
+  rain's `is_raining`/`visual_alpha`), calls `smart_cursor_lookup` with the
+  `App`-carried `ContinuityState` (the C#'s two static locks), and
+  `update_editing` re-points `(tx, ty)` right after its reach gate so the
+  mining/placement arms see the smart target. The gate is the vanilla
+  per-player setting — `settings.smart_cursor_toggle` (`Main.cs:67178`) —
+  with `TR_SMARTCURSOR=0` as the debug kill switch.
+- **The reach rect is `TileReachCheckSettings.Simple`.** `reachable_rect`
+  ports `GetTileRegion` (`TileReachCheckSettings.cs:48-56`) over
+  `GetRanges` (:22-45): the 5/3 default ranges (`Player.cs:57113-57114`)
+  capped by the 20-tile `TileReachLimit`, the near edge truncating and the
+  far edge ceiling (`Math.Ceiling`). The C#'s `TB` boost (`tileBoost` +
+  `blockRange`, `SmartCursorHelper.cs:94-101`) stays 0 — neither is ported
+  (both are potion/gizmo state, like the extract slice's note).
+- **The wiring's remaining seams are the inventory, the entities and the
+  overlay.** The paint steps stand down (their `paint_lookup` is 0 — the
+  `Player.FindPaintOrCoating` inventory scan is app-side and unported), the
+  `Collision.EmptyTile` entity arms still answer true without the
+  player/NPC store, the grapple arms are empty lists, and the gamepad /
+  MP inputs are singleplayer defaults (`grav_dir` 1.0, `direction` 1, no
+  nav directions). The `Cursor_1` highlight overlay lands with the UI pass.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -8679,3 +8730,37 @@ Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
 dusts), the sounds and the light are unmodelled; the wand's
 `UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
 late-stage clone spawn (`:32251-32257`) is unmodelled.
+
+## SpreadGrass's conversion arms (M5-SPREAD-2)
+
+`WorldGen.SpreadGrass`'s last unported arms landed (`WorldGen.cs:75207-75221`):
+the `flag2 = dirt > 0 && TileID.Sets.Conversion.Grass[dirt]` dispatch (the set
+is 2/23/199/109/477/492, `TileID.cs:86`) and `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+(`:54802-54860`).
+
+- **The dispatch.** A conversion-grass dirt spreads through the flavor's map
+  instead of the plain type write: corruption for 23/661 (`Convert(i, j, 1,
+  tiles: true, walls: false)`), crimson for 199/662 (type 4), hallow for 109
+  (type 2). The port's new `spread::convert_cell_flavor` is that single-cell
+  Convert arm over the port's three conversion tables; `walls: false` is the
+  caller's flag (the SpreadGrass calls never convert walls).
+- **The tree arm.** A forest tree (5) standing on the spread cell survives
+  only a grass/jungle/snow/mushroom ground (the C#'s `Conversion.Grass` +
+  `JungleGrass` + `Snow` + `MushroomGrass` sets — the port's `SET_GRASS` plus
+  the literal members 60/661/662/147/70), a palm (323) only sand
+  (`SET_CONVERSION_SAND`), and the profile trees (the gem 583-589 / sakura
+  596 / willow 616 / ash 634) their `GroundTest`'s kind. An invalid ground
+  kills the tree (the port clears the cell). The 596/616
+  `ConvertTreeAndGround` re-grounding arm is the port's Out — the tree-
+  conversion machinery isn't ported.
+- Tests: `spread_grass_2_the_conversion_dispatch_and_the_tree_kill`
+  (jungle keeps the tree, sand kills it, the plain write lands) and
+  `spread_grass_2_the_conversion_arm_converts_through_the_flavor` (the
+  corruption map over a conversion-grass dirt, the walls untouched).
+  Suite 2759 / 0.
+
+Out: the C#'s `NetMessage.SendTileSquare(-1, i, j, 3)` (no MP netcode on this
+pass), the `UseBlockColors(TileColorCache)` arm, the neighborhood recursion
+(`repeat` with the `grassSpread < 1000` cap — the port's world-wide growth
+loop is its equivalent, the cap recorded here), and the vines/moss arms
+(`GrowMoreVines`, `SpreadGrassWalls`, `MossConversion`) still open.
