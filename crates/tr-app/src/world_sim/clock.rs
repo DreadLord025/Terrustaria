@@ -76,6 +76,34 @@ pub(crate) fn advance_time(
     (blood_moon_started, eclipse_started)
 }
 
+/// `Main.cs:64995-65003`'s tax pump: while a Tax Collector is alive the
+/// player's `taxTimer` counts the dayRate iterations and every
+/// `Player.taxRate` (3600) ticks collects the taxes.
+pub(crate) fn update_taxes(world: &mut tr_core::World, day_rate: i32) {
+    if !world.tax_collector {
+        return;
+    }
+    world.tax_timer += day_rate;
+    if world.tax_timer < crate::world_sim::npcs::TAX_RATE {
+        return;
+    }
+    world.tax_timer -= crate::world_sim::npcs::TAX_RATE;
+    collect_taxes(world);
+}
+
+/// `Player.CollectTaxes` (`Player.cs:24129-24155`): 50 copper per housed,
+/// living, non-pet town NPC per collection, capped at 25 gold
+/// (`Item.buyPrice(0, 25)`).
+pub(crate) fn collect_taxes(world: &mut tr_core::World) {
+    if !world.tax_collector || world.tax_money >= crate::world_sim::npcs::TAX_CAP {
+        return;
+    }
+    world.tax_money += 50 * world.tax_payers;
+    if world.tax_money > crate::world_sim::npcs::TAX_CAP {
+        world.tax_money = crate::world_sim::npcs::TAX_CAP;
+    }
+}
+
 /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
 ///
 /// The original runs its six `if`s sequentially, so a style that completes on

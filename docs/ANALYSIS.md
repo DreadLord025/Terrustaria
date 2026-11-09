@@ -3633,6 +3633,33 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Stylist/Tax Collector (M4-TOWN-17)
+
+The three kinds and the Tax Collector's coin system. Deliberate gaps: the tax
+purse is per-player in the C# (`Player.taxMoney`, saved at `Player.cs:54788`) —
+the port carries it on the World until the player-file section exists; the Tax
+Collector's "Andrew" easter egg (`NPC.cs:52968`'s 200-defense and
+`:55033-55037`'s doubled attack) waits for the town-attack task; the hair-window
+UI (`NPCInteractions.cs:425-441`'s `StylistHairWindow` → `Main.OpenHairWindow`)
+lands with the hair system; the bound Tax Collector (534) and his
+Purification-Powder release (`Projectile.cs:14728-14733`) wait for M4-NPC's
+hostile-bound archetype.
+
+## Wizard/Mechanic (M4-TOWN-16)
+
+The pair and their bound forms port the 1.4.5.8 spawn/transform/shop slice. Deliberate gaps, all
+in the ROADMAP row: the attack machines (`AI_007_TownEntities`'s `ai[0] == 10` arm for 124,
+`NPC.cs:54450-54459`, and `ai[0] == 14` for 108, `:54865-54875` + the 108's multi-projectile
+`SelectRandom(1,1,1,1,2,2,3)` at `:54927`) wait for the town-attack task; the Wizard's
+hardmode blood-moon deck (5461) and halloween hat (1739) and the Mechanic's graveyard goggles
+(4409) are constants-off (no season/graveyard stock gates yet); the Mechanic's Rod gate reads the
+moon phase only — the C# also needs `NPC.AnyNPCs(369)` (the Angler), which the port's shop
+engine carries through `StockWhen::PlayerHasItem`-style flags only, so the Angler-presence half
+sits with the town-count gate's follow-up; the bound Mechanic's depth band rides the player's
+tile without the Dungeon biome gate (`NPC.cs:2643-2652`'s `hardDungeon` branch); the
+`hasTownNPC`-style flags the C# counts for the arrival (`num10`/`num12`, `Main.cs:65651-65658`)
+fold into the port's per-kind absence check.
+
 ## Angler quest (M4-TOWN-15)
 
 The quest state lives on the statics in the C# (`Main.anglerQuest`,
