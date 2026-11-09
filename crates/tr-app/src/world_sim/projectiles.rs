@@ -26,16 +26,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.dev_throw = false;
     }
     // The boomerangs' return seek reads the owner's center (`AI_003`'s
-    // `Main.player[owner]` inputs).
+    // `Main.player[owner]` inputs); the whips anchor their curve on the same
+    // center (the `GetArmPosition` stand-in) and aim the Moon Lord arms
+    // along `swing_aim` (`AI_165_Whip`'s mouse aim, `:47709`).
     let owner = app.player.as_ref().map(|p| {
         let (x, y) = p.center();
         (x, y)
     });
+    let aim = if app.swing_aim.is_finite() {
+        Some(Vec2::from_angle(app.swing_aim))
+    } else {
+        None
+    };
     // The closure's disjoint field captures keep the step borrow
     // (`projectile_step`) apart from the pool/world/npcs/player set.
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles
-            .update(&mut app.world, &mut app.npcs, owner, app.player.as_mut());
+        app.projectiles.update(
+            &mut app.world,
+            &mut app.npcs,
+            owner,
+            aim,
+            app.player.as_mut(),
+            &mut app.item_rng,
+        );
     });
     app.projectile_step.cap_backlog();
 }

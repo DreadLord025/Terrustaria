@@ -215,6 +215,11 @@ pub struct Player {
     pub dead_time: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
+    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
+    /// prefer while it stands. The consumers are the minion AIs
+    /// (M4-PROJ-8); the whip pass only writes it.
+    pub minion_attack_target_npc: i16,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -627,9 +632,7 @@ impl Player {
         // failure chat needs the monitor, which the join path has not built
         // yet); the revive prints like the C#.
         let (sx, sy) = match world.bed_spawn {
-            Some((bx, by))
-                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
-            {
+            Some((bx, by)) if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() => {
                 // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
                 // the spawn cell's top.
                 (
@@ -648,6 +651,7 @@ impl Player {
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
