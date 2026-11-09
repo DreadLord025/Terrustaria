@@ -8452,3 +8452,34 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## .trwld v11 — the saved ore tiers (M6-SAVE-1f)
+
+`WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) moved onto the World and
+into the world file — the four pre-hardmode metals the setup rolls once per
+world (`Main.cs:11266-11297`) plus the hardmode trio the altar smashes fill.
+Before this, the runtime copy started at the static defaults on every load:
+the alternate-metal flips (tin/lead/tungsten/platinum) and any smashed hardmode
+tier were lost on reload (the recorded ANALYSIS "save-migration follow-up").
+
+- **The shape.** One presence byte, then the seven `i32` tiers in the
+  `SavedOreTiers` field order (copper/iron/silver/gold/cobalt/mythril/
+  adamantite), the -1 sentinels included. The C# rides them in the
+  world-flags block (`WorldFile.cs:1315-1321` + `:1444-1450`); the port's own
+  section, the same values.
+- **The plumbing.** `World.ore_tiers` is the per-world owner (the worldgen's
+  `ores_and_shinies` pass writes its setup roll there; `caves.rs`'s pass), the
+  App reads it back at construction (`app/mod.rs`'s `ore_tiers_seed`), and
+  `save_world` writes the App's live tiers. A file written before v11 leaves
+  the World at the static defaults — the C#'s own reset arm
+  (`WorldFile.cs:796-814`).
+- Tests: `dw_2_6_the_ore_tiers_round_trip_in_v11`,
+  `dw_2_6_a_v10_payload_loads_default_tiers`,
+  `dw_2_6_a_truncated_ore_section_bails`, `dw_2_6_the_ore_section_is_deterministic`,
+  and the app pair `dw_2_6_the_ore_tiers_round_trip_through_the_app` /
+  `dw_2_6_a_v10_world_starts_at_the_static_defaults`. Suite 2719 / 0.
+
+Out: the remaining C# sections — signs (no port store), the angler quest state
+(no port fields), the TownManager rooms, the weighted pressure plates (no port
+store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
+bestiary's Sights/Chats sub-blocks — each needs its own scope.

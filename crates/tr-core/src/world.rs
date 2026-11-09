@@ -305,6 +305,13 @@ pub struct World {
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
     /// and lands with M4 spawns, so the port keeps the reset value.
     pub butterfly_chance: i32,
+    /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven metal
+    /// tiers — the four pre-hardmode metals rolled once at the world setup
+    /// (`Main.cs:11266-11297`) and the hardmode trio `-1` until an altar is
+    /// smashed. The port's `ores.rs` owns the value; it rides the World so
+    /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
+    /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
+    pub ore_tiers: crate::ores::SavedOreTiers,
 }
 
 impl World {
@@ -317,6 +324,7 @@ impl World {
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             frame_important: Vec::new(),
+            ore_tiers: crate::ores::SavedOreTiers::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
