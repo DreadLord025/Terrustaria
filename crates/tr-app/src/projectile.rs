@@ -238,6 +238,20 @@ pub const VENOM_FANG: u16 = 355;
 pub const FROST_BOLT: u16 = 359;
 /// `ProjectileID.AmberBolt` (597) — the Amber Staff's gem bolt.
 pub const GEM_BOLT_AMBER: u16 = 597;
+/// The seven gem-bolt kinds the C# spells out as
+/// `type == 121 || type == 122 || type == 123 || type == 124 || type == 597 ||
+/// type == 125 || type == 126` (`Projectile.cs:22057`'s `FinalizeProjectile`,
+/// `:17996`'s `HandleMovement` bounce, `:75425`'s `Kill` burst) — the set this
+/// phase's gem arm, its finalize and its death AoE are gated on.
+pub const GEM_BOLTS: [u16; 7] = [
+    GEM_BOLT_AMETHYST,
+    GEM_BOLT_TOPAZ,
+    GEM_BOLT_SAPPHIRE,
+    GEM_BOLT_EMERALD,
+    GEM_BOLT_RUBY,
+    GEM_BOLT_DIAMOND,
+    GEM_BOLT_AMBER,
+];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -814,6 +828,149 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         alpha,
         scale,
     })
+}
+
+/// `Projectile.GemStaffFeatures` (`Projectile.cs:37-164`) — the gem-staff
+/// feature pack, a bitfield over the C#'s `FloatIntUnion`
+/// (`FloatIntUnion.cs:6-59`): the union's `this[int bit]` accessor
+/// (`:14-31`) reads and writes bit `bit` of the `int` view of the same
+/// storage, and the struct's constructor (`:161-164`) takes the packed
+/// `float` the shoot path hands `NewProjectile` as `ai0`. Bit 0 Homing, 1
+/// FastThenSlow, 2 CanBounce, 3 AoeExplosion, 4 SwirlTwins, 5 ArPenSpread, 6
+/// BiggerHitbox, 7 AllGems, 8 RepeatsGem, 9 AllGems2.
+///
+/// The write side (`Player.PickGemStaffFeatures`'s pack,
+/// `Player.cs:49470-49489`) is Phase 5's shoot path; this phase is the reader
+/// side the AI arm, the finalize and the death AoE run on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GemStaffFeatures {
+    /// The union's `Int` view (`FloatIntUnion.cs:11-12`) — bit `i` of this
+    /// word is feature `i`.
+    bits: u32,
+}
+
+impl GemStaffFeatures {
+    /// `Bits[0]` — `Projectile.cs:41-51`.
+    pub const HOMING: u32 = 1 << 0;
+    /// `Bits[1]` — `:53-63`.
+    pub const FAST_THEN_SLOW: u32 = 1 << 1;
+    /// `Bits[2]` — `:65-75`.
+    pub const CAN_BOUNCE: u32 = 1 << 2;
+    /// `Bits[3]` — `:77-87`.
+    pub const AOE_EXPLOSION: u32 = 1 << 3;
+    /// `Bits[4]` — `:89-99`.
+    pub const SWIRL_TWINS: u32 = 1 << 4;
+    /// `Bits[5]` — `:101-111`.
+    pub const AR_PEN_SPREAD: u32 = 1 << 5;
+    /// `Bits[6]` — `:113-123`.
+    pub const BIGGER_HITBOX: u32 = 1 << 6;
+    /// `Bits[7]` — `:125-135`.
+    pub const ALL_GEMS: u32 = 1 << 7;
+    /// `Bits[8]` — `:137-147`.
+    pub const REPEATS_GEM: u32 = 1 << 8;
+    /// `Bits[9]` — `:149-159`.
+    pub const ALL_GEMS2: u32 = 1 << 9;
+
+    /// `new GemStaffFeatures(aiState)` (`Projectile.cs:161-164`) — the C#
+    /// implicit `float` → `FloatIntUnion` cast (`FloatIntUnion.cs:34-40`)
+    /// reinterprets the float's bits, so `f32::to_bits` is the exact
+    /// equivalent and every `ai[0]` round-trips bit for bit.
+    pub fn from_ai(ai0: f32) -> Self {
+        Self { bits: ai0.to_bits() }
+    }
+
+    /// The implicit `FloatIntUnion` → `float` cast
+    /// (`FloatIntUnion.cs:42-45`) — the value the pack writes back into
+    /// `ai[0]`.
+    pub fn ai_state(self) -> f32 {
+        f32::from_bits(self.bits)
+    }
+
+    /// `Bits[bit]`'s getter (`FloatIntUnion.cs:14-16`).
+    pub fn bit(self, bit: u32) -> bool {
+        self.bits & bit != 0
+    }
+
+    /// `Bits[bit] = value`'s setter (`FloatIntUnion.cs:21-31`) — the or /
+    /// and-not pair.
+    pub fn set_bit(&mut self, bit: u32, on: bool) {
+        if on {
+            self.bits |= bit;
+        } else {
+            self.bits &= !bit;
+        }
+    }
+
+    /// `Homing` (`Projectile.cs:41-51`).
+    pub fn homing(self) -> bool {
+        self.bit(Self::HOMING)
+    }
+
+    /// `FastThenSlow` (`:53-63`).
+    pub fn fast_then_slow(self) -> bool {
+        self.bit(Self::FAST_THEN_SLOW)
+    }
+
+    /// `CanBounce` (`:65-75`).
+    pub fn can_bounce(self) -> bool {
+        self.bit(Self::CAN_BOUNCE)
+    }
+
+    /// `AoeExplosion` (`:77-87`).
+    pub fn aoe_explosion(self) -> bool {
+        self.bit(Self::AOE_EXPLOSION)
+    }
+
+    /// `SwirlTwins` (`:89-99`).
+    pub fn swirl_twins(self) -> bool {
+        self.bit(Self::SWIRL_TWINS)
+    }
+
+    /// `ArPenSpread` (`:101-111`).
+    pub fn ar_pen_spread(self) -> bool {
+        self.bit(Self::AR_PEN_SPREAD)
+    }
+
+    /// `BiggerHitbox` (`:113-123`).
+    pub fn bigger_hitbox(self) -> bool {
+        self.bit(Self::BIGGER_HITBOX)
+    }
+
+    /// `AllGems` (`:125-135`).
+    pub fn all_gems(self) -> bool {
+        self.bit(Self::ALL_GEMS)
+    }
+
+    /// `RepeatsGem` (`:137-147`).
+    pub fn repeats_gem(self) -> bool {
+        self.bit(Self::REPEATS_GEM)
+    }
+
+    /// `AllGems2` (`:149-159`).
+    pub fn all_gems2(self) -> bool {
+        self.bit(Self::ALL_GEMS2)
+    }
+
+    /// `GetDamageMultiplier` (`:166-186`): 1 for the AllGems pair, otherwise
+    /// the minimum of 1, the SwirlTwins' 0.6, the CanBounce's 0.8 and the
+    /// ArPenSpread's 0.5 — the shoot-side multiplier the death AoE divides
+    /// by (`:75468`).
+    pub fn damage_multiplier(self) -> f32 {
+        if self.all_gems() || self.all_gems2() {
+            return 1.0;
+        }
+        let mut num: f32 = 1.0;
+        if self.swirl_twins() {
+            num = num.min(0.6);
+        }
+        if self.can_bounce() {
+            num = num.min(0.8);
+        }
+        if self.ar_pen_spread() {
+            num = num.min(0.5);
+        }
+        num
+    }
 }
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
@@ -1860,6 +2017,276 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_029_GemStaffs` (`Projectile.cs:37643-37827`) → the bolts'
+    /// `AI_029_GemStaffs_ActuallyGemStaffs` (`:37829-38001`): the gem-staff
+    /// family (kinds 121-126 and 597 — the C#'s `else` arm; the 521/522/619/
+    /// 620/731 rider kinds have no ported row and no arm here). The state —
+    /// the owner-only target refresh, the homing steering, the SwirlTwins
+    /// sinusoid pair, the FastThenSlow shrink and the rotation — then the
+    /// movement, which is `HandleMovement`'s gem branch (`:17996-18056`) in
+    /// the port's per-arm collision model.
+    ///
+    /// SKIP list (each noted at its point): the per-tick gem dust
+    /// (`:37847-37855`), the first-tick staff sound (`:37856-37864`), the
+    /// per-gem light tints (`:37954-38000`), the bounce's `HitTiles` plus
+    /// impact sound (`:18047-18051`) and the Kill burst's dust
+    /// (`:75439-75463`). Every `Main.rand` call in the C# arm belongs to one
+    /// of those, so the arm keeps the pool's zero-RNG invariant.
+    fn ai_gem_staff(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        // The C# reads `Main.player[this.owner]` only for its `Main.myPlayer`
+        // gate, which the port folds to `self.owner == 0`; the two context
+        // parameters ride the family signature the doc block pins.
+        _owner: Option<(f32, f32)>,
+        _player: Option<&crate::player::Player>,
+    ) {
+        // `:37831-37839`: the gem dust id `type - 121 + 86` (121→86 amethyst
+        // … 126→91 diamond, 597→262 amber) — the two-per-tick dust spawns
+        // that read it (`:37847-37855`) are SKIPPED.
+        let features = GemStaffFeatures::from_ai(self.ai[0]);
+        // The homing block (`:37876-37923`).
+        if features.homing() {
+            // `:37878-37882`: the 500f radius doubles for FastThenSlow or
+            // CanBounce.
+            let mut range = 500.0;
+            if features.fast_then_slow() || features.can_bounce() {
+                range *= 2.0;
+            }
+            let mut target = self.ai[2] as i32 - 1;
+            // `:37884-37893`: the owner-only refresh — `this.owner ==
+            // Main.myPlayer` is the port's `self.owner == 0`. The C#'s
+            // `netUpdate = true` write is net code — SKIPPED.
+            if self.owner == 0 {
+                let held = target;
+                target =
+                    find_target_with_line_of_sight(world, npcs, self.pos, self.w, self.h, range, &[]);
+                if target != held {
+                    self.ai[2] = (target + 1) as f32;
+                }
+            }
+            if target >= 0 {
+                self.gem_bolt_steer(npcs, target as usize, range, &features);
+            }
+        }
+        // The SwirlTwins sinusoid pair (`:37924-37935`).
+        if features.swirl_twins() {
+            let (freq, amplitude) = (0.05f32, 6.0f32);
+            // `:37926-37930`: the twin index rides `ai[1]` as the sinusoid's
+            // phase (the shoot path spawns the twin with `ai1 = 1f`), and the
+            // C#'s `_ = gemStaffFeatures.AllGems;` read (`:37930`) discards
+            // its result — ported as nothing.
+            let phase = self.ai[1] as i32 as f32 * std::f32::consts::PI;
+            let (n0, n1) = (
+                (self.local_ai[0] * (std::f32::consts::PI * 2.0) * freq + phase).sin(),
+                ((self.local_ai[0] + 1.0) * (std::f32::consts::PI * 2.0) * freq + phase).sin(),
+            );
+            self.local_ai[0] += 1.0;
+            let angle = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+            self.pos += Vec2::new(angle.cos(), angle.sin()) * (n1 - n0) * amplitude;
+        }
+        // The FastThenSlow shrink (`:37936-37952`).
+        if features.fast_then_slow() {
+            if self.vel.length() > 0.1 {
+                self.vel *= 0.97;
+            } else {
+                self.scale -= 0.005;
+                if self.scale < 0.1 {
+                    // `:37948-37951`'s `Kill()` — the pool's death hook runs
+                    // the gem bolts' `Kill()` arm (`Projectile.cs:75425`) for
+                    // the AoE.
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+            }
+        }
+        // `:37953`: the rotation rides the flight direction.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        // The `:37954-38000` per-gem light tints (`num24 = num - 85` — 3/5/4/
+        // 1/6/2, the 262 amber default) are SKIPPED: the slot carries no
+        // `light` field (recorded for ANALYSIS, as with Phase 3's light
+        // writes).
+        // The movement: `HandleMovement`'s gem branch (`:17996-18056`).
+        self.gem_bolt_move(world, npcs, &features);
+    }
+
+    /// The homing steering block (`Projectile.cs:37894-37923`): the speed
+    /// build at the per-family steer speed (8f, 16f for FastThenSlow) with the
+    /// 1.1/0.1 accel pair, the distance-remapped turn rate, the
+    /// `rotateTowards` turn (the speed preserved) and the close-range `Lerp`
+    /// pull. `target` indexes the `Main.npc` slice; `range` is the homing
+    /// radius the AI block computed (500f, doubled).
+    fn gem_bolt_steer(
+        &mut self,
+        npcs: &[Npc],
+        target: usize,
+        range: f32,
+        features: &GemStaffFeatures,
+    ) {
+        // `:37896-37903`: the steer speed and the drag / turn-rate constants.
+        let steer_speed = if features.fast_then_slow() { 16.0 } else { 8.0 };
+        let (accel, drag, turn) = (1.1f32, 0.1f32, 0.1f32);
+        // `:37904-37909`: the capture runs *before* the acceleration, and
+        // every `if (num13 < num9)` scaling below reads that captured value.
+        let speed = self.vel.length();
+        if speed < steer_speed {
+            self.vel += safe_normalize(self.vel) * drag;
+            self.vel *= accel;
+        }
+        let Some(npc) = npcs.get(target) else {
+            return;
+        };
+        let npc_center = npc_center(npc);
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        // `:37910`: `base.Distance(npc.Center)` — the centre-to-centre length.
+        let distance = center.distance(npc_center);
+        // `:37911`: `Remap(distance, range, 0, 0, 1) * 0.1 + 0.01`.
+        let mut turn_rate = remap(distance, range, 0.0, 0.0, 1.0) * turn + 0.01;
+        if speed < steer_speed {
+            // `:37914`: the near-steer-speed ×10 pull-in.
+            turn_rate = (turn_rate + 0.05) * remap(speed, 1.0, 3.0, 10.0, 1.0);
+        }
+        if features.fast_then_slow() {
+            // `:37918`: the fast end of the sprint barely turns.
+            turn_rate *= remap(speed, 30.0, 40.0, 1.0, 0.0);
+        }
+        // `:37920`: the turn — `Utils.rotateTowards`, the speed preserved.
+        self.vel = rotate_towards(center, self.vel, npc_center, turn_rate);
+        // `:37921`: the close-range pull — `Vector2.Zero.MoveTowards(npc -
+        // Center, steerSpeed)`, blended by the 150f remap.
+        let pull = move_towards(Vec2::ZERO, npc_center - center, steer_speed);
+        self.vel += (pull - self.vel) * remap(distance, 150.0, 0.0, 0.0, 0.2);
+    }
+
+    /// `HandleMovement`'s gem branch (`Projectile.cs:17996-18056`): the
+    /// blocked axes of the TileCollision resolution decide the branch, the
+    /// port's stand-in being the per-axis destination-box probe the
+    /// arrow/bomb arms use. CanBounce reverses each blocked axis at 0.8,
+    /// spends one penetration, re-targets (owner-only, 2400f) and dies when
+    /// the budget is spent; FastThenSlow bypasses the tile instead (the
+    /// resolved velocity ×0.99, then the old direction pinned at 0.0001, and
+    /// the bolt survives); a bolt with neither feature falls to the collision
+    /// chain's default — one last step into the tile, then `Kill()`
+    /// (`:19849-19853`).
+    fn gem_bolt_move(&mut self, world: &World, npcs: &[Npc], features: &GemStaffFeatures) {
+        if !self.tile_collide {
+            // `UpdatePosition` (`:20433-20446`) on the collide-free kinds.
+            self.pos += self.vel;
+            return;
+        }
+        let last = self.vel;
+        let hit_x = crate::player::collides_rect(world, self.pos.x + last.x, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, self.pos.y + last.y, self.w, self.h);
+        if !(hit_x || hit_y) {
+            // `UpdatePosition` (`:20445`): the free move.
+            self.pos += self.vel;
+            return;
+        }
+        // `Collision.TileCollision`'s resolution zeroes the blocked axis
+        // (`Collision.cs:299-330`) — the C#'s `velocity.X != lastVelocity.X`
+        // test is exactly the port's `hit_x`.
+        if hit_x {
+            self.vel.x = 0.0;
+        }
+        if hit_y {
+            self.vel.y = 0.0;
+        }
+        if features.can_bounce() {
+            // `:18003-18011`: the ±0.8 reversal on the blocked axis.
+            if hit_x {
+                self.vel.x = -last.x * 0.8;
+            }
+            if hit_y {
+                self.vel.y = -last.y * 0.8;
+            }
+            // `:18012-18013`: every bounce spends one penetration.
+            self.penetrate -= 1;
+            let survive = self.penetrate > 0;
+            if features.homing() {
+                // `:18014-18030`: the owner-only re-target at the 2400f
+                // radius — the velocity is rewritten toward it at the old
+                // speed ×0.8, and `ai[2] = num16 + 1` is written even when
+                // the search failed (`num16 = -1` clears the index).
+                let mut target: i32 = -1;
+                if self.owner == 0 {
+                    target = find_target_with_line_of_sight(
+                        world, npcs, self.pos, self.w, self.h, 2400.0, &[],
+                    );
+                }
+                if let Some(npc) = npcs.get(target as usize) {
+                    let toward = npc_center(npc)
+                        - Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                    // `:18025-18027`: a zero direction keeps the reversal.
+                    if toward.length() > 0.0 {
+                        self.vel = safe_normalize(toward) * last.length() * 0.8;
+                    }
+                }
+                self.ai[2] = (target + 1) as f32;
+            }
+            // `:18047-18051`: `Collision.HitTiles` and the impact sound are
+            // SKIPPED (no tile-effect or sound layer in the pool), and the
+            // oldPos trail reset (`:18032-18038`) has no slot state.
+            // `:18052-18055`: a spent budget kills on the bounce tick — the
+            // C# still runs `UpdatePosition` first (`:19858`), which the
+            // `pos += vel` below mirrors.
+            self.pos += self.vel;
+            if !survive {
+                self.active = false;
+                self.time_left = 0;
+            }
+            return;
+        }
+        if features.fast_then_slow() {
+            // `:18040-18046`: the bypass — the resolved velocity ×0.99 (the
+            // blocked axis already zeroed), then the old direction pinned at
+            // 0.0001. The C#'s `flag7 = true` keeps the bolt alive and its
+            // `flag8 = false` skips the HitTiles/sound pair.
+            self.pos += self.vel * 0.99;
+            self.vel = safe_normalize(last) * 0.0001;
+            self.pos += self.vel;
+            return;
+        }
+        // The collision chain's default (`:19849-19853`): one last step into
+        // the tile, then the kill — the port's [`Projectile::kill_step`].
+        self.kill_step(world);
+    }
+
+    /// `FinalizeProjectile`'s gem arm (`Projectile.cs:22057-22059`) →
+    /// `FinalizeProjectile_GemStaves` (`:22063-22099`): the spawn-time
+    /// bonuses the C# applies at the end of `NewProjectile`, after the `ai0`
+    /// argument has landed — FastThenSlow hires one penetration and doubles
+    /// `timeLeft`, CanBounce hires two, BiggerHitbox hires one, ArPenSpread
+    /// adds four armor penetration, and the AllGems pair forces the 2/4 pair
+    /// with `timeLeft = 90` instead of the ×2.
+    fn gem_staves_finalize(&mut self) {
+        let features = GemStaffFeatures::from_ai(self.ai[0]);
+        let mut penetration = 0;
+        let mut life_scale = 1;
+        if features.fast_then_slow() {
+            penetration = penetration.max(1);
+            life_scale *= 2;
+        }
+        if features.can_bounce() {
+            penetration = penetration.max(2);
+        }
+        if features.bigger_hitbox() {
+            penetration = penetration.max(1);
+        }
+        // `:22084`: `armorPenetration += 4` — the slot carries no
+        // armor-penetration field (recorded for ANALYSIS).
+        if features.all_gems() || features.all_gems2() {
+            penetration = 2;
+            self.time_left = 90;
+        } else {
+            self.time_left *= life_scale;
+        }
+        self.max_penetrate += penetration;
+        self.penetrate += penetration;
+        // `:22098`: the armor-penetration write rides the +4 skip above.
+    }
+
     /// The wind tail the C# applies after the AI sub-steps
     /// (`Projectile.cs:16777-16781`): `velocity.X += windSpeedCurrent *
     /// windPhysicsStrength`, under the altitude gate
@@ -1965,12 +2392,12 @@ const WIND_PHYSICS_STRENGTH: f32 = 0.1;
 const AI_STYLE_1_RIDERS: [u16; 4] = [GREEN_LASER, PURPLE_LASER, VENOM_FANG, SKY_FRACTURE];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
-/// Only the styles whose arms this phase ports (8/24/28) are wind-eligible in
-/// the port: the styles that already have ported arms (1 the arrows, 2 the
-/// shuriken, 16 the bombs) keep their pre-existing no-wind behaviour, and the
-/// rest (10/14/29/…) port in Phase 4 or later.
+/// The styles whose arms this port has are 8/24/28 (Phase 3) and 29 (Phase
+/// 4a's gem bolts) — the styles that already had ported arms (1 the arrows, 2
+/// the shuriken, 16 the bombs) keep their pre-existing no-wind behaviour, and
+/// the rest (10/14/…) port in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 8 | 24 | 28)
+    matches!(ai_style, 8 | 24 | 28 | 29)
 }
 
 /// The `!tile.inActive() && tile.active() && tileSolid[type] &&
@@ -2053,6 +2480,303 @@ fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, 
 /// plus its separate `!dontTakeDamage` test lands on the same predicate.
 fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
+}
+
+/// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
+fn npc_center(n: &Npc) -> Vec2 {
+    let (w, h) = n.size();
+    Vec2::new(n.x + w * 0.5, n.y + h * 0.5)
+}
+
+/// `Collision.CanHitLine(Vector2, int, int, Vector2, int, int)`
+/// (`Collision.cs:588-778`): the line-of-sight walk the mounts
+/// (`Mount.cs:4912`/`:5220`), the Life Drain (`Player.cs:14067`) and the
+/// ranged re-targets use. The anchors are the two boxes' tile centres clamped
+/// into the world exactly as [`can_hit`] clamps them (`:594-625`); the walk
+/// alternates the dominant axis, tests the three tiles beside the current
+/// position for a solid block (`:679-697`, `:723-741`) and stops on the first
+/// tile it steps onto that blocks (`:761-769`). A missing tile reads as a
+/// blocked walk, like the C#'s try/catch (`:774-777`).
+///
+/// The walk's opacity test is the four-term `!inActive() && active() &&
+/// tileSolid[type] && !tileSolidTop[type]` conjunction (`:694`, `:738`,
+/// `:766`) — unlike [`can_hit`]'s flank test it carries no slope or halfBrick
+/// term, so this helper does not reuse [`full_solid`].
+#[allow(dead_code)] // Phase 4's later arms (aiStyle 129, the riders) call it
+fn can_hit_line(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
+    // `:590-593`: the anchors — `(int)((X + (float)(Width / 2)) / 16f)`.
+    let clx = |v: i32| v.clamp(1, world.width - 1);
+    let cly = |v: i32| v.clamp(1, (world.height - 40).max(1));
+    let anchor_x = |x: f32, w: f32| clx(((x + (w * 0.5) as i32 as f32) / TILE_PX) as i32);
+    let anchor_y = |y: f32, h: f32| cly(((y + (h * 0.5) as i32 as f32) / TILE_PX) as i32);
+    let (mut ax, mut ay) = (anchor_x(x1, w1), anchor_y(y1, h1));
+    let (bx, by) = (anchor_x(x2, w2), anchor_y(y2, h2));
+    // `:626-627`: the axis deltas.
+    let dx = (ax - bx).abs() as f32;
+    let dy = (ay - by).abs() as f32;
+    if dx == 0.0 && dy == 0.0 {
+        // `:628-631`: the same tile always hits.
+        return true;
+    }
+    // `:632-652`: the per-axis step weights — the dominant axis walks one
+    // tile per sweep, the recessive one `dominant / recessive` (0f on a pure
+    // axis).
+    let (mut step_x, mut step_y) = (1.0f32, 1.0f32);
+    if dx == 0.0 || dy == 0.0 {
+        if dx == 0.0 {
+            step_x = 0.0;
+        }
+        if dy == 0.0 {
+            step_y = 0.0;
+        }
+    } else if dx > dy {
+        step_x = dx / dy;
+    } else {
+        step_y = dy / dx;
+    }
+    // `:653-663`: the two error accumulators, the traversal state (2 = the
+    // x sweep, 1 = the y sweep; it opens on 2 when the target is below), the
+    // remaining steps per axis and the two directions.
+    let (mut err_x, mut err_y) = (0.0f32, 0.0f32);
+    let mut sweep = if ay < by { 2 } else { 1 };
+    let (mut left_x, mut left_y) = (dx as i32, dy as i32);
+    let dir_x = (bx - ax).signum();
+    let dir_y = (by - ay).signum();
+    let mut reached = false;
+    let mut done = false;
+    loop {
+        // `:670-759`: one sweep of the current axis.
+        if sweep == 2 {
+            err_x += step_x;
+            let steps = err_x as i32;
+            err_x -= steps as f32;
+            for _ in 0..steps {
+                // `:679-690`: the null guards, then the (above, here, below)
+                // trio — the first solid one blocks the walk.
+                let (above, here, below) = (
+                    world.tile(ax, ay - 1),
+                    world.tile(ax, ay),
+                    world.tile(ax, ay + 1),
+                );
+                if above.is_none() || here.is_none() || below.is_none() {
+                    return false;
+                }
+                if above.is_some_and(line_solid)
+                    || below.is_some_and(line_solid)
+                    || here.is_some_and(line_solid)
+                {
+                    return false;
+                }
+                if left_x == 0 && left_y == 0 {
+                    reached = true;
+                    break;
+                }
+                ax += dir_x;
+                left_x -= 1;
+                if left_x == 0 && left_y == 0 && steps == 1 {
+                    done = true;
+                }
+            }
+            // `:710-713`: the other axis still has steps left.
+            if left_y != 0 {
+                sweep = 1;
+            }
+        } else {
+            err_y += step_y;
+            let steps = err_y as i32;
+            err_y -= steps as f32;
+            for _ in 0..steps {
+                // `:723-734`: the (left, here, right) trio.
+                let (left, here, right) = (
+                    world.tile(ax - 1, ay),
+                    world.tile(ax, ay),
+                    world.tile(ax + 1, ay),
+                );
+                if left.is_none() || here.is_none() || right.is_none() {
+                    return false;
+                }
+                if left.is_some_and(line_solid)
+                    || right.is_some_and(line_solid)
+                    || here.is_some_and(line_solid)
+                {
+                    return false;
+                }
+                if left_x == 0 && left_y == 0 {
+                    reached = true;
+                    break;
+                }
+                ay += dir_y;
+                left_y -= 1;
+                if left_x == 0 && left_y == 0 && steps == 1 {
+                    done = true;
+                }
+            }
+            if left_x != 0 {
+                sweep = 2;
+            }
+        }
+        // `:761-769`: the tile the sweep stepped onto.
+        let Some(tile) = world.tile(ax, ay) else {
+            return false;
+        };
+        if line_solid(tile) {
+            return false;
+        }
+        // The `do..while (!(flag | flag2))` exit (`:770-772`).
+        if reached || done {
+            return true;
+        }
+    }
+}
+
+/// The `!tile.inActive() && tile.active() && tileSolid[type] &&
+/// !tileSolidTop[type]` conjunction `Collision.CanHitLine`'s walk tests
+/// (`Collision.cs:694`, `:738`, `:766`): the four terms without the slope and
+/// halfBrick pair [`full_solid`] adds for `Collision.CanHit`'s flank test.
+fn line_solid(t: &tr_core::tile::Tile) -> bool {
+    t.flags & tr_core::tile::FLAG_INACTIVE == 0
+        && t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+}
+
+/// `Projectile.FindTargetWithLineOfSight` (`Projectile.cs:45627-45660`): the
+/// nearest chaseable NPC within `max_range` that has a clear `Collision.CanHit`
+/// line — `-1` when none is found. The search is distance-strict
+/// (`num2 < num`, `:45656`) and the anchors are the targeter's box.
+///
+/// `immune` is the C#'s `projectile.localNPCImmunity[i] != 0` skip
+/// (`:45645-45648`) — the row lives on the pool's per-slot array, which the
+/// arm signature cannot reach, so the gem arm passes it empty and the
+/// deviation is recorded there.
+fn find_target_with_line_of_sight(
+    world: &World,
+    npcs: &[Npc],
+    pos: Vec2,
+    w: f32,
+    h: f32,
+    max_range: f32,
+    immune: &[i32],
+) -> i32 {
+    let center = Vec2::new(pos.x + w * 0.5, pos.y + h * 0.5);
+    let mut best = max_range;
+    let mut result: i32 = -1;
+    for (i, n) in npcs.iter().enumerate() {
+        if immune.get(i).is_some_and(|v| *v != 0) {
+            continue;
+        }
+        if !chaseable(n) {
+            continue;
+        }
+        // `:45651`: `targeter.Distance(npc.Center)` — the centre-to-centre
+        // length, then the CanHit line test.
+        let distance = center.distance(npc_center(n));
+        if distance < best && can_hit(world, pos.x, pos.y, w, h, n.x, n.y, n.size().0, n.size().1) {
+            best = distance;
+            result = i as i32;
+        }
+    }
+    result
+}
+
+/// `Utils.GetLerpValue(from, to, t, clamped: true)` (`Utils.cs:315-340`):
+/// the clamped ramp — 0/1 outside the from-range, linear inside. The branches
+/// are the C#'s, since it treats a descending range (`from > to`) as clamped
+/// from the *other* side.
+fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
+    if from < to {
+        if t < from {
+            return 0.0;
+        }
+        if t > to {
+            return 1.0;
+        }
+    } else {
+        if t < to {
+            return 1.0;
+        }
+        if t > from {
+            return 0.0;
+        }
+    }
+    (t - from) / (to - from)
+}
+
+/// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
+/// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
+/// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
+/// uses it for the turn rate and the close-range pull.
+fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
+}
+
+/// `MathHelper.WrapAngle` (XNA's body: the `IEEERemainder(angle, TwoPi)`
+/// remainder plus the ±2π fix-up). `round_ties_even` is
+/// `IEEERemainder`'s round-to-nearest-integer.
+fn wrap_angle(angle: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    if angle > -PI && angle <= PI {
+        return angle;
+    }
+    let rem = angle - (angle / TAU).round_ties_even() * TAU;
+    if rem <= -PI {
+        rem + TAU
+    } else if rem > PI {
+        rem - TAU
+    } else {
+        rem
+    }
+}
+
+/// `Utils.AngleTowards(curAngle, targetAngle, maxChange)` (`Utils.cs:2053-2069`):
+/// the wrapped shortest-way turn, clamped to `max_change`.
+fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let mut cur = wrap_angle(cur);
+    let target = wrap_angle(target);
+    if cur < target {
+        if target - cur > PI {
+            cur += TAU;
+        }
+    } else if cur - target > PI {
+        cur -= TAU;
+    }
+    cur += (target - cur).clamp(-max_change, max_change);
+    wrap_angle(cur)
+}
+
+/// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`): the
+/// zero/NaN direction falls back to `defaultValue`.
+fn safe_normalize(v: Vec2) -> Vec2 {
+    if v == Vec2::ZERO || v.is_nan() {
+        Vec2::ZERO
+    } else {
+        v.normalize()
+    }
+}
+
+/// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
+/// `from` walks toward `target` by at most `max`, snapping on arrival.
+fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
+    let delta = target - from;
+    if delta.length() < max {
+        return target;
+    }
+    from + safe_normalize(delta) * max
+}
+
+/// `Utils.rotateTowards(currentPosition, currentVelocity, targetPosition,
+/// maxChange)` (`Utils.cs:1934-1939`): the velocity turned by at most
+/// `max_change` toward the target, its length preserved.
+fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
+    let len = vel.length();
+    // `vel.ToRotation()` and `position.AngleTo(target)` (`Entity.cs:186-190`).
+    let angle = angle_towards(
+        vel.y.atan2(vel.x),
+        (to.y - from.y).atan2(to.x - from.x),
+        max_change,
+    );
+    Vec2::new(angle.cos(), angle.sin()) * len
 }
 
 /// The 1000-slot pool with the shared immunity state.
@@ -2376,6 +3100,13 @@ impl ProjectilePool {
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
+        // `NewProjectile`'s tail (`Projectile.cs:11094`): `FinalizeProjectile`
+        // runs after the `ai0/ai1` arguments have landed (`:10921-10923`), so
+        // the gem bolts' spawn-time bonuses read the packed features out of
+        // the fresh slot — the same order this seam reproduces.
+        if GEM_BOLTS.contains(&kind) {
+            self.slots[slot].gem_staves_finalize();
+        }
         Some(slot)
     }
 
@@ -2462,6 +3193,13 @@ impl ProjectilePool {
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
+                        // The aiStyle-29 gem bolts (`Projectile.cs:37643-38001`):
+                        // the owner-aware arm of the family signature — its
+                        // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
+                        // and the owner centre / the player ride along.
+                        29 => {
+                            self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
+                        }
                         _ => {}
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
@@ -2532,8 +3270,84 @@ impl ProjectilePool {
             // kind (so the blast cannot chain a second spawn).
             if !self.slots[i].active {
                 self.spawn_inferno_blast(i);
+                // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
+                // burst — the AoeExplosion damage rides the dying slot, so it
+                // runs at the same death hook the blast does.
+                self.gem_bolt_aoe(i, npcs);
             }
         }
+    }
+
+    /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
+    /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
+    /// dust layer in the pool), and the `AoeExplosion` feature's damage half
+    /// rides the dying slot itself: `Resize(160, 160)` (`:22353-22359`
+    /// recentres on the old centre), `damage × 0.35 / GetDamageMultiplier()`
+    /// (the C#'s `(int)` truncation), `maxPenetrate = penetrate = -1`,
+    /// `knockBack × 0.35`, the local-immunity reset and `Damage()` through the
+    /// resized box, then the trailing `Resize(22, 22)`. Kind-gated to the
+    /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
+    /// it and the burst fires at most once per bolt (a dead slot never returns
+    /// to `active`).
+    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc]) {
+        let (kind, ai0) = match self.slots.get(slot) {
+            Some(p) => (p.kind, p.ai[0]),
+            None => return,
+        };
+        if !GEM_BOLTS.contains(&kind) {
+            return;
+        }
+        let features = GemStaffFeatures::from_ai(ai0);
+        if !features.aoe_explosion() {
+            return;
+        }
+        // `:75433-75438`: the dust direction from the last velocity — dust
+        // only, SKIPPED with the spawns above.
+        let (center, damage, knock_back, cooldown) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.damage,
+                p.knock_back,
+                p.local_hit_cooldown,
+            )
+        };
+        let p = &mut self.slots[slot];
+        // `:75467`: `Resize(160, 160)` — the recentre keeps the old centre.
+        p.w = 160.0;
+        p.h = 160.0;
+        p.pos = Vec2::new(center.x - 80.0, center.y - 80.0);
+        // `:75468-75472`: the damage half divides out the shoot side's
+        // multiplier, the penetration opens to -1 and the knockback scales.
+        let multiplier = 0.35 / features.damage_multiplier();
+        p.damage = (damage as f32 * multiplier) as i32;
+        p.max_penetrate = -1;
+        p.penetrate = -1;
+        p.knock_back = knock_back * 0.35;
+        // `:75473-75481`: every local-immunity entry that is not the slot's
+        // own cooldown clears (a no-op for a gem bolt, whose only writes are
+        // the 60 the cooldown itself arms — ported for its shape).
+        let base = slot * 256;
+        for v in &mut self.local_immunity[base..base + 256] {
+            if *v != cooldown {
+                *v = 0;
+            }
+        }
+        // `:75482`: `Damage()` — the walk through the resized box.
+        // `Projectile.Damage()` (`:14087-14119`) tests the projectile's
+        // rectangle against the NPC's, so the AoE rides the box walk, not
+        // `damage_pve`'s fixed centre point (the point test would sit on
+        // the already-hit centre NPC and the burst would deal nothing).
+        self.damage_pve_boxed(slot, npcs);
+        // `:75483`: the trailing `Resize(22, 22)`.
+        let (cx, cy) = {
+            let p = &self.slots[slot];
+            (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let p = &mut self.slots[slot];
+        p.w = 22.0;
+        p.h = 22.0;
+        p.pos = Vec2::new(cx - 11.0, cy - 11.0);
     }
 
     /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
@@ -2717,6 +3531,75 @@ impl ProjectilePool {
             }
             let landed = n.hurt_from_projectile(damage, center.x, kb, crit);
             // `:14087-14119`: the immunity application.
+            if uses_local && self.slots[slot].local_hit_cooldown != -2 {
+                n.immune[owner] = 0;
+                self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
+            } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
+                n.immune[owner] = 0;
+                self.id_static.insert(
+                    (self.slots[slot].kind, idx as u16),
+                    self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
+                );
+            } else if max_penetrate != 1 {
+                n.immune[owner] = OWNER_IMMUNE_TICKS;
+            }
+            if landed {
+                let p = &mut self.slots[slot];
+                p.penetrate -= 1;
+                if p.penetrate == 0 {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// The box walk `Projectile.Damage()` (`:14087-14119`) actually runs:
+    /// the projectile's rectangle against the NPC's, the same immunity
+    /// bookkeeping [`ProjectilePool::damage_pve`] applies. The point walk
+    /// the normal PVE pass uses is the port's simplification for the
+    /// flight-size boxes; the resized death bursts (the gem bolts' AoE)
+    /// need the rectangle, or the burst's damage lands nowhere.
+    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc]) {
+        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
+            let p = &self.slots[slot];
+            if p.damage <= 0 {
+                return;
+            }
+            (
+                p.damage,
+                p.owner as usize,
+                p.uses_local_immunity,
+                p.uses_id_static_immunity,
+                p.max_penetrate,
+                p.knock_back,
+                p.crit,
+            )
+        };
+        let (px, py, pw, ph) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y, p.w, p.h)
+        };
+        for (idx, n) in npcs.iter_mut().enumerate() {
+            if n.hp <= 0 {
+                continue;
+            }
+            let p = &self.slots[slot];
+            if !self.target_allowed(slot, p, idx as u16) {
+                continue;
+            }
+            let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
+            if !single_hit && n.immune[owner] != 0 {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            // `myprojectile.GetRect().Intersects(npc.GetRect())` — the
+            // rectangle overlap of the slot's box with the NPC's.
+            let hit = px < n.x + nw && px + pw > n.x && py < n.y + nh && py + ph > n.y;
+            if !hit {
+                continue;
+            }
+            let (cx, cy) = (px + pw * 0.5, py + ph * 0.5);
+            let landed = n.hurt_from_projectile(damage, cx, kb, crit);
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
@@ -5419,6 +6302,301 @@ mod magic_ai_tests {
             pool.slots()[slot].vel.x,
             stuck,
             "no clamp and no further wind past the gate"
+        );
+    }
+
+    // ---- DW-4a: the gem-staff family (aiStyle 29) --------------------------
+
+    /// `new GemStaffFeatures(aiState)` (`Projectile.cs:161-164`): the C#
+    /// implicit float → `FloatIntUnion` cast reinterprets the float's bits,
+    /// so every bit survives the `ai[0]` round-trip the shoot side packs.
+    #[test]
+    fn test_dw_4a_the_gem_staff_features_round_trip_through_ai0() {
+        for bit in 0..10u32 {
+            let mut features = GemStaffFeatures::from_ai(0.0);
+            features.set_bit(1 << bit, true);
+            let back = GemStaffFeatures::from_ai(features.ai_state());
+            assert_eq!(back.bits, features.bits, "bit {bit} round-trips");
+        }
+        let mut all = GemStaffFeatures::from_ai(0.0);
+        for bit in 0..10u32 {
+            all.set_bit(1 << bit, true);
+        }
+        assert_eq!(all.bits, (1 << 10) - 1, "all ten bits set");
+        assert!(
+            all.homing() && all.swirl_twins() && all.all_gems2(),
+            "all ten bits read back (bits={})",
+            all.bits
+        );
+    }
+
+    /// A gem bolt spawned with a feature-packed `ai[0]` — the shoot path's
+    /// seam (`spawn_with_data_ai`'s `ai0`, Phase 5).
+    fn gem_bolt(
+        features: &GemStaffFeatures,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+    ) -> (ProjectilePool, usize) {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                GEM_BOLT_RUBY,
+                x,
+                y,
+                vx,
+                vy,
+                20,
+                0.0,
+                features.ai_state(),
+                0.0,
+            )
+            .unwrap();
+        (pool, slot)
+    }
+
+    fn only_homing() -> GemStaffFeatures {
+        let mut features = GemStaffFeatures::from_ai(0.0);
+        features.set_bit(GemStaffFeatures::HOMING, true);
+        features
+    }
+
+    #[test]
+    fn test_dw_4a_homing_steers_toward_the_target_and_the_plain_bolt_does_not() {
+        // `:37876-37923`: the homing block bends the flight toward the
+        // target; without the Homing bit the bolt keeps its line.
+        let features = only_homing();
+        let (mut pool, slot) = gem_bolt(&features, 20.0 * TILE_PX, 24.0 * TILE_PX, 2.0, 0.0);
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            20.0 * TILE_PX + 96.0,
+            24.0 * TILE_PX + 48.0,
+            SlimeVariant::Blue,
+        )];
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let steered = pool.slots()[slot].vel;
+        assert!(
+            steered.y > 0.0,
+            "the turn bends the flight toward the target (vy={})",
+            steered.y
+        );
+        let (mut pool, slot) = gem_bolt(
+            &GemStaffFeatures::from_ai(0.0),
+            20.0 * TILE_PX,
+            24.0 * TILE_PX,
+            2.0,
+            0.0,
+        );
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            20.0 * TILE_PX + 96.0,
+            24.0 * TILE_PX + 48.0,
+            SlimeVariant::Blue,
+        )];
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(
+            pool.slots()[slot].vel,
+            Vec2::new(2.0, 0.0),
+            "no Homing bit, no steering (`:37876`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_4a_homing_accelerates_to_the_steer_speed_cap() {
+        // `:37896-37903`: the steer accel runs while under the steer speed —
+        // 8f, doubled for FastThenSlow — so the two converge to different
+        // speeds at a fixed 480f target (inside the 500f radius, past the
+        // 150f close-range pull).
+        let mut fast = only_homing();
+        fast.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+        for (features, label) in [(only_homing(), "8f"), (fast, "16f")] {
+            let (mut pool, slot) = gem_bolt(&features, 20.0 * TILE_PX, 24.0 * TILE_PX, 2.0, 0.0);
+            let mut w = world();
+            let mut npcs = vec![Npc::spawn_slime_sky(
+                20.0 * TILE_PX + 480.0,
+                24.0 * TILE_PX,
+                SlimeVariant::Blue,
+            )];
+            for _ in 0..30 {
+                tick_npcs(&mut w, &mut pool, &mut npcs);
+            }
+            let speed = pool.slots()[slot].vel.length();
+            if label == "8f" {
+                assert!(
+                    (7.5..9.0).contains(&speed),
+                    "the 8f steer speed caps the accel (|v|={speed})"
+                );
+            } else {
+                assert!(
+                    speed > 10.0,
+                    "the 16f steer speed keeps accelerating past the 8f cap (|v|={speed})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_dw_4a_swirl_twins_offsets_the_two_bolts_in_opposite_phases() {
+        // `:37924-37935`: the sinusoid pair — the twin rides `ai[1] = 1f`,
+        // a PI phase shift, so the two bolts swing opposite ways. The
+        // primary's first tick: sin(0) vs sin(2PI * 0.05) = 0.309, offset
+        // 0.309 * 6 = 1.854 perpendicular to the (2, 0) flight.
+        let mut w = world();
+        let mut features = GemStaffFeatures::from_ai(0.0);
+        features.set_bit(GemStaffFeatures::SWIRL_TWINS, true);
+        for (twin, sign) in [(0.0, 1.0), (1.0, -1.0)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    GEM_BOLT_RUBY,
+                    20.0 * TILE_PX,
+                    24.0 * TILE_PX,
+                    2.0,
+                    0.0,
+                    20,
+                    0.0,
+                    features.ai_state(),
+                    twin,
+                )
+                .unwrap();
+            step(&mut pool, &mut w);
+            let p = &pool.slots()[slot];
+            assert!(
+                (p.pos.y - (24.0 * TILE_PX + 1.854 * sign)).abs() < 1e-2,
+                "the twin={twin} swing sign {sign} lands at {}",
+                p.pos.y - 24.0 * TILE_PX
+            );
+            assert!(
+                (p.pos.x - (20.0 * TILE_PX + 2.0)).abs() < 1e-2,
+                "the flight keeps its direction"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dw_4a_fast_then_slow_shrinks_the_velocity_and_kills_at_the_0_1_scale() {
+        // `:37936-37952`: the ×0.97 drag until the flight dies, then the
+        // scale drops 0.005 per tick and the bolt dies below 0.1.
+        let mut features = only_homing();
+        features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+        let (mut pool, slot) = gem_bolt(&features, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0, 0.0);
+        let mut w = world();
+        for _ in 0..125 {
+            step(&mut pool, &mut w);
+        }
+        let (speed, scale) = (pool.slots()[slot].vel.length(), pool.slots()[slot].scale);
+        assert!(speed < 0.1, "the drag ends the flight (|v|={speed})");
+        assert!(scale <= 1.0, "the scale holds until the flight dies");
+        for _ in 0..200 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            !pool.slots()[slot].active,
+            "the bolt dies at the 0.1 scale (`:37948-37951`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_4a_fast_then_slow_survives_a_solid_tile() {
+        // `:18040-18046`: the bypass — the resolved velocity ×0.99 and the
+        // old direction pinned at 0.0001, so the bolt never dies on tiles.
+        let mut features = GemStaffFeatures::from_ai(0.0);
+        features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+        let mut w = world();
+        let x = wall_ahead(&mut w, 10.0);
+        let (mut pool, slot) = gem_bolt(&features, x, 10.0 * TILE_PX, 2.0, 0.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the FastThenSlow bolt survives the tile");
+        assert!(p.vel.length() < 1e-3, "the old direction pinned at 0.0001");
+    }
+
+    #[test]
+    fn test_dw_4a_can_bounce_reverses_the_flight_and_spends_penetration() {
+        // `:18003-18030`: each blocked move reverses that axis at ×0.8 and
+        // spends one penetration; the budget (1 + the finalize's 2) runs
+        // out on the third bounce.
+        let mut features = GemStaffFeatures::from_ai(0.0);
+        features.set_bit(GemStaffFeatures::CAN_BOUNCE, true);
+        let mut w = world();
+        put_tile(&mut w, 9, 10, 1);
+        let x = wall_ahead(&mut w, 10.0);
+        let (mut pool, slot) = gem_bolt(&features, x, 10.0 * TILE_PX, 2.0, 0.0);
+        let budget = pool.slots()[slot].penetrate;
+        assert_eq!(budget, 3, "the finalize hires CanBounce's +2 (`:22077`)");
+        // First bounce off tile 11: -2 × 0.8.
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "survives inside the budget");
+        assert!((p.vel.x + 1.6).abs() < 1e-6, "the axis reverses at 0.8");
+        assert_eq!(p.penetrate, 2, "the bounce spends one");
+        // Walk it back into the same wall: the second bounce.
+        pool.slots_mut()[slot].pos.x = x;
+        pool.slots_mut()[slot].vel.x = 2.0;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "survives the second bounce");
+        assert_eq!(p.penetrate, 1, "the budget drains");
+        // Third: the budget is spent.
+        pool.slots_mut()[slot].pos.x = x;
+        pool.slots_mut()[slot].vel.x = 2.0;
+        step(&mut pool, &mut w);
+        assert!(
+            !pool.slots()[slot].active,
+            "the spent budget kills on the bounce (`:18052-18055`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_4a_the_finalize_bonuses_ride_the_spawn() {
+        // `FinalizeProjectile_GemStaves` (`:22063-22099`): FastThenSlow
+        // +1 penetration and ×2 life, CanBounce +2, BiggerHitbox +1, the
+        // AllGems pair forces the 2/4 pair with timeLeft 90.
+        for (bit, time_left, penetrate) in [
+            (GemStaffFeatures::HOMING, 300, 1),
+            (GemStaffFeatures::FAST_THEN_SLOW, 600, 2),
+            (GemStaffFeatures::CAN_BOUNCE, 300, 3),
+            (GemStaffFeatures::BIGGER_HITBOX, 300, 2),
+            (GemStaffFeatures::ALL_GEMS2, 90, 3),
+        ] {
+            let mut features = GemStaffFeatures::from_ai(0.0);
+            features.set_bit(bit, true);
+            let (pool, slot) = gem_bolt(&features, 20.0 * TILE_PX, 24.0 * TILE_PX, 2.0, 0.0);
+            let p = &pool.slots()[slot];
+            assert_eq!(p.time_left, time_left, "bit {bit} timeLeft");
+            assert_eq!(p.penetrate, penetrate, "bit {bit} penetration");
+            assert_eq!(p.max_penetrate, penetrate, "bit {bit} maxPenetrate");
+        }
+    }
+
+    #[test]
+    fn test_dw_4a_the_aoe_explosion_damages_through_the_resized_box() {
+        // `:75425-75484`: the death burst rides the dying slot — the 160×160
+        // box around the old centre, damage ×0.35, the immunity reset
+        // keeping the already-hit centre. An NPC inside the box but off the
+        // centre takes the burst; one outside it takes nothing.
+        let mut features = only_homing();
+        features.set_bit(GemStaffFeatures::AOE_EXPLOSION, true);
+        let (mut pool, slot) = gem_bolt(&features, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0);
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 40.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 300.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        let (near_before, far_before) = (npcs[0].hp, npcs[1].hp);
+        pool.slots_mut()[slot].time_left = 1;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(!pool.slots()[slot].active, "the bolt dies into the burst");
+        assert!(
+            npcs[1].hp == far_before,
+            "outside the 160 box, no burst damage"
+        );
+        assert!(
+            npcs[0].hp < near_before,
+            "inside the box the burst lands ({} → {})",
+            near_before,
+            npcs[0].hp
         );
     }
 }
