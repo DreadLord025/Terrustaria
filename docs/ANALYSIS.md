@@ -4907,6 +4907,33 @@ Deviations: the chest inventories ride the storage task (the C#
 `Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
 piles and the graveyards are the follow-ups; the layouts are shape-level.
 
+- **The statues** (`Statues`, `WorldGen.cs:16853-16970` — the M5-STRUCT-1
+  statues slice): the `SetupStatueList` table (`WorldGen.cs:4449-4488`, 73
+  entries) is a `STATUE_LIST` const in `structures.rs` (the C#'s
+  pass-static list — `Reset` `:11228` and the cave-house re-build write
+  the same idempotent data). The pass lands at its vanilla slot
+  immediately before `Buried Chests` (`:16971`) on its own
+  `pass_rng("Statues")` stream, so no other pass's draws shift. The
+  placement is the faithful `Place2xX` (`:39663-39722`) frame math — the
+  `(105, 34) → (349, 0)` remap, the `style / 55` row offset — plus the
+  unconditional `SquareTileFrame`, and the `StatuesWithTraps` indices
+  {4, 7, 10, 18} (`GenVars.cs:474-475`) arm a dart trap 135 with the
+  L-shaped `WorldUtils.WireLine` red-wire run back to the statue.
+  Deliberate deviations, all recorded here: (1) the seat's
+  `tileFrameImportant && !tileCut` gate (`:16846`) needs the
+  `Main.tileFrameImportant`/`Main.tileCut` tables, which the port does
+  not carry yet — `Place2xX`'s clear-cell check already refuses an
+  occupied seat, so the gate would only suppress a redundant
+  `SquareTileFrame` on a busy cell; (2) the secret-seed arms
+  (`noTrapsWorldGen`'s ×15, `skyblockWorldGen`, `starGame`) park with
+  M5-SEED-1; (3) `WorldGen.Statue`'s paint sweep (`:10563-10573`) and its
+  `MarblePileWithStatues` caller (`:10538`) ride the M5-BIOME-2 marble
+  piles — the pass itself never paints. The cave-house statue furniture
+  (`HouseBuilder.cs:471-490`) and the rest of the STRUCT-1 row
+  (the `CaveHouseBiome`/`HouseBuilder` room crawl, the `Traps` pass and
+  the boulder piles) are the follow-up branches. `DEFAULT_WORLD`'s
+  pinned hash moved by design (world_hash.rs's pin note).
+
 ## Biome detail passes (M1.4-WGEN-3)
 
 The decorator passes over the finished biomes — the ocean caves, the

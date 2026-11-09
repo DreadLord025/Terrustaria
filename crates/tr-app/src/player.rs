@@ -2420,23 +2420,7 @@ impl Player {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 6;
             // `:36155-36216`: the state selection.
-            // `Mount.cs:4507-4511`: a dashing Chillet (62-65) pins the dash band
-        // while the dash is active (`dashDelay < 0 && >= -5`).
-        if matches!(self.mount.kind(), 62 | 63 | 64 | 65)
-            && self.dash_delay < 0
-            && self.dash_delay >= -5
-        {
-            self.mount.update_frame(
-                crate::mount::FRAME_DASHING,
-                self.vx,
-                self.vy,
-                self.just_jumped,
-                self.control_down,
-            );
-            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
-            return;
-        }
-        if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
+            if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
                 if self.mount.fly_time() > 0
                     && self.jump == 0
                     && self.control_jump
@@ -2844,10 +2828,6 @@ impl Player {
     /// pins the capability for now. The dust/gore trails are visual seams;
     /// the vanilla plays no dash sounds.
     fn dash_movement(&mut self, world: &World, input: PlayerInput) {
-        // `:21036-21040`: a Chillet mount (62-65) forces dashType 6.
-        if self.mount.is_active() && matches!(self.mount.kind(), 62 | 63 | 64 | 65) {
-            self.dash_type = 6;
-        }
         // `:21040-21048`: the lifecycle re-sync.
         if self.dash_delay == 0 {
             self.dash = self.dash_type;
@@ -3104,13 +3084,6 @@ impl Player {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
         };
-        // `Mount.cs:6232-6235`: only the PirateShip (44) clears the dash on
-        // mount.
-        if m == 44 {
-            self.dash_type = 0;
-            self.dash = 0;
-            self.dash_delay = 0;
-        }
         if let Some(old) = equip.clear_buff {
             self.clear_buff_type(old);
         }
@@ -3243,7 +3216,6 @@ impl Player {
             10 => self.has_jump_options[ExtraJump::Unicorn.index()] = true,
             47 => self.has_jump_options[ExtraJump::WallOfFleshGoat.index()] = true,
             14 => self.has_jump_options[ExtraJump::Basilisk.index()] = true,
-            46 => self.has_jump_options[ExtraJump::Santank.index()] = true,
             _ => {}
         }
         if matches!(self.mount.kind(), 10 | 47 | 14 | 40 | 41 | 42)

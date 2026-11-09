@@ -1302,179 +1302,6 @@ const STEAMPUNK_MINECART: MountData = cart(36, 255, "Extra_128");
 const HELLWIZARD_MINECART: MountData = cart(38, 269, "Extra_150");
 const FART_MINECART: MountData = cart_vo(51, 338, "Extra_246");
 const TERRA_FART_MINECART: MountData = cart_vo(53, 346, "Extra_251");
-// -- Special-ability rows (M2-MOUNT-4, `Mount.cs:1987-2044` Santank,
-//    `Mount.cs:2540-2605` roller skates, `Mount.cs:2544-2746` chillets) -------
-
-/// 46 Santank (`Mount.cs:1987-2044`): the cannon mount — ability 40/40/0
-/// (the auto-targeting fire is the follow-up), run/dash 8, accel 0.4,
-/// jump 8/9.01, 27 frames, the `Extra_168` strip front + extra.
-static SANTANK_Y_OFFSETS: [i32; 27] = [
-    4, 6, 6, 4, 4, 4, 4, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-];
-const SANTANK: MountData = MountData {
-    id: 46,
-    buff: 281,
-    ability_charge_max: 40,
-    ability_cooldown: 40,
-    ability_duration: 0,
-    height_boost: 0,
-    flight_time_max: 0,
-    fall_damage: 0.0,
-    run_speed: 8.0,
-    dash_speed: 8.0,
-    acceleration: 0.4,
-    jump_height: 8,
-    jump_speed: 9.01,
-    block_extra_jumps: false,
-    spawn_dust: 15,
-    total_frames: 27,
-    standing: FrameSet {
-        start: 0,
-        count: 1,
-        delay: 12,
-        loops: false,
-    },
-    running: FrameSet {
-        start: 0,
-        count: 11,
-        delay: 12,
-        loops: false,
-    },
-    in_air: FrameSet {
-        start: 1,
-        count: 11,
-        delay: 12,
-        loops: false,
-    },
-    swim: FrameSet {
-        start: 0,
-        count: 11,
-        delay: 12,
-        loops: false,
-    },
-    front_sheet: "Extra_168",
-    front_extra_sheet: "Extra_168",
-    x_offset: 1,
-    y_offset: 1,
-    player_y_offsets: &SANTANK_Y_OFFSETS,
-    body_frame: 3,
-    player_head_offset: 2,
-    ..BASE
-};
-
-const ROLLER_SKATE_BLUE: MountData = roller_skate(57, 378);
-const ROLLER_SKATE_GREEN: MountData = roller_skate(58, 379);
-const ROLLER_SKATE_CLASSIC: MountData = roller_skate(59, 380);
-const ROLLER_SKATE_PARTY: MountData = roller_skate(60, 381);
-const CHILLET: MountData = chillet(62, 387, "Extra_301", false);
-const CHILLET_IGNIS: MountData = chillet(63, 388, "Extra_302", false);
-const CHILLET_TRUSTY: MountData = chillet(64, 391, "Extra_301", true);
-const CHILLET_TRUSTY_IGNIS: MountData = chillet(65, 392, "Extra_302", true);
-
-/// `Mount.SetAsChillet` (`Mount.cs:2670-2746`): the Palworld ride — the
-/// shared body plus the hardmode branch (64/65: dash 9, jump 11/8.1).
-const CHILLET_Y_OFFSETS: [i32; 13] = [10, 10, 10, 10, 12, 16, 12, 10, 12, 16, 16, 14, 10];
-
-const fn chillet(id: i32, buff: i32, back_sheet: &'static str, hardmode: bool) -> MountData {
-    MountData {
-        id,
-        buff,
-        spawn_dust: 15,
-        height_boost: 4,
-        flight_time_max: 0,
-        fall_damage: 0.5,
-        run_speed: 3.0,
-        dash_speed: if hardmode { 9.0 } else { 6.5 },
-        acceleration: 0.32,
-        jump_height: if hardmode { 11 } else { 6 },
-        jump_speed: if hardmode { 8.1 } else { 8.01 },
-        walking_grace_time_max: 10,
-        total_frames: 13,
-        standing: FrameSet {
-            start: 0,
-            count: 4,
-            delay: 12,
-            loops: false,
-        },
-        running: FrameSet {
-            start: 6,
-            count: 6,
-            delay: 30,
-            loops: false,
-        },
-        dashing: FrameSet {
-            start: 5,
-            count: 7,
-            delay: 130,
-            loops: false,
-        },
-        flying: FrameSet {
-            start: 1,
-            count: 6,
-            delay: 6,
-            loops: false,
-        },
-        in_air: FrameSet {
-            start: 4,
-            count: 1,
-            delay: 12,
-            loops: false,
-        },
-        idle: FrameSet {
-            start: 0,
-            count: 4,
-            delay: 12,
-            loops: true,
-        },
-        swim: FrameSet {
-            start: 4,
-            count: 1,
-            delay: 12,
-            loops: false,
-        },
-        back_sheet,
-        x_offset: 7,
-        y_offset: -10,
-        player_y_offsets: &CHILLET_Y_OFFSETS,
-        body_frame: 3,
-        player_head_offset: 10,
-        ..BASE
-    }
-}
-
-/// `Mount.SetAsRollerSkate` (`Mount.cs:2569-2605`): the grindable rides —
-/// additive stats, run/dash 1, accel 0.1, jump 2/1, wings allowed, no
-/// texture of its own (the player draws).
-const fn roller_skate(id: i32, buff: i32) -> MountData {
-    MountData {
-        id,
-        buff,
-        spawn_dust: 31,
-        can_ride_minecart_tracks: true,
-        can_use_wings: true,
-        movement_stats_are_additive: true,
-        dash_speed: 1.0,
-        run_speed: 1.0,
-        acceleration: 0.1,
-        jump_height: 2,
-        jump_speed: 1.0,
-        fall_damage: 1.0,
-        block_extra_jumps: false,
-        total_frames: 1,
-        standing: FrameSet {
-            start: 0,
-            count: 1,
-            delay: 6,
-            loops: false,
-        },
-        x_offset: 0,
-        y_offset: 0,
-        player_y_offsets: &[2; 1],
-        body_frame: 3,
-        player_head_offset: 2,
-        ..BASE
-    }
-}
 pub(crate) static MOUNTS: &[MountData] = &[
     RUDOLPH,        // 0
     BUNNY,          // 1
@@ -1526,15 +1353,6 @@ pub(crate) static MOUNTS: &[MountData] = &[
     MOLE_MINECART,     // 39
     FART_MINECART,     // 51
     TERRA_FART_MINECART,// 53
-    SANTANK,           // 46
-    ROLLER_SKATE_BLUE, // 57
-    ROLLER_SKATE_GREEN,// 58
-    ROLLER_SKATE_CLASSIC,// 59
-    ROLLER_SKATE_PARTY, // 60
-    CHILLET,           // 62
-    CHILLET_IGNIS,     // 63
-    CHILLET_TRUSTY,    // 64
-    CHILLET_TRUSTY_IGNIS, // 65
 ];
 
 /// The saddle items — `Item.SetDefaults`' `Item.mountType` assignments:
@@ -1545,7 +1363,7 @@ pub(crate) static MOUNTS: &[MountData] = &[
 /// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
 /// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
 /// Slime Mount Saddle 4981 -> 50.
-const MOUNT_ITEMS: [(u16, i32); 58] = [
+const MOUNT_ITEMS: [(u16, i32); 49] = [
     (1914, 0),
     (2428, 1),
     (2430, 3),
@@ -1608,20 +1426,6 @@ const MOUNT_ITEMS: [(u16, i32); 58] = [
     (4763, 39),
     (5125, 51),
     (5288, 53),
-    // M2-MOUNT-4: the Santank item (`Item.cs:39400` 4794 -> 46), the four
-    // roller-skate items (`:44056` 5600 -> 57, `:44300` 5640 -> 58,
-    // `:44313` 5641 -> 59, `:44326` 5642 -> 60) and the four Chillets
-    // (`:44519` 5665 -> 62, `:44531` 5666 -> 63, `:47394` 6150 -> 64,
-    // `:47407` 6151 -> 65).
-    (4794, 46),
-    (5600, 57),
-    (5640, 58),
-    (5641, 59),
-    (5642, 60),
-    (5665, 62),
-    (5666, 63),
-    (6150, 64),
-    (6151, 65),
 ];
 
 /// `Item.mountType` for the ported rows.
@@ -1967,21 +1771,9 @@ impl MountState {
                     self.frame = row.swim.start;
                 }
             }
-            FRAME_DASHING => {
-                // `:4476-4505`: the dash loop paces on |velocity.X|, the
-                // flip sign for Scutlix (9) alone not modelled.
-                self.frame_counter += vx.abs();
-                if self.frame_counter > row.dashing.delay as f32 {
-                    self.frame_counter -= row.dashing.delay as f32;
-                    self.frame += 1;
-                }
-                if self.frame < row.dashing.start
-                    || self.frame >= row.dashing.start + row.dashing.count
-                {
-                    self.frame = row.dashing.start;
-                }
+            _ => {
+                // `:4476-4505` (dashing) waits for the dash mounts.
             }
-            _ => {}
         }
     }
 
@@ -2467,80 +2259,6 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn the_special_ability_rows_carry_the_c_constants() {
-        // `Mount.cs:1987-2044` Santank: the cannon's 40/40/0 ability + the
-        // run/jump stats; `SetAsChillet`/`SetAsRollerSkate` shapes.
-        let s = mount_data(46).expect("the Santank row");
-        assert_eq!((s.buff, s.spawn_dust), (281, 15));
-        assert_eq!(
-            (s.ability_charge_max, s.ability_cooldown, s.ability_duration),
-            (40, 40, 0)
-        );
-        assert_eq!((s.run_speed, s.dash_speed, s.acceleration), (8.0, 8.0, 0.4));
-        assert_eq!((s.jump_height, s.jump_speed), (8, 9.01));
-        assert!(!s.block_extra_jumps);
-        assert_eq!((s.front_sheet, s.front_extra_sheet), ("Extra_168", "Extra_168"));
-
-        // The Chillets: 62/63 vanilla, 64/65 the hardmode branch (dash 9,
-        // jump 11/8.1), both with walking grace + the dashing band.
-        for (id, buff, dash, jh, js, hm) in [
-            (62, 387, 6.5, 6, 8.01, false),
-            (63, 388, 6.5, 6, 8.01, false),
-            (64, 391, 9.0, 11, 8.1, true),
-            (65, 392, 9.0, 11, 8.1, true),
-        ] {
-            let c = mount_data(id).expect("the chillet row");
-            assert_eq!(c.buff, buff);
-            assert_eq!((c.run_speed, c.dash_speed), (3.0, dash));
-            assert_eq!((c.jump_height, c.jump_speed), (jh, js));
-            assert_eq!(c.walking_grace_time_max, 10);
-            assert_eq!(c.dashing.start, 5);
-            assert_eq!(c.dashing.count, 7);
-            assert_eq!((c.x_offset, c.y_offset, c.player_head_offset), (7, -10, 10));
-            assert!(c.height_boost == 4 && c.flight_time_max == 0);
-            let _ = hm;
-        }
-        // The roller skates: additive stats, wing-allowed, grindable, no strip.
-        for (id, buff) in [(57, 378), (58, 379), (59, 380), (60, 381)] {
-            let r = mount_data(id).expect("the skate row");
-            assert_eq!(r.buff, buff);
-            assert!(r.movement_stats_are_additive);
-            assert!(r.can_use_wings);
-            assert!(r.can_ride_minecart_tracks);
-            assert_eq!((r.run_speed, r.dash_speed, r.acceleration), (1.0, 1.0, 0.1));
-            assert_eq!((r.jump_height, r.jump_speed), (2, 1.0));
-            assert!(r.front_sheet.is_empty() && r.back_sheet.is_empty());
-        }
-        // The summon items reach their rows.
-        assert_eq!(mount_type_of_item(4794), Some(46));
-        assert_eq!(mount_type_of_buff(281), Some(46));
-        for (item, id) in [(5600, 57), (5640, 58), (5641, 59), (5642, 60)] {
-            assert_eq!(mount_type_of_item(item), Some(id));
-        }
-        for (item, id) in [(5665, 62), (5666, 63), (6150, 64), (6151, 65)] {
-            assert_eq!(mount_type_of_item(item), Some(id));
-        }
-    }
-
-    #[test]
-    fn the_dashing_frame_advances_the_band() {
-        // `Mount.cs:4476-4505` (FRAME_DASHING) and the row's 7/130/5 band.
-        let mut m = MountState::default();
-        m.set_mount(62, false);
-        m.test_set_frame_state(crate::mount::FRAME_DASHING);
-        m.update_frame(crate::mount::FRAME_DASHING, 6.5, 0.0, false, false);
-        assert_eq!(m.frame, 5, "the band starts at dashingFrameStart");
-        for _ in 0..140 {
-            m.update_frame(crate::mount::FRAME_DASHING, 6.5, 0.0, false, false);
-        }
-        assert!(
-            (5..12).contains(&m.frame),
-            "the frame stays inside the 7-wide band, got {}",
-            m.frame
-        );
-    }
-
     #[test]
     fn the_cart_rows_carry_the_setas_minecart_body() {
         // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus

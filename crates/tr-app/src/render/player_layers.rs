@@ -1573,8 +1573,8 @@ mod tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
-            mount_back: [Some(sheet()); 59],
-            mount_front: [Some(sheet()); 59],
+            mount_back: [Some(sheet()); 50],
+            mount_front: [Some(sheet()); 50],
         }
     }
 

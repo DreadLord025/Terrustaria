@@ -1075,6 +1075,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
+    // The vanilla slot (`WorldGen.cs:16853`): immediately before Buried
+    // Chests (`:16971`) — the M5-STRUCT-1 insertion, the statues pass with
+    // its statue-trap arm. Its own `pass_rng("Statues")` stream, so no
+    // other pass's draws shift.
+    step!("statues", "Statues", step_statues),
     step!("cave houses", "Buried Chests", step_cave_houses),
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
@@ -1842,6 +1847,21 @@ fn step_temple(
     gv.temple = temple::pass_lihzahrd_temple(world, dungeon_x, rock_layer, &mut trng);
 }
 
+fn step_statues(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `Statues` (`WorldGen.cs:16853-16970`) on its own per-pass stream (the
+    // vanilla per-pass reseed), reading `world_surface`/`rock_layer` off the
+    // `World` (the pass's `Main.*` reads).
+    let mut rng = streams.pass_rng("Statues");
+    structures::pass_statues(world, &mut rng);
+}
+
 fn step_cave_houses(
     world: &mut World,
     gv: &mut GenVars,
@@ -2230,13 +2250,14 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_56_named_steps() {
+    fn the_executed_pipeline_is_57_named_steps() {
         let names = executed_pass_names();
         // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
         // M5-STRUCT-5: + `spider caves` + `gem caves` + `moss` + `webs and
         // honey` (vanilla `:17356` / `:17428` / `:17472` / `:19995`).
-        assert_eq!(names.len(), 56);
+        // M5-STRUCT-1: + `statues` (vanilla "Statues", `:16853`).
+        assert_eq!(names.len(), 57);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2301,6 +2322,7 @@ mod tests {
                 "hell forts",
                 "lihzahrd temple",
                 "temple part 2",
+                "statues",
                 "cave houses",
                 "campsites",
                 "spike pits",
