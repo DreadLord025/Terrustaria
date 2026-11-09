@@ -1717,6 +1717,10 @@ impl App {
                         "primesaw" => NpcKind::PrimeSaw,
                         "primevice" => NpcKind::PrimeVice,
                         "primelaser" => NpcKind::PrimeLaser,
+                        // The Twins (M4-NPC-3k): the two eyes ride their
+                        // hover machines up beside the player once spawned.
+                        "retinazer" => NpcKind::Retinazer,
+                        "spazmatism" => NpcKind::Spazmatism,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
