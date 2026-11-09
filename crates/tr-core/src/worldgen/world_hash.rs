@@ -156,12 +156,13 @@ mod tests {
     /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
     /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
     /// pass — every world on every seed changes by design.
-    // M5-DESERT-structures (2026-11-09): the `Dunes` pass and the `Full
-    // Desert` underground desert changed the generated worlds; the pins are
-    // re-taken after the merge of that branch (the merged content is what
-    // they describe).
-    const SEED42_512: u32 = 1040332190;
-    const DEFAULT_WORLD: u32 = 3467491710;
+    // M5-SPREAD-1 (2026-11-09): `growth::spread_grass`'s enclosure gate was
+    // inverted (it refused when the 3x3 box was all-empty instead of
+    // all-solid, `WorldGen.cs:75186-75201`), so the growth tick and the neon
+    // moss worldgen sweep converted the wrong cells; the pins are re-taken
+    // with the C# semantics.
+    const SEED42_512: u32 = 1586971478;
+    const DEFAULT_WORLD: u32 = 4240603701;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

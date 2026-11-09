@@ -6696,6 +6696,20 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Grass growth's enclosure gate (M5-SPREAD-1)
+
+`growth::spread_grass` carried an inverted neighbour gate: it refused the
+conversion when the 3×3 box was all-empty and proceeded when it was all-solid
+— the exact inverse of the C# (`WorldGen.cs:75186-75201`'s `flag`, which
+starts true, is cleared by any non-solid tile, re-armed by a lava tile with an
+early break, and refuses only while it stays set). The growth tick therefore
+refused the open-soil conversions the C# allows and allowed the enclosed ones
+it refuses; the neon-moss worldgen sweep (`worldgen/spider_gem_moss.rs`)
+inherits the same function, so both moved. Fixed 2026-11-09 with the C#
+semantics; the world-hash pins are re-taken (`SEED42_512 = 1586971478`,
+`DEFAULT_WORLD = 4240603701`) and `worldgen/biomes.rs`'s divergence note
+updated — its own `spread_jungle_grass` already carried the C# gate.
+
 ## Chest loot rows + the family probes (M5-CHEST-gen)
 
 The remaining `AddBuriedChest` tail rows landed 2026-11-09 with two
