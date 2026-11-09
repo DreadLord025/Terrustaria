@@ -2119,14 +2119,8 @@ pub struct Npc {
     pub wants_minion_batch: u32,
     /// The town NPC's assigned home tile (`homeTileX/Y`); `None` =
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
-    /// world-file persistence lands with M6-SAVE-1's NPC sections
-    /// (M6-SAVE-1e).
+    /// world-file persistence lands with M6-SAVE-1's NPC sections.
     pub home: Option<(i32, i32)>,
-    /// `NPC.GivenName` (`NPC.cs:6497`): the town NPC's display name —
-    /// empty carries the kind's static name, exactly the vanilla's
-    /// "give it a name at the first world-file save" convention. The
-    /// world-file persistence rides M6-SAVE-1's NPC section.
-    pub given_name: String,
     /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
     /// 100/200/300 shot triggers, the 650 teleport threshold).
     pub caster_counter: i32,
@@ -2655,7 +2649,6 @@ impl Npc {
             y,
             vx: 0.0,
             vy: 0.0,
-            given_name: String::new(),
             hp: kind.max_hp(),
             max_hp: kind.max_hp(),
             on_ground: false,
