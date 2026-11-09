@@ -190,6 +190,37 @@ pub struct Lookup {
     /// force-cursor step refuses on a gamepad (input is app-side, so the
     /// caller passes it).
     pub using_gamepad: bool,
+    /// The gamepad's navigator/thumbsticks read as idle
+    /// (`Step_Pickaxe_MineSolids` :2359-2368): the mine step re-points the
+    /// mouse straight ahead of the player while no direction is held.
+    /// Input is app-side, so the caller passes it.
+    pub gamepad_idle: bool,
+    /// `player.gravDir` (`Step_Pickaxe_MineSolids` :2357): the player's
+    /// gravity sign (the walk's vertical flip).
+    pub grav_dir: f32,
+    /// `player.direction` (the mine step's horizontal sign).
+    pub direction: i32,
+    /// `Main.netMode == 1` (the client): the mine-solids vote's
+    /// multiplayer tie-break runs only on a client.
+    pub is_mp_client: bool,
+    /// The three miner counts the C#'s tie-break scans `Main.player[0..255)`
+    /// for (`:2507-2561`): the lower-id miners within 8 px, the lower-id
+    /// miners within 80 px and |dY| ≤ 12, and the higher-id miners within
+    /// 8 px. The player array is app-side, so the caller passes the counts.
+    pub mp_miners: MpMinerCounts,
+}
+
+/// The `Step_Pickaxe_MineSolids` multiplayer tie-break's three counts (the
+/// C# scans `Main.player[0..255)` for the active, non-dead, pick-equipped
+/// miners — an app-side array).
+#[derive(Clone, Copy, Default)]
+pub struct MpMinerCounts {
+    /// `num13` — the miners with a lower id within 8 px.
+    pub near_before: i32,
+    /// `num14` — the miners with a lower id within 80 px and |dY| ≤ 12.
+    pub far_before: i32,
+    /// `num15` — the miners with a higher id within 8 px.
+    pub near_after: i32,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -2082,6 +2113,384 @@ pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     }
     if flag {
         return Some((x, y));
+    }
+    None
+}
+
+// ------------------------------------------------------------ line walker --
+
+/// The C#'s "solid full block" test as HitLine reads it
+/// (`Collision.cs:784`-style: `!inActive() && active() && tileSolid &&
+/// !tileSolidTop`).
+fn hit_line_solid(t: &Tile) -> bool {
+    !t.inactive() && t.active() && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+}
+
+/// `Collision.HitLine` (`Collision.cs:780-969`): the Bresenham-ish line walk
+/// from `(x1, y1)` to `(x2, y2)` — `ignoreX`/`ignoreY` flip the
+/// perpendicular hit arms off (the mine step passes the walk's own
+/// direction so the side it came from does not block), the ignore targets
+/// (the grapple hooks) never block. Returns the hit cell (the endpoint when
+/// nothing blocks) or `false` with the START cell when the walk leaves the
+/// world (the C#'s catch arm — the port's out-of-world read).
+fn hit_line(
+    w: &crate::World,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+    ignore_x: i32,
+    ignore_y: i32,
+    ignore_targets: &[(i32, i32)],
+) -> Result<(i32, i32), (i32, i32)> {
+    let (max_x, max_y) = (w.width, w.height);
+    // `:786-792` — the C#'s sequential-if clamps (a true `clamp` panics on
+    // the port's small test worlds, where maxY - 40 < 1).
+    let mut vx = x1;
+    let mut vy = y1;
+    let mut vx2 = x2;
+    let mut vy2 = y2;
+    if vx <= 1 {
+        vx = 1;
+    }
+    if vx2 <= 1 {
+        vx2 = 1;
+    }
+    if vx >= max_x {
+        vx = max_x - 1;
+    }
+    if vx2 >= max_x {
+        vx2 = max_x - 1;
+    }
+    if vy <= 1 {
+        vy = 1;
+    }
+    if vy2 <= 1 {
+        vy2 = 1;
+    }
+    if vy >= max_y - 40 {
+        vy = max_y - 40;
+    }
+    if vy2 >= max_y - 40 {
+        vy2 = max_y - 40;
+    }
+    let (num, num2) = ((vx - vx2).abs() as f32, (vy - vy2).abs() as f32);
+    if num == 0.0 && num2 == 0.0 {
+        return Ok((vx, vy));
+    }
+    // `:803-817` — the axis steps: the wider axis walks one cell per step,
+    // the narrower accumulates a fractional stride.
+    let mut num3 = 1.0f32;
+    let mut num4 = 1.0f32;
+    if num == 0.0 || num2 == 0.0 {
+        if num == 0.0 {
+            num3 = 0.0;
+        }
+        if num2 == 0.0 {
+            num4 = 0.0;
+        }
+    } else if num > num2 {
+        num3 = num / num2;
+    } else {
+        num4 = num2 / num;
+    }
+    let mut num5 = 0.0f32;
+    let mut num6 = 0.0f32;
+    let mut num7 = 1;
+    if vy < vy2 {
+        num7 = 2;
+    }
+    let mut num8 = num as i32;
+    let mut num9 = num2 as i32;
+    let num10 = (vx2 - vx).signum();
+    let num11 = (vy2 - vy).signum();
+    let mut flag = false;
+    let mut flag2 = false;
+    loop {
+        match num7 {
+            2 => {
+                num5 += num3;
+                let mut num13 = num5 as i32;
+                num5 -= num13 as f32;
+                for _ in 0..num13 {
+                    let (Some(above), Some(below), Some(cur)) =
+                        (w.tile(vx, vy - 1), w.tile(vx, vy + 1), w.tile(vx, vy))
+                    else {
+                        return Err((x1, y1));
+                    };
+                    if !ignore_targets.contains(&(vx, vy))
+                        && !ignore_targets.contains(&(vx, vy - 1))
+                        && !ignore_targets.contains(&(vx, vy + 1))
+                    {
+                        if ignore_y != -1
+                            && num11 < 0
+                            && hit_line_solid(above)
+                        {
+                            return Ok((vx, vy - 1));
+                        }
+                        if ignore_y != 1 && num11 > 0 && hit_line_solid(below) {
+                            return Ok((vx, vy + 1));
+                        }
+                        if hit_line_solid(cur) {
+                            return Ok((vx, vy));
+                        }
+                    }
+                    if num8 == 0 && num9 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    vx += num10;
+                    num8 -= 1;
+                    if num8 == 0 && num9 == 0 && num13 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num9 != 0 {
+                    num7 = 1;
+                }
+            }
+            _ => {
+                num6 += num4;
+                let mut num12 = num6 as i32;
+                num6 -= num12 as f32;
+                for _ in 0..num12 {
+                    let (Some(left), Some(right), Some(cur)) =
+                        (w.tile(vx - 1, vy), w.tile(vx + 1, vy), w.tile(vx, vy))
+                    else {
+                        return Err((x1, y1));
+                    };
+                    if !ignore_targets.contains(&(vx, vy))
+                        && !ignore_targets.contains(&(vx - 1, vy))
+                        && !ignore_targets.contains(&(vx + 1, vy))
+                    {
+                        if ignore_x != -1 && num10 < 0 && hit_line_solid(left) {
+                            return Ok((vx - 1, vy));
+                        }
+                        if ignore_x != 1 && num10 > 0 && hit_line_solid(right) {
+                            return Ok((vx + 1, vy));
+                        }
+                        if hit_line_solid(cur) {
+                            return Ok((vx, vy));
+                        }
+                    }
+                    if num8 == 0 && num9 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    vy += num11;
+                    num9 -= 1;
+                    if num8 == 0 && num9 == 0 && num12 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num8 != 0 {
+                    num7 = 2;
+                }
+            }
+        }
+        let Some(cur) = w.tile(vx, vy) else {
+            return Err((x1, y1));
+        };
+        if !ignore_targets.contains(&(vx, vy)) && hit_line_solid(cur) {
+            return Ok((vx, vy));
+        }
+        if flag || flag2 {
+            break;
+        }
+    }
+    Ok((vx, vy))
+}
+
+// --------------------------------------------------------- mine-solids step --
+
+/// `SmartCursorHelper.Step_Pickaxe_MineSolids` (`:2350-2580`): the held
+/// pickaxe mines a beam of solids from the player toward the mouse — the
+/// step walks the beam's start cells to its end cells with `HitLine`,
+/// keeping every solid hit on the way (minus the unkillable ones), and
+/// votes the closest to the player's centre (the client's multiplayer
+/// tie-break perturbs that origin).
+pub fn step_pickaxe_mine_solids(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+) -> Option<(i32, i32)> {
+    // `:2351-2353` — the player's height/gravity/id (the id only feeds the
+    // MP scan, which the caller answers with `mp_miners`).
+    let height = l.player_height;
+    let grav_dir = l.grav_dir;
+    // `:2355` — the pick-power gate + the focus sentinel.
+    if l.item.pick <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:2359-2368` — the gamepad override: with the sticks idle the mouse
+    // is re-pointed straight ahead of the player (the direction × 1000 px).
+    let mut mouse = l.mouse;
+    if l.using_gamepad
+        && l.gamepad_idle
+    {
+        mouse = (player_center(l).0 + l.direction as f32 * 1000.0, player_center(l).1);
+    }
+    let center = player_center(l);
+    // `:2370-2381` — the axis snap: an axis beyond 3× the other zeroes its
+    // perpendicular and pins the mouse to the centre's axis.
+    let (dx, dy) = (mouse.0 - center.0, mouse.1 - center.1);
+    let mut num = dx.signum() as i32;
+    let mut num2 = dy.signum() as i32;
+    if dx.abs() > dy.abs() * 3.0 {
+        num2 = 0;
+        mouse.1 = center.1;
+    }
+    if dy.abs() > dx.abs() * 3.0 {
+        num = 0;
+        mouse.0 = center.0;
+    }
+    // `:2383-2384` — the C#'s two decompiler artifacts (`_ =
+    // (int)Center.X / 16` — no side effects, dropped).
+    let (position, width) = (l.player_position, l.player_width);
+    // `:2386-2387` — the beam's start points and end points.
+    let mut points: Vec<(i32, i32)> = Vec::new();
+    let mut endpoints: Vec<(i32, i32)> = Vec::new();
+    let mut num3 = 1;
+    if num2 == -1 && num != 0 {
+        num3 = -1;
+    }
+    // `:2389-2395` — the player's edge column/row (the gravity flip picks
+    // the bottom row).
+    let num4 = ((position.0 + (width / 2) as f32 + ((width / 2 - 1) * num) as f32) / 16.0) as i32;
+    let mut num5 = ((position.1 as f64 + 0.1) / 16.0) as i32;
+    if num3 == -1 {
+        num5 = ((position.1 + (height - 1) as f32) / 16.0) as i32;
+    }
+    let num6 = width / 16 + if width % 16 != 0 { 1 } else { 0 };
+    let num7 = height / 16 + if height % 16 != 0 { 1 } else { 0 };
+    if num != 0 {
+        for i in 0..num7 {
+            if w.tile(num4, num5 + i * num3).is_some() {
+                points.push((num4, num5 + i * num3));
+            }
+        }
+    }
+    if num2 != 0 {
+        for j in 0..num6 {
+            if w.tile((position.0 / 16.0) as i32 + j, num5).is_some() {
+                points.push(((position.0 / 16.0) as i32 + j, num5));
+            }
+        }
+    }
+    // `:2413-2422` — the mouse's edge column/row (the gravity flip + the
+    // two gravity-axis corrections, then the row clamp).
+    let num8 = ((mouse.0 + ((width / 2 - 1) * num) as f32) / 16.0) as i32;
+    let mut num9 = ((mouse.1 as f64 + 0.1 - (height / 2 + 1) as f64) / 16.0) as i32;
+    if num3 == -1 {
+        num9 = ((mouse.1 + (height / 2) as f32 - 1.0) / 16.0) as i32;
+    }
+    if grav_dir == -1.0 && num2 == 0 {
+        num9 += 1;
+    }
+    if grav_dir == 1.0 && num == 0 {
+        num9 += 1;
+    }
+    if num9 < 10 {
+        num9 = 10;
+    }
+    if num9 > w.height - 10 {
+        num9 = w.height - 10;
+    }
+    let num10 = width / 16 + if width % 16 != 0 { 1 } else { 0 };
+    let num11 = height / 16 + if height % 16 != 0 { 1 } else { 0 };
+    // `WorldGen.InWorld(num8, num9, 40)` (`WorldGen.cs:9688-9696`): the 40-tile
+    // world-fluff margin on every side.
+    if num8 >= 40 && num8 < w.width - 40 && num9 >= 40 && num9 < w.height - 40 {
+        if num != 0 {
+            for k in 0..num11 {
+                if w.tile(num8, num9 + k * num3).is_some() {
+                    endpoints.push((num8, num9 + k * num3));
+                }
+            }
+        }
+        if num2 != 0 {
+            for m in 0..num10 {
+                if w.tile(((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9).is_some() {
+                    endpoints.push((((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9));
+                }
+            }
+        }
+    }
+    // `:2449-2488` — the walk: every start/end pair walks; every hit on the
+    // way joins the targets (the endpoint's own hit and the full-solid
+    // re-hit — the C#'s two adds, the grapple targets excluded).
+    let grapple_targets: Vec<(i32, i32)> = Vec::new();
+    let mut targets: Vec<(i32, i32)> = Vec::new();
+    while !points.is_empty() && !endpoints.is_empty() {
+        let (a, b) = (points[0], endpoints[0]);
+        let col = match hit_line(
+            w,
+            a.0,
+            a.1,
+            b.0,
+            b.1,
+            num * grav_dir as i32,
+            -num2 * grav_dir as i32,
+            &grapple_targets,
+        ) {
+            Ok(c) => c,
+            Err(_) => {
+                points.remove(0);
+                endpoints.remove(0);
+                continue;
+            }
+        };
+        if col != b {
+            targets.push(col);
+        }
+        if let Some(t) = w.tile(col.0, col.1) {
+            if !t.inactive()
+                && t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                && !grapple_targets.contains(&col)
+            {
+                targets.push(col);
+            }
+        }
+        points.remove(0);
+        endpoints.remove(0);
+    }
+    // `:2489-2501` — the unkillable targets are dropped.
+    targets.retain(|&(x, y)| crate::edit::can_kill_tile(w, x, y, |_, _| false));
+    if !targets.is_empty() {
+        // `:2507-2561` — the client's tie-break origin: the neighboring
+        // miners perturb the vote centre by ±12 px per parity.
+        let mut vote = center;
+        if l.is_mp_client {
+            let (num13, num14, num15) =
+                (l.mp_miners.near_before, l.mp_miners.far_before, l.mp_miners.near_after);
+            if num13 > 0 {
+                vote.0 += if num13 % 2 == 1 { 12.0 } else { -12.0 };
+                if num14 % 2 == 1 {
+                    vote.1 -= 12.0;
+                }
+            }
+            if num15 > 0 && num13 == 0 {
+                vote.0 += if num15 % 2 == 1 { -12.0 } else { 12.0 };
+            }
+        }
+        // `:2562-2576` — the vote from the (possibly perturbed) centre.
+        let mut best: Option<(i32, i32)> = None;
+        let mut best_dist = -1.0f32;
+        for &(x, y) in &targets {
+            let d = dist_to_mouse(x, y, vote);
+            if best_dist == -1.0 || d < best_dist {
+                best_dist = d;
+                best = Some((x, y));
+            }
+        }
+        let p = best?;
+        if in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y) {
+            return Some(p);
+        }
     }
     None
 }
