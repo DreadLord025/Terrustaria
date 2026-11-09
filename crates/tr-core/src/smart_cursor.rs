@@ -16,11 +16,13 @@
 //! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
 //! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264),
 //! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles),
-//! `Step_EmptyBuckets` (:622-676) and `Step_BlocksLines` (:814-888, over the
-//! caller-passed `Lookup::smart_blocks_enabled`) — the seed/herb/planting
-//! family plus the paint family, gated on item id / `createTile` and shared
-//! with the closest-to-mouse vote. The paint steps read the caller-passed
-//! `Lookup::paint_lookup`/`paint_coating_lookup`
+//! `Step_EmptyBuckets` (:622-676), `Step_BlocksLines` (:814-888, over the
+//! caller-passed `Lookup::smart_blocks_enabled`) and `Step_Walls`
+//! (:1100-1164, over the caller-passed player hitbox and the
+//! `Collision.CanHitWithCheck` line walk) — the seed/herb/planting family
+//! plus the paint family, gated on item id / `createTile` / `createWall`
+//! and shared with the closest-to-mouse vote. The paint steps read the
+//! caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
@@ -82,6 +84,9 @@ pub struct ItemPort {
     /// `Item.createTile` (`Item.cs:169`'s `-1` default): the tile the item
     /// places.
     pub create_tile: i32,
+    /// `Item.createWall` (`Item.cs:171`'s `-1` default): the wall the item
+    /// places.
+    pub create_wall: i32,
     /// `Item.placeStyle` (`Item.cs:173`'s `0` default): the sub-style the
     /// placement takes.
     pub place_style: i32,
@@ -105,6 +110,15 @@ pub struct Lookup {
     pub end_x: i32,
     /// `reachableEndY` — the clamped reach rect's last row.
     pub end_y: i32,
+    /// `SmartCursorUsageInfo.position` (`:21`, the C# `Vector2`) plus the
+    /// holding player's `width`/`height` (`Player.cs`) — the wall step's
+    /// line-of-sight origin (`Step_Walls` :1100-1102). The player entity is
+    /// app-side, so the caller passes them.
+    pub player_position: (f32, f32),
+    /// `providedInfo.player.width`.
+    pub player_width: i32,
+    /// `providedInfo.player.height`.
+    pub player_height: i32,
     /// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
     /// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields.
     pub weather: crate::growth::WeatherCtx,
@@ -1175,16 +1189,168 @@ pub fn step_blocks_lines(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// --------------------------------------------------------------- wall step --
+
+/// `DelegateMethods.NotDoorStand` (`DelegateMethods.cs:854-865`): the open
+/// door's 11 whose frame column (18..53) blocks the line walk — the C#'s
+/// `Utils.TileActionAttempt` the walk applies at every step.
+fn not_door_stand(w: &crate::World, x: i32, y: i32) -> bool {
+    match w.tile(x, y) {
+        Some(t) if t.active() && t.kind == 11 => t.frame_x >= 18 && t.frame_x < 54,
+        _ => true,
+    }
+}
+
+/// The C#'s inline "solid full block" test (`CanHitWithCheck` :526-534,
+/// :564-571): `!inActive() && active() && tileSolid && !tileSolidTop &&
+/// slope() == 0 && !halfBrick()` — i.e. `Tile.nactive()` plus the flags.
+fn solid_full(t: &Tile) -> bool {
+    crate::tileobject::nactive(t)
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+}
+
+/// `Collision.CanHitWithCheck` (`Collision.cs:490-586`): the line walk from
+/// the player's centre tile to the target cell — the wall step's reach
+/// check. The C#'s `Utils.TileActionAttempt` delegate is the port's `check`
+/// closure; the C#'s `Main.tile == null` / catch guards read as the port's
+/// `World::tile` returning `None` → `false` (the same result as the vanilla
+/// catch, which returns `false`).
+fn can_hit_with_check(
+    w: &crate::World,
+    p1: (f32, f32),
+    w1: i32,
+    h1: i32,
+    p2: (f32, f32),
+    w2: i32,
+    h2: i32,
+    check: impl Fn(i32, i32) -> bool,
+) -> bool {
+    let (max_x, max_y) = (w.width, w.height);
+    // `:493-518` — the two centre tiles, clamped to the C#'s windows
+    // (columns 1..maxTilesX-1, rows 1..maxTilesY-40).
+    let mut num = ((p1.0 + (w1 / 2) as f32) / 16.0) as i32;
+    let mut num2 = ((p1.1 + (h1 / 2) as f32) / 16.0) as i32;
+    let mut num3 = ((p2.0 + (w2 / 2) as f32) / 16.0) as i32;
+    let mut num4 = ((p2.1 + (h2 / 2) as f32) / 16.0) as i32;
+    num = num.clamp(1, max_x - 1);
+    num3 = num3.clamp(1, max_x - 1);
+    num2 = num2.clamp(1, max_y - 40);
+    num4 = num4.clamp(1, max_y - 40);
+    loop {
+        // `:523-548` — the Manhattan step: the wider axis advances first,
+        // and a full solid tower on both sides of the crossed column blocks.
+        let (num5, num6) = ((num - num3).abs(), (num2 - num4).abs());
+        if num == num3 && num2 == num4 {
+            return true;
+        }
+        if num5 > num6 {
+            num = if num >= num3 { num - 1 } else { num + 1 };
+            let (Some(above), Some(below)) = (w.tile(num, num2 - 1), w.tile(num, num2 + 1)) else {
+                return false;
+            };
+            if solid_full(above) && solid_full(below) {
+                return false;
+            }
+        } else {
+            num2 = if num2 >= num4 { num2 - 1 } else { num2 + 1 };
+            let (Some(left), Some(right)) = (w.tile(num - 1, num2), w.tile(num + 1, num2)) else {
+                return false;
+            };
+            if solid_full(left) && solid_full(right) {
+                return false;
+            }
+        }
+        // `:549-556` — the reached cell may not itself be a full solid.
+        let Some(cur) = w.tile(num, num2) else {
+            return false;
+        };
+        if cur.active()
+            && crate::tileobject::nactive(&cur)
+            && crate::tiledata::TILE_SOLID.has(cur.kind)
+            && !crate::tiledata::TILE_SOLID_TOP.has(cur.kind)
+        {
+            return false;
+        }
+        // `:576-578` — the do/while's condition: the walk continues while
+        // the check passes; a false ends it with `return false`.
+        if !check(num, num2) {
+            return false;
+        }
+    }
+}
+
+/// `SmartCursorHelper.Step_Walls` (`:1100-1164`): the held wall item
+/// (`createWall > 0`) re-points at the closest reachable cell whose wall
+/// slot is free, that stands beside a tile-or-wall neighbour and is not an
+/// open-door anchor frame.
+pub fn step_walls(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1101-1106` — the player's hitbox (the C#'s line-of-sight origin)
+    // and the createWall gate + the focus sentinel.
+    let (width, height) = (l.player_width, l.player_height);
+    if l.item.create_wall <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1114` — a free wall slot behind a non-full-solid cell,
+            // reachable from the player (`NotDoorStand` is the walk's check).
+            if t.wall == 0
+                && (!t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+                && can_hit_with_check(
+                    w,
+                    l.player_position,
+                    width,
+                    height,
+                    (i as f32 * 16.0, j as f32 * 16.0),
+                    16,
+                    16,
+                    |x, y| not_door_stand(w, x, y),
+                )
+            {
+                // `:1116-1132` — any of the four neighbours carries a tile
+                // or a wall (the `||`, not the `&&`).
+                let mut flag = false;
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    if let Some(tn) = w.tile(i + dx, j + dy) {
+                        if tn.active() || tn.wall > 0 {
+                            flag = true;
+                        }
+                    }
+                }
+                // `:1133-1136` — an open-door anchor frame vetoes the spot.
+                if crate::tileobject::is_open_door_anchor_frame(w, i, j) {
+                    flag = false;
+                }
+                if flag {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
-/// Torch :142 → LawnMower :143 → BlocksLines :145 → PaintRoller :146 →
-/// PaintBrush :147 → PaintScrapper :148 → Acorns :149 → GemCorns :150 →
-/// EmptyBuckets :151 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
-/// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
-/// first step that finds a spot wins — the C# straight-line chain.
+/// Walls :136 → PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 →
+/// Pigronata :140 → Torch :142 → LawnMower :143 → BlocksLines :145 →
+/// PaintRoller :146 → PaintBrush :147 → PaintScrapper :148 → Acorns :149
+/// → GemCorns :150 → EmptyBuckets :151 → AlchemySeeds :153 → PlanterBox
+/// :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's gate refuses a
+/// taken focus, so the first step that finds a spot wins — the C#
+/// straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -1194,7 +1360,8 @@ pub fn step_blocks_lines(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
 pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 17] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 18] = [
+        step_walls,
         step_pumpkin_seeds,
         step_grass_seeds,
         step_moss,
@@ -1307,6 +1474,9 @@ mod tests {
             paint_lookup: 0,
             paint_coating_lookup: 0,
             smart_blocks_enabled: false,
+            player_position: (30.0 * 16.0, 21.0 * 16.0),
+            player_width: 20,
+            player_height: 42,
         }
     }
 
@@ -1314,6 +1484,7 @@ mod tests {
         ItemPort {
             kind,
             create_tile: -1,
+            create_wall: -1,
             place_style: 0,
         }
     }
@@ -1322,6 +1493,17 @@ mod tests {
         ItemPort {
             kind,
             create_tile,
+            create_wall: -1,
+            place_style: 0,
+        }
+    }
+
+    /// A wall-placing item (`Item.createWall > 0`).
+    fn placeable_wall(kind: u16, create_wall: i32) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile: -1,
+            create_wall,
             place_style: 0,
         }
     }
@@ -1584,6 +1766,7 @@ mod tests {
             ItemPort {
                 kind: 0,
                 create_tile: 82,
+                create_wall: -1,
                 place_style: 0,
             },
             mouse_at(25, 19),
@@ -1597,6 +1780,7 @@ mod tests {
             ItemPort {
                 kind: 0,
                 create_tile: 82,
+                create_wall: -1,
                 place_style: 1,
             },
             mouse_at(25, 19),
@@ -2219,6 +2403,125 @@ mod tests {
             step_blocks_lines(&world, &seed, -1, -1),
             None,
             "the grass seed takes its own step, not the block lines"
+        );
+    }
+
+    /// A tall bare world (100 rows — the walk's `maxTilesY - 40` clamp needs
+    /// a real world height; the 40-row fixture clamps every row to 0 and the
+    /// walk fails on its first out-of-world read, exactly as the C# would).
+    fn tall() -> crate::World {
+        let mut w = crate::World::new("tall".into(), 60, 100);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    /// The frame column of the cell (`Tile.frameX`, the door frames' key).
+    fn frame_x_at(w: &mut crate::World, x: i32, y: i32, frame_x: i16) {
+        let i = w.index(x, y);
+        w.tiles[i].frame_x = frame_x;
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_finds_the_anchored_cell() {
+        // `Step_Walls` :1114-1132 — a free wall slot behind an empty cell
+        // that stands beside a wall neighbour and is reachable from the
+        // player (the default lookup's player centre is the tile (30, 22)).
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1); // the neighbour wall below the spot
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the wall re-points beside the wall neighbour"
+        );
+        // A taken slot is not the answer for that cell (the step moves on
+        // to the neighbour the taken cell anchors — the C#'s `tile.wall == 0`
+        // reads per cell).
+        let mut taken = tall();
+        wall_at(&mut taken, 25, 20, 1);
+        wall_at(&mut taken, 25, 19, 1);
+        let l2 = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_ne!(
+            step_walls(&taken, &l2, -1, -1),
+            Some((25, 19)),
+            "the cell's wall slot is taken"
+        );
+        // No tile-or-wall neighbour — the spot is not a wall.
+        let bare_world = tall();
+        let l3 = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&bare_world, &l3, -1, -1),
+            None,
+            "the spot needs a tile-or-wall neighbour"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_line_of_sight_blocks() {
+        // `CanHitWithCheck` :526-534 — a full-solid tower on both sides of
+        // the crossed column breaks the walk, so the spot is unreachable.
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1); // the neighbour that anchors the spot
+        put(&mut world, 28, 21, 1); // the tower beside the walked column
+        put(&mut world, 28, 23, 1);
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&world, &l, -1, -1),
+            None,
+            "the solid tower blocks the line walk"
+        );
+        // Without the tower the same spot is reachable.
+        let mut open = tall();
+        wall_at(&mut open, 25, 20, 1);
+        assert_eq!(
+            step_walls(
+                &open,
+                &lookup(placeable_wall(0, 1), mouse_at(25, 19)),
+                -1,
+                -1
+            ),
+            Some((25, 19)),
+            "the open walk reaches the spot"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_open_door_anchor_frame_veto() {
+        // `IsOpenDoorAnchorFrame` (WorldGen.cs:69171-69184): the open door's
+        // 11 anchors a wall on its top (columns 0..17) and bottom (54..71)
+        // frame columns — the middle columns (18..53) do not.
+        let mut world = tall();
+        put(&mut world, 25, 19, 11);
+        frame_x_at(&mut world, 25, 19, 0); // the top frame column
+        assert!(crate::tileobject::is_open_door_anchor_frame(&world, 25, 19));
+        frame_x_at(&mut world, 25, 19, 36); // the door's middle
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 25, 19
+        ));
+        frame_x_at(&mut world, 25, 19, 60); // the bottom column
+        assert!(crate::tileobject::is_open_door_anchor_frame(&world, 25, 19));
+        // A closed door (10) or a plain tile is never an anchor.
+        put(&mut world, 26, 19, 10);
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 26, 19
+        ));
+        put(&mut world, 27, 19, 1);
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 27, 19
+        ));
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_runs_first_in_the_chain() {
+        // The dispatch order (:136): the wall step runs before the pumpkin
+        // seeds — the chain dispatches it.
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1);
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the wall step runs inside the lookup chain"
         );
     }
 }
