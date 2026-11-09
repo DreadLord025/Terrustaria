@@ -160,8 +160,8 @@ mod tests {
     // Desert` underground desert changed the generated worlds; the pins are
     // re-taken after the merge of that branch (the merged content is what
     // they describe).
-    const SEED42_512: u32 = 1555134907;
-    const DEFAULT_WORLD: u32 = 2136037719;
+    const SEED42_512: u32 = 1040332190;
+    const DEFAULT_WORLD: u32 = 3467491710;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
