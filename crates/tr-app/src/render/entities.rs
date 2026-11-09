@@ -19,7 +19,8 @@ use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
 /// legs, pants, shoes, hair. Frames are 40x56 on the 40-px-wide strips.
-#[derive(Default)]
+/// `Default` is hand-written: the two 50-entry mount arrays exceed the
+/// `[T; N]: Default` bound for N > 32.
 pub(crate) struct PlayerAssets {
     pub(crate) head: Option<BgTex>,
     pub(crate) eye_whites: Option<BgTex>,
@@ -47,9 +48,33 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_legs: [Option<BgTex>; 5],
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
-    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
-    pub(crate) mount_back: [Option<BgTex>; 23],
-    pub(crate) mount_front: [Option<BgTex>; 23],
+    /// (`frontTexture`) of the ground + hover/flyer + cart sets.
+    pub(crate) mount_back: [Option<BgTex>; 50],
+    pub(crate) mount_front: [Option<BgTex>; 50],
+}
+
+impl Default for PlayerAssets {
+    fn default() -> Self {
+        Self {
+            head: None,
+            eye_whites: None,
+            eyes: None,
+            torso: None,
+            shirt: None,
+            arm: None,
+            undershirt: None,
+            arm_shirt: None,
+            legs: None,
+            pants: None,
+            shoes: None,
+            hair: None,
+            armor_head: [None; 5],
+            armor_body: [None; 5],
+            armor_legs: [None; 5],
+            mount_back: [None; 50],
+            mount_front: [None; 50],
+        }
+    }
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -231,6 +256,9 @@ pub(crate) struct NpcAssets {
     pub(crate) cultist: Option<BgTex>,
     /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
     pub(crate) towers: Option<BgTex>,
+    /// `NPC_406/407/423/425/429` — the pillar shards.
+    pub(crate) shards: Option<BgTex>,
+    pub(crate) shard_hovers: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -351,6 +379,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
         towers: sky_tex(atlas, "NPC_493", None),
+        shards: sky_tex(atlas, "NPC_406", None),
+        shard_hovers: sky_tex(atlas, "NPC_425", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_27", None),
@@ -1173,6 +1203,40 @@ pub(crate) fn draw_npcs(
                 assets.towers.as_ref(),
                 assets.towers.as_ref().map_or(270.0, |t| t.h),
                 [130.0, 270.0],
+                [n.x, n.y],
+            ),
+            // The shards: the cell/jellyfish/beast 2-row strips + the
+            // vortex walkers' 14-frame humanoid strips.
+            NpcKind::StardustCellBig => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(44.0, |t| t.h / 4.0),
+                [44.0 * n.scale, 44.0 * n.scale],
+                [n.x, n.y],
+            ),
+            // The cell's ramp rides `n.scale` (`AI()`'s aiStyle-95 arm,
+            // `NPC.cs:39393`) — the strip's own frame height stays put.
+            NpcKind::StardustCellSmall => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(22.0, |t| t.h / 2.0),
+                [22.0 * n.scale, 22.0 * n.scale],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustJellyfishBig => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(60.0, |t| t.h / 5.0),
+                [40.0, 60.0],
+                [n.x, n.y],
+            ),
+            NpcKind::NebulaBeast => (
+                assets.shard_hovers.as_ref(),
+                assets.shard_hovers.as_ref().map_or(44.0, |t| t.h / 12.0),
+                [50.0, 44.0],
+                [n.x, n.y],
+            ),
+            NpcKind::VortexRifleman | NpcKind::VortexSoldier => (
+                assets.shard_hovers.as_ref(),
+                assets.shard_hovers.as_ref().map_or(56.0, |t| t.h / 13.0),
+                [30.0, 56.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (

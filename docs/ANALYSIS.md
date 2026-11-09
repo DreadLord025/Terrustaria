@@ -2145,10 +2145,16 @@ Deviations recorded by the refactor and this sweep:
   the fixed generator resolves it to the active `case` ids (the grass id
   itself) instead of modelling the local's data flow — the approximation the
   framer expects grass variants to merge against (`Program.cs:613-621`).
-- **`env.rs` is deferred.** The planned consolidation of the ~65 `TR_*` flags
-  into one module did not happen; the flags still live where they are
-  consumed (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs`,
-  `rain.rs`, `render/sky.rs`, …).
+- **`env.rs` landed (2026-11-09, REFACTOR-env).** The ~112 `TR_*` flags
+  consolidated into `crates/tr-app/src/env.rs` as named accessors: every pin
+  resolves once through a `OnceLock` and keeps its original read semantics
+  (`env::var` vs `env::var_os`, the presence/value/parse shape), so no
+  screenshot or test behaviour changed. `TR_SUNDIAL`/`TR_MOONDIAL` deliberately
+  stay live reads — they are the only flags a test mutates (`set_var` /
+  `remove_var` in the DW-1.6 pair, serialized by `ENV_LOCK`) and a `OnceLock`
+  would latch the first test's value into the second's. The tr-core /
+  tr-render pins (`TR_NOCACHE`, `TR_PROBE`) stay with their crates — a
+  cross-crate pins module is the follow-up.
 - **The P6 stand-ins** this sweep documented (see "Front-end screens (P6)"):
   `GameTipsDisplay` not ported, the Crc32-instead-of-`Main.rand` world-name/
   seed composition and the `assign_random_world_name` stand-in.
@@ -6787,6 +6793,60 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
+## Smart cursor (M7-SMARTCURSOR-1)
+
+`tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
+(`GameContent/SmartCursorHelper.cs:61-165`) as a step chain over the caller's
+reachable rect — grass seeds (`:266`), moss (`:334`), pigronata (`:969`), torch
+(`:2795` + `IsValidSpotForTorch` `:2867`), lawn mower (`:2895`), alchemy seeds
+(`:492`), planter box (`:437`), clay pots (`:381`), staff of regrowth (`:224`),
+each voting its candidates by distance-to-mouse (`:2849`'s `_targets` pick) and
+committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
+
+- **The edge convention is deliberately stricter than vanilla.** `Main.tile` is
+  exactly world-sized (`Main.cs:66984`) and the reachable rect never touches the
+  border, so vanilla never indexes out of world. `World::tile` returns `None` at
+  the edge and every step skips such a cell, while a *neighbour* read — the
+  flag/flag2 halves, `:236-239` — counts an out-of-world cell as the inactive
+  tile the C#'s default `Tile` would read. `InTileBounds` rejects any
+  OOB-derived candidate, so the two skip semantics converge with the C# for
+  `Step_PlanterBox`'s side extensions.
+- **`Collision.EmptyTile`'s entity arms are stubbed.** The clay-pots filter
+  (`:418`/`:428`) calls it with `ignoreTiles: true`
+  (`Collision.cs:1359-1386`), so the tile half is skipped; the player/NPC hitbox
+  arms have no tr-core store behind them and `collision_empty_tile` returns
+  `true` until the app-side wiring lands.
+- **`WeatherCtx` is a seam, not a deviation.** `IsAlchemyPlantHarvestable`
+  (`WorldGen.cs:66148-66175`) reads `Main.raining`/`cloudAlpha`/`remixWorld` —
+  session state, not `World` fields — so the caller passes them
+  (`growth.rs`'s `WeatherCtx`); every other input (`dayTime`, `bloodMoon`,
+  `moonPhase`, `worldSurface`, `time`) is saved world state.
+- **The C#'s `&`/`|` bool operators become `&&`/`||`.** `Step_StaffOfRegrowth`'s
+  `(tile.type == 0) & flag2` (`:238`) is redundant — the outer clause already
+  tests `tile.type == 0`, so it reduces to `flag2` — and
+  `IsAlchemyPlantHarvestable`'s `(!Main.raining | flag)` (`:66173`); both
+  operands are pure, so the short-circuit forms are provably equivalent.
+- **`Step_BlocksFilling` (`:2692-2793`) is unreachable in vanilla.** Its `:2709`
+  gate opens with `SmartBlocksEnabled ||` — reached with the setting on,
+  already returned at `:2694` with it off — so the body is dead code. Not
+  ported; do not "fix" it by dropping the flag.
+- **`Step_Pickaxe_MineShinies`'s priority filter (`:2315-2327`) is inert.** Both
+  loops iterate the just-cleared `_targets2`, so the
+  `SmartCursorPickaxePriorityOverride` comparison and the removal never see a
+  candidate; when the pickaxe family lands, port the observable behaviour (a
+  no-op filter), not the intended one.
+- **The torch step's gates were corrected to the real sets.** `:2812` reads
+  `ItemID.Sets.Torches` (24 ids, `ItemID.cs:1371`), the placement test
+  `Main.tileCut` (41 ids) with `TileID.Sets.BreakableWhenPlacing`, and
+  `IsValidSpotForTorch`'s anchors read `TileID.Sets.NotReallySolid` {387, 388,
+  10} (`TileID.cs:592`). This changes the previously merged torch behaviour; no
+  caller existed, so there is no runtime impact.
+- **`edit::solid_tile` gained the `!inActive` term.** The C#'s `nactive()`
+  (`WorldGen.cs:69957-69969`) and the indexed overload's explicit `!inActive()`
+  (`:70111-70131`) both exclude framed-off tiles, so an actuated tile is no
+  longer solid (vanilla parity). `Step_Pigronata`'s seat test
+  (`smart_cursor.rs:582`) reads it; the worldgen-only callers are unaffected —
+  worldgen has no actuated tiles.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -6836,7 +6896,15 @@ Deliberate deviations, all in the module header:
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
+## The pillar shards (M4-EVENT-9)
 
+The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
+`SetDefaults`: 405/406/407/423/425/429). Every row was re-read from the
+decompile before porting — the first pass' stats (the 407 at 1200 HP/def
+50, the 423 at 44×44/3000 HP, the 425 at 22×56) were wrong, as was the
+aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
+26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
+"shard hover" machine belongs to the Star Cell alone.
 
 
 ## Micro-biome passes (M5-BIOME-2)
@@ -6865,4 +6933,59 @@ The three micro-biome passes are 1:1 ports; the deviations:
   The pass's own isolated stream keeps the move RNG-neutral for the other
   steps; the world contract's per-step pins hold.
 - The three passes draw from their own `pass_rng` streams; the shared
-  `streams.rng` is untouched by them.
+  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
+  `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
+  300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
+  vanilla's `SetDefaultsFromNetId` keeps `life`; both are 300 HP so the
+  numbers agree) and resets the ramp. `npcFrameCount[405/406]` = 4/2.
+- **The 407's aiStyle-96 flyer** (`:39430-39472`): `TargetClosest`, the
+  aim vector is the player's centre lifted 250 px, the bands are <20
+  (hold the current velocity) / <40 (1.75) / <80 (3.25) / else 5, the
+  `moveSpeed` 0.15 smoothing, the rotation `velocity.X * 0.1`, and the
+  70-tick cycle throws the 539 at 60 damage from the ring: `UnitY`
+  rotated by a random ±π/2 and scaled by (5, 3), resampled until
+  `|X| >= 1.5` (the port's 64-iteration guard stands in for the vanilla's
+  unbounded loop). 5 frames.
+- **The 405's aiStyle-85 hover** (`:36930-37220`): five `ai[0]` phases.
+  Phase 0 probes (sighted → 1; 800 px → 2; the 8-px corner probe →
+  3 with the player centre as the waypoint; else the drift → 4). Phase 1
+  steers at `8 + dist/100` (the 405's base) over the 50-tick smoothing
+  `(velocity * 49 + desired) / 50` and drops back to 0 when the line of
+  sight breaks. Phases 2/3 charge/homing at 6 and 3 over the 3-tick
+  divisor; phase 4 bounces with the 0.8 restitution and re-probes every
+  180 ticks. The separator loop pushes 0.05 per axis off the player
+  within a width. The 421-only attachment arm and the dust arms are
+  unmodelled.
+- **The 423's `AI_026_Unicorns` arm** (`:62366-62924`): the machine is
+  the unicorn/wolf/hellhound/tumbleweed walker with per-type speed/accel
+  tails — the NebulaBeast's is the 10-px cap, the 0.2 accel and the 0.85
+  turnaround damping. Its own arms sit at `:62497-62557`: the charge
+  (`ai[2] == 1`) damps `velocity.X` by 0.7 each tick, fires the 575 at 50
+  damage (`GetAttackDamage_ForProjectiles(50, 35)` — the classic
+  constant) from 20 px behind the centre at `spriteDirection * -7` on
+  the 30th tick, and releases at 60 by setting `ai[1] = -rand(320, 600)`.
+  The idle arms the charge on the grounded 180-tick idle inside the
+  500-px reach. The ledge-jump arm's tile probes (the −8.5/−7.5/−7/−6/−8
+  ladder at `:62806-62903`) fold into the walker's single jump.
+- **The 425's `AI_003_Fighters` arm** (`:58463-58621`): `localAI[3]`'s
+  one-shot latch rearms `ai[3]` to −120 on the first tick (the port's
+  `rifleman_rearmed` field — without the latch the idling timer retriggers
+  the init forever). Grounded clears the leap state `ai[2]`; in the air
+  the homing aims 300 px to the side of the player and 20 px off its
+  bottom, with the 0.3/8 vertical and 0.3/7 horizontal accel/cap pairs.
+  The leap arm fires when the player's centre is 100 px below with line
+  of sight (`velocity.Y = -5`). The arming window advances `ai[3]` from
+  0 to 30 only inside the 800-px horizontal line of sight, the 31..40
+  windup wraps back to −150, and the 30th tick fires the four 577s at 75
+  damage from 30 px behind the centre — only the first shot is exact.
+- **The 429 rides the plain walker** with the 4-px cap (`:57681`) and
+  has no AI attack; its 578 lightning is a `HitEffect`-death spawn
+  (`:83161-83203`) the port leaves out with the dust/gore arms.
+
+Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
+`DoDeathEvents`'s 629 shield-hit projectile (`:79290`), the 427/428
+metamorphoses, the VortexHunter's shared shooter block and the tower
+spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
+tables themselves stay open.
+

@@ -424,7 +424,7 @@ pub(crate) fn draw_tile_liquid_behind(
     // `BlocksWaterDrawingBehindSelf`: chests and friends never draw water behind
     // themselves, and while sloped they fall back to the plain liquid frame.
     const BLOCKS_WATER_BEHIND: [u16; 5] = [54, 541, 328, 459, 470];
-    if std::env::var_os("TR_NO_LIQBEHIND").is_some() {
+    if crate::env::no_liqbehind() {
         return 0;
     }
     let blocks_behind = BLOCKS_WATER_BEHIND.contains(&tile.kind);
