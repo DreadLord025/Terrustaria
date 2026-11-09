@@ -22,8 +22,35 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `spX/spY` arrays, `Player.cs:54877-54888` — the port's single-player world
 /// save carries it world-side, `World::bed_spawn`); v6 appended the world
 /// flags block (the C# `SaveWorldFlags` progression subset, `WorldFile.cs:1238-1430`),
-/// the wire side table and the tile entities (`SaveTileEntities`, `WorldFile.cs:3302-3313`).
-pub const VERSION: u32 = 6;
+/// the wire side table and the tile entities (`SaveTileEntities`, `WorldFile.cs:3302-3313`);
+/// v7 appended the world chests (`SaveChests`, `WorldFile.cs:1606-1676`).
+pub const VERSION: u32 = 7;
+
+/// One item inside a chest record — the C# `SaveChests` slot shape
+/// (`int16 stack`, then `int32 itemType` + `byte prefix` while the stack is
+/// positive, `WorldFile.cs:1606-1676`); the stack is widened to `i32` for
+/// the port's `u32` counts (the vanilla cap is 9999, far inside `i16`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestItem {
+    pub stack: i32,
+    pub kind: u16,
+    pub prefix: u8,
+}
+
+/// One chest record — the anchor tile, the effective name and the slots.
+///
+/// The slots keep the port's implicit-air compression: a `stack == 0` entry
+/// is an empty slot and trailing airs are dropped, where the C# always
+/// writes `maxItems` slots (40) — the port's store materializes them on
+/// open (`chest::open_chest`'s `resize`), so the compressed vec round-trips
+/// exactly. `maxItems` itself is the port's frozen `DEFAULT_MAX_ITEMS` (40).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChestRecord {
+    pub x: i32,
+    pub y: i32,
+    pub name: String,
+    pub slots: Vec<ChestItem>,
+}
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -73,7 +100,7 @@ pub fn default_player_path(name: &str) -> Option<PathBuf> {
     Some(default_players_dir()?.join(format!("{safe}.plr")))
 }
 
-pub fn save(path: &Path, world: &World) -> Result<()> {
+pub fn save(path: &Path, world: &World, chests: &[ChestRecord]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
@@ -82,7 +109,7 @@ pub fn save(path: &Path, world: &World) -> Result<()> {
         let file =
             std::fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
         let mut w = std::io::BufWriter::new(file);
-        write_world(&mut w, world)?;
+        write_world(&mut w, world, chests)?;
         w.flush()?;
     }
     std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
@@ -90,13 +117,13 @@ pub fn save(path: &Path, world: &World) -> Result<()> {
 }
 
 /// Serialises a world to memory (multiplayer world transfer).
-pub fn to_bytes(world: &World) -> Result<Vec<u8>> {
+pub fn to_bytes(world: &World, chests: &[ChestRecord]) -> Result<Vec<u8>> {
     let mut out = Vec::new();
-    write_world(&mut out, world)?;
+    write_world(&mut out, world, chests)?;
     Ok(out)
 }
 
-fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
+fn write_world(w: &mut impl Write, world: &World, chests: &[ChestRecord]) -> Result<()> {
     w.write_all(MAGIC)?;
     w.write_all(&VERSION.to_le_bytes())?;
     w.write_all(&world.seed.to_le_bytes())?;
@@ -175,6 +202,26 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
     let mut sec = crate::binio::Writer::new();
     world.tile_entities.write_all(&mut sec);
     w.write_all(&sec.into_inner())?;
+    // v7: the world chests — `SaveChests`'s shape (`WorldFile.cs:1606-1676`):
+    // a u32 count, then per chest the anchor, the name and the slots.
+    w.write_all(&(chests.len() as u32).to_le_bytes())?;
+    for chest in chests {
+        w.write_all(&chest.x.to_le_bytes())?;
+        w.write_all(&chest.y.to_le_bytes())?;
+        // The name rides a u32 length + UTF-8, the file's own string
+        // convention (the world name at the stream head).
+        let name = chest.name.as_bytes();
+        w.write_all(&(name.len() as u32).to_le_bytes())?;
+        w.write_all(name)?;
+        w.write_all(&(chest.slots.len() as u32).to_le_bytes())?;
+        for slot in &chest.slots {
+            w.write_all(&slot.stack.to_le_bytes())?;
+            if slot.stack != 0 {
+                w.write_all(&slot.kind.to_le_bytes())?;
+                w.write_all(&[slot.prefix])?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -340,12 +387,18 @@ fn write_tile(w: &mut impl Write, t: &Tile) -> Result<()> {
     Ok(())
 }
 
-pub fn load(path: &Path) -> Result<World> {
+pub fn load(path: &Path) -> Result<(World, Vec<ChestRecord>)> {
     let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     parse(&data).with_context(|| format!("parsing {}", path.display()))
 }
 
-pub fn parse(data: &[u8]) -> Result<World> {
+/// The chests of a parsed save — the v7 section alone (the world is parsed
+/// and dropped, so callers that only walk the store keep one entry point).
+pub fn parse_chests(data: &[u8]) -> Result<Vec<ChestRecord>> {
+    parse(data).map(|(_, chests)| chests)
+}
+
+pub fn parse(data: &[u8]) -> Result<(World, Vec<ChestRecord>)> {
     let mut r = Reader::new(data);
     if r.take(8)? != MAGIC {
         bail!("not a TRWLD save");
@@ -436,8 +489,41 @@ pub fn parse(data: &[u8]) -> Result<World> {
         let tes = TileEntities::read_all(&mut r.0, &world).ok_or_else(|| eof(r.0.pos()))?;
         world.tile_entities = tes;
     }
+    // v7: the world chests (`LoadChests`'s shape `WorldFile.cs:2723-2805` — the
+    // port keeps the store's implicit-air compression instead of the vanilla
+    // fixed `maxItems`, and drops the vanilla's pre-count validity sweep:
+    // the anchors are re-checked by the app when the store is built).
+    let chests = if version >= 7 { read_chests_v7(&mut r)? } else { Vec::new() };
     world.revision = 0;
-    Ok(world)
+    Ok((world, chests))
+}
+
+/// The v7 chests reader — the exact inverse of the v7 write.
+fn read_chests_v7(r: &mut Reader<'_>) -> Result<Vec<ChestRecord>> {
+    let count = r.u32()? as usize;
+    let mut out = Vec::with_capacity(count.min(8192));
+    for _ in 0..count {
+        let x = r.i32()?;
+        let y = r.i32()?;
+        let name_len = r.u32()? as usize;
+        let name = String::from_utf8_lossy(r.take(name_len)?).into_owned();
+        let slots = r.u32()? as usize;
+        let mut items = Vec::with_capacity(slots.min(64));
+        for _ in 0..slots {
+            let stack = r.i32()?;
+            if stack == 0 {
+                items.push(ChestItem { stack: 0, kind: 0, prefix: 0 });
+                continue;
+            }
+            items.push(ChestItem {
+                stack,
+                kind: r.u16()?,
+                prefix: r.u8()?,
+            });
+        }
+        out.push(ChestRecord { x, y, name, slots: items });
+    }
+    Ok(out)
 }
 
 fn read_tile(r: &mut Reader) -> Result<Tile> {
@@ -558,8 +644,8 @@ mod tests {
         w.set_invisible_block(3, 0, true);
         w.set_extras_at(w.index(7, 7), 0);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        let back = parse(&buf).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.width, 64);
         assert_eq!(back.name, "Test");
         assert_eq!(back.seed, 99);
@@ -589,9 +675,9 @@ mod tests {
         w.sundial_cooldown = 5;
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        assert_eq!(&buf[8..12], &[6, 0, 0, 0], "the writer emits the current v6");
-        let back = parse(&buf).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
+        assert_eq!(&buf[8..12], &[7, 0, 0, 0], "the writer emits the current v7");
+        let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
     }
@@ -605,10 +691,10 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf.truncate(buf.len() - 3);
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
-        let back = parse(&buf).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
         assert_eq!(back.moondial_cooldown, 0);
     }
@@ -620,9 +706,9 @@ mod tests {
         // is now the current format, so the gate pins 7.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        buf[8..12].copy_from_slice(&7u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 7 is unsupported");
+        write_world(&mut buf, &w, &[]).unwrap();
+        buf[8..12].copy_from_slice(&8u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 8 is unsupported");
     }
 
     #[test]
@@ -632,13 +718,13 @@ mod tests {
         let mut w = World::new("Test".into(), 64, 48);
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        let back = parse(&buf).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.bed_spawn, Some((30, 20)));
         w.bed_spawn = None;
         buf.clear();
-        write_world(&mut buf, &w).unwrap();
-        assert_eq!(parse(&buf).unwrap().bed_spawn, None);
+        write_world(&mut buf, &w, &[]).unwrap();
+        assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
 
     #[test]
@@ -651,9 +737,9 @@ mod tests {
         w.spawn_y = 20;
         w.bed_spawn = Some((30, 22));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf[8..12].copy_from_slice(&4u32.to_le_bytes());
-        let back = parse(&buf).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.bed_spawn, None);
         assert_eq!((back.spawn_x, back.spawn_y), (32, 20));
     }
@@ -666,13 +752,13 @@ mod tests {
         let mut w = World::new("Test".into(), 64, 48);
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
         // fixed flags block + four empty colour counts + one empty entity
         // count sit after it — [presence][x: i32][y: i32] — poison the x.
         let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4) - 9;
         buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
-        assert_eq!(parse(&buf).unwrap().bed_spawn, None);
+        assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
 
     #[test]
@@ -744,8 +830,8 @@ mod tests {
         let pylon = w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 8, 8);
 
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        let back = parse(&buf).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         // The set flags round-trip and the unset ones stay default.
         assert!(back.blood_moon && back.downed_eoc && back.downed_golem && back.saved_goblin);
         assert!(back.downed_pirates && back.shadow_orb_smashed && back.spawn_meteor && back.hard_mode);
@@ -797,12 +883,12 @@ mod tests {
         w.wires.set(1, 1, WireColor::Red, true);
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
         buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
-        let back = parse(&buf).unwrap();
+        let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
         assert!(!back.downed_eoc);
         assert_eq!(back.invasion_size, 0);
@@ -819,7 +905,7 @@ mod tests {
         w.wires.set(1, 1, WireColor::Red, true);
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
+        write_world(&mut buf, &w, &[]).unwrap();
         buf.truncate(buf.len() - 2); // inside the TE record
         assert!(parse(&buf).is_err());
     }
@@ -839,8 +925,85 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 7, 3);
         let mut a = Vec::new();
         let mut b = Vec::new();
-        write_world(&mut a, &w).unwrap();
-        write_world(&mut b, &w).unwrap();
+        write_world(&mut a, &w, &[]).unwrap();
+        write_world(&mut b, &w, &[]).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn dw_2_2_the_chests_round_trip_in_v7() {
+        // DW-2.2: the v7 tail carries `SaveChests`'s shape (`WorldFile.cs:1606-1676`)
+        // — the anchor, the name (the effective one, renamed or default) and the
+        // slots, including interior airs (the implicit-air compression) and the
+        // prefixed items.
+        let mut w = World::new("Test".into(), 64, 48);
+        let chests = vec![
+            ChestRecord {
+                x: 12,
+                y: 7,
+                name: "Gold Chest".into(),
+                slots: vec![
+                    ChestItem { stack: 35, kind: 19, prefix: 0 },
+                    ChestItem { stack: 0, kind: 0, prefix: 0 }, // interior air
+                    ChestItem { stack: 1, kind: 1541, prefix: 81 },
+                ],
+            },
+            ChestRecord { x: 40, y: 9, name: String::new(), slots: Vec::new() },
+        ];
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &chests).unwrap();
+        assert_eq!(&buf[8..12], &[7, 0, 0, 0], "the writer emits the current v7");
+        let (back, back_chests) = parse(&buf).unwrap();
+        assert_eq!(back_chests, chests);
+    }
+
+    #[test]
+    fn dw_2_2_a_v6_payload_loads_no_chests() {
+        // DW-2.2: a v6 payload (the version field patched) parses with no chests —
+        // the v7 tail sits unread, the same back-compat contract as the earlier
+        // tails.
+        let mut w = World::new("Test".into(), 32, 32);
+        let chests = vec![ChestRecord { x: 3, y: 4, name: "Wooden Chest".into(), slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }] }];
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &chests).unwrap();
+        buf[8..12].copy_from_slice(&6u32.to_le_bytes());
+        let (back, back_chests) = parse(&buf).unwrap();
+        assert!(back_chests.is_empty());
+        assert!(!back_chests.iter().any(|c| c.x == 3 && c.y == 4));
+    }
+
+    #[test]
+    fn dw_2_2_a_truncated_chest_section_bails() {
+        // DW-2.2 (dirty): the chests section is self-delimiting; a payload cut
+        // mid-record is a structural error.
+        let mut w = World::new("Test".into(), 32, 32);
+        let chests = vec![ChestRecord {
+            x: 3,
+            y: 4,
+            name: "Wooden Chest".into(),
+            slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }],
+        }];
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &chests).unwrap();
+        buf.truncate(buf.len() - 3); // inside the item record
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn dw_2_2_the_chest_section_is_deterministic() {
+        // DW-2.2: the same records written twice are byte-equal.
+        let mut w = World::new("Test".into(), 32, 32);
+        let chests = vec![
+            ChestRecord { x: 5, y: 6, name: "Ivy Chest".into(), slots: vec![ChestItem { stack: 20, kind: 166, prefix: 3 }] },
+            ChestRecord { x: 7, y: 8, name: "Water Chest".into(), slots: Vec::new() },
+        ];
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &chests).unwrap();
+        write_world(&mut b, &w, &chests).unwrap();
+        assert_eq!(a, b);
+        let (_, back) = parse(&a).unwrap();
+        assert_eq!(back[0].name, "Ivy Chest");
+        assert_eq!(back[1].name, "Water Chest");
     }
 }
