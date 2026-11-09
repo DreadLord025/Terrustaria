@@ -1319,19 +1319,19 @@ pub(crate) fn draw_npcs(
             // the v1 read `t.h` and sampled the whole strip as one frame
             // at the box's 80x102).
             NpcKind::SkeletronPrime => prime_draw(assets.prime.as_ref(), 6, n, w, h),
-            // The Twins: the 2-frame 100x110 sheets.
+            // The Twins: `Main.npcFrameCount[125/126]` = 6 — NPC_125/126
+            // are 110x1200 (200-px rows), and `FindFrame`'s case 125/126
+            // (`NPC.cs:76906-76924`) walks the spawn rows 0-2 and the live
+            // rows 3-5 (the `ai[0]` hover anchor's +3 offset) over a
+            // 20-tick beat. The v1 ran an 8-tick 2-row strip over a
+            // 600-px slice of the sheet at the box's corner.
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 let tex = if n.kind == NpcKind::Retinazer {
                     assets.retinazer.as_ref()
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                (
-                    tex,
-                    tex.map_or(110.0, |t| t.h / 2.0),
-                    [100.0, 110.0],
-                    [n.x, n.y],
-                )
+                prime_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
@@ -1702,7 +1702,7 @@ pub(crate) fn draw_npcs(
         // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
         // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
         // `facing` cannot stand in for them.
-        let flip_dir = if n.kind.is_martian() {
+        let flip_dir = if n.kind.flips_on_sprite_dir() {
             n.sprite_dir
         } else {
             n.facing
