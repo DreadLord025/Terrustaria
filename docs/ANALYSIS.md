@@ -7231,6 +7231,22 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   (`:1250-1256`: no track directly above or below) and the closest to the
   mouse. The tests pin both halves: a track under a candidate drops it, and
   the line's tail (the second track cell) extends in its own direction.
+- **`Step_ForceCursorToAnyMinableThing` is a seat, not a scan.** The step
+  writes the mouse's own tile (`Utils.ToTileCoordinates`' arithmetic `>> 4`
+  shift — the port keeps the shift, not a float floor) when that tile is
+  minable and not a full solid; the `WorldGen.CanKillTile` half runs
+  `edit::can_kill_tile` with the app-side chest store's closure passing
+  `false` (the same convention as the wiring slice — the chest store fills
+  with M3-CHEST-UI), and the three tool demotions read the new
+  `Main.tileHammer` (4 ids) / `Main.tileAxe` (16 ids) tables, transcribed in
+  `tileobject.rs` beside the `TILE_CUT` precedent because the generator's
+  `wantedSets` does not carry them (the arrays are plain `Main.tile*`
+  assignments, not `TileID.Sets`).
+- **The tool powers are caller-passed on `ItemPort`.** The step reads
+  `item.pick`/`item.axe`/`item.hammer` (`Item.cs:161/163/165`); the item
+  definition data lives in the app's `itemdata.rs`, so the three powers ride
+  `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
+  force-cursor step then refuses every tile — the gate is `pick < 1`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
