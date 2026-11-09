@@ -6913,6 +6913,30 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   longer solid (vanilla parity). `Step_Pigronata`'s seat test
   (`smart_cursor.rs:582`) reads it; the worldgen-only callers are unaffected —
   worldgen has no actuated tiles.
+- **The paint lookup is a seam, like `WeatherCtx`.** `Step_PaintBrush`/
+  `Step_PaintRoller` (:727/:772) read `SmartCursorUsageInfo.paintLookup`/
+  `paintCoatingLookup` (:31-32), which the C# fills with
+  `TryFindingPaintInplayerInventory` (:177-191) — a scan of the player's
+  inventory (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`). The
+  inventory is app-side, so the port's `Lookup.paint_lookup`/
+  `paint_coating_lookup` stay caller-passed u32s until the app wiring lands;
+  `Step_PaintScrapper` (:678) never reads them — :182 fills them only for the
+  brush/roller ids (1071/1543/1072/1544).
+- **The coating is a raw u32, not a port-side type.** `paintCoatingLookup`
+  carries 1 = Glow (the fullbright flags — GlowPaint 4668, `Item.cs:38496`) and
+  2 = Echo (the invisible flags — EchoCoating 5344, `Item.cs:42416`), decoded
+  by `WorldGen.paintCoatTile`/`paintCoatWall` (`WorldGen.cs:44134-44217`). The
+  port had no coating type before this pass, so the steps compare the raw
+  values (`coating == 1 && !fullbright_block()`,
+  `coating == 2 && !invisible_block(i, j)` and the wall pair) and leave the
+  encoding to the caller.
+- **The scraper's second target is LongMoss 184.** `Step_PaintScrapper`'s tile
+  arm (:692-697) also accepts a LongMoss tile — the scraper's moss arm lives
+  on the player (`Player.cs:41822-41824`'s
+  `PlaceThing_PaintScraper_LongMoss`) — so the scan is `tile.color() > 0`,
+  a `kind == 184` LongMoss tile, `fullbright_block()` or
+  `invisible_block()`, OR-ed with the wall arm behind the cell
+  (`wallColor() > 0`, `fullbright_wall` or `invisible_wall`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:

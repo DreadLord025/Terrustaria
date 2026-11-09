@@ -88,6 +88,14 @@ impl Tile {
         self.flags & FLAG_HALF_BRICK != 0
     }
 
+    /// `Tile.fullbrightBlock` (`Tile.cs:562-565`): the Glow-coating bit —
+    /// the block ignores the light map. (The wall's Glow bit rides
+    /// `World::fullbright_wall`.)
+    #[inline]
+    pub fn fullbright_block(&self) -> bool {
+        self.flags & FLAG_FULLBRIGHT != 0
+    }
+
     /// `Tile.topSlope`: slope 1 or 2.
     #[inline]
     pub fn top_slope(&self) -> bool {
