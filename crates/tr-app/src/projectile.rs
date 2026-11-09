@@ -279,6 +279,9 @@ pub const STICKY_BOMBS: [u16; 7] = [37, 397, 470, 519, 773, 911, 1087];
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
+/// `ProjectileID.Count` (`ID/ProjectileID.cs` static ctor) — the id-space
+/// bound `Player.ownedProjectileCounts` is sized by (`Player.cs:2992`).
+pub const PROJ_COUNT: usize = 1136;
 /// `timeLeft`'s SetDefaults value (`Projectile.cs:787`).
 pub const TIME_LEFT_DEFAULT: i32 = 3600;
 /// The per-owner immunity a default penetrating hit applies
@@ -1939,12 +1942,19 @@ impl ProjectilePool {
         }
     }
 
-    /// Sets the slot's crit flag (the throw path rolls it at spawn time).
     /// The `ProjectileKey` a slot's current occupant would travel under
     /// (`Projectile.cs:10854`'s key mint).
     pub fn key_of(&self, slot: usize) -> i32 {
         let p = &self.slots[slot];
         crate::net::projectile_key(p.owner, slot, p.generation)
+    }
+
+    /// Writes the slot's `originalDamage` after a spawn — the summon-spawn
+    /// arms set it explicitly (`Player.cs:49601`, `:48209`, `:10713`).
+    pub fn set_original_damage(&mut self, slot: usize, value: i32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.original_damage = value;
+        }
     }
 
     /// The `29` despawn: the slot dies only when the key matches its current

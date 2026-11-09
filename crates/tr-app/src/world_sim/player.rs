@@ -110,6 +110,49 @@ pub(crate) fn grant_ammo_mastery(
     }
 }
 
+/// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the
+/// armor rows (`GrantArmorBenefits` over `GetEffectiveArmor(0..10)`,
+/// `Player.cs:13258-13948`) and the held items (`ApplyEquipFunctional` over
+/// the accessory slots 3..10 + the port's `miscEquips` host, `:15324-15329`)
+/// raise `maxMinions`/`maxTurrets`. ONLY the budget deltas port — the
+/// `minionDamage`/`whipRange`/`minionKB` halves have no port consumer yet
+/// (M3-EQUIP-3 / the M4 follow-ups) and the DD2 turret-set rows (`:13007`,
+/// `:13133-13230`, the `dd2Accessory` flag `:13010-13013`) sit outside the
+/// phase's cited scope (M4-EVENT-5). Recorded in the phase discovery.
+pub(crate) fn grant_summon_caps(
+    p: &mut Player,
+    armor: &[ItemSlot; ARMOR],
+    misc: &[ItemSlot; MISC],
+) {
+    // `GrantArmorBenefits` (`:13103+`): the armor-piece and accessory slots
+    // 0..10, each row once per equipped kind.
+    for slot in &armor[..10] {
+        match slot.kind {
+            238 | 3777 | 3778 | 4873 | 4899 | 5524 | 5068 | 2361 | 2362 | 3267 | 1832 | 1834 => {
+                p.max_minions += 1
+            }
+            1158..=1161 | 2370..=2371 | 2372 => p.max_minions += 1,
+            3381 => {
+                // `:13871-13876`: +1 minion and +1 turret together.
+                p.max_minions += 1;
+                p.max_turrets += 1;
+            }
+            3382 | 3383 => p.max_minions += 2, // :13877-13881
+            1833 => p.max_minions += 2,        // :13941-13945
+            _ => {}
+        }
+    }
+    // `ApplyEquipFunctional`'s held summon items (`:15322-15331`): the
+    // Pygmy Necklace (1845) and the Papyrus Scarab (1864) — the 1167 row's
+    // minionKB/minionDamage halves carry no budget delta.
+    for slot in armor[3..10].iter().chain(misc.iter()) {
+        match slot.kind {
+            1864 | 1845 => p.max_minions += 1,
+            _ => {}
+        }
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
@@ -199,6 +242,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
                 respawn_now = p.update_dead(input.jump, boss_near, false) || respawn_now;
+                // `Player.Update`'s dead path (`Player.cs:24752-24753`): the
+                // caches reset + recount, no `UpdateBuffs` — the buff arms
+                // never run while dead. `UpdateDead` zeroed the counters
+                // (`:17009-17010`).
+                p.reset_projectile_caches();
+                p.update_projectile_caches(&app.projectiles);
             });
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
@@ -343,6 +392,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // stand-in (no `DangerThatPreventsOtherDangers` members yet).
             let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
             p.update_with_grapple(&app.world, input, grapple_for_tick, item_in_use, false);
+            // M4-PROJ-8 phase 2 — the summon seam (the ported-order block on
+            // `Player::update_summon_buff_arms`): the recount
+            // (`Player.cs:25565`) then the buff arms (`:10483-10947`) then
+            // the `:28279-28280` counter reset, all inside the fixed step —
+            // `UpdateBuffs` before `UpdateEquips`, like the C#.
+            p.update_projectile_caches(&app.projectiles);
+            p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -351,6 +407,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // tick's equipment and buffs, then the cycler's cooldown decrements
             // — both inside the fixed step, BEFORE the shoot path reads them.
             grant_ammo_mastery(p, &app.equip.armor, &app.equip.misc_equips);
+            // The `UpdateEquips` summon-cap rows (`Player.cs:13258-13948`,
+            // `:15324-15329`) — the armor/held half beside the ammo flags.
+            grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips);
             p.ammo_cycling.tick();
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
@@ -876,10 +935,297 @@ mod tests {
         for _ in 0..700 {
             update_player(&mut app, 1.0 / 60.0);
         }
-        let w_spawn = (app.world.spawn_x as f32 * tr_core::TILE_PX + 8.0
-            - crate::player::WIDTH as f32 * 0.5);
+        let w_spawn =
+            (app.world.spawn_x as f32 * tr_core::TILE_PX + 8.0 - crate::player::WIDTH as f32 * 0.5);
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.spawn_x, w_spawn, "the broken bed reverts the spawn");
         assert_eq!(app.world.bed_spawn, None);
+    }
+
+    /// M4-PROJ-8 phase 2 — the summon seam's tick-level behaviour: the recount
+    /// (`Player.cs:25565`), the dead-path recount (`:24752-24753`) and the
+    /// `UpdateEquips` cap rows (`:13258-13948`/`:15324-15329`).
+    mod summon_tests {
+        use super::*;
+        use crate::projectile::ProjectilePool;
+
+        /// Deactivates a slot through the public key path (`key_of` +
+        /// `kill_remote`) — the pool's `Kill` stand-in between ticks.
+        fn kill_pool_slot(pool: &mut ProjectilePool, slot: usize) {
+            let key = pool.key_of(slot);
+            let (owner, slot, generation) = crate::net::projectile_key_parts(key);
+            pool.kill_remote(slot, owner, generation);
+        }
+
+        /// The live pool's owned counts (owner 0 — the port's whoAmI) for the
+        /// given kinds.
+        fn live_counts(pool: &ProjectilePool, kinds: &[u16]) -> Vec<i32> {
+            kinds
+                .iter()
+                .map(|&k| {
+                    pool.slots()
+                        .iter()
+                        .filter(|p| p.active && p.owner == 0 && p.kind == k)
+                        .count() as i32
+                })
+                .collect()
+        }
+
+        /// The live pool's highest `originalDamage` among owner-0 slots of
+        /// `kind` (0 when none — the recount zeroed it).
+        fn live_max(pool: &ProjectilePool, kind: u16) -> i32 {
+            pool.slots()
+                .iter()
+                .filter(|p| p.active && p.owner == 0 && p.kind == kind)
+                .map(|p| p.original_damage)
+                .max()
+                .unwrap_or(0)
+        }
+
+        /// DW-2.1 — the reset→recount order leaves every counter equal to the
+        /// live pool after each tick, no drift over 600 ticks (with mid-run
+        /// spawns and kills churning the pool). The budgets stay at the 1/1
+        /// base with no cap sources, and `numMinions`/`slotsMinions` zero every
+        /// tick (`:28279-28280`) until Phase 3's pool pass accumulates them.
+        #[test]
+        fn test_DW_2_1_the_recount_tracks_the_pool_over_600_ticks() {
+            let mut app = ammo_app();
+            {
+                let pool = &mut app.projectiles;
+                pool.spawn_with_data_ai_owned(373, 0, 100.0, 100.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0);
+                pool.spawn_with_data_ai_owned(308, 0, 130.0, 100.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0);
+                pool.spawn(
+                    3,
+                    0,
+                    glam::Vec2::new(150.0, 100.0),
+                    glam::Vec2::ZERO,
+                    5,
+                    1.0,
+                    false,
+                );
+                // A foreign-owner slot — never counted (the C# `owner != i` skip).
+                pool.spawn(
+                    3,
+                    1,
+                    glam::Vec2::new(150.0, 130.0),
+                    glam::Vec2::ZERO,
+                    5,
+                    1.0,
+                    false,
+                );
+                let tiger1 = pool
+                    .spawn(
+                        831,
+                        0,
+                        glam::Vec2::new(160.0, 100.0),
+                        glam::Vec2::ZERO,
+                        40,
+                        1.0,
+                        false,
+                    )
+                    .unwrap();
+                pool.set_original_damage(tiger1, 40);
+                let tiger2 = pool
+                    .spawn(
+                        831,
+                        0,
+                        glam::Vec2::new(170.0, 100.0),
+                        glam::Vec2::ZERO,
+                        90,
+                        1.0,
+                        false,
+                    )
+                    .unwrap();
+                pool.set_original_damage(tiger2, 90);
+                let abigail = pool
+                    .spawn(
+                        970,
+                        0,
+                        glam::Vec2::new(180.0, 100.0),
+                        glam::Vec2::ZERO,
+                        55,
+                        1.0,
+                        false,
+                    )
+                    .unwrap();
+                pool.set_original_damage(abigail, 55);
+            }
+            let kinds = [3u16, 266, 308, 373, 831, 970];
+            for tick in 0..600 {
+                if tick == 200 {
+                    app.projectiles.spawn(
+                        266,
+                        0,
+                        glam::Vec2::new(190.0, 100.0),
+                        glam::Vec2::ZERO,
+                        10,
+                        1.0,
+                        false,
+                    );
+                }
+                if tick == 400 {
+                    // Kill one storm tiger — the maximum drops to the survivor's.
+                    let victim = app
+                        .projectiles
+                        .slots()
+                        .iter()
+                        .position(|p| p.active && p.owner == 0 && p.kind == 831)
+                        .unwrap();
+                    kill_pool_slot(&mut app.projectiles, victim);
+                }
+                tick_ammo(&mut app);
+                let p = app.player.as_ref().unwrap();
+                let expected = live_counts(&app.projectiles, &kinds);
+                let got: Vec<i32> = kinds
+                    .iter()
+                    .map(|&k| p.owned_projectile_counts[usize::from(k)])
+                    .collect();
+                assert_eq!(got, expected, "tick {tick}: the counts mirror the pool");
+                assert_eq!(
+                    p.highest_storm_tiger_gem_original_damage,
+                    live_max(&app.projectiles, 831),
+                    "tick {tick}"
+                );
+                assert_eq!(
+                    p.highest_abigail_counter_original_damage,
+                    live_max(&app.projectiles, 970),
+                    "tick {tick}"
+                );
+                assert_eq!(p.num_minions, 0, "tick {tick}: the per-tick reset");
+                assert_eq!(p.slots_minions, 0.0);
+                assert_eq!((p.max_minions, p.max_turrets), (1, 1), "tick {tick}");
+            }
+        }
+
+        /// DW-2.1 dirty variant — death mid-tick: the counters reset
+        /// (`Player.cs:17009-17010`) while the pool stays intact and the
+        /// dead-path recount still runs (`:24752-24753`); the buff arms do not.
+        #[test]
+        fn test_DW_2_1_dead_player_resets_counters_and_keeps_the_pool() {
+            let mut app = ammo_app();
+            app.projectiles
+                .spawn_with_data_ai_owned(373, 0, 100.0, 100.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0);
+            tick_ammo(&mut app);
+            {
+                let p = app.player.as_mut().unwrap();
+                assert_eq!(p.owned_projectile_counts[373], 1);
+                p.num_minions = 3;
+                p.slots_minions = 2.5;
+                p.buffs.add_buff(64, 100);
+                p.start_death(&app.world, false, false);
+            }
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert!(p.dead);
+            assert_eq!(p.num_minions, 0, "UpdateDead zeroes it (:17009)");
+            assert_eq!(p.slots_minions, 0.0);
+            assert_eq!(
+                p.owned_projectile_counts[373], 1,
+                "the dead path still recounts (:24752-24753)"
+            );
+            assert_eq!(app.projectiles.active_count(), 1, "the pool is intact");
+            // The buff arms did not run — the C# dead path returns before
+            // `UpdateBuffs` (`:24755`), so no arm refreshed buff 64 and the flag
+            // was never re-affirmed. The port's dead path runs no buff timer
+            // either (the C#'s non-persistent-buff wipe at `:16995-17001` is a
+            // death-system behavior outside this phase — recorded in the
+            // discovery).
+            let b = p.buffs.find_buff_index(64).unwrap();
+            assert_eq!(p.buffs.buff_time[b], 100);
+            assert!(!p.slime);
+        }
+
+        /// DW-2.3 — the cap buffs move the budgets by the verbatim deltas
+        /// (`Player.cs:10175-10183`) and expiry returns to the 1/1 base; 150/348
+        /// never tick down (`BuffID.Sets.TimeLeftDoesNotDecrease`).
+        #[test]
+        fn test_DW_2_3_cap_buffs_move_the_budgets_and_expire_to_base() {
+            let mut app = ammo_app();
+            app.player.as_mut().unwrap().buffs.add_buff(110, 3);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 2);
+            // The buff expires: the drop returns the base.
+            for _ in 0..3 {
+                tick_ammo(&mut app);
+            }
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 1);
+            // 150 (Bewitched) — same delta, and it never decrements.
+            app.player.as_mut().unwrap().buffs.add_buff(150, 100);
+            for _ in 0..5 {
+                tick_ammo(&mut app);
+            }
+            {
+                let p = app.player.as_ref().unwrap();
+                assert_eq!(p.max_minions, 2);
+                let b = p.buffs.find_buff_index(150).unwrap();
+                assert_eq!(p.buffs.buff_time[b], 100, "TimeLeftDoesNotDecrease");
+            }
+            // 348 (War Table) — the sentry budget, also never-decreasing.
+            app.player.as_mut().unwrap().buffs.add_buff(348, 100);
+            tick_ammo(&mut app);
+            {
+                let p = app.player.as_ref().unwrap();
+                assert_eq!(p.max_turrets, 2);
+                assert_eq!(p.max_minions, 2, "150 still held");
+            }
+            // Both cleared — the per-tick reset returns the 1/1 base.
+            {
+                let p = app.player.as_mut().unwrap();
+                p.buffs.clear_buff(150);
+                p.buffs.clear_buff(348);
+            }
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert_eq!((p.max_minions, p.max_turrets), (1, 1));
+        }
+
+        /// DW-2.3 — the armor rows (`Player.cs:13258-13948`) and the held items
+        /// (`:15324-15329`) move the budgets by the verbatim deltas; unequipping
+        /// returns to the base. 3777 +1, 3381 +1/+1, 3382/3383 +2, the
+        /// 1158-1161 range +1, the held 1864/1845 +1, 1167 no delta.
+        #[test]
+        fn test_DW_2_3_the_armor_and_held_rows_move_the_budgets() {
+            let mut app = ammo_app();
+            app.equip.armor[0] = slot(3777);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 2, "3777: +1");
+            app.equip.armor[1] = slot(3381);
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.max_minions, 3, "3381: +1");
+            assert_eq!(p.max_turrets, 2, "3381: +1 turret");
+            app.equip.armor[2] = slot(3382);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 5, "3382: +2");
+            // The held rows: 1864 in an accessory slot, 1845 in the port's
+            // misc-equips host (the `ApplyEquipFunctional` scopes).
+            app.equip.armor[3] = slot(1864);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 6);
+            app.equip.misc_equips[0] = slot(1845);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 7);
+            // The 1158-1161 range row (1159 also carries the minionDamage half
+            // this phase does not port — only the budget delta lands).
+            app.equip.armor[4] = slot(1159);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 8);
+            // A 1167 held item carries NO budget delta (only the minionKB/
+            // minionDamage halves — out of scope).
+            app.equip.misc_equips[1] = slot(1167);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 8);
+            // The double row: 3383.
+            app.equip.armor[5] = slot(3383);
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 10);
+            // Unequip everything — the per-tick reset returns the base.
+            let empty = EquipSlots::empty();
+            app.equip.armor = empty.armor;
+            app.equip.misc_equips = empty.misc_equips;
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert_eq!((p.max_minions, p.max_turrets), (1, 1));
+        }
     }
 }
