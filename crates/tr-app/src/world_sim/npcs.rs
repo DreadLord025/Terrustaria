@@ -75,6 +75,38 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) {
         rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
     }
+    // The Sleeping Angler's talk (`NPC.cs:19853-19856`'s `talkNPC`
+    // trigger + `AI_000_TransformBoundNPC` `:44884-44896`): the talk
+    // transforms 376 → 369 in place, `UpdateSavedStates` (`:52956-52958`)
+    // raises `savedAngler`, and `Transform`'s `case 369` (`:81121-81129`)
+    // forces the new Angler homeless with his home at his feet — the
+    // port drops the home (the town pass re-anchors him).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::SleepingAngler && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_bound_angler(&mut app.npcs[i], &mut app.world);
+    }
+    // The Angler's quest turn-in (`NPCInteractions.cs:519`'s `AnglerQuest`
+    // → `Main.NPCChatText_DoAnglerQuest`, `Main.cs:40227-40263`): the
+    // hand-in of today's quest fish — the vanilla's chat-button collapse,
+    // the Nurse treatment.
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::Angler && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        return angler_turn_in(app, i);
+    }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
     // — the port collapses them onto the right-click).
     let Some(nurse_idx) = app.npcs.iter().position(|n| {
@@ -156,6 +188,176 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
     n.max_hp = NpcKind::GoblinTinkerer.max_hp();
     n.hp = n.max_hp;
     world.saved_goblin = true;
+}
+
+/// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
+/// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
+/// raised, the Angler homeless (the C# `Transform` `case 369`,
+/// `NPC.cs:81121-81129`).
+pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Angler;
+    n.max_hp = NpcKind::Angler.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_angler = true;
+}
+
+/// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`) — the quest's
+/// turn-in: the day gate, the quest-fish scan (`FindItem`), the stack
+/// decrement, the `anglerQuestsFinished++` and the reward
+/// (`Player.GetAnglerReward`, `Player.cs:56302`).
+pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    let mut handed = false;
+    // `:40232`'s gate: the day's quest is open and this player has not
+    // already handed it in (`anglerWhoFinishedToday`'s single-player
+    // collapse).
+    if !app.world.angler_quest_finished && !app.world.angler_quest_turned_in {
+        let quest_item = crate::angler::QUEST_POOL[app.world.angler_quest as usize];
+        if let Some(slot) = app
+            .inventory
+            .iter()
+            .position(|s| s.kind == quest_item && s.count > 0)
+        {
+            app.inventory[slot].count -= 1;
+            if app.inventory[slot].count == 0 {
+                app.inventory[slot].kind = 0;
+            }
+            handed = true;
+            // `:40244`: the counter++ BEFORE the reward table reads it.
+            if let Some(p) = app.player.as_mut() {
+                p.angler_quests_finished += 1;
+            }
+            give_angler_reward(app, angler_idx);
+        }
+    }
+    if handed {
+        // `:40251-40258`: the day flags — the world's `anglerQuestFinished`
+        // and this player's slot in `anglerWhoFinishedToday`.
+        app.world.angler_quest_finished = true;
+        app.world.angler_quest_turned_in = true;
+    }
+    true
+}
+
+/// The reward spawn (`Player.GetAnglerReward`, `Player.cs:56302-56311`): the
+/// four sub-rolls on `Main.rand`'s stream, each spawning at the Angler's
+/// centre (`QuickSpawnItem`'s drops).
+fn give_angler_reward(app: &mut App, angler_idx: usize) {
+    let quests_done = app
+        .player
+        .as_ref()
+        .map_or(0, |p| p.angler_quests_finished);
+    let hard_mode = app.world.hard_mode;
+    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` — the
+    // mood pass leaves the town roster at 1.0 (`ShopHelper.cs:103`'s
+    // exclusions do not cover 369, but the port's town NPCs carry no mood
+    // rows for him yet, so the plain 1.0 stands).
+    let adjustment = 1.0f32;
+    // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
+    // the port's one inventory (the armor/bank/loadout scans are
+    // constants-off — the port carries neither).
+    let owned: Vec<u16> = app
+        .inventory
+        .iter()
+        .filter(|s| s.kind != 0 && s.count > 0)
+        .map(|s| s.kind)
+        .collect();
+    let lines = crate::angler::angler_reward(
+        quests_done,
+        hard_mode,
+        adjustment,
+        &owned,
+        &mut app.npc_rng,
+    );
+    let (ax, ay) = app.npcs[angler_idx].center();
+    for line in lines {
+        crate::world_sim::items::spawn_item_drop_px(app, line.item, line.stack, Vec2::new(ax, ay));
+    }
+}
+
+/// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`) — the
+/// app pass resolves the clock's request (`Main.cs:3754-3902` the day reset
+/// + the pool re-roll).
+pub(crate) fn resolve_angler_swap(app: &mut App) {
+    if !app.world.angler_swap_pending {
+        return;
+    }
+    app.world.angler_swap_pending = false;
+    // `:3760-3761`: the day reset (`anglerWhoFinishedToday.Clear()` collapses
+    // to the single-player flag).
+    app.world.angler_quest_finished = false;
+    app.world.angler_quest_turned_in = false;
+    let gates = crate::angler::QuestGates {
+        hard_mode: app.world.hard_mode,
+        // `WorldGen.crimson` — the port has no evil-kind field, so the
+        // corruption default stands (the crimson quest rows 2457/2463/
+        // 2477/2485 then re-roll exactly like a corruption world).
+        crimson: false,
+        downed_boss1: app.world.downed_eoc,
+        downed_boss2: app.world.downed_eow,
+        downed_boss3: app.world.downed_skeletron,
+        downed_slime_king: app.world.downed_slime_king,
+        downed_queen_bee: app.world.downed_queen_bee,
+        // `Main.isThereAWorldSurface` — the constants-off seed.
+        has_world_surface: true,
+    };
+    let mut rng = app.npc_rng;
+    let idx = crate::angler::angler_quest_swap(&gates, &mut rng);
+    app.npc_rng = rng;
+    app.world.angler_quest = idx as u8;
+}
+
+/// The Sleeping Angler's world spawn (`Spawner`'s two 376 arms,
+/// `NPC.cs:1775-1794` the ocean water tile and `:1925-1928` the beach sand):
+/// the Angler unsaved and no 376 alive, the 1-in-20 roll per attempt. The
+/// vanilla's arms sit inside `SpawnAnNPC`'s ladder; the port runs them as
+/// their own pass (the same player-tile scan, the same roll count).
+pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
+    if app.world.saved_angler || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler) {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let tx = (p.x / TILE_PX) as i32;
+    let ty = (p.y / TILE_PX) as i32;
+    // `Main.tileSand` (`Main.cs:7228-7231`): 53/112/116/234.
+    const SAND: [u16; 4] = [53, 112, 116, 234];
+    // `WorldGen.beachDistance` (`WorldGen.cs:86914`): 380 tiles.
+    const BEACH: i32 = 380;
+    // The sand row reads the ground under the player (`FindGroundTile`'s
+    // descent — the vanity's ladder spawns on the ground tile), the water
+    // row the player's own tile (`:1775`'s `this.waterTile`).
+    let ground = app
+        .world
+        .tile(tx, ty + 1)
+        .is_some_and(|t| t.active() && SAND.contains(&t.kind));
+    let water = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    let near_edge = tx < BEACH || tx > app.world.width as i32 - BEACH;
+    let above_surface = (ty as f64) < app.world.world_surface;
+    // `:1775`'s ocean-water arm vs `:1925`'s beach-sand arm — the water arm
+    // also runs below the surface (`!isThereAWorldSurface`), the sand arm
+    // only above it.
+    let eligible = (water && near_edge) || (ground && near_edge && above_surface);
+    if !eligible {
+        return false;
+    }
+    if rand01(&mut app.npc_rng) >= 0.05 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::SleepingAngler,
+        tx as f32 * TILE_PX + 8.0 - 17.0,
+        ty as f32 * TILE_PX - 8.0,
+        1,
+        0.0,
+    );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
 }
 
 fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
@@ -1286,7 +1488,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.npcs[i].moon_parts = slots;
     }
-    // The Scutlix rider's carrier write-through
+    // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
+    // (`Main.cs:65373`): the clock arms it at the day boundary (the
+    // clock carries no RNG), the world pass rolls it.
+    resolve_angler_swap(app);
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
@@ -1622,6 +1827,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     if app.town_look_timer == 0.0 {
+        // The Sleeping Angler's world spawn (`NPC.cs:1775`/`:1925`):
+        // found on the beach or in the ocean while the Angler is
+        // unsaved — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
+        // the port's `Next(20)` roll rides this cadence.
+        try_spawn_sleeping_angler(app);
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -2804,6 +3014,157 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 mod tests {
     use super::*;
     use tr_core::World;
+
+
+    /// `AI_000_TransformBoundNPC`'s 376 → 369 arm (`NPC.cs:19853-19856`): the
+    /// talk transforms the Sleeping Angler into the Angler in place and
+    /// raises `savedAngler` (`:52956-52958`) — the world's spawn arms then
+    /// stop looking for the fish on the beach.
+    #[test]
+    fn the_talk_wakes_the_sleeping_angler() {
+        let mut world = World::new("t".into(), 64, 800);
+        let mut saved = crate::player::Player::spawn(&world);
+        saved.x = 32.0;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(saved);
+        let mut n = Npc::new(NpcKind::SleepingAngler, 32.0, 100.0, 1, 0.0);
+        n.home = Some((2, 6));
+        app.npcs.push(n);
+        assert!(!app.world.saved_angler);
+        try_open_shop_at_cursor(&mut app, Vec2::new(34.0, 100.0));
+        let angler = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Angler)
+            .expect("the Angler");
+        assert_eq!(angler.max_hp, 250, "the town twin's body");
+        assert!(angler.home.is_none(), "Transform case 369 leaves him homeless");
+        assert!(app.world.saved_angler, "the saved flag raises");
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler),
+            "no bound form remains"
+        );
+    }
+
+    /// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`): the hand-in
+    /// takes the quest fish off the stack, counts the quest, pays the reward
+    /// and closes the day — a second click on the same day does nothing.
+    #[test]
+    fn the_angler_quest_turn_in_pays_out_once_a_day() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        // Today's quest (the pool index 7 = 2457) and the fish in hand.
+        app.world.angler_quest = 7;
+        let quest = crate::angler::QUEST_POOL[7];
+        let slot = &mut app.inventory[0];
+        slot.kind = quest;
+        slot.name = "Quest Fish";
+        slot.count = 3;
+        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
+        a.hp = a.max_hp;
+        let ai = app.npcs.len();
+        app.npcs.push(a);
+        let idx = app.npcs.iter().position(|n| n.kind == NpcKind::Angler).unwrap();
+        assert_eq!(idx, ai);
+        let before = app.items.len();
+        assert!(angler_turn_in(&mut app, idx), "the hand-in runs");
+        assert_eq!(app.inventory[0].count, 2, "the stack drops one");
+        assert_eq!(app.player.as_ref().unwrap().angler_quests_finished, 1);
+        assert!(app.world.angler_quest_finished, "the day closes");
+        assert!(app.world.angler_quest_turned_in, "the player's slot");
+        assert!(app.items.len() > before, "the reward drops spawn");
+        // The reward lands at the Angler's centre.
+        let (ax, ay) = app.npcs[idx].center();
+        assert!(
+            app.items.iter().any(|d| (d.pos.x - ax).abs() < 40.0 && (d.pos.y - ay).abs() < 40.0),
+            "the drops ride the Angler"
+        );
+        // The same-day refusal.
+        let count = app.player.as_ref().unwrap().angler_quests_finished;
+        angler_turn_in(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().angler_quests_finished, count);
+        // An empty hand keeps the day open.
+        app.world.angler_quest_finished = false;
+        app.world.angler_quest_turned_in = false;
+        app.inventory[0].kind = 0;
+        angler_turn_in(&mut app, idx);
+        assert!(!app.world.angler_quest_finished, "no fish, no hand-in");
+    }
+
+    /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`): the
+    /// clock arms the request, the world pass rolls it, and the day flags
+    /// reset (`:3760-3761`).
+    #[test]
+    fn the_day_boundary_rolls_a_new_quest() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.angler_quest = 40;
+        app.world.angler_quest_finished = true;
+        app.world.angler_quest_turned_in = true;
+        // No request: nothing happens.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.angler_quest, 40, "no request, no swap");
+        // The boundary arms it.
+        app.world.angler_swap_pending = true;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.angler_swap_pending, "the request resolves");
+        assert!(!app.world.angler_quest_finished, "the day resets");
+        assert!(!app.world.angler_quest_turned_in, "the player's slot resets");
+        assert!(
+            (app.world.angler_quest as usize) < crate::angler::QUEST_POOL.len(),
+            "a valid pool index"
+        );
+    }
+
+    /// `Spawner`'s two 376 arms (`NPC.cs:1775` the ocean water tile,
+    /// `:1925` the beach sand): the Angler unsaved and no 376 alive — and
+    /// the saved flag stops the search for good.
+    #[test]
+    fn the_sleeping_angler_is_found_on_the_beach() {
+        let mut world = World::new("t".into(), 1000, 300);
+        // A sand beach inside the 380-tile band, above the surface.
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 53,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        world.world_surface = 120.0;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 20.0 * 16.0;
+        player.y = 75.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // The roll's gate (`Main.rand.Next(20) == 0` ≈ rand01 < 0.05): sweep
+        // for the seed whose FIRST draw lands under it, so the spawn is
+        // deterministic (the state is the one before the draw).
+        let mut probe = 1u64;
+        loop {
+            let mut trial = probe;
+            if rand01(&mut trial) < 0.05 {
+                break;
+            }
+            probe += 1;
+        }
+        app.npc_rng = probe;
+        assert!(
+            try_spawn_sleeping_angler(&mut app),
+            "the beach arm spawns the Sleeping Angler"
+        );
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler));
+        // `savedAngler` closes the search.
+        app.npcs.clear();
+        app.world.saved_angler = true;
+        assert!(!try_spawn_sleeping_angler(&mut app), "the saved flag stops it");
+    }
 
     #[test]
     fn black_slime_darkness_touch_rolls_the_item_stream() {
