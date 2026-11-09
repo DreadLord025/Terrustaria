@@ -515,6 +515,25 @@ fn portrait_data(
         NpcKind::NebulaBeast => 116,      // NPC_423
         NpcKind::VortexRifleman => 117,   // NPC_425
         NpcKind::VortexSoldier => 118,    // NPC_429
+        NpcKind::StardustSpiderBig => 131, // NPC_409
+        NpcKind::StardustSpiderSmall => 132, // NPC_410
+        NpcKind::StardustSoldier => 133, // NPC_411
+        NpcKind::SolarDrakomire => 134,  // NPC_415
+        NpcKind::SolarDrakomireRider => 135, // NPC_416
+        NpcKind::SolarSroller => 136,   // NPC_417
+        NpcKind::SolarCorite => 137,    // NPC_418
+        NpcKind::SolarSelenian => 138,  // NPC_419
+        NpcKind::NebulaFloater => 128,    // NPC_420
+        NpcKind::BrainSuckler => 129,   // NPC_421
+        NpcKind::Predictor => 130,      // NPC_424
+        NpcKind::VortexHunter => 125,     // NPC_426
+        NpcKind::VortexAlien => 126,     // NPC_427
+        NpcKind::VortexHeadcrab => 127,  // NPC_428
+        NpcKind::MoonLordHead => 120,    // NPC_396
+        NpcKind::MoonLordHand => 121,    // NPC_397
+        NpcKind::MoonLordCore => 122,    // NPC_398
+        NpcKind::MoonLordFreeEye => 123, // NPC_400
+        NpcKind::MoonLordLeechBlob => 124, // NPC_401
         NpcKind::StardustCellBig => 119,  // NPC_405
     };
     let white = [1.0, 1.0, 1.0, 1.0];
@@ -852,6 +871,124 @@ fn portrait_data(
             (sheet_i, h, 30.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
+        // The Moon Lord family's portraits over the 396 sheet's rows.
+        // The vortex trio's portraits over the 426 sheet's 15 rows.
+        // The nebula trio's portraits over the 420 sheet's rows.
+        // The tower mobs' portraits over the 409 sheet's rows.
+        (NpcKind::StardustSpiderBig, _) => {
+            let h = lookups.bestiary_npc_sheets[132]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::StardustSpiderSmall, _) => {
+            let h = lookups.bestiary_npc_sheets[138]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::StardustSoldier, _) => {
+            let h = lookups.bestiary_npc_sheets[144]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SolarDrakomire, _) => {
+            let h = lookups.bestiary_npc_sheets[150]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::SolarDrakomireRider, _) => {
+            let h = lookups.bestiary_npc_sheets[156]
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::SolarSroller, _) => {
+            let h = lookups.bestiary_npc_sheets[162]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::SolarCorite, _) => {
+            let h = lookups.bestiary_npc_sheets[168]
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::SolarSelenian, _) => {
+            let h = lookups.bestiary_npc_sheets[174]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::NebulaFloater, _) => {
+            let h = lookups.bestiary_npc_sheets[128]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::BrainSuckler, _) => {
+            let h = lookups.bestiary_npc_sheets[129]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::Predictor, _) => {
+            let h = lookups.bestiary_npc_sheets[130]
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::VortexHunter, _) => {
+            let h = lookups.bestiary_npc_sheets[125]
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::VortexAlien, _) => {
+            let h = lookups.bestiary_npc_sheets[126]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::VortexHeadcrab, _) => {
+            let h = lookups.bestiary_npc_sheets[127]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::MoonLordHead, _) => {
+            let h = lookups.bestiary_npc_sheets[120]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::MoonLordHand, _) => {
+            let h = lookups.bestiary_npc_sheets[121]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordCore, _) => {
+            let h = lookups.bestiary_npc_sheets[122]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordFreeEye, _) => {
+            let h = lookups.bestiary_npc_sheets[123]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(60.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::MoonLordLeechBlob, _) => {
+            let h = lookups.bestiary_npc_sheets[124]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
         (NpcKind::PirateDeckhand, _)
         | (NpcKind::PirateCaptainsMate, _)
         | (NpcKind::PirateArcher, _)

@@ -1953,6 +1953,25 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustTower
         | crate::npc::NpcKind::NebulaTower
         | crate::npc::NpcKind::SolarTower
+        | crate::npc::NpcKind::MoonLordHead
+        | crate::npc::NpcKind::MoonLordHand
+        | crate::npc::NpcKind::MoonLordCore
+        | crate::npc::NpcKind::MoonLordFreeEye
+        | crate::npc::NpcKind::MoonLordLeechBlob
+        | crate::npc::NpcKind::VortexHunter
+        | crate::npc::NpcKind::VortexAlien
+        | crate::npc::NpcKind::VortexHeadcrab
+        | crate::npc::NpcKind::NebulaFloater
+        | crate::npc::NpcKind::BrainSuckler
+        | crate::npc::NpcKind::Predictor
+        | crate::npc::NpcKind::StardustSpiderBig
+        | crate::npc::NpcKind::StardustSpiderSmall
+        | crate::npc::NpcKind::StardustSoldier
+        | crate::npc::NpcKind::SolarDrakomire
+        | crate::npc::NpcKind::SolarDrakomireRider
+        | crate::npc::NpcKind::SolarSroller
+        | crate::npc::NpcKind::SolarCorite
+        | crate::npc::NpcKind::SolarSelenian
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig

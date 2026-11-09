@@ -669,31 +669,12 @@ pub fn size_dimensions(size: u8) -> (i32, i32) {
 
 /// `ReLogic.Utilities.Crc32.Calculate(string)` (`Crc32.cs`): the standard
 /// reflected CRC-32 — poly `0xEDB88320`, init `0xFFFFFFFF`, final complement —
-/// returning `(int)(~num)`. The `Tabs` table (`Crc32.cs:9-59`) is derived in
-/// the const block instead of pasted; the loop walks the string's UTF-16
-/// chars like the C# `foreach (char c in value)` (`Crc32.cs:66-71`), each
-/// char contributing its low byte (`(num ^ c) & 0xFF`).
+/// returning `(int)(~num)`. M5-SEED-1 moves the codec into the engine
+/// (`tr_core::seeds::crc32` — the same table, the same UTF-16 low-byte walk)
+/// so the worldgen, save and UI layers share one copy; the re-export keeps
+/// this module's spelling (and its tests) unchanged.
 fn crc32(text: &str) -> i32 {
-    const TABS: [u32; 256] = {
-        let mut t = [0u32; 256];
-        let mut i = 0usize;
-        while i < 256 {
-            let mut n = i as u32;
-            let mut k = 0;
-            while k < 8 {
-                n = if n & 1 != 0 { 0xEDB8_8320 ^ (n >> 1) } else { n >> 1 };
-                k += 1;
-            }
-            t[i] = n;
-            i += 1;
-        }
-        t
-    };
-    let mut num = u32::MAX;
-    for c in text.encode_utf16() {
-        num = TABS[((num ^ c as u32) & 0xFF) as usize] ^ (num >> 8);
-    }
-    (!num) as i32
+    tr_core::seeds::crc32(text)
 }
 
 /// `WorldFileData.TranslateSeed` (`WorldFileData.cs:380-392`): a numeric text
@@ -701,13 +682,9 @@ fn crc32(text: &str) -> i32 {
 /// `int.MaxValue`); everything else — non-numeric, out-of-i32, or empty —
 /// goes through [`crc32`]. (`int.TryParse`'s `NumberStyles.Integer` also
 /// tolerates surrounding whitespace, mimicked with the trim; the CRC still
-/// hashes the raw text.)
+/// hashes the raw text.) The engine twin is `tr_core::seeds::translate_seed`.
 fn translate_seed(seed_text: &str) -> i32 {
-    match seed_text.trim().parse::<i32>() {
-        Ok(n) if n != i32::MIN => n.abs(),
-        Ok(_) => i32::MAX,
-        Err(_) => crc32(seed_text),
-    }
+    tr_core::seeds::translate_seed(seed_text)
 }
 
 /// `FinishCreatingWorld`'s seed step (`UIWorldCreation.cs:852-858`): a blank
@@ -724,6 +701,27 @@ pub fn seed_value(name: &str, seed_text: &str) -> u64 {
     translate_seed(seed_text) as u32 as u64
 }
 
+/// `WorldGenerationOptions.GetOptionFromSeedText`'s UI half
+/// (`UIWorldCreation.cs:829-842` `OnFinishedSettingSeed` → `SelectOption` +
+/// `SecretSeed.CheckInputForSecretSeed`): the draft's seed text resolves the
+/// classic secret-seed flags. The port has no `WorldGenerationOptions` UI
+/// state (the Advanced tab and the option ring are documented deviations),
+/// but the *resolution* itself is pure (`tr_core::seeds`), so the created
+/// world carries the flags a vanilla world would — the worldgen branches and
+/// the runtime condition readers both key off them. The 38 BCrypt micro
+/// seeds arrive with M5-SEED-2.
+///
+/// The blank case: `SetSeedToRandomWithCurrentEvents`
+/// (`UIWorldCreation.cs:852-855`) picks a fresh random text (so no secret
+/// unless Halloween's `pumpkinseason` prefix, micro-seed territory) — the
+/// port's deterministic name-hash stand-in therefore yields a classic world.
+pub fn seed_flags(seed_text: &str) -> tr_core::seeds::SeedFlags {
+    if seed_text.is_empty() {
+        return tr_core::seeds::SeedFlags::none();
+    }
+    tr_core::seeds::SeedFlags::from_seed_text(seed_text)
+}
+
 /// `FinishCreatingWorld` (`UIWorldCreation.cs:845-863`) through the port's
 /// pipeline: the trimmed name, the size row's tile counts, the seed, then
 /// `worldgen::generate` + `tr_core::save::save` into `worlds_dir`. The world's
@@ -738,6 +736,7 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     let name = draft.name.trim();
     let (width, height) = size_dimensions(draft.size);
     let seed = seed_value(name, &draft.seed);
+    let flags = seed_flags(&draft.seed);
     let mut world = tr_core::worldgen::generate(&tr_core::worldgen::GenOptions {
         name: name.to_string(),
         width,
@@ -750,6 +749,7 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
             2 => true,
             _ => tr_core::worldgen::roll_crimson(seed),
         },
+        flags,
     });
     // `generate` seeds its noise/RNG but leaves `World::new`'s `seed: 0` —
     // the header records the draft's (`save.rs:61`'s `world.seed` write).

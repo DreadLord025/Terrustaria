@@ -87,6 +87,34 @@ pub const MARTIAN_RAY: u16 = 438;
 /// `ProjectileID.Arrow`-family hostile arrow (180) — the pirate Deadeye's
 /// (`Projectile.cs:3922-3933`: 4x4, aiStyle 1, hostile, penetrate -1,
 /// light 0.5, alpha 255, scale 1.2).
+/// `ProjectileID.PhantasmalEye` (452) — the Moon Lord hand's eye
+/// volley (`Projectile.cs:5240-5249`: 14x14, aiStyle 82, hostile,
+/// timeLeft 600).
+/// `ProjectileID.DarkDividingDart`-family hostile dart (581) — the
+/// VortexHunter's shot (`Projectile.cs:6306-6315`: 10x10, aiStyle 1,
+/// hostile, penetrate -1).
+pub const VORTEX_DART: u16 = 581;
+pub const PHANTASMAL_EYE: u16 = 452;
+/// `ProjectileID.PhantasmalSphere` (454) — the flood orb
+/// (`Projectile.cs:5259-5269`: 40x40, aiStyle 83, hostile,
+/// tileCollide false, timeLeft 600).
+pub const PHANTASMAL_SPHERE: u16 = 454;
+/// `ProjectileID.PhantasmalDeathray` (455) — the head's sweeping
+/// deathray (`Projectile.cs:5270-5280`: 36x36, aiStyle 84, hostile,
+/// tileCollide false, timeLeft 600).
+pub const PHANTASMAL_DEATHRAY: u16 = 455;
+/// `ProjectileID.MoonLeech` (456) — the head's leech seeker
+/// (`Projectile.cs:5281-5291`: 16x16, aiStyle 85, hostile,
+/// tileCollide false, timeLeft 600).
+pub const MOON_LEECH: u16 = 456;
+/// `ProjectileID.PhantasmalBolt` (462) — the retargeting lasers
+/// (`Projectile.cs:5329-5339`: 8x8, aiStyle 1, hostile,
+/// extraUpdates 3, tileCollide false, ignoreWater).
+pub const PHANTASMAL_BOLT: u16 = 462;
+/// `ProjectileID.BlowupSmokeMoonlord` (622) — the core's death-drama
+/// smoke (`Projectile.cs:6691-6698`: 10x10, aiStyle 1, extraUpdates
+/// 2, timeLeft 3600).
+pub const BLOWUP_SMOKE_MOONLORD: u16 = 622;
 pub const PIRATE_ARROW: u16 = 180;
 /// `ProjectileID.DD2JavelinHostile` (662) — the javelin throwers' spear
 /// (`Projectile.cs:7122-7130`: 16x16, aiStyle 1, hostile, penetrate -1;
@@ -353,8 +381,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
+            // The VortexHunter's dart (`Projectile.cs:6306-6315`): 10x10, aiStyle
+            // 1, hostile, penetrate -1 (alpha 255 = no fade).
+            VORTEX_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
+            // The Moon Lord family (`Projectile.cs`'s SetDefaults
+            // rows): the 452/454/455/456 hostile set (timeLeft 600,
+            // penetrate -1 except the bolt) and the drama smoke 622.
+            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false),
+            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false),
+            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false),
+            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false),
+            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true),
+            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false),
             // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
             // and the Corsair's musket ball 82 (10x10, aiStyle 1).
             PIRATE_ARROW => (4.0, 4.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false),

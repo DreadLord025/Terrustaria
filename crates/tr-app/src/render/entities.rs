@@ -230,6 +230,26 @@ pub(crate) struct NpcAssets {
     /// walkers but each keeps its own sheet.
     pub(crate) brain_scrambler: Option<BgTex>,
     pub(crate) ray_gunner: Option<BgTex>,
+    /// `NPC_396` — the Moon Lord's eye (8 rows of 38x56), `NPC_397` —
+    /// the hand (4 rows of 46x66), `NPC_398` — the core (5 rows),
+    /// `NPC_400` — the True Eye (4 rows of 60x60), `NPC_401` — the leech
+    /// clot (1 frame of 30x30).
+    /// `NPC_426` — the VortexHunter (15 rows of 50x62), `NPC_427` —
+    /// the VortexAlien (9 rows of 40x28), `NPC_428` — the
+    /// VortexHeadcrab (5 rows of 24x26).
+    /// `NPC_420` — the NebulaFloater (6 rows of 40x40), `NPC_421` — the
+    /// BrainSuckler (6 rows of 44x44), `NPC_424` — the Predictor (12
+    /// rows of 22x56).
+    /// `NPC_409` — the StardustSpiderBig (4 rows), `NPC_410` — the
+    /// StardustSpiderSmall (11 rows), `NPC_411` — the StardustSoldier
+    /// (5 rows), `NPC_415` — the SolarDrakomire (1 row), `NPC_416` —
+    /// the rider (10 rows), `NPC_417` — the SolarSroller (10 rows),
+    /// `NPC_418` — the SolarCorite (15 rows), `NPC_419` — the
+    /// SolarSelenian (8 rows).
+    pub(crate) tower_mobs: Option<BgTex>,
+    pub(crate) nebula_trio: Option<BgTex>,
+    pub(crate) vortex_trio: Option<BgTex>,
+    pub(crate) moon_lord_parts: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
     pub(crate) scutlix_rider: Option<BgTex>,
@@ -349,6 +369,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        tower_mobs: sky_tex(atlas, "NPC_409", None),
+        nebula_trio: sky_tex(atlas, "NPC_420", None),
+        vortex_trio: sky_tex(atlas, "NPC_426", None),
+        moon_lord_parts: sky_tex(atlas, "NPC_396", None),
         prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
         bone_laser: sky_tex(atlas, "Bone_Laser", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
@@ -1267,10 +1291,132 @@ pub(crate) fn draw_npcs(
                 [50.0, 44.0],
                 [n.x, n.y],
             ),
+            // The vortex trio: the hunter's 50x62 / the alien's 40x28 /
+            // the headcrab's 24x26 over the 426 sheet's 15 rows.
+            NpcKind::VortexHunter => (
+                assets.vortex_trio.as_ref(),
+                assets.vortex_trio.as_ref().map_or(62.0, |t| t.h / 15.0),
+                [50.0, 62.0],
+                [n.x, n.y],
+            ),
+            NpcKind::VortexAlien => (
+                assets.vortex_trio.as_ref(),
+                assets.vortex_trio.as_ref().map_or(28.0, |t| t.h / 15.0),
+                [40.0, 28.0],
+                [n.x, n.y],
+            ),
+            NpcKind::VortexHeadcrab => (
+                assets.vortex_trio.as_ref(),
+                assets.vortex_trio.as_ref().map_or(26.0, |t| t.h / 15.0),
+                [24.0, 26.0],
+                [n.x, n.y],
+            ),
+            // The nebula trio: the floater 40x40 / the suckler 44x44 / the
+            // predictor 22x56 over the 420 sheet's 6 rows.
+            // The stardust/solar tower mobs' strips over the 409 sheet.
+            NpcKind::StardustSpiderBig => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(42.0, |t| t.h / 4.0),
+                [34.0, 42.0],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustSpiderSmall => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(22.0, |t| t.h / 11.0),
+                [22.0, 22.0],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustSoldier => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 5.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarDrakomire => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 1.0),
+                [60.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarDrakomireRider => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 13.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarSroller => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(52.0, |t| t.h / 10.0),
+                [46.0, 52.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarCorite => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(38.0, |t| t.h / 15.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarSelenian => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 8.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::NebulaFloater => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(40.0, |t| t.h / 6.0),
+                [40.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::BrainSuckler => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(44.0, |t| t.h / 6.0),
+                [44.0, 44.0],
+                [n.x, n.y],
+            ),
+            NpcKind::Predictor => (
+                assets.nebula_trio.as_ref(),
+                assets.nebula_trio.as_ref().map_or(56.0, |t| t.h / 6.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
             NpcKind::VortexRifleman | NpcKind::VortexSoldier => (
                 assets.shard_hovers.as_ref(),
                 assets.shard_hovers.as_ref().map_or(56.0, |t| t.h / 13.0),
                 [30.0, 56.0],
+                [n.x, n.y],
+            ),
+            // The Moon Lord family: the per-part rows (38x56 / 46x66 /
+            // 60x60 / 30x30) over the 396 sheet's strips — the core and
+            // the leech ride their own 1-row strips.
+            NpcKind::MoonLordHead => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(56.0, |t| t.h / 8.0),
+                [38.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordHand => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordCore => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordFreeEye => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(60.0, |t| t.h / 8.0),
+                [60.0, 60.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordLeechBlob => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(30.0, |t| t.h / 8.0),
+                [30.0, 30.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
@@ -1319,19 +1465,19 @@ pub(crate) fn draw_npcs(
             // the v1 read `t.h` and sampled the whole strip as one frame
             // at the box's 80x102).
             NpcKind::SkeletronPrime => prime_draw(assets.prime.as_ref(), 6, n, w, h),
-            // The Twins: the 2-frame 100x110 sheets.
+            // The Twins: `Main.npcFrameCount[125/126]` = 6 — NPC_125/126
+            // are 110x1200 (200-px rows), and `FindFrame`'s case 125/126
+            // (`NPC.cs:76906-76924`) walks the spawn rows 0-2 and the live
+            // rows 3-5 (the `ai[0]` hover anchor's +3 offset) over a
+            // 20-tick beat. The v1 ran an 8-tick 2-row strip over a
+            // 600-px slice of the sheet at the box's corner.
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 let tex = if n.kind == NpcKind::Retinazer {
                     assets.retinazer.as_ref()
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                (
-                    tex,
-                    tex.map_or(110.0, |t| t.h / 2.0),
-                    [100.0, 110.0],
-                    [n.x, n.y],
-                )
+                prime_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
@@ -1702,7 +1848,7 @@ pub(crate) fn draw_npcs(
         // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
         // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
         // `facing` cannot stand in for them.
-        let flip_dir = if n.kind.is_martian() {
+        let flip_dir = if n.kind.flips_on_sprite_dir() {
             n.sprite_dir
         } else {
             n.facing

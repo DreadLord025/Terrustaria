@@ -7,18 +7,32 @@
 //! reachable rect and the held item; the module re-points
 //! `App.smart_cursor: Option<(i32, i32)>` when a better spot exists.
 //!
-//! Ported steps, in the C# dispatch order (`:118-156`): `Step_GrassSeeds`
-//! (:266-332), `Step_Moss` (:334-379), `Step_Pigronata` (:969-1025),
-//! `Step_Torch` (:2795-2866 + `IsValidSpotForTorch` :2867-2936),
-//! `Step_LawnMower` (:2895-2939), `Step_AlchemySeeds` (:492-580),
-//! `Step_PlanterBox` (:437-490), `Step_ClayPots` (:381-435) and
-//! `Step_StaffOfRegrowth` (:224-264) — the seed/herb/planting family,
-//! gated on item id / `createTile` and shared with the
-//! closest-to-mouse vote.
+//! Ported steps, in the C# dispatch order (`:118-156`): `Step_PumpkinSeeds`
+//! (:1027-1098), `Step_GrassSeeds` (:266-332), `Step_Moss` (:334-379),
+//! `Step_Pigronata` (:969-1025), `Step_Torch` (:2795-2866 +
+//! `IsValidSpotForTorch` :2867-2936), `Step_LawnMower` (:2895-2939),
+//! `Step_PaintRoller` (:772-812), `Step_PaintBrush` (:727-770),
+//! `Step_PaintScrapper` (:678-725), `Step_Acorns` (:2032-2157),
+//! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
+//! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264),
+//! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles),
+//! `Step_EmptyBuckets` (:622-676), `Step_BlocksLines` (:814-888, over the
+//! caller-passed `Lookup::smart_blocks_enabled`), `Step_Walls`
+//! (:1100-1164, over the caller-passed player hitbox and the
+//! `Collision.CanHitWithCheck` line walk) and `Step_Platforms`
+//! (:1324-1389, over the [`ContinuityState`] locks and
+//! [`tile_target_desired`]'s placement gate) — the seed/herb/planting
+//! family plus the paint family, gated on item id / `createTile` /
+//! `createWall` and shared with the closest-to-mouse vote. The paint steps
+//! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
+//! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
-//! platform/wall/wrench/paint families, `UsingSmartCursorWithContinuity`'s
-//! lock state, the grapple target arms, and the paint-lookup arm.
+//! platform/wall/wrench families, `UsingSmartCursorWithContinuity`'s
+//! lock state, the grapple target arms, the inventory-driven paint lookup
+//! (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`), and the
+//! app-side wiring (the reachable rect, the `App.smart_cursor` field, the
+//! settings gate).
 //!
 //! Edge convention: the C# `Main.tile` array is exactly world-sized
 //! (`Main.cs:66984`) and the reachable rect never touches the border, so
@@ -54,6 +68,14 @@ pub const GRASS_SEED_ITEMS: [u16; 7] = [62, 59, 2171, 369, 195, 194, 5214];
 pub const MOSS_ITEMS: [u16; 11] = [
     4349, 4350, 4351, 4352, 4353, 4354, 4377, 4378, 4389, 5127, 5128,
 ];
+/// `ItemID.Sets.IsPaintScraper` (`ItemID.cs:496`): the scraper items — the
+/// PaintScraper 1100 and the Spectre PaintScraper 1545. The brush/roller
+/// gates read the literal ids in the C# step bodies (no set exists for
+/// them).
+pub const PAINT_SCRAPER_ITEMS: [u16; 2] = [1100, 1545];
+/// `ItemID.Count` (`ItemID.cs:14861`): the item-id count the placement
+/// gates' range checks read.
+pub const ITEM_COUNT: u16 = 6196;
 
 /// The held-item fields the smart-cursor steps read (the C# reads them off
 /// `SmartCursorUsageInfo.item`).
@@ -64,6 +86,9 @@ pub struct ItemPort {
     /// `Item.createTile` (`Item.cs:169`'s `-1` default): the tile the item
     /// places.
     pub create_tile: i32,
+    /// `Item.createWall` (`Item.cs:171`'s `-1` default): the wall the item
+    /// places.
+    pub create_wall: i32,
     /// `Item.placeStyle` (`Item.cs:173`'s `0` default): the sub-style the
     /// placement takes.
     pub place_style: i32,
@@ -87,9 +112,38 @@ pub struct Lookup {
     pub end_x: i32,
     /// `reachableEndY` — the clamped reach rect's last row.
     pub end_y: i32,
+    /// `SmartCursorUsageInfo.position` (`:21`, the C# `Vector2`) plus the
+    /// holding player's `width`/`height` (`Player.cs`) — the wall step's
+    /// line-of-sight origin (`Step_Walls` :1100-1102). The player entity is
+    /// app-side, so the caller passes them.
+    pub player_position: (f32, f32),
+    /// `providedInfo.player.width`.
+    pub player_width: i32,
+    /// `providedInfo.player.height`.
+    pub player_height: i32,
     /// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
     /// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields.
     pub weather: crate::growth::WeatherCtx,
+    /// `SmartCursorUsageInfo.paintLookup` (`SmartCursorHelper.cs:38`): the
+    /// held brush/roller's selected tile/wall paint. The C# fills it with
+    /// `TryFindingPaintInplayerInventory` (:177-191) from the player's
+    /// inventory (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`) —
+    /// the inventory is app-side, so the port's caller passes it.
+    pub paint_lookup: u32,
+    /// `paintCoatingLookup` (`SmartCursorHelper.cs:39`): the selected
+    /// coating — 1 Glow (the fullbright flags, GlowPaint 4668) and 2 Echo
+    /// (the invisible flags, EchoCoating 5344), decoded by
+    /// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44170`).
+    pub paint_coating_lookup: u32,
+    /// `Player.SmartCursorSettings.SmartBlocksEnabled` (`Player.cs:331`):
+    /// the setting the block-lines step reads. It is a per-player settings
+    /// value the app persists (`settings_ui`/`menu` own the toggle), so the
+    /// port's caller passes it.
+    pub smart_blocks_enabled: bool,
+    /// `player.controlUseItem` (`SmartCursorHelper.cs:66`): the use button's
+    /// held state — the continuity-lock reset reads it. Input is app-side,
+    /// so the caller passes it.
+    pub use_item_held: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -159,12 +213,15 @@ fn is_lava(t: &Tile) -> bool {
     t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava
 }
 
-/// `Collision.EmptyTile` (`Collision.cs:1359-1386`) in the
-/// `ignoreTiles: true` form the placement filter uses (`Step_ClayPots`
-/// :418): the cell must not stand inside a player's or NPC's hitbox.
-/// tr-core carries no entity store — the tile half of the check is what
-/// `ignoreTiles` skips, and the entity arms wait on the app-side wiring.
-fn collision_empty_tile(_w: &crate::World, _i: i32, _j: i32, _ignore_tiles: bool) -> bool {
+/// `Collision.EmptyTile` (`Collision.cs:1359-1386`): the cell must not be
+/// an occupied tile (unless `ignoreTiles`) and must not stand inside a
+/// player's or NPC's hitbox. tr-core carries no entity store — the tile
+/// half is all the placement filters' `ignoreTiles` choice reads, and the
+/// entity arms wait on the app-side wiring.
+fn collision_empty_tile(w: &crate::World, i: i32, j: i32, ignore_tiles: bool) -> bool {
+    if !ignore_tiles && w.tile(i, j).is_some_and(Tile::active) {
+        return false;
+    }
     true
 }
 
@@ -677,14 +734,833 @@ pub fn step_lawn_mower(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// ------------------------------------------------------------- paint family --
+
+/// `SmartCursorHelper.Step_PaintScrapper` (`:678-725`): the held scraper
+/// (1100/1545) re-points at the closest tile or wall carrying paint or a
+/// coating — or at a LongMoss tile (184), the scraper's second target
+/// (`Player.cs:41822-41824`).
+pub fn step_paint_scrapper(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:680` — the item gate + the focus sentinel. The scraper does not
+    // read the paint lookup: `TryFindingPaintInplayerInventory` :182 only
+    // fills it for the brush/roller ids, and its scan targets anything
+    // paintable or coated.
+    if !PAINT_SCRAPER_ITEMS.contains(&l.item.kind) || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:692-697` — the two OR-ed groups: a painted / coated block
+            // (LongMoss 184 included), or a painted / coated wall behind
+            // the cell (the C# `|` is the non-short-circuit bool OR over
+            // pure operands — `||` is equivalent).
+            let mut painted = false;
+            if t.active() {
+                painted |= t.paint() > 0
+                    || t.kind == 184
+                    || t.fullbright_block()
+                    || w.invisible_block(i, j);
+            }
+            if t.wall > 0 {
+                painted |=
+                    w.wall_paint(i, j) > 0 || w.fullbright_wall(i, j) || w.invisible_wall(i, j);
+            }
+            if painted {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PaintBrush` (`:727-770`): the held brush
+/// (1071/1543) re-points at the closest block that still needs the
+/// selected paint (a different tile paint) or coating.
+pub fn step_paint_brush(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:729` — the item-type gate, the "no paint selected" gate (the C#
+    // `||` chain) and the focus sentinel.
+    if (l.item.kind != 1071 && l.item.kind != 1543)
+        || (l.paint_lookup == 0 && l.paint_coating_lookup == 0)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    let (paint, coating) = (l.paint_lookup, l.paint_coating_lookup);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    // `:734` — the C#'s redundant `paintLookup != 0 || paintCoatingLookup != 0`
+    // re-check (the gate above already refused the both-zero case).
+    if paint != 0 || coating != 0 {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let Some(t) = w.tile(i, j) else {
+                    continue;
+                };
+                // `:743` — the block needs the paint (`tile.color() !=
+                // paintLookup`) or the coating (Glow 1 = !fullbrightBlock,
+                // Echo 2 = !invisibleBlock).
+                if t.active()
+                    && ((paint != 0 && t.paint() as u32 != paint)
+                        || (coating == 1 && !t.fullbright_block())
+                        || (coating == 2 && !w.invisible_block(i, j)))
+                {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PaintRoller` (`:772-812`): the held roller
+/// (1072/1544) re-points at the closest wall — behind a non-solid cell —
+/// that still needs the selected paint or coating.
+pub fn step_paint_roller(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:774` — the roller's item-type gate + the no-paint gate + the
+    // focus sentinel.
+    if (l.item.kind != 1072 && l.item.kind != 1544)
+        || (l.paint_lookup == 0 && l.paint_coating_lookup == 0)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    let (paint, coating) = (l.paint_lookup, l.paint_coating_lookup);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:786` — the wall behind a cell that is not a full solid
+            // (empty, non-solid or solidTop), needing the wall paint or
+            // the wall coating (Glow 1, Echo 2).
+            if t.wall > 0
+                && (!t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+                && ((paint != 0 && w.wall_paint(i, j) as u32 != paint)
+                    || (coating == 1 && !w.fullbright_wall(i, j))
+                    || (coating == 2 && !w.invisible_wall(i, j)))
+            {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// ------------------------------------------------------------ tree-seed step --
+
+/// `SmartCursorHelper.Step_Acorns` (`:2032-2157`): the held acorn (27)
+/// re-points at the closest plantable sapling spot — an open cell above a
+/// fitting ground with no sapling too close. The vanilla's three ground
+/// arms (jungle grass 60, the grass family, the sand family) and the
+/// 15-tile removal pass drop every spot whose ground row stands alone.
+pub fn step_acorns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2037` — the item-kind gate + the focus sentinel + the height gate
+    // (the vanilla never plants at or above the row 20).
+    if l.item.kind != 27 || fx != -1 || fy != -1 || l.start_y <= 20 {
+        return None;
+    }
+    let (num, num2, num3) = (9, 14, 20); // `:2034-2036` — the height budgets
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            // `:2044-2052` — the nine reads; an out-of-world cell skips the
+            // candidate (the port's edge convention — the C#'s array is
+            // exactly world-sized and the rect never reaches the border).
+            let (Some(t), Some(t2), Some(t3), Some(t4), Some(t5)) = (
+                w.tile(i, j),
+                w.tile(i, j - 1),
+                w.tile(i, j + 1),
+                w.tile(i - 1, j),
+                w.tile(i + 1, j),
+            ) else {
+                continue;
+            };
+            // `:2054` — the cell and the one above must be empty (a cut /
+            // replaceable cell passes) and the cell below must be a solid
+            // ground (`SolidTile2`).
+            let occupied = |t: &Tile| {
+                t.active()
+                    && !crate::tileobject::tile_cut(t.kind)
+                    && !crate::tileobject::breakable_when_placing(t.kind)
+            };
+            if occupied(t) || occupied(t2) || !t3.active() || !crate::edit::solid_tile2(w, i, j + 1)
+            {
+                continue;
+            }
+            // `:2058-2060` — the sapling proximity: `flag` the immediate
+            // neighbours, `flag2` the ±2/±3 row.
+            let sapling_at = |x: i32, y: i32| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && crate::growth::is_common_sapling(t.kind))
+            };
+            let flag = sapling_at(i - 1, j) || sapling_at(i + 1, j);
+            let flag2 = flag
+                || sapling_at(i - 2, j)
+                || sapling_at(i + 2, j)
+                || sapling_at(i - 3, j)
+                || sapling_at(i + 3, j);
+            // `:2061-2093` — the three ground arms.
+            match t3.kind {
+                60 => {
+                    // Jungle grass: the 14-row box.
+                    if !flag2
+                        && crate::growth::empty_tile_check(
+                            w,
+                            i - 2,
+                            i + 2,
+                            j - num2 + 1,
+                            j,
+                            Some(20),
+                        )
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                2 | 23 | 109 | 147 | 199 | 477 | 492 | 633 | 661 | 662 => {
+                    // The grass family: the 9-row box, dry only.
+                    if !flag2
+                        && t4.liquid == 0
+                        && t.liquid == 0
+                        && t5.liquid == 0
+                        && crate::growth::empty_tile_check(
+                            w,
+                            i - 2,
+                            i + 2,
+                            j - num + 1,
+                            j,
+                            Some(20),
+                        )
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                53 | 112 | 116 | 234 => {
+                    // The sand family: the 20-row box over one column.
+                    if !flag
+                        && t.liquid == 0
+                        && crate::growth::empty_tile_check(w, i, i, j - num3, j, Some(20))
+                    {
+                        cands.push((i, j));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // `:2096-2136` — the removal pass: the spot survives only when a cell
+    // beside its ground row is itself an acorn ground (the 15-tile list) —
+    // a ground row standing alone is dropped.
+    cands.retain(|&(x, y)| {
+        [-1, 1].iter().any(|&dx| {
+            w.tile(x + dx, y + 1).is_some_and(|t| {
+                t.active()
+                    && matches!(
+                        t.kind,
+                        2 | 23
+                            | 53
+                            | 60
+                            | 109
+                            | 112
+                            | 116
+                            | 147
+                            | 199
+                            | 234
+                            | 477
+                            | 492
+                            | 633
+                            | 661
+                            | 662
+                    )
+            })
+        })
+    });
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_GemCorns` (`:2159-2227`): the held gem/vanity
+/// seed re-points at the closest plantable spot for its
+/// `GrowTreeSettings` profile — the profile's ground test, the dry clear
+/// box of the profile's height and no sapling within the ±3 columns.
+pub fn step_gem_corns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2161` — the profile lookup (the C#'s `TryGetFromItemId`), the focus
+    // sentinel and the height gate.
+    let Some(profile) = crate::growth::grow_tree_profile_from_item(l.item.kind) else {
+        return None;
+    };
+    if fx != -1 || fy != -1 || l.start_y <= 20 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            // `:2171-2178` — the nine reads (an out-of-world cell skips,
+            // the port's edge convention).
+            let (Some(t), Some(t2), Some(t3), Some(t4), Some(t5)) = (
+                w.tile(i, j),
+                w.tile(i, j - 1),
+                w.tile(i, j + 1),
+                w.tile(i - 1, j),
+                w.tile(i + 1, j),
+            ) else {
+                continue;
+            };
+            // `:2179` — the one long predicate: the ground passes the
+            // profile's test, the spot and the cell above are empty (a cut/
+            // replaceable cell passes), no sapling within ±3 columns, the
+            // ground is solid (`SolidTile2`), the three cells dry and the
+            // profile-height box is clear (the profile's own sapling is the
+            // `EmptyTileCheck`'s ignore id).
+            let sapling_at = |x: i32, y: i32| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && crate::growth::is_common_sapling(t.kind))
+            };
+            if profile.ground.test(t3.kind)
+                && (!t.active()
+                    || crate::tileobject::tile_cut(t.kind)
+                    || crate::tileobject::breakable_when_placing(t.kind))
+                && (!t2.active()
+                    || crate::tileobject::tile_cut(t2.kind)
+                    || crate::tileobject::breakable_when_placing(t2.kind))
+                && (!t4.active() || !crate::growth::is_common_sapling(t4.kind))
+                && (!t5.active() || !crate::growth::is_common_sapling(t5.kind))
+                && !(sapling_at(i - 2, j)
+                    || sapling_at(i + 2, j)
+                    || sapling_at(i - 3, j)
+                    || sapling_at(i + 3, j))
+                && t3.active()
+                && crate::edit::solid_tile2(w, i, j + 1)
+                && t4.liquid == 0
+                && t.liquid == 0
+                && t5.liquid == 0
+                && crate::growth::empty_tile_check(
+                    w,
+                    i - 2,
+                    i + 2,
+                    j - profile.tree_height_max,
+                    j,
+                    Some(profile.sapling_tile_type),
+                )
+            {
+                cands.push((i, j));
+            }
+        }
+    }
+    // `:2189-2206` — the removal pass: the spot survives when a cell beside
+    // its ground row passes the profile's ground test (the C# runs the
+    // profile's delegate here, not the acorn's 15-tile list).
+    cands.retain(|&(x, y)| {
+        [-1, 1].iter().any(|&dx| {
+            w.tile(x + dx, y + 1)
+                .is_some_and(|t| t.active() && profile.ground.test(t.kind))
+        })
+    });
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.AllowNormalBlockPlacementBehaviourForItemType`
+/// (`:211-222`): the block-placement steps' item gate — the staff/acorn axe
+/// (213/5295), the seed and moss items and any id past `ItemID.Count` take
+/// their own steps instead.
+fn allow_normal_block_placement(kind: u16) -> bool {
+    if kind >= ITEM_COUNT || kind == 213 || kind == 5295 {
+        return false;
+    }
+    !GRASS_SEED_ITEMS.contains(&kind) && !MOSS_ITEMS.contains(&kind)
+}
+
+/// `SmartCursorHelper.Step_EmptyBuckets` (`:622-676`): the held empty
+/// bucket (205) re-points at the closest liquid cell whose 3x3 box of the
+/// same liquid kind holds more than 100 (the bucket's minimum draw).
+pub fn step_empty_buckets(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:624` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 205 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:634` — the dry cell skips.
+            if t.liquid == 0 {
+                continue;
+            }
+            let kind = t.liquid_kind();
+            // `:639-648` — the 3x3 box sum of the same liquid kind (an
+            // out-of-world cell contributes nothing — the C#'s default
+            // `Tile` reads liquid 0 with kind `Water`, which only ever adds
+            // a zero).
+            let mut sum: u32 = 0;
+            for k in (i - 1)..=(i + 1) {
+                for m in (j - 1)..=(j + 1) {
+                    if let Some(t2) = w.tile(k, m) {
+                        if t2.liquid_kind() == kind {
+                            sum += t2.liquid as u32;
+                        }
+                    }
+                }
+            }
+            // `:650` — the 100-liquid minimum.
+            if sum > 100 {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_BlocksLines` (`:814-888`): the held block item
+/// re-points at the closest replaceable cell with one full-solid neighbour
+/// — the smart-blocks line placement.
+pub fn step_blocks_lines(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:817` — the single gate chain: the item range, the settings toggle,
+    // the createTile's presence, the placement-behaviour gate and the
+    // createTile's solid/non-solidTop/non-frameImportant flags.
+    let create_tile = l.item.create_tile;
+    if l.item.kind >= ITEM_COUNT
+        || !l.smart_blocks_enabled
+        || create_tile <= -1
+        || !allow_normal_block_placement(l.item.kind)
+        || !crate::tiledata::TILE_SOLID.has(create_tile as u16)
+        || crate::tiledata::TILE_SOLID_TOP.has(create_tile as u16)
+        || w.frame_important.get(create_tile as usize).copied() == Some(true)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    // `:822-830` — the screen-target pre-check: an occupied or out-of-rect
+    // target disables the scan.
+    let mut skip = w
+        .tile(l.screen_target.0, l.screen_target.1)
+        .is_some_and(Tile::active);
+    if !in_tile_bounds(
+        l.screen_target.0,
+        l.screen_target.1,
+        l.start_x,
+        l.start_y,
+        l.end_x,
+        l.end_y,
+    ) {
+        skip = true;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !skip {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let Some(t) = w.tile(i, j) else {
+                    continue;
+                };
+                // `:838` — the cell may be replaced.
+                if !t.active()
+                    || crate::tileobject::tile_cut(t.kind)
+                    || crate::tileobject::breakable_when_placing(t.kind)
+                {
+                    // `:841-856` — any of the four neighbours is a full
+                    // solid (`tileSolid && !tileSolidTop`).
+                    let anchored = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                        w.tile(i + dx, j + dy).is_some_and(|tn| {
+                            tn.active()
+                                && crate::tiledata::TILE_SOLID.has(tn.kind)
+                                && !crate::tiledata::TILE_SOLID_TOP.has(tn.kind)
+                        })
+                    });
+                    if anchored {
+                        cands.push((i, j));
+                    }
+                }
+            }
+        }
+    }
+    // `:871-881` — the `Collision.EmptyTile` filter (the default
+    // `ignoreTiles: false` — an occupied cell fails here even when the scan
+    // let it through as a cut tile), the closest pick and the
+    // `num != -1f` + InTileBounds commit guards.
+    let p = pick_closest_if(&cands, l.mouse, |x, y| collision_empty_tile(w, x, y, false))?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// --------------------------------------------------------------- wall step --
+
+/// `DelegateMethods.NotDoorStand` (`DelegateMethods.cs:854-865`): the open
+/// door's 11 whose frame column (18..53) blocks the line walk — the C#'s
+/// `Utils.TileActionAttempt` the walk applies at every step.
+fn not_door_stand(w: &crate::World, x: i32, y: i32) -> bool {
+    match w.tile(x, y) {
+        Some(t) if t.active() && t.kind == 11 => t.frame_x >= 18 && t.frame_x < 54,
+        _ => true,
+    }
+}
+
+/// The C#'s inline "solid full block" test (`CanHitWithCheck` :526-534,
+/// :564-571): `!inActive() && active() && tileSolid && !tileSolidTop &&
+/// slope() == 0 && !halfBrick()` — i.e. `Tile.nactive()` plus the flags.
+fn solid_full(t: &Tile) -> bool {
+    crate::tileobject::nactive(t)
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+}
+
+/// `Collision.CanHitWithCheck` (`Collision.cs:490-586`): the line walk from
+/// the player's centre tile to the target cell — the wall step's reach
+/// check. The C#'s `Utils.TileActionAttempt` delegate is the port's `check`
+/// closure; the C#'s `Main.tile == null` / catch guards read as the port's
+/// `World::tile` returning `None` → `false` (the same result as the vanilla
+/// catch, which returns `false`).
+fn can_hit_with_check(
+    w: &crate::World,
+    p1: (f32, f32),
+    w1: i32,
+    h1: i32,
+    p2: (f32, f32),
+    w2: i32,
+    h2: i32,
+    check: impl Fn(i32, i32) -> bool,
+) -> bool {
+    let (max_x, max_y) = (w.width, w.height);
+    // `:493-518` — the two centre tiles, clamped to the C#'s windows
+    // (columns 1..maxTilesX-1, rows 1..maxTilesY-40).
+    let mut num = ((p1.0 + (w1 / 2) as f32) / 16.0) as i32;
+    let mut num2 = ((p1.1 + (h1 / 2) as f32) / 16.0) as i32;
+    let mut num3 = ((p2.0 + (w2 / 2) as f32) / 16.0) as i32;
+    let mut num4 = ((p2.1 + (h2 / 2) as f32) / 16.0) as i32;
+    num = num.clamp(1, max_x - 1);
+    num3 = num3.clamp(1, max_x - 1);
+    num2 = num2.clamp(1, max_y - 40);
+    num4 = num4.clamp(1, max_y - 40);
+    loop {
+        // `:523-548` — the Manhattan step: the wider axis advances first,
+        // and a full solid tower on both sides of the crossed column blocks.
+        let (num5, num6) = ((num - num3).abs(), (num2 - num4).abs());
+        if num == num3 && num2 == num4 {
+            return true;
+        }
+        if num5 > num6 {
+            num = if num >= num3 { num - 1 } else { num + 1 };
+            let (Some(above), Some(below)) = (w.tile(num, num2 - 1), w.tile(num, num2 + 1)) else {
+                return false;
+            };
+            if solid_full(above) && solid_full(below) {
+                return false;
+            }
+        } else {
+            num2 = if num2 >= num4 { num2 - 1 } else { num2 + 1 };
+            let (Some(left), Some(right)) = (w.tile(num - 1, num2), w.tile(num + 1, num2)) else {
+                return false;
+            };
+            if solid_full(left) && solid_full(right) {
+                return false;
+            }
+        }
+        // `:549-556` — the reached cell may not itself be a full solid.
+        let Some(cur) = w.tile(num, num2) else {
+            return false;
+        };
+        if cur.active()
+            && crate::tileobject::nactive(&cur)
+            && crate::tiledata::TILE_SOLID.has(cur.kind)
+            && !crate::tiledata::TILE_SOLID_TOP.has(cur.kind)
+        {
+            return false;
+        }
+        // `:576-578` — the do/while's condition: the walk continues while
+        // the check passes; a false ends it with `return false`.
+        if !check(num, num2) {
+            return false;
+        }
+    }
+}
+
+/// `SmartCursorHelper.Step_Walls` (`:1100-1164`): the held wall item
+/// (`createWall > 0`) re-points at the closest reachable cell whose wall
+/// slot is free, that stands beside a tile-or-wall neighbour and is not an
+/// open-door anchor frame.
+pub fn step_walls(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1101-1106` — the player's hitbox (the C#'s line-of-sight origin)
+    // and the createWall gate + the focus sentinel.
+    let (width, height) = (l.player_width, l.player_height);
+    if l.item.create_wall <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1114` — a free wall slot behind a non-full-solid cell,
+            // reachable from the player (`NotDoorStand` is the walk's check).
+            if t.wall == 0
+                && (!t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+                && can_hit_with_check(
+                    w,
+                    l.player_position,
+                    width,
+                    height,
+                    (i as f32 * 16.0, j as f32 * 16.0),
+                    16,
+                    16,
+                    |x, y| not_door_stand(w, x, y),
+                )
+            {
+                // `:1116-1132` — any of the four neighbours carries a tile
+                // or a wall (the `||`, not the `&&`).
+                let mut flag = false;
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    if let Some(tn) = w.tile(i + dx, j + dy) {
+                        if tn.active() || tn.wall > 0 {
+                            flag = true;
+                        }
+                    }
+                }
+                // `:1133-1136` — an open-door anchor frame vetoes the spot.
+                if crate::tileobject::is_open_door_anchor_frame(w, i, j) {
+                    flag = false;
+                }
+                if flag {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// -------------------------------------------------- platform / continuity --
+
+/// The C#'s two `SmartCursorHelper` statics (`SmartCursorHelper.cs:53-57`)
+/// — the platform-continuity locks. The C#'s static fields become the
+/// port's per-session state the caller holds across lookups (a world's
+/// smart cursor is single-threaded, one player at a time).
+#[derive(Clone, Copy, Default)]
+pub struct ContinuityState {
+    /// `_lockedDesiredDirection` (`:55`) — the direction the platform line
+    /// keeps extending.
+    pub locked_desired_direction: Option<(i32, i32)>,
+    /// `_lockedContinuityCoords` (`:57`) — the focus cell the line started
+    /// from.
+    pub locked_continuity_coords: Option<(i32, i32)>,
+}
+
+/// `SmartCursorHelper.UsingSmartCursorWithContinuity` (`:167-175`): the
+/// continuity locks are armed only while the held item places a platform
+/// (`TileID.Sets.Platforms`, `TileID.cs:534`).
+fn using_smart_cursor_with_continuity(create_tile: i32) -> bool {
+    create_tile >= 0 && crate::tiledata::SET_PLATFORMS.has(create_tile as u16)
+}
+
+/// `SmartCursorHelper.IsPlatform` (`:1446-1453`): the cell carries a
+/// platform tile.
+fn is_platform(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y)
+        .is_some_and(|t| t.active() && crate::tiledata::SET_PLATFORMS.has(t.kind))
+}
+
+/// `SmartCursorHelper.AllowedForContinuity` (`:1404-1429`): the candidate
+/// continues the locked line — the lock's own cell or a
+/// `skips_allowed` walk along the locked direction.
+fn allowed_for_continuity(x: i32, y: i32, state: &ContinuityState, skips_allowed: i32) -> bool {
+    let Some(coords) = state.locked_continuity_coords else {
+        return true;
+    };
+    if coords == (x, y) {
+        return true;
+    }
+    let Some(dir) = state.locked_desired_direction else {
+        return false;
+    };
+    let mut walk = coords;
+    for _ in 0..skips_allowed {
+        walk.0 += dir.0;
+        walk.1 += dir.1;
+        if (x, y) == walk {
+            return true;
+        }
+    }
+    false
+}
+
+/// `SmartCursorHelper.GetDesiredDirectionFrom` (`:1431-1444`): the mouse's
+/// bearing from the cell, quantised to one of eight directions ×1.5 — the
+/// C#'s `ToRotation` atan2, the π/4 bucket with its half-bucket offset, the
+/// `ToRotationVector2` unit vector scaled by 1.5 and `ToPoint`'s truncation
+/// (`Utils.cs:1655-1658`, `:1817-1820`).
+fn get_desired_direction_from(offset: (f32, f32), state: &ContinuityState) -> (i32, i32) {
+    if let Some(dir) = state.locked_desired_direction {
+        return dir;
+    }
+    let mut num = offset.1.atan2(offset.0);
+    if num < 0.0 {
+        num += std::f32::consts::PI * 2.0;
+    }
+    let num2 = std::f32::consts::PI / 4.0;
+    // `:1443` — the bucket index (the `(int)` truncation), its angle, the
+    // unit vector, the ×1.5 scale and the second truncation.
+    let bucket = ((num + num2 / 2.0) % (std::f32::consts::PI * 2.0) / num2) as i32;
+    let angle = bucket as f32 * num2;
+    ((angle.cos() * 1.5) as i32, (angle.sin() * 1.5) as i32)
+}
+
+/// `SmartCursorHelper.TileTargetDesired` (`:1391-1402`): the placement gate
+/// the C# reads in `Player.PlaceThing_Tiles` (`Player.cs:39721`) — while a
+/// continuity lock stands, the player's tile target must sit on the smart
+/// cursor's own (re-pointed) cell.
+pub fn tile_target_desired(
+    state: &ContinuityState,
+    smart_cursor_showing: bool,
+    target: (i32, i32),
+    smart_cursor: (i32, i32),
+) -> bool {
+    if state.locked_continuity_coords.is_some() {
+        if smart_cursor_showing && target.0 == smart_cursor.0 {
+            return target.1 == smart_cursor.1;
+        }
+        return false;
+    }
+    true
+}
+
+/// `SmartCursorHelper.Step_Platforms` (`:1324-1389`): the held platform
+/// item re-points at the closest cell that extends the platform line —
+/// the two-key vote (distance, then the dot product along the locked
+/// direction) and, on a hit, both continuity locks are written.
+pub fn step_platforms(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+    state: &mut ContinuityState,
+) -> Option<(i32, i32)> {
+    // `:1326` — the createTile gate (a platform-placing item) + the focus
+    // sentinel + the screen-target platform pre-check.
+    if l.item.create_tile < 0
+        || !crate::tiledata::SET_PLATFORMS.has(l.item.create_tile as u16)
+        || fx != -1
+        || fy != -1
+        || is_platform(w, l.screen_target.0, l.screen_target.1)
+    {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    let mut dirs: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1338` — the desired direction from the mouse's bearing to
+            // this cell; `flag` = the cell is not itself a platform.
+            let desired = get_desired_direction_from(
+                (
+                    l.mouse.0 - (i as f32 * 16.0 + 8.0),
+                    l.mouse.1 - (j as f32 * 16.0 + 8.0),
+                ),
+                state,
+            );
+            let mut flag = !is_platform(w, i, j);
+            // `:1338-1341` — the horizontal-join exception: an active,
+            // non-solid cell beside a platform row is NOT skipped when the
+            // direction is horizontal (the row extends).
+            if flag
+                && desired.1 == 0
+                && t.active()
+                && !crate::edit::solid_tile(w, i, j)
+                && (is_platform(w, i - 1, j) || is_platform(w, i + 1, j))
+            {
+                flag = false;
+            }
+            // `:1343` — the C# skips the cell while the flag stands.
+            if flag {
+                continue;
+            }
+            // `:1346-1347` — the slope arm (2 for a diagonal, 1 for the
+            // anti-diagonal, 0 for flat): when the cell has no matching
+            // slope, the placement needs the side-neighbour clearance.
+            let num = if desired.0 == desired.1 {
+                2
+            } else if desired.0 == -desired.1 {
+                1
+            } else {
+                0
+            };
+            if (num == 0 || t.slope() as i32 != num)
+                && (desired.0 != 0
+                    || (!is_platform(w, i - 1, j + desired.1)
+                        && !is_platform(w, i + 1, j + desired.1)))
+            {
+                // `:1350-1356` — the target cell may be replaced and the
+                // walk continues the locked line.
+                let (nx, ny) = (i + desired.0, j + desired.1);
+                let Some(tile) = w.tile(nx, ny) else {
+                    continue;
+                };
+                if (!tile.active() || crate::tileobject::tile_cut(tile.kind))
+                    && allowed_for_continuity(nx, ny, state, 2)
+                {
+                    cands.push((nx, ny));
+                    dirs.push(desired);
+                }
+            }
+        }
+    }
+    // `:1364-1378` — the two-key vote: the closest centre to the mouse,
+    // then the larger dot product along the stored direction (the C#'s
+    // `num3` sentinel is `-1f`, so the first candidate always takes it).
+    let mut best: Option<((i32, i32), (i32, i32))> = None;
+    let mut best_dist = -1.0f32;
+    let mut best_dot = -1.0f32;
+    for (k, &(x, y)) in cands.iter().enumerate() {
+        let dx = l.mouse.0 - (x as f32 * 16.0 + 8.0);
+        let dy = l.mouse.1 - (y as f32 * 16.0 + 8.0);
+        let dist = dx.hypot(dy);
+        let dot = dx * dirs[k].0 as f32 + dy * dirs[k].1 as f32;
+        if best_dist == -1.0 || dist < best_dist || (dist == best_dist && dot > best_dot) {
+            best_dist = dist;
+            best_dot = dot;
+            best = Some(((x, y), dirs[k]));
+        }
+    }
+    let ((px, py), dir) = best?;
+    if !in_tile_bounds(px, py, l.start_x, l.start_y, l.end_x, l.end_y) {
+        return None;
+    }
+    // `:1383-1384` — the only writer of the locks outside the reset.
+    state.locked_desired_direction = Some(dir);
+    state.locked_continuity_coords = Some((px, py));
+    Some((px, py))
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
-/// LawnMower :143 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155 →
-/// StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
-/// first step that finds a spot wins — the C# straight-line chain.
+/// Platforms :134 → Walls :136 → PumpkinSeeds :137 → GrassSeeds :138 →
+/// Moss :139 → Pigronata :140 → Torch :142 → LawnMower :143 → BlocksLines
+/// :145 → PaintRoller :146 → PaintBrush :147 → PaintScrapper :148 → Acorns
+/// :149 → GemCorns :150 → EmptyBuckets :151 → AlchemySeeds :153 →
+/// PlanterBox :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's gate
+/// refuses a taken focus, so the first step that finds a spot wins — the
+/// C# straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -693,19 +1569,52 @@ pub fn step_lawn_mower(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option
 ///
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
-pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 9] = [
+pub fn smart_cursor_lookup(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+    state: &mut ContinuityState,
+) -> Option<(i32, i32)> {
+    // `:66-67` — the continuity-lock reset: the locks survive only while the
+    // use button is held, the smart cursor is on and the held item places a
+    // platform (`UsingSmartCursorWithContinuity`, :167-175). The C#'s
+    // `Main.SmartCursorShowing = false` (:63) stays the caller's flag.
+    if !l.use_item_held
+        || !SMART_CURSOR_IS_USED
+        || !using_smart_cursor_with_continuity(l.item.create_tile)
+    {
+        *state = ContinuityState::default();
+    }
+    if !SMART_CURSOR_IS_USED {
+        return None;
+    }
+    let mut focus = (fx, fy);
+    // `:134` — the platform step runs first in the C#'s chain and is the
+    // only step that writes the continuity state.
+    if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
+        focus = p;
+    }
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 18] = [
+        step_walls,
+        step_pumpkin_seeds,
         step_grass_seeds,
         step_moss,
         step_pigronata,
         step_torch,
         step_lawn_mower,
+        step_blocks_lines,
+        step_paint_roller,
+        step_paint_brush,
+        step_paint_scrapper,
+        step_acorns,
+        step_gem_corns,
+        step_empty_buckets,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
         step_staff_of_regrowth,
     ];
-    let mut focus = (fx, fy);
     for step in steps {
         if let Some(p) = step(w, l, focus.0, focus.1) {
             focus = p;
@@ -750,6 +1659,25 @@ mod tests {
         }
     }
 
+    /// The tile paint on the cell (`Tile::set_paint`, `tile.rs:52`).
+    fn paint_at(w: &mut crate::World, x: i32, y: i32, paint: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].set_paint(paint);
+    }
+
+    /// A wall behind the cell (`Tile.wall`, the WallID — the wall's paint
+    /// and coatings ride `World::extras`).
+    fn wall_at(w: &mut crate::World, x: i32, y: i32, wall: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].wall = wall;
+    }
+
+    /// The tile's Glow-coating (fullbright) flag.
+    fn fullbright_at(w: &mut crate::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i].flags |= crate::tile::FLAG_FULLBRIGHT;
+    }
+
     /// A bare world — no fixture floor (the steps whose box sweeps need
     /// the rows above their seat clear start from it).
     fn bare() -> crate::World {
@@ -777,6 +1705,13 @@ mod tests {
             end_x: 40,
             end_y: 19,
             weather: crate::growth::WeatherCtx::default(),
+            paint_lookup: 0,
+            paint_coating_lookup: 0,
+            smart_blocks_enabled: false,
+            use_item_held: false,
+            player_position: (30.0 * 16.0, 21.0 * 16.0),
+            player_width: 20,
+            player_height: 42,
         }
     }
 
@@ -784,6 +1719,7 @@ mod tests {
         ItemPort {
             kind,
             create_tile: -1,
+            create_wall: -1,
             place_style: 0,
         }
     }
@@ -792,6 +1728,17 @@ mod tests {
         ItemPort {
             kind,
             create_tile,
+            create_wall: -1,
+            place_style: 0,
+        }
+    }
+
+    /// A wall-placing item (`Item.createWall > 0`).
+    fn placeable_wall(kind: u16, create_wall: i32) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile: -1,
+            create_wall,
             place_style: 0,
         }
     }
@@ -818,7 +1765,7 @@ mod tests {
         let world = w();
         let l = lookup(item(1), (0.0, 0.0));
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             None,
             "the pickaxe's lookup rides a later step"
         );
@@ -1054,6 +2001,7 @@ mod tests {
             ItemPort {
                 kind: 0,
                 create_tile: 82,
+                create_wall: -1,
                 place_style: 0,
             },
             mouse_at(25, 19),
@@ -1067,6 +2015,7 @@ mod tests {
             ItemPort {
                 kind: 0,
                 create_tile: 82,
+                create_wall: -1,
                 place_style: 1,
             },
             mouse_at(25, 19),
@@ -1163,9 +2112,774 @@ mod tests {
         put(&mut world, 25, 19, 0); // open dirt: the seed step's target
         let l = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the grass-seed step runs before the torch step"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_scrapper_finds_painted_tiles() {
+        // `Step_PaintScrapper` :692-697 — a painted tile, a LongMoss tile
+        // (184) and a coated wall are scraper targets; clean stone is not.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        paint_at(&mut world, 25, 19, 3);
+        let l = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to the painted tile"
+        );
+        let mut moss = w();
+        put(&mut moss, 25, 19, 184); // LongMoss: the scraper's second target
+        let l2 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&moss, &l2, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to LongMoss (Player.cs:41822)"
+        );
+        // A coated wall behind an empty cell is a target too.
+        let mut coated = w();
+        wall_at(&mut coated, 25, 19, 1);
+        coated.set_fullbright_wall(25, 19, true);
+        let l3 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&coated, &l3, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to the coated wall"
+        );
+        // Clean stone with no wall is not a target.
+        let clean = w();
+        let l4 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&clean, &l4, -1, -1),
+            None,
+            "a clean stone is not a scraper target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_brush_finds_the_unpainted_tile() {
+        // `Step_PaintBrush` :743 — with paint 3 selected the unpainted
+        // stone is the target and the already-painted one is skipped.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        let l = Lookup {
+            paint_lookup: 3,
+            ..lookup(item(1071), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the brush snaps to the unpainted stone"
+        );
+        let mut painted = w();
+        put(&mut painted, 25, 19, 1);
+        paint_at(&mut painted, 25, 19, 3);
+        let l2 = Lookup {
+            paint_lookup: 3,
+            ..lookup(item(1071), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&painted, &l2, -1, -1),
+            None,
+            "the tile already carries the paint"
+        );
+        // No paint or coating selected — the step no-ops (:729).
+        let l3 = lookup(item(1071), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_brush(&world, &l3, -1, -1),
+            None,
+            "the brush needs a selected paint or coating"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_brush_coating_arm_wants_the_glow() {
+        // `Step_PaintBrush` :743's coating arms — Glow (coating 1) skips a
+        // fullbright block, Echo (coating 2) skips an invisible block.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        fullbright_at(&mut world, 25, 19);
+        put(&mut world, 26, 19, 1); // the plain neighbour
+        let glow = Lookup {
+            paint_coating_lookup: 1,
+            ..lookup(item(1543), mouse_at(26, 19)) // the Spectre brush
+        };
+        assert_eq!(
+            step_paint_brush(&world, &glow, -1, -1),
+            Some((26, 19)),
+            "the Glow brush skips the fullbright block"
+        );
+        let mut echo = w();
+        put(&mut echo, 25, 19, 1);
+        echo.set_invisible_block(25, 19, true);
+        put(&mut echo, 26, 19, 1);
+        let echo_l = Lookup {
+            paint_coating_lookup: 2,
+            ..lookup(item(1071), mouse_at(26, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&echo, &echo_l, -1, -1),
+            Some((26, 19)),
+            "the Echo brush skips the invisible block"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_roller_finds_the_unpainted_wall() {
+        // `Step_PaintRoller` :786 — a wall behind an empty cell is the
+        // target; the already-painted wall and the wall behind a solid
+        // block are not.
+        let mut world = w();
+        wall_at(&mut world, 25, 19, 1);
+        let l = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the roller snaps to the unpainted wall"
+        );
+        let mut painted = w();
+        wall_at(&mut painted, 25, 19, 1);
+        painted.set_wall_paint(25, 19, 4);
+        let l2 = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&painted, &l2, -1, -1),
+            None,
+            "the wall already carries the paint"
+        );
+        // The wall behind a full solid cell is not a roller target.
+        let mut solid = w();
+        put(&mut solid, 25, 19, 1);
+        wall_at(&mut solid, 25, 19, 1);
+        let l3 = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&solid, &l3, -1, -1),
+            None,
+            "the wall behind a solid block is not a target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_steps_chain_after_the_mower() {
+        // The dispatch order (:146-148): with a held scraper the paint
+        // family runs after the mower and before the alch seeds.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        paint_at(&mut world, 25, 19, 3);
+        let l = lookup(item(1545), mouse_at(25, 19)); // the Spectre scraper
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the scraper step runs inside the lookup chain"
+        );
+    }
+
+    /// An acorn lookup over the fixture's rows 21..=30 (the step's height
+    /// gate refuses `startY <= 20`).
+    fn acorn_lookup(kind: u16, mouse: (f32, f32)) -> Lookup {
+        Lookup {
+            start_y: 21,
+            end_y: 30,
+            ..lookup(item(kind), mouse)
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_finds_the_grass_spot() {
+        // `Step_Acorns` :2061-2093 — the grass-family arm: an open cell
+        // above a grass row with the 9-row box clear replants there.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2); // the grass row (the ground)
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the acorn re-points above the grass row"
+        );
+        // A non-ground row (the fixture's stone) refuses.
+        let mut stone = bare();
+        put_row(&mut stone, 20, 40, 22, 1);
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&stone, &l2, -1, -1),
+            None,
+            "stone is not an acorn ground"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_needs_open_space_above() {
+        // `Step_Acorns` :2054 — a cell occupied by a non-replaceable tile
+        // (the one above or the spot itself) drops the candidate: a solid
+        // row over the whole grass row leaves no plant.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        put_row(&mut world, 20, 40, 20, 1); // the stone row above the spots
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            None,
+            "the occupied cell above blocks the plant"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_removal_pass_needs_a_ground_neighbour() {
+        // `Step_Acorns` :2096-2136 — a ground row standing alone (no acorn
+        // ground beside the spot's own ground cell) is removed.
+        let mut world = bare();
+        put(&mut world, 25, 22, 2); // a lone grass cell under the spot
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            None,
+            "the lone ground is dropped by the removal pass"
+        );
+        // A second grass cell beside it survives.
+        let mut row = bare();
+        put_row(&mut row, 24, 26, 22, 2);
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&row, &l2, -1, -1),
+            Some((25, 21)),
+            "the ground row beside the spot keeps it"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_respects_the_far_saplings() {
+        // `Step_Acorns` :2058-2060 — `flag2 = flag || (±2/±3)`, so ANY
+        // sapling within the ±3 column window blocks the grass arm; the
+        // vote falls on the closest free cell outside the window.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        put(&mut world, 27, 21, 20); // a sapling two columns right of 25
+        let l = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&world, &l, -1, -1),
+            Some((23, 21)),
+            "the sapling's ±3 window (24..=27) drops, the vote takes 23"
+        );
+        // An immediate ±1 sapling feeds `flag` and therefore `flag2` — the
+        // blocked window widens to 23..=29 and the vote falls to 22.
+        let mut near = bare();
+        put_row(&mut near, 20, 40, 22, 2);
+        put(&mut near, 26, 21, 20); // a sapling directly beside the spot
+        let l2 = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            step_acorns(&near, &l2, -1, -1),
+            Some((22, 21)),
+            "the immediate sapling widens the block to the full ±3 window"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_acorn_runs_in_the_chain_and_the_pumpkin_fixes_its_place() {
+        // The dispatch order (:137, :149): the pumpkin seed runs before the
+        // grass seeds, the acorn after the paint family — the chain dispatches
+        // both steps.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        let acorn = acorn_lookup(27, mouse_at(25, 21));
+        assert_eq!(
+            smart_cursor_lookup(&world, &acorn, -1, -1, &mut ContinuityState::default()),
+            Some((25, 21)),
+            "the acorn step runs inside the lookup chain"
+        );
+        let mut pumpkins = w();
+        put_row(&mut pumpkins, 20, 40, 20, 2); // grass ground at the fixture's floor row
+        pumpkins.world_surface = 25.0;
+        let l = lookup(placeable(0, 254), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&pumpkins, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the pumpkin-seed step is dispatched before the grass seeds"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_finds_the_stone_ground() {
+        // `Step_GemCorns` :2179 — the Ruby seed (4855) plants on the gem
+        // trees' ground (Conversion.Stone {1,25,117,203}); the 12-row clear
+        // box ignores the profile's own sapling (590).
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 1); // stone ground
+        let l = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the gem seed re-points above the stone ground"
+        );
+        // The gem profile's ground test refuses dirt (2 — a Conversion.Grass
+        // tile, not Conversion.Stone/Moss): the vanilla's GemTreeGroundTest
+        // reads only those two sets (WorldGen.cs:30304-30315).
+        let mut dirt = bare();
+        put_row(&mut dirt, 20, 40, 22, 2);
+        let l2 = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&dirt, &l2, -1, -1),
+            None,
+            "dirt is not a gem-tree ground"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_sakura_seed_finds_grass_but_not_corrupt_grass() {
+        // `VanityTreeGroundTest` (WorldGen.cs:30317-30328): the grass
+        // conversion minus the corruption/crimson pair — the sakura seed
+        // (4871) plants on grass but refuses corrupt grass (23).
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2); // grass ground
+        let l = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the sakura seed re-points above the grass"
+        );
+        let mut corrupt = bare();
+        put_row(&mut corrupt, 20, 40, 22, 23); // corrupt grass ground
+        let l2 = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&corrupt, &l2, -1, -1),
+            None,
+            "corrupt grass is excluded from the vanity ground test"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_only_the_profile_seed_items_pass_the_gate() {
+        // The `TryGetFromItemId` gate (:2161): nine item ids carry a
+        // profile; a plain block or the acorn does not.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 1);
+        assert_eq!(
+            step_gem_corns(&world, &acorn_lookup(27, mouse_at(25, 21)), -1, -1),
+            None,
+            "the acorn is not a gem-corn seed"
+        );
+        assert_eq!(
+            step_gem_corns(&world, &acorn_lookup(1, mouse_at(25, 21)), -1, -1),
+            None,
+            "a plain item carries no profile"
+        );
+        // The ash profile (634) has no seed item — the C#'s
+        // `TryGetFromItemId` does not list it (:3853-3884).
+        assert_eq!(
+            crate::growth::grow_tree_profile_from_item(634),
+            None,
+            "the ash tree has no seed item"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_removal_pass_needs_a_ground_neighbour() {
+        // `Step_GemCorns` :2189-2206 — the removal pass runs the profile's
+        // ground test on the cells beside the ground row: a lone stone cell
+        // is dropped, a stone row survives.
+        let mut world = bare();
+        put(&mut world, 25, 22, 1); // a lone stone cell under the spot
+        let l = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            None,
+            "the lone ground is dropped by the gem-corn removal pass"
+        );
+        let mut row = bare();
+        put_row(&mut row, 24, 26, 22, 1);
+        let l2 = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&row, &l2, -1, -1),
+            Some((25, 21)),
+            "the stone row beside the spot keeps it"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_runs_after_the_acorn_in_the_chain() {
+        // The dispatch order (:150): the gem-corn step sits between the
+        // acorn and the alch seeds.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        let sakura = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            smart_cursor_lookup(&world, &sakura, -1, -1, &mut ContinuityState::default()),
+            Some((25, 21)),
+            "the gem-corn step runs inside the lookup chain"
+        );
+    }
+
+    /// Water of the given amount at the cell (the fixture water: no liquid
+    /// flag, `liquid_kind() == Water`).
+    fn water_at(w: &mut crate::World, x: i32, y: i32, amount: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+    }
+
+    #[test]
+    fn test_smart_1_the_empty_bucket_finds_the_deep_liquid() {
+        // `Step_EmptyBuckets` :650 — the 3x3 box of the same liquid kind
+        // must hold more than 100.
+        let mut world = bare();
+        for x in 24..=26 {
+            for y in 14..=16 {
+                water_at(&mut world, x, y, 60);
+            }
+        }
+        let l = lookup(item(205), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&world, &l, -1, -1),
+            Some((25, 15)),
+            "the bucket re-points at the 540-liquid box"
+        );
+        // A shallow puddle (the 3x3 sum 45) is below the minimum.
+        let mut shallow = bare();
+        water_at(&mut shallow, 25, 15, 45);
+        let l2 = lookup(item(205), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&shallow, &l2, -1, -1),
+            None,
+            "the 45-liquid box is below the bucket's 100 minimum"
+        );
+        // The item gate: a non-bucket item skips the step.
+        let l3 = lookup(item(1), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&world, &l3, -1, -1),
+            None,
+            "the step's gate is item 205 only"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_empty_bucket_sums_only_the_same_kind() {
+        // `Step_EmptyBuckets` :644 — the box sum counts the matching
+        // `liquidType()` only: a lava pocket beside water does not lift the
+        // water total.
+        let mut world = bare();
+        for x in 24..=26 {
+            for y in 14..=16 {
+                water_at(&mut world, x, y, 60);
+            }
+        }
+        let i = world.index(25, 15);
+        world.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        world.tiles[i].liquid = 60; // lava: the water sum drops to 480
+        let l = lookup(item(205), mouse_at(25, 15));
+        // The water cells still total 480 > 100 → the water spot stands
+        // (the lava cell itself is a candidate of its own kind, 180).
+        let found = step_empty_buckets(&world, &l, -1, -1);
+        assert!(found.is_some(), "the water box still draws the bucket");
+    }
+
+    #[test]
+    fn test_smart_1_the_block_line_places_on_the_anchored_cell() {
+        // `Step_BlocksLines` :838-856 — a replaceable cell with one
+        // full-solid neighbour re-points; the settings toggle gates it.
+        let blocks = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(1, 1), mouse_at(25, 19)) // the stone block item
+        };
+        let world = w(); // the fixture's stone floor row at y = 20
+        assert_eq!(
+            step_blocks_lines(&world, &blocks, -1, -1),
+            Some((25, 19)),
+            "the block line re-points above the solid floor"
+        );
+        // The toggle off — the step no-ops (:817).
+        let off = lookup(placeable(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_blocks_lines(&world, &off, -1, -1),
+            None,
+            "SmartBlocksEnabled off disables the step"
+        );
+        // A solidTop createTile (the platform 19) is refused by the gate.
+        let platform = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(0, 19), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_blocks_lines(&world, &platform, -1, -1),
+            None,
+            "the solidTop createTile fails the gate"
+        );
+        // A fully occupied rect offers no line spot.
+        let mut occupied = w();
+        for y in 10..=19 {
+            put_row(&mut occupied, 20, 40, y, 1);
+        }
+        assert_eq!(
+            step_blocks_lines(&occupied, &blocks, -1, -1),
+            None,
+            "every cell occupied — no placement target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_block_line_refuses_the_seed_items() {
+        // `AllowNormalBlockPlacementBehaviourForItemType` (:217): a grass
+        // seed holding nothing to place — even with a createTile — is not a
+        // normal block placement.
+        let world = w();
+        let seed = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(62, 1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_blocks_lines(&world, &seed, -1, -1),
+            None,
+            "the grass seed takes its own step, not the block lines"
+        );
+    }
+
+    /// A tall bare world (100 rows — the walk's `maxTilesY - 40` clamp needs
+    /// a real world height; the 40-row fixture clamps every row to 0 and the
+    /// walk fails on its first out-of-world read, exactly as the C# would).
+    fn tall() -> crate::World {
+        let mut w = crate::World::new("tall".into(), 60, 100);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    /// The frame column of the cell (`Tile.frameX`, the door frames' key).
+    fn frame_x_at(w: &mut crate::World, x: i32, y: i32, frame_x: i16) {
+        let i = w.index(x, y);
+        w.tiles[i].frame_x = frame_x;
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_finds_the_anchored_cell() {
+        // `Step_Walls` :1114-1132 — a free wall slot behind an empty cell
+        // that stands beside a wall neighbour and is reachable from the
+        // player (the default lookup's player centre is the tile (30, 22)).
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1); // the neighbour wall below the spot
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the wall re-points beside the wall neighbour"
+        );
+        // A taken slot is not the answer for that cell (the step moves on
+        // to the neighbour the taken cell anchors — the C#'s `tile.wall == 0`
+        // reads per cell).
+        let mut taken = tall();
+        wall_at(&mut taken, 25, 20, 1);
+        wall_at(&mut taken, 25, 19, 1);
+        let l2 = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_ne!(
+            step_walls(&taken, &l2, -1, -1),
+            Some((25, 19)),
+            "the cell's wall slot is taken"
+        );
+        // No tile-or-wall neighbour — the spot is not a wall.
+        let bare_world = tall();
+        let l3 = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&bare_world, &l3, -1, -1),
+            None,
+            "the spot needs a tile-or-wall neighbour"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_line_of_sight_blocks() {
+        // `CanHitWithCheck` :526-534 — a full-solid tower on both sides of
+        // the crossed column breaks the walk, so the spot is unreachable.
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1); // the neighbour that anchors the spot
+        put(&mut world, 28, 21, 1); // the tower beside the walked column
+        put(&mut world, 28, 23, 1);
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_walls(&world, &l, -1, -1),
+            None,
+            "the solid tower blocks the line walk"
+        );
+        // Without the tower the same spot is reachable.
+        let mut open = tall();
+        wall_at(&mut open, 25, 20, 1);
+        assert_eq!(
+            step_walls(
+                &open,
+                &lookup(placeable_wall(0, 1), mouse_at(25, 19)),
+                -1,
+                -1
+            ),
+            Some((25, 19)),
+            "the open walk reaches the spot"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_open_door_anchor_frame_veto() {
+        // `IsOpenDoorAnchorFrame` (WorldGen.cs:69171-69184): the open door's
+        // 11 anchors a wall on its top (columns 0..17) and bottom (54..71)
+        // frame columns — the middle columns (18..53) do not.
+        let mut world = tall();
+        put(&mut world, 25, 19, 11);
+        frame_x_at(&mut world, 25, 19, 0); // the top frame column
+        assert!(crate::tileobject::is_open_door_anchor_frame(&world, 25, 19));
+        frame_x_at(&mut world, 25, 19, 36); // the door's middle
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 25, 19
+        ));
+        frame_x_at(&mut world, 25, 19, 60); // the bottom column
+        assert!(crate::tileobject::is_open_door_anchor_frame(&world, 25, 19));
+        // A closed door (10) or a plain tile is never an anchor.
+        put(&mut world, 26, 19, 10);
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 26, 19
+        ));
+        put(&mut world, 27, 19, 1);
+        assert!(!crate::tileobject::is_open_door_anchor_frame(
+            &world, 27, 19
+        ));
+    }
+
+    #[test]
+    fn test_smart_1_the_wall_step_runs_first_in_the_chain() {
+        // The dispatch order (:136): the wall step runs before the pumpkin
+        // seeds — the chain dispatches it.
+        let mut world = tall();
+        wall_at(&mut world, 25, 20, 1);
+        let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the wall step runs inside the lookup chain"
+        );
+    }
+
+    /// The desired-direction quantiser (`GetDesiredDirectionFrom` :1443):
+    /// the mouse bearing from a cell to one of the eight directions ×1.5.
+    fn direction_of(offset: (f32, f32)) -> (i32, i32) {
+        get_desired_direction_from(offset, &ContinuityState::default())
+    }
+
+    #[test]
+    fn test_smart_1_the_desired_direction_quantises_the_bearing() {
+        // The eight buckets: flat right, the diagonals, flat down and their
+        // mirrors (the `(int)` truncation of the ×1.5 unit vectors).
+        assert_eq!(direction_of((40.0, 0.0)), (1, 0));
+        assert_eq!(direction_of((40.0, 40.0)), (1, 1));
+        assert_eq!(direction_of((0.0, 40.0)), (0, 1));
+        assert_eq!(direction_of((-40.0, 40.0)), (-1, 1));
+        assert_eq!(direction_of((-40.0, 0.0)), (-1, 0));
+        assert_eq!(direction_of((-40.0, -40.0)), (-1, -1));
+        assert_eq!(direction_of((0.0, -40.0)), (0, -1));
+        assert_eq!(direction_of((40.0, -40.0)), (1, -1));
+        // A lock short-circuits the bearing — the line keeps its direction.
+        let locked = ContinuityState {
+            locked_desired_direction: Some((0, 1)),
+            locked_continuity_coords: Some((25, 18)),
+        };
+        assert_eq!(get_desired_direction_from((40.0, 0.0), &locked), (0, 1));
+    }
+
+    #[test]
+    fn test_smart_1_the_platform_step_extends_the_row() {
+        // `Step_Platforms` :1343-1356 — the step works from the platform
+        // cells themselves (a plain empty cell is skipped by the flag), and
+        // re-points at the first free cell beyond the row's end, in the
+        // mouse's direction.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19); // the platform row
+        let l = lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0));
+        let mut state = ContinuityState::default();
+        assert_eq!(
+            step_platforms(&world, &l, -1, -1, &mut state),
+            Some((31, 18)),
+            "the platform extends the row to the right"
+        );
+        // The hit writes both locks (:1383-1384).
+        assert_eq!(state.locked_desired_direction, Some((1, 0)));
+        assert_eq!(state.locked_continuity_coords, Some((31, 18)));
+        // The gate: a non-platform item refuses.
+        assert_eq!(
+            step_platforms(
+                &world,
+                &lookup(placeable(1, 1), (0.0, 0.0)),
+                -1,
+                -1,
+                &mut state
+            ),
+            None,
+            "the step's gate is a platform-placing item"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_continuity_lock_and_the_placement_gate() {
+        // `TileTargetDesired` (:1391-1402): without a lock the gate always
+        // passes; with one the tile target must be the smart cursor's own
+        // re-pointed cell (`Player.cs:39721`).
+        let open = ContinuityState::default();
+        assert!(tile_target_desired(&open, true, (12, 12), (25, 18)));
+        assert!(tile_target_desired(&open, false, (12, 12), (25, 18)));
+        let locked = ContinuityState {
+            locked_desired_direction: Some((1, 0)),
+            locked_continuity_coords: Some((31, 18)),
+        };
+        assert!(tile_target_desired(&locked, true, (31, 18), (31, 18)));
+        assert!(!tile_target_desired(&locked, true, (32, 18), (31, 18)));
+        // The smart cursor not showing — the gate refuses (the C#'s
+        // `Main.SmartCursorShowing` half).
+        assert!(!tile_target_desired(&locked, false, (31, 18), (31, 18)));
+    }
+
+    #[test]
+    fn test_smart_1_the_continuity_lock_resets_without_the_use_button() {
+        // `SmartCursorLookup` :66-67 — the locks survive only while the use
+        // button is held, the smart cursor is on and the item places a
+        // platform.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19);
+        let mut state = ContinuityState {
+            locked_desired_direction: Some((1, 0)),
+            locked_continuity_coords: Some((31, 18)),
+        };
+        // Not held — the reset clears the locks.
+        let l = lookup(placeable(0, 19), (0.0, 0.0));
+        smart_cursor_lookup(&world, &l, -1, -1, &mut state);
+        assert_eq!(state.locked_desired_direction, None, "the lock reset");
+        assert_eq!(state.locked_continuity_coords, None, "the coords reset");
+        // Held — the locks stand (and the step may re-write them).
+        let held = Lookup {
+            use_item_held: true,
+            ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
+        };
+        smart_cursor_lookup(&world, &held, -1, -1, &mut state);
+        assert_eq!(
+            state.locked_continuity_coords,
+            Some((31, 18)),
+            "the lock stood"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_platform_step_runs_first_in_the_chain() {
+        // The dispatch order (:134): the platform step runs before the wall
+        // step — the chain dispatches it.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19);
+        let l = Lookup {
+            use_item_held: true,
+            ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
+        };
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((31, 18)),
+            "the platform step runs inside the lookup chain"
         );
     }
 }

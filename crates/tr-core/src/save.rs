@@ -22,8 +22,12 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `spX/spY` arrays, `Player.cs:54877-54888` — the port's single-player world
 /// save carries it world-side, `World::bed_spawn`); v6 appended the world
 /// flags block (the C# `SaveWorldFlags` progression subset, `WorldFile.cs:1238-1430`),
-/// the wire side table and the tile entities (`SaveTileEntities`, `WorldFile.cs:3302-3313`);
-/// v7 appended the world chests (`SaveChests`, `WorldFile.cs:1606-1676`).
+/// the wire side table and the tile entities (`SaveTileEntities`, `WorldFile.cs:3302-3313`)
+/// and the world chests (`SaveChests`, `WorldFile.cs:1606-1676`). The v6 tail on this
+/// branch instead carries the classic secret-seed flags (`World.seeds` — the
+/// `SaveWorldFlags` byte block, `WorldFile.cs:1238-1250`, as the port's own u16
+/// bitmask; the C# `.wld` stores the nine booleans and re-derives the seed from the
+/// stored seed *text*), so the v6 block below is re-assembled as v7.
 pub const VERSION: u32 = 7;
 
 /// One item inside a chest record — the C# `SaveChests` slot shape
@@ -192,9 +196,15 @@ fn write_world(w: &mut impl Write, world: &World, chests: &[ChestRecord]) -> Res
         }
         None => w.write_all(&[0u8])?,
     }
-    // v6: the world flags block, then the wires and the tile entities — the
-    // three port-native sections whose C# counterparts ride `SaveWorldFlags`
-    // / the per-tile header bits / `SaveTileEntities`.
+    // v6 (re-assembled as v7): the classic secret-seed flags
+    // (`WorldFile.SaveWorldFlags`'s nine `Main.*` booleans,
+    // `WorldFile.cs:1238-1250`) as the port's own `serializedSeedsSum`
+    // bitmask (`WorldFileData.cs:157-197`).
+    w.write_all(&world.seeds.sum().to_le_bytes())?;
+    // v7: the world flags block, then the wires, the tile entities and the
+    // chests — the four port-native sections whose C# counterparts ride
+    // `SaveWorldFlags` / the per-tile header bits / `SaveTileEntities` /
+    // `SaveChests`.
     write_flags_v6(w, world)?;
     let mut sec = crate::binio::Writer::new();
     world.wires.write(&mut sec);
@@ -479,21 +489,29 @@ pub fn parse(data: &[u8]) -> Result<(World, Vec<ChestRecord>)> {
             world.bed_spawn = Some((x, y));
         }
     }
-    // v6: the flags block, the wires and the tile entities. A v5 file (and
-    // older) keeps the `World::new` defaults — the same contract as the v4/v5
-    // tails. The wire and TE sections are self-delimiting (count + records),
-    // so a truncated one bails like every other structural failure.
+    // v6 (re-assembled as v7): the secret-seed flags. A v5 file loads with
+    // the classic (all-false) world, which is what the pre-M5-SEED-1 saves
+    // were.
     if version >= 6 {
+        world.seeds = crate::seeds::SeedFlags::from_sum(r.u16()?);
+    }
+    // v7: the flags block, the wires, the tile entities and the chests. A v6
+    // file (and older) keeps the `World::new` defaults — the same contract as
+    // the earlier tails. The wire/TE/chest sections are self-delimiting
+    // (count + records), so a truncated one bails like every other structural
+    // failure.
+    let mut chests = Vec::new();
+    if version >= 7 {
         read_flags_v6(&mut r, &mut world)?;
         world.wires = WireState::read(&mut r.0).ok_or_else(|| eof(r.0.pos()))?;
         let tes = TileEntities::read_all(&mut r.0, &world).ok_or_else(|| eof(r.0.pos()))?;
         world.tile_entities = tes;
+        // v7: the world chests (`LoadChests`'s shape `WorldFile.cs:2723-2805` —
+        // the port keeps the store's implicit-air compression instead of the
+        // vanilla fixed `maxItems`, and drops the vanilla's pre-count validity
+        // sweep: the anchors are re-checked by the app when the store is built).
+        chests = read_chests_v7(&mut r)?;
     }
-    // v7: the world chests (`LoadChests`'s shape `WorldFile.cs:2723-2805` — the
-    // port keeps the store's implicit-air compression instead of the vanilla
-    // fixed `maxItems`, and drops the vanilla's pre-count validity sweep:
-    // the anchors are re-checked by the app when the store is built).
-    let chests = if version >= 7 { read_chests_v7(&mut r)? } else { Vec::new() };
     world.revision = 0;
     Ok((world, chests))
 }
@@ -756,9 +774,58 @@ mod tests {
         // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
         // fixed flags block + four empty colour counts + one empty entity
         // count sit after it — [presence][x: i32][y: i32] — poison the x.
-        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4) - 9;
+        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4) - 9;
         buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
         assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
+    }
+
+    #[test]
+    fn dw_2_1_a_v6_payload_loads_the_seeds_but_not_the_v7_tail() {
+        // DW-2.1: a v6 payload (the seed flags only — the v7 block truncated
+        // and the version field patched) parses with the seeds and with the
+        // `World::new` defaults for the v7 sections — the tail sits unread.
+        let mut w = World::new("Test".into(), 32, 32);
+        w.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &[]).unwrap();
+        // The v7 block of an empty-wire/entity/chest world: the fixed flags
+        // block + four empty colour counts + one empty entity count + one
+        // empty chest count.
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4));
+        buf[8..12].copy_from_slice(&6u32.to_le_bytes());
+        let (back, chests) = parse(&buf).unwrap();
+        assert_eq!(back.seeds, w.seeds);
+        assert!(!back.downed_eoc, "the v7 flags stay default");
+        assert!(!back.wires.get(1, 1, WireColor::Red));
+        assert!(back.tile_entities.get_at(2, 2).is_none());
+        assert!(chests.is_empty());
+    }
+
+    #[test]
+    fn m5_seed_1_the_secret_seed_flags_round_trip_in_v6() {
+        // M5-SEED-1: the v6 block carries the classic secret-seed flags
+        // (`WorldFile.SaveWorldFlags`'s nine booleans as the port's
+        // `serializedSeedsSum` bitmask); a classic world keeps all bits 0 and
+        // a seed world survives the save/load.
+        let mut classic = World::new("Test".into(), 32, 32);
+        let mut buf = Vec::new();
+        write_world(&mut buf, &classic, &[]).unwrap();
+        assert_eq!(back_flags(&buf), 0, "a classic world writes no seed bits");
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.seeds, crate::seeds::SeedFlags::none());
+        classic.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
+        buf.clear();
+        write_world(&mut buf, &classic, &[]).unwrap();
+        assert_eq!(back_flags(&buf), crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.seeds, classic.seeds);
+    }
+
+    /// The v6 block's u16 bitmask, read back out of the written buffer — the
+    /// two bytes ahead of the fixed v7 flags block.
+    fn back_flags(buf: &[u8]) -> u16 {
+        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4) - 2;
+        u16::from_le_bytes([buf[tail], buf[tail + 1]])
     }
 
     #[test]
@@ -886,7 +953,7 @@ mod tests {
         write_world(&mut buf, &w, &[]).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4));
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);

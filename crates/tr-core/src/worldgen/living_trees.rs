@@ -5,8 +5,20 @@
 //! wood-tree walls.
 //!
 //! Simplifications against the source, all recorded here:
-//! * The secret-seed variants (extra/drunk/bees/remix/anniversary), the
-//!   skyblock/remix layouts and the dungeon-wall checks are not modelled.
+//! * The secret-seed variants other than the drunk arms (the 1.4.5 micro
+//!   seeds `extra`/`error`, the bees, remix, anniversary and tenth-anniversary
+//!   ladders), the skyblock/remix layouts and the dungeon-wall checks are not
+//!   modelled. The M5-SEED-1 drunk arms are: the tree-count ladder
+//!   (`WorldGen.cs:15504`, `num4 += (int)(2.0 * num3)`) and the per-side
+//!   patch count (`:15628`, `num8 += genRand.Next(2, 5)`).
+//! * `WorldGen.cs:15554` / `:15624` — drunk's other two "arms" are pure
+//!   exclusions: drunk is barred from the `notTheBees && tenthAnniversaryWorldGen`
+//!   branches of the anchor ground-type test (`:15554`'s
+//!   `(notTheBees && type == 60) || (notTheBees && anniversary && !drunk)`)
+//!   and of `GrowLivingTree`'s trunk widening (`:28037`, `:28063`). The port
+//!   carries neither not-the-bees branch, so its generic tests already are the
+//!   drunk behaviour and nothing is written for them (deferred whole: the
+//!   bees/anniversary seed arms belong to their own seeds).
 //! * The hollow room's furniture (door style 7, chair style 5, Living Loom,
 //!   the buried Living Wood Chest) needs `TileObjectData` (M1.4-TO), which the
 //!   port does not have yet — the room is carved with wall 244 but left empty.
@@ -22,6 +34,47 @@ pub(crate) const TILE_LIVING_WOOD: u16 = 191;
 pub(crate) const TILE_LEAVES: u16 = 192;
 pub(crate) const WALL_LIVING_WOOD: u16 = 244;
 
+/// `WorldGen.cs:15482-15515`: the full-tree count — `num3` (the world-width
+/// unit), the base roll, the zero rescue and the seed-count ladder's arms.
+/// The draws stay in vanilla's order (the base roll, then the rescue, then
+/// the ladder's own addition) so a classic world's stream is untouched.
+///
+/// The ladder is an if/else-if chain in the C#
+/// (`extraLivingTrees` `:15494` / `notTheBees && anniversary && !drunk`
+/// `:15500` / `drunk` `:15504` / `tenthAnniversaryWorld` `:15508` /
+/// `remixWorldGen` `:15512`); the port carries the drunk arm only — the
+/// micro seeds and the bees/anniversary arms are their own seeds' scope.
+fn living_tree_count(world: &World, rng: &mut Rng) -> i32 {
+    let num3 = world.width as f64 / 4200.0;
+    let mut count = rng.range(0, (2.0 * num3) as i32 + 1);
+    if count == 0 && rng.chance(2) {
+        count += 1;
+    }
+    // `WorldGen.cs:15504-15507`: the drunk arm — `num4 += (int)(2.0 * num3)`,
+    // two extra trees per 4200-column world-width unit. Flag-gated, so a
+    // classic world takes exactly the two draws above and nothing more.
+    if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        count += (2.0 * num3) as i32;
+    }
+    count
+}
+
+/// `WorldGen.cs:15619-15631`: the per-side patch-tree count — `num8 =
+/// genRand.Next(4)`, then the ladder's arms. Same chain as the count above
+/// (`extraLivingTrees` +`Next(5, 11)` `:15620`, `notTheBees && anniversary &&
+/// !drunk` +`Next(3, 7)` `:15624`, `drunk || anniversary` +`Next(2, 5)`
+/// `:15628`, `remixWorldGen` +`Next(1, 6)` `:15632`, `errorWorld`
+/// +`Next(1, 4)` `:15636`); the port carries the drunk arm only.
+fn patch_tree_count(world: &World, rng: &mut Rng) -> i32 {
+    let mut attempts = rng.range(0, 4);
+    // `WorldGen.cs:15628-15631`: `else if (drunkWorldGen ||
+    // Main.tenthAnniversaryWorld) num8 += genRand.Next(2, 5)`.
+    if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        attempts += rng.range(2, 5);
+    }
+    attempts
+}
+
 /// The "Living Trees" pass (`WorldGen.cs:15476-15715`). The beach anchors
 /// are the vanilla GenVars pair (`GenVars.cs:90-92`): placements stay inland
 /// of both beaches.
@@ -33,12 +86,7 @@ pub(crate) fn plant_living_trees(
     right_beach_start: i32,
     desert: (i32, i32),
 ) {
-    // `WorldGen.cs:15482-15492`: the count scales with the world width.
-    let num3 = world.width as f64 / 4200.0;
-    let mut count = rng.range(0, (2.0 * num3) as i32 + 1);
-    if count == 0 && rng.chance(2) {
-        count += 1;
-    }
+    let count = living_tree_count(world, rng);
     // `WorldGen.cs:15482`: the spawn-area exclusion half-width.
     let exclusion = 200;
     #[cfg(test)]
@@ -136,9 +184,10 @@ pub(crate) fn plant_living_trees(
             continue;
         };
         // `WorldGen.cs:15611-15701`: the patch trees step outward from the
-        // anchor, `Next(4)` attempts per side, `Next(13, 31)` tiles apart.
+        // anchor, `Next(4)` attempts per side plus the seed ladder's arm
+        // ([`patch_tree_count`]), `Next(13, 31)` tiles apart.
         for side in [-1i32, 1] {
-            let attempts = rng.range(0, 4);
+            let attempts = patch_tree_count(world, rng);
             let mut px = x;
             for _ in 0..attempts {
                 px += rng.range(13, 31) * side;
@@ -674,5 +723,139 @@ fn horizontal_tunnel(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
         if world.tile(tx + dir * 2, y).is_some_and(|t| t.active() && t.kind == TILE_LIVING_WOOD) {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A tree-friendly grassland: the empty sky `GrowLivingTree`'s clearance
+    /// scan wants (50 wide, 20 tall), grass from row 200 down (the anchor
+    /// cell above it must be air, and `j >= 150` must hold), and vanilla
+    /// beach anchors so the patch offsets stay inside the world.
+    fn grassland(w: i32, h: i32) -> World {
+        let mut world = World::new("lt".into(), w, h);
+        world.world_surface = 200.0;
+        for x in 0..w {
+            for y in 200..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = 2;
+                world.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        world
+    }
+
+    fn flat_surface(w: i32) -> Vec<i32> {
+        vec![200; w as usize]
+    }
+
+    fn living_wood(world: &World) -> usize {
+        world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_LIVING_WOOD)
+            .count()
+    }
+
+    #[test]
+    fn the_drunk_count_ladder_adds_two_per_world_unit() {
+        // `WorldGen.cs:15504-15507`: `num4 += (int)(2.0 * num3)` — the
+        // 4200-wide vanilla world (num3 = 1.0) grows exactly two more trees.
+        let classic = World::new("lt".into(), 4200, 1200);
+        let mut drunk = World::new("lt".into(), 4200, 1200);
+        drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        for seed in [1u64, 7, 42, 5162020] {
+            let mut a = Rng(seed);
+            let mut b = Rng(seed);
+            let base = living_tree_count(&classic, &mut a);
+            let added = living_tree_count(&drunk, &mut b);
+            assert_eq!(added, base + 2, "seed {seed}");
+        }
+        // And the narrower world scales with num3: the 2100 pin world adds
+        // one (the `(int)` truncation of 2.0 * 0.5).
+        let narrow = World::new("lt".into(), 2100, 1200);
+        let mut narrow_drunk = World::new("lt".into(), 2100, 1200);
+        narrow_drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        for seed in [3u64, 11] {
+            let base = living_tree_count(&narrow, &mut Rng(seed));
+            let added = living_tree_count(&narrow_drunk, &mut Rng(seed));
+            assert_eq!(added, base + 1, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn the_drunk_patch_ladder_adds_two_to_four_attempts() {
+        // `WorldGen.cs:15628-15631`: `num8 += genRand.Next(2, 5)` on top of
+        // the `Next(4)` per-side count.
+        let classic = World::new("lt".into(), 4200, 1200);
+        let mut drunk = World::new("lt".into(), 4200, 1200);
+        drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        for seed in [1u64, 5, 9] {
+            let base = patch_tree_count(&classic, &mut Rng(seed));
+            let added = patch_tree_count(&drunk, &mut Rng(seed));
+            assert!(
+                (2..=4).contains(&(added - base)),
+                "seed {seed}: {base} + {added}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_classic_ladders_draw_nothing_extra() {
+        // The golden rule: the classic path spends exactly vanilla's draws —
+        // the base roll (+ the zero rescue) for the count, the single
+        // `Next(4)` per side for the patches. Each helper's stream is
+        // replayed against an independent ledger below.
+        let world = World::new("lt".into(), 4200, 1200);
+        for seed in [1u64, 7, 42] {
+            let mut a = Rng(seed);
+            let count = living_tree_count(&world, &mut a);
+            let after_count = a.next_u32();
+            let mut b = Rng(seed);
+            let mut replay = b.range(0, 3);
+            if replay == 0 && b.chance(2) {
+                replay += 1;
+            }
+            assert_eq!(count, replay, "count at seed {seed}");
+            assert_eq!(after_count, b.next_u32(), "count draws at seed {seed}");
+
+            let mut c = Rng(seed);
+            let attempts = patch_tree_count(&world, &mut c);
+            let after_attempts = c.next_u32();
+            let mut d = Rng(seed);
+            let replay2 = d.range(0, 4);
+            assert_eq!(attempts, replay2, "attempts at seed {seed}");
+            assert_eq!(
+                after_attempts,
+                d.next_u32(),
+                "attempts draws at seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_drunk_world_grows_more_living_wood() {
+        // Both ladders wired into the pass: over a seed sweep the drunk
+        // worlds grow strictly more living wood than the classic ones on the
+        // same seeds (the classic runs are the control).
+        let mut classic_total = 0usize;
+        let mut drunk_total = 0usize;
+        let surface = flat_surface(4200);
+        for seed in 1..=8u64 {
+            let mut classic = grassland(4200, 1200);
+            plant_living_trees(&mut classic, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            classic_total += living_wood(&classic);
+
+            let mut drunk = grassland(4200, 1200);
+            drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+            plant_living_trees(&mut drunk, &mut Rng(seed), &surface, 320, 3880, (0, 0));
+            drunk_total += living_wood(&drunk);
+        }
+        assert!(
+            drunk_total > classic_total,
+            "drunk {drunk_total} wood tiles vs classic {classic_total}"
+        );
     }
 }
