@@ -5144,15 +5144,6 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   mahogany chests; a kind-341 anchor keeps just the repeated rows. The
   mahogany block itself needs no new rows.
 
-- **The cactus seed arms** (`GrowCactus`, `WorldGen.cs:56590-56699` — the
-  M5-SPREAD-1 cactus slice, over the M5-SEED-1 `World.seeds` flags): the
-  drunk world's density cap widens to `Next(11, 20)` (the classic worlds
-  keep `Next(11, 13)`) and the remix world skips the `cactusWaterLimit` 25
-  box above the surface (`!remixWorld || !(j > worldSurface)`). Still open
-  in `grow_cactus`: the tall-column fork branch (`:56736-56770` — the
-  side shoots at `Next(3)` and the tip at `num6 < Next(2, 8)`), which the
-  port's num6==0 arm does not reach.
-
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -7614,20 +7605,6 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the force-cursor step), and the vote runs from the player's centre — on a
   client the neighbouring miners perturb that centre by ±12 px per parity
   (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
-- **`Step_Hammers` is the pickaxe's beam with three deliberate differences.**
-  The C# copies the start/end grid math but drops the `gravDir == 1` axis
-  correction (only the `gravDir == -1 && num2 == 0` arm survives, :1599-1602)
-  and skips the `WorldGen.InWorld` fluff guard on the endpoints (the
-  pickaxe's :2443 has it). Its hit test is `Collision.HitLineWall`
-  (`Collision.cs:1146-1312`) — the same Bresenham walker as `hit_line`, but
-  stepping on `HitWallSubstep` (`Collision.cs:1310-1357`: the house-wall /
-  open-neighbour flags over `housing::is_house_wall`, then the full-solid
-  surround arm when the cell holds a tile) and returning `(-1, -1)` on the
-  world exit. Both phases' votes skip the altar tile 26 (the hammer cannot
-  Pound it) and write the player's `poundRelease` clear — the caller does
-  that for the port when the step hits. The second phase (the wall scan)
-  runs only when the beam found nothing, and votes from the mouse instead
-  of the centre.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -8475,3 +8452,46 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## The lunar battery projectiles (M4-EVENT-16)
+
+The Moon Lord's and the pillars' shots run through six aiStyles, all ported
+in `projectile.rs`'s pool dispatch.
+
+- **452 PhantasmalEye (aiStyle 82)** drifts in three legs: 45 ticks, then
+  the drift angle negates; 90 more, then `ai[1]` becomes the target player
+  index; then the homing — the 14-px target over the 0.6 lerp with the Y
+  floor of 6 and an accel that ramps 0.4 → 0 as `ai[2]` ages 0→90, killing
+  at 30 px. Every leg's drift rotates `velocity.X` off `ai[1]`, clamps to
+  ±6, drifts Y by −0.08 (−0.2 when rising) and floors at −7.
+- **454 PhantasmalSphere (aiStyle 83)** fades its alpha by 6 and sets
+  `scale = 1 - alpha/255`; while `ai[0] < 30` it locks its position to
+  `Main.npc[ai[1]].Center - halfbox - velocity` (the hand's held charge),
+  then decays at 0.96 and cycles its 2 frames. The damage suppression
+  (`Projectile.cs:15406-15412`) rides the same window.
+- **455 PhantasmalDeathray (aiStyle 84)** derives its position from the
+  host every tick — the (27, 59) ellipse for the Moon Lord head, (30, 30)
+  for the True Eye — scaled by the host's `localAI[1]` open factor and
+  rotated by its `localAI[0]` aim. Its heading sweeps by `ai[0]` per tick
+  (the ±2π/540 the head's spawn sets), it lives 180 ticks with the
+  `sin(t·π/180)·10` scale curve, and its length smooths toward the port's
+  tile ray at 0.5 (0.75 when the host can't see its player).
+- **456 MoonLeech (aiStyle 85)** runs the outbound leg at the 16-px cap
+  toward its player, applies buff 145 (840 classic / 960 expert) once at
+  the 20-px contact, and after 330 ticks (or the player's death) flips
+  `ai[0]` negative for the return leg that dies at the head.
+- **540 StardustMark (aiStyle 103)** fades in over 30 ticks and spawns the
+  NPC id carried in `localAI[0]` (the tower's mark: 405/402/407 picked
+  from the culled list), then fades out. The port's pool can't grow the NPC
+  vec, so the spawn rides `wants_mark_spawn` out to `drain_mark_spawns`.
+- **574 NebulaEye (aiStyle 102)** is dragged along its host's frame delta
+  while `ai[0] < 180`, homing at the ±0.15/±0.075 accel clamped to 6 px.
+- **629 TowerDamageBolt (aiStyle 122)** homes at 5 px toward the host tower
+  in `ai[0]` and dies with it; on contact the dispatch spends the tower's
+  `ShieldStrengthTower*` (clamped at 0) — the M4-EVENT-7 shield's drain.
+
+Deviations: the pool's spawn carries no `ai[1]` whoAmI, so the machines
+link their host by kind (the nearest living MoonLordHead/FreeEye,
+MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
+the 452's `Player.FindClosest` folds into the owner's centre; the 456's
+expert duration stays classic until the difficulty modes land.
