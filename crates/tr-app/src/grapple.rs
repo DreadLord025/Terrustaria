@@ -36,9 +36,6 @@ pub(crate) struct HookSpec {
     pub pull_speed: f32,
 }
 
-/// The `TR_HOOK=<type>` pin (the granting items land with M3-EQUIP-3).
-pub(crate) static HOOK_TYPE: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
-
 pub(crate) fn hook_spec(hook_type: i32) -> HookSpec {
     let (max_distance, retract_speed, pull_speed) = match hook_type {
         32 => (400.0, 15.0, 11.0),

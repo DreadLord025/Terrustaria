@@ -413,13 +413,11 @@ impl Menu {
         // `TR_PAGE=settings|general|interface|video|multiplayer` or the numeric
         // `menuMode` names: open a screen directly so the layout can be
         // screenshotted deterministically.
-        if let Ok(focus) = std::env::var("TR_FOCUS") {
-            if let Ok(index) = focus.parse::<usize>() {
-                me.selected = index;
-                me.focus_keyboard = true;
-            }
+        if let Some(index) = crate::env::menu_focus() {
+            me.selected = index;
+            me.focus_keyboard = true;
         }
-        if let Ok(page) = std::env::var("TR_PAGE") {
+        if let Some(page) = crate::env::menu_page() {
             if let Some(p) = Self::page_from_name(&page) {
                 me.page = p;
             }
