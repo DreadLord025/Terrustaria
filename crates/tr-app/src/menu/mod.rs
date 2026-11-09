@@ -365,7 +365,10 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(name: String) -> Self {
+    /// `settings` is the app's working clone of the master `App.settings` (the
+    /// app reads `config.json` once at startup and hands the clone in), so the
+    /// menu edits the same values `close_menu`/`park_menu` copy back.
+    pub fn new(settings: Settings, name: String) -> Self {
         let mut me = Self {
             page: Page::Main,
             selected: 0,
@@ -386,7 +389,7 @@ impl Menu {
             confirm_name: None,
             confirm_index: 0,
             status: None,
-            settings: Settings::load(),
+            settings,
             mouse: Vec2::ZERO,
             mouse_down: false,
             bar_grab: None,
@@ -461,18 +464,20 @@ impl Menu {
     // parked on its page; the App supplies the confirm target's name/index the
     // way `Main.selectedPlayer`/`selectedWorld` are parked before the mode
     // opens (`UICharacterListItem.cs:246-249` / `UIWorldListItem.cs:350-353`).
+    // The working settings ride along so the hop's `park_menu` sync keeps the
+    // app's copy (`close_menu`/`park_menu` copy them back and re-apply).
 
     /// menuMode 5 (`Main.cs:49420-49439`): the `Delete {name}?` confirm.
-    pub fn open_confirm_delete_player(name: String) -> Self {
-        let mut me = Self::new(String::new());
+    pub fn open_confirm_delete_player(settings: Settings, name: String) -> Self {
+        let mut me = Self::new(settings, String::new());
         me.page = Page::ConfirmDeletePlayer;
         me.confirm_name = Some(name);
         me
     }
 
     /// menuMode 9 (`Main.cs:49674-49692`): the `Delete {world}?` confirm.
-    pub fn open_confirm_delete_world(name: String) -> Self {
-        let mut me = Self::new(String::new());
+    pub fn open_confirm_delete_world(settings: Settings, name: String) -> Self {
+        let mut me = Self::new(settings, String::new());
         me.page = Page::ConfirmDeleteWorld;
         me.confirm_name = Some(name);
         me
@@ -481,8 +486,8 @@ impl Menu {
     /// menuMode 40 (`Main.cs:49440-49467`): `Discard your new player?` while
     /// the draft has no name, `Discard {name}?` otherwise
     /// (`Main.PendingPlayer.name`'s `IsNullOrEmpty` branch, `:49441-49445`).
-    pub fn open_confirm_discard(name: Option<String>) -> Self {
-        let mut me = Self::new(String::new());
+    pub fn open_confirm_discard(settings: Settings, name: Option<String>) -> Self {
+        let mut me = Self::new(settings, String::new());
         me.page = Page::ConfirmDiscard;
         me.confirm_name = name;
         me
@@ -493,8 +498,8 @@ impl Menu {
     /// vanilla runs alongside (`Main.cs:48967-48969`'s entry) is the
     /// documented deviation — the port's credits page draws over the world
     /// backdrop.
-    pub fn open_credits() -> Self {
-        let mut me = Self::new(String::new());
+    pub fn open_credits(settings: Settings) -> Self {
+        let mut me = Self::new(settings, String::new());
         me.page = Page::Credits;
         me
     }
@@ -1181,7 +1186,7 @@ mod tests {
     use super::*;
 
     fn menu(page: Page) -> Menu {
-        let mut m = Menu::new("Test".into());
+        let mut m = Menu::new(Settings::default(), "Test".into());
         m.page = page;
         m.persist = false;
         m
@@ -1290,9 +1295,61 @@ mod tests {
         m.toggle(Toggle::LightMode);
         assert_eq!(m.settings.light_mode, 0, "four modes");
         m.toggle(Toggle::FrameSkip);
+        assert_eq!(m.settings.frame_skip, 0, "the vanilla Subtle default wraps to Off");
         m.toggle(Toggle::FrameSkip);
         m.toggle(Toggle::FrameSkip);
-        assert_eq!(m.settings.frame_skip, 0, "three modes");
+        assert_eq!(m.settings.frame_skip, 2, "three modes, back to Subtle");
+    }
+
+    #[test]
+    fn menu_edits_reach_the_app_settings_on_close() {
+        // DW-3.2 — the read-once seam keeps the menu-close sync: the menu works
+        // on a clone of the app's master copy and `App::close_menu`
+        // (`app/clicks.rs:1031-1035`) copies it back before `apply_settings`
+        // re-reads it. Vanilla saves the same way on close
+        // (`Main.SaveSettings`, `Main.cs:4089-4221`); the port's per-edit save
+        // is the documented P5 deviation.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, Vec::new(), Vec::new());
+        let mut m = menu(Page::Video);
+        // Row 1 is the port's Zoom row and row 4 the light-mode cycle
+        // (`menu/pages.rs`'s video rows) — both re-read by `apply_settings`.
+        m.activate(1);
+        assert_eq!(m.settings.zoom, 1.25, "the working copy stepped the zoom");
+        m.activate(4);
+        assert_eq!(m.settings.light_mode, 1, "the working copy flipped to White");
+        app.menu = Some(m);
+        app.close_menu();
+        assert_eq!(app.settings.zoom, 1.25, "the master copy took the zoom edit");
+        assert_eq!(app.settings.light_mode, 1, "the master copy took the light-mode edit");
+        assert_eq!(app.zoom, 1.25, "apply_settings applied the zoom");
+        assert_eq!(
+            app.light_mode,
+            tr_core::lighting::LightMode::ALL[1],
+            "apply_settings applied the light mode"
+        );
+    }
+
+    #[test]
+    fn parked_confirm_pages_keep_the_app_settings() {
+        // DW-3.2 — the flow hops sync through `App::park_menu`
+        // (`app/clicks.rs:1041-1046`), so the menu a hop opens must carry the
+        // app's working settings: a default copy here would reset the master
+        // (and `apply_settings` would snap zoom/light mode back) on the next
+        // close.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, Vec::new(), Vec::new());
+        app.settings.zoom = 1.5;
+        app.settings.light_mode = 2;
+        let m = Menu::open_confirm_discard(app.settings.clone(), None);
+        assert_eq!(m.settings.zoom, 1.5, "the hop's menu carries the working settings");
+        assert_eq!(m.settings.light_mode, 2);
+        app.menu = Some(m);
+        app.park_menu();
+        assert_eq!(app.settings.zoom, 1.5, "the hop kept the master copy");
+        assert_eq!(app.settings.light_mode, 2);
+        assert_eq!(app.zoom, 1.5, "apply_settings kept the configured zoom");
+        assert_eq!(app.light_mode, tr_core::lighting::LightMode::ALL[2]);
     }
 
     #[test]
@@ -1503,7 +1560,10 @@ mod tests {
         m.mouse = Vec2::new(708.0, 332.0); // 84 px into the hit box: value 0.5
         m.drag_volume_screen(1600.0);
         assert_eq!(m.bar_grab, Some(0));
-        assert!((m.settings.music_volume - 0.75).abs() < 1e-6);
+        // The store waits for the lock it checks (`Main.cs:51540`), so the first
+        // frame leaves the bar at the default — now vanilla's 1f
+        // (`Main.cs:66857`), not the port's old 0.75.
+        assert!((m.settings.music_volume - 1.0).abs() < 1e-6);
         m.drag_volume_screen(1600.0);
         assert!((m.settings.music_volume - 0.5).abs() < 1e-6);
         // Sticky: dragging out past the bar's right edge keeps following — 797
@@ -1523,8 +1583,9 @@ mod tests {
         assert_eq!(m.bar_grab, Some(1));
         m.drag_volume_screen(1600.0);
         assert!((m.settings.sound_volume - 0.5).abs() < 1e-6);
-        // The ambient bar stayed put throughout.
-        assert!((m.settings.ambient_volume - 0.75).abs() < 1e-6);
+        // The ambient bar stayed put throughout — at vanilla's 1f default
+        // (`Main.cs:66858`).
+        assert!((m.settings.ambient_volume - 1.0).abs() < 1e-6);
     }
 
     #[test]
@@ -2380,7 +2441,7 @@ mod tests {
         // `:66711`), `Main.getPort = Convert.ToString(Netplay.ListenPort)`
         // (`:67160`; the static ctor sets 7777, `Netplay.cs:863`), the
         // passwords start empty (`Netplay.cs:858`) and the blinker is idle.
-        let m = Menu::new("Test".into());
+        let m = Menu::new(Settings::default(), "Test".into());
         assert!(m.get_ip.is_empty());
         assert_eq!(m.get_port, "7777");
         assert!(m.server_password.is_empty() && m.join_password.is_empty());
@@ -2794,7 +2855,7 @@ mod tests {
         // `Lang.menu[46] + " " + name + "?"` header (`array[0] = true`),
         // rows 1-2 `Lang.menu[104]`/`[105]`, `num5 = 3` — three rows over the
         // 250/80 defaults.
-        let m = Menu::open_confirm_delete_player("Bob".into());
+        let m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
         assert_eq!(m.page, Page::ConfirmDeletePlayer);
         let items = m.items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
@@ -2807,18 +2868,18 @@ mod tests {
         let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
         assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (250.0, 330.0, 410.0));
         // The world twin names the world (`:49675`).
-        let m = Menu::open_confirm_delete_world("World 1".into());
+        let m = Menu::open_confirm_delete_world(Settings::default(), "World 1".into());
         assert_eq!(m.page, Page::ConfirmDeleteWorld);
         assert_eq!(m.items()[0].label, "Delete World 1?");
         assert_eq!(m.items()[1].label, "Yes");
         assert_eq!(m.items()[2].label, "No");
         // `confirm_index` parks `Main.selectedPlayer`/`selectedWorld`
         // (`UICharacterListItem.cs:246-249` / `UIWorldListItem.cs:350-353`).
-        let mut m = Menu::open_confirm_delete_player("Bob".into());
+        let mut m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
         m.confirm_index = 3;
         assert_eq!(m.confirm_index, 3);
         // Both rows resolve through the actions (`Main.cs:49431-49439`).
-        let mut m = Menu::open_confirm_delete_player("Bob".into());
+        let mut m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
         assert!(matches!(m.activate(1), Action::ConfirmYes));
         assert!(matches!(m.activate(2), Action::ConfirmNo));
     }
@@ -2828,14 +2889,14 @@ mod tests {
         // `Main.cs:49441-49450`: `UI.PlayerCreateDiscardWarningNoName` while
         // `Main.PendingPlayer.name` is empty, `…WithName` ("Discard {0}?")
         // otherwise; rows `…WarningYes` / `…WarningNo`.
-        let m = Menu::open_confirm_discard(None);
+        let m = Menu::open_confirm_discard(Settings::default(), None);
         assert_eq!(m.page, Page::ConfirmDiscard);
         let items = m.items();
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert_eq!(labels, ["Discard your new player?", "Yes, discard edits!", "No, keep editing..."]);
         assert!(items[0].header);
         assert!(!items[1].header && !items[2].header);
-        let m = Menu::open_confirm_discard(Some("Zealot".into()));
+        let m = Menu::open_confirm_discard(Settings::default(), Some("Zealot".into()));
         assert_eq!(m.items()[0].label, "Discard Zealot?");
     }
 
@@ -2845,7 +2906,7 @@ mod tests {
         // `Main.cs:49693-49704`: `num5 = 1`, `num2 = 500`,
         // `array7[0] = 0.9f`, `array9[0] = Lang.menu[5]`; the click (or
         // `flag5`) returns to menuMode 0 (`:49700-49703`).
-        let m = Menu::open_credits();
+        let m = Menu::open_credits(Settings::default());
         assert_eq!(m.page, Page::Credits);
         let items = m.items();
         assert_eq!(items.len(), 1, "num5 = 1");
@@ -2855,7 +2916,7 @@ mod tests {
         let layout = Page::Credits.layout();
         assert_eq!(layout.y0 + items[0].y, 500.0, "the row draws at num2 = 500");
         // Back navigates back to the main menu.
-        let mut m = Menu::open_credits();
+        let mut m = Menu::open_credits(Settings::default());
         m.activate(0);
         assert_eq!(m.page, Page::Main);
     }
@@ -2878,9 +2939,13 @@ mod tests {
         // instead of walking a parent.
         for page in [Page::ConfirmDeletePlayer, Page::ConfirmDeleteWorld, Page::ConfirmDiscard] {
             let mut m = match page {
-                Page::ConfirmDeletePlayer => Menu::open_confirm_delete_player("Bob".into()),
-                Page::ConfirmDeleteWorld => Menu::open_confirm_delete_world("W".into()),
-                _ => Menu::open_confirm_discard(None),
+                Page::ConfirmDeletePlayer => {
+                    Menu::open_confirm_delete_player(Settings::default(), "Bob".into())
+                }
+                Page::ConfirmDeleteWorld => {
+                    Menu::open_confirm_delete_world(Settings::default(), "W".into())
+                }
+                _ => Menu::open_confirm_discard(Settings::default(), None),
             };
             assert!(
                 matches!(m.key(winit::keyboard::KeyCode::Escape), Action::ConfirmNo),
@@ -2889,7 +2954,7 @@ mod tests {
         }
         // Credits keeps the parent walk: Escape returns to the main menu
         // (`:49700-49703`).
-        let mut m = Menu::open_credits();
+        let mut m = Menu::open_credits(Settings::default());
         m.key(winit::keyboard::KeyCode::Escape);
         assert_eq!(m.page, Page::Main);
     }
