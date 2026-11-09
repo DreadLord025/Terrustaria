@@ -2012,12 +2012,13 @@ pub(crate) fn draw_npcs(
                     [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
                 )
             }
-            NpcKind::KingSlime => (
-                assets.king_slime.as_ref(),
-                120.0,
-                [174.0, 120.0],
-                [n.x - 38.0, n.y - 25.0],
-            ),
+            // NPC_50 is 174x720 — six 120-px rows
+            // (`Main.npcFrameCount[50]` = 6, `Main.cs:67082`) whose frames
+            // tower 120 px over the 98x92 box. The v1 carried the right
+            // numbers as MAGIC offsets (`[x - 38, y - 25]` ≈ the generic
+            // anchor `[x + 49 - 87, y + 92 + 4 - 60]`, a 1-px fudge) —
+            // the formula makes it maintainable.
+            NpcKind::KingSlime => boss_draw(assets.king_slime.as_ref(), 6, n, w, h),
             // The Eye of Cthulhu: NPC_4 is 110x996 — six 166-px rows
             // (`Main.npcFrameCount[4]` = 6) whose frames are LARGER than
             // the 100x110 box; the v1 squeezed a 166-px row into a 110-px
