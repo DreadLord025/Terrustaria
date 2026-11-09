@@ -33,6 +33,10 @@ pub struct ShopFlags {
     pub downed_mech_2: bool,
     pub downed_mech_3: bool,
     pub downed_martians: bool,
+    /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
+    /// Golfer shop's score gates — the port has no golf system yet, so it
+    /// reads 0 until one lands (the gated rows stay hidden).
+    pub golfer_score: i32,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -58,6 +62,7 @@ impl Default for ShopFlags {
             downed_mech_2: false,
             downed_mech_3: false,
             downed_martians: false,
+            golfer_score: 0,
             travel_stock: [0; 40],
         }
     }
@@ -116,6 +121,13 @@ pub enum StockWhen {
     DownedMechAny,
     /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
     DownedMartians,
+    /// The Golfer shop's painting pair (`Chest.cs:3238-3260`): the score
+    /// `>= 2000` gate AND the moon-phase pair, exactly one of four.
+    GolfPainting(u8),
+    /// The Golfer shop's score tier — the vanilla mixes `>=` and `>` per
+    /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
+    /// `:3233`), so each row names its own threshold + operator.
+    GolfScore(i32, bool),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -353,6 +365,57 @@ pub fn setup_shop(
             // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
             // port's town count reads the Angler's presence.
             row(2295, StockWhen::MoonPhaseOdd),
+        ],
+        // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
+        // gear — the clubs, the cup flags, the tees/balls, the signs, the
+        // clothes and the mower are always on; every better club, the
+        // chest, the trophies, the cart and the paintings ride
+        /// `golferScoreAccumulated`'s tiers (and the cart's Skeletron
+        /// gate) — the port carries the score on the ShopFlags so the
+        /// rows stay faithful once the golf system lands.
+        22 => vec![
+            row(4587, StockWhen::Always),
+            row(4590, StockWhen::Always),
+            row(4589, StockWhen::Always),
+            row(4588, StockWhen::Always),
+            row(4083, StockWhen::Always),
+            row(4084, StockWhen::Always),
+            row(4085, StockWhen::Always),
+            row(4086, StockWhen::Always),
+            row(4087, StockWhen::Always),
+            row(4088, StockWhen::Always),
+            row(4039, StockWhen::GolfScore(500, true)),
+            row(4094, StockWhen::GolfScore(500, true)),
+            row(4093, StockWhen::GolfScore(500, true)),
+            row(4092, StockWhen::GolfScore(500, true)),
+            row(4089, StockWhen::Always),
+            row(3989, StockWhen::Always),
+            row(4095, StockWhen::Always),
+            row(4040, StockWhen::Always),
+            row(4319, StockWhen::Always),
+            row(4320, StockWhen::Always),
+            row(4591, StockWhen::GolfScore(1000, false)),
+            row(4594, StockWhen::GolfScore(1000, false)),
+            row(4593, StockWhen::GolfScore(1000, false)),
+            row(4592, StockWhen::GolfScore(1000, false)),
+            row(4135, StockWhen::Always),
+            row(4138, StockWhen::Always),
+            row(4136, StockWhen::Always),
+            row(4137, StockWhen::Always),
+            row(4049, StockWhen::Always),
+            row(4265, StockWhen::GolfScore(500, false)),
+            row(4595, StockWhen::GolfScore(2000, false)),
+            row(4598, StockWhen::GolfScore(2000, false)),
+            row(4597, StockWhen::GolfScore(2000, false)),
+            row(4596, StockWhen::GolfScore(2000, false)),
+            row(4264, StockWhen::DownedBoss3),
+            row(4599, StockWhen::GolfScore(500, false)),
+            row(4600, StockWhen::GolfScore(1000, true)),
+            row(4601, StockWhen::GolfScore(2000, true)),
+            row(4658, StockWhen::GolfPainting(0)),
+            row(4659, StockWhen::GolfPainting(1)),
+            row(4660, StockWhen::GolfPainting(2)),
+            row(4661, StockWhen::GolfPainting(3)),
         ],
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
@@ -989,6 +1052,16 @@ pub fn resolve_stock_moon(
             }
             StockWhen::DownedMechAny => flags.hard_mode && flags.downed_mech_any,
             StockWhen::DownedMartians => flags.hard_mode && flags.downed_martians,
+            StockWhen::GolfPainting(pair) => {
+                flags.golfer_score >= 2000 && moon_phase / 2 == pair as u32
+            }
+            StockWhen::GolfScore(min, inclusive) => {
+                if inclusive {
+                    flags.golfer_score >= min
+                } else {
+                    flags.golfer_score > min
+                }
+            }
         })
         .map(|e| e.item)
         .collect()
@@ -1099,9 +1172,10 @@ mod tests {
 
     #[test]
     fn the_unknown_shop_index_is_empty() {
-        // The port carries the Merchant's shop only; the other indexes
-        // land with their NPCs.
-        assert!(resolve_stock(22, &ShopFlags::default(), &[]).is_empty());
+        // The unclaimed indexes carry nothing (the ported ones land with
+        // their NPCs — 1..8, 15..19, 22).
+        assert!(resolve_stock(0, &ShopFlags::default(), &[]).is_empty());
+        assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
     }
 
 

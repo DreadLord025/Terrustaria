@@ -3724,6 +3724,20 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Golfer (M4-TOWN-18)
+
+The pair and its shop. The whole shop's variable stock keys off
+`Player.golferScoreAccumulated` (`Chest.cs:3158`), which only the golf system
+grows (`GolfHelper.PutBallInCup` → `AccumulateGolfingScore`, `Player.cs:4932`);
+the port carries the score on the shop flags and the accumulator, so the rows
+are faithful but stay at their score-0 tier until M4-GOLF-1 ports the balls,
+cups and `GolfState` scoring. The bound-Golfer spawn's desert-wall gate
+(`SpawnTileOrAboveHasAnyWallInSet(..., AllowsUndergroundDesertEnemiesToSpawn)`,
+`NPC.cs:1680`) has no port table yet, so the port spawns it from the depth band
+and rate alone. The Golfer's attack machine (projectile 721, `NPC.cs:54378`) and
+the 480-tick shot lifetime (`:54868`) ride the town-attack task; the chatter
+tiers (`GolferQuestsChatter*`, `NPC.cs:94792`) ride M6-LOCALIZE.
+
 ## Stylist/Tax Collector (M4-TOWN-17)
 
 The three kinds and the Tax Collector's coin system. Deliberate gaps: the tax
@@ -7676,6 +7690,30 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the force-cursor step), and the vote runs from the player's centre — on a
   client the neighbouring miners perturb that centre by ±12 px per parity
   (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
+- **The app wiring runs the lookup once per frame in the editing path.**
+  `world_sim/smart_cursor.rs`'s `repoint` is the `Player.cs:25446` call
+  site: it builds the core `Lookup` from the App (the held item via
+  `registry::get/place_tile/place_wall`, the player's position/hitbox, the
+  rain's `is_raining`/`visual_alpha`), calls `smart_cursor_lookup` with the
+  `App`-carried `ContinuityState` (the C#'s two static locks), and
+  `update_editing` re-points `(tx, ty)` right after its reach gate so the
+  mining/placement arms see the smart target. The gate is the vanilla
+  per-player setting — `settings.smart_cursor_toggle` (`Main.cs:67178`) —
+  with `TR_SMARTCURSOR=0` as the debug kill switch.
+- **The reach rect is `TileReachCheckSettings.Simple`.** `reachable_rect`
+  ports `GetTileRegion` (`TileReachCheckSettings.cs:48-56`) over
+  `GetRanges` (:22-45): the 5/3 default ranges (`Player.cs:57113-57114`)
+  capped by the 20-tile `TileReachLimit`, the near edge truncating and the
+  far edge ceiling (`Math.Ceiling`). The C#'s `TB` boost (`tileBoost` +
+  `blockRange`, `SmartCursorHelper.cs:94-101`) stays 0 — neither is ported
+  (both are potion/gizmo state, like the extract slice's note).
+- **The wiring's remaining seams are the inventory, the entities and the
+  overlay.** The paint steps stand down (their `paint_lookup` is 0 — the
+  `Player.FindPaintOrCoating` inventory scan is app-side and unported), the
+  `Collision.EmptyTile` entity arms still answer true without the
+  player/NPC store, the grapple arms are empty lists, and the gamepad /
+  MP inputs are singleplayer defaults (`grav_dir` 1.0, `direction` 1, no
+  nav directions). The `Cursor_1` highlight overlay lands with the UI pass.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:

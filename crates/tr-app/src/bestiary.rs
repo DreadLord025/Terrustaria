@@ -453,6 +453,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Tax Collector",
     },
     BestiaryEntryDef {
+        credit_id: "Golfer",
+        net_id: 588,
+        kind: NpcKind::Golfer,
+        variant: None,
+        quick_unlock: false,
+        name: "Golfer",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -1308,6 +1316,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3557-3561`), so it
         // never has an entry of its own.
         NpcKind::WebbedStylist => NpcKind::Stylist,
+        // The sleeping Golfer rides the Golfer's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:6072-6075`), so it
+        // never has an entry of its own.
+        NpcKind::SleepingGolfer => NpcKind::Golfer,
         NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
         other => other,
     };

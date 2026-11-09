@@ -398,6 +398,15 @@ impl Lerp for f32 {
 mod tests {
     use super::*;
 
+    /// `Player.cs:4932-4940`'s ceiling: the score clamps at 1e9.
+    #[test]
+    fn the_golf_score_clamps_at_a_billion() {
+        assert_eq!(accumulate_golfing_score(0, 400), 400);
+        assert_eq!(accumulate_golfing_score(0, 1_000_000_000), 1_000_000_000);
+        assert_eq!(accumulate_golfing_score(1_000_000_000, 50), 1_000_000_000);
+        assert_eq!(accumulate_golfing_score(900_000_000, 200_000_000), 1_000_000_000);
+    }
+
     /// `Main.cs:67032-67039`: the 41-id pool — the 39 rows of 2450-2488 and
     /// the two Legendary fish (4393/4394).
     #[test]
@@ -553,5 +562,18 @@ mod tests {
         assert!(pool.iter().all(|v| !matches!(v, 2373 | 2374 | 2375)), "the 3721 family");
         remove_acc_options(&mut pool, 5140);
         assert!(!pool.contains(&5139), "the 5140 family");
+    }
+}
+
+/// `Player.AccumulateGolfingScore` (`Player.cs:4932-4940`): the golf score
+/// grows to the 1,000,000,000 ceiling — the only ported piece of the golf
+/// system (the balls/cups/scoring ride M4-GOLF-1); the Golfer's shop and
+/// chatter tier read it.
+pub fn accumulate_golfing_score(current: i32, score: i32) -> i32 {
+    let capped = 1_000_000_000 - current;
+    if score > capped {
+        current + capped
+    } else {
+        current + score
     }
 }
