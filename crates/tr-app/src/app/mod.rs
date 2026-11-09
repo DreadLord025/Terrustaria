@@ -359,6 +359,14 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// The `27` projectile sync: the last-sent state per key (the
+    /// change-detection diff) and the per-projectile send budget in ticks
+    /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
+    pub(crate) net_proj_last: HashMap<i32, net::ProjectileState>,
+    pub(crate) net_proj_spam: HashMap<i32, i32>,
+    /// The host slot id per client-npc index (the `28 NPCStrike` target and
+    /// the `23` order), parallel to `npcs` on a joining client.
+    pub(crate) net_npc_slots: Vec<u32>,
     /// The `82` module cadence counter and the last ping send stamp (the
     /// client's RTT diagnostic, `NetPingModule`).
     pub(crate) net_module_beat: u32,
@@ -1356,7 +1364,12 @@ impl App {
     /// entity/session half of the startup: the render assets, the starting
     /// player and slimes, the inventory and the persisted session, the debug
     /// env hooks, the menu/network/map setup and the `TR_UI` preset.
+    ///
+    /// `settings` is the master copy, read once by `main` (`Settings::load`,
+    /// the read-once rule); the menu receives a clone so its edits park here on
+    /// close (`close_menu`/`park_menu`).
     pub(crate) fn new(
+        settings: settings::Settings,
         world: World,
         world_path: PathBuf,
         atlas: Atlas,
@@ -1663,12 +1676,37 @@ impl App {
                         "tim" => NpcKind::Tim,
                         "darkcaster" => NpcKind::DarkCaster,
                         "fireimp" => NpcKind::FireImp,
+                        // The martians' lineup (M4-NPC-3i): the ground
+                        // group's per-kind sheets, the probe/drone, the
+                        // Scutlix pair and the saucer family's four strips.
+                        "officer" => NpcKind::MartianOfficer,
+                        "grunt" => NpcKind::GrayGrunt,
+                        "engineer" => NpcKind::MartianEngineer,
+                        "zapper" => NpcKind::GigaZapper,
+                        "scrambler" => NpcKind::BrainScrambler,
+                        "raygunner" => NpcKind::RayGunner,
+                        "walker" => NpcKind::MartianWalker,
+                        "probe" => NpcKind::MartianProbe,
+                        "drone" => NpcKind::MartianDrone,
+                        "rider" => NpcKind::ScutlixRider,
+                        "scutlix" => NpcKind::Scutlix,
+                        "saucer" => NpcKind::MartianSaucer,
+                        "turret" => NpcKind::MartianSaucerTurret,
+                        "cannon" => NpcKind::MartianSaucerCannon,
+                        "saucercore" => NpcKind::MartianSaucerCore,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
                     let mut n =
                         Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
                     n.hp = n.max_hp;
+                    // The saucer family's `FindFrame` cases read the core's
+                    // mirrored `ai[3]` clock; give the spawn a mid-band value
+                    // so the lineup shows the attack rows rather than the
+                    // stripped idle frame.
+                    if n.kind.is_martian() {
+                        n.ai[3] = 100.0;
+                    }
                     npcs.push(n);
                 }
             }
@@ -1800,7 +1838,7 @@ impl App {
         let menu_state = if skip_menu {
             None
         } else {
-            let mut m = menu::Menu::new(player_name.clone());
+            let mut m = menu::Menu::new(settings.clone(), player_name.clone());
             m.connecting = join_target.is_some();
             Some(m)
         };
@@ -1837,6 +1875,10 @@ impl App {
         // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
         // chest merges in (its anchor is already stocked — the roll skips).
         let world_chests = crate::chest_gen::generate_world_chests(&world);
+        // `Main.mouseColor`'s stored colour seeds the cursor tint
+        // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
+        // live settings, so this is only the pre-first-frame value.
+        let cursor_mouse_color = settings.mouse_color;
         let mut app = App {
             window: None,
             gpu: None,
@@ -2063,7 +2105,7 @@ impl App {
             front_mouse_down: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
-            settings: settings::Settings::load(),
+            settings,
             player_name,
             net: net_role,
             remote_players: HashMap::new(),
@@ -2089,6 +2131,9 @@ impl App {
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
             net_module_beat: 0,
+            net_proj_last: HashMap::new(),
+            net_proj_spam: HashMap::new(),
+            net_npc_slots: Vec::new(),
             net_ping_at: None,
             net_rtt_ms: 0,
             join_target,
@@ -2114,7 +2159,7 @@ impl App {
             } else {
                 crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
-            cursor: ui::cursor::CursorState::default(),
+            cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,

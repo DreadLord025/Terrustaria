@@ -40,6 +40,7 @@ use super::living_trees;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::spider_gem_moss;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -1055,6 +1056,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
+    // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
+    // chest family (the `UnderwaterChests` environs `:17245`, which the port's
+    // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
+    // insertion. Everything these three passes key on (the cave pockets of
+    // `Tunnels`, the gem veins of `Shinies`, the hive walls) already exists.
+    step!("spider caves", "Spider Caves", step_spider_caves),
+    step!("gem caves", "Gem Caves", step_gem_caves),
+    step!("moss", "Moss", step_moss),
     step!("altars", "Altars", step_altars),
     // The vanilla slot (`WorldGen.cs:15810`): immediately after Altars
     // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
@@ -1070,6 +1079,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
+    // The vanilla slot (`WorldGen.cs:19995`): after the micro-biomes the port
+    // grouped here and immediately before the plants pass (`:20122`) — the
+    // M5-STRUCT-5 webs/speleothems pass, which runs over whatever walls the
+    // spider and hive passes left.
+    step!("webs and honey", "Webs And Honey", step_webs_and_honey),
     step!(
         "mushroom and jungle plants",
         "Glowing Mushrooms and Jungle Plants",
@@ -1665,6 +1679,81 @@ fn step_pots(
     structures::pass_pots(world, &mut streams.srng);
 }
 
+/// `Spider Caves` (`WorldGen.cs:17356`) — the cave-pocket search and the
+/// `Spread.Spider` flood fill. The pass's own stream (`pass_rng`) is the
+/// port's model of the vanilla per-pass re-seed; `Main.tileSolid[379] = false`
+/// (`:17360`) rides inside the pass's `solid_tile`.
+fn step_spider_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let hell_top = gv.layers().hell_top;
+    let mut rng = streams.pass_rng("Spider Caves");
+    spider_gem_moss::pass_spider_caves(
+        world,
+        &mut rng,
+        world.rock_layer,
+        world.world_surface,
+        hell_top as f64,
+    );
+}
+
+/// `Gem Caves` (`WorldGen.cs:17428`).
+fn step_gem_caves(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Gem Caves");
+    spider_gem_moss::pass_gem_caves(world, &mut rng, world.rock_layer, world.world_surface);
+}
+
+/// `Moss` (`WorldGen.cs:17472`) — the neon-moss biomes, the moss caves and
+/// the scatters. The C#'s `GenVars.lavaLine`/`waterLine` (`GenVars.cs:62-64`)
+/// are the port's `GenVars` fields (the terrain-fill step's product), the
+/// depth anchors the arms key on.
+fn step_moss(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_layer, water_line, lava_line) = (world.rock_layer, gv.water_line, gv.lava_line);
+    let hell_top = gv.layers().hell_top;
+    let mut rng = streams.pass_rng("Moss");
+    spider_gem_moss::pass_moss(
+        world,
+        &mut rng,
+        rock_layer,
+        water_line as f64,
+        lava_line as f64,
+        hell_top,
+    );
+}
+
+/// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
+/// cobweb in the spider caves and honeyed speleothems in the hives.
+fn step_webs_and_honey(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Webs And Honey");
+    spider_gem_moss::pass_webs_and_honey(world, &mut rng, world.world_surface);
+}
+
 fn step_beehives(
     world: &mut World,
     gv: &mut GenVars,
@@ -2141,11 +2230,13 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_52_named_steps() {
+    fn the_executed_pipeline_is_56_named_steps() {
         let names = executed_pass_names();
         // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
-        assert_eq!(names.len(), 52);
+        // M5-STRUCT-5: + `spider caves` + `gem caves` + `moss` + `webs and
+        // honey` (vanilla `:17356` / `:17428` / `:17472` / `:19995`).
+        assert_eq!(names.len(), 56);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2162,7 +2253,11 @@ mod tests {
         // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
         // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
         // and `muds walls in jungle` between `vines` and `floating islands`
-        // (vanilla `:20193` → `:20813`) — and the three M5-OCEAN phase-2
+        // (vanilla `:20193` → `:20813`) — the four M5-STRUCT-5 cave
+        // decorations (`spider caves` + `gem caves` + `moss` between `chests`
+        // and `altars`, vanilla `:17245` → `:17356` → `:17428` → `:17472`,
+        // and `webs and honey` before `mushroom and jungle plants`, vanilla
+        // `:19995` → `:20122`) — and the three M5-OCEAN phase-2
         // insertions: `ocean sand` right after `plan biome spans`
         // (vanilla `:11517` → `:11580`), and `beaches` + `gravitating sand`
         // between `dungeon` (`:14757`) and `ocean caves` (`:14888` →
@@ -2195,6 +2290,9 @@ mod tests {
                 "exposed gems",
                 "jungle shrines",
                 "chests",
+                "spider caves",
+                "gem caves",
+                "moss",
                 "altars",
                 "wet jungle",
                 "pyramids",
@@ -2207,6 +2305,7 @@ mod tests {
                 "campsites",
                 "spike pits",
                 "sword shrines",
+                "webs and honey",
                 "mushroom and jungle plants",
                 "jungle plants",
                 "vines",
@@ -2353,6 +2452,37 @@ mod tests {
         assert!(cpos("Jungle Temple") == cpos("Wet Jungle") + 1);
         assert!(cpos("Jungle Plants") == cpos("Glowing Mushrooms and Jungle Plants") + 1);
         assert!(cpos("Muds Walls In Jungle") > cpos("Vines"));
+    }
+
+    /// DW-5.6: the four M5-STRUCT-5 cave-decor steps sit in their vanilla
+    /// positions — `spider caves` + `gem caves` + `moss` between `chests` and
+    /// `altars` (vanilla Underwater Chests `:17245` → Spider Caves `:17356`
+    /// → Gem Caves `:17428` → Moss `:17472` → Jungle Temple `:17701`, with
+    /// the port's `lihzahrd temple` standing in for the temple), and
+    /// `webs and honey` immediately before `mushroom and jungle plants`
+    /// (vanilla Webs And Honey `:19995` → Glowing Mushrooms and Jungle
+    /// Plants `:20122`).
+    #[test]
+    fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("spider caves"), pos("chests") + 1);
+        assert_eq!(pos("gem caves"), pos("spider caves") + 1);
+        assert_eq!(pos("moss"), pos("gem caves") + 1);
+        assert_eq!(names[pos("moss") + 1], "altars");
+        assert_eq!(pos("webs and honey") + 1, pos("mushroom and jungle plants"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spider Caves") == cpos("Water Chests") + 1);
+        assert!(cpos("Gem Caves") == cpos("Spider Caves") + 1);
+        assert!(cpos("Moss") == cpos("Gem Caves") + 1);
+        assert!(cpos("Temple") == cpos("Moss") + 1);
+        assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
     }
 
     #[test]
