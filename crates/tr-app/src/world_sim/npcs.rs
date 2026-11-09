@@ -58,6 +58,61 @@ pub(crate) fn black_slime_darkness_touch(
 /// Guide offers none — M4-TOWN-3's finding). The stock and the happiness
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
+/// `Player.taxRate` (`Player.cs:57097`): 3600 ticks between collections.
+pub(crate) const TAX_RATE: i32 = 3600;
+/// `Player.CollectTaxes`'s cap — `Item.buyPrice(0, 25)` = 25 gold
+/// (`Player.cs:24132`/`:24151`).
+pub(crate) const TAX_CAP: i32 = 250_000;
+
+/// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
+/// Collector's right-click pays the accrued tax purse out in coins — the
+/// platinum→gold→silver→copper split at the player's centre, then the
+/// purse empties. The happiness adjustment scales the payout
+/// (`:40184`); the port's town NPCs carry the plain 1.0.
+pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
+    if app.world.tax_money <= 0 {
+        return true;
+    }
+    let mut num = app.world.tax_money;
+    let (px, py) = app.npcs[npc_idx].center();
+    while num > 0 {
+        let (kind, stack) = if num > 1_000_000 {
+            let stack = num / 1_000_000;
+            num -= 1_000_000 * stack;
+            (74u16, stack as u32)
+        } else if num > 10_000 {
+            let stack = num / 10_000;
+            num -= 10_000 * stack;
+            (73, stack as u32)
+        } else if num > 100 {
+            let stack = num / 100;
+            num -= 100 * stack;
+            (72, stack as u32)
+        } else {
+            let stack = num.max(1);
+            num -= stack;
+            (71, stack as u32)
+        };
+        crate::world_sim::items::spawn_item_drop_px(app, kind, stack, Vec2::new(px, py));
+    }
+    app.world.tax_money = 0;
+    true
+}
+
+/// The right-click dispatch's Tax Collector arm — the `TaxCollectorCollectTaxes`
+/// interaction (`NPCInteractions.cs:221-244`); he offers no shop.
+fn try_tax_collect_at_cursor(app: &mut App, world_pos: Vec2) -> Option<usize> {
+    app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::TaxCollector && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    })
+}
+
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // The bound-goblin rescue (`NPC.cs:19824-19840`'s `talkNPC` trigger +
     // `AI_000_TransformBoundNPC` `:44884-44896`): the talk transforms 105
@@ -74,6 +129,42 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         }
     }) {
         rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
+    }
+    // The bound Wizard/Mechanic talks (`NPC.cs:19841-19848`'s talk arms):
+    // the talk transforms 106 → 108 and 123 → 124 in place and raises
+    // the saved flags (`:52948`/`:52951`), which opens the town arrival.
+    for (bound, freed, flag) in [
+        (NpcKind::BoundWizard, NpcKind::Wizard, "wizard"),
+        (NpcKind::BoundMechanic, NpcKind::Mechanic, "mech"),
+    ] {
+        if let Some(i) = app.npcs.iter().position(|n| {
+            n.hp > 0 && n.kind == bound && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+        }) {
+            match flag {
+                "wizard" => rescue_bound_wizard(&mut app.npcs[i], &mut app.world),
+                _ => rescue_bound_mechanic(&mut app.npcs[i], &mut app.world),
+            }
+            let _ = freed;
+        }
+    }
+    // The webbed Stylist's talk (`NPC.cs:19849-19852`): the talk frees
+    // him and raises `savedStylist` (`:52953`).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::WebbedStylist && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_webbed_stylist(&mut app.npcs[i], &mut app.world);
     }
     // The Sleeping Angler's talk (`NPC.cs:19853-19856`'s `talkNPC`
     // trigger + `AI_000_TransformBoundNPC` `:44884-44896`): the talk
@@ -106,6 +197,12 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         }
     }) {
         return angler_turn_in(app, i);
+    }
+    // The Tax Collector's right arm (`NPCInteractions.cs:221-244`'s
+    // `TaxCollectorCollectTaxes`): he offers no shop — the click pays the
+    // tax purse out (`Main.NPCChatText_DoTaxCollector`).
+    if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
+        return tax_collector_payout(app, i);
     }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
     // — the port collapses them onto the right-click).
@@ -175,6 +272,9 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
         NpcKind::TravellingMerchant => 19,
+        NpcKind::Wizard => 7,
+        NpcKind::Mechanic => 8,
+        NpcKind::Stylist => 18,
         _ => return None,
     })
 }
@@ -194,6 +294,44 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
 /// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
 /// raised, the Angler homeless (the C# `Transform` `case 369`,
 /// `NPC.cs:81121-81129`).
+/// The bound Wizard's rescue (`AI_000_TransformBoundNPC`'s 106 → 108 arm,
+/// `NPC.cs:19841-19844`/`:44884-44894`): the transform in place, the freed
+/// stats restore and `savedWizard` raises (`:52948`).
+pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Wizard;
+    n.max_hp = NpcKind::Wizard.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_wizard = true;
+}
+
+/// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
+/// `NPC.cs:19845-19848`): the transform in place and `savedMech` raises
+/// (`:52951`).
+pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Mechanic;
+    n.max_hp = NpcKind::Mechanic.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_mech = true;
+}
+
+/// The webbed Stylist's rescue (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
+/// `NPC.cs:19849-19852`/`:44884-44894`): the talk frees him in place and
+/// raises `NPC.savedStylist` (`:52953-52955`), which opens the town
+/// arrival; `Transform`'s `case 353` (`:81120`) leaves him homeless.
+pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Stylist;
+    n.max_hp = NpcKind::Stylist.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_stylist = true;
+}
+
+/// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
+/// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
+/// raised, the Angler homeless (the C# `Transform` `case 369`,
+/// `:81121-81129`).
 pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
     n.kind = NpcKind::Angler;
     n.max_hp = NpcKind::Angler.max_hp();
@@ -312,6 +450,48 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// the Angler unsaved and no 376 alive, the 1-in-20 roll per attempt. The
 /// vanilla's arms sit inside `SpawnAnNPC`'s ladder; the port runs them as
 /// their own pass (the same player-tile scan, the same roll count).
+/// `NPC.cs:1660-1670`'s spider-wall arm: the webbed Stylist waits on a
+/// spider wall (`wall == 62`) in the rock layer — `Next(8) == 0`, no
+/// water, once per save (`!savedStylist && !AnyNPCs(354)`). The port has
+/// no spider-wall tile table, so the wall gate rides the world's wall id
+/// at the player's spawn tile (the same depth band as the C#'s
+/// `deeperThanRockLayer`).
+pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
+    if app.world.saved_stylist
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::WebbedStylist)
+    {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let tx = (p.x / TILE_PX) as i32;
+    let ty = (p.y / TILE_PX) as i32;
+    if (ty as f64) <= app.world.rock_layer {
+        return false;
+    }
+    let water = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    if water || rand01(&mut app.npc_rng) >= 1.0 / 8.0 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::WebbedStylist,
+        tx as f32 * TILE_PX + 8.0 - 9.0,
+        ty as f32 * TILE_PX - 34.0,
+        1,
+        0.0,
+    );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
 pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
     if app.world.saved_angler || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler) {
         return false;
@@ -360,6 +540,29 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
     true
 }
 
+/// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
+/// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
+fn coin_total(inventory: &[crate::item::ItemSlot]) -> i64 {
+    let mut total: i64 = 0;
+    for sl in inventory.iter() {
+        if sl.count == 0 {
+            continue;
+        }
+        let mult: i64 = match sl.kind {
+            71 => 1,
+            72 => 100,
+            73 => 10_000,
+            74 => 1_000_000,
+            _ => continue,
+        };
+        total += sl.count as i64 * mult;
+        if total < 0 || total > 9_999_999_999 {
+            return 9_999_999_999;
+        }
+    }
+    total
+}
+
 fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && shop_index_for_kind(n.kind).is_some() && {
@@ -388,6 +591,20 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
+        // life/mana maxima, the copper purse, the Party Girl's presence and
+        // the mech/martian flags.
+        life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
+        mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
+        coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
+        party_girl_present: false, // the Party Girl (208) is not ported yet
+        downed_mech_any: app.world.downed_mech_boss1
+            || app.world.downed_mech_boss2
+            || app.world.downed_mech_boss3,
+        downed_mech_1: app.world.downed_mech_boss1,
+        downed_mech_2: app.world.downed_mech_boss2,
+        downed_mech_3: app.world.downed_mech_boss3,
+        downed_martians: app.world.downed_martians,
         travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
@@ -1492,6 +1709,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (`Main.cs:65373`): the clock arms it at the day boundary (the
     // clock carries no RNG), the world pass rolls it.
     resolve_angler_swap(app);
+    // `NPC.taxCollector` (`NPC.cs:6083`): `AI_007_TownEntities` raises
+    // it while a Tax Collector is alive (`:53304-53307`) and the pass
+    // reset clears it (`Main.cs:17908`); the tax pump runs while true.
+    app.world.tax_collector = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::TaxCollector && n.hp > 0);
+    // `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
+    // the alive, housed town NPCs (the C# counts every non-pet with a
+    // head index — the port's town roster).
+    app.world.tax_payers = app
+        .npcs
+        .iter()
+        .filter(|n| n.kind.is_town_resident() && n.hp > 0 && n.home.is_some())
+        .count() as i32;
+    // `Main.cs:64995-65003`'s pump.
+    let rate = app.world.day_rate();
+    crate::world_sim::clock::update_taxes(&mut app.world, rate);
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
@@ -1778,6 +2013,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Stylist and the Tax Collector: `NPC.savedStylist`/
+        // `savedTaxCollector` (`Main.cs:65824`/`:65840`'s `townNPCCanSpawn`
+        // arms collapsed into the port's 2-second pass).
+        if app.world.saved_stylist && !app.npcs.iter().any(|n| n.kind == NpcKind::Stylist) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Stylist) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        if app.world.saved_tax_collector
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::TaxCollector)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 10).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::TaxCollector) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         // The Clothier: the downedSkeletron gate.
         if app.world.downed_skeletron && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier) {
             if let Some(player) = app.player.as_ref() {
@@ -1798,8 +2056,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
-        // downedBoss1 — the port's downed_eoc).
+        // The Wizard: `NPC.savedWizard` (`NPC.cs:6289`), raised by the
+        // bound-Wizard talk (`UpdateSavedStates`, `:52948`).
+        if app.world.saved_wizard && !app.npcs.iter().any(|n| n.kind == NpcKind::Wizard) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 8).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Wizard) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Mechanic: `NPC.savedMech` (`NPC.cs:6291`).
+        if app.world.saved_mech && !app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 7).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Mechanic) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s        // downedBoss1 — the port's downed_eoc).
         if app.world.downed_eoc && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
@@ -1832,6 +2110,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // unsaved — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
         // the port's `Next(20)` roll rides this cadence.
         try_spawn_sleeping_angler(app);
+        // The webbed Stylist's world spawn (`NPC.cs:1660-1670`'s
+        // spider-wall arm): a spider wall in the rock layer, `Next(8) == 0`,
+        // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
+        // the port's roll rides this cadence with the same gates.
+        try_spawn_webbed_stylist(app);
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -2769,6 +3052,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && !app.npcs.iter().any(|n| {
                         n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
                     }),
+                // `NPC.cs:2088`'s Wizard guards: hardmode, unsaved, and
+                // nobody bound/freed.
+                bound_wizard_ok: app.world.hard_mode
+                    && !app.world.saved_wizard
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
+                    }),
+                // `NPC.cs:2653`'s Mechanic guards: Skeletron downed,
+                // unsaved, and nobody bound/freed.
+                bound_mech_ok: app.world.downed_skeletron
+                    && !app.world.saved_mech
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
+                    }),
+                // `(worldSurface * 4 + rockLayer) / 5` — the Mechanic's deep
+                // dungeon band, read against the player's spawn tile.
+                below_deep_dungeon: {
+                    let ty = app
+                        .player
+                        .as_ref()
+                        .map_or(0, |p| (p.y / TILE_PX) as i32);
+                    (ty as f64) > (app.world.world_surface * 4.0 + app.world.rock_layer) / 5.0
+                },
                 // The skyMob/probe gates (`SetSpawnFlags`' `invaders`, the
                 // `downedGolemBoss`/`downedMartians` rolls, the skyMob
                 // dispatch's type-4 read, and `AnyDanger`'s boss loop —
@@ -3025,6 +3331,231 @@ mod tests {
     /// talk transforms the Sleeping Angler into the Angler in place and
     /// raises `savedAngler` (`:52956-52958`) — the world's spawn arms then
     /// stop looking for the fish on the beach.
+
+    /// `AI_000_TransformBoundNPC`'s 106 → 108 and 123 → 124 arms
+    /// (`NPC.cs:19841-19848`/`:44884-44894`): the talks free the Wizard and
+    /// the Mechanic in place and raise `savedWizard`/`savedMech`
+    /// (`:52948`/`:52951`), which opens the town arrival.
+
+    /// The webbed Stolist's talk (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
+    /// `NPC.cs:19849-19852`): the talk frees him, raises `savedStylist`
+    /// (`:52953`) and the town arrival follows.
+    #[test]
+    fn the_talk_frees_the_webbed_stylist() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut w = Npc::new(NpcKind::WebbedStylist, 32.0 * 16.0, 100.0, 1, 0.0);
+        w.home = Some((2, 6));
+        app.npcs.push(w);
+        assert!(!app.world.saved_stylist);
+        try_open_shop_at_cursor(&mut app, Vec2::new(32.0 * 16.0 + 2.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Stylist),
+            "the Stylist is freed"
+        );
+        assert!(app.world.saved_stylist, "savedStylist raises");
+    }
+
+    /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
+    /// Collector's right-click pays the accrued taxes out in coins and
+    /// empties the purse.
+    #[test]
+    fn the_tax_collector_pays_the_purse_out() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        let idx = app.npcs.len();
+        app.npcs.push(t);
+        // A purse with platinum + gold + silver + copper.
+        app.world.tax_money = 1_000_000 + 25_000 + 340;
+        let before = app.items.len();
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.world.tax_money, 0, "the purse empties");
+        let kinds: Vec<u16> = app.items.iter().map(|d| d.kind).collect();
+        assert!(kinds.contains(&74), "one platinum coin");
+        assert!(kinds.contains(&73), "two gold coins");
+        assert!(kinds.contains(&72), "three silver coins");
+        assert!(kinds.contains(&71), "the coppers");
+        assert!(app.items.len() > before, "the drops spawn");
+    }
+
+    /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
+    /// (`Main.cs:64995-65003`): 50 copper per housed town NPC per
+    /// `taxRate` clock, capped at 25 gold.
+    #[test]
+    fn the_tax_pump_fills_the_purse_to_the_cap() {
+        let mut world = World::new("t".into(), 8, 8);
+        world.tax_collector = true;
+        // No collectors yet: the pump does nothing.
+        crate::world_sim::clock::update_taxes(&mut world, 1);
+        assert_eq!(world.tax_money, 0, "no payers, no money");
+        // One payer: after `taxRate` iterations one collection lands.
+        world.tax_payers = 1;
+        for _ in 0..TAX_RATE {
+            crate::world_sim::clock::update_taxes(&mut world, 1);
+        }
+        assert_eq!(world.tax_money, 50, "one collection of 50 copper");
+        // The cap (`:24151-24153`): a collection that would overflow clamps
+        // to 25 gold; a purse already at the cap collects nothing more.
+        world.tax_money = TAX_CAP - 10;
+        world.tax_payers = 100;
+        crate::world_sim::clock::collect_taxes(&mut world);
+        assert_eq!(world.tax_money, TAX_CAP, "the 25-gold cap holds");
+        let capped = world.tax_money;
+        crate::world_sim::clock::collect_taxes(&mut world);
+        assert_eq!(world.tax_money, capped, "no collection past the cap");
+    }
+
+    #[test]
+    fn the_talks_free_the_wizard_and_mechanic() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        app.world.hard_mode = true;
+        let mut w = Npc::new(NpcKind::BoundWizard, 32.0, 100.0, 1, 0.0);
+        w.home = Some((2, 6));
+        app.npcs.push(w);
+        let mut m = Npc::new(NpcKind::BoundMechanic, 64.0, 100.0, 1, 0.0);
+        app.npcs.push(m);
+        try_open_shop_at_cursor(&mut app, Vec2::new(34.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard is freed"
+        );
+        assert!(app.world.saved_wizard, "savedWizard raises");
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::BoundWizard));
+        try_open_shop_at_cursor(&mut app, Vec2::new(66.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic is freed"
+        );
+        assert!(app.world.saved_mech, "savedMech raises");
+    }
+
+    /// The town arrival behind the flags (`Main.cs:65844-65851`'s
+    /// `townNPCCanSpawn` arms collapsed to the 2-second town pass): the saved
+    /// flag spawns the town NPC once and never again.
+    #[test]
+    fn the_saved_flags_open_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_wizard = true;
+        app.world.saved_mech = true;
+        // One town pass.
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard arrives"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic arrives"
+        );
+        // A second pass adds nothing.
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
+    /// `NPC.cs:2088`'s hardmode guard: the bound Wizard's ladder arm needs
+    /// hardmode, so without it the tied Wizard never appears however many
+    /// spawn attempts run.
+    #[test]
+    fn the_bound_wizard_arm_needs_hardmode() {
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 400..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        for hard in [false, true] {
+            let mut found_any = false;
+            let mut found_wizard = false;
+            for seed in 0..240u64 {
+                let ctx = crate::spawner::SpawnContext {
+                    world: &world,
+                    player_center: (32.0 * 16.0, 500.0 * 16.0),
+                    player_pos: (32.0 * 16.0, 500.0 * 16.0),
+                    nearby_active_npcs: 0.0,
+                    town_npcs: 0,
+                    day_time: true,
+                    player_life_max: 100,
+                    underworld_for_bats: false,
+                    flags: crate::spawner::SpawnFlags {
+                        hard_mode: hard,
+                        ..Default::default()
+                    },
+                    bound_goblin_ok: false,
+                    bound_wizard_ok: true,
+                    bound_mech_ok: false,
+                    below_deep_dungeon: true,
+                    invaders: false,
+                    downed_golem: false,
+                    downed_martians: false,
+                    invasion_type: 0,
+                    any_danger: false,
+                    probe_exists: false,
+                    sky_behind_player: false,
+                };
+                let mut rng = crate::spawner::FastRandom::new(seed + 1);
+                if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
+                    found_any = true;
+                    if n.kind == NpcKind::BoundWizard {
+                        found_wizard = true;
+                    }
+                }
+            }
+            // The arm's own gate is the assertion: without hardmode the tied
+            // Wizard never comes out of the ladder, whatever else spawns (the
+            // other ladders' world gates decide that, not this arm).
+            if !hard {
+                assert!(
+                    !found_wizard,
+                    "no hardmode, no bound Wizard (any spawn: {found_any})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_talk_wakes_the_sleeping_angler() {
         let mut world = World::new("t".into(), 64, 800);
