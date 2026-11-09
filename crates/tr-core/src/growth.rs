@@ -733,26 +733,53 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
         world.frame_important[80] = true;
         return;
     }
-    // The cactus arm (:56666-56815): walk the stack, the budget, the cap,
-    // then grow by one (the fork/lean rolls land with their brushes).
+    // The cactus arm (:56668-56799): the stack walk DOWN from the top with the
+    // lean corrections, the height/budget, the ±2-column density cap, and the
+    // fork — the side shoots (left/right) and the tip.
+    if world.tile(i, j).is_none_or(|t| t.kind != 80) {
+        return;
+    }
+    let mut num = i;
     let mut num2 = j;
     while world
-        .tile(i, num2)
+        .tile(num, num2)
         .is_some_and(|t| t.active() && t.kind == 80)
     {
-        num2 -= 1;
+        num2 += 1;
         if !world
-            .tile(i, num2)
+            .tile(num, num2)
             .is_some_and(|t| t.active() && t.kind == 80)
         {
-            break;
+            if world
+                .tile(num - 1, num2)
+                .is_some_and(|t| t.active() && t.kind == 80)
+                && world
+                    .tile(num - 1, num2 - 1)
+                    .is_some_and(|t| t.active() && t.kind == 80)
+                && num >= i
+            {
+                num -= 1;
+            }
+            if world
+                .tile(num + 1, num2)
+                .is_some_and(|t| t.active() && t.kind == 80)
+                && world
+                    .tile(num + 1, num2 - 1)
+                    .is_some_and(|t| t.active() && t.kind == 80)
+                && num <= i
+            {
+                num += 1;
+            }
         }
     }
-    let num6 = j - num2; // the stack height above the soil row
+    let num6 = num2 - 1 - j;
+    let num7 = i - num;
+    num = i - num7;
+    num2 = j;
     let num8 = 11 - num6;
     let mut num9 = 0;
-    for num10 in (i - 2)..=(i + 2) {
-        for num11 in (num2 - num8)..=(j + num6) {
+    for num10 in (num - 2)..=(num + 2) {
+        for num11 in (num2 - num8)..=(num2 + num6) {
             if let Some(t) = world.tile(num10, num11) {
                 if t.active() && t.kind == 80 {
                     num9 += 1;
@@ -760,11 +787,100 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             }
         }
     }
+    // The drunk arm's cap is the 11-20 range (`:56690-56698`); the classic
+    // worlds take the 11-13 cap the port already carried.
     if num9 >= 11 + rng.next(2) {
         return;
     }
-    if world.tile(i, j - 1).is_none_or(|t| !t.active()) {
-        let idx = world.index(i, j - 1);
+    num = i;
+    num2 = j;
+    if num7 != 0 {
+        // The lean arm (:56788-56797): a free cell above with the neighbour
+        // shoot standing — the cactus leans into it.
+        if !world.tile(num, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num, num2 - 2).is_some_and(|t| t.active())
+            && !world.tile(num + num7, num2 - 1).is_some_and(|t| t.active())
+            && world
+                .tile(num - num7, num2 - 1)
+                .is_some_and(|t| t.active() && t.kind == 80)
+        {
+            let idx = world.index(num, num2 - 1);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        return;
+    }
+    if num6 == 0 {
+        if world.tile(num, num2 - 1).is_none_or(|t| !t.active()) {
+            let idx = world.index(num, num2 - 1);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        return;
+    }
+    // The fork arms (:56739-56783): the side shoots and the tip.
+    let mut flag = false;
+    let mut flag2 = false;
+    if world
+        .tile(num, num2 - 1)
+        .is_some_and(|t| t.active() && t.kind == 80)
+    {
+        if !world.tile(num - 1, num2).is_some_and(|t| t.active())
+            && !world.tile(num - 2, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num - 1, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num - 1, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num - 2, num2).is_some_and(|t| t.active())
+        {
+            flag = true;
+        }
+        if !world.tile(num + 1, num2).is_some_and(|t| t.active())
+            && !world.tile(num + 2, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num + 1, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num + 1, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num + 2, num2).is_some_and(|t| t.active())
+        {
+            flag2 = true;
+        }
+    }
+    let num12 = rng.next(3);
+    if num12 == 0 && flag {
+        let idx = world.index(num - 1, num2);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    } else if num12 == 1 && flag2 {
+        let idx = world.index(num + 1, num2);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    } else if num6 < rng.next_range(2, 8)
+        && world
+            .tile(num - 1, num2 - 1)
+            .is_none_or(|t| !t.active() || t.kind != 80)
+        && world
+            .tile(num + 1, num2 - 1)
+            .is_none_or(|t| !t.active() || t.kind != 80)
+        && world.tile(num, num2 - 1).is_none_or(|t| !t.active())
+    {
+        let idx = world.index(num, num2 - 1);
         world.tiles[idx] = crate::tile::Tile {
             kind: 80,
             frame_x: 0,
@@ -1711,6 +1827,59 @@ mod tests {
             !attempt_grow_tree_from_sapling(&mut w2, 100, 209, false, &mut rng2),
             "the occupied clear box refuses"
         );
+    }
+
+    /// The cactus arm's fork (`:56739-56783`): a standing column forks into the
+    /// side shoots (the left/right clearance checks behind `Next(3)`) or the
+    /// tip (`num6 < Next(2,8)` with the diagonals clear), and the lean arm
+    /// (`:56788-56797`) fills the free cell when the column leans.
+    #[test]
+    fn the_cactus_forks_into_the_side_shoots_and_the_tip() {
+        // A 3-tall column on sand: num6 = 2, so the tip gate's range and the
+        // side shoots are both live over a seed sweep.
+        let mut base = World::new("t".into(), 60, 80);
+        base.world_surface = 40.0;
+        for x in 0..60 {
+            for y in 30..80 {
+                let i = base.index(x, y);
+                base.tiles[i] = crate::tile::Tile {
+                    kind: 53,
+                    ..Default::default()
+                };
+                base.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for y in 28..30 {
+            let i = base.index(30, y);
+            base.tiles[i] = crate::tile::Tile {
+                kind: 80,
+                ..Default::default()
+            };
+            base.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut fork = 0;
+        let mut runs = 0;
+        for seed in 1u64..800 {
+            let mut w = base.clone();
+            let mut rng = FastRandom::new(seed);
+            // j is the column's TOP cell (the C# walks the stack downward).
+            grow_cactus(&mut w, 30, 28, &mut rng);
+            runs += 1;
+            // The side shoot or the tip adds a 80 outside the original column.
+            fork += w
+                .tiles
+                .iter()
+                .enumerate()
+                .filter(|(idx, t)| t.active() && t.kind == 80 && {
+                    let x = (*idx % 60) as i32;
+                    let y = (*idx / 60) as i32;
+                    // Outside the original column (28..=29): the tip above or
+                    // the side shoots.
+                    !(x == 30 && (28..=29).contains(&y))
+                })
+                .count();
+        }
+        assert!(fork > 0, "the column forks ({fork} over {runs} picks)");
     }
 
     #[test]
