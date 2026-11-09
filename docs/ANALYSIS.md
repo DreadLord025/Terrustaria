@@ -7036,65 +7036,6 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
-<<<<<<< HEAD
-## Ammo mastery layer (M3-ITEM-6)
-
-Port of the M3-ITEM-3 "Out" list: `Player.PickAmmo`'s mastery half
-(`Player.cs:53458-53749`) — the pair table, the projToShoot resolution chain,
-the not-consume arms, the `gunProj` dontConsume four, the volley specials and
-the ammo-cycling modes. Deliberate deviations and traps:
-
-- **The four `gunProj` weapons read their data from a wire-side id-keyed table,
-  not the registry.** `ItemID.Sets.gunProj` (`ItemID.cs:1327` — the VortexBeater
-  3475 / Phantasm 3540 / DD2PhoenixBow 3854 / Celeb2 3930) makes `PickAmmo` run
-  with `dontConsume = true` (`Player.cs:47071`): the pick still gates on having
-  ammo, but the ammo's damage/speed fuse is discarded (`:47069-47081`) and the
-  spawn uses the fixed gun projectile (615/630/705/714, `:48986-49018`). No drain
-  anywhere in the shoot path — the only drain sits behind `!flag` with `flag`
-  seeded true (verified by reading the whole of `ItemCheck_Shoot`). All four
-  carry placeholder rows in the scaled `itemdata.rs` class (`use_ammo: 0`), so
-  the wire keys their vanilla defs (`Item.cs:31159`/`:31728`/`:34048`/`:34741`)
-  by id; the `tools/GenItemData` fix is a separate M3-ITEM-1 follow-up.
-- **The 1.4.5.8 tick semantics the windows read.** On the press tick
-  `ItemCheck_StartActualUse` sets `itemAnimation = itemAnimationMax` and leaves
-  `itemTime` at 0; the same tick's decrements run and the shot gate
-  (`itemAnimation > 0 && ItemTimeIsZero`) fires the first shot at
-  `itemAnimation == max - 1` — which IS `ItemAnimationJustStarted`
-  (`Player.cs:4066`). The port arms one tick on the press frame to land there
-  and derives the three window booleans in integer ticks (its item timers are
-  per-frame seconds — the C# compares integers). Derived counts: the Clockwork
-  434 (12/4) fires at anim 11/7/3 with the first consuming; the Fairy Queen 4953
-  (30/2) fires 15 shots with the four free ones at anim 29/27/25/23; the
-  Clentaminator (30/5) / Flamethrower (30/6) sprays consume on the first shot
-  only; the Acorn Slingshot 5629's `flag = false` is the chain's last arm and
-  clears the Ammo Box / Ammo Reservation saves (order trap).
-- **The `gunProj` four still spend their own `Main.rand` draw** even though the
-  save is discarded — the arms run unconditionally (`:53579-53594`) — so the
-  golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
-  shooter.
-- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
-  (`useAmmo = 0` → `PickAmmo` never runs) — not ported; the Snowball Cannon
-  1319's remix arm is parked (no celebration-seed stand-in in the port); the
-  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
-  and not ported.
-- **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
-  `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
-  the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
-  ×1.1 scales the weapon's own value only (it precedes `KnockBack +=
-  item.knockBack`, `:53568`) and the NanoBullet 285's ×1.25 scales the FUSED
-  damage (the wire applies the weapon's part too).
-- **The projectile rows land with the unported AI styles** (147 Celebration,
-  75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
-  — the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
-  territory. The visual-only vanilla fields (alpha/scale/ignoreWater/drawLayer/
-  hide) have no port consumer and are dropped; the Snowman rockets' `scale = 0.9`
-  keeps the 14x14 box. `ProjData` gained `uses_local_immunity` +
-  `local_hit_cooldown` (the runtime already carried both) for the immunity pairs.
-- **`ammo.rs` is ~1800 lines** — a single C# function's port (the pair table,
-  the resolution chain and the roll chain share the module); the plan's
-  fallback split behind the same `pub` surface is deferred to a refactor-shaped
-  follow-up.
-=======
 ## The yoyo family (M4-PROJ-4)
 
 - **The lifetime table's -1 default is verbatim, not a gap.**
@@ -7159,7 +7100,64 @@ the ammo-cycling modes. Deliberate deviations and traps:
   `hasVanityEffects`, `handOffSlot`, `vanity`, `mountType`) stay
   committed as improved-but-incomplete and are the follow-up row's
   scope (M3-EQUIP-3 consumes the accessory flags).
->>>>>>> origin/main
+
+## Ammo mastery layer (M3-ITEM-6)
+
+Port of the M3-ITEM-3 "Out" list: `Player.PickAmmo`'s mastery half
+(`Player.cs:53458-53749`) — the pair table, the projToShoot resolution chain,
+the not-consume arms, the `gunProj` dontConsume four, the volley specials and
+the ammo-cycling modes. Deliberate deviations and traps:
+
+- **The four `gunProj` weapons read their data from a wire-side id-keyed table,
+  not the registry.** `ItemID.Sets.gunProj` (`ItemID.cs:1327` — the VortexBeater
+  3475 / Phantasm 3540 / DD2PhoenixBow 3854 / Celeb2 3930) makes `PickAmmo` run
+  with `dontConsume = true` (`Player.cs:47071`): the pick still gates on having
+  ammo, but the ammo's damage/speed fuse is discarded (`:47069-47081`) and the
+  spawn uses the fixed gun projectile (615/630/705/714, `:48986-49018`). No drain
+  anywhere in the shoot path — the only drain sits behind `!flag` with `flag`
+  seeded true (verified by reading the whole of `ItemCheck_Shoot`). All four
+  carry placeholder rows in the scaled `itemdata.rs` class (`use_ammo: 0`), so
+  the wire keys their vanilla defs (`Item.cs:31159`/`:31728`/`:34048`/`:34741`)
+  by id; the `tools/GenItemData` fix is a separate M3-ITEM-1 follow-up.
+- **The 1.4.5.8 tick semantics the windows read.** On the press tick
+  `ItemCheck_StartActualUse` sets `itemAnimation = itemAnimationMax` and leaves
+  `itemTime` at 0; the same tick's decrements run and the shot gate
+  (`itemAnimation > 0 && ItemTimeIsZero`) fires the first shot at
+  `itemAnimation == max - 1` — which IS `ItemAnimationJustStarted`
+  (`Player.cs:4066`). The port arms one tick on the press frame to land there
+  and derives the three window booleans in integer ticks (its item timers are
+  per-frame seconds — the C# compares integers). Derived counts: the Clockwork
+  434 (12/4) fires at anim 11/7/3 with the first consuming; the Fairy Queen 4953
+  (30/2) fires 15 shots with the four free ones at anim 29/27/25/23; the
+  Clentaminator (30/5) / Flamethrower (30/6) sprays consume on the first shot
+  only; the Acorn Slingshot 5629's `flag = false` is the chain's last arm and
+  clears the Ammo Box / Ammo Reservation saves (order trap).
+- **The `gunProj` four still spend their own `Main.rand` draw** even though the
+  save is discarded — the arms run unconditionally (`:53579-53594`) — so the
+  golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
+  shooter.
+- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
+  (`useAmmo = 0` → `PickAmmo` never runs) — not ported; the Snowball Cannon
+  1319's remix arm is parked (no celebration-seed stand-in in the port); the
+  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
+  and not ported.
+- **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
+  `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
+  the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
+  ×1.1 scales the weapon's own value only (it precedes `KnockBack +=
+  item.knockBack`, `:53568`) and the NanoBullet 285's ×1.25 scales the FUSED
+  damage (the wire applies the weapon's part too).
+- **The projectile rows land with the unported AI styles** (147 Celebration,
+  75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
+  — the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
+  territory. The visual-only vanilla fields (alpha/scale/ignoreWater/drawLayer/
+  hide) have no port consumer and are dropped; the Snowman rockets' `scale = 0.9`
+  keeps the 14x14 box. `ProjData` gained `uses_local_immunity` +
+  `local_hit_cooldown` (the runtime already carried both) for the immunity pairs.
+- **`ammo.rs` is ~1800 lines** — a single C# function's port (the pair table,
+  the resolution chain and the roll chain share the module); the plan's
+  fallback split behind the same `pub` surface is deferred to a refactor-shaped
+  follow-up.
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
