@@ -2060,6 +2060,15 @@ and a third was the click gate the geometry feeds):
   (`ui/world_select.rs:506`), the layout shared with char_select (`:42`, `:185`)
   and the framework's `get_element_at` (`ui/framework.rs:64`) are all 1:1 with
   `UIWorldListItem.cs:94-158` and `UIElement.cs:324-352`.
+  **Re-landed 2026-11-10 (fix-world-select-clicks-2):** the M6-ACH-2 merge
+  (a75dd14) silently reverted this fix - its auto-resolution restored the
+  pre-fix frame() branch (the decay back inside menu.is_none() &&
+  front.is_none()) and dropped the six regression tests, so both select
+  screens locked out again (AGENTS.md 2026-11-08 incident class: a lossy
+  merge dropping merged work). Cherry-pick of 7351e6c onto the ACH-2 tree;
+  the tests ride along and now guard the regression; the ACH-2 draw arm in
+  the same frame() region survives by construction (the cherry-pick touched
+  only the lockout lines).
 
 * **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
   `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
