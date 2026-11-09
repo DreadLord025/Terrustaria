@@ -6793,6 +6793,60 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
+## Smart cursor (M7-SMARTCURSOR-1)
+
+`tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
+(`GameContent/SmartCursorHelper.cs:61-165`) as a step chain over the caller's
+reachable rect — grass seeds (`:266`), moss (`:334`), pigronata (`:969`), torch
+(`:2795` + `IsValidSpotForTorch` `:2867`), lawn mower (`:2895`), alchemy seeds
+(`:492`), planter box (`:437`), clay pots (`:381`), staff of regrowth (`:224`),
+each voting its candidates by distance-to-mouse (`:2849`'s `_targets` pick) and
+committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
+
+- **The edge convention is deliberately stricter than vanilla.** `Main.tile` is
+  exactly world-sized (`Main.cs:66984`) and the reachable rect never touches the
+  border, so vanilla never indexes out of world. `World::tile` returns `None` at
+  the edge and every step skips such a cell, while a *neighbour* read — the
+  flag/flag2 halves, `:236-239` — counts an out-of-world cell as the inactive
+  tile the C#'s default `Tile` would read. `InTileBounds` rejects any
+  OOB-derived candidate, so the two skip semantics converge with the C# for
+  `Step_PlanterBox`'s side extensions.
+- **`Collision.EmptyTile`'s entity arms are stubbed.** The clay-pots filter
+  (`:418`/`:428`) calls it with `ignoreTiles: true`
+  (`Collision.cs:1359-1386`), so the tile half is skipped; the player/NPC hitbox
+  arms have no tr-core store behind them and `collision_empty_tile` returns
+  `true` until the app-side wiring lands.
+- **`WeatherCtx` is a seam, not a deviation.** `IsAlchemyPlantHarvestable`
+  (`WorldGen.cs:66148-66175`) reads `Main.raining`/`cloudAlpha`/`remixWorld` —
+  session state, not `World` fields — so the caller passes them
+  (`growth.rs`'s `WeatherCtx`); every other input (`dayTime`, `bloodMoon`,
+  `moonPhase`, `worldSurface`, `time`) is saved world state.
+- **The C#'s `&`/`|` bool operators become `&&`/`||`.** `Step_StaffOfRegrowth`'s
+  `(tile.type == 0) & flag2` (`:238`) is redundant — the outer clause already
+  tests `tile.type == 0`, so it reduces to `flag2` — and
+  `IsAlchemyPlantHarvestable`'s `(!Main.raining | flag)` (`:66173`); both
+  operands are pure, so the short-circuit forms are provably equivalent.
+- **`Step_BlocksFilling` (`:2692-2793`) is unreachable in vanilla.** Its `:2709`
+  gate opens with `SmartBlocksEnabled ||` — reached with the setting on,
+  already returned at `:2694` with it off — so the body is dead code. Not
+  ported; do not "fix" it by dropping the flag.
+- **`Step_Pickaxe_MineShinies`'s priority filter (`:2315-2327`) is inert.** Both
+  loops iterate the just-cleared `_targets2`, so the
+  `SmartCursorPickaxePriorityOverride` comparison and the removal never see a
+  candidate; when the pickaxe family lands, port the observable behaviour (a
+  no-op filter), not the intended one.
+- **The torch step's gates were corrected to the real sets.** `:2812` reads
+  `ItemID.Sets.Torches` (24 ids, `ItemID.cs:1371`), the placement test
+  `Main.tileCut` (41 ids) with `TileID.Sets.BreakableWhenPlacing`, and
+  `IsValidSpotForTorch`'s anchors read `TileID.Sets.NotReallySolid` {387, 388,
+  10} (`TileID.cs:592`). This changes the previously merged torch behaviour; no
+  caller existed, so there is no runtime impact.
+- **`edit::solid_tile` gained the `!inActive` term.** The C#'s `nactive()`
+  (`WorldGen.cs:69957-69969`) and the indexed overload's explicit `!inActive()`
+  (`:70111-70131`) both exclude framed-off tiles, so an actuated tile is no
+  longer solid (vanilla parity). `Step_Pigronata`'s seat test
+  (`smart_cursor.rs:582`) reads it; the worldgen-only callers are unaffected —
+  worldgen has no actuated tiles.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
