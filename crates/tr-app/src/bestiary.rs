@@ -29,7 +29,6 @@ pub struct BestiaryEntryDef {
 /// BlueSlime's 1; the list stays in that (net-id) order for the grid's
 /// display indexes.
 pub const ENTRIES: &[BestiaryEntryDef] = &[
-    // (the Moon Lord entries land with their boss rows)
     BestiaryEntryDef {
         credit_id: "BlueSlime",
         net_id: crate::loot_db::BLUE_SLIME,
@@ -900,6 +899,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Vortex Soldier",
+    },
+    BestiaryEntryDef {
+        credit_id: "VortexHunter",
+        net_id: 426,
+        kind: NpcKind::VortexHunter,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Hunter",
+    },
+    BestiaryEntryDef {
+        credit_id: "VortexAlien",
+        net_id: 427,
+        kind: NpcKind::VortexAlien,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Alien",
+    },
+    BestiaryEntryDef {
+        credit_id: "VortexHeadcrab",
+        net_id: 428,
+        kind: NpcKind::VortexHeadcrab,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Headcrab",
     },
     BestiaryEntryDef {
         credit_id: "MoonLordHead",

@@ -208,6 +208,18 @@ pub enum NpcKind {
     /// `NPCID.VortexSoldier` (429) — the vortex soldier (`NPC.cs`:
     /// 22×56, aiStyle 3, dmg 90, def 34).
     VortexSoldier,
+    /// `NPCID.VortexHunter` (426) — the vortex pillar's shooter
+    /// (`NPC.cs:15214-15247`: 50×62, aiStyle 3, 1000 HP, dmg 100, def 44,
+    /// kb 0.3; the 581 battery and the 4/0.6/0.95 walk).
+    VortexHunter,
+    /// `NPCID.VortexAlien` (427) — the hive's diver (`NPC.cs`:
+    /// 15226-15235: 40×28, aiStyle 3, 500 HP, dmg 75, def 20, kb 0.5; the
+    /// 0.015/0.15 dive, the leap and the 1200-tick `Transform(426)`).
+    VortexAlien,
+    /// `NPCID.VortexHeadcrab` (428) — the crawler (`NPC.cs:15215-15222`:
+    /// 24×26, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default);
+    /// the rolling rotation and the 300-tick `Transform(427)`).
+    VortexHeadcrab,
     /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
     /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
@@ -710,11 +722,17 @@ impl NpcKind {
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
             NpcKind::SolarTower => 115,
+            NpcKind::VortexHunter => 127,
+            NpcKind::VortexAlien => 128,
+            NpcKind::VortexHeadcrab => 129,
             NpcKind::MoonLordHead => 122,
             NpcKind::MoonLordHand => 123,
             NpcKind::MoonLordCore => 124,
             NpcKind::MoonLordFreeEye => 125,
             NpcKind::MoonLordLeechBlob => 126,
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
@@ -776,6 +794,9 @@ impl NpcKind {
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
             NpcKind::MoonLordHead => 396,
             NpcKind::MoonLordHand => 397,
             NpcKind::MoonLordCore => 398,
@@ -856,6 +877,9 @@ impl NpcKind {
             118 => NpcKind::NebulaBeast,
             119 => NpcKind::VortexRifleman,
             120 => NpcKind::VortexSoldier,
+            127 => NpcKind::VortexHunter,
+            128 => NpcKind::VortexAlien,
+            129 => NpcKind::VortexHeadcrab,
             122 => NpcKind::MoonLordHead,
             123 => NpcKind::MoonLordHand,
             124 => NpcKind::MoonLordCore,
@@ -1116,6 +1140,9 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => (130.0, 270.0),
+            NpcKind::VortexHunter => (50.0, 62.0),
+            NpcKind::VortexAlien => (40.0, 28.0),
+            NpcKind::VortexHeadcrab => (24.0, 26.0),
             NpcKind::MoonLordHead => (38.0, 56.0),
             NpcKind::MoonLordHand | NpcKind::MoonLordCore => (46.0, 66.0),
             NpcKind::MoonLordFreeEye => (60.0, 60.0),
@@ -1450,6 +1477,9 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20000,
+            NpcKind::VortexHunter => 1000,
+            NpcKind::VortexAlien => 500,
+            NpcKind::VortexHeadcrab => 200,
             NpcKind::MoonLordHead => 45000,
             NpcKind::MoonLordHand => 25000,
             NpcKind::MoonLordCore => 50000,
@@ -1615,7 +1645,11 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 0,
-            // The shards' damage: 70/70/120/90/100/90.
+            // The vortex trio's damage: the hunter's 100, the alien's 75,
+            // the headcrab's 50.
+            NpcKind::VortexHunter => 100,
+            NpcKind::VortexAlien => 75,
+            NpcKind::VortexHeadcrab => 50,
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
             | NpcKind::MoonLordCore => 0,
@@ -2441,6 +2475,11 @@ impl Npc {
             NpcKind::StardustCellSmall => 0.4,
             NpcKind::StardustJellyfishBig => 0.03,
             NpcKind::NebulaBeast => 0.2,
+            // The vortex trio's kb: 0.3/0.5/1.0 (`NPC.cs`'s rows; the headcrab
+            // keeps the class default 1.0).
+            NpcKind::VortexHunter => 0.3,
+            NpcKind::VortexAlien => 0.5,
+            NpcKind::VortexHeadcrab => 1.0,
             NpcKind::VortexRifleman => 0.4,
             NpcKind::VortexSoldier => 0.6,
             // The tavernkeeper 0.5, the crystal 0.
@@ -2626,6 +2665,9 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
+            NpcKind::VortexHunter => 44,
+            NpcKind::VortexAlien => 20,
+            NpcKind::VortexHeadcrab => 6,
             NpcKind::MoonLordHead => 50,
             NpcKind::MoonLordHand => 40,
             NpcKind::MoonLordCore => 70,
@@ -2738,6 +2780,9 @@ impl Npc {
         match self.kind {
             // `NPC.cs:14130`: the core alone carries a value (1 platinum
             // = 1000000 copper); the parts are value 0.
+            NpcKind::VortexHunter => 1200.0,
+            NpcKind::VortexAlien => 400.0,
+            NpcKind::VortexHeadcrab => 100.0,
             NpcKind::MoonLordCore => 1_000_000.0,
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -3140,6 +3185,12 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The vortex trio: the hunter's shooter arm, the alien's dive
+            // + the `Transform(426)`, the headcrab's roll + the
+            // `Transform(427)`.
+            NpcKind::VortexHunter => self.update_vortex_hunter(world, player, rng),
+            NpcKind::VortexAlien => self.update_vortex_alien(world, player, rng),
+            NpcKind::VortexHeadcrab => self.update_vortex_headcrab(world, player),
             // The pillar shards: the aiStyle-95/96/85/26 machines and the
             // Vortex pair's aiStyle-3 riders.
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player),
@@ -3677,6 +3728,20 @@ impl Npc {
                     NpcKind::NebulaBeast => 12,
                     NpcKind::VortexRifleman => 13,
                     _ => 10,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The vortex trio's 15/9/5-frame strips over the walker
+            // accumulator.
+            NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab => {
+                let count = match self.kind {
+                    NpcKind::VortexHunter => 15,
+                    NpcKind::VortexAlien => 9,
+                    _ => 5,
                 };
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
@@ -7544,6 +7609,222 @@ impl Npc {
     /// `AI()`'s aiStyle-82 block (`NPC.cs:36629-36756`) — the Moon Leech
     /// Clot: the 90-tick glide, then the 1000-hp drain from the head →
     /// the core → the hands.
+    /// `AI_003_Fighters`' VortexHunter arm (`NPC.cs:59069-59756`, the 426
+    /// rows at `:59072`/`:59163-59192`/`:59304-59308`/`:59480-59484`/
+    /// `:59751-59756`) — the vortex shooter: the ground walk's 4-px cap /
+    /// 0.6 accel / 0.95 drag, the 60-tick shot cycle firing the 581 (60)
+    /// from the muzzle `(spriteDirection * 2, -12)` with the ±30×0.3
+    /// spread, the aim octant on `ai[2]`, and the 700-px engage gate.
+    ///
+    /// Deviations: the interception aim (`:59529-59542`'s
+    /// `GetChaseResults` at the factor 15) folds into the centre aim; the
+    /// vanilla's `localAI[0]`-free state means the metamorphosis counter
+    /// rides the walker's own counters, so the hunter is the last form.
+    fn update_vortex_hunter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // `:59082-59089`'s timer decay + the aim octant.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        if self.ai[2] > 0.0 {
+            let octant = |dx: f32, dy: f32| -> f32 {
+                if dy.abs() > dx.abs() * 2.0 {
+                    if dy > 0.0 { 1.0 } else { 5.0 }
+                } else if dx.abs() > dy.abs() * 2.0 {
+                    3.0
+                } else if dy > 0.0 {
+                    2.0
+                } else {
+                    4.0
+                }
+            };
+            if self.ai[1] * 2.0 >= 60.0 {
+                // `:59204-59202`'s fire: the 581 at 60 (the classic
+                // constant of `GetAttackDamage_ForProjectiles(60, 45)`).
+                let jit = 30.0 * 0.3;
+                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                ax = ax / len * 7.0;
+                ay = ay / len * 7.0;
+                // `:59304-59308`'s muzzle: `spriteDirection * 2, -12`.
+                let (mx, my) = (
+                    cx + self.sprite_dir as f32 * 2.0,
+                    cy - 12.0,
+                );
+                self.wants_hostile_shot.push((581u16, mx, my, ax, ay, 60));
+                let _ = octant;
+                self.ai[2] = 0.0;
+            }
+        }
+        // `:59619-59623`'s arm reset: a finished shot cycle rests.
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        // `:59634-59688`'s engage arm: the 700-px gate starts the 60-tick
+        // cycle with the aim octant.
+        if self.ai[1] <= 0.0 && (dx * dx + dy * dy).sqrt() < 700.0 && player.hp > 0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 60.0;
+        }
+        // The ground walk (`:59751-59756`'s num180=4 / num181=0.6 /
+        // num182=0.95) — the port's walker carries the speed; the accel
+        // and the drag fold into its snapshot step.
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 4.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY * 0.1 / 0.3,
+            3.0,
+        );
+    }
+
+    /// `AI_003_Fighters`' VortexAlien arm (`NPC.cs:58622-58711`) + the
+    /// metamorphosis (`:56886-56901`) — the alien's dive (the 0.015/0.15
+    /// accel pairs over the ±6 caps, the 0.98 damping, the 20-px deadband,
+    /// the 0.05 separation), the leap arm (`velocity.Y = -5`) and the
+    /// 1200-tick `Transform(426)` behind the empty 5x5 box.
+    fn update_vortex_alien(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:56888-56889`'s metamorphosis counter (`localAI[0]` + |vx|/2).
+        self.caster_counter += 1 + (self.vx.abs() * 0.5) as i32;
+        if self.caster_counter >= 1200 {
+            // `:56892-56897`'s 5x5 probe + the heal + `Transform(426)`.
+            let tx = (cx / TILE_PX) as i32;
+            let ty = (cy / TILE_PX) as i32;
+            let mut boxed = false;
+            for bx in (tx - 2)..=(tx + 2) {
+                for by in (ty - 3)..=(ty + 1) {
+                    if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                        boxed = true;
+                        break;
+                    }
+                    if world
+                        .tile(bx, by)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+                    {
+                        boxed = true;
+                        break;
+                    }
+                }
+            }
+            if !boxed {
+                self.kind = NpcKind::VortexHunter;
+                self.max_hp = NpcKind::VortexHunter.max_hp();
+                self.hp = self.max_hp;
+                self.ai = [0.0; 4];
+                self.frame = 0;
+                self.frame_counter = 0.0;
+                self.caster_counter = 0;
+                return;
+            }
+        }
+        // `:58624-58628`'s landing arm.
+        if self.vy == 0.0 {
+            self.ai[2] = 0.0;
+            self.rotation = 0.0;
+        } else if self.ai[2] == 1.0 {
+            // The dive homing (`:58639-58681`'s pairs).
+            self.rotation = self.vx * 0.1;
+            let (hx, hy) = (pcx - cx, pcy - cy);
+            if hx < -20.0 && self.vx > -6.0 {
+                self.vx = (self.vx - 0.015).max(-6.0);
+            } else if hx > 20.0 && self.vx < 6.0 {
+                self.vx = (self.vx + 0.015).min(6.0);
+            }
+            if hy < -20.0 && self.vy > -6.0 {
+                self.vy = (self.vy - 0.15).max(-6.0);
+            } else if hy > 20.0 && self.vy < 6.0 {
+                self.vy = (self.vy + 0.15).min(6.0);
+            }
+        }
+        // `:58705-58709`'s leap arm.
+        if self.vy == 0.0 && pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+            self.vy = -5.0;
+            self.ai[2] = 1.0;
+        }
+        // `:58684-58700`'s separation from the player.
+        if (pcx - cx).abs() + (pcy - cy).abs() < w {
+            self.vx -= (pcx - cx).signum() * 0.05;
+            self.vy -= (pcy - cy).signum() * 0.05;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// `AI_003_Fighters`' VortexHeadcrab arm (`NPC.cs:58832-58841`'s
+    /// rotation + `:56855-56869`'s metamorphosis) — the headcrab rides the
+    /// generic walker (no speed override in the C#) and `Transform(427)`s
+    /// on the 300-tick counter behind the empty 3x2 box above its centre.
+    fn update_vortex_headcrab(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `:58834-58841`'s rotation: grounded flat, rolling in the air.
+        if self.vy == 0.0 {
+            self.rotation = 0.0;
+        } else {
+            self.rotation += self.vx * 0.08;
+        }
+        // `:56857-56867`'s metamorphosis counter + the 3x2 probe.
+        self.caster_counter += 1;
+        if self.caster_counter >= 300 {
+            let (w, h) = self.size();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            let tx = (cx / TILE_PX) as i32;
+            let ty = (cy / TILE_PX) as i32;
+            let mut boxed = false;
+            for bx in (tx - 1)..=(tx + 1) {
+                for by in (ty - 1)..=ty {
+                    if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                        boxed = true;
+                        break;
+                    }
+                    if world
+                        .tile(bx, by)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+                    {
+                        boxed = true;
+                        break;
+                    }
+                }
+            }
+            if !boxed {
+                self.kind = NpcKind::VortexAlien;
+                self.max_hp = NpcKind::VortexAlien.max_hp();
+                self.hp = self.max_hp;
+                self.ai = [0.0; 4];
+                self.frame = 0;
+                self.frame_counter = 0.0;
+                self.caster_counter = 0;
+            }
+        }
+    }
+
     fn update_moon_leech_blob(&mut self, _world: &World, _player: &Player) {
         self.ai[2] += 1.0;
         if self.ai[2] >= 90.0 {
@@ -9510,6 +9791,9 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
             NpcKind::MoonLordHead => 396,
             NpcKind::MoonLordHand => 397,
             NpcKind::MoonLordCore => 398,

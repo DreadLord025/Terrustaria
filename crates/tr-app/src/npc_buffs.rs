@@ -266,6 +266,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::MoonLordCore
         | NpcKind::MoonLordFreeEye
         | NpcKind::MoonLordLeechBlob
+        | NpcKind::VortexHunter
+        | NpcKind::VortexAlien
+        | NpcKind::VortexHeadcrab
         | NpcKind::StardustCellBig
         | NpcKind::StardustCellSmall
         | NpcKind::StardustJellyfishBig

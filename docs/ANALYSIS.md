@@ -7237,3 +7237,46 @@ loot rows stay open. The `FindFrame` cases port their counters (the
 396's 4×8 accumulator with the rand boost folded into a hash, the 397's
 frameCounter/7, the 398's 30/6, the 400's 16/4) — the 398's gore burst
 on its first frame is unmodelled.
+
+## The Vortex hive trio (M4-EVENT-11)
+
+The Vortex pillar spawns 426/427/428 (`NPC.cs:1327`'s `SelectRandom(429,
+429, 429, 429, 427, 427, 425, 425, 426)` — the 426 caps at 3 alive, the
+429 at 4). All three ride aiStyle 3.
+
+- **The hunter (426)** is the only vortex mob in the shared shooter block
+  (`NPC.cs:59069`): `flag17` (`:59072`) lets it shoot mid-air, its
+  cooldown is 60 with the shot at the 59th tick (`:59163-59192`), the
+  muzzle sits at `spriteDirection * 2, -12` and the speed is 7
+  (`:59304-59308`), the spread is `rand(-30..31) * 0.3` on both axes
+  (`:59374-59378`), the projectile is the 581 at 60 damage
+  (`:59480-59484`, the classic constant of `GetAttackDamage_ForProjectiles
+  (60, 45)`), and its walk runs the 4-px cap / 0.6 accel / 0.95 drag
+  (`:59751-59756`). `UpdateNPC_UpdateGravity`'s 426 arm (`:90910`) runs
+  gravity 0.1 with the 3-px fall clamp. The interception aim
+  (`:59529-59542`) folds into the centre aim.
+- **The alien (427)** flies the same dive skeleton as the rifleman with
+  its own constants (`:58622-58711`): landing clears `ai[2]` and flattens
+  the rotation, airborne the rotation rides `velocity.X * 0.1`; the dive
+  homing accelerates 0.015 (X) and 0.15 (Y) over the ±6 caps with the
+  0.98 damping and the 20-px deadband (no 300-px aim offset); the 0.05
+  separation pushes off the player; the leap (`:58705-58709`) throws
+  `velocity.Y = -5` when the player's centre is 100 px below. At the
+  1200-tick counter (`localAI[0]++ + |vx|/2`) behind the empty 5×5 box it
+  `Transform(426)`s (`:56886-56901`). Gravity 0.1 / 4-px clamp while
+  `ai[2] == 1` (`:90902-90908`).
+- **The headcrab (428)** rides the generic walker with no speed override
+  and rolls its rotation (`velocity.Y == 0` → 0, else `+= velocity.X *
+  0.08`, `:58832-58841`). At the 300-tick counter behind the empty 3×2
+  box above its centre it `Transform(427)`s (`:56855-56869`).
+- **`Transform(newType)`** (`NPC.cs:81084-81114`) re-runs `SetDefaults`
+  with `withReposition` and rescales `life`; both hive arms pre-set
+  `life = lifeMax`, so the port's in-place kind swap sets the new max,
+  heals and clears the ai slots (the vanilla's own `localAI[0] = 0`
+  resets the counter).
+
+Deviations: the dust cadences (`:56871`'s 16/8/4/2/1 and `:56903`'s
+32/16/6/2/1), the hunter's `GetChaseResults` interception, the 426-only
+`ai[2]` re-pick by the velocity ratio and the `stealth`/`itemAnimation`
+gate are unmodelled; the walker's snapshot accel folds the vanilla's
+per-type 0.6 accel / 0.95 drag into its speed cap.

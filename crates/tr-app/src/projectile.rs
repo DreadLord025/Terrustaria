@@ -90,6 +90,10 @@ pub const MARTIAN_RAY: u16 = 438;
 /// `ProjectileID.PhantasmalEye` (452) — the Moon Lord hand's eye
 /// volley (`Projectile.cs:5240-5249`: 14x14, aiStyle 82, hostile,
 /// timeLeft 600).
+/// `ProjectileID.DarkDividingDart`-family hostile dart (581) — the
+/// VortexHunter's shot (`Projectile.cs:6306-6315`: 10x10, aiStyle 1,
+/// hostile, penetrate -1).
+pub const VORTEX_DART: u16 = 581;
 pub const PHANTASMAL_EYE: u16 = 452;
 /// `ProjectileID.PhantasmalSphere` (454) — the flood orb
 /// (`Projectile.cs:5259-5269`: 40x40, aiStyle 83, hostile,
@@ -377,6 +381,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
+            // The VortexHunter's dart (`Projectile.cs:6306-6315`): 10x10, aiStyle
+            // 1, hostile, penetrate -1 (alpha 255 = no fade).
+            VORTEX_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
             // The Moon Lord family (`Projectile.cs`'s SetDefaults

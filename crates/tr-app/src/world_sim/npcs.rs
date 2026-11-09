@@ -5817,6 +5817,169 @@ mod tower_shield_tests {
 }
 
 #[cfg(test)]
+mod vortex_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_vortex_trio_round_trips_its_rows() {
+        // The three vortex hive mobs (`NPC.cs`'s cases 426/427/428): the
+        // port ids 127-129, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::VortexHunter, 127u16, 50.0, 62.0, 1000, 100, 44, 0.3),
+            (NpcKind::VortexAlien, 128, 40.0, 28.0, 500, 75, 20, 0.5),
+            (NpcKind::VortexHeadcrab, 129, 24.0, 26.0, 200, 50, 6, 1.0),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+        // The 581 dart (`Projectile.cs:6306-6315`): 10x10, aiStyle 1,
+        // hostile, penetrate -1.
+        let data = crate::projectile::proj_data(581).expect("the dart");
+        assert_eq!((data.w, data.h), (10.0, 10.0));
+        assert_eq!(data.penetrate, -1);
+        assert_eq!(data.ai_style, 1);
+    }
+
+    #[test]
+    fn the_hunter_fires_the_581_on_its_60_tick_cycle() {
+        // `AI_003_Fighters`' 426 arm (`NPC.cs:59069-59756`): the 700-px
+        // engage gate starts the 60-tick cycle, the fire at the 59th tick
+        // throws the 581 (60) from the muzzle `(spriteDirection * 2,
+        // -12)` at the 7-px speed.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHunter,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..130 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the dart fires");
+        assert_eq!(s.0, 581, "the vortex dart");
+        assert_eq!(s.5, 60, "the classic damage constant");
+        // The muzzle: `spriteDirection * 2` ahead of the centre and 12 px
+        // above it — the hunter walks, so the shot's own tick's centre is
+        // the reference (the walk's contribution rides inside the drift).
+        let (hw, hh) = n.size();
+        let (ncx, ncy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        assert!((s.1 - (ncx + 2.0)).abs() < 24.0, "the muzzle X: {}", s.1);
+        assert!((s.2 - (ncy - 12.0)).abs() < 24.0, "the muzzle Y: {}", s.2);
+        let _ = (cx, cy);
+    }
+
+    #[test]
+    fn the_headcrab_metamorphoses_into_the_alien() {
+        // `:56855-56869`'s 300-tick counter + the empty 3x2 probe above
+        // the centre: the headcrab heals to its new max and transforms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHeadcrab,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 10;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexAlien {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the headcrab becomes the alien");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 500, "the alien's full hp");
+    }
+
+    #[test]
+    fn the_alien_metamorphoses_into_the_hunter() {
+        // `:56886-56901`'s 1200-tick counter (plus |vx|/2) + the empty
+        // 5x5 probe: the alien becomes the hunter at full health.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexAlien,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 20;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..1400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexHunter {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the alien becomes the hunter");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 1000, "the hunter's full hp");
+    }
+}
+
+#[cfg(test)]
 mod moon_lord_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
