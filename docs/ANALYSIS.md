@@ -5171,6 +5171,24 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   mahogany chests; a kind-341 anchor keeps just the repeated rows. The
   mahogany block itself needs no new rows.
 
+- **The vanity-tree growth** (`GrowTreeWithSettings`,
+  `WorldGen.cs:30388-30847` + `TryGrowingTreeByType` `:30343-30387` — the
+  M5-SPREAD-1 sapling slice): the settings-driven tree grow lands — the
+  sapling-stack walk, the liquid/ground/wall gates (the wall test is the
+  hand-transcribed `WallID.Sets.AllowsPlantsToGrow` set, `WallID.cs:97`),
+  the 7-12 height roll, the trunk's `num5` branch-shape frame table with
+  the `num4` column pick and the re-roll guard, the left/right branch arms,
+  the side-ground caps (the `IsTileTypeFitForTree` neighbours with the
+  1/3 kills) and the 1/13 top cap, closing with `RangeFrame`.
+  `AttemptToGrowTreeFromSapling`'s 595/615 arms now dispatch it (the
+  Sakura/Willow profiles); the kind-20 style-10 arm grows the ash profile.
+  Deviations: `treeHeightAddon`/`ignoreWalls` parked (all callers pass
+  0/false); the tenthAnniversary colour roll and the errorWorld height arm
+  park with M5-SEED-1; the gem sapling's 590 arm is underground-only (the
+  underground dispatcher = GROWTH-2); the kind-20 styles 6-9 palms park
+  (no `GrowPalmTree` port); the paint cache copies the ground's paint (the
+  C#'s `UseBlockColors` coating bits ride the port's paint field alone).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
