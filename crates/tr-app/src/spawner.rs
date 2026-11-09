@@ -112,15 +112,6 @@ pub struct SpawnContext<'a> {
     /// The bound-Tinkerer roll gate: `downedGoblins && !savedGoblin &&
     /// !AnyNPCs(105/107)` — the world_sim pass computes it.
     pub bound_goblin_ok: bool,
-    /// `NPC.cs:2088`'s guards for the tied Wizard: hardmode, the rescue
-    /// not yet raised, nobody bound/freed on the map.
-    pub bound_wizard_ok: bool,
-    /// `NPC.cs:2653`'s guards for the tied Mechanic: Skeletron downed, the
-    /// rescue not yet raised, nobody bound/freed on the map.
-    pub bound_mech_ok: bool,
-    /// `spawnTileY > (worldSurface * 4 + rockLayer) / 5` — the Mechanic's
-    /// deep-dungeon depth band (`NPC.cs:2653`).
-    pub below_deep_dungeon: bool,
     /// `Spawner.invaders` (`NPC.cs:395`'s `ShouldSpawnInvasionEnemies`) —
     /// gates the skyMob detection (`FindSpawnTile`'s `!this.invaders`).
     pub invaders: bool,
@@ -955,24 +946,6 @@ fn spawn_npc_at(
     {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::BoundGoblin);
     }
-    // The bound Wizard (`NPC.cs:2088-2091`'s ladder arm): hardmode, the
-    // same `RollLuck(20) == 0` cadence as the goblin, one per save (the
-    // talk raises `savedWizard`). The C#'s arm is the FIRST `else if`
-    // after the goblin's, so it consumes the stream only where the
-    // goblin arm's guards fail.
-    if ctx.bound_wizard_ok
-        && !underworld_depth
-        && (y as f64 / 16.0) > ctx.world.rock_layer
-        && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
-        && rng.next(20) == 0
-    {
-        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundWizard);
-    }
-    // The bound Mechanic (`NPC.cs:2653-2657`'s Dungeon arm): the
-    // Skeletron downed, `Main.rand.Next(5) == 0`, one per save.
-    if ctx.bound_mech_ok && ctx.below_deep_dungeon && rng.next(5) == 0 {
-        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundMechanic);
-    }
     // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
     // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
     // (`:1286`); `CanSpawnDevourer` is the custom-seed gate — true in the
@@ -1158,9 +1131,6 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1521,9 +1491,6 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1709,9 +1676,6 @@ mod tests {
                         ..SpawnFlags::default()
                     },
                     bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
                     invaders: false,
                     downed_golem: false,
                     downed_martians: false,
@@ -1963,9 +1927,6 @@ mod tests {
                 ..SpawnFlags::default()
             },
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
             invaders: false,
             downed_golem: true,
             downed_martians: false,

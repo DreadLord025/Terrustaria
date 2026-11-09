@@ -469,37 +469,6 @@ pub enum NpcKind {
     /// `Sets.BoundTownNPCs` (`NPCID.cs:10441`): the talk transforms
     /// 376 -> 369 and raises `savedAngler` (`NPC.cs:19853`).
     SleepingAngler,
-    /// `NPCID.Stylist` (353) — the hair-dye seller (`NPC.cs:13488-13501`:
-    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
-    /// `npcFrameCount[353]` = 23, `Main.cs:67119`) — the shop index 18
-    /// (`Chest.cs:2698`) — M4-TOWN-17.
-    Stylist,
-    /// `NPCID.WebbedStylist` (354) — the spider-cavern tied Stylist
-    /// (`NPC.cs:13502-13516`: 18x34, scale 0.9, aiStyle 0 the bound stand,
-    /// rarity 1, `npcFrameCount[354]` = 1); the talk transforms 354 → 353.
-    WebbedStylist,
-    /// `NPCID.TaxCollector` (441) — the coin collector (`NPC.cs:14704-14717`:
-    /// the town twin, aiStyle 7; `npcFrameCount[441]` = 25, `Main.cs:67128`)
-    /// — no shop: his tax timer rides the player's coin purse
-    /// (`Main.cs:64994`) — M4-TOWN-17.
-    TaxCollector,
-    /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
-    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
-    /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
-    Wizard,
-    /// `NPCID.BoundWizard` (106) — the tied Wizard awaiting the rescue
-    /// (`NPC.cs:10257-10270`: 18x40, aiStyle 0 the bound stand, rarity 1,
-    /// `npcFrameCount[106]` = 1) — `Sets.BoundTownNPCs`
-    /// (`NPCID.cs:10441`); the talk transforms 106 → 108.
-    BoundWizard,
-    /// `NPCID.Mechanic` (124) — the wire seller (`NPC.cs:10508-10521`: the
-    /// town twin, aiStyle 7; `npcFrameCount[124]` = 23) — M4-TOWN-16.
-    Mechanic,
-    /// `NPCID.BoundMechanic` (123) — the tied Mechanic awaiting the rescue
-    /// (`NPC.cs:10493-10507`: 18x34, scale 0.9, aiStyle 0, rarity 1,
-    /// `npcFrameCount[123]` = 1) — `Sets.BoundTownNPCs`; the talk
-    /// transforms 123 → 124.
-    BoundMechanic,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -989,13 +958,6 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
-            NpcKind::Wizard => 156,
-            NpcKind::BoundWizard => 157,
-            NpcKind::Mechanic => 158,
-            NpcKind::BoundMechanic => 159,
-            NpcKind::Stylist => 160,
-            NpcKind::WebbedStylist => 161,
-            NpcKind::TaxCollector => 162,
         }
     }
 
@@ -1175,13 +1137,6 @@ NpcKind::SolarSelenian => 140,
             111 => NpcKind::TravellingMerchant,
             150 => NpcKind::Angler,
             151 => NpcKind::SleepingAngler,
-            156 => NpcKind::Wizard,
-            157 => NpcKind::BoundWizard,
-            158 => NpcKind::Mechanic,
-            159 => NpcKind::BoundMechanic,
-            160 => NpcKind::Stylist,
-            161 => NpcKind::WebbedStylist,
-            162 => NpcKind::TaxCollector,
             _ => return None,
         })
     }
@@ -1207,10 +1162,6 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::GoblinTinkerer
                 | NpcKind::TravellingMerchant
                 | NpcKind::Angler
-                | NpcKind::Wizard
-                | NpcKind::Mechanic
-                | NpcKind::Stylist
-                | NpcKind::TaxCollector
         )
     }
 
@@ -1328,13 +1279,6 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => (18.0, 40.0),
             NpcKind::Angler => (18.0, 40.0),
             NpcKind::SleepingAngler => (34.0, 8.0),
-            NpcKind::Wizard => (18.0, 40.0),
-            NpcKind::BoundWizard => (18.0, 40.0),
-            NpcKind::Mechanic => (18.0, 40.0),
-            NpcKind::BoundMechanic => (18.0, 34.0),
-            NpcKind::Stylist => (18.0, 40.0),
-            NpcKind::WebbedStylist => (18.0, 34.0),
-            NpcKind::TaxCollector => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1565,13 +1509,6 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => 368,
             NpcKind::Angler => 369,
             NpcKind::SleepingAngler => 376,
-            NpcKind::Wizard => 108,
-            NpcKind::BoundWizard => 106,
-            NpcKind::Mechanic => 124,
-            NpcKind::BoundMechanic => 123,
-            NpcKind::Stylist => 353,
-            NpcKind::WebbedStylist => 354,
-            NpcKind::TaxCollector => 441,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1697,13 +1634,6 @@ NpcKind::SolarSelenian => 140,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
             NpcKind::Angler => 250,
-            NpcKind::Wizard => 250,
-            NpcKind::BoundWizard => 250,
-            NpcKind::Mechanic => 250,
-            NpcKind::Stylist => 250,
-            NpcKind::WebbedStylist => 250,
-            NpcKind::TaxCollector => 250,
-            NpcKind::BoundMechanic => 250,
             NpcKind::SleepingAngler => 250,
             NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
@@ -1924,13 +1854,6 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
             NpcKind::Angler => 10,
-            NpcKind::Wizard => 10,
-            NpcKind::BoundWizard => 10,
-            NpcKind::Mechanic => 10,
-            NpcKind::Stylist => 10,
-            NpcKind::WebbedStylist => 10,
-            NpcKind::TaxCollector => 10,
-            NpcKind::BoundMechanic => 10,
             NpcKind::SleepingAngler => 10,
             NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
@@ -3024,13 +2947,6 @@ impl Npc {
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
             NpcKind::Angler => 0.5,
-            NpcKind::Wizard => 0.5,
-            NpcKind::BoundWizard => 0.5,
-            NpcKind::Mechanic => 0.5,
-            NpcKind::Stylist => 0.5,
-            NpcKind::WebbedStylist => 0.5,
-            NpcKind::TaxCollector => 0.5,
-            NpcKind::BoundMechanic => 0.5,
             NpcKind::SleepingAngler => 0.5,
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
@@ -3267,13 +3183,6 @@ impl Npc {
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
             NpcKind::Angler => 15,
-            NpcKind::Wizard => 15,
-            NpcKind::BoundWizard => 15,
-            NpcKind::Mechanic => 15,
-            NpcKind::Stylist => 15,
-            NpcKind::WebbedStylist => 15,
-            NpcKind::TaxCollector => 15,
-            NpcKind::BoundMechanic => 15,
             NpcKind::SleepingAngler => 15,
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
@@ -3510,13 +3419,6 @@ impl Npc {
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
             NpcKind::Angler => 0.0,
-            NpcKind::Wizard => 0.0,
-            NpcKind::BoundWizard => 0.0,
-            NpcKind::Mechanic => 0.0,
-            NpcKind::Stylist => 0.0,
-            NpcKind::WebbedStylist => 0.0,
-            NpcKind::TaxCollector => 0.0,
-            NpcKind::BoundMechanic => 0.0,
             NpcKind::SleepingAngler => 0.0,
             NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
@@ -3671,10 +3573,6 @@ impl Npc {
             | NpcKind::Clothier
             | NpcKind::TravellingMerchant
             | NpcKind::Angler
-            | NpcKind::Wizard
-            | NpcKind::Mechanic
-            | NpcKind::Stylist
-            | NpcKind::TaxCollector
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3695,9 +3593,6 @@ impl Npc {
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
             NpcKind::SleepingAngler => {}
-            NpcKind::BoundWizard => {}
-            NpcKind::BoundMechanic => {}
-            NpcKind::WebbedStylist => {}
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
                 self.update_goblin(world, player)
             }
@@ -4003,11 +3898,6 @@ impl Npc {
                 // for type 36 — the strip is one frame).
                 self.frame = 0;
             }
-            // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
-            // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
-            // own — the shared town body's rows stand.
-            NpcKind::Wizard | NpcKind::Mechanic => {}
-            NpcKind::Stylist | NpcKind::TaxCollector => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -5061,13 +4951,6 @@ impl Npc {
                 // default arm — rows 2..count-1).
                 self.humanoid_town_frame();
             }
-            // The bound Wizard/Mechanic: `Main.npcFrameCount` 106/123 = 1
-            // (`Main.cs:67094`/`:67096`) and `FindFrame` has no case for
-            // them — one row, the still stand.
-            NpcKind::BoundWizard | NpcKind::BoundMechanic => {}
-            // The webbed Stylist: `Main.npcFrameCount[354]` = 1
-            // (`Main.cs:67119`) and no `FindFrame` case — one row.
-            NpcKind::WebbedStylist => {}
             NpcKind::SleepingAngler => {
                 // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
                 // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
@@ -11171,13 +11054,6 @@ impl Npc {
                     | NpcKind::TravellingMerchant
                     | NpcKind::Angler
                     | NpcKind::SleepingAngler
-                    | NpcKind::Wizard
-                    | NpcKind::BoundWizard
-                    | NpcKind::Mechanic
-                    | NpcKind::BoundMechanic
-                    | NpcKind::Stylist
-                    | NpcKind::WebbedStylist
-                    | NpcKind::TaxCollector
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11240,13 +11116,6 @@ impl Npc {
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
-            NpcKind::Wizard => 156,
-            NpcKind::BoundWizard => 157,
-            NpcKind::Mechanic => 158,
-            NpcKind::BoundMechanic => 159,
-            NpcKind::Stylist => 160,
-            NpcKind::WebbedStylist => 161,
-            NpcKind::TaxCollector => 162,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13672,212 +13541,6 @@ mod tests {
     /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
     /// two rows flip once past 30 ticks and wrap — the headless twin of the
     /// screenshot pair (the port's draw rides the same rows).
-
-
-    #[test]
-    fn the_stylist_and_tax_collector_kinds_stats_roundtrip_and_shops() {
-        // `SetDefaults` 353 (`NPC.cs:13488-13501`), 354 (`:13502-13516`) and
-        // 441 (`:14704-14717`): the town twin's numbers on all three, the
-        // webbed body's 18x34, the kind<->u16 round-trips, the Stylist's shop
-        // (`NPCInteractions.cs:505`'s `Shop(353, 18)`) and the Tax
-        // Collector's absence (no `Shop(441, ...)` row at all), the town flag
-        // (the webbed Stylist is a bound NPC).
-        for (kind, id) in [
-            (NpcKind::Stylist, 353u16),
-            (NpcKind::WebbedStylist, 354),
-            (NpcKind::TaxCollector, 441),
-        ] {
-            assert_eq!(kind.max_hp(), 250, "{kind:?}");
-            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
-            assert_eq!(kind.cs_id(), id, "{kind:?}");
-        }
-        assert_eq!(NpcKind::Stylist.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::WebbedStylist.size(), (18.0, 34.0), "the bound body");
-        assert_eq!(NpcKind::TaxCollector.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::Stylist.to_u16(), 160);
-        assert_eq!(NpcKind::from_u16(160), Some(NpcKind::Stylist));
-        assert_eq!(NpcKind::WebbedStylist.to_u16(), 161);
-        assert_eq!(NpcKind::from_u16(161), Some(NpcKind::WebbedStylist));
-        assert_eq!(NpcKind::TaxCollector.to_u16(), 162);
-        assert_eq!(NpcKind::from_u16(162), Some(NpcKind::TaxCollector));
-        assert!(NpcKind::Stylist.is_town_resident());
-        assert!(NpcKind::TaxCollector.is_town_resident());
-        assert!(!NpcKind::WebbedStylist.is_town_resident());
-        assert_eq!(
-            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Stylist),
-            Some(18)
-        );
-        assert_eq!(
-            crate::world_sim::npcs::shop_index_for_kind(NpcKind::TaxCollector),
-            None,
-            "the Tax Collector sells nothing"
-        );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Stylist, SlimeVariant::Blue).net_id, 353);
-        assert_eq!(
-            crate::bestiary::entry_for_npc(NpcKind::TaxCollector, SlimeVariant::Blue).net_id,
-            441
-        );
-    }
-
-    /// `Chest.SetupShop`'s case 18 (`Chest.cs:2698-2790`): the Stylist's
-    /// hair-dye rows and their gates.
-    #[test]
-    fn the_stylist_shop_carries_the_dye_rows_and_gates() {
-        let flags = crate::shop::ShopFlags {
-            life_max_400: true,
-            mana_max_200: true,
-            coins_over_gold: true,
-            party_girl_present: true,
-            downed_mech_1: true,
-            downed_mech_2: true,
-            downed_mech_3: true,
-            downed_mech_any: true,
-            downed_martians: true,
-            hard_mode: true,
-            ..Default::default()
-        };
-        let stock = crate::shop::resolve_stock(18, &flags, &[]);
-        for id in [1990, 1979, 1977, 1978, 1980, 1983, 1984, 1985, 1986, 2863, 3259, 5104] {
-            assert!(stock.contains(&id), "the {id} dye row");
-        }
-        // The moon-phase parity row: even phase + day, odd phase + night.
-        let day_even = crate::shop::resolve_stock_moon(
-            18,
-            &crate::shop::ShopFlags {
-                night: false,
-                ..Default::default()
-            },
-            &[],
-            0,
-        );
-        assert!(day_even.contains(&1981), "even phase by day");
-        let night_even = crate::shop::resolve_stock_moon(
-            18,
-            &crate::shop::ShopFlags {
-                night: true,
-                ..Default::default()
-            },
-            &[],
-            0,
-        );
-        assert!(!night_even.contains(&1981), "no even-phase row by night");
-        let night_odd = crate::shop::resolve_stock_moon(
-            18,
-            &crate::shop::ShopFlags {
-                night: true,
-                ..Default::default()
-            },
-            &[],
-            1,
-        );
-        assert!(night_odd.contains(&1981), "odd phase by night");
-    }
-
-    #[test]
-    fn the_wizard_and_mechanic_kinds_stats_roundtrip_and_shops() {
-        // `SetDefaults` 108 (`NPC.cs:10285-10298`), 106 (`:10257-10270`),
-        // 124 (`:10508-10521`) and 123 (`:10493-10507`): the town twin's
-        // numbers on all four, the bound Mechanic's shorter 18x34 body, the
-        // kind<->u16 round-trips, the shops (`NPCInteractions.cs:494-495`'s
-        // `Shop(108, 7)`/`Shop(124, 8)`) and the town flag (the bound forms
-        // are NOT town NPCs — `Sets.BoundTownNPCs`, `NPCID.cs:10441`).
-        for (kind, id) in [
-            (NpcKind::Wizard, 108u16),
-            (NpcKind::BoundWizard, 106),
-            (NpcKind::Mechanic, 124),
-            (NpcKind::BoundMechanic, 123),
-        ] {
-            assert_eq!(kind.max_hp(), 250, "{kind:?}");
-            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
-            assert_eq!(kind.cs_id(), id, "{kind:?}");
-        }
-        assert_eq!(NpcKind::Wizard.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::BoundWizard.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::Mechanic.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::BoundMechanic.size(), (18.0, 34.0), "the bound body");
-        assert_eq!(NpcKind::Wizard.to_u16(), 156);
-        assert_eq!(NpcKind::from_u16(156), Some(NpcKind::Wizard));
-        assert_eq!(NpcKind::BoundWizard.to_u16(), 157);
-        assert_eq!(NpcKind::from_u16(157), Some(NpcKind::BoundWizard));
-        assert_eq!(NpcKind::Mechanic.to_u16(), 158);
-        assert_eq!(NpcKind::from_u16(158), Some(NpcKind::Mechanic));
-        assert_eq!(NpcKind::BoundMechanic.to_u16(), 159);
-        assert_eq!(NpcKind::from_u16(159), Some(NpcKind::BoundMechanic));
-        assert!(NpcKind::Wizard.is_town_resident());
-        assert!(NpcKind::Mechanic.is_town_resident());
-        assert!(!NpcKind::BoundWizard.is_town_resident());
-        assert!(!NpcKind::BoundMechanic.is_town_resident());
-        assert_eq!(
-            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Wizard),
-            Some(7)
-        );
-        assert_eq!(
-            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Mechanic),
-            Some(8)
-        );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Wizard, SlimeVariant::Blue).net_id, 108);
-        assert_eq!(
-            crate::bestiary::entry_for_npc(NpcKind::Mechanic, SlimeVariant::Blue).net_id,
-            124
-        );
-    }
-
-    /// `Chest.SetupShop`'s case 7 (`Chest.cs:2004-2032`): the Wizard's nine
-    /// magic rows always on; the hardmode blood-moon and halloween rows sit
-    /// constants-off.
-    #[test]
-    fn the_wizard_shop_carries_the_magic_rows() {
-        let stock = crate::shop::resolve_stock(7, &crate::shop::ShopFlags::default(), &[]);
-        assert_eq!(
-            stock,
-            vec![487, 496, 500, 507, 508, 531, 149, 576, 3186],
-            "the nine base rows"
-        );
-        assert!(!stock.contains(&5461), "the hardmode blood-moon deck is off");
-        assert!(!stock.contains(&1739), "the halloween hat is off");
-        let empty = crate::shop::resolve_stock(
-            7,
-            &crate::shop::ShopFlags {
-                blood_moon: true,
-                ..Default::default()
-            },
-            &[],
-        );
-        assert_eq!(empty, stock, "the flags do not add the off rows");
-    }
-
-    /// `Chest.SetupShop`'s case 8 (`Chest.cs:2033-2090`): the wire family's
-    /// 30 rows and the Mechanic's Rod (2295) behind the moon-phase pair.
-    #[test]
-    fn the_mechanic_shop_carries_the_wire_rows_and_the_rod() {
-        let stock = crate::shop::resolve_stock(8, &crate::shop::ShopFlags::default(), &[]);
-        assert_eq!(stock.len(), 30, "the base wire rows: {stock:?}");
-        // The Rod rides the ODD phases (`:2085`'s 1/3/5/7), so phase 0 hides
-        // it and phase 1 shows it.
-        for id in [509, 850, 510, 530, 513, 849, 1263, 583, 4484, 4485] {
-            assert!(stock.contains(&id), "the {id} wire row");
-        }
-        // The Rod rides the even moon phase (1/3/5/7 in the C#), so phase 0
-        // (the pair's mid) shows it and phase 2 hides it.
-        assert!(!stock.contains(&2295), "no Rod at moonPhase 0");
-        let phase1 = crate::shop::resolve_stock_moon(
-            8,
-            &crate::shop::ShopFlags::default(),
-            &[],
-            1,
-        );
-        let phase4 = crate::shop::resolve_stock_moon(
-            8,
-            &crate::shop::ShopFlags::default(),
-            &[],
-            4,
-        );
-        assert!(phase1.contains(&2295), "the Rod at moonPhase 1");
-        assert!(!phase4.contains(&2295), "no Rod at moonPhase 5");
-        // The graveyard goggles sit constants-off.
-        assert!(!stock.contains(&4409));
-    }
-
     #[test]
     fn the_sleeping_angler_frame_flips_on_thirty_ticks() {
         let w = ground();
