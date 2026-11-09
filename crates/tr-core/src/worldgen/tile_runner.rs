@@ -4,19 +4,33 @@
 //! and hellstone column: a point walks with a clamped velocity while carving a
 //! shrinking Manhattan disc, re-rolling the disc wobble per candidate tile.
 //!
-//! The port covers the **normal-world** path (no drunk / remix / getGood /
-//! notTheBees secret seeds exist here): their strength/steps modifiers
-//! (`:76772-76788`) and jitter draws (`:76823-76827`, `:77088-77091`) never
-//! fire, and the per-blob ladder condition `(!drunk || Next(3) != 0)`
-//! short-circuits without a draw. Ported for the M5-BIOME passes (the wall
-//! arm `:76875-76888`, the `type < 0` liquid path `:76889-76913`, the
-//! `type == 59` branches `:76963/:76995-76999/:77123-77141`). Unported,
-//! waiting for their first caller: the 367/368 wall placements
-//! (`:76914-76921`) and the `case 53` underground-desert protection
-//! (`:76934` — the port carries no `GenVars.UndergroundDesertLocation`).
+//! M5-SEED-1 ports the walker's own secret-seed arms, all of them behind
+//! [`crate::seeds::SeedFlags`] so a classic world replays the pre-M5-SEED-1
+//! ledger exactly (`world_hash`'s two pinned constants are the contract):
+//!
+//! * the `!GenVars.mudWall` strength/steps modifiers (`:76772-76788`) — the
+//!   drunk pair `±80%` on both, the remix `±50%` on strength, and the For The
+//!   Worthy `±120%` on strength plus `Next(3)` extra steps for every
+//!   `type != 57`;
+//! * the `num3` liquid-type lottery (`:76805-76821`) and its two resets
+//!   (`:76828-76830`, `:76860-76863`);
+//! * the drunk 1-in-30 position teleport (`:76823-76827`) and the drunk ash
+//!   candidate skip (`:76866`);
+//! * the drunk `(!drunk || Next(3) != 0)` ladder gate (`:77003`);
+//! * the drunk extra X-velocity nudge (`:77088-77091`).
+//!
+//! Ported earlier for the M5-BIOME passes (the wall arm `:76875-76888`, the
+//! `type < 0` liquid path `:76889-76913`, the `type == 59` branches
+//! `:76963/:76995-76999/:77123-77141`). Unported, waiting for their first
+//! caller: the 367/368 wall placements (`:76914-76921`) and the `case 53`
+//! underground-desert protection (`:76934` — the port carries no
+//! `GenVars.UndergroundDesertLocation`). Deferred inside the `type < 0`
+//! fill: the remix `oceanDepths` lava split (`:76899-76905`) — the port
+//! always applies the non-remix `else if (l > lavaLine)` of `:76906-76909`.
 
 use super::noise::Rng;
-use super::{TILE_SAND, WALL_DIRT};
+use super::{TILE_ASH, TILE_SAND, WALL_DIRT};
+use crate::seeds::SeedFlags;
 use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_LIQUID_LAVA};
 use crate::tiledata::{SET_CAN_BE_CLEARED_DURING_GENERATION, SET_ORE, TILE_SOLID, TILE_STONE};
 use crate::tileobject::tile_cut;
@@ -47,6 +61,28 @@ pub(crate) struct TileRunnerOpts {
     /// `GenVars.lavaLine` — read by the wall-arm depth split (`:76877`) and
     /// the type -2 lava fill (`:76895`, `:76906`).
     pub lava_line: f64,
+    /// M5-SEED-1: the classic secret-seed flags the runner's own arms read
+    /// (`WorldGen.cs:76774-76788` — the drunk/remix/for-the-worthy strength
+    /// and steps modifiers; `:76805-76821` — the `num3` liquid-type lottery;
+    /// `:76823-76866` — the drunk teleport, resets and ash skip; `:77003`
+    /// — the drunk ladder gate; `:77088-77091` — the drunk X nudge).
+    /// `Default` = a classic world, so every existing call site is
+    /// byte-identical until it sets the flags.
+    pub flags: crate::seeds::SeedFlags,
+}
+
+impl TileRunnerOpts {
+    /// The caller-side constructor that carries the world's seed flags:
+    /// vanilla's drunk/for-the-worthy/remix modifiers fire on **every**
+    /// `TileRunner` call (`WorldGen.cs:76772-76788`), not only the ore
+    /// passes, so each caller seeds its opts from the generated world
+    /// (`World.seeds`, the publication of `GenOptions::flags`).
+    pub(crate) fn for_world(world: &World) -> Self {
+        Self {
+            flags: world.seeds,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for TileRunnerOpts {
@@ -62,6 +98,7 @@ impl Default for TileRunnerOpts {
             rock_layer: 0.0,
             water_line: 0.0,
             lava_line: 0.0,
+            flags: crate::seeds::SeedFlags::default(),
         }
     }
 }
@@ -85,6 +122,10 @@ const WALL_MUD_UNSAFE: u16 = 15;
 /// same id as `biomes.rs::WALL_JUNGLE`; kept local so this leaf mechanic does
 /// not depend on the pass modules.
 const WALL_JUNGLE_UNSAFE: u16 = 64;
+
+/// `WorldGen.beachDistance` (`WorldGen.cs:86914`, decl `:4154`) = 380 — the
+/// margin the `num3` beach reset (`:76860-76863`) excludes.
+const BEACH_DISTANCE: i32 = 380;
 
 /// The speed-up ladder thresholds (`WorldGen.cs:77003-77086`): the C# nests one
 /// `if (num > t)` level per threshold, each level advancing the walker an extra
@@ -156,6 +197,25 @@ pub(crate) fn tile_runner(
     world_surface: f64,
     opts: &TileRunnerOpts,
 ) {
+    let flags = opts.flags;
+    // The `!GenVars.mudWall` strength/steps modifiers (`WorldGen.cs:76772-76788`):
+    // an `if`/`else if` chain, so exactly one branch fires (or none) and its
+    // draws precede every other use of `strength`/`steps`. The C# mutates the
+    // *parameters* — the bindings below do the same, and the per-iteration
+    // `num = strength * (num2 / steps)` (`:76839`) reads the modified values.
+    let mut strength = strength;
+    let mut steps = steps;
+    if !opts.mud_wall {
+        if flags.contains(SeedFlags::DRUNK) {
+            strength *= 1.0 + rng.range(-80, 81) as f64 * 0.01;
+            steps = (steps as f64 * (1.0 + rng.range(-80, 81) as f64 * 0.01)) as i32;
+        } else if flags.contains(SeedFlags::REMIX) {
+            strength *= 1.0 + rng.range(-50, 51) as f64 * 0.01;
+        } else if flags.contains(SeedFlags::FOR_THE_WORTHY) && kind != TILE_ASH as i32 {
+            strength *= 1.0 + rng.range(-80, 81) as f64 * 0.015;
+            steps += rng.range(0, 3);
+        }
+    }
     let mut num = strength;
     let mut num2 = steps as f64;
     let (mut x, mut y) = (i as f64, j as f64);
@@ -173,14 +233,47 @@ pub(crate) fn tile_runner(
     // (`TileID.cs:468-471`, `:496`).
     let clears_slope = kind >= 0 && !save_slopes(kind);
 
-    // The `num3` liquid-type lottery (`:76806-76820`) draws `Next(4)` on every
-    // call even though every branch is secret-seed-only and the result is a
-    // no-op for solid kinds — the draw is part of the stream contract.
-    let _liquid_pick = rng.range(0, 4);
+    // The `num3` liquid-type lottery (`:76805-76821`). The not-the-bees +
+    // don't-starve arm draws `Next(3)` *and, on a hit, skips* the `Next(4)`
+    // below — the `else if` chains off the whole condition, not its last
+    // term. A classic world takes the else-if directly, so its ledger is the
+    // single `Next(4)`, and `num3` stays 0 (water) for the `type < 0` fill.
+    let mut num3: i32 = 0;
+    if flags.contains(SeedFlags::NOT_THE_BEES)
+        && flags.contains(SeedFlags::DONT_STARVE)
+        && !flags.contains(SeedFlags::REMIX)
+        && rng.range(0, 3) == 0
+    {
+        num3 = 2;
+    } else if rng.range(0, 4) == 0 {
+        if flags.contains(SeedFlags::DRUNK)
+            && flags.contains(SeedFlags::TENTH_ANNIVERSARY)
+            && flags.contains(SeedFlags::REMIX)
+            && !flags.contains(SeedFlags::NOT_THE_BEES)
+        {
+            num3 = 3;
+        } else if flags.contains(SeedFlags::FOR_THE_WORTHY) {
+            num3 = 1;
+        }
+    }
 
     while num > 0.0 && num2 > 0.0 {
-        // The drunk jitter (`:76823-76827`) and the tenth-anniversary `num3`
-        // reset (`:76828-76831`) are secret-seed-only.
+        // The drunk position teleport (`WorldGen.cs:76823-76827`): the 1-in-30
+        // gate draws on every iteration of a drunk world, and a hit draws a
+        // fresh `±5`-tile offset for *both* axes.
+        if flags.contains(SeedFlags::DRUNK) && rng.range(0, 30) == 0 {
+            x += rng.range(-100, 101) as f64 * 0.05;
+            y += rng.range(-100, 101) as f64 * 0.05;
+        }
+        // The tenth-anniversary `num3` reset (`:76828-76830`).
+        if num3 == 1
+            && flags.contains(SeedFlags::TENTH_ANNIVERSARY)
+            && x > world.width as f64 * 0.45
+            && y < world.width as f64 * 0.55
+            && y < world_surface
+        {
+            num3 = 0;
+        }
         // The mud early exit (`:76832-76835`).
         if kind == 59 && y < 0.0 && num2 > 0.0 {
             num2 = 0.0;
@@ -202,10 +295,21 @@ pub(crate) fn tile_runner(
             bottom = world.height - 1;
         }
         for k in left..right {
-            // The beach `num3` reset (`:76860-76863`): `num3` is 0 on normal
-            // worlds either way, so the reset only matters for the type -2
-            // `liquidType(num3)` — always water here.
+            // The beach `num3` reset (`:76860-76863`): the outer ±`beachDistance`
+            // margin cancels the lottery, so the type -2 fill reverts to water
+            // there. `num3` is 0 on a classic world either way.
+            if k < BEACH_DISTANCE + 50 || k >= world.width - BEACH_DISTANCE - 50 {
+                num3 = 0;
+            }
             for l in top..bottom {
+                // The drunk ash skip (`:76866-76868`): drunk worlds never touch
+                // an ash candidate above the hell band.
+                if flags.contains(SeedFlags::DRUNK)
+                    && l < world.height - 300
+                    && kind == TILE_ASH as i32
+                {
+                    continue;
+                }
                 let Some(tile) = world.tile(k, l) else {
                     continue;
                 };
@@ -273,9 +377,20 @@ pub(crate) fn tile_runner(
                     {
                         if let Some(tile) = world.tile_mut(k, l) {
                             tile.liquid = u8::MAX;
-                            // `liquidType(num3)` with the normal-world
-                            // `num3` = 0 → water (`:76898`).
-                            tile.set_liquid_kind(LiquidKind::Water);
+                            // `liquidType(num3)` (`:76898`) — the lottery's
+                            // winner: water on a classic world (and after the
+                            // beach reset), lava with For The Worthy, honey
+                            // with not-the-bees + don't starve, shimmer with
+                            // the everything cascade.
+                            tile.set_liquid_kind(match num3 {
+                                1 => LiquidKind::Lava,
+                                2 => LiquidKind::Honey,
+                                3 => LiquidKind::Shimmer,
+                                _ => LiquidKind::Water,
+                            });
+                            // The non-remix deep-line lava split
+                            // (`:76906-76909`); the remix `oceanDepths` arm
+                            // (`:76899-76905`) is deferred — see the module doc.
                             if (l as f64) > opts.lava_line {
                                 tile.set_liquid_kind(LiquidKind::Lava);
                             }
@@ -362,8 +477,12 @@ pub(crate) fn tile_runner(
         }
         x += vel_x;
         y += vel_y;
+        // The drunk ladder gate (`:77003`): in a drunk world the `Next(3)`
+        // draw is evaluated *before* the `num > 50` test, so it fires once per
+        // step whether or not the ladder runs, and a hit skips every tier.
+        let drunk_ladder_skipped = flags.contains(SeedFlags::DRUNK) && rng.range(0, 3) == 0;
         for threshold in LADDER_THRESHOLDS {
-            if num <= threshold {
+            if drunk_ladder_skipped || num <= threshold {
                 break;
             }
             x += vel_x;
@@ -375,6 +494,10 @@ pub(crate) fn tile_runner(
         // The velocity drift (`:77087-77110`): X always, Y when the walker is
         // allowed to change depth; both clamp to ±1.
         vel_x += rng.range(-10, 11) as f64 * 0.05;
+        // The drunk extra X nudge (`:77088-77091`), before the clamp.
+        if flags.contains(SeedFlags::DRUNK) {
+            vel_x += rng.range(-10, 11) as f64 * 0.25;
+        }
         vel_x = vel_x.clamp(-1.0, 1.0);
         if !opts.no_y_change {
             vel_y += rng.range(-10, 11) as f64 * 0.05;
@@ -458,6 +581,7 @@ mod tests {
         ];
         for &(strength, wobbles) in cases {
             let mut world = stone_world();
+            let flags = world.seeds;
             let mut runner = Rng(0xDEAD_BEEF);
             tile_runner(
                 &mut world,
@@ -468,7 +592,7 @@ mod tests {
                 1,
                 7,
                 200.0,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
             );
             let mut replay = Rng(0xDEAD_BEEF);
             for _ in 0..2 {
@@ -489,6 +613,7 @@ mod tests {
     #[test]
     fn strength_one_touches_at_most_one_tile_per_step() {
         let mut world = World::new("test".into(), 200, 200);
+        let flags = world.seeds;
         let mut rng = Rng(7);
         tile_runner(
             &mut world,
@@ -499,7 +624,7 @@ mod tests {
             3,
             7,
             200.0,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
         );
         let touched: Vec<usize> = world
             .tiles
@@ -528,6 +653,7 @@ mod tests {
     #[test]
     fn protection_rules_match_the_csharp_switch() {
         let mut world = World::new("test".into(), 200, 200);
+        let flags = world.seeds;
         for i in 0..world.tiles.len() {
             let mut tile = Tile::default();
             tile.kind = 1; // stone: clearable, replaced
@@ -573,7 +699,7 @@ mod tests {
             4,
             7,
             150.0,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
         );
 
         assert_eq!(
@@ -619,6 +745,7 @@ mod tests {
     #[test]
     fn mud_wall_arm_replays_the_csharp_draws() {
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         let mut runner = Rng(0xDEAD_BEEF);
         tile_runner(
             &mut world,
@@ -632,7 +759,7 @@ mod tests {
             &TileRunnerOpts {
                 mud_wall: true,
                 lava_line: 0.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let mut replay = Rng(0xDEAD_BEEF);
@@ -668,6 +795,7 @@ mod tests {
         let always: &[(i32, i32)] = &[(50, 50), (49, 50), (51, 50), (50, 49), (50, 51)];
         // (a) lava_line 0: every candidate is deep → wall 15.
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(0xDEAD_BEEF),
@@ -680,7 +808,7 @@ mod tests {
             &TileRunnerOpts {
                 mud_wall: true,
                 lava_line: 0.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         for &(x, y) in always {
@@ -695,6 +823,7 @@ mod tests {
         );
         // (b) lava_line 200: every candidate is shallow → wall 64.
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(0xDEAD_BEEF),
@@ -707,7 +836,7 @@ mod tests {
             &TileRunnerOpts {
                 mud_wall: true,
                 lava_line: 200.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         for &(x, y) in always {
@@ -721,6 +850,7 @@ mod tests {
         // next to it (`:76879`), and PlaceWall never overwrites a wall
         // (`:75135`).
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         let idx = world.index(49, 50);
         world.tiles[idx].wall = 64;
         let idx = world.index(50, 50);
@@ -737,7 +867,7 @@ mod tests {
             &TileRunnerOpts {
                 mud_wall: true,
                 lava_line: 0.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         assert_eq!(world.tile(49, 50).unwrap().wall, 64, "64 stands");
@@ -761,6 +891,7 @@ mod tests {
     fn mud_wall_arm_short_circuits_without_draws() {
         // (a) every wall-above read sees dirt wall 2.
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         for tile in world.tiles.iter_mut() {
             tile.wall = 2;
         }
@@ -776,7 +907,7 @@ mod tests {
             0.0,
             &TileRunnerOpts {
                 mud_wall: true,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let mut replay = Rng(0xDEAD_BEEF);
@@ -791,6 +922,7 @@ mod tests {
         assert_eq!(runner.0, replay.0, "dirt wall above short-circuits");
         // (b) the whole rect sits at/above the surface.
         let mut world = stone_world_sized(200, 400);
+        let flags = world.seeds;
         let mut runner = Rng(0xDEAD_BEEF);
         tile_runner(
             &mut world,
@@ -803,7 +935,7 @@ mod tests {
             60.0,
             &TileRunnerOpts {
                 mud_wall: true,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let mut replay = Rng(0xDEAD_BEEF);
@@ -825,6 +957,7 @@ mod tests {
     #[test]
     fn negative_kind_draws_the_full_csharp_walk() {
         let mut world = stone_world();
+        let flags = world.seeds;
         let mut runner = Rng(0xDEAD_BEEF);
         tile_runner(
             &mut world,
@@ -835,7 +968,7 @@ mod tests {
             1,
             -1,
             0.0,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
         );
         let mut replay = Rng(0xDEAD_BEEF);
         replay.range(-10, 11);
@@ -860,6 +993,7 @@ mod tests {
     fn negative_kind_carves_pockets_and_skips_sand() {
         // -1: stone deactivated, sand untouched.
         let mut world = stone_world();
+        let flags = world.seeds;
         put(&mut world, 50, 42, 53, 0);
         tile_runner(
             &mut world,
@@ -870,13 +1004,14 @@ mod tests {
             1,
             -1,
             0.0,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
         );
         let sand = world.tile(50, 42).unwrap();
         assert!(sand.active() && sand.kind == 53, "sand survives the carve");
         assert!(!world.tile(49, 42).unwrap().active(), "stone hollowed");
         // -2 water: active tiles above the water line fill with water.
         let mut world = stone_world();
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(11),
@@ -889,7 +1024,7 @@ mod tests {
             &TileRunnerOpts {
                 water_line: 43.0,
                 lava_line: 100.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let filled = world.tile(50, 42).unwrap();
@@ -907,6 +1042,7 @@ mod tests {
         );
         // -2 lava: tiles below the lava line fill with lava.
         let mut world = stone_world();
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(11),
@@ -919,7 +1055,7 @@ mod tests {
             &TileRunnerOpts {
                 water_line: 0.0,
                 lava_line: 41.5,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let lava = world.tile(50, 42).unwrap();
@@ -936,6 +1072,7 @@ mod tests {
         );
         // -2 skips sand entirely.
         let mut world = stone_world();
+        let flags = world.seeds;
         put(&mut world, 50, 42, 53, 0);
         tile_runner(
             &mut world,
@@ -948,7 +1085,7 @@ mod tests {
             0.0,
             &TileRunnerOpts {
                 water_line: 43.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let sand = world.tile(50, 42).unwrap();
@@ -966,6 +1103,7 @@ mod tests {
     #[test]
     fn kind_59_ledger_includes_the_stone_draws() {
         let mut world = stone_world();
+        let flags = world.seeds;
         let mut runner = Rng(0xDEAD_BEEF);
         tile_runner(
             &mut world,
@@ -976,7 +1114,7 @@ mod tests {
             1,
             59,
             0.0,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
         );
         let mut replay = Rng(0xDEAD_BEEF);
         replay.range(-10, 11);
@@ -1005,6 +1143,7 @@ mod tests {
     #[test]
     fn kind_59_clears_liquid_below_the_water_line() {
         let mut world = stone_world();
+        let flags = world.seeds;
         add_liquid(&mut world, 50, 50, 255, true);
         add_liquid(&mut world, 49, 50, 128, false);
         put(&mut world, 50, 51, 41, 0); // silver brick: generation-protected
@@ -1021,7 +1160,7 @@ mod tests {
             0.0,
             &TileRunnerOpts {
                 water_line: 45.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let centre = world.tile(50, 50).unwrap();
@@ -1055,6 +1194,7 @@ mod tests {
             // The kind-131 base must be stone: 131 is in `Main.tileStone`,
             // so the runner protects every non-stone tile (`:76926`).
             let mut world = World::new("t".into(), 200, 200);
+            let flags = world.seeds;
             let idx = world.index(100, 100);
             let mut tile = Tile::default();
             tile.kind = base; // clearable, replaced by every runner here
@@ -1071,7 +1211,7 @@ mod tests {
                 1,
                 runner_kind,
                 0.0,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
             );
             let wrote = world.tile(100, 100).unwrap();
             assert_eq!(wrote.kind, runner_kind as u16, "the base was replaced");
@@ -1103,6 +1243,7 @@ mod tests {
         // walker stuck at the ±0.5 clamp could only reach ~55 — the deepest
         // placed row discriminates the force.
         let mut world = stone_world_sized(512, 512);
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(7),
@@ -1114,7 +1255,7 @@ mod tests {
             0.0,
             &TileRunnerOpts {
                 rock_layer: 0.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let mud: Vec<(i32, i32)> = (0..world.width)
@@ -1130,6 +1271,7 @@ mod tests {
         // velocity is clamped to ±0.5, so 80 steps move the walker at most
         // ~40 tiles — the guaranteed range of a correct clamp.
         let mut world = stone_world_sized(512, 600);
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(7),
@@ -1141,7 +1283,7 @@ mod tests {
             0.0,
             &TileRunnerOpts {
                 rock_layer: 100.0,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         let mud: Vec<(i32, i32)> = (0..world.width)
@@ -1153,5 +1295,331 @@ mod tests {
         let max_y = mud.iter().map(|&(_, y)| y).max().unwrap();
         assert!(min_y >= 208, "half-tile drift down: {min_y}");
         assert!(max_y <= 292, "half-tile drift up: {max_y}");
+    }
+
+    // --- M5-SEED-1: the secret-seed arms -------------------------------------
+
+    /// One runner call on an all-stone world: the tiles it painted (every
+    /// touched tile carries the runner kind) plus the stream state it left
+    /// behind — the two observables the secret-seed arms move.
+    fn walk_once(
+        kind: i32,
+        flags: SeedFlags,
+        seed: u64,
+    ) -> (Vec<(i32, i32)>, u64) {
+        let mut world = stone_world();
+        let mut rng = Rng(seed);
+        tile_runner(
+            &mut world,
+            &mut rng,
+            50,
+            50,
+            8.0,
+            1,
+            kind,
+            200.0,
+            &TileRunnerOpts {
+                flags, ..TileRunnerOpts::default()
+            },
+        );
+        let painted: Vec<(i32, i32)> = (0..world.width)
+            .flat_map(|x| (0..world.height).map(move |y| (x, y)))
+            .filter(|&(x, y)| world.tile(x, y).map_or(false, |t| t.kind == kind as u16))
+            .collect();
+        (painted, rng.0)
+    }
+
+    /// M5-SEED-1 (a): the For The Worthy world is a *different* world — the
+    /// `±120%` strength jitter and the `Next(3)` extra steps
+    /// (`WorldGen.cs:76783-76788`) move both the painted disc and the draw
+    /// ledger, on the same stream, for the same call.
+    #[test]
+    fn for_the_worthy_paints_a_different_world_than_the_classic() {
+        for &seed in &[0x5EEDu64, 7, 42, 0x0CEA] {
+            let (classic, classic_state) = walk_once(7, SeedFlags::none(), seed);
+            let (worthy, worthy_state) =
+                walk_once(7, SeedFlags::from(SeedFlags::FOR_THE_WORTHY), seed);
+            assert!(!classic.is_empty(), "seed {seed} classic disc");
+            assert_ne!(
+                (classic, classic_state),
+                (worthy.clone(), worthy_state),
+                "seed {seed}: the FTW walk differs"
+            );
+        }
+    }
+
+    /// M5-SEED-1 (a): the `type != 57` gate — ash runners never take the
+    /// for-the-worthy modifiers, so an ash walk is byte-identical across the
+    /// two worlds (`WorldGen.cs:76783`).
+    #[test]
+    fn for_the_worthy_leaves_ash_runners_alone() {
+        let (classic, classic_state) = walk_once(TILE_ASH as i32, SeedFlags::none(), 0x5EED);
+        let (worthy, worthy_state) =
+            walk_once(TILE_ASH as i32, SeedFlags::from(SeedFlags::FOR_THE_WORTHY), 0x5EED);
+        assert_eq!(classic, worthy, "the ash disc is unchanged");
+        assert_eq!(classic_state, worthy_state, "and so is the ledger");
+    }
+
+    /// M5-SEED-1 (a): the entry draws in the C# order — the `±120%` strength
+    /// jitter, then `Next(3)` extra steps, *before* the two velocity draws and
+    /// the `num3` lottery (`WorldGen.cs:76783-76806`). The sweep picks a stream
+    /// whose steps bump is 0, so the walk is a single iteration and the replay
+    /// below is the complete ledger.
+    #[test]
+    fn for_the_worthy_entry_draws_lead_the_csharp_ledger() {
+        let seed = (1u64..=512)
+            .find(|&s| {
+                let mut probe = Rng(s);
+                let jitter = probe.range(-80, 81);
+                jitter >= 0 && probe.range(0, 3) == 0 // a positive disc, no steps bump
+            })
+            .expect("a stream with no for-the-worthy steps bump");
+        let (painted, state) = walk_once(7, SeedFlags::from(SeedFlags::FOR_THE_WORTHY), seed);
+        let mut replay = Rng(seed);
+        let jitter = replay.range(-80, 81) as f64;
+        let strength = 8.0 * (1.0 + jitter * 0.015);
+        replay.range(0, 3); // the steps bump — 0 by the sweep
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        replay.range(0, 4); // the num3 lottery (the else-if — not bees is off)
+        // One iteration (`steps` stayed 1): `num = strength * (1 / 1)`.
+        let half = strength * 0.5;
+        let left = (50.0 - half) as i32;
+        let right = (50.0 + half) as i32;
+        for _ in left..right {
+            for _ in (50.0 - half) as i32..(50.0 + half) as i32 {
+                replay.range(-10, 11); // the 0.5-disc wobble
+            }
+        }
+        // No ladder (`num < 50`), two drift draws.
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        assert_eq!(state, replay.0, "FTW ledger for seed {seed}");
+        let wobbles = ((right - left) * (right - left)) as usize;
+        assert!(!painted.is_empty(), "the walk painted the disc");
+        assert!(painted.len() <= wobbles, "the disc fits the ledger's rect");
+    }
+
+    /// M5-SEED-1 (b): the drunk world is a different world — the two entry
+    /// jitters, the per-step teleport gate, the ladder gate and the extra X
+    /// nudge (`WorldGen.cs:76774-76788`, `:76823-76827`, `:77003`,
+    /// `:77088-77091`) all draw off the same stream.
+    #[test]
+    fn drunk_world_draws_differently_than_the_classic() {
+        for &seed in &[0x5EEDu64, 7, 42, 0x0CEA] {
+            let (classic, classic_state) = walk_once(7, SeedFlags::none(), seed);
+            let (drunk, drunk_state) = walk_once(7, SeedFlags::from(SeedFlags::DRUNK), seed);
+            assert!(!classic.is_empty(), "seed {seed} classic disc");
+            assert_ne!(
+                (classic, classic_state),
+                (drunk, drunk_state),
+                "seed {seed}: the drunk walk differs"
+            );
+        }
+    }
+
+    /// M5-SEED-1 (b): the drunk ledger, draw by draw — the `status ±80%`
+    /// entry pair first, then the velocity pair, then the `num3` lottery
+    /// (a drunk world takes the `else if`, since the not-the-bees gate is
+    /// off), then per step the 1-in-30 teleport gate, the ladder gate, and the
+    /// three X/Y drift draws (`:76816`, `:76823`, `:77003`, `:77088`).
+    /// The seed sweep keeps `steps` at 1 after the truncating jitter, so the
+    /// walk is a single iteration.
+    #[test]
+    fn drunk_world_draws_the_csharp_ledger() {
+        let seed = (1u64..=512)
+            .find(|&s| {
+                let mut probe = Rng(s);
+                let strength_jitter = probe.range(-80, 81);
+                strength_jitter >= 0 && probe.range(-80, 81) >= 0
+            })
+            .expect("a stream whose drunk jitters keep the disc painted");
+        let (painted, state) = walk_once(7, SeedFlags::from(SeedFlags::DRUNK), seed);
+        let mut replay = Rng(seed);
+        let jitter = replay.range(-80, 81) as f64;
+        let strength = 8.0 * (1.0 + jitter * 0.01);
+        replay.range(-80, 81); // the steps jitter (>= 0: `steps` stays 1)
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        replay.range(0, 4); // the num3 lottery
+        // One iteration: the teleport gate draws on *every* drunk step.
+        replay.range(0, 30);
+        let half = strength * 0.5;
+        let left = (50.0 - half) as i32;
+        let right = (50.0 + half) as i32;
+        for _ in left..right {
+            for _ in (50.0 - half) as i32..(50.0 + half) as i32 {
+                replay.range(-10, 11); // the 0.5-disc wobble
+            }
+        }
+        replay.range(0, 3); // the drunk ladder gate (drawn once per step)
+        replay.range(-10, 11); // the X drift
+        replay.range(-10, 11); // the drunk X nudge (`:77090`)
+        replay.range(-10, 11); // the Y drift
+        assert_eq!(state, replay.0, "drunk ledger for seed {seed}");
+        let wobbles = ((right - left) * (right - left)) as usize;
+        assert!(!painted.is_empty(), "the walk painted the disc");
+        assert!(painted.len() <= wobbles, "the disc fits the ledger's rect");
+    }
+
+    /// M5-SEED-1 (b): the drunk ash skip (`WorldGen.cs:76866-76868`) — no ash
+    /// candidate above `maxTilesY - 300` is ever touched in a drunk world,
+    /// while a classic world paints the whole disc.
+    #[test]
+    fn drunk_world_skips_ash_above_the_hell_band() {
+        let mut classic = stone_world_sized(200, 600);
+        tile_runner(
+            &mut classic,
+            &mut Rng(0x5EED),
+            50,
+            200,
+            8.0,
+            1,
+            TILE_ASH as i32,
+            200.0,
+            &TileRunnerOpts::default(),
+        );
+        let painted: Vec<(i32, i32)> = (0..classic.width)
+            .flat_map(|x| (0..classic.height).map(move |y| (x, y)))
+            .filter(|&(x, y)| classic.tile(x, y).map_or(false, |t| t.kind == TILE_ASH))
+            .collect();
+        assert!(!painted.is_empty(), "the classic ash walk paints");
+        assert!(
+            painted.iter().all(|&(_, y)| y < 300),
+            "the disc sits above the hell band"
+        );
+        let mut drunk = stone_world_sized(200, 600);
+        tile_runner(
+            &mut drunk,
+            &mut Rng(0x5EED),
+            50,
+            200,
+            8.0,
+            1,
+            TILE_ASH as i32,
+            200.0,
+            &TileRunnerOpts {
+                flags: SeedFlags::from(SeedFlags::DRUNK),
+                ..TileRunnerOpts::default()
+            },
+        );
+        let drunk_painted: Vec<(i32, i32)> = (0..drunk.width)
+            .flat_map(|x| (0..drunk.height).map(move |y| (x, y)))
+            .filter(|&(x, y)| drunk.tile(x, y).map_or(false, |t| t.kind == TILE_ASH))
+            .collect();
+        assert!(
+            drunk_painted.is_empty(),
+            "drunk skips every candidate above maxTilesY - 300: {:?}",
+            drunk_painted.len()
+        );
+    }
+
+    /// M5-SEED-1 (c): the not-the-bees + don't-starve lottery
+    /// (`WorldGen.cs:76806-76808`) draws `Next(3)` first and, on a hit, skips
+    /// the `Next(4)` below — the ledger is one draw shorter, not just
+    /// differently assigned. The lottery is the *third* draw of a call: the
+    /// two velocity draws precede it (`:76789-76791`).
+    #[test]
+    fn not_the_bees_and_dont_starve_lottery_skips_the_next_four() {
+        let flags = SeedFlags::from(SeedFlags::NOT_THE_BEES | SeedFlags::DONT_STARVE);
+        // A stream whose lottery draw is a hit: no `Next(4)` follows.
+        let hit = (1u64..=64)
+            .find(|&s| {
+                let mut probe = Rng(s);
+                probe.range(-10, 11); // vx
+                probe.range(-10, 11); // vy
+                probe.range(0, 3) == 0
+            })
+            .expect("a not-the-bees + don't-starve lottery hit");
+        let mut world = stone_world();
+        let mut runner = Rng(hit);
+        tile_runner(
+            &mut world,
+            &mut runner,
+            50,
+            50,
+            4.0,
+            1,
+            7,
+            200.0,
+            &TileRunnerOpts {
+                flags, ..TileRunnerOpts::default()
+            },
+        );
+        let mut replay = Rng(hit);
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        replay.range(0, 3); // the lottery — a hit, so no `Next(4)` follows
+        for _ in 0..16 {
+            replay.range(-10, 11); // the 0.5-disc wobble
+        }
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        assert_eq!(runner.0, replay.0, "lottery-hit ledger for seed {hit}");
+        // A stream whose lottery draw misses still falls through to the
+        // `Next(4)` (the `else if` chains off the whole condition).
+        let miss = (1u64..=64)
+            .find(|&s| {
+                let mut probe = Rng(s);
+                probe.range(-10, 11);
+                probe.range(-10, 11);
+                probe.range(0, 3) != 0
+            })
+            .expect("a lottery miss");
+        let (_, state) = walk_once(7, flags, miss);
+        let mut replay = Rng(miss);
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        replay.range(0, 3); // the lottery — a miss
+        replay.range(0, 4); // the else-if draws anyway (`num3` stays 0)
+        let half = 8.0 * 0.5;
+        let left = (50.0 - half) as i32;
+        let right = (50.0 + half) as i32;
+        for _ in left..right {
+            for _ in (50.0 - half) as i32..(50.0 + half) as i32 {
+                replay.range(-10, 11);
+            }
+        }
+        replay.range(-10, 11); // vx
+        replay.range(-10, 11); // vy
+        assert_eq!(state, replay.0, "lottery-miss ledger for seed {miss}");
+    }
+
+    /// M5-SEED-1 (c): the lottery's payoff — `num3 = 2` fills honey in the
+    /// `type < 0` pool (`:76898` → `Tile.liquidType(2)`, `Tile.cs:226-228`),
+    /// where a classic world fills water. The world is wider than the beach
+    /// margin so the `:76860-76863` reset does not fire (it cancels `num3`
+    /// inside ±430 columns of either edge — a 200-wide world is all beach).
+    #[test]
+    fn not_the_bees_and_dont_starve_fill_honey() {
+        let hit = (1u64..=64)
+            .find(|&s| {
+                let mut probe = Rng(s);
+                probe.range(-10, 11); // vx
+                probe.range(-10, 11); // vy
+                probe.range(0, 3) == 0
+            })
+            .expect("a not-the-bees + don't-starve lottery hit");
+        let mut world = stone_world_sized(1200, 400);
+        let flags = world.seeds;
+        tile_runner(
+            &mut world,
+            &mut Rng(hit),
+            600,
+            200,
+            4.0,
+            1,
+            -2,
+            0.0,
+            &TileRunnerOpts {
+                flags: SeedFlags::from(SeedFlags::NOT_THE_BEES | SeedFlags::DONT_STARVE),
+                water_line: 300.0,
+                lava_line: 399.0,
+                ..TileRunnerOpts::default()
+            },
+        );
+        let filled = world.tile(600, 200).unwrap();
+        assert_eq!(filled.liquid, 255, "the pool filled");
+        assert_eq!(filled.liquid_kind(), LiquidKind::Honey, "num3 = 2 is honey");
     }
 }

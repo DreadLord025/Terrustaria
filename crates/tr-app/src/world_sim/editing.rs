@@ -538,14 +538,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
                         tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
-                    let slot = app.projectiles.spawn_with_data(
+                    let slot = app.projectiles.spawn_with_data_owned(
                         proj,
+                        app.local_id as u8,
                         spawn.x,
                         spawn.y,
                         dir.x * fx_spd,
                         dir.y * fx_spd,
                         raw as i32,
                         fx_kb,
+                        0.0,
+                        0.0,
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
@@ -591,7 +594,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
+            let hit_idx = app.npcs.iter().position(|n| n.contains(ax, ay));
+            if let Some(idx) = hit_idx {
+                let n = &mut app.npcs[idx];
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
                 // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
                 // `CalculateDamageNPCsTake` with the NPC's defense
@@ -634,6 +639,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // (`Item.knockBack` for the copper shortsword class); the
                 // per-item values land with M3-ITEM.
                 n.hurt(dmg, pcx, 5.5, crit);
+                // A joining client's strike goes to the host as `28`
+                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
+                app.send_npc_strike(idx, dmg, 5.5, crit, pcx >= nx);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
@@ -1135,14 +1143,23 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                 tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + w_crit)
             };
-            let slot = app.projectiles.spawn_with_data(
+            // origin/main’s owned spawner (the owner plumbing of the
+            // projectile-ownership task) + this task’s resolution: the pair
+            // table’s or the ammo’s own projectile, the gunProj fixed id when
+            // the weapon is one of the four, and the fused knockback (the
+            // weapon’s own + the ammo’s + the magicQuiver scale), which
+            // supersedes the pre-fuse `w_kb` read.
+            let slot = app.projectiles.spawn_with_data_owned(
                 gun_proj.map_or(resolved.projectile, |g| g.projectile),
+                app.local_id as u8,
                 spawn.x,
                 spawn.y,
                 dir.x * speed,
                 dir.y * speed,
                 damage as i32,
                 knock_back,
+                0.0,
+                0.0,
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
@@ -1431,7 +1448,10 @@ fn drop_ctx(app: &App) -> DropCtx {
         max_tiles_y: app.world.height,
         hard_mode: app.world.hard_mode,
         expert_mode: false,
-        dont_starve: false,
+        // M5-SEED-1: `Main.dontStarveWorld` (`editing.rs`'s fruit/pot
+        // branches, `:1437-1474`) — the world's own flag replaces the
+        // hard-coded false.
+        dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,

@@ -20,13 +20,23 @@ pub struct Settings {
     pub auto_pause: bool,
     /// `Main.mapEnabled`.
     pub map_enabled: bool,
-    /// `Main.HidePassword`.
+    /// `Main.HidePassword`. Vanilla persists it under `"HidePasswords"` — plural
+    /// (`Put` `Main.cs:4144`, `Get` `:4422`); the port wrote the singular
+    /// `"HidePassword"` before this parity pass, so `parse` reads **both**
+    /// spellings (vanilla-last) while `to_json` writes only the vanilla name.
     pub hide_password: bool,
-    /// `Main.SettingPlayWhenUnfocused`.
+    /// `Main.SettingPlayWhenUnfocused`: default **false** — `static Main()`
+    /// (`Main.cs:66512`), persisted under `"PlayWhenUnfocused"` (`Put`
+    /// `Main.cs:4217`, `Get` `:4352`). The menuMode 11 row inverts it into the
+    /// "Pause When Unfocused" label ("Off" when the flag is true).
     pub play_when_unfocused: bool,
-    /// `Main.showItemText`.
+    /// `Main.showItemText`, persisted under `"ShowItemText"` (`Put`
+    /// `Main.cs:4135`, `Get` `:4409`) — the port's old key was `"PickupText"`.
     pub pickup_text: bool,
-    /// `Main.invasionProgressMode`: 0 off, 1 timed, 2 on.
+    /// `Main.invasionProgressMode`: 0 off, 1 timed, 2 on; default **2** (On) —
+    /// `static Main()` (`Main.cs:67080`). Vanilla persists it under
+    /// `"InvasionBarMode"` (`Put` `Main.cs:4096`, `Get` `:4332`) — the port's
+    /// old key was `"InvasionProgressMode"`.
     pub event_progress: u8,
     /// `Main.placementPreview`.
     pub placement_preview: bool,
@@ -34,7 +44,9 @@ pub struct Settings {
     pub highlight_new_items: bool,
     /// `Main.MouseShowBuildingGrid`.
     pub tile_grid: bool,
-    /// `Main.GamepadDisableInstructionsDisplay`.
+    /// `Main.GamepadDisableInstructionsDisplay`, persisted under the same name
+    /// (`Put` `Main.cs:4151`, `Get` `:4427`) — the port's old key was
+    /// `"GamepadInstructions"`.
     pub gamepad_instructions: bool,
     /// `Main.bgScroll` (`Main.cs:2429`, a plain static): the "Parallax" slider
     /// value, 0..=100 — the bar stores `(int)(value * 100f)` (`Main.cs:51642`)
@@ -47,19 +59,34 @@ pub struct Settings {
     /// `Get("BackgroundParallax", ref bgScroll)` keeps it (`Main.cs:4405-4408`)
     /// — the screen shows "Parallax: 60" with the 0.88 backdrop factor.
     pub parallax_scroll: u8,
-    /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle.
+    /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle (`FrameSkipMode.cs:3-8`);
+    /// default **2** (Subtle) — `static Main()` (`Main.cs:67204`).
     pub frame_skip: u8,
-    /// `Lighting.Mode`: 0 Color, 1 White, 2 Retro, 3 Trippy.
+    /// `Lighting.Mode` in the **port's internal** order (`LightMode.cs:3-9`'s
+    /// mirror, `tr-core/src/lighting/params.rs:12-17`): 0 Color, 1 White,
+    /// 2 Retro, 3 Trippy. The *persisted* value is the C# ordinal instead —
+    /// `LightMode` in the original is `{White=0, Retro=1, Trippy=2, Color=3}`
+    /// (`Terraria/Graphics/Light/LightMode.cs:3-9`), so `parse`/`to_json`
+    /// translate in both directions and every in-memory reader sees this port
+    /// order.
     pub light_mode: u8,
-    /// `Main.qaStyle`: 0 auto, 1 high, 2 medium, 3 low.
+    /// `Main.qaStyle`: 0 auto, 1 high, 2 medium, 3 low. Vanilla persists it
+    /// under `"GraphicsQuality"` (`Put` `Main.cs:4130`, `Get` `:4371`) — the
+    /// port's old key was `"Quality"`.
     pub quality: u8,
     /// `Main.BackgroundEnabled`.
     pub background: bool,
-    /// `ChildSafety.Disabled` (blood and gore).
+    /// `ChildSafety.Disabled` (blood and gore), persisted under
+    /// `"GoreVisualsAllowed"` (`Put` `Main.cs:4101`, `Get` `:4349`) — the port's
+    /// old key was `"BloodAndGore"`.
     pub blood: bool,
-    /// `Main.SettingsEnabled_MinersWobble`.
+    /// `Main.SettingsEnabled_MinersWobble`, persisted under the same name (`Put`
+    /// `Main.cs:4153`, `Get` `:4540`) — the port's old key was
+    /// `"MinersWobble"`.
     pub miners_wobble: bool,
-    /// `Main.SettingsEnabled_TilesSwayInWind`.
+    /// `Main.SettingsEnabled_TilesSwayInWind`, persisted under the same name
+    /// (`Put` `Main.cs:4157`, `Get` `:4543`) — the port's old key was
+    /// `"TilesSwayInWind"`.
     pub tiles_sway: bool,
     /// `Player.Settings.CraftFromNearbyChests` (`Player.cs:360`), defaulted
     /// true (`Player.cs:406`): the crafting pulls ingredients from the world
@@ -67,11 +94,17 @@ pub struct Settings {
     pub craft_from_nearby_chests: bool,
     /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
     pub zoom: f32,
-    /// `Main.musicVolume`.
+    /// `Main.musicVolume`: default **1f** — `static Main()` (`Main.cs:66857`).
+    /// Persisted under `"VolumeMusic"` (`Put` `Main.cs:4107`, `Get` `:4357`) —
+    /// the port's old key was `"MusicVolume"`.
     pub music_volume: f32,
-    /// `Main.soundVolume`.
+    /// `Main.soundVolume`: default **1f** — `static Main()` (`Main.cs:66859`).
+    /// Persisted under `"VolumeSound"` (`Put` `Main.cs:4105`, `Get` `:4355`) —
+    /// the port's old key was `"SoundVolume"`.
     pub sound_volume: f32,
-    /// `Main.ambientVolume`.
+    /// `Main.ambientVolume`: default **1f** — `static Main()` (`Main.cs:66858`).
+    /// Persisted under `"VolumeAmbient"` (`Put` `Main.cs:4106`, `Get` `:4356`) —
+    /// the port's old key was `"AmbientVolume"`.
     pub ambient_volume: f32,
     /// `Main.MapScale`: saved as "MapScale" (`Main.cs:4202`), load-clamped
     /// [0.5, 1] (`:4494`), default 1 (`:67298`). P4 draws the reference 1.0
@@ -185,15 +218,20 @@ impl Default for Settings {
             auto_pause: false,
             map_enabled: true,
             hide_password: false,
-            play_when_unfocused: true,
+            // `Main.SettingPlayWhenUnfocused = false` (`Main.cs:66512`).
+            play_when_unfocused: false,
             pickup_text: true,
-            event_progress: 1,
+            // `Main.invasionProgressMode = 2` (`Main.cs:67080`) — the
+            // "Event Progress Bar: On" row of menuMode 1112.
+            event_progress: 2,
             placement_preview: true,
             highlight_new_items: true,
             tile_grid: false,
             gamepad_instructions: true,
             parallax_scroll: 60,
-            frame_skip: 0,
+            // `Main.FrameSkipMode = FrameSkipMode.Subtle` (`Main.cs:67204`), i.e.
+            // the enum's 2 (`Terraria/Enums/FrameSkipMode.cs:3-8`).
+            frame_skip: 2,
             light_mode: 0,
             quality: 0,
             background: true,
@@ -202,9 +240,12 @@ impl Default for Settings {
             tiles_sway: true,
             craft_from_nearby_chests: true,
             zoom: 1.0,
-            music_volume: 0.75,
-            sound_volume: 0.75,
-            ambient_volume: 0.75,
+            // `Main.musicVolume = 1f` (`Main.cs:66857`), `Main.ambientVolume =
+            // 1f` (`:66858`), `Main.soundVolume = 1f` (`:66859`) — the
+            // `static Main()` values, not the 0.75 the port used before.
+            music_volume: 1.0,
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
             map_scale: 1.0,
             minimap_frame: "Default".to_string(),
             mouse_color: [255, 50, 95, 255],      // Main.cs:67199
@@ -251,6 +292,22 @@ impl Settings {
 
     /// Reads the `config.json` subset this port stores. Unknown keys are ignored and
     /// missing keys keep their default.
+    ///
+    /// Two spellings are accepted for the eleven keys this port renamed during the
+    /// parity pass (`HidePassword`→`HidePasswords` `Main.cs:4144` plus the ten
+    /// `SaveSettings` renames `:4096-4157`): the vanilla name comes first and the
+    /// port's pre-parity name second, so a file carrying both spellings still
+    /// resolves the vanilla line (the parser's "last line wins"). None of the
+    /// eleven legacy spellings exists in the decompiled source (grep-verified),
+    /// so the alias set is purely the restore path for the port's own configs.
+    ///
+    /// KNOWN DEVIATION, deliberately **not** changed by the rename pass (recorded
+    /// here so docs own the ANALYSIS entry): the boolean arms coerce every token
+    /// that is not the bare literal `"true"` — quoted `"True"`, `7`, `null`
+    /// included — to `false`, where vanilla's `Preferences.Get` would keep the
+    /// field default on a `Convert.ChangeType` failure
+    /// (`Terraria/IO/Preferences.cs:176-190`). That coercion is port-wide and
+    /// pre-existing, so each alias arm behaves exactly like its vanilla sibling.
     pub fn parse(text: &str) -> Self {
         let mut me = Self::default();
         for line in text.lines() {
@@ -275,15 +332,44 @@ impl Settings {
                         .to_string();
                 }
                 "MapEnabled" => me.map_enabled = boolean(value),
+                // `configuration.Put("HidePasswords", Main.HidePassword)`
+                // (`Main.cs:4144`) and `Get` `:4422`. The port wrote the
+                // singular `"HidePassword"` before this pass, so both spellings
+                // are read and the vanilla name comes last: a file carrying
+                // both still resolves vanilla (the file's "last line wins").
                 "HidePassword" => me.hide_password = boolean(value),
+                "HidePasswords" => me.hide_password = boolean(value),
+                // `configuration.Put("PlayWhenUnfocused",
+                // Main.SettingPlayWhenUnfocused)` (`Main.cs:4217`, read back at
+                // `:4352`). The port's old `"SettingPlayWhenUnfocused"` was its
+                // own invention and stays as the alias, with the port's name
+                // first so the vanilla spelling wins a file carrying both
+                // (the parser's "last line wins").
                 "SettingPlayWhenUnfocused" => me.play_when_unfocused = boolean(value),
+                "PlayWhenUnfocused" => me.play_when_unfocused = boolean(value),
+                // `configuration.Put("ShowItemText", Main.showItemText)`
+                // (`Main.cs:4135`), read back at `:4409`; the port's old key
+                // `"PickupText"` was its own invention (vanilla has no such key).
+                "ShowItemText" => me.pickup_text = boolean(value),
                 "PickupText" => me.pickup_text = boolean(value),
+                // `configuration.Put("InvasionBarMode", Main.invasionProgressMode)`
+                // (`Main.cs:4096`), read back at `:4332`; the port's old key was
+                // `"InvasionProgressMode"`.
+                "InvasionBarMode" => {
+                    me.event_progress = value.parse().unwrap_or(me.event_progress).min(2)
+                }
                 "InvasionProgressMode" => {
                     me.event_progress = value.parse().unwrap_or(me.event_progress).min(2)
                 }
                 "PlacementPreview" => me.placement_preview = boolean(value),
                 "HighlightNewItems" => me.highlight_new_items = boolean(value),
                 "MouseShowBuildingGrid" => me.tile_grid = boolean(value),
+                // `configuration.Put("GamepadDisableInstructionsDisplay",
+                // Main.GamepadDisableInstructionsDisplay)` (`Main.cs:4151`),
+                // read back at `:4427`; the port's old key `"GamepadInstructions"`
+                // appears nowhere in the original — like every other legacy
+                // spelling paired here, it was the port's own invention.
+                "GamepadDisableInstructionsDisplay" => me.gamepad_instructions = boolean(value),
                 "GamepadInstructions" => me.gamepad_instructions = boolean(value),
                 // `configuration.Get("BackgroundParallax", ref Main.bgScroll)`
                 // (`Main.cs:4407`); the slider only writes 0..=100 (`:51642`).
@@ -292,18 +378,52 @@ impl Settings {
                         value.parse().unwrap_or(me.parallax_scroll).min(100)
                 }
                 "FrameSkipMode" => me.frame_skip = value.parse().unwrap_or(me.frame_skip).min(2),
-                "LightingMode" => me.light_mode = value.parse().unwrap_or(me.light_mode).min(3),
+                // `LoadSettings` casts the stored int to the enum unchecked —
+                // `Lighting.Mode = (LightMode)currentValue6` (`Main.cs:4403`),
+                // which would make a 9 an undefined mode. The port instead
+                // falls back to the default for anything outside the four C#
+                // members; a deliberate robustness deviation, recorded here
+                // (`LightMode.cs:3-9`).
+                "LightingMode" => {
+                    if let Some(v) = value.parse::<u8>().ok().and_then(light_mode_from_vanilla) {
+                        me.light_mode = v;
+                    }
+                }
+                // `configuration.Put("GraphicsQuality", Main.qaStyle)`
+                // (`Main.cs:4130`), read back at `:4371`; the port's old key was
+                // `"Quality"`.
+                "GraphicsQuality" => me.quality = value.parse().unwrap_or(me.quality).min(3),
                 "Quality" => me.quality = value.parse().unwrap_or(me.quality).min(3),
                 "BackgroundEnabled" => me.background = boolean(value),
+                // `configuration.Put("GoreVisualsAllowed", ChildSafety.Disabled)`
+                // (`Main.cs:4101`), read back at `:4349`; the port's old key was
+                // `"BloodAndGore"`.
+                "GoreVisualsAllowed" => me.blood = boolean(value),
                 "BloodAndGore" => me.blood = boolean(value),
+                // `configuration.Put("SettingsEnabled_MinersWobble",
+                // Main.SettingsEnabled_MinersWobble)` (`Main.cs:4153`), read back
+                // at `:4540`; the port's old key was `"MinersWobble"`.
+                "SettingsEnabled_MinersWobble" => me.miners_wobble = boolean(value),
                 "MinersWobble" => me.miners_wobble = boolean(value),
+                // `configuration.Put("SettingsEnabled_TilesSwayInWind",
+                // Main.SettingsEnabled_TilesSwayInWind)` (`Main.cs:4157`), read
+                // back at `:4543`; the port's old key was `"TilesSwayInWind"`.
+                "SettingsEnabled_TilesSwayInWind" => me.tiles_sway = boolean(value),
                 "TilesSwayInWind" => me.tiles_sway = boolean(value),
                 "Zoom" => {
                     me.zoom = value.parse::<f32>().unwrap_or(me.zoom).clamp(1.0, 2.0)
                 }
-                "MusicVolume" => me.music_volume = value.parse().unwrap_or(me.music_volume),
+                // The audio trio: `configuration.Put("VolumeSound", ...)`,
+                // `"VolumeAmbient"` / `"VolumeMusic"` (`Main.cs:4105-4107`), read
+                // back at `:4355-4357`; the port's old keys were
+                // `"SoundVolume"`, `"AmbientVolume"`, `"MusicVolume"` (note the
+                // swapped order of the noun and "Volume").
+                "VolumeSound" => me.sound_volume = value.parse().unwrap_or(me.sound_volume),
                 "SoundVolume" => me.sound_volume = value.parse().unwrap_or(me.sound_volume),
+                "VolumeAmbient" => me.ambient_volume = value.parse().unwrap_or(me.ambient_volume),
                 "AmbientVolume" => me.ambient_volume = value.parse().unwrap_or(me.ambient_volume),
+                "VolumeMusic" => me.music_volume = value.parse().unwrap_or(me.music_volume),
+                "MusicVolume" => me.music_volume = value.parse().unwrap_or(me.music_volume),
                 "MapScale" => {
                     me.map_scale = value.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0)
                 }
@@ -384,6 +504,11 @@ impl Settings {
                 // Player.SmartCursorSettings.SmartBlocksEnabled)`
                 // (`Main.cs:4138`, read back at `:4411`).
                 "UseSmartCursorForCommonBlocks" => me.smart_blocks = boolean(value),
+                // `configuration.Put("CraftFromNearbyChests",
+                // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`), the
+                // `Player.Settings` control pair read back through the same
+                // group; the port wrote no key for it before.
+                "CraftFromNearbyChests" => me.craft_from_nearby_chests = boolean(value),
                 // `configuration.Get("LockOnPriority", ...)` (`Main.cs:4496-4505`):
                 // the stored value clamps to 0..=2 and FocusTarget (0) reloads
                 // as ThreeDS (2), so 0 never survives a boot.
@@ -445,6 +570,11 @@ impl Settings {
     }
 
     /// `Main.SaveSettings`: written to `config.json` next to the worlds.
+    ///
+    /// The key names are the **vanilla** `SaveSettings` `Put` names
+    /// (`Main.cs:4089-4231`) so a vanilla `config.json` round-trips; the port's
+    /// own pre-parity names are only accepted as aliases by [`Self::parse`].
+    /// The order stays as written here (this port's long-standing Put order).
     pub fn save(&self) -> std::io::Result<()> {
         let Some(path) = Self::path() else {
             return Ok(());
@@ -459,22 +589,24 @@ impl Settings {
         format!(
             "{{\n  \"AutoSave\": {},\n  \"AutoPause\": {},\n  \"Language\": \"{}\",\n  \
              \"MapEnabled\": {},\n  \
-             \"HidePassword\": {},\n  \"SettingPlayWhenUnfocused\": {},\n  \"PickupText\": {},\n  \
-             \"InvasionProgressMode\": {},\n  \"PlacementPreview\": {},\n  \
+             \"HidePasswords\": {},\n  \"PlayWhenUnfocused\": {},\n  \"ShowItemText\": {},\n  \
+             \"InvasionBarMode\": {},\n  \"PlacementPreview\": {},\n  \
              \"HighlightNewItems\": {},\n  \"MouseShowBuildingGrid\": {},\n  \
-             \"GamepadInstructions\": {},\n  \"BackgroundParallax\": {},\n  \
+             \"GamepadDisableInstructionsDisplay\": {},\n  \"BackgroundParallax\": {},\n  \
              \"FrameSkipMode\": {},\n  \
-             \"LightingMode\": {},\n  \"Quality\": {},\n  \"BackgroundEnabled\": {},\n  \
-             \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
+             \"LightingMode\": {},\n  \"GraphicsQuality\": {},\n  \"BackgroundEnabled\": {},\n  \
+             \"GoreVisualsAllowed\": {},\n  \"SettingsEnabled_MinersWobble\": {},\n  \
+             \"SettingsEnabled_TilesSwayInWind\": {},\n  \
              \"UseStormEffect\": {},\n  \"UseHeatDistortion\": {},\n  \
              \"ForegroundSunlightEffects\": {},\n  \"WaveQuality\": {},\n  \
              \"FlashyEffectsWorld\": {},\n  \"UseScreenShake\": {},\n  \
-             \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
-             \"AmbientVolume\": {:.3},\n  \"MapScale\": {:.3},\n  \
+             \"Zoom\": {:.3},\n  \"VolumeMusic\": {:.3},\n  \"VolumeSound\": {:.3},\n  \
+             \"VolumeAmbient\": {:.3},\n  \"MapScale\": {:.3},\n  \
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
              \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
-             \"UseSmartCursorForCommonBlocks\": {},\n  \"LockOnPriority\": {},\n  \
+             \"UseSmartCursorForCommonBlocks\": {},\n  \"CraftFromNearbyChests\": {},\n  \
+             \"LockOnPriority\": {},\n  \
              \"ReverseUpDownForArmorSetBonuses\": {},\n  \
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
@@ -494,7 +626,9 @@ impl Settings {
             self.gamepad_instructions,
             self.parallax_scroll,
             self.frame_skip,
-            self.light_mode,
+            // The stored byte is the C# ordinal, so Color (the port's 0) goes
+            // out as 3 (`LightMode.cs:3-9`).
+            light_mode_to_vanilla(self.light_mode),
             self.quality,
             self.background,
             self.blood,
@@ -527,6 +661,11 @@ impl Settings {
             self.smart_cursor_toggle,
             self.smart_axe_first,
             self.smart_blocks,
+            // `configuration.Put("CraftFromNearbyChests",
+            // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`); the port
+            // keeps its own position in this list (Phase 2 only renames keys, it
+            // does not reorder the writer).
+            self.craft_from_nearby_chests,
             self.lock_on_priority,
             // The Task 5 keys, written under the vanilla names (`Main.cs:4145`,
             // `:4141`, `:4142`, `:4220`; `BigProgressBarSystem.cs:231`;
@@ -540,6 +679,34 @@ impl Settings {
             self.flashy_effects_interface,
             self.minimap_frame,
         )
+    }
+}
+
+/// The stored `LightingMode` byte (`Terraria.Graphics.Light.LightMode`:
+/// White 0, Retro 1, Trippy 2, Color 3 — `LightMode.cs:3-9`) → the port's
+/// internal `LightMode` order (`Color` 0, `White` 1, `Retro` 2, `Trippy` 3,
+/// `tr-core/src/lighting/params.rs:12-17`). `None` for anything outside the
+/// four enum members, which is the robustness deviation noted on the
+/// `"LightingMode"` arm of `parse`.
+fn light_mode_from_vanilla(stored: u8) -> Option<u8> {
+    match stored {
+        0 => Some(1), // White
+        1 => Some(2), // Retro
+        2 => Some(3), // Trippy
+        3 => Some(0), // Color
+        _ => None,
+    }
+}
+
+/// The port `LightMode` byte → the stored `LightingMode` ordinal, the inverse
+/// of [`light_mode_from_vanilla`]. Anything outside the four port variants
+/// writes `Color` (3), the vanilla default (`Lighting.cs:96`).
+fn light_mode_to_vanilla(port: u8) -> u8 {
+    match port {
+        1 => 0, // White
+        2 => 1, // Retro
+        3 => 2, // Trippy
+        _ => 3, // Color
     }
 }
 
@@ -568,7 +735,9 @@ mod tests {
         assert!(!s.auto_pause);
         assert!(s.map_enabled);
         assert!(!s.hide_password);
-        assert!(s.play_when_unfocused);
+        // `Main.SettingPlayWhenUnfocused = false` (`Main.cs:66512`) — the
+        // port's `true` was a plain parity break.
+        assert!(!s.play_when_unfocused);
         assert!(s.placement_preview);
         assert!(!s.tile_grid);
         // `Main.bgScroll` is a plain static (`Main.cs:2429`) that a fresh config
@@ -577,13 +746,20 @@ mod tests {
         // and the keyless `Get("BackgroundParallax", ...)` keeps it
         // (`Main.cs:4405-4408`).
         assert_eq!(s.parallax_scroll, 60);
-        assert_eq!(s.frame_skip, 0);
+        // `Main.FrameSkipMode = FrameSkipMode.Subtle` (`Main.cs:67204`), the
+        // enum's 2 (`FrameSkipMode.cs:3-8`) — the port's 0 (Off) was wrong.
+        assert_eq!(s.frame_skip, 2);
         assert_eq!(s.light_mode, 0);
         assert_eq!(s.quality, 0);
         assert!(s.background);
         assert!(s.blood);
-        assert_eq!(s.event_progress, 1);
-        assert!((s.music_volume - 0.75).abs() < 1e-6);
+        // `Main.invasionProgressMode = 2` (`Main.cs:67080`).
+        assert_eq!(s.event_progress, 2);
+        // `Main.musicVolume = 1f` (`Main.cs:66857`), `Main.soundVolume = 1f`
+        // (`:66859`), `Main.ambientVolume = 1f` (`:66858`).
+        assert_eq!(s.music_volume, 1.0);
+        assert_eq!(s.sound_volume, 1.0);
+        assert_eq!(s.ambient_volume, 1.0);
         assert_eq!(s.map_scale, 1.0);
         assert_eq!(s.minimap_frame, "Default");
         // `Main.mouseColor = new Color(255, 50, 95)` (`Main.cs:67199`) and
@@ -633,6 +809,8 @@ mod tests {
         s.hide_password = true;
         s.event_progress = 2;
         s.frame_skip = 2;
+        // The port's Trippy, written as the C# 2 and read back as 3 — the
+        // ordinal translation (`LightMode.cs:3-9` vs `params.rs:12-17`).
         s.light_mode = 3;
         s.quality = 1;
         s.background = false;
@@ -650,6 +828,7 @@ mod tests {
         s.smart_cursor_toggle = false;
         s.smart_axe_first = true;
         s.smart_blocks = true;
+        s.craft_from_nearby_chests = false;
         s.lock_on_priority = 1;
         s.use_storm_effects = false;
         s.foreground_sunlight = false;
@@ -688,6 +867,7 @@ mod tests {
         assert!(!back.smart_cursor_toggle);
         assert!(back.smart_axe_first);
         assert!(back.smart_blocks);
+        assert!(!back.craft_from_nearby_chests);
         assert_eq!(back.lock_on_priority, 1);
         assert!(!back.use_storm_effects);
         assert!(!back.foreground_sunlight);
@@ -735,7 +915,92 @@ mod tests {
     fn unknown_keys_and_garbage_are_ignored() {
         let s = Settings::parse("{\n \"Nope\": true,\n \"AutoSave\": false,\n \"LightingMode\": 9\n}");
         assert!(!s.auto_save);
-        assert_eq!(s.light_mode, 3, "clamped to the four modes");
+        // Vanilla would cast 9 to an undefined mode (`Main.cs:4403`); the port
+        // keeps the default instead (see the `"LightingMode"` arm).
+        assert_eq!(s.light_mode, 0, "out of range keeps the default");
+    }
+
+    #[test]
+    fn lighting_mode_uses_the_vanilla_ordinal() {
+        // The C# enum is White 0, Retro 1, Trippy 2, Color 3
+        // (`Terraria/Graphics/Light/LightMode.cs:3-9`) while the port's
+        // `LightMode` is Color 0, White 1, Retro 2, Trippy 3
+        // (`tr-core/src/lighting/params.rs:12-17`). The persisted byte is the
+        // C# ordinal, so the two directions below are the whole translation.
+        let cases = [(0u8, 1u8), (1, 2), (2, 3), (3, 0)];
+        for (stored, port) in cases {
+            let text = format!("{{\n \"LightingMode\": {stored}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.light_mode, port, "stored {stored} reads as port {port}");
+
+            let mut w = Settings::default();
+            w.light_mode = port;
+            let json = w.to_json();
+            assert!(
+                json.contains(&format!("\"LightingMode\": {stored},")),
+                "port {port} writes back as {stored}: {json}"
+            );
+        }
+
+        // DW-1.2's fixture: a vanilla-shaped config's Color.
+        let s = Settings::parse("{\n \"LightingMode\": 3\n}");
+        assert_eq!(s.light_mode, 0, "vanilla 3 is Color, the port's 0");
+        let json = Settings::default().to_json();
+        assert!(
+            json.contains("\"LightingMode\": 3,"),
+            "the default Color writes vanilla's 3: {json}"
+        );
+
+        // Out of range (above the enum) keeps the default — vanilla casts
+        // unchecked (`Main.cs:4398-4403`), which is the deviation this arm
+        // avoids. Only u8-parseable values reach the translation; anything the
+        // `-1` byte range cannot hold fails `parse::<u8>()` instead.
+        for bad in ["4", "255", "-1", "\"x\"", "null"] {
+            let text = format!("{{\n \"LightingMode\": {bad}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.light_mode, 0, "{bad} falls back to the default");
+        }
+    }
+
+    #[test]
+    fn craft_from_nearby_chests_round_trips_the_vanilla_key() {
+        // `configuration.Put("CraftFromNearbyChests",
+        // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`) — the field
+        // existed with no key, so it never survived a config round-trip.
+        assert!(Settings::default().craft_from_nearby_chests, "Player.cs:406");
+        for stored in [true, false] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {stored}\n}}");
+            let s = Settings::parse(&text);
+            assert_eq!(s.craft_from_nearby_chests, stored);
+            let mut w = Settings::default();
+            w.craft_from_nearby_chests = stored;
+            let json = w.to_json();
+            assert!(
+                json.contains(&format!("\"CraftFromNearbyChests\": {stored},")),
+                "the writer persists the key: {json}"
+            );
+        }
+        // Garbage coerces to false, exactly like the port's other fifteen
+        // boolean arms (`boolean` in `parse`): the whole value token — quotes
+        // included — must equal "true". Vanilla's `Preferences.Get` would
+        // instead keep the field default, its `try`/`catch` swallowing the
+        // `Convert.ChangeType` failure
+        // (`Terraria/IO/Preferences.cs:176-190`); that coercion is port-wide
+        // and pre-existing, so this key follows its siblings rather than
+        // standing alone — Phase 2 owns the boolean-arm semantics.
+        for bad in ["\"maybe\"", "7", "null", "\"True\"", "TRUE!"] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {bad}\n}}");
+            let s = Settings::parse(&text);
+            assert!(!s.craft_from_nearby_chests, "{bad} coerces to false");
+        }
+        // The comparison is case-insensitive; only the bare literal counts.
+        for good in ["true", "True", "TRUE"] {
+            let text = format!("{{\n \"CraftFromNearbyChests\": {good}\n}}");
+            let s = Settings::parse(&text);
+            assert!(s.craft_from_nearby_chests, "{good} is truthy");
+        }
+        // A key absent from the file leaves the default alone.
+        assert!(Settings::parse("{}").craft_from_nearby_chests, "Player.cs:406");
     }
 
     #[test]
@@ -818,5 +1083,345 @@ mod tests {
             s.resource_sets, "Nope",
             "the raw key is kept; the label normalizes on use"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 2 — the vanilla key names (writer) and the alias arms (reader).
+    // ------------------------------------------------------------------
+
+    /// The key names of a `to_json()` document, in file order. The writer's one
+    /// `"key": value` per line makes a line split enough: the one-line
+    /// `"MouseColor"` / `"MouseBorderColor"` dicts yield a single key each,
+    /// and their inner `"R"`/`"G"`/`"B"`/`"A"` entries never start a line.
+    /// (Only the bare `{` / `}` lines are skipped.)
+    fn json_keys(json: &str) -> Vec<&str> {
+        json.lines()
+            .map(|line| line.trim().trim_end_matches(','))
+            .filter_map(|line| line.strip_prefix('"'))
+            .filter_map(|line| line.split_once("\":"))
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    /// A vanilla-shaped `config.json`: the ten renames (`Main.cs:4096-4157`),
+    /// the `"HidePasswords"` spelling (`:4144`) and the already-verified keys.
+    fn vanilla_renamed_config() -> &'static str {
+        "{\n  \"AutoSave\": false,\n  \"AutoPause\": true,\n  \"Language\": \"ru-RU\",\n \
+         \"MapEnabled\": false,\n  \"HidePasswords\": true,\n \
+         \"PlayWhenUnfocused\": true,\n  \"ShowItemText\": false,\n \
+         \"InvasionBarMode\": 1,\n  \"PlacementPreview\": false,\n \
+         \"HighlightNewItems\": false,\n  \"MouseShowBuildingGrid\": true,\n \
+         \"GamepadDisableInstructionsDisplay\": false,\n \
+         \"BackgroundParallax\": 25,\n  \"FrameSkipMode\": 1,\n  \"LightingMode\": 1,\n \
+         \"GraphicsQuality\": 2,\n  \"BackgroundEnabled\": false,\n \
+         \"GoreVisualsAllowed\": false,\n  \"SettingsEnabled_MinersWobble\": false,\n \
+         \"SettingsEnabled_TilesSwayInWind\": false,\n  \"UseStormEffect\": true,\n \
+         \"UseHeatDistortion\": true,\n  \"ForegroundSunlightEffects\": true,\n \
+         \"WaveQuality\": 1,\n  \"FlashyEffectsWorld\": false,\n  \"UseScreenShake\": false,\n \
+         \"Zoom\": 1.5,\n  \"VolumeMusic\": 0.25,\n  \"VolumeSound\": 0.5,\n \
+         \"VolumeAmbient\": 0.75,\n  \"MapScale\": 0.75,\n \
+         \"MouseColor\": {\"R\": 11, \"G\": 12, \"B\": 13},\n \
+         \"MouseBorderColor\": {\"R\": 14, \"G\": 15, \"B\": 16, \"A\": 17},\n \
+         \"SmartCursorToggle\": false,\n  \"UseSmartAxeAfterSmartPickaxe\": true,\n \
+         \"UseSmartCursorForCommonBlocks\": true,\n  \"CraftFromNearbyChests\": false,\n \
+         \"LockOnPriority\": 1,\n  \"ReverseUpDownForArmorSetBonuses\": true,\n \
+         \"DisableLeftShiftTrashCan\": false,\n  \"DisableQuickTrash\": true,\n \
+         \"PlayerResourcesSet\": \"HorizontalBars\",\n  \"PortraitPreference\": 3,\n \
+         \"ShowBossBarHealthText\": false,\n  \"FlashyEffectsInterface\": false,\n \
+         \"MinimapFrame\": \"Golden\"\n}\n"
+    }
+
+    #[test]
+    fn test_DW_2_1_vanilla_fixture_reads_the_renamed_keys() {
+        // A real `Main.SaveSettings` file: the port must read the renamed keys
+        // without the aliases. Every non-default value below has to survive.
+        let s = Settings::parse(vanilla_renamed_config());
+        assert!(!s.auto_save);
+        assert!(s.auto_pause);
+        assert_eq!(s.language, "ru-RU");
+        assert!(!s.map_enabled);
+        // `HidePasswords` (`Main.cs:4144`, `Get` `:4422`).
+        assert!(s.hide_password);
+        assert!(s.play_when_unfocused);
+        // `ShowItemText` (`:4135`, `Get` `:4409`).
+        assert!(!s.pickup_text);
+        // `InvasionBarMode` (`:4096`, `Get` `:4332`).
+        assert_eq!(s.event_progress, 1);
+        assert!(!s.placement_preview);
+        assert!(!s.highlight_new_items);
+        assert!(s.tile_grid);
+        // `GamepadDisableInstructionsDisplay` (`:4151`, `Get` `:4427`).
+        assert!(!s.gamepad_instructions);
+        assert_eq!(s.parallax_scroll, 25);
+        assert_eq!(s.frame_skip, 1);
+        // The Phase 1 ordinal translation still rides on top of the renames:
+        // vanilla's 1 is Retro, the port's 2.
+        assert_eq!(s.light_mode, 2);
+        // `GraphicsQuality` (`:4130`, `Get` `:4371`).
+        assert_eq!(s.quality, 2);
+        assert!(!s.background);
+        // `GoreVisualsAllowed` (`:4101`, `Get` `:4349`).
+        assert!(!s.blood);
+        // `SettingsEnabled_MinersWobble` (`:4153`, `Get` `:4540`) and
+        // `SettingsEnabled_TilesSwayInWind` (`:4157`, `Get` `:4543`).
+        assert!(!s.miners_wobble);
+        assert!(!s.tiles_sway);
+        // The audio trio (`:4105-4107`, `Get` `:4355-4357`) — note the noun
+        // comes first, so the port's old names do not appear at all.
+        assert_eq!(s.music_volume, 0.25);
+        assert_eq!(s.sound_volume, 0.5);
+        assert_eq!(s.ambient_volume, 0.75);
+        assert!((s.zoom - 1.5).abs() < 1e-3);
+        assert!((s.map_scale - 0.75).abs() < 1e-3);
+        assert_eq!(s.mouse_color, [11, 12, 13, 255]);
+        assert_eq!(s.mouse_border_color, [14, 15, 16, 17]);
+        assert!(!s.smart_cursor_toggle);
+        assert!(s.smart_axe_first);
+        assert!(s.smart_blocks);
+        // Phase 1's key (`Main.cs:4213`) reads through the same file.
+        assert!(!s.craft_from_nearby_chests);
+        assert_eq!(s.lock_on_priority, 1);
+        assert!(s.reversed_armor_bonuses);
+        assert!(!s.disable_left_shift_trash);
+        assert!(s.quick_trash);
+        assert_eq!(s.resource_sets, "HorizontalBars");
+        assert_eq!(s.portrait_preference, 3);
+        assert!(!s.boss_bar_text);
+        assert!(!s.flashy_effects_interface);
+        assert_eq!(s.minimap_frame, "Golden");
+    }
+
+    #[test]
+    fn test_DW_2_2_legacy_port_names_load_through_the_aliases() {
+        // The port's own pre-parity config (all twelve old spellings) must keep
+        // every value it stored; the alias arms exist for exactly this file.
+        let s = Settings::parse(
+            "{\n  \"PickupText\": false,\n  \"MusicVolume\": 0.3,\n  \
+             \"SoundVolume\": 0.4,\n  \"AmbientVolume\": 0.5,\n  \"Quality\": 3,\n \
+             \"BloodAndGore\": false,\n  \"MinersWobble\": false,\n \
+             \"TilesSwayInWind\": false,\n  \"GamepadInstructions\": false,\n \
+             \"InvasionProgressMode\": 0,\n  \"SettingPlayWhenUnfocused\": true,\n  \
+             \"HidePassword\": true\n}\n",
+        );
+        assert!(!s.pickup_text);
+        assert!((s.music_volume - 0.3).abs() < 1e-3);
+        assert!((s.sound_volume - 0.4).abs() < 1e-3);
+        assert!((s.ambient_volume - 0.5).abs() < 1e-3);
+        assert_eq!(s.quality, 3);
+        assert!(!s.blood);
+        assert!(!s.miners_wobble);
+        assert!(!s.tiles_sway);
+        assert!(!s.gamepad_instructions);
+        assert_eq!(s.event_progress, 0);
+        assert!(s.play_when_unfocused, "the old spelling still loads");
+        assert!(s.hide_password);
+    }
+
+    #[test]
+    fn test_DW_2_2_hide_password_reads_the_vanilla_and_port_names() {
+        // The one alias the task spells out: `Main.HidePassword` is persisted as
+        // `"HidePasswords"` (`Main.cs:4144`, `Get` `:4422`); the port wrote the
+        // singular before the parity pass, so both spellings load.
+        for spelling in ["HidePasswords", "HidePassword"] {
+            let text = format!("{{\n  \"{spelling}\": true\n}}");
+            assert!(Settings::parse(&text).hide_password, "{spelling}: true reads");
+            let text = format!("{{\n  \"{spelling}\": false\n}}");
+            assert!(!Settings::parse(&text).hide_password, "{spelling}: false reads");
+        }
+    }
+
+    #[test]
+    fn test_DW_2_2_both_spellings_in_one_file_last_line_wins() {
+        // The parser's existing semantics — the last line for a key wins —
+        // carries over to the alias pairs: whatever comes last is the value the
+        // field keeps, so the ordering must be spelled out in a comment.
+        let vanilla_last = "{\n  \"HidePassword\": false,\n  \"HidePasswords\": true\n}";
+        assert!(Settings::parse(vanilla_last).hide_password);
+        let port_last = "{\n  \"HidePasswords\": false,\n  \"HidePassword\": true\n}";
+        assert!(Settings::parse(port_last).hide_password);
+
+        let vanilla_last = "{\n  \"MusicVolume\": 0.9,\n  \"VolumeMusic\": 0.1\n}";
+        assert_eq!(Settings::parse(vanilla_last).music_volume, 0.1);
+        let port_last = "{\n  \"VolumeMusic\": 0.9,\n  \"MusicVolume\": 0.1\n}";
+        assert_eq!(Settings::parse(port_last).music_volume, 0.1);
+
+        let vanilla_last = "{\n  \"BloodAndGore\": true,\n  \"GoreVisualsAllowed\": false\n}";
+        assert!(!Settings::parse(vanilla_last).blood);
+        let port_last = "{\n  \"GoreVisualsAllowed\": false,\n  \"BloodAndGore\": true\n}";
+        assert!(Settings::parse(port_last).blood);
+    }
+
+    #[test]
+    fn test_DW_2_3_to_json_writes_the_vanilla_key_names() {
+        let json = Settings::default().to_json();
+        // The exact key sequence, in the writer's own order (the order the port
+        // has always written; only the names changed). The brace-aware reader
+        // keeps the two colour dicts as single pairs.
+        assert_eq!(
+            json_keys(&json),
+            [
+                "AutoSave",
+                "AutoPause",
+                "Language",
+                "MapEnabled",
+                "HidePasswords",
+                "PlayWhenUnfocused",
+                "ShowItemText",
+                "InvasionBarMode",
+                "PlacementPreview",
+                "HighlightNewItems",
+                "MouseShowBuildingGrid",
+                "GamepadDisableInstructionsDisplay",
+                "BackgroundParallax",
+                "FrameSkipMode",
+                "LightingMode",
+                "GraphicsQuality",
+                "BackgroundEnabled",
+                "GoreVisualsAllowed",
+                "SettingsEnabled_MinersWobble",
+                "SettingsEnabled_TilesSwayInWind",
+                "UseStormEffect",
+                "UseHeatDistortion",
+                "ForegroundSunlightEffects",
+                "WaveQuality",
+                "FlashyEffectsWorld",
+                "UseScreenShake",
+                "Zoom",
+                "VolumeMusic",
+                "VolumeSound",
+                "VolumeAmbient",
+                "MapScale",
+                "MouseColor",
+                "MouseBorderColor",
+                "SmartCursorToggle",
+                "UseSmartAxeAfterSmartPickaxe",
+                "UseSmartCursorForCommonBlocks",
+                "CraftFromNearbyChests",
+                "LockOnPriority",
+                "ReverseUpDownForArmorSetBonuses",
+                "DisableLeftShiftTrashCan",
+                "DisableQuickTrash",
+                "PlayerResourcesSet",
+                "PortraitPreference",
+                "ShowBossBarHealthText",
+                "FlashyEffectsInterface",
+                "MinimapFrame",
+            ]
+        );
+        // Vanilla names only: the port's twelve pre-parity spellings never
+        // appear in the document, not even as a substring of a value.
+        for old in [
+            "\"HidePassword\"",
+            "\"PickupText\"",
+            "\"InvasionProgressMode\"",
+            "\"GamepadInstructions\"",
+            "\"Quality\"",
+            "\"BloodAndGore\"",
+            "\"MinersWobble\"",
+            "\"TilesSwayInWind\"",
+            "\"MusicVolume\"",
+            "\"SoundVolume\"",
+            "\"AmbientVolume\"",
+            "\"SettingPlayWhenUnfocused\"",
+        ] {
+            assert!(!json.contains(old), "{old} must not be written: {json}");
+        }
+        // The eleven renames as whole `"key":` pairs plus `HidePasswords`, so the
+        // alias check above cannot pass on a new name containing an old one.
+        for new in [
+            "\"HidePasswords\":",
+            "\"PlayWhenUnfocused\":",
+            "\"ShowItemText\":",
+            "\"InvasionBarMode\":",
+            "\"GamepadDisableInstructionsDisplay\":",
+            "\"GraphicsQuality\":",
+            "\"GoreVisualsAllowed\":",
+            "\"SettingsEnabled_MinersWobble\":",
+            "\"SettingsEnabled_TilesSwayInWind\":",
+            "\"VolumeMusic\":",
+            "\"VolumeSound\":",
+            "\"VolumeAmbient\":",
+        ] {
+            assert!(json.contains(new), "{new} is the vanilla spelling: {json}");
+        }
+        // The values sit on the new names, so a vanilla `config.json` reads back
+        // what the port wrote (the round-trip is the point of the rename).
+        let s = Settings::parse(vanilla_renamed_config());
+        let back = Settings::parse(&s.to_json());
+        assert_eq!(back.hide_password, s.hide_password);
+        assert_eq!(back.pickup_text, s.pickup_text);
+        assert_eq!(back.event_progress, s.event_progress);
+        assert_eq!(back.gamepad_instructions, s.gamepad_instructions);
+        assert_eq!(back.quality, s.quality);
+        assert_eq!(back.blood, s.blood);
+        assert_eq!(back.miners_wobble, s.miners_wobble);
+        assert_eq!(back.tiles_sway, s.tiles_sway);
+        assert_eq!(back.music_volume, s.music_volume);
+        assert_eq!(back.sound_volume, s.sound_volume);
+        assert_eq!(back.ambient_volume, s.ambient_volume);
+    }
+
+    #[test]
+    fn renamed_keys_keep_the_port_clamps_and_coercions() {
+        // Boundary/dirty data on the renamed arms — the semantics are the
+        // port's own (documented, not a vanilla `Get`), and they must survive
+        // the rename unchanged for both spellings.
+        for key in ["GraphicsQuality", "Quality"] {
+            assert_eq!(Settings::parse(&format!("{{\n \"{key}\": 9\n}}")).quality, 3);
+            assert_eq!(Settings::parse(&format!("{{\n \"{key}\": 255\n}}")).quality, 3);
+            assert_eq!(
+                Settings::parse(&format!("{{\n \"{key}\": \"x\"\n}}")).quality,
+                0,
+                "an unparseable byte keeps the default"
+            );
+        }
+        for key in ["InvasionBarMode", "InvasionProgressMode"] {
+            assert_eq!(Settings::parse(&format!("{{\n \"{key}\": 3\n}}")).event_progress, 2);
+            assert_eq!(
+                Settings::parse(&format!("{{\n \"{key}\": \"x\"\n}}")).event_progress,
+                2,
+                "the default (On) survives"
+            );
+        }
+        for key in ["VolumeMusic", "MusicVolume"] {
+            // Garbage falls back to the previous/default value, as before.
+            assert_eq!(
+                Settings::parse(&format!("{{\n \"{key}\": \"loud\"\n}}")).music_volume, 1.0
+            );
+            assert_eq!(Settings::parse(&format!("{{\n \"{key}\": 0\n}}")).music_volume, 0.0);
+        }
+        // The boolean arms coerce any non-"true" token to false (the port-wide,
+        // pre-existing semantics this phase deliberately does not change).
+        for bad in ["\"True\"", "1", "null", "TRUE!"] {
+            let text = format!("{{\n \"GoreVisualsAllowed\": {bad}\n}}");
+            assert!(!Settings::parse(&text).blood, "{bad} coerces to false");
+        }
+        // A key absent from the file keeps the default.
+        assert!(Settings::parse("{}").blood);
+        assert!(Settings::parse("{}").pickup_text);
+        assert!(!Settings::parse("{}").hide_password, "`Main.HidePassword` default");
+    }
+
+    #[test]
+    fn empty_and_blank_files_and_unknown_keys_keep_the_defaults() {
+        // Dirty-input robustness of the whole parser: an empty file, a blank
+        // file, a file of only braces and a file of unknown keys all yield the
+        // defaults (a missing key never moves a field).
+        let d = Settings::default();
+        for text in ["", "\n\n", "{}", "{ }", "{\n}", "garbage", "{\n \"Nope\": 1\n}"] {
+            let s = Settings::parse(text);
+            assert_eq!(s.auto_save, d.auto_save, "{text:?}");
+            assert_eq!(s.auto_pause, d.auto_pause, "{text:?}");
+            assert_eq!(s.quality, d.quality, "{text:?}");
+            assert_eq!(s.event_progress, d.event_progress, "{text:?}");
+            assert_eq!(s.light_mode, d.light_mode, "{text:?}");
+            assert_eq!(s.music_volume, d.music_volume, "{text:?}");
+            assert_eq!(s.pickup_text, d.pickup_text, "{text:?}");
+            assert_eq!(s.blood, d.blood, "{text:?}");
+            assert_eq!(s.language, d.language, "{text:?}");
+        }
+        // Blank-ish whitespace around a real key still parses (the parser
+        // trims each line).
+        assert!(!Settings::parse("   \"GoreVisualsAllowed\" : false   ").blood);
     }
 }

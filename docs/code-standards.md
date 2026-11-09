@@ -151,8 +151,12 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
   randomness uses named u64 streams through `next_rand`/`rand01`
   (`crates/tr-app/src/app/frame.rs:1413/:1421`) — one stream per consumer (crafting,
   growth, scheduler; `rain.rs` owns its own with `StreamReplay` for replay); (4) worldgen
-  uses the xorshift stream; (5) a pinned constant is the last resort and must be recorded
-  in ANALYSIS. Determinism is a hard invariant.
+  and the wind walk share one xorshift core — `Xorshift64` (`tr-core/src/rng.rs`), the
+  13/7/17 triple carrying both draw conventions (worldgen's high-32-bit `next_u32` +
+  `range`/`chance`/`next_f64`, re-exported as `Rng` from `worldgen/noise.rs`; the wind
+  walk's `from_seed` + `range`), byte-exact to the pre-refactor cores; (5) a pinned
+  constant is the last resort and must be recorded in ANALYSIS. Determinism is a hard
+  invariant.
 - Time: 60 Hz fixed step (`FixedStepper`), one update per draw, accumulator clamped 3×.
 
 ## Exemplar Files

@@ -58,7 +58,7 @@ const TXT_NAME_TAKEN: &str = "That name is taken.";
 
 impl App {
     /// Drains network events without borrowing `self.net` across handlers, and
-    /// keeps the idle timers alive (`TimeOutTimer`, `MessageBuffer.cs:127-134`).
+    // keeps the idle timers alive (`TimeOutTimer`, `MessageBuffer.cs:127-134`).
     pub(crate) fn poll_net(&mut self) {
         let mut server_events = Vec::new();
         let mut client_events = Vec::new();
@@ -359,6 +359,75 @@ impl App {
             C2s::NetModule { module, body } => {
                 self.host_module(server, id, module, &body);
             }
+            // `case 28` — a client's NPC strike. The host is authoritative: it
+            // validates the generation (`MessageBuffer.cs:1781-1784`), applies
+            // the strike and relays it, plus a full `23` update on death
+            // (`MessageBuffer.cs:1805-1815`).
+            C2s::NpcStrike(st) => {
+                let slot = st.npc as usize;
+                let gen_ok = self
+                    .net_npc_gen
+                    .get(&(slot as u32))
+                    .map(|(_, g)| *g == st.generation as u32)
+                    .unwrap_or(false);
+                if !gen_ok || !self.npcs.get(slot).is_some_and(|n| n.hp > 0) {
+                    log::debug!("strike for unknown npc slot {slot} gen {}", st.generation);
+                    return;
+                }
+                let npc = &mut self.npcs[slot];
+                npc.facing = if st.hit_direction > 0 { 1 } else { -1 };
+                npc.hurt(st.damage.max(0) as i32, npc.x, st.knock_back, st.crit);
+                let dead = self.npcs[slot].hp <= 0;
+                // The relay carries the validated values to everyone else.
+                server.broadcast_except(&S2c::NpcStrike(st), id);
+                if dead {
+                    // The full `23` update on death (`MessageBuffer.cs:1808-1811`).
+                    let kind = self.npcs[slot].kind.to_u16() as i16;
+                    let generation = self
+                        .net_npc_gen
+                        .get(&(slot as u32))
+                        .map(|(_, g)| *g)
+                        .unwrap_or(0);
+                    let npc = &self.npcs[slot];
+                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
+                        slot: st.npc,
+                        generation: generation as u8,
+                        spawn: false,
+                        kind,
+                        x: npc.x,
+                        y: npc.y,
+                        vx: npc.vx,
+                        vy: npc.vy,
+                        dir_right: npc.facing > 0,
+                        dir_y_down: npc.vy > 0.0,
+                        sprite_right: npc.facing > 0,
+                        life_full: false,
+                        hp: npc.hp,
+                    })));
+                }
+            }
+            // `case 27` — a peer's own projectile state. The host applies it
+            // into its pool (rendering; the owner-side damage arrives as
+            // `28`) and relays it to the others
+            // (`MessageBuffer.cs:1760-1763`).
+            C2s::Projectile(ps) => {
+                self.projectiles.upsert_remote(&ps);
+                server.broadcast_except(&S2c::Projectile(ps.clone()), id);
+            }
+            // `case 29` — a peer's projectile is gone; the host drops the slot
+            // and relays (`MessageBuffer.cs:1844-1847`).
+            C2s::ProjectileDead { key } => {
+                let (owner, slot, generation) = net::projectile_key_parts(key);
+                self.projectiles.kill_remote(slot, owner, generation);
+                server.broadcast_except(
+                    &S2c::ProjectileDead {
+                        key,
+                        x: f32::NAN,
+                        y: f32::NAN,
+                    },
+                    id,
+                );
+            }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
                 // C# `SyncItem`→`151` path — `WorldItem.cs:612-615`). The host
@@ -383,7 +452,7 @@ impl App {
 
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
-    /// the peers, the peers learn the newcomer.
+    // the peers, the peers learn the newcomer.
 
     /// Streams the world to a spawning client as `10 TileBlock` sections —
     /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
@@ -931,6 +1000,34 @@ impl App {
             S2c::NetModule { module, body } => {
                 self.client_module(module, &body);
             }
+            // `case 27` — one projectile's spawn/update state; the pool
+            // patches or re-creates the slot by key (`MessageBuffer.cs:1729-1755`).
+            S2c::Projectile(ps) => {
+                self.projectiles.upsert_remote(&ps);
+            }
+            // `case 29` — the projectile is gone; a finite position means the
+            // slot dies there, NaN deactivates it silently
+            // (`MessageBuffer.cs:1825-1850`).
+            S2c::ProjectileDead { key, .. } => {
+                let (owner, slot, generation) = net::projectile_key_parts(key);
+                self.projectiles.kill_remote(slot, owner, generation);
+            }
+            // `case 28` — a peer's strike: the local flash (the C# applies the
+            // full `StrikeNPC_Inner` on every client — the port keeps the
+            // hp/hurt_cd/flash part, the knockback rides the `23` snapshots).
+            S2c::NpcStrike(st) => {
+                let slot = st.npc as u32;
+                if let Some(npc) = self.net_npcs.get_mut(&slot) {
+                    npc.facing = if st.hit_direction > 0 { 1 } else { -1 };
+                    if st.damage >= 0 {
+                        npc.hp = (npc.hp - st.damage as i32).max(0);
+                    } else {
+                        npc.hp = 0;
+                    }
+                    npc.hurt_cd = 0.18;
+                    self.net_npcs_dirty = true;
+                }
+            }
             // `case 23` — one NPC's state. The client keeps a slot-keyed
             // store (`net_npcs`) and recreates a slot only on a kind change or
             // the spawn flag (the C#'s `generation`/`spawnNeedsSyncing` test,
@@ -941,6 +1038,9 @@ impl App {
                 let slot = info.slot as u32;
                 self.net_npc_seen.push(slot);
                 self.net_npcs_seen_at.insert(slot, Instant::now());
+                // The slot's generation rides back on this client's strikes.
+                self.net_npc_gen
+                    .insert(slot, (info.kind, info.generation as u32));
                 let kind = crate::npc::NpcKind::from_u16(info.kind.max(0) as u16);
                 let recreate = !self.net_npcs.contains_key(&slot)
                     || info.spawn
@@ -1256,7 +1356,7 @@ impl App {
         self.remote_players.clear();
         self.local_id = 0;
         if self.menu.is_none() {
-            let mut m = menu::Menu::new(self.player_name.clone());
+            let mut m = menu::Menu::new(self.settings.clone(), self.player_name.clone());
             m.error = Some(format!("Disconnected: {reason}"));
             self.menu = Some(m);
         }
@@ -1265,6 +1365,65 @@ impl App {
     /// Sends our player (and, when hosting, the authoritative state) at 10 Hz.
     /// The in-world gate is the accept gate's mirror: the internal messages
     /// are only legal at `IN_WORLD` (`MessageBuffer.cs:161`).
+    /// The `27` diff pass for this machine's own projectiles: the states that
+    /// changed since the last send, gated by the C#'s send budget
+    /// (`Projectile.cs:17224-17238`: budget 60, cost 5, refill 1/tick — the
+    /// net tick runs at 10 Hz, so the refill is 10 here), plus the keys that
+    /// left the locally-simulated set (the `29` despawns). The caller sends
+    /// the plan in the direction its role dictates.
+    fn projectile_sync_plan(&mut self) -> (Vec<net::ProjectileState>, Vec<i32>) {
+        for v in self.net_proj_spam.values_mut() {
+            *v = (*v - 10).max(0);
+        }
+        let local = self.local_id as u8;
+        let mut current: Vec<net::ProjectileState> = Vec::new();
+        for slot in 0..crate::projectile::MAX_PROJECTILES {
+            let p = &self.projectiles.slots()[slot];
+            if !p.active || p.owner != local {
+                continue;
+            }
+            current.push(net::ProjectileState {
+                key: self.projectiles.key_of(slot),
+                x: p.pos.x,
+                y: p.pos.y,
+                vx: p.vel.x,
+                vy: p.vel.y,
+                kind: p.kind as i16,
+                ai0: if p.ai[0] != 0.0 { Some(p.ai[0]) } else { None },
+                ai1: if p.ai[1] != 0.0 { Some(p.ai[1]) } else { None },
+                banner_id: 0,
+                damage: p.damage.clamp(0, i16::MAX as i32) as i16,
+                knock_back: p.knock_back,
+                original_damage: 0,
+                ai2: if p.ai[2] != 0.0 { Some(p.ai[2]) } else { None },
+            });
+        }
+        let mut sends = Vec::new();
+        for st in &current {
+            if self.net_proj_last.get(&st.key) == Some(st) {
+                continue;
+            }
+            let budget = self.net_proj_spam.entry(st.key).or_insert(0);
+            if *budget >= 60 {
+                continue; // parked until the budget frees (`netUpdate2`)
+            }
+            *budget += 5;
+            sends.push(*st);
+            self.net_proj_last.insert(st.key, *st);
+        }
+        let mut dead = Vec::new();
+        for key in self.net_proj_last.keys().copied().collect::<Vec<_>>() {
+            if !current.iter().any(|st| st.key == key) {
+                dead.push(key);
+            }
+        }
+        for key in &dead {
+            self.net_proj_last.remove(key);
+            self.net_proj_spam.remove(key);
+        }
+        (sends, dead)
+    }
+
     pub(crate) fn net_tick(&mut self, dt: f32) {
         if matches!(self.net, NetRole::Off) {
             return;
@@ -1296,6 +1455,9 @@ impl App {
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
         // (type, seed) pairs leave the store before the role borrow.
         let ambience_spawns = self.take_unsent_ambience();
+        // The `27` diff for this machine's own projectiles, sent in the
+        // direction the role dictates below.
+        let (proj_sends, proj_dead) = self.projectile_sync_plan();
         // The `82` module cadence (the 1 Hz ping on a client).
         self.net_module_tick();
         match &self.net {
@@ -1312,6 +1474,18 @@ impl App {
                     server.broadcast(&S2c::NetModule {
                         module: crate::app::netmodules::module_id::AMBIENCE,
                         body,
+                    });
+                }
+                // The `27` broadcast for the host's own projectiles and the
+                // `29` despawns (`Projectile.cs:17224-17238`).
+                for st in &proj_sends {
+                    server.broadcast(&S2c::Projectile(Box::new(*st)));
+                }
+                for key in &proj_dead {
+                    server.broadcast(&S2c::ProjectileDead {
+                        key: *key,
+                        x: f32::NAN,
+                        y: f32::NAN,
                     });
                 }
                 // Newly approached sections stream before the cadence batch
@@ -1400,6 +1574,15 @@ impl App {
                 });
             }
             NetRole::Client(client) => {
+                // The client's own projectiles go to the host as `27`
+                // (`Projectile.cs:17210-17244`'s owner machine) and its
+                // despawns as `29`.
+                for st in &proj_sends {
+                    client.send(&C2s::Projectile(Box::new(*st)));
+                }
+                for key in &proj_dead {
+                    client.send(&C2s::ProjectileDead { key: *key });
+                }
                 // The C#'s `TrySyncingInput` change-driven send plus the
                 // 420-tick heartbeat (`Player.cs:6852-6916`,
                 // `Main.cs:64522-64529`); the port's control flags are not
@@ -1434,7 +1617,7 @@ impl App {
     /// `max(2, 10% of the lag)` per tick, collision-boosted; the NPC arm's
     /// `2 + 2*(len/range)` — `NPC.cs:90287-90311`), and the client's npc list
     /// is refreshed from the slot store so the render sees the decayed
-    /// offsets. Host/single-player: a no-op (`net_offset`/`off_*` stay zero).
+    // offsets. Host/single-player: a no-op (`net_offset`/`off_*` stay zero).
     pub(crate) fn net_interp_tick(&mut self, dt: f32) {
         if !self.is_client() {
             return;
@@ -1520,6 +1703,7 @@ impl App {
             let mut slots: Vec<(u32, crate::npc::Npc)> =
                 self.net_npcs.iter().map(|(k, v)| (*k, v.clone())).collect();
             slots.sort_by_key(|(k, _)| *k);
+            self.net_npc_slots = slots.iter().map(|(k, _)| *k).collect();
             self.npcs = slots.into_iter().map(|(_, v)| v).collect();
         }
         if std::mem::take(&mut self.net_items_dirty) {
@@ -1530,6 +1714,42 @@ impl App {
                 .collect();
             v.sort_by_key(|(k, _)| *k);
             self.items = v.into_iter().map(|(_, d)| d).collect();
+        }
+    }
+
+    /// A client-side strike on a networked NPC: the `28` body addressed by the
+    /// host's slot and the generation the `23` push delivered
+    // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
+    pub(crate) fn send_npc_strike(
+        &self,
+        idx: usize,
+        damage: i32,
+        knock_back: f32,
+        crit: bool,
+        from_right: bool,
+    ) {
+        if !matches!(self.net, NetRole::Client(_)) {
+            return;
+        }
+        // The local npcs Vec is the slot-keyed store rebuilt in slot order, so
+        // the index maps through `net_npc_slots`.
+        let Some(slot) = self.net_npc_slots.get(idx).copied() else {
+            return;
+        };
+        let generation = self
+            .net_npc_gen
+            .get(&slot)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(0);
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: slot as u8,
+                generation,
+                damage: damage.clamp(0, i16::MAX as i32) as i16,
+                knock_back,
+                hit_direction: if from_right { 1 } else { -1 },
+                crit,
+            }));
         }
     }
 
@@ -1545,7 +1765,7 @@ impl App {
     /// The replicated tile change: the host broadcasts a `20 SectionRange`
     /// of the edited tiles (`SendTileSquare`, `NetMessage.cs:2627-2630`), the
     /// client asks for one. The edit kinds (0 kill tile, 1 place, 2/3 wall)
-    /// already mutated the local world, so the record is read back out.
+    // already mutated the local world, so the record is read back out.
     pub(crate) fn request_edit(&self, x: i32, y: i32, kind: u8, tile: u16) {
         // The port replicates the 1x1 edit (multi-tile objects arrive as
         // per-tile edits; the C#'s `SendTileSquare(-1, x, y, 2)` door
@@ -1594,24 +1814,6 @@ mod player_item_slot {
     }
 }
 
-/// Compresses a world for the chunk stream (zlib, speed over ratio: the tile
-/// array is mostly empty cells and compresses well).
-pub(crate) fn compressed_world(world: &World) -> Vec<u8> {
-    use std::io::Write;
-    let bytes = save::to_bytes(world).unwrap_or_default();
-    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
-    let _ = enc.write_all(&bytes);
-    enc.finish().unwrap_or_default()
-}
-
-fn decompressed_world(data: &[u8]) -> Option<World> {
-    use std::io::Read;
-    let mut out = Vec::new();
-    let mut dec = flate2::read::ZlibDecoder::new(data);
-    dec.read_to_end(&mut out).ok()?;
-    save::parse(&out).ok()
-}
-
 /// The world-probing NPC ctors, seeding a client-side NPC's stats from the
 /// `23` body (`npc_from_net`'s stats pass). `None` when the world has no
 /// column surface at the slot — the joining client's column tables are not
@@ -1621,7 +1823,7 @@ fn npc_seed(
     world: &World,
     kind: crate::npc::NpcKind,
     tx: i32,
-    x: f32,
+    _x: f32,
     y: f32,
 ) -> Option<crate::npc::Npc> {
     Some(match kind {
@@ -1751,6 +1953,36 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustTower
         | crate::npc::NpcKind::NebulaTower
         | crate::npc::NpcKind::SolarTower
+        | crate::npc::NpcKind::MoonLordHead
+        | crate::npc::NpcKind::MoonLordHand
+        | crate::npc::NpcKind::MoonLordCore
+        | crate::npc::NpcKind::MoonLordFreeEye
+        | crate::npc::NpcKind::MoonLordLeechBlob
+        | crate::npc::NpcKind::VortexHunter
+        | crate::npc::NpcKind::VortexAlien
+        | crate::npc::NpcKind::VortexHeadcrab
+        | crate::npc::NpcKind::NebulaFloater
+        | crate::npc::NpcKind::BrainSuckler
+        | crate::npc::NpcKind::Predictor
+        | crate::npc::NpcKind::StardustSpiderBig
+        | crate::npc::NpcKind::StardustSpiderSmall
+        | crate::npc::NpcKind::StardustSoldier
+        | crate::npc::NpcKind::SolarDrakomire
+        | crate::npc::NpcKind::SolarDrakomireRider
+        | crate::npc::NpcKind::SolarSroller
+        | crate::npc::NpcKind::SolarCorite
+        | crate::npc::NpcKind::SolarCrawltipedeHead
+        | crate::npc::NpcKind::SolarCrawltipedeBody
+        | crate::npc::NpcKind::SolarCrawltipedeTail
+        | crate::npc::NpcKind::StardustWormHead
+        | crate::npc::NpcKind::SolarSpearman
+        | crate::npc::NpcKind::SolarSelenian
+        | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::StardustCellSmall
+        | crate::npc::NpcKind::StardustJellyfishBig
+        | crate::npc::NpcKind::NebulaBeast
+        | crate::npc::NpcKind::VortexRifleman
+        | crate::npc::NpcKind::VortexSoldier
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher
@@ -2485,6 +2717,148 @@ mod handshake_tests {
             !client_app.ambience.entities.is_empty(),
             "the client spawned the relayed entity: {}",
             client_app.ambience.entities.len()
+        );
+    }
+
+    /// A remote player's projectile lands in the local pool through `27` and
+    /// leaves it through `29` (`MessageBuffer.cs:1729-1755`,
+    /// `:1825-1850`).
+    #[test]
+    fn a_peer_projectile_syncs_in_and_out() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host owns the slot and broadcasts it as `27`.
+        let key = net::projectile_key(0, 3, 1);
+        let st = net::ProjectileState {
+            key,
+            x: 100.0,
+            y: 100.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 10,
+            knock_back: 2.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        client_app.projectiles.upsert_remote(&st);
+        assert_eq!(client_app.projectiles.active_count(), 1);
+        let p = &client_app.projectiles.slots()[3];
+        assert_eq!(p.owner, 0, "the slot keeps the wire owner");
+        assert!((p.pos.x - 100.0).abs() < 0.01);
+        // A stale key for the same index cannot touch it.
+        client_app.projectiles.upsert_remote(&net::ProjectileState {
+            key: net::projectile_key(0, 3, 9),
+            x: 999.0,
+            ..st
+        });
+        assert!(
+            (client_app.projectiles.slots()[3].pos.x - 999.0).abs() < 0.01,
+            "the stale-generation state re-creates the slot"
+        );
+        // The despawn kills only the matching occupant.
+        client_app.projectiles.kill_remote(3, 0, 9);
+        assert_eq!(
+            client_app.projectiles.active_count(),
+            0,
+            "the 29 dropped it"
+        );
+        client_app.projectiles.kill_remote(3, 0, 1);
+        assert_eq!(
+            client_app.projectiles.active_count(),
+            0,
+            "a stale key is a no-op"
+        );
+    }
+
+    /// The own-projectile diff: the host's shot reaches the client's pool and
+    /// its death comes back as `29`.
+    #[test]
+    fn the_host_projectile_broadcast_reaches_the_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(1, 0, 100.0, 100.0, 3.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .expect("spawn");
+        let _ = slot;
+        pump(&mut host_app, &mut client_app, 20);
+        let active = client_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .count();
+        assert!(active >= 1, "the client received the host's projectile");
+        let (_, proj_dead) = client_app.projectile_sync_plan();
+        let (_, host_dead) = host_app.projectile_sync_plan();
+        assert!(
+            proj_dead.is_empty(),
+            "the host's shot is not the client's to despwn"
+        );
+        assert!(host_dead.is_empty(), "the live shot is not dead");
+    }
+
+    /// The `28` strike: a client's hit is validated and relayed by the host,
+    /// which also pushes the full `23` on death.
+    #[test]
+    fn a_strike_is_validated_and_relayed_by_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut npc =
+            crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        host_app.npcs.clear();
+        host_app.npcs.push(npc);
+        // The generation bookkeeping the first `23` push creates.
+        host_app.net_npc_gen.insert(0, (1, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        // The client knows the NPC's slot and generation from the `23` push.
+        let generation = client_app
+            .net_npc_gen
+            .get(&0)
+            .map(|(_, g)| *g as u8)
+            .expect("the 23 push delivered a generation");
+        let hp_before = client_app.net_npcs.get(&0).map(|n| n.hp).unwrap_or(0);
+        assert!(hp_before > 0);
+        // A strike from the client with the right generation lands.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 0,
+                generation,
+                damage: 10,
+                knock_back: 3.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let hp_after = client_app.net_npcs.get(&0).map(|n| n.hp).unwrap_or(0);
+        assert!(
+            hp_after < hp_before,
+            "the relayed strike landed on the client"
+        );
+        assert_eq!(
+            host_app.npcs[0].hp, hp_after,
+            "the host applied the same damage"
+        );
+        // A stale generation is dropped by the host.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 0,
+                generation: 9,
+                damage: 10,
+                knock_back: 3.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            client_app.net_npcs.get(&0).map(|n| n.hp),
+            Some(hp_after),
+            "the stale strike was dropped"
         );
     }
 }

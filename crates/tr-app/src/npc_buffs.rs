@@ -260,7 +260,37 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
-        | NpcKind::SolarTower => &[],
+        | NpcKind::SolarTower
+        | NpcKind::MoonLordHead
+        | NpcKind::MoonLordHand
+        | NpcKind::MoonLordCore
+        | NpcKind::MoonLordFreeEye
+        | NpcKind::MoonLordLeechBlob
+        | NpcKind::VortexHunter
+        | NpcKind::VortexAlien
+        | NpcKind::VortexHeadcrab
+        | NpcKind::NebulaFloater
+        | NpcKind::BrainSuckler
+        | NpcKind::Predictor
+        | NpcKind::StardustSpiderBig
+        | NpcKind::StardustSpiderSmall
+        | NpcKind::StardustSoldier
+        | NpcKind::SolarDrakomire
+        | NpcKind::SolarDrakomireRider
+        | NpcKind::SolarSroller
+        | NpcKind::SolarCorite
+        | NpcKind::SolarCrawltipedeHead
+        | NpcKind::SolarCrawltipedeBody
+        | NpcKind::SolarCrawltipedeTail
+        | NpcKind::StardustWormHead
+        | NpcKind::SolarSpearman
+        | NpcKind::SolarSelenian
+        | NpcKind::StardustCellBig
+        | NpcKind::StardustCellSmall
+        | NpcKind::StardustJellyfishBig
+        | NpcKind::NebulaBeast
+        | NpcKind::VortexRifleman
+        | NpcKind::VortexSoldier => &[],
         // The pirates: no `DebuffImmunitySets` rows.
         NpcKind::PirateDeckhand
         | NpcKind::PirateCaptainsMate
