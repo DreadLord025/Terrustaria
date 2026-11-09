@@ -1272,6 +1272,31 @@ impl NpcKind {
         }
     }
 
+    /// The kinds whose display flip rides the dedicated `sprite_dir`
+    /// (`NPC.spriteDirection`, `NPC.cs:6515`) rather than the motion
+    /// `facing`: the martian family (the Scutlix pair's inverted write,
+    /// the saucer mounts' inheritance), the Prime family (the limbs'
+    /// `-(int)ai[0]` seat write, the head's and the Twins' never-written
+    /// default -1 — `Main.cs:23124-23128` reads it as the flip) and the
+    /// Twins.
+    pub fn flips_on_sprite_dir(self) -> bool {
+        self.is_martian()
+            || self.is_prime_limb()
+            || matches!(
+                self,
+                NpcKind::SkeletronPrime | NpcKind::Retinazer | NpcKind::Spazmatism
+            )
+    }
+
+    /// The Prime's four limbs (`NPCID` 128-131, `aiStyle 33-36`) — the
+    /// kinds `AI_032`'s init spawns and the dock tether drives.
+    pub fn is_prime_limb(self) -> bool {
+        matches!(
+            self,
+            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser
+        )
+    }
+
     /// The Martian Madness family — the kinds whose `FindFrame` cases live
     /// in `NPC.cs:71578-71921` and whose display rides the drawn
     /// `spriteDirection` (the Scutlix family's inversion, the saucer
@@ -1896,6 +1921,35 @@ pub(crate) fn rot(x: f32, y: f32, angle: f32) -> (f32, f32) {
         x * angle.cos() - y * angle.sin(),
         x * angle.sin() + y * angle.cos(),
     )
+}
+
+/// `Utils.AngleLerp` (`Utils.cs:2033-2049`): the short-way angular lerp —
+/// the Prime head's Mech-Queen roll eases into half its drift through it
+/// (`NPC.cs:27689`/`:27781`/`:27866`), and the despawn's spin uses the
+/// plain accumulation. `MathHelper.WrapAngle` folds the result back into
+/// (-π, π], exactly like XNA.
+pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
+    let mut angle;
+    if target < cur {
+        let wrapped = target + std::f32::consts::TAU;
+        angle = if wrapped - cur > cur - target {
+            cur + (target - cur) * amount
+        } else {
+            cur + (wrapped - cur) * amount
+        };
+    } else {
+        if !(target > cur) {
+            return cur;
+        }
+        let wrapped = target - std::f32::consts::TAU;
+        angle = if target - cur > cur - wrapped {
+            cur + (wrapped - cur) * amount
+        } else {
+            cur + (target - cur) * amount
+        };
+    }
+    angle = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    angle
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -3250,9 +3304,40 @@ impl Npc {
                 // for type 36 — the strip is one frame).
                 self.frame = 0;
             }
-            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
-                // The limbs' single frame.
+            // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
+            // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
+            // laser have NO `FindFrame` case at all (row 0 forever), while
+            // the saw (`case 129`, `NPC.cs:74539-74554`) and the vice
+            // (`case 130`, `NPC.cs:74555-74570`) spin their 2-row strips.
+            // The v1 forced row 0 on all four ("the limbs' single frame").
+            NpcKind::PrimeCannon | NpcKind::PrimeLaser => {
+                // No `case 128`/`case 131` exists in `NPC.cs:66684-77370`
+                // — `frame.Y` never leaves its `SetFrameSize` 0.
                 self.frame = 0;
+            }
+            NpcKind::PrimeSaw => {
+                // `case 129`: `spriteDirection = direction` while grounded
+                // (the AI's own `-ai[0]` write stands otherwise); the row
+                // advances every 2 ticks and wraps at `npcFrameCount`'s 2.
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 2.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 2;
+                }
+            }
+            NpcKind::PrimeVice => {
+                // `case 130`: the same shape at the 8-tick clamp cadence.
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 2;
+                }
             }
             NpcKind::WallOfFleshEye => {
                 // The single frame — no FindFrame case for type 114.
@@ -4089,19 +4174,61 @@ impl Npc {
                 }
             }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
-                // `Main.npcFrameCount[125/126]` = 2 (`Main.cs:67082`).
+                // `case 125/126` (`NPC.cs:76906-76924`): the Twins' sheets
+                // are 6 rows of 200 (`Main.npcFrameCount[125/126]` = 6,
+                // `Main.cs:67082` — the v1's comment claimed 2 and ran an
+                // 8-tick strip over rows 0/1), laid out as the two 3-row
+                // wing-beats of the spawn (0-2) and the live (3-5) phases.
+                // The 20-tick counter walks the bands 0/1/2 and the
+                // `ai[0] > 1` hover-anchor offset (the AI's own write —
+                // `AI_022`'s `NPC.cs:24758`) parks the pair on rows 3-5.
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
+                let mut row = if self.frame_counter < 7.0 {
+                    0
+                } else if self.frame_counter < 14.0 {
+                    1
+                } else if self.frame_counter < 21.0 {
+                    2
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    0
+                };
+                if self.ai[0] > 1.0 {
+                    row += 3;
                 }
+                self.frame = row;
             }
             NpcKind::SkeletronPrime => {
-                // `Main.npcFrameCount[127]` = 1 (`Main.cs:67082`).
+                // `case 127` (`NPC.cs:74498-74538`): the head's 6-row strip
+                // (`Main.npcFrameCount[127]` = 6, `Main.cs:67082` — the v1's
+                // comment claimed 1 and left the arm empty, so the sheet
+                // pinned its 0th row forever). The hover phase (`ai[1] == 0`)
+                // alternates rows 0 and 1 every 12 ticks; every other phase
+                // holds the wide row 2. The Mech-Queen variant
+                // (`ai[3] != 0` — `NPC.cs:27630-27633`'s registration, the
+                // port never sets it yet) alternates rows 3/4 and pins 5.
+                let mech_queen = self.ai[3] != 0.0;
+                if self.ai[1] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 12.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        self.frame = if mech_queen {
+                            if self.frame >= 5 {
+                                3
+                            } else {
+                                self.frame
+                            }
+                        } else if self.frame >= 2 {
+                            0
+                        } else {
+                            self.frame
+                        };
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = if mech_queen { 5 } else { 2 };
+                }
             }
             NpcKind::TheDestroyer => {
                 // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
@@ -7850,6 +7977,15 @@ impl Npc {
             // the ±200/±500 bands, the X steer to ±100, the 0.1/2 caps,
             // the 0.98 friction; the 600-tick cycle flips to the rage.
             self.ai[2] += 1.0;
+            // The roll (`:27694-27698`): the hover's rotation rides the
+            // drift `velocity.X / 15` (the Mech Queen eases into half of
+            // it through `AngleLerp`) — the v1 never wrote a rotation, so
+            // the head drew bolt upright while it strafed.
+            self.rotation = if self.ai[3] != 0.0 {
+                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
+            } else {
+                self.vx / 15.0
+            };
             let target_y = if pcy > cy + 200.0 {
                 pcy - 500.0
             } else if pcy < cy - 200.0 {
@@ -7877,6 +8013,15 @@ impl Npc {
             // The enraged charge (`:27765-27859`): the straight line at
             // the classic 2, the 400-tick duration.
             self.ai[2] += 1.0;
+            // The spin (`:27781-27786`): the head rolls `direction * 0.3`
+            // per tick (the Mech Queen eases into the half-drift instead) —
+            // the port's find_frame case 127 pins row 2 for this phase, so
+            // the roll is the only motion the wide row shows.
+            self.rotation = if self.ai[3] != 0.0 {
+                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
+            } else {
+                self.rotation + self.facing as f32 * 0.3
+            };
             let dx = pcx - cx;
             let dy = pcy - cy;
             let d = (dx * dx + dy * dy).sqrt().max(0.001);
@@ -7888,6 +8033,11 @@ impl Npc {
             }
         } else if self.ai[1] == 2.0 {
             // The day-rage (`:27860-27892`): the 8-32 chase.
+            self.rotation = if self.ai[3] != 0.0 {
+                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
+            } else {
+                self.rotation + self.facing as f32 * 0.3
+            };
             let dx = pcx - cx;
             let dy = pcy - cy;
             let d = (dx * dx + dy * dy).sqrt().max(0.001);
@@ -7959,6 +8109,13 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        // The hover anchor (`AI_022`'s `NPC.cs:24758`): the vanilla keeps
+        // the twin's arrival band in `ai[0] = position.X` and
+        // `FindFrame`'s case 125/126 reads it back as the +3 row offset —
+        // the live wing-beat rows 3-5. The port's simplified hover has no
+        // arrival state, so the anchor write stands in for it (the value
+        // is any live pixel X, which is > 1 past the spawn tick).
+        self.ai[0] = self.x;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -8182,6 +8339,36 @@ impl Npc {
                 }
             }
         }
+        // The display direction (`AI_033`'s `NPC.cs:27960` and its three
+        // siblings `:28247`/`:28524`/`:28759`): `spriteDirection =
+        // -(int)ai[0]` — the limbs carry their seat's side, and the flip
+        // rides it (the C# reads it at `Main.cs:23124-23128`).
+        self.sprite_dir = if self.ai[0] < 0.0 { 1 } else { -1 };
+        // The sprite rotations (the `atan2` writes each limb runs every
+        // tick): the saw and the vice aim their "up" along the dock vector
+        // (the +1.57 baseline — the vice's rise rides the wider 280 dock,
+        // `AI_034`'s `NPC.cs:28445`), the cannon follows its dock while it
+        // idles (`:28656`), and the laser always aims at the player (the
+        // -1.57 baseline, `:28891`/`:28969`). The v1 wrote no rotation, so
+        // the whole family drew upright.
+        self.rotation = match self.kind {
+            NpcKind::PrimeSaw => {
+                (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2
+            }
+            NpcKind::PrimeVice => {
+                // The rise state swings at the wider 280 dock (`:28435`).
+                let dx = if self.ai[2] == 1.0 {
+                    world.prime_x - 280.0 * side
+                } else {
+                    dock_x
+                };
+                (world.prime_y + 230.0 - cy).atan2(dx - cx) + std::f32::consts::FRAC_PI_2
+            }
+            NpcKind::PrimeCannon => {
+                (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2
+            }
+            _ => (pcy - cy).atan2(pcx - cx) - std::f32::consts::FRAC_PI_2,
+        };
         self.x += self.vx;
         self.y += self.vy;
     }
@@ -9492,6 +9679,7 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
     }
     h
+
 }
 
 #[cfg(test)]
@@ -12585,6 +12773,236 @@ mod tests {
         assert_eq!(c.frame, 5, "the recoil tail: 7 - (170 - 160) / 5 = 5");
     }
 
+
+    #[test]
+    fn the_prime_head_cycles_its_rows_and_the_phase_pins_the_wide_row() {
+        // `case 127` (`NPC.cs:74498-74538`): the hover alternates rows 0/1
+        // every 12 ticks, the enraged/day phases hold the wide row 2, and
+        // the Mech-Queen variant (`ai[3] != 0`) alternates 3/4 and pins 5.
+        let mut h = bare(NpcKind::SkeletronPrime);
+        h.ai[1] = 0.0;
+        for _ in 0..11 {
+            h.find_frame();
+        }
+        assert_eq!(h.frame, 0, "11 ticks hold row 0");
+        h.find_frame();
+        assert_eq!(h.frame, 1, "the 12th tick advances to row 1");
+        for _ in 0..12 {
+            h.find_frame();
+        }
+        assert_eq!(h.frame, 0, "the wrap sets row 0 (the count's 2)");
+        // The phase pin: every non-hover state holds the wide row 2.
+        for phase in [1.0, 2.0, 3.0] {
+            h.ai[1] = phase;
+            h.find_frame();
+            assert_eq!(h.frame, 2, "phase {phase} pins row 2");
+            h.frame_counter = 11.0;
+            h.find_frame();
+            assert_eq!(h.frame, 2, "and resets the counter");
+        }
+        // The Mech-Queen rows.
+        h.ai[1] = 0.0;
+        h.ai[3] = 1.0;
+        h.frame = 3;
+        for _ in 0..12 {
+            h.find_frame();
+        }
+        assert!(h.frame == 3 || h.frame == 4, "the queen alternates 3/4: {}", h.frame);
+        h.ai[1] = 1.0;
+        h.find_frame();
+        assert_eq!(h.frame, 5, "the queen's phase pin is row 5");
+    }
+
+    #[test]
+    fn the_prime_limbs_spin_their_two_row_strips() {
+        // `case 129`/`case 130` (`NPC.cs:74539-74570`): the saw advances
+        // every 2 ticks and the vice every 8, both wrapping at
+        // `npcFrameCount`'s 2; `case 128`/`case 131` do not exist, so the
+        // cannon and the laser hold row 0 (the v1 pinned all four).
+        let mut saw = bare(NpcKind::PrimeSaw);
+        saw.find_frame();
+        assert_eq!(saw.frame, 0, "one tick holds row 0");
+        saw.find_frame();
+        assert_eq!(saw.frame, 1, "the saw's 2-tick cadence");
+        saw.find_frame();
+        saw.find_frame();
+        assert_eq!(saw.frame, 0, "the saw wraps over npcFrameCount's 2");
+        let mut vice = bare(NpcKind::PrimeVice);
+        for _ in 0..7 {
+            vice.find_frame();
+        }
+        assert_eq!(vice.frame, 0, "7 ticks hold row 0");
+        vice.find_frame();
+        assert_eq!(vice.frame, 1, "the vice's 8-tick cadence");
+        for _ in 0..8 {
+            vice.find_frame();
+        }
+        assert_eq!(vice.frame, 0, "and wraps");
+        for kind in [NpcKind::PrimeCannon, NpcKind::PrimeLaser] {
+            let mut l = bare(kind);
+            l.frame = 0;
+            for _ in 0..40 {
+                l.find_frame();
+                assert_eq!(l.frame, 0, "{kind:?} has no FindFrame case — row 0 forever");
+            }
+        }
+    }
+
+    #[test]
+    fn the_prime_limbs_aim_their_rotations_and_carry_the_seat_direction() {
+        // `AI_033`-`AI_036`: `spriteDirection = -(int)ai[0]` (the seat's
+        // side) and the per-limb `atan2` rotations — the saw/cannon aim
+        // their "up" along the dock vector (+1.57) and the laser aims at
+        // the player (-1.57). The v1 wrote neither, so the family drew
+        // upright and unflipped.
+        let mut w = ground_air();
+        w.prime_present = true;
+        w.prime_x = 200.0 * 16.0;
+        w.prime_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 260.0 * 16.0;
+        player.y = 120.0 * 16.0;
+        // A seat-1 limb (the right side): `spriteDirection = -1`.
+        let mut saw = Npc::new(NpcKind::PrimeSaw, 200.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        saw.hp = saw.max_hp;
+        saw.ai[0] = 1.0;
+        saw.update_prime_limb(&w, &player);
+        assert_eq!(saw.sprite_dir, -1, "the seat +1 limb's display direction");
+        // The dock is 200 px toward the head's centre and 230 px below it
+        // — the saw's "up" aims along that vector off the +π/2 baseline
+        // (`NPC.cs:28151`'s `atan2(dy, dx) + 1.57`).
+        let (scx, scy) = saw.center();
+        let expected = (w.prime_y + 230.0 - scy).atan2(w.prime_x - 200.0 - scx)
+            + std::f32::consts::FRAC_PI_2;
+        assert!(
+            (saw.rotation - expected).abs() < 0.001,
+            "the saw's dock aim: {} vs {}",
+            saw.rotation,
+            expected
+        );
+        // A seat -1 limb mirrors it.
+        let mut saw_l = Npc::new(NpcKind::PrimeSaw, 200.0 * 16.0, 130.0 * 16.0, -1, 0.0);
+        saw_l.hp = saw_l.max_hp;
+        saw_l.ai[0] = -1.0;
+        saw_l.update_prime_limb(&w, &player);
+        assert_eq!(saw_l.sprite_dir, 1, "the seat -1 limb's display direction");
+        // The laser aims at the player (up-right): the -1.57 baseline.
+        let mut laser = Npc::new(NpcKind::PrimeLaser, 200.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        laser.hp = laser.max_hp;
+        laser.ai[0] = 1.0;
+        laser.update_prime_limb(&w, &player);
+        let (dx, dy) = (player.center().0 - laser.center().0, player.center().1 - laser.center().1);
+        assert!(
+            (laser.rotation - (dy.atan2(dx) - std::f32::consts::FRAC_PI_2)).abs() < 0.001,
+            "the laser's player aim: {}",
+            laser.rotation
+        );
+    }
+
+    #[test]
+    fn the_prime_head_rolls_with_its_drift_and_spins_in_the_charge() {
+        // `AI_032`'s rotation writes (`NPC.cs:27694`/`:27785`): the hover
+        // rides `velocity.X / 15` and the enraged charge accumulates
+        // `direction * 0.3`. The v1 never wrote a rotation, so the head
+        // drew bolt upright while it strafed.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pr.hp = pr.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 20.0 * 16.0;
+        pr.vx = 1.5;
+        pr.update_prime(&w, &player);
+        assert!(
+            (pr.rotation - 0.1).abs() < 0.001,
+            "the hover's roll follows the drift: {}",
+            pr.rotation
+        );
+        // The charge: force the phase and roll.
+        pr.ai[1] = 1.0;
+        pr.vx = 1.5;
+        pr.update_prime(&w, &player);
+        let spin = pr.rotation - 0.1;
+        assert!(
+            (spin - 0.3).abs() < 0.001 || (spin + 0.3).abs() < 0.001,
+            "the charge's spin accumulates direction * 0.3: {}",
+            pr.rotation
+        );
+    }
+
+
+    #[test]
+    fn the_twins_beat_their_wing_rows_over_the_twenty_tick_cycle() {
+        // `case 125/126` (`NPC.cs:76906-76924`): the 20-tick counter walks
+        // the bands rows 0/1/2 and the `ai[0] > 1` hover anchor offsets
+        // them to the live rows 3/4/5 (`Main.npcFrameCount[125/126]` = 6 —
+        // NPC_125/126 are 110x1200, 200-px rows). The v1 ran an 8-tick
+        // 2-row strip.
+        let mut t = bare(NpcKind::Retinazer);
+        // Pre-anchor (the spawn ticks before the AI writes `ai[0]`): the
+        // spawn rows 0/1/2.
+        t.ai[0] = 0.0;
+        for _ in 0..6 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 0, "the first band holds row 0");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 1, "the second band advances to row 1");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 2, "the third band advances to row 2");
+        t.find_frame();
+        assert_eq!((t.frame, t.frame_counter), (0, 0.0), "the 21st tick wraps");
+        // Live: the machine's `ai[0] = position.X` write flips the pair
+        // onto the phase-2 rows.
+        t.ai[0] = 3200.0;
+        for _ in 0..6 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 3, "the anchor's +3 parks the live rows");
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 4);
+        for _ in 0..7 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 5);
+        t.find_frame();
+        assert_eq!(t.frame, 3, "the live beat wraps 5 -> 3");
+        // The Spazmatism shares the case.
+        let mut s2 = bare(NpcKind::Spazmatism);
+        s2.ai[0] = 100.0;
+        s2.find_frame();
+        assert_eq!(s2.frame, 3, "the second twin rides the same rows");
+    }
+
+    #[test]
+    fn the_twin_machine_writes_the_hover_anchor() {
+        // `AI_022`'s `NPC.cs:24758`: the hover anchor `ai[0] = position.X`
+        // is what `FindFrame` reads back as the +3 row offset — the port's
+        // simplified machine writes it once per tick.
+        let mut w = ground_air();
+        let mut tw = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        tw.hp = tw.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 20.0 * 16.0;
+        let x_before = tw.x;
+        tw.update_twin(&w, &player);
+        assert!(
+            (tw.ai[0] - x_before).abs() < 0.001,
+            "the anchor rides the position: {} vs {}",
+            tw.ai[0],
+            x_before
+        );
+        tw.find_frame();
+        assert_eq!(tw.frame, 3, "the anchor lands the live rows on the same tick");
+    }
 }
 
 #[cfg(test)]
@@ -12607,4 +13025,6 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 }

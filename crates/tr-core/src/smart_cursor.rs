@@ -10,15 +10,21 @@
 //! Ported steps, in the C# dispatch order (`:118-156`): `Step_GrassSeeds`
 //! (:266-332), `Step_Moss` (:334-379), `Step_Pigronata` (:969-1025),
 //! `Step_Torch` (:2795-2866 + `IsValidSpotForTorch` :2867-2936),
-//! `Step_LawnMower` (:2895-2939), `Step_AlchemySeeds` (:492-580),
-//! `Step_PlanterBox` (:437-490), `Step_ClayPots` (:381-435) and
-//! `Step_StaffOfRegrowth` (:224-264) — the seed/herb/planting family,
-//! gated on item id / `createTile` and shared with the
-//! closest-to-mouse vote.
+//! `Step_LawnMower` (:2895-2939), `Step_PaintRoller` (:772-812),
+//! `Step_PaintBrush` (:727-770), `Step_PaintScrapper` (:678-725),
+//! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
+//! `Step_ClayPots` (:381-435) and `Step_StaffOfRegrowth` (:224-264) — the
+//! seed/herb/planting family plus the paint family, gated on item id /
+//! `createTile` and shared with the closest-to-mouse vote. The paint steps
+//! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
+//! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
-//! platform/wall/wrench/paint families, `UsingSmartCursorWithContinuity`'s
-//! lock state, the grapple target arms, and the paint-lookup arm.
+//! platform/wall/wrench families, `UsingSmartCursorWithContinuity`'s
+//! lock state, the grapple target arms, the inventory-driven paint lookup
+//! (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`), and the
+//! app-side wiring (the reachable rect, the `App.smart_cursor` field, the
+//! settings gate).
 //!
 //! Edge convention: the C# `Main.tile` array is exactly world-sized
 //! (`Main.cs:66984`) and the reachable rect never touches the border, so
@@ -54,6 +60,11 @@ pub const GRASS_SEED_ITEMS: [u16; 7] = [62, 59, 2171, 369, 195, 194, 5214];
 pub const MOSS_ITEMS: [u16; 11] = [
     4349, 4350, 4351, 4352, 4353, 4354, 4377, 4378, 4389, 5127, 5128,
 ];
+/// `ItemID.Sets.IsPaintScraper` (`ItemID.cs:496`): the scraper items — the
+/// PaintScraper 1100 and the Spectre PaintScraper 1545. The brush/roller
+/// gates read the literal ids in the C# step bodies (no set exists for
+/// them).
+pub const PAINT_SCRAPER_ITEMS: [u16; 2] = [1100, 1545];
 
 /// The held-item fields the smart-cursor steps read (the C# reads them off
 /// `SmartCursorUsageInfo.item`).
@@ -90,6 +101,17 @@ pub struct Lookup {
     /// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
     /// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields.
     pub weather: crate::growth::WeatherCtx,
+    /// `SmartCursorUsageInfo.paintLookup` (`SmartCursorHelper.cs:38`): the
+    /// held brush/roller's selected tile/wall paint. The C# fills it with
+    /// `TryFindingPaintInplayerInventory` (:177-191) from the player's
+    /// inventory (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`) —
+    /// the inventory is app-side, so the port's caller passes it.
+    pub paint_lookup: u32,
+    /// `paintCoatingLookup` (`SmartCursorHelper.cs:39`): the selected
+    /// coating — 1 Glow (the fullbright flags, GlowPaint 4668) and 2 Echo
+    /// (the invisible flags, EchoCoating 5344), decoded by
+    /// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44170`).
+    pub paint_coating_lookup: u32,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -677,12 +699,136 @@ pub fn step_lawn_mower(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// ------------------------------------------------------------- paint family --
+
+/// `SmartCursorHelper.Step_PaintScrapper` (`:678-725`): the held scraper
+/// (1100/1545) re-points at the closest tile or wall carrying paint or a
+/// coating — or at a LongMoss tile (184), the scraper's second target
+/// (`Player.cs:41822-41824`).
+pub fn step_paint_scrapper(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:680` — the item gate + the focus sentinel. The scraper does not
+    // read the paint lookup: `TryFindingPaintInplayerInventory` :182 only
+    // fills it for the brush/roller ids, and its scan targets anything
+    // paintable or coated.
+    if !PAINT_SCRAPER_ITEMS.contains(&l.item.kind) || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:692-697` — the two OR-ed groups: a painted / coated block
+            // (LongMoss 184 included), or a painted / coated wall behind
+            // the cell (the C# `|` is the non-short-circuit bool OR over
+            // pure operands — `||` is equivalent).
+            let mut painted = false;
+            if t.active() {
+                painted |= t.paint() > 0
+                    || t.kind == 184
+                    || t.fullbright_block()
+                    || w.invisible_block(i, j);
+            }
+            if t.wall > 0 {
+                painted |=
+                    w.wall_paint(i, j) > 0 || w.fullbright_wall(i, j) || w.invisible_wall(i, j);
+            }
+            if painted {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PaintBrush` (`:727-770`): the held brush
+/// (1071/1543) re-points at the closest block that still needs the
+/// selected paint (a different tile paint) or coating.
+pub fn step_paint_brush(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:729` — the item-type gate, the "no paint selected" gate (the C#
+    // `||` chain) and the focus sentinel.
+    if (l.item.kind != 1071 && l.item.kind != 1543)
+        || (l.paint_lookup == 0 && l.paint_coating_lookup == 0)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    let (paint, coating) = (l.paint_lookup, l.paint_coating_lookup);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    // `:734` — the C#'s redundant `paintLookup != 0 || paintCoatingLookup != 0`
+    // re-check (the gate above already refused the both-zero case).
+    if paint != 0 || coating != 0 {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let Some(t) = w.tile(i, j) else {
+                    continue;
+                };
+                // `:743` — the block needs the paint (`tile.color() !=
+                // paintLookup`) or the coating (Glow 1 = !fullbrightBlock,
+                // Echo 2 = !invisibleBlock).
+                if t.active()
+                    && ((paint != 0 && t.paint() as u32 != paint)
+                        || (coating == 1 && !t.fullbright_block())
+                        || (coating == 2 && !w.invisible_block(i, j)))
+                {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PaintRoller` (`:772-812`): the held roller
+/// (1072/1544) re-points at the closest wall — behind a non-solid cell —
+/// that still needs the selected paint or coating.
+pub fn step_paint_roller(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:774` — the roller's item-type gate + the no-paint gate + the
+    // focus sentinel.
+    if (l.item.kind != 1072 && l.item.kind != 1544)
+        || (l.paint_lookup == 0 && l.paint_coating_lookup == 0)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    let (paint, coating) = (l.paint_lookup, l.paint_coating_lookup);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:786` — the wall behind a cell that is not a full solid
+            // (empty, non-solid or solidTop), needing the wall paint or
+            // the wall coating (Glow 1, Echo 2).
+            if t.wall > 0
+                && (!t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+                && ((paint != 0 && w.wall_paint(i, j) as u32 != paint)
+                    || (coating == 1 && !w.fullbright_wall(i, j))
+                    || (coating == 2 && !w.invisible_wall(i, j)))
+            {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
 /// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
-/// LawnMower :143 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155 →
+/// LawnMower :143 → PaintRoller :146 → PaintBrush :147 → PaintScrapper
+/// :148 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155 →
 /// StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
 /// first step that finds a spot wins — the C# straight-line chain.
 ///
@@ -694,12 +840,15 @@ pub fn step_lawn_mower(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
 pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 9] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 12] = [
         step_grass_seeds,
         step_moss,
         step_pigronata,
         step_torch,
         step_lawn_mower,
+        step_paint_roller,
+        step_paint_brush,
+        step_paint_scrapper,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
@@ -750,6 +899,25 @@ mod tests {
         }
     }
 
+    /// The tile paint on the cell (`Tile::set_paint`, `tile.rs:52`).
+    fn paint_at(w: &mut crate::World, x: i32, y: i32, paint: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].set_paint(paint);
+    }
+
+    /// A wall behind the cell (`Tile.wall`, the WallID — the wall's paint
+    /// and coatings ride `World::extras`).
+    fn wall_at(w: &mut crate::World, x: i32, y: i32, wall: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].wall = wall;
+    }
+
+    /// The tile's Glow-coating (fullbright) flag.
+    fn fullbright_at(w: &mut crate::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i].flags |= crate::tile::FLAG_FULLBRIGHT;
+    }
+
     /// A bare world — no fixture floor (the steps whose box sweeps need
     /// the rows above their seat clear start from it).
     fn bare() -> crate::World {
@@ -777,6 +945,8 @@ mod tests {
             end_x: 40,
             end_y: 19,
             weather: crate::growth::WeatherCtx::default(),
+            paint_lookup: 0,
+            paint_coating_lookup: 0,
         }
     }
 
@@ -1166,6 +1336,173 @@ mod tests {
             smart_cursor_lookup(&world, &l, -1, -1),
             Some((25, 19)),
             "the grass-seed step runs before the torch step"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_scrapper_finds_painted_tiles() {
+        // `Step_PaintScrapper` :692-697 — a painted tile, a LongMoss tile
+        // (184) and a coated wall are scraper targets; clean stone is not.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        paint_at(&mut world, 25, 19, 3);
+        let l = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to the painted tile"
+        );
+        let mut moss = w();
+        put(&mut moss, 25, 19, 184); // LongMoss: the scraper's second target
+        let l2 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&moss, &l2, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to LongMoss (Player.cs:41822)"
+        );
+        // A coated wall behind an empty cell is a target too.
+        let mut coated = w();
+        wall_at(&mut coated, 25, 19, 1);
+        coated.set_fullbright_wall(25, 19, true);
+        let l3 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&coated, &l3, -1, -1),
+            Some((25, 19)),
+            "the scraper snaps to the coated wall"
+        );
+        // Clean stone with no wall is not a target.
+        let clean = w();
+        let l4 = lookup(item(1100), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_scrapper(&clean, &l4, -1, -1),
+            None,
+            "a clean stone is not a scraper target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_brush_finds_the_unpainted_tile() {
+        // `Step_PaintBrush` :743 — with paint 3 selected the unpainted
+        // stone is the target and the already-painted one is skipped.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        let l = Lookup {
+            paint_lookup: 3,
+            ..lookup(item(1071), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the brush snaps to the unpainted stone"
+        );
+        let mut painted = w();
+        put(&mut painted, 25, 19, 1);
+        paint_at(&mut painted, 25, 19, 3);
+        let l2 = Lookup {
+            paint_lookup: 3,
+            ..lookup(item(1071), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&painted, &l2, -1, -1),
+            None,
+            "the tile already carries the paint"
+        );
+        // No paint or coating selected — the step no-ops (:729).
+        let l3 = lookup(item(1071), mouse_at(25, 19));
+        assert_eq!(
+            step_paint_brush(&world, &l3, -1, -1),
+            None,
+            "the brush needs a selected paint or coating"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_brush_coating_arm_wants_the_glow() {
+        // `Step_PaintBrush` :743's coating arms — Glow (coating 1) skips a
+        // fullbright block, Echo (coating 2) skips an invisible block.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        fullbright_at(&mut world, 25, 19);
+        put(&mut world, 26, 19, 1); // the plain neighbour
+        let glow = Lookup {
+            paint_coating_lookup: 1,
+            ..lookup(item(1543), mouse_at(26, 19)) // the Spectre brush
+        };
+        assert_eq!(
+            step_paint_brush(&world, &glow, -1, -1),
+            Some((26, 19)),
+            "the Glow brush skips the fullbright block"
+        );
+        let mut echo = w();
+        put(&mut echo, 25, 19, 1);
+        echo.set_invisible_block(25, 19, true);
+        put(&mut echo, 26, 19, 1);
+        let echo_l = Lookup {
+            paint_coating_lookup: 2,
+            ..lookup(item(1071), mouse_at(26, 19))
+        };
+        assert_eq!(
+            step_paint_brush(&echo, &echo_l, -1, -1),
+            Some((26, 19)),
+            "the Echo brush skips the invisible block"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_roller_finds_the_unpainted_wall() {
+        // `Step_PaintRoller` :786 — a wall behind an empty cell is the
+        // target; the already-painted wall and the wall behind a solid
+        // block are not.
+        let mut world = w();
+        wall_at(&mut world, 25, 19, 1);
+        let l = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the roller snaps to the unpainted wall"
+        );
+        let mut painted = w();
+        wall_at(&mut painted, 25, 19, 1);
+        painted.set_wall_paint(25, 19, 4);
+        let l2 = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&painted, &l2, -1, -1),
+            None,
+            "the wall already carries the paint"
+        );
+        // The wall behind a full solid cell is not a roller target.
+        let mut solid = w();
+        put(&mut solid, 25, 19, 1);
+        wall_at(&mut solid, 25, 19, 1);
+        let l3 = Lookup {
+            paint_lookup: 4,
+            ..lookup(item(1072), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_paint_roller(&solid, &l3, -1, -1),
+            None,
+            "the wall behind a solid block is not a target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_paint_steps_chain_after_the_mower() {
+        // The dispatch order (:146-148): with a held scraper the paint
+        // family runs after the mower and before the alch seeds.
+        let mut world = w();
+        put(&mut world, 25, 19, 1);
+        paint_at(&mut world, 25, 19, 3);
+        let l = lookup(item(1545), mouse_at(25, 19)); // the Spectre scraper
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the scraper step runs inside the lookup chain"
         );
     }
 }

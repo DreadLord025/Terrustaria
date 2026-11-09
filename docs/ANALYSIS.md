@@ -2908,6 +2908,86 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Twins' display (M4-NPC-3k)
+
+Retinazer and Spazmatism had the same v1 shape as the martians did: a
+blind 8-tick `(frame + 1) % 2` strip whose comment claimed
+`npcFrameCount[125/126] = 2`, drawn with `frame_h = t.h / 2` (a 600-px
+slice of the sheet as "one frame") over the 100x110 box at the box's
+corner. Against the decompile:
+
+- **The sheets are 6 rows of 200** (NPC_125/126 measured 110x1200,
+  `Main.npcFrameCount[125/126] = 6`, `Main.cs:67096`) — the v1's count
+  was wrong and its draw read a 600-px slice.
+- **`case 125/126`** (`NPC.cs:76906-76924`) is a 20-tick beat, not an
+  8-tick strip: the counter walks the bands 0/1/2 (splits at 7/14/21,
+  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 — the
+  pair rides the live rows 3/4/5 from its first anchored tick onward.
+- **`ai[0]` is the AI's hover anchor** (`AI_022`'s `NPC.cs:24758`:
+  `ai[0] = position.X`), not a phase counter — the port's simplified
+  hover writes it once per tick so the offset engages; the pre-anchor
+  spawn ticks show the spawn rows 0/1/2, exactly like the vanilla.
+- **The Twins never flip**: the aiStyle-22 block has no
+  `spriteDirection` arm (the 24893 write belongs to type 169's eye), so
+  the pair keeps the `SetDefaults` default -1 and joins the
+  `flips_on_sprite_dir` predicate (with the martians and the Prime
+  family) instead of flipping on the motion `facing`.
+- The laser/spit phases and the second-form transformations stay the AI
+  follow-ups; the port's `update_twin` is still the v1 EoC-cycle shape.
+
+Screenshot: `twins_family.png` (both eyes at their real 110x200 frames
+on the live rows), SHA256-stable across runs.
+
+## The Prime family's display (M4-NPC-3j)
+
+Skeletron Prime's head and four limbs had the port's earliest stub: the
+head's `find_frame` arm was empty (its comment even claimed
+`npcFrameCount[127] = 1`) and the four limbs all forced row 0 as "the
+limbs' single frame". Against `NPC.cs:74498-74570`:
+
+- **The head** (`case 127`) rides a 6-row 156-px strip: the hover phase
+  alternates rows 0/1 every 12 ticks, the enraged/day/despawn phases hold
+  the wide row 2, and the Mech-Queen variant (the head's `ai[3] != 0`)
+  alternates 3/4 and pins 5.
+- **The saw** (`case 129`) and **the vice** (`case 130`) spin 2-row strips
+  at 2 and 8 ticks with the wrap at `npcFrameCount`'s 2, and both write
+  `spriteDirection = direction` while grounded — on top of the AI's own
+  `-(int)ai[0]` seat write, which the port's `sprite_dir` field now
+  carries (the flip rides it, `Main.cs:23124-23128`).
+- **The cannon and the laser have no `FindFrame` case at all** — row 0
+  forever, matching the v1's outcome but now with the citation (a missing
+  case with a tall sheet is exactly how the martian family's
+  whole-strip-as-one-frame bug would look).
+- **The motion was written nowhere**: `AI_032`'s head roll
+  (`rotation = velocity.X / 15` in the hover, `direction * 0.3` in the
+  charge/day, the `AngleLerp` easing for the queen) and every limb's
+  `atan2` rotation (the saw/cannon/vice aim their "up" along the dock
+  vector at +π/2 — the vice's rise at the wider 280 dock — and the laser
+  aims at the player at -π/2) are ported; the head and the limbs joined
+  the draw's rotation branch.
+- **The draws took the whole strip as one frame** (`frame_h = t.h` over
+  box-sized quads at the box's corner). Now the sheets' real rows
+  (140x156, 38x76, 38x78, 40x70, 40x62) draw at the generic anchor, and
+  the two glow masks (`Bone_Eyes` over the head, `Bone_Laser` over the
+  laser, `Main.cs:25585-25642`) ride the body's own frame/rotation/anchor
+  as a second pass — both sheets were never packed into the atlas, so the
+  masks had nothing to draw from (the port renders the overlays with the
+  sheets' own alpha: the vanilla's (200,200,200,0) mask tint is a no-op in
+  a premultiplied pipeline).
+- **The enabling half**: the head's init request (`wants_limbs`,
+  `NPC.cs:27635-27661`) was set on the first tick and never drained — no
+  limb existed outside the direct-call test. The sim resolves it now with
+  the vanilla's seat signs (`ai[0]` -1/+1/-1/+1, the vice and laser with
+  `ai[3] = 150`), and `TR_BOSS=prime` spawns the whole boss for the shots.
+- Deviations: the Mech-Queen's `Chain12` links (`Main.cs:25590-25630`)
+  and the family's `TrailingMode 6` after-images (`Main.cs:25124-25136`)
+  stay unmodelled (the port has no trail pass); the glow masks' tint is
+  the alpha-carried equivalent noted above.
+
+Screenshots: `prime_family.png` (the head over the four limbs, all at
+their real frame sizes) and `prime_limbs.png` (the dock-rotated limbs),
+both SHA256-stable across runs.
+
 ## The martians' display (M4-NPC-3i)
 
 The Martian Madness family's 16 kinds had a `find_frame` arm each and a
@@ -4872,6 +4952,40 @@ the filters cover the world, never the map or the HUD.
 Verification: rain/sand/leaf shots with the fullscreen map and the
 minimap — no particle over either; the sandstorm filter no longer paints
 the minimap (the twins SHA256-equal); the workspace suite 1261/0.
+- **The jungle chest cycle** (`GetNextJungleChestItem`, `WorldGen.cs:10170-10196`
+  — the M5-CHEST-gen jungle slice): the jungle family's slot-0 main item
+  rides the `JungleItemCount % 4` table {211, 212, 213, 964} with the two
+  overrides (`Next(15) == 0` → 2292 first, else `Next(20) == 0` → 3017) and
+  `Prefix(-1)`, replacing the depth-band weapon approximation. Recorded
+  approximations: the counter advances once per *stocked* jungle anchor in
+  the load-time sweep's scan order (vanilla advances once per *attempted*
+  shrine chest in the `JChestX[i]` order, `ChestsInJungleShrines`
+  `:17219` — the sweep cannot see the failed attempts), and the port's
+  single `ctx.jungle` flag merges vanilla's flag4 (jungle, `chestStyle == 10`
+  `:36089`) and flag6 (living-tree, wall 244 `:36144`) families, so the
+  cycle now covers both — vanilla's slot-0 arm (`:36229`) writes `num10`
+  only under `(flag23 && (flag | flag6)) | flag11`, which leaves the deep
+  shrine chests' vanilla slot-0 question open for the style-dispatcher
+  follow-up.
+
+- **The chest family extras** (`AddBuriedChest`'s two `num10 > 0` arms,
+  `WorldGen.cs:36236-36257` surface / `:36806-36847` deep — the M5-CHEST-gen
+  flag-extras slice): the surface arm's flag6 (living-tree) extras
+  (5629 on 1/3, 4429/4427 on 1/6 with the 1/2 pick, 5528 on the 2/3
+  complement) and the deep arm's flag2 (ice) 3199 (1/5), flag3
+  (underground desert) 4346 (1/7) + 4066 (1/15), flag4 (jungle) 3360/3361
+  (the once-per-world `gennedLivingMahoganyWands` fairness — the first
+  jungle chest grants unconditionally, later ones on 1/5), 4426 and 5525
+  (1/10 each) — all at the vanilla draw order, replacing the approximations.
+  The port's `Context.jungle` (flag4, jungle grass 60 at the anchor) and
+  `Context.living_tree` (flag6, wall 244) are the split of the merged flag
+  the approximations ran on: the pre-existing pottery/2198 rows keep the
+  combined `wood_family` gate, the exact arms use the split families. Still
+  parked: the tenth anniversary's flag11 rows (M5-SEED-1), flag5's rows, the
+  remaining family rows the probes approximate (2198/669, 2197/751,
+  2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
+  chest cycle note).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -6847,6 +6961,30 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   longer solid (vanilla parity). `Step_Pigronata`'s seat test
   (`smart_cursor.rs:582`) reads it; the worldgen-only callers are unaffected —
   worldgen has no actuated tiles.
+- **The paint lookup is a seam, like `WeatherCtx`.** `Step_PaintBrush`/
+  `Step_PaintRoller` (:727/:772) read `SmartCursorUsageInfo.paintLookup`/
+  `paintCoatingLookup` (:31-32), which the C# fills with
+  `TryFindingPaintInplayerInventory` (:177-191) — a scan of the player's
+  inventory (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`). The
+  inventory is app-side, so the port's `Lookup.paint_lookup`/
+  `paint_coating_lookup` stay caller-passed u32s until the app wiring lands;
+  `Step_PaintScrapper` (:678) never reads them — :182 fills them only for the
+  brush/roller ids (1071/1543/1072/1544).
+- **The coating is a raw u32, not a port-side type.** `paintCoatingLookup`
+  carries 1 = Glow (the fullbright flags — GlowPaint 4668, `Item.cs:38496`) and
+  2 = Echo (the invisible flags — EchoCoating 5344, `Item.cs:42416`), decoded
+  by `WorldGen.paintCoatTile`/`paintCoatWall` (`WorldGen.cs:44134-44217`). The
+  port had no coating type before this pass, so the steps compare the raw
+  values (`coating == 1 && !fullbright_block()`,
+  `coating == 2 && !invisible_block(i, j)` and the wall pair) and leave the
+  encoding to the caller.
+- **The scraper's second target is LongMoss 184.** `Step_PaintScrapper`'s tile
+  arm (:692-697) also accepts a LongMoss tile — the scraper's moss arm lives
+  on the player (`Player.cs:41822-41824`'s
+  `PlaceThing_PaintScraper_LongMoss`) — so the scan is `tile.color() > 0`,
+  a `kind == 184` LongMoss tile, `fullbright_block()` or
+  `invisible_block()`, OR-ed with the wall arm behind the cell
+  (`wallColor() > 0`, `fullbright_wall` or `invisible_wall`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -6906,7 +7044,34 @@ aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
 26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
 "shard hover" machine belongs to the Star Cell alone.
 
-- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+
+## Micro-biome passes (M5-BIOME-2)
+
+The three micro-biome passes are 1:1 ports; the deviations:
+
+- **`tile_is_ore` is a hardcoded kind list**, not the generated
+  `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
+  Ore set, so the slab map's ore preservation uses the vanilla's ore ids
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
+  tile yet — the pots land with M5-STRUCT's pots step.
+- **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
+  cave-house voters read the tiles directly, so the registration has no
+  consumer yet.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — the port
+  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
+  slabs' corner states flatten to the active pattern).
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
+  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
+  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
+  decor family.
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
+  The pass's own isolated stream keeps the move RNG-neutral for the other
+  steps; the world contract's per-step pins hold.
+- The three passes draw from their own `pass_rng` streams; the shared
+  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
   300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
