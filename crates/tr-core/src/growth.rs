@@ -1656,6 +1656,11 @@ pub fn update_world(
     if rate == 0 {
         return 0;
     }
+    // `WorldGen.UpdateWorld`'s setup (`:71503`, `:71508`): the infection
+    // spread is allowed (the creative-power override parks with M6-CREATIVE)
+    // and the wall-arm box radius is the constant 3.
+    let allowed_to_spread = true;
+    let wall_dist = 3;
     let mut picks = 0u32;
     let mut overground_count =
         (world.width as f64 * world.height as f64) * 3e-5 * rate as f64;
@@ -1675,9 +1680,19 @@ pub fn update_world(
     for _ in 0..underground_count as i32 {
         let x = rng.next_range(10, world.width - 10);
         let y = rng.next_range(world.world_surface as i32 - 1, world.height - 20);
-        // The underground arms (the vines, the moss, the spread) are
-        // GROWTH-2; the herb branch keeps the parity here.
-        update_world_overground_tile(world, x, y, day_time, raining, rng);
+        // The underground dispatcher (`UpdateWorld_UndergroundTile`
+        // `:73214-73614`) replaces the overground parity call; the dyed/
+        // moss/oyster arms inside it park (ANALYSIS).
+        update_world_underground_tile(
+            world,
+            x,
+            y,
+            wall_dist,
+            allowed_to_spread,
+            day_time,
+            raining,
+            rng,
+        );
         picks += 1;
     }
     picks
@@ -2253,6 +2268,12 @@ mod tests {
         w
     }
 
+    /// Sets a cell's wall (the wall-arm tests' natural/evil walls).
+    fn set_wall(w: &mut World, x: i32, y: i32, wall: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].wall = wall;
+    }
+
     fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
@@ -2419,6 +2440,102 @@ mod tests {
     }
 
 
+
+
+    #[test]
+    fn the_underground_dispatcher_runs_the_passed_arms() {
+        // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73614`): the
+        // alch plant grows, the grass family converts (underground), the lily
+        // becomes 74 and the grass growth re-runs the spikes. The parked arms
+        // (the 655 kill, the dye/cattail/seaweed, the 444/396 moss/oyster, the
+        // web/town-NPC) stay out.
+        // The lily conversion: a lily (61) at Next(3)==0 over a non-226 tile
+        // converts to 74.
+        let mut w = world();
+        put(&mut w, 100, 200, 61, 0);
+        let mut grew = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+            if w.tile(100, 200).is_some_and(|t| t.kind == 74) {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the lily converts to 74 on some stream");
+
+        // The grass family: the jungle grass 60 converts in the underground
+        // direction (the conversion arm runs through the dispatcher).
+        let mut w2 = world();
+        put(&mut w2, 100, 200, 0, 0);
+        put(&mut w2, 100, 201, 60, 0);
+        put(&mut w2, 99, 201, 60, 0);
+        let mut converted = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            update_world_underground_tile(&mut w2, 100, 201, 3, true, true, false, &mut rng);
+            if w2.tile(100, 200).is_some_and(|t| t.active()) {
+                converted = true;
+                break;
+            }
+        }
+        assert!(converted, "the grass arm runs underground");
+    }
+
+    #[test]
+    fn the_wall_arms_convert_the_neighbour_walls() {
+        // `SpreadGrassWalls`/`SpreadDesertWalls` (`:74884`/`:74984`): an evil
+        // cell with its source in the wallDist box converts a neighbouring
+        // natural wall through Convert's wall chain; the gated arms stand
+        // down without the source or with a wrong neighbour family.
+        // The setup: a corrupt grass tile (23) beside a natural grass wall
+        // (63) at ±2, the corruption source inside the box.
+        let mut w = world();
+        for dx in 0..10 {
+            for dy in 200..205 {
+                put(&mut w, 100 + dx, dy, 1, 0); // the stone floor
+                set_wall(&mut w, 100 + dx, dy, 63); // the natural grass walls
+            }
+        }
+        // The corrupt grass in the box (a `SpreadsCorruption` tile).
+        put(&mut w, 102, 203, 23, 0);
+        let mut rng = FastRandom::new(3);
+        // The evil cell: the wall itself is a corruption-spreading wall (69)
+        // at the source cell, so the arm fires from (102, 203).
+        set_wall(&mut w, 102, 203, 69);
+        let mut converted = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            spread_grass_walls(&mut w, 3, 102, 203, &mut rng);
+            // Any wall that left the natural family counts.
+            converted = (100..110).any(|x| {
+                (200..205).any(|y| w.tile(x, y).is_some_and(|t| t.wall != 63))
+            });
+            if converted {
+                break;
+            }
+        }
+        assert!(converted, "the corruption arm converts a natural wall");
+
+        // Without the source in the box the arm stands down.
+        let mut w2 = world();
+        for dx in 0..10 {
+            for dy in 200..205 {
+                put(&mut w2, 100 + dx, dy, 1, 0);
+                set_wall(&mut w2, 100 + dx, dy, 63);
+            }
+        }
+        set_wall(&mut w2, 102, 203, 69); // the spreading wall, but no evil tile
+        let mut rng2 = FastRandom::new(3);
+        spread_grass_walls(&mut w2, 3, 102, 203, &mut rng2);
+        assert!(
+            (100..110).all(|x| (200..205).all(|y| {
+                // The source cell keeps its own spreading wall by construction.
+                (x, y) == (102, 203) || w2.tile(x, y).is_some_and(|t| t.wall == 63)
+            })),
+            "no source in the box - no conversion"
+        );
+    }
 
     #[test]
     fn the_palm_sapling_grows_the_leaning_trunk() {
@@ -3134,4 +3251,345 @@ pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -
             t.frame_y = num5;
         }
     true
+}
+
+// --- M5-SPREAD-1: the underground dispatcher + its wall arms -----------------
+
+/// `WallID.Sets.SpreadsCorruption` (`WallID.cs:93`) — the walls that carry the
+/// corruption into `SpreadGrassWalls`/`SpreadDesertWalls`.
+const SPREADS_CORRUPTION_WALLS: [u16; 4] = [69, 217, 220, 3];
+/// `WallID.Sets.SpreadsCrimson` (`WallID.cs:94`).
+const SPREADS_CRIMSON_WALLS: [u16; 4] = [83, 81, 218, 221];
+/// `WallID.Sets.SpreadsHallow` (`WallID.cs:95`).
+const SPREADS_HALLOW_WALLS: [u16; 4] = [70, 219, 222, 28];
+/// `WallID.Sets.Conversion.Grass` (`WallID.cs:37`).
+const CONVERSION_GRASS_WALLS: [u16; 12] = [63, 64, 65, 66, 67, 68, 69, 70, 81, 264, 265, 268];
+/// `WallID.Sets.Conversion.Stone` (`WallID.cs:38`).
+const CONVERSION_STONE_WALLS: [u16; 12] = [1, 61, 185, 3, 28, 83, 262, 274, 246, 248, 269, 349];
+/// `WallID.Sets.Conversion.HardenedSand` (`WallID.cs:43`).
+const CONVERSION_HARDENED_SAND_WALLS: [u16; 8] = [216, 217, 219, 218, 304, 305, 307, 306];
+/// `WallID.Sets.Conversion.Sandstone` (`WallID.cs:42`).
+const CONVERSION_SANDSTONE_WALLS: [u16; 8] = [187, 220, 222, 221, 275, 308, 310, 309];
+/// `WallID.Sets.Conversion.PureSand` (`WallID.cs:44`).
+const CONVERSION_PURE_SAND_WALLS: [u16; 4] = [216, 187, 304, 275];
+/// `WallID.Sets.Conversion.NewWall1..4` (`WallID.cs:45-48`).
+const CONVERSION_NEW_WALLS: [[u16; 10]; 4] = [
+    [188, 192, 200, 204, 212, 276, 280, 288, 292, 300],
+    [189, 193, 201, 205, 213, 277, 281, 289, 293, 301],
+    [190, 194, 202, 206, 214, 278, 282, 290, 294, 302],
+    [191, 195, 203, 207, 215, 279, 283, 291, 295, 303],
+];
+/// `TileID.Sets.SpreadsHallow` (`TileID.cs:584`): the hallow-source tiles.
+const SPREADS_HALLOW: [u16; 10] = [109, 492, 117, 116, 402, 403, 164, 115, 110, 113];
+/// `TileID.Sets.SpreadUnderground` (`TileID.cs:622`) — the underground tiles
+/// the growth pass runs the grass arm over.
+const SPREAD_UNDERGROUND: [u16; 9] = [23, 661, 109, 199, 662, 60, 70, 633, 226];
+
+/// `WorldGen.Convert`'s wall chains for the three conversion types the wall
+/// arms use (`WorldGen.cs:55261+` corruption, `:55176+` hallow, `:55100+`
+/// crimson): the cell's wall set picks the new wall and the chain skips a cell
+/// that already carries it.
+fn convert_wall_by_case(wall: u16, conversion_type: u8) -> Option<u16> {
+    // `(guard set, target)` in the C#'s else-if order.
+    let cases: [(usize, u16); 8] = match conversion_type {
+        1 => [
+            (0, 69),
+            (1, 3),
+            (2, 217),
+            (3, 220),
+            (4, 188),
+            (5, 189),
+            (6, 190),
+            (7, 191),
+        ],
+        2 => [
+            (0, 70),
+            (1, 28),
+            (2, 219),
+            (3, 222),
+            (4, 200),
+            (5, 201),
+            (6, 202),
+            (7, 203),
+        ],
+        // 4 — the crimson.
+        _ => [
+            (0, 81),
+            (1, 83),
+            (2, 218),
+            (3, 221),
+            (4, 192),
+            (5, 193),
+            (6, 194),
+            (7, 195),
+        ],
+    };
+    for (set, target) in cases {
+        let in_set = match set {
+            0 => CONVERSION_GRASS_WALLS.contains(&wall),
+            1 => CONVERSION_STONE_WALLS.contains(&wall),
+            2 => CONVERSION_HARDENED_SAND_WALLS.contains(&wall),
+            3 => CONVERSION_SANDSTONE_WALLS.contains(&wall),
+            n => CONVERSION_NEW_WALLS[n - 4].contains(&wall),
+        };
+        if in_set && wall != target {
+            return Some(target);
+        }
+    }
+    None
+}
+
+/// The crimson source tile set (`TileID.Sets.SpreadsCrimson`, `TileID.cs:589`).
+fn crimson_set_slice() -> [u16; 10] {
+    crate::spread::SPREADS_CRIMSON
+}
+/// The corruption source tile set (`TileID.Sets.SpreadsCorruption`, `TileID.cs:580`).
+fn corrupt_set_slice() -> [u16; 10] {
+    crate::spread::SPREADS_CORRUPTION
+}
+/// The hallow source tile set (`TileID.Sets.SpreadsHallow`).
+fn hallow_set_slice() -> [u16; 10] {
+    SPREADS_HALLOW
+}
+
+/// The `wallDist` box scan for the source tile kind (the wall arms'
+/// `:74895-74906` shape).
+fn box_has_source(
+    world: &World,
+    wall_dist: i32,
+    i: i32,
+    j: i32,
+    is_source: &[u16],
+) -> bool {
+    for k in (i - wall_dist)..=(i + wall_dist) {
+        for l in (j - wall_dist)..=(j + wall_dist) {
+            if world
+                .tile(k, l)
+                .is_some_and(|t| t.active() && is_source.contains(&t.kind))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.SpreadGrassWalls` (`WorldGen.cs:74884-74982`): an evil cell
+/// spreads into the neighbouring natural walls (the 63-68 family) when its own
+/// source sits in the `wallDist` box — the crimson branch checks the crimson
+/// source, the corruption branch the corruption one, the hallow branch the
+/// hallow one. The neighbour wall then converts through `Convert`'s wall chain
+/// (`tiles: false`).
+pub fn spread_grass_walls(
+    world: &mut World,
+    wall_dist: i32,
+    i: i32,
+    j: i32,
+    rng: &mut FastRandom,
+) {
+    if i < 10 || j < 10 || i >= world.width - 10 || j >= world.height - 10 {
+        return;
+    }
+    let Some(tile) = world.tile(i, j) else {
+        return;
+    };
+    let (wall, active, kind) = (tile.wall, tile.active(), tile.kind);
+    let crimson = SPREADS_CRIMSON_WALLS.contains(&wall)
+        || (active && crate::spread::SPREADS_CRIMSON.contains(&kind));
+    let corrupt = SPREADS_CORRUPTION_WALLS.contains(&wall)
+        || (active && crate::spread::SPREADS_CORRUPTION.contains(&kind));
+    let hallow =
+        SPREADS_HALLOW_WALLS.contains(&wall) || (active && SPREADS_HALLOW.contains(&kind));
+    // `(conversion type, the neighbour wall gate, the source set)`: the
+    // crimson arm's family is the 63-68 band, the corruption arm's is
+    // 63/65/66/68 (`:74959-74962`) and the hallow arm's the 63-68 band.
+    let arm: Option<(u8, &[u16], &[u16])> = if crimson {
+        Some((4, &[63, 64, 65, 66, 67, 68], &crimson_set_slice()))
+    } else if corrupt {
+        Some((1, &[63, 65, 66, 68], &corrupt_set_slice()))
+    } else if hallow {
+        Some((2, &[63, 64, 65, 66, 67, 68], &hallow_set_slice()))
+    } else {
+        None
+    };
+    let Some((conversion_type, gate, source)) = arm else {
+        return;
+    };
+    let (x, y) = (i + rng.next_range(-2, 3), j + rng.next_range(-2, 3));
+    if x < 10 || y < 10 || x >= world.width - 10 || y >= world.height - 10 {
+        return;
+    }
+    let Some(neighbour) = world.tile(x, y) else {
+        return;
+    };
+    let neighbour = neighbour.wall;
+    if !gate.contains(&neighbour) {
+        return;
+    }
+    if !box_has_source(world, wall_dist, i, j, source) {
+        return;
+    }
+    let Some(new) = convert_wall_by_case(neighbour, conversion_type) else {
+        return;
+    };
+    let idx = world.index(x, y);
+    world.tiles[idx].wall = new;
+}
+
+/// `WorldGen.SpreadDesertWalls` (`WorldGen.cs:74984-75123`): the desert walls
+/// (the sandstone/hardened-sand family) convert to their evil variant when an
+/// evil source sits in the `wallDist` box and the neighbour cell is still pure
+/// sand.
+pub fn spread_desert_walls(
+    world: &mut World,
+    wall_dist: i32,
+    i: i32,
+    j: i32,
+    rng: &mut FastRandom,
+) {
+    if i < 10 || j < 10 || i >= world.width - 10 || j >= world.height - 10 {
+        return;
+    }
+    let Some(tile) = world.tile(i, j) else {
+        return;
+    };
+    let (wall, active, kind) = (tile.wall, tile.active(), tile.kind);
+    let sandstone_wall = CONVERSION_SANDSTONE_WALLS.contains(&wall);
+    let hardened_wall = CONVERSION_HARDENED_SAND_WALLS.contains(&wall);
+    let sandstone_tile = active && crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind);
+    let hardened_tile = active && crate::tiledata::SET_CONVERSION_SAND.has(kind);
+    if !sandstone_wall && !hardened_wall && !sandstone_tile && !hardened_tile {
+        return;
+    }
+    let mut flavour = 0u8;
+    if SPREADS_CORRUPTION_WALLS.contains(&wall)
+        || (active && crate::spread::SPREADS_CORRUPTION.contains(&kind))
+    {
+        flavour = 1;
+    }
+    if SPREADS_HALLOW_WALLS.contains(&wall) || (active && SPREADS_HALLOW.contains(&kind)) {
+        flavour = 2;
+    }
+    if SPREADS_CRIMSON_WALLS.contains(&wall)
+        || (active && crate::spread::SPREADS_CRIMSON.contains(&kind))
+    {
+        flavour = 3;
+    }
+    if flavour == 0 {
+        return;
+    }
+    let conversion_type = match flavour {
+        2 => 2,
+        3 => 4,
+        _ => 1,
+    };
+    let (x, y) = (i + rng.next_range(-2, 3), j + rng.next_range(-2, 3));
+    let Some(neighbour) = world.tile(x, y) else {
+        return;
+    };
+    if !CONVERSION_PURE_SAND_WALLS.contains(&neighbour.wall) {
+        return;
+    }
+    let source: &[u16] = match conversion_type {
+        4 => &crimson_set_slice(),
+        2 => &hallow_set_slice(),
+        _ => &corrupt_set_slice(),
+    };
+    if !box_has_source(world, wall_dist, i, j, source) {
+        return;
+    }
+    let Some(new) = convert_wall_by_case(neighbour.wall, conversion_type) else {
+        return;
+    };
+    let idx = world.index(x, y);
+    world.tiles[idx].wall = new;
+}
+
+/// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
+/// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
+/// grass growth (underground) + the spike arms, the lily conversion, the five
+/// vine families and, behind `allowed_to_spread`, the wall arms.
+///
+/// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
+/// `plantDye`, the 519 cattail and the 549/53 seaweed, the 444/396 moss and
+/// oyster arms (`PlayerLOS`/`AnchorValid`/`CountNearBlocksTypes` have no
+/// ports), `GrowWeb`, `TrySpawningTownNPC`, the net sides, and the C#'s dual
+/// `genRand`/`Main.rand` streams (the port's per-consumer stream carries every
+/// draw).
+pub fn update_world_underground_tile(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    wall_dist: i32,
+    allowed_to_spread: bool,
+    day_time: bool,
+    raining: bool,
+    rng: &mut FastRandom,
+) {
+    // The clamped box (`:73216-73231`).
+    let min_i = (i - 1).max(10);
+    let max_i = (i + 2).min(world.width - 10);
+    let min_j = (j - 1).max(10);
+    let max_j = (j + 2).min(world.height - 10);
+    let Some(tile) = world.tile(i, j) else {
+        return;
+    };
+    let (kind, active) = (tile.kind, tile.active());
+    // The 655 life-fruit kill parks (`:73239-73246`).
+    if TILE_ALCH.contains(&kind) {
+        grow_alch(world, i, j, day_time, raining, rng);
+        return;
+    }
+    if !active {
+        // The hard-mode infection arm (`:73252`); the dye/cattail/seaweed
+        // arms park.
+        crate::spread::hard_update_world(world, i, j, false, true, rng);
+        return;
+    }
+    // The grass family + the spikes (`:73281-73295`).
+    if SPREAD_UNDERGROUND.contains(&kind) {
+        update_world_grass_growth(
+            world,
+            i,
+            j,
+            min_i,
+            max_i,
+            min_j,
+            max_j,
+            allowed_to_spread,
+            rng,
+        );
+        if matches!(kind, 32 | 352) && rng.next(3) == 0 {
+            if kind == 32 {
+                grow_spike(world, i, j, 32, 23, rng);
+            } else {
+                grow_spike(world, i, j, 352, 199, rng);
+            }
+        }
+        return;
+    }
+    // The lily → 74 conversion (`:73296-73310`).
+    if kind == 61 && rng.next(3) == 0 && world.tile(i, j + 1).map(|t| t.kind).unwrap_or(0) != 226 {
+        let frame_x = world.tile(i, j).map(|t| t.frame_x).unwrap_or(0);
+        if frame_x < 144 {
+            if rng.next(4) == 0 {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.frame_x = (162 + rng.next_range(0, 8) * 18) as i16;
+                }
+            }
+            if let Some(t) = world.tile_mut(i, j) {
+                t.kind = 74;
+            }
+        }
+        return;
+    }
+    // The five vine families (`:73311-73482`) — the port's one-fn arm. The
+    // 444/396 moss and oyster arms park.
+    grow_vine_arm(world, i, j, rng);
+    // The wall arms (`:72499-72502`, behind `AllowedToSpreadInfections`); the
+    // web and town-NPC arms park.
+    if allowed_to_spread {
+        spread_grass_walls(world, wall_dist, i, j, rng);
+        spread_desert_walls(world, wall_dist, i, j, rng);
+    }
 }

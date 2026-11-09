@@ -5293,6 +5293,26 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
   anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
 
+- **The underground growth dispatcher** (`UpdateWorld_UndergroundTile`,
+  `WorldGen.cs:73214-73614` — the M5-SPREAD-1/GROWTH-2 slice): the driver's
+  underground picks run the dispatcher (the overground parity call retires):
+  the clamped box, the alch/hard-mode heads, the `SpreadUnderground` grass
+  growth (`TileID.cs:622`) with the 32/352 spikes, the lily→74 conversion
+  (`:73296`), the five vine families (through `grow_vine_arm`), and behind
+  `allowed_to_spread` the wall arms. `SpreadGrassWalls`/`SpreadDesertWalls`
+  (`:74884`/`:74984`) carry the three flavour branches each — the
+  `SpreadsCorruption`/`Crimson`/`Hallow` wall sets (`WallID.cs:93-95`), the
+  neighbour-family gates (63-68, the corruption arm's 63/65/66/68), the
+  `wallDist`-3 source scan and `Convert`'s wall chain (`:55261`/`:55176`/
+  `:55100` — the Grass/Stone/HardenedSand/Sandstone/NewWall1..4 sets
+  `WallID.cs:37-48` per conversion type). Parked arms: the 655 life-fruit
+  kill (the NPC store), `plantDye`, the 519 cattail / 549+53 seaweed, the
+  444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
+  `CountNearBlocksTypes` have no ports), `GrowWeb`, `TrySpawningTownNPC`, the
+  net sides, the creative-power override on `AllowedToSpreadInfections`, and
+  the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
+  carries every draw).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
