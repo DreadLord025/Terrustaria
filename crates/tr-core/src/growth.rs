@@ -217,6 +217,148 @@ pub fn is_common_sapling(kind: u16) -> bool {
     COMMON_SAPLINGS.contains(&kind)
 }
 
+/// `WorldGen.GemTreeGroundTest` (`WorldGen.cs:30304-30315`): the stone or
+/// moss conversion tiles — the gem trees' ground. The C#'s arrays are
+/// length `TileID.Count`, so a `u16` id is always in range and its
+/// `tileType < 0` guard is vacuous in the port.
+fn gem_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_CONVERSION_STONE.has(kind) || crate::tiledata::SET_CONVERSION_MOSS.has(kind)
+}
+
+/// `WorldGen.VanityTreeGroundTest` (`WorldGen.cs:30317-30328`): the grass
+/// conversion tiles minus the corruption/crimson pair (23/199).
+fn vanity_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_GRASS.has(kind) && kind != 23 && kind != 199
+}
+
+/// `WorldGen.AshTreeGroundTest` (`WorldGen.cs:30330-30341`): ash grass only.
+fn ash_tree_ground_test(kind: u16) -> bool {
+    kind == 633
+}
+
+/// `WorldGen.GrowTreeSettings` (`WorldGen.cs:3825-4048`'s struct): one
+/// gem/vanity/ash tree profile. The C#'s `GroundTest`/`WallTest` delegates
+/// are the port's [`GroundTestKind`]; the wall arm stays out — no
+/// smart-cursor step reads it (the C#'s other callers do).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GrowTreeSettings {
+    /// `GroundTest` — the delegate the C# stores per profile.
+    pub ground: GroundTestKind,
+    /// `TreeTileType` — the tree-top tile the profile grows.
+    pub tree_tile_type: u16,
+    /// `TreeHeightMin`.
+    pub tree_height_min: i32,
+    /// `TreeHeightMax`.
+    pub tree_height_max: i32,
+    /// `TreeTopPaddingNeeded`.
+    pub tree_top_padding_needed: i32,
+    /// `SaplingTileType` — the profile's sapling (`EmptyTileCheck`'s
+    /// ignore id and the proximity gate's set).
+    pub sapling_tile_type: u16,
+}
+
+/// The C#'s `GrowTreeSettings.Profiles`' `GroundTest` delegates
+/// (`WorldGen.cs:30304-30341`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroundTestKind {
+    /// `WorldGen.GemTreeGroundTest`.
+    Gem,
+    /// `WorldGen.VanityTreeGroundTest`.
+    Vanity,
+    /// `WorldGen.AshTreeGroundTest`.
+    Ash,
+}
+
+impl GroundTestKind {
+    /// The delegate's call (the C#'s `profile.GroundTest(tileType)`).
+    pub fn test(&self, kind: u16) -> bool {
+        match self {
+            GroundTestKind::Gem => gem_tree_ground_test(kind),
+            GroundTestKind::Vanity => vanity_tree_ground_test(kind),
+            GroundTestKind::Ash => ash_tree_ground_test(kind),
+        }
+    }
+}
+
+impl GrowTreeSettings {
+    /// The C#'s `Profiles` static table (`WorldGen.cs:3930-4022`): every
+    /// gem tree shares the heights 12/7, the padding 4 and the sapling 590;
+    /// the sakura's sapling is 595, the willow's 615 and the ash's 20.
+    pub const GEM_TREE_RUBY: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Gem,
+        tree_tile_type: 587,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 590,
+    };
+    /// `Profiles.GemTree_Diamond` (`WorldGen.cs:3942`).
+    pub const GEM_TREE_DIAMOND: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 588, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Topaz` (`WorldGen.cs:3952`).
+    pub const GEM_TREE_TOPAZ: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 583, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amethyst` (`WorldGen.cs:3962`).
+    pub const GEM_TREE_AMETHYST: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 584, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Sapphire` (`WorldGen.cs:3972`).
+    pub const GEM_TREE_SAPPHIRE: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 585, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Emerald` (`WorldGen.cs:3982`).
+    pub const GEM_TREE_EMERALD: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 586, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amber` (`WorldGen.cs:3992`).
+    pub const GEM_TREE_AMBER: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 589, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.VanityTree_Sakura` (`WorldGen.cs:4002`).
+    pub const VANITY_TREE_SAKURA: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 596,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 595,
+    };
+    /// `Profiles.VanityTree_Willow` (`WorldGen.cs:4012`).
+    pub const VANITY_TREE_WILLOW: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 616,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 615,
+    };
+    /// `Profiles.Tree_Ash` (`WorldGen.cs:4022`).
+    pub const TREE_ASH: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Ash,
+        tree_tile_type: 634,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 20,
+    };
+}
+
+/// `WorldGen.GrowTreeSettings.Profiles.TryGetFromItemId`
+/// (`WorldGen.cs:3853-3884`): the seed items that carry a profile — the
+/// seven gem seeds 4851-4857, the willow 4907 and the sakura 4871. (The
+/// ash profile's only entry is `TryGetFromTreeId`'s tree tile 634 — the
+/// C# has no ash SEED item, so no item id reaches it here.)
+pub fn grow_tree_profile_from_item(item: u16) -> Option<GrowTreeSettings> {
+    match item {
+        4857 => Some(GrowTreeSettings::GEM_TREE_AMBER),
+        4852 => Some(GrowTreeSettings::GEM_TREE_AMETHYST),
+        4856 => Some(GrowTreeSettings::GEM_TREE_DIAMOND),
+        4854 => Some(GrowTreeSettings::GEM_TREE_EMERALD),
+        4855 => Some(GrowTreeSettings::GEM_TREE_RUBY),
+        4853 => Some(GrowTreeSettings::GEM_TREE_SAPPHIRE),
+        4851 => Some(GrowTreeSettings::GEM_TREE_TOPAZ),
+        4907 => Some(GrowTreeSettings::VANITY_TREE_WILLOW),
+        4871 => Some(GrowTreeSettings::VANITY_TREE_SAKURA),
+        _ => None,
+    }
+}
+
 /// `WorldGen.EmptyTileCheck(startX, endX, startY, endY, ignoreID = 20)`
 /// (`:31453-31520`): every cell in the box is inactive — or a
 /// `CommonSapling` when the passed `ignoreID` is itself a sapling (the
