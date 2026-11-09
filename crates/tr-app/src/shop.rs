@@ -74,9 +74,6 @@ pub enum StockWhen {
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
     MoonPhasePair(u8),
-    /// The ODD moon phases only (`Chest.cs:2085`'s
-    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
-    MoonPhaseOdd,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -240,60 +237,6 @@ pub fn setup_shop(
             row(4437, StockWhen::MoonPhasePair(2)),
             row(4439, StockWhen::MoonPhasePair(3)),
             row(4440, StockWhen::MoonPhasePair(3)),
-        ],
-        // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
-        // magic rows always, the hardmode blood-moon deck (5461) and the
-        // halloween hat (1739) constants-off (the port has neither
-        // season).
-        7 => vec![
-            row(487, StockWhen::Always),
-            row(496, StockWhen::Always),
-            row(500, StockWhen::Always),
-            row(507, StockWhen::Always),
-            row(508, StockWhen::Always),
-            row(531, StockWhen::Always),
-            row(149, StockWhen::Always),
-            row(576, StockWhen::Always),
-            row(3186, StockWhen::Always),
-        ],
-        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
-        // family's rows; the graveyard goggles (4409) constants-off and
-        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
-        // pair (1/3/5/7).
-        8 => vec![
-            row(509, StockWhen::Always),
-            row(850, StockWhen::Always),
-            row(851, StockWhen::Always),
-            row(3612, StockWhen::Always),
-            row(510, StockWhen::Always),
-            row(530, StockWhen::Always),
-            row(513, StockWhen::Always),
-            row(538, StockWhen::Always),
-            row(529, StockWhen::Always),
-            row(541, StockWhen::Always),
-            row(542, StockWhen::Always),
-            row(543, StockWhen::Always),
-            row(852, StockWhen::Always),
-            row(853, StockWhen::Always),
-            row(4261, StockWhen::Always),
-            row(3707, StockWhen::Always),
-            row(2739, StockWhen::Always),
-            row(849, StockWhen::Always),
-            row(1263, StockWhen::Always),
-            row(3616, StockWhen::Always),
-            row(3725, StockWhen::Always),
-            row(2799, StockWhen::Always),
-            row(3619, StockWhen::Always),
-            row(3627, StockWhen::Always),
-            row(3629, StockWhen::Always),
-            row(585, StockWhen::Always),
-            row(584, StockWhen::Always),
-            row(583, StockWhen::Always),
-            row(4484, StockWhen::Always),
-            row(4485, StockWhen::Always),
-            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
-            // port's town count reads the Angler's presence.
-            row(2295, StockWhen::MoonPhaseOdd),
         ],
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
@@ -919,7 +862,6 @@ pub fn resolve_stock_moon(
             StockWhen::BloodMoonCorruption => flags.blood_moon,
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
-            StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
         })
         .map(|e| e.item)
         .collect()

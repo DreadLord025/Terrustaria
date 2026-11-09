@@ -433,10 +433,6 @@ fn portrait_data(
         NpcKind::TravellingMerchant => 110, // NPC_368
         NpcKind::Angler => 111, // NPC_369
         NpcKind::SleepingAngler => 112, // NPC_376
-        NpcKind::Wizard => 148, // NPC_108
-        NpcKind::BoundWizard => 149, // NPC_106
-        NpcKind::Mechanic => 150, // NPC_124
-        NpcKind::BoundMechanic => 151, // NPC_123
         NpcKind::EyeOfCthulhu => 42,      // NPC_4
         NpcKind::QueenBee => 43,          // NPC_222
         NpcKind::SkeletronHead => 44,     // NPC_35
@@ -647,10 +643,6 @@ fn portrait_data(
         (NpcKind::TravellingMerchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Angler, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::SleepingAngler, _) => (sheet_i, 8.0, 34.0, 8.0, white),
-        (NpcKind::Wizard, _) => (sheet_i, 48.0, 38.0, 48.0, white),
-        (NpcKind::Mechanic, _) => (sheet_i, 48.0, 38.0, 48.0, white),
-        (NpcKind::BoundWizard, _) => (sheet_i, 48.0, 38.0, 48.0, white),
-        (NpcKind::BoundMechanic, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),

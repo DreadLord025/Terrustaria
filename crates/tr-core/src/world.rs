@@ -277,10 +277,6 @@ pub struct World {
     /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
     /// talked into the Angler — the 376 spawn arms stop looking.
     pub saved_angler: bool,
-    /// `NPC.savedWizard` (`NPC.cs:6289`) / `NPC.savedMech` (`NPC.cs:6291`):
-    /// the bound Wizard/Mechanic rescue flags (`:52948`/`:52951`).
-    pub saved_wizard: bool,
-    pub saved_mech: bool,
     /// `Main.anglerQuest` (`Main.cs:1785`): the INDEX into the 41-entry
     /// quest-fish pool (`Main.cs:67032`'s `anglerQuestItemNetIDs`).
     pub angler_quest: u8,
@@ -425,8 +421,6 @@ impl World {
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
             saved_angler: false,
-            saved_wizard: false,
-            saved_mech: false,
             angler_quest: 0,
             angler_quest_finished: false,
             angler_quest_turned_in: false,
