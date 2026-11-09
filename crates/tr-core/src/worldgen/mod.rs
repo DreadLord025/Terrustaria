@@ -18,6 +18,9 @@ mod biomes;
 pub mod dungeon;
 mod caves;
 mod config;
+mod desert;
+mod desert_dunes;
+mod desert_entrances;
 pub mod evil;
 mod islands;
 mod liquids;
@@ -271,8 +274,12 @@ mod tests {
             {
                 continue;
             }
+            // The desert family: the `Full Desert` pass (M5-DESERT-structures)
+            // places its underground desert under this band and its
+            // `AddTileVariance` hardens exposed sand (`DesertHive.cs:396-398`),
+            // so a band surface may read 53 / 397 / 396.
             assert!(
-                t.kind == TILE_SAND,
+                matches!(t.kind, TILE_SAND | TILE_HARDENED_SAND | TILE_SANDSTONE),
                 "desert surface at x{x} is kind {}",
                 t.kind
             );
@@ -437,6 +444,50 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    /// DW-6.1: the M5-DESERT-structures passes place their content — the
+    /// dunes' sand crests above the surface and the underground desert's
+    /// shells (the sandstone 396 / hardened-sand 397 strata and their 187/216
+    /// walls) across three seeds.
+    #[test]
+    fn the_desert_passes_place_the_dunes_and_the_hive() {
+        for seed in [1u64, 77, 4242] {
+            let mut w = generate(&GenOptions {
+                seed,
+                ..Default::default()
+            });
+            w.compute_column_surface();
+            let count_kind = |kind: u16| {
+                w.tiles
+                    .iter()
+                    .filter(|t| t.active() && t.kind == kind)
+                    .count()
+            };
+            let count_wall = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
+            // The hive's concentric shells (`DesertHive.cs:282-361`).
+            assert!(count_kind(TILE_SANDSTONE) > 0, "seed {seed}: no sandstone band");
+            assert!(count_kind(TILE_HARDENED_SAND) > 0, "seed {seed}: no hardened sand");
+            assert!(count_wall(WALL_SANDSTONE) > 0, "seed {seed}: no sandstone walls");
+            assert!(count_wall(216) > 0, "seed {seed}: no hardened-sand walls");
+            // The dune crests (`PlaceCurvedLine`'s sand fill) rise above the
+            // local surface — once the pass runs, the crest IS that column's
+            // surface, so the pin is the sand standing well above the world's
+            // mean surface line (the `Full Desert` mound and the beach wedges
+            // never lift sand this far).
+            let width = w.width as usize;
+            let crests = w
+                .tiles
+                .iter()
+                .enumerate()
+                .filter(|(i, t)| {
+                    t.active()
+                        && t.kind == TILE_SAND
+                        && ((*i / width) as i32) < (w.world_surface as i32 - 8)
+                })
+                .count();
+            assert!(crests > 0, "seed {seed}: no dune crest above the surface");
+        }
     }
 
     /// DW-4.1: the faithful evil pass at the integration level — the

@@ -32,6 +32,8 @@
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::caves;
+use super::desert;
+use super::desert_dunes;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::evil;
 use super::islands;
@@ -211,6 +213,19 @@ pub(crate) struct GenVars {
     pub(crate) pyr_x: Vec<i32>,
     pub(crate) pyr_y: Vec<i32>,
     pub(crate) num_pyr: i32,
+    /// `GenVars.UndergroundDesertLocation` / `UndergroundDesertHiveLocation`
+    /// (`GenVars.cs:138-140`) — the `Full Desert` pass's placement
+    /// (`DesertBiome.ExportDescriptionToEngine`, `DesertBiome.cs:48-53`),
+    /// the combined band inflated 10,10 and the hive rect. Written by
+    /// `desert::full_desert`; consumed by the underground houses
+    /// (`AdditionalDesertHouseCount`, `WorldGen.cs:16989`) and the TileRunner's
+    /// `case 53` containment (`tile_runner.rs`).
+    pub(crate) underground_desert: Option<super::desert::Rect>,
+    pub(crate) desert_hive: Option<super::desert::Rect>,
+    /// `GenVars.desertHiveHigh/Low/Left/Right` (`GenVars.cs:142-148`) — the
+    /// hive carve's bounds (`UpdateDesertHiveBounds`, `WorldGen.cs:10989`):
+    /// (left, high/top, right, low/bottom).
+    pub(crate) desert_hive_bounds: Option<(i32, i32, i32, i32)>,
     /// `GenVars.numOceanCaveTreasure`/`oceanCaveTreasure[2]`
     /// (`GenVars.cs:130-134`, reset in `WorldGen.cs:11224`, `GenVars.cs:440-442`)
     /// — the ocean-cave walker's treasure anchors (the counter wraps at
@@ -261,6 +276,11 @@ impl Default for GenVars {
             pyr_x: Vec::new(),
             pyr_y: Vec::new(),
             num_pyr: 0,
+            // The C# leaves the desert locations `Rectangle.Empty` until
+            // `Full Desert` places one (`DesertBiome.cs:50-52`).
+            underground_desert: None,
+            desert_hive: None,
+            desert_hive_bounds: None,
             // The C# resets the treasure counter to 0 (`WorldGen.cs:11224`).
             num_ocean_cave_treasure: 0,
             ocean_cave_treasure: [(0, 0); 2],
@@ -1015,6 +1035,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain height map", "Terrain", step_terrain_height_map),
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
+    // The vanilla Dunes slot (`WorldGen.cs:11517`, pass #3 after TerrainPass):
+    // right after the spans planner, before Ocean Sand (`:11580`). Vanilla
+    // runs its dune carver here — the M5-DESERT-structures port (the compact
+    // terrain model used to flatten the desert inside the terrain step).
+    step!("dunes", "Dunes", step_dunes),
     // The vanilla Ocean Sand slot (`WorldGen.cs:11580`): right after the
     // spans planner, before the jungle (`:12466`). Vanilla runs it third
     // (after TerrainPass and Dunes, both compact-model steps here) — the
@@ -1026,6 +1051,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Mud Caves To Grass",
         step_mud_caves_to_jungle_grass
     ),
+    // The vanilla Full Desert slot (`WorldGen.cs:12500`): after Mud Caves To
+    // Grass (`:12468`) and before Mushroom Patches (`:12544`) — the
+    // M5-DESERT-structures underground desert.
+    step!("full desert", "Full Desert", step_full_desert),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
     step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
@@ -1164,6 +1193,67 @@ fn step_terrain_height_map(
         left_beach_end,
         right_beach_start,
     ));
+}
+
+/// `DunesAndPyramidLocations` (`WorldGen.cs:11517-11579`): the dune carver and
+/// the pyramid-slot anchors. The `Count`/`ChanceOfPyramid` options come from
+/// the pass's config section (`Configuration.json`'s `Passes.Dunes`); the snow
+/// band's start is the terrain fill's eastern third (`terrain.rs:242`).
+fn step_dunes(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    pass_config: &ConfigSection,
+) {
+    let count = pass_config
+        .get_range("Count")
+        .map_or(1, |r| r.get_random(&mut streams.pass_rng("Dunes"), world.width, world.height));
+    let chance = pass_config
+        .get_f64("ChanceOfPyramid")
+        .unwrap_or(0.8);
+    let anchors = desert_dunes::dunes(
+        world,
+        gv,
+        world.width * 2 / 3,
+        world.world_surface,
+        count,
+        chance,
+        &mut streams.pass_rng("Dunes"),
+    );
+    // `GenVars.PyrX/PyrY/numPyr` (`GenVars.cs:156-160`): the anchors the
+    // Pyramids step consumes (the append is the C#'s `:11570-11572`).
+    for (x, y) in anchors {
+        gv.pyr_x.push(x);
+        gv.pyr_y.push(y);
+        gv.num_pyr += 1;
+    }
+}
+
+/// `Full Desert` (`WorldGen.cs:12500-12543`): one underground desert opposite
+/// the dungeon (`GenVars.CurrentDungeonGenVars.dungeonSide` — the port's
+/// dungeon sits on the side of `spans().dungeon_x`).
+fn step_full_desert(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let dungeon_side = if gv.spans().dungeon_x > world.width / 2 {
+        1
+    } else {
+        -1
+    };
+    desert::full_desert(
+        world,
+        gv,
+        dungeon_side,
+        world.world_surface,
+        &mut streams.pass_rng("Full Desert"),
+    );
 }
 
 fn step_ocean_sand(
@@ -2236,7 +2326,9 @@ mod tests {
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
         // M5-STRUCT-5: + `spider caves` + `gem caves` + `moss` + `webs and
         // honey` (vanilla `:17356` / `:17428` / `:17472` / `:19995`).
-        assert_eq!(names.len(), 56);
+        // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
+        // `:12500`).
+        assert_eq!(names.len(), 58);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2268,9 +2360,11 @@ mod tests {
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
+                "dunes",
                 "ocean sand",
                 "jungle",
                 "mud caves to grass",
+                "full desert",
                 "mushroom patches",
                 "granite and marble",
                 "cave fields",
@@ -2349,15 +2443,17 @@ mod tests {
     }
 
     /// DW-2.3: the three M5-OCEAN phase-2 ocean steps sit in their vanilla
-    /// positions — `ocean sand` immediately after `plan biome spans`
-    /// (vanilla `:11517` Dunes → `:11580` Ocean Sand), and `beaches` +
-    /// `gravitating sand` between `dungeon` (`:14757`) and `ocean caves`
-    /// (vanilla `:14888` → `:15138` → `:15167`).
+    /// positions — `ocean sand` immediately after the `dunes` step (the
+    /// M5-DESERT-structures `:11517` Dunes → `:11580` Ocean Sand pair; the
+    /// dunes step is after `plan biome spans`, whose planner the dunes' origin
+    /// roll reads), and `beaches` + `gravitating sand` between `dungeon`
+    /// (`:14757`) and `ocean caves` (vanilla `:14888` → `:15138` → `:15167`).
     #[test]
     fn test_DW_2_3_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("ocean sand"), pos("plan biome spans") + 1);
+        assert_eq!(pos("ocean sand"), pos("dunes") + 1);
+        assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "jungle");
         assert_eq!(pos("beaches"), pos("dungeon") + 1);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);

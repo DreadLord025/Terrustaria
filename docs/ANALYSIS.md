@@ -6582,6 +6582,57 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Desert passes (M5-DESERT-structures)
+
+The `Dunes` carver and the `Full Desert` underground desert landed
+2026-11-09 (branch `M5-DESERT-structures`): the dune Bézier hills
+(`desert_dunes.rs`), the underground desert family — `SurfaceLine`,
+`DesertGeom`, `SandMound`, `ClusterGroup`, the hive density ladder and
+`AddTileVariance` (`desert.rs`) — and the four entrances with the
+`PlotLine`/`Tail`/`Circle`/`Rect` shape primitives ported inline
+(`desert_entrances.rs`). Both passes run as their own pipeline steps at
+their vanilla slots (`Dunes` after the spans planner, `Full Desert` after
+Mud Caves To Grass). Final world-hash pins: `SEED42_512 = 139436343`,
+`DEFAULT_WORLD = 3348406208` — both re-pinned because the passes change
+the generated worlds. Suites green.
+
+Deviations and accepted changes:
+
+- **Special seeds skipped.** The C# arms for `remixWorldGen`,
+  `tenthAnniversaryWorld`, `SecretSeed.surfaceIsDesert`,
+  `notTheBees`, `dualDungeons`, `extraLiquid` and `skyblock` have no port
+  model (no `GenOptions` field), so their branches and their extra draws
+  never run: `DesertDescription`'s remix height, the anniversary hive gap,
+  `RowHasInvalidTiles`'s mud/jungle gate condition, the drunk pyramid
+  chance, the `Full Desert` remix sandification sweep and every DesertHive
+  remix wall/liquid flip. The vanilla-chain rows for `M5-SEED-1/2` carry
+  them.
+- **`Blotches` and `Smooth` skipped.** `Modifiers.Blotches` is a `genRand`
+  noise pass over the shape and `Actions.Smooth` is the port's missing
+  slope smoother; both are noted at their call sites
+  (`desert_entrances.rs`), so the anthill/larva chambers and the pit keep
+  their hard geometry where the vanilla jitters and smooths it.
+- **The pyramid-slot anchors are recorded, not consumed.**
+  `step_dunes` appends the `GenVars.PyrX/PyrY/numPyr` anchors (the C#'
+  `:11570-11572`), but `structures::pass_pyramids` still rolls its own
+  anchor inside the compact desert band — the rewrite that consumes the
+  recorded slots (and moves them out of the band, as vanilla does) is a
+  follow-up.
+- **The per-pass RNG stream.** The C# drives the desert off the single
+  global `genRand` (`GenBase._random` IS `genRand`); the port gives each
+  pass its own `pass_rng` stream (the documented `WorldGenerator.cs:497`
+  re-seed model), so the port's worlds are deterministic but not
+  byte-identical to vanilla's.
+- **The hive's FastRandom is exact.** `FastRandom::with_modifier_u64`
+  + `next_double` were added to `tile_light/palette.rs` (the existing
+  verbatim LCG port) so the hive's per-tile sand kind and its `> 0.25`
+  probabilistic shell replay the C# bit-for-bit.
+- **The band test widened.** `desert_band_has_sand_dunes_and_no_trees`
+  now accepts the desert tile family (53/397/396) at the band surface:
+  the underground desert legitimately places itself under the compact band
+  (the vanilla retry loop lands opposite the dungeon, which is this band),
+  and `AddTileVariance` hardens the exposed sand there.
+
 ## Entity sync (M6-NET-2)
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
