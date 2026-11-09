@@ -18,8 +18,12 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// the sparse paint/coating extras; v4 appended the two dial cooldown bytes;
 /// v5 appended the bed spawn (the vanilla keeps it in the *player* file's
 /// `spX/spY` arrays, `Player.cs:54877-54888` — the port's single-player world
-/// save carries it world-side, `World::bed_spawn`).
-pub const VERSION: u32 = 5;
+/// save carries it world-side, `World::bed_spawn`); v6 appended the classic
+/// secret-seed flags (`World.seeds` — the `SaveWorldFlags` byte block,
+/// `WorldFile.cs:1238-1250`, as the port's own u16 bitmask; the C# `.wld`
+/// stores the nine booleans and re-derives the seed from the stored seed
+/// *text*).
+pub const VERSION: u32 = 6;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -161,6 +165,10 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
         }
         None => w.write_all(&[0u8])?,
     }
+    // v6: the secret-seed flags (`WorldFile.SaveWorldFlags`'s nine
+    // `Main.*` booleans, `WorldFile.cs:1238-1250`) as the port's own
+    // `serializedSeedsSum` bitmask (`WorldFileData.cs:157-197`).
+    w.write_all(&world.seeds.sum().to_le_bytes())?;
     Ok(())
 }
 
@@ -265,6 +273,12 @@ pub fn parse(data: &[u8]) -> Result<World> {
         if x >= 10 && x < world.width - 10 && y >= 10 && y < world.height - 10 {
             world.bed_spawn = Some((x, y));
         }
+    }
+    // v6: the secret-seed flags (`SaveWorldFlags`'s block, the port's bitmask
+    // mirror). A v5 file loads with the classic (all-false) world, which is
+    // what the pre-M5-SEED-1 saves were.
+    if version >= 6 {
+        world.seeds = crate::seeds::SeedFlags::from_sum(r.u16()?);
     }
     world.revision = 0;
     Ok(world)
@@ -414,7 +428,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        assert_eq!(&buf[8..12], &[5, 0, 0, 0], "the writer emits the current v5");
+        assert_eq!(&buf[8..12], &[6, 0, 0, 0], "the writer emits the current v6");
         let back = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -438,15 +452,43 @@ mod tests {
     }
 
     #[test]
-    fn dw_1_4_version_above_4_rejected() {
+    fn dw_1_4_version_above_5_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v5 (the bed spawn) is now the
-        // current format, so the gate pins 6.
+        // current one (`save.rs` version gate). v6 (the secret-seed flags)
+        // is now the current format, so the gate pins 7.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        buf[8..12].copy_from_slice(&6u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 6 is unsupported");
+        buf[8..12].copy_from_slice(&7u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 7 is unsupported");
+    }
+
+    #[test]
+    fn m5_seed_1_the_secret_seed_flags_round_trip_in_v6() {
+        // M5-SEED-1: the v6 tail carries the classic secret-seed flags
+        // (`WorldFile.SaveWorldFlags`'s nine booleans as the port's
+        // `serializedSeedsSum` bitmask); a classic world keeps all bits 0
+        // and a seed world survives the save/load.
+        let mut classic = World::new("Test".into(), 32, 32);
+        let mut buf = Vec::new();
+        write_world(&mut buf, &classic).unwrap();
+        assert_eq!(back_flags(&buf), 0, "a classic world writes no seed bits");
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.seeds, crate::seeds::SeedFlags::none());
+        classic.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
+        buf.clear();
+        write_world(&mut buf, &mut classic).unwrap();
+        assert_eq!(
+            back_flags(&buf),
+            crate::seeds::SeedFlags::FOR_THE_WORTHY
+        );
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.seeds, classic.seeds);
+    }
+
+    /// The v6 tail's u16 bitmask, read back out of the written buffer.
+    fn back_flags(buf: &[u8]) -> u16 {
+        u16::from_le_bytes([buf[buf.len() - 2], buf[buf.len() - 1]])
     }
 
     #[test]

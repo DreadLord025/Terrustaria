@@ -2676,6 +2676,14 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
             downed_eoc: app.world.downed_eoc,
+            // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
+            // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
+            // `SkyblockIsUp` conditions) now read the world's identity —
+            // until this branch they were dead (`..Default::default()`).
+            tenth_anniversary: app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {

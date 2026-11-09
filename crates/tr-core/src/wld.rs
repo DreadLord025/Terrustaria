@@ -94,9 +94,23 @@ fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<
     // point and the world layers, which the lighting needs.
     if version >= 209 {
         r.skip(4)?; // GameMode
-        for min_version in [222, 227, 238, 239, 241, 249, 266, 267, 302] {
-            if version >= min_version {
-                r.skip(1)?;
+        for (min_version, flag) in [
+            (222, crate::seeds::SeedFlags::DRUNK),
+            (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
+            (238, crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            (239, crate::seeds::SeedFlags::DONT_STARVE),
+            (241, crate::seeds::SeedFlags::NOT_THE_BEES),
+            (249, crate::seeds::SeedFlags::REMIX),
+            (266, crate::seeds::SeedFlags::NO_TRAPS),
+            (267, crate::seeds::SeedFlags::ZENITH),
+            (302, crate::seeds::SeedFlags::SKYBLOCK),
+        ] {
+            // `WorldFile.LoadWorldFlags` (`WorldFile.cs:1981-2041`) reads the
+            // nine `Main.*` seed booleans in the `SaveWorldFlags` order
+            // (`:1238-1250`), each gated on its introduction version — the
+            // port kept them as `skip(1)` while no flag existed to fill.
+            if version >= min_version && r.u8()? != 0 {
+                world.seeds.insert(flag);
             }
         }
     } else {
@@ -104,6 +118,16 @@ fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<
         if version == 208 {
             r.skip(1)?;
         }
+    }
+    // The pre-267 back-compat inference (`WorldFile.cs:2020`): a world that
+    // carries remix && drunk but has no zenith byte is a get-fixed-boi world.
+    if version < 267
+        && world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+        && world.seeds.contains(crate::seeds::SeedFlags::DRUNK)
+    {
+        world.seeds.insert(
+            crate::seeds::SeedFlags::ZENITH | crate::seeds::SeedFlags::EVERYTHING_DEPS,
+        );
     }
     if version >= 141 {
         r.skip(8)?; // creation time

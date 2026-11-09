@@ -246,7 +246,7 @@ pub(crate) fn pass_jungle(
             rock_layer,
             water_line,
             lava_line,
-            ..TileRunnerOpts::default()
+            flags: world.seeds, ..TileRunnerOpts::default()
         },
     );
     // `GenerateTunnelToSurface(x, y)` (`:57`; the extraLiquid seed skips it —
@@ -318,7 +318,7 @@ fn place_first_pass_mud(
             rock_layer,
             water_line,
             lava_line,
-            ..TileRunnerOpts::default()
+            flags: world.seeds, ..TileRunnerOpts::default()
         },
     );
 }
@@ -354,7 +354,7 @@ fn place_gems_at(
             steps,
             kind,
             world_surface,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
         );
     }
 }
@@ -432,7 +432,7 @@ fn generate_tunnel_to_surface(
                 world_surface,
                 &TileRunnerOpts {
                     speed_x: branch_speed,
-                    ..TileRunnerOpts::default()
+                    flags: world.seeds, ..TileRunnerOpts::default()
                 },
             );
         }
@@ -561,7 +561,7 @@ fn generate_finishing_touches(
             steps,
             59,
             world_surface,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
         );
     }
     // (b) `for j <= 10*ws` (`:220-241`): re-pick the anchor on a mud 59 tile
@@ -584,7 +584,7 @@ fn generate_finishing_touches(
                 steps,
                 pocket_kind,
                 world_surface,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
             );
         }
     }
@@ -602,7 +602,7 @@ fn generate_finishing_touches(
             steps,
             1,
             world_surface,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
         );
         if rng.range(0, 4) == 0 {
             // `:254`'s named arguments evaluate in source order — the gem
@@ -622,7 +622,7 @@ fn generate_finishing_touches(
                 g_steps,
                 g_kind,
                 world_surface,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
             );
         }
     }
@@ -850,7 +850,7 @@ pub(crate) fn pass_dirt_to_mud(
                 rock_layer,
                 water_line,
                 lava_line,
-                ..TileRunnerOpts::default()
+                flags: world.seeds, ..TileRunnerOpts::default()
             },
         );
     }
@@ -995,7 +995,16 @@ fn shroom_patch(
 ) {
     let mut num = rng.range(80, 100) as f64;
     let mut num2 = rng.range(20, 26) as f64;
-    let num3 = world.width as f64 / 4200.0;
+    // `num3 *= 1.5` under for-the-worthy && !remix (`WorldGen.cs:79866-79870`) —
+    // M5-SEED-1's shroom arm (the world-scale multiplier grows the patch by
+    // half). The remix gate has no port field; the seed flags are the nearest
+    // stand-in (documented).
+    let mut num3 = world.width as f64 / 4200.0;
+    if world.seeds.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+        && !world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+    {
+        num3 *= 1.5;
+    }
     num *= num3;
     num2 *= num3;
     let num4 = num2 - 1.0;
@@ -1753,7 +1762,14 @@ pub(crate) fn pass_dungeon(
     let brick = [41u16, 43, 44][brick_i];
     let dungeon_wall = [7u16, 8, 9][brick_i];
     let x0 = spans.dungeon_x;
-    let top = surface[x0 as usize];
+    // The drunk start row (`WorldGen.cs:14804-14807`): `(int)Main.worldSurface
+    // + 70` instead of the searched depth — M5-SEED-1. The vanilla arm comes
+    // after the search and the `Next(-200,200)` offset, so no draw moves.
+    let top = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        world.world_surface as i32 + 70
+    } else {
+        surface[x0 as usize]
+    };
     let bottom = (world.height - 220).min(top + (world.rock_layer as i32) * 2);
     // The entrance tower: a 5-wide brick shell down from the surface.
     let mut y = top - 8;
@@ -1883,6 +1899,9 @@ mod tests {
     fn test_DW_3_1_jungle_pass_stage_ledger() {
         let (mut wa, ws_surf, rock) = flat_world(200, 512, 512);
         let mut wb = wa.clone();
+        // The seed flags ride their own copy — the runner calls below borrow
+        // `&mut wb` and read the flags in the same expression.
+        let flags = wb.seeds;
         let (water, lava, origin, seed) = (300.0, 340.0, 102, 0x4A55_4E47u64);
         // The beach anchors: the fixed margins the ledger replays (left 140,
         // right 512−140 — the pre-beach-pass values).
@@ -1907,6 +1926,7 @@ mod tests {
         let mut y = ((512 as f64 + rock) as i32) / 2;
         let (mut zx, mut zy) = (0, 0);
         let mut mud = |wb: &mut World, rep: &mut Rng, x: i32, y: i32, sx: f64| {
+            let flags = wb.seeds;
             let s = rep.range(scale(250.0), scale(500.0));
             let st = rep.range(50, 150);
             tile_runner(
@@ -1924,11 +1944,12 @@ mod tests {
                     rock_layer: rock,
                     water_line: water,
                     lava_line: lava,
-                    ..TileRunnerOpts::default()
+                    flags, ..TileRunnerOpts::default()
                 },
             );
         };
         let mut gems = |wb: &mut World, rep: &mut Rng, x: i32, y: i32, lo: i32| {
+            let flags = wb.seeds;
             for _ in 0..(6.0 * ws).ceil() as i32 {
                 let gx = x + rep.range(scale(-125.0), scale(125.0));
                 let gy = y + rep.range(scale(-125.0), scale(125.0));
@@ -1944,7 +1965,7 @@ mod tests {
                     gst,
                     gk,
                     ws_surf,
-                    &TileRunnerOpts::default(),
+                    &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
                 );
             }
         };
@@ -2002,7 +2023,7 @@ mod tests {
                 rock_layer: rock,
                 water_line: water,
                 lava_line: lava,
-                ..TileRunnerOpts::default()
+                flags, ..TileRunnerOpts::default()
             },
         );
         // The tunnel (`:92-191`).
@@ -2056,7 +2077,7 @@ mod tests {
                     ws_surf,
                     &TileRunnerOpts {
                         speed_x: dir,
-                        ..TileRunnerOpts::default()
+                        flags, ..TileRunnerOpts::default()
                     },
                 );
             }
@@ -2110,7 +2131,7 @@ mod tests {
                 st,
                 59,
                 ws_surf,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
             );
         }
         let pick = |wb: &World, rep: &mut Rng| -> (i32, i32) {
@@ -2144,7 +2165,7 @@ mod tests {
                     st,
                     kind,
                     ws_surf,
-                    &TileRunnerOpts::default(),
+                    &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
                 );
             }
         }
@@ -2161,7 +2182,7 @@ mod tests {
                 st,
                 1,
                 ws_surf,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
             );
             if rep.range(0, 4) == 0 {
                 // `:254`'s named-argument order — the gem draw first.
@@ -2179,7 +2200,7 @@ mod tests {
                     gst,
                     gk,
                     ws_surf,
-                    &TileRunnerOpts::default(),
+                    &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
                 );
             }
         }
@@ -2325,6 +2346,7 @@ mod tests {
     #[test]
     fn the_mud_body_splits_walls_at_the_lava_line() {
         let (mut world, ws_surf, rock) = flat_world(200, 512, 512);
+        let flags = world.seeds;
         tile_runner(
             &mut world,
             &mut Rng(0x5EED),
@@ -2342,6 +2364,7 @@ mod tests {
                 rock_layer: rock,
                 water_line: 300.0,
                 lava_line: 340.0,
+                flags,
                 ..TileRunnerOpts::default()
             },
         );

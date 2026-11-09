@@ -25,6 +25,7 @@ pub mod map;
 pub mod mapdata;
 pub mod save;
 pub mod scene;
+pub mod seeds;
 pub mod shimmer;
 pub mod shimmer_tables;
 pub mod sky;pub mod smart_cursor;
