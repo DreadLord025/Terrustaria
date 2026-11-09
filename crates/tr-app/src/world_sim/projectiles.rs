@@ -77,4 +77,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
+    // tower's mark resolves into the NPC vec here (the pool can't grow it).
+    for (kind, x, y) in app.projectiles.drain_mark_spawns() {
+        let k = crate::npc::NpcKind::from_u16(kind).unwrap_or(crate::npc::NpcKind::Slime);
+        let mut n = crate::npc::Npc::new(k, x, y, 1, 0.0);
+        n.hp = n.max_hp;
+        n.worm_id = 1;
+        app.npcs.push(n);
+    }
 }
