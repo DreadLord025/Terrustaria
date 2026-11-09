@@ -1302,8 +1302,11 @@ pub(crate) fn draw_npcs(
                 [130.0, 270.0],
                 [n.x, n.y],
             ),
-            // The towers: the 1-frame NPC_493/507/517 strips.
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
+            // The towers: the 1-frame NPC_493/507/517/422 strips.
+            NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::VortexTower
+            | NpcKind::SolarTower => (
                 assets.towers.as_ref(),
                 assets.towers.as_ref().map_or(270.0, |t| t.h),
                 [130.0, 270.0],

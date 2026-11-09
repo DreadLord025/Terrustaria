@@ -1985,7 +1985,9 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustWormHead
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
         | crate::npc::NpcKind::NebulaBeast
