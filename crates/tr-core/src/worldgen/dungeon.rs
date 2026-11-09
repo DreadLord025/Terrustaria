@@ -453,13 +453,44 @@ fn carve_interior(
 /// the entrance tower + shaft at the dungeon anchor, and the cracked-brick
 /// runs. The vanilla's entrance-hall precalculation and the biome styles
 /// (`dungeonGenerationStyles`) ride the follow-up.
+///
+/// The colour roll lives here — [`DungeonColor::roll`] below is this pass's
+/// `SetupDungeonGenVarVariables` `genRand.Next(3)` triple, and the live
+/// pipeline path carries its twin in `biomes::pass_dungeon`
+/// (`biomes.rs:1752`'s `rng.range(0, 3)` → the 41/43/44 + 7/8/9 rows). The
+/// drunk world's *re*-roll of that colour is NOT here: it is
+/// `WorldGen.FinishDrunkGen` (`WorldGen.cs:26226-26260` — the
+/// `Next(13, 25)` opener, the per-brick 41/43/44 bands 19-23/15-19/13-15
+/// and the `wallColor(25)` sweep) which runs in the seed-finish tail
+/// (`finish_seeds::finish_drunk_gen`'s owner), so the brick/wall ids stay
+/// the `Setup` triple here.
+///
+/// M5-SEED-1 seam: the `step_dungeon` step in `pipeline.rs` currently
+/// routes through `biomes::pass_dungeon` (the shape-level approximation),
+/// so this faithful pass is exercised by its own tests below rather than
+/// by the pipeline; the drunk start-row arm is ported here so the two
+/// implementations can be reconciled by the dungeon's owner without a
+/// re-derivation.
 pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut HallSeed) {
+    // `WorldGen.cs:14804-14807` — and its dual-dungeon twin at `:14854-14857`
+    // (one per `GenVars.dungeonGenVars` entry): a drunk world (without
+    // `noSurface`) pins the dungeon start row to
+    // `(int)Main.worldSurface + 70` instead of the searched solid-tile depth
+    // the caller computed. The `Next(-200, 200)` offset draw (`:14769`) and
+    // the whole solid-tile search (`:14773-14803`) sit *before* the drunk
+    // line in vanilla, so both are evaluated either way — the arm replaces
+    // only the resulting start row and burns no draw of its own, which is
+    // what keeps a classic world byte-identical.
+    let top = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        world.world_surface as i32 + 70
+    } else {
+        surface_y
+    };
     let color = DungeonColor::roll(&mut |n| r.next(n));
     let brick = color.brick_tile();
     let cracked = color.cracked_tile();
     let wall = color.brick_wall();
     let setup = DungeonSetup::roll(&mut |lo, hi| r.range(lo, hi), world.width);
-    let top = surface_y;
     let bottom = (world.height - 220).min(top + (world.rock_layer as i32) * 2);
     // The entrance tower (:the existing pass's contract — a 5-wide shell
     // from the surface and the 3-wide carved shaft).
@@ -585,6 +616,65 @@ mod tests {
         assert!(brick_cells > 500, "the brick shell landed: {brick_cells}");
         assert!(wall_cells > 500, "the dungeon walls landed: {wall_cells}");
         assert!(carved > 200, "the interior carve landed: {carved}");
+    }
+
+    /// The topmost row carrying a dungeon brick (41/43/44) — the entrance
+    /// tower's first shell row (`top - 8`).
+    fn topmost_brick_row(w: &World) -> Option<i32> {
+        (0..w.height).find(|y| {
+            (0..w.width).any(|x| {
+                let t = w.tile(x, *y).unwrap();
+                t.active() && matches!(t.kind, 41 | 43 | 44)
+            })
+        })
+    }
+
+    #[test]
+    fn test_dungeon_1_the_drunk_start_row_pins_the_surface_plus_70() {
+        // `WorldGen.cs:14804-14807` (the dual-dungeon twin `:14854-14857`):
+        // drunk replaces the searched start row with
+        // `(int)Main.worldSurface + 70`, so the entrance tower (which begins
+        // 8 rows above the start row) moves down with it. A classic world
+        // keeps the searched row — the arm is flag-gated and burns no draw,
+        // so both the classic tile grid and the classic draw sequence are
+        // untouched.
+        // A vanilla-height world: `num6 = (maxTilesY - 220) - 100` = 880
+        // puts both start rows above `LegacyDungeonHall`'s upward-turn bound
+        // (`WorldGen.cs:149`-ish, the port's `generate_hall` `num6`), so the
+        // crawler walks DOWN from the shaft foot and never paints above the
+        // entrance tower — the tower's top row is the pass's start row minus
+        // 8, and reading it back reads the drunk arm directly.
+        let mut classic = flat_world(600, 1200, 60);
+        let mut drunk = flat_world(600, 1200, 60);
+        // The searched depth (the port's `surface_y`, the vanilla solid-tile
+        // search product) and `Main.worldSurface` disagree on purpose so the
+        // two arms pick different rows.
+        classic.world_surface = 60.0;
+        drunk.world_surface = 60.0;
+        drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        let mut r1 = HallSeed::new(0xD00D);
+        let mut r2 = HallSeed::new(0xD00D);
+        generate_dungeon(&mut classic, 300, 92, &mut r1);
+        generate_dungeon(&mut drunk, 300, 92, &mut r2);
+        assert_eq!(topmost_brick_row(&classic), Some(92 - 8));
+        assert_eq!(topmost_brick_row(&drunk), Some(60 + 70 - 8));
+    }
+
+    #[test]
+    fn test_dungeon_1_the_classic_world_is_untouched_by_the_drunk_arm() {
+        // The flag gate is the whole contract: the drunk pass over a classic
+        // world reproduces the classic grid cell-for-cell (and the classic
+        // world reproduces itself), so the pinned `world_hash` worlds stay
+        // where they are.
+        let mut a = flat_world(600, 400, 60);
+        let mut b = flat_world(600, 400, 60);
+        let mut r1 = HallSeed::new(0xD00D);
+        let mut r2 = HallSeed::new(0xD00D);
+        generate_dungeon(&mut a, 300, 92, &mut r1);
+        generate_dungeon(&mut b, 300, 92, &mut r2);
+        for i in 0..a.tiles.len() {
+            assert_eq!(a.tiles[i].kind, b.tiles[i].kind, "cell {i} kind");
+        }
     }
 
     #[test]

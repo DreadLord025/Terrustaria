@@ -7,9 +7,18 @@
 //! crimstone blob with its chambers, veins and heart rooms and scatters the
 //! style-1 altars; the corruption branch cuts the chasms with their side
 //! caverns, orbs and the never-re-armed altar search, then wraps every orb in
-//! an ebonstone blob. The secret-seed branches (drunk/remix/flipInfections/
-//! tenthAnniversary/dontStarve/notTheBees/noSurface/surfaceIsInSpace/
-//! skyblock) are out of scope — the classic path only.
+//! an ebonstone blob.
+//!
+//! M5-SEED-1 ports the drunk half of the pass (`WorldGen.cs:13938`, `:13962`,
+//! `:14279`, `:14302`) and the `GenVars.flipInfections` arms (`:11298-11304`):
+//! a drunk world halves the biome count, runs both flavours, and draws each
+//! band's centre from its own world half; drunk + for-the-worthy + !remix
+//! swaps the ebonstone/crimstone tile and wall pairs so the two branches
+//! trade their walkers. The flag reads ride the world (`World::seeds`, the
+//! `generate` publication of `GenOptions::flags`), so every arm gates on the
+//! world's own identity and a classic world is byte-identical. Still out of
+//! scope (documented deviations): remix, tenthAnniversary, dontStarve,
+//! notTheBees, noSurface, surfaceIsInSpace and skyblock.
 //!
 //! The pass draws exclusively from its per-pass stream (the caller passes
 //! `Streams::pass_rng("Corruption")`); the three contract streams are
@@ -26,6 +35,7 @@ use crate::tile::{FLAG_ACTIVE, FLAG_INACTIVE, LiquidKind, Tile};
 use crate::tiledata::{
     SET_CAN_BE_CLEARED_DURING_GENERATION, SET_CRACKED_BRICKS, SET_GRASS, TILE_SOLID, TILE_SOLID_TOP,
 };
+use crate::seeds::SeedFlags;
 use crate::world::World;
 
 // --- tiles (TileID.cs) -------------------------------------------------------
@@ -152,14 +162,65 @@ fn set_wall(world: &mut World, x: i32, y: i32, wall: u16) {
     }
 }
 
+// --- the secret-seed readers -------------------------------------------------
+
+/// `WorldGen.drunkWorldGen` (`WorldGen.cs:11115-11123`'s flag set, published to
+/// the passes as `World::seeds`). Read-only: a classic world never sets it.
+fn drunk(world: &World) -> bool {
+    world.seeds.contains(SeedFlags::DRUNK)
+}
+
+/// `GenVars.crimsonLeft` (`GenVars.cs:280`) — the `genRand.Next(2)` half-roll
+/// of `Reset` (`WorldGen.cs:11216-11223`) that splits the world into a
+/// corruption-left / crimson-left half pair. The port's Reset stand-in lives
+/// in `pipeline::run` and its `GenVars` never reaches this pass's signature,
+/// so the drunk anchor arms (`:13962`, `:14302`) re-derive the roll from the
+/// per-pass stream contract: `Streams::pass_rng(name)` is
+/// `Rng(seed ^ fnv1a64(name))`, so this pass's stream state carries the world
+/// seed and the "Reset" stream can be rebuilt and drawn exactly once. It must
+/// be evaluated before the pass draws anything and it consumes no draws of
+/// its own; a classic world never evaluates it. (M5-SEED-1 follow-up: once
+/// `step_evil` forwards `&GenVars` the re-derivation can be dropped.)
+fn crimson_left(rng: &Rng) -> bool {
+    let world_seed = rng.0 ^ super::pipeline::fnv1a64("Corruption");
+    let mut reset = Rng(world_seed ^ super::pipeline::fnv1a64("Reset"));
+    reset.range(0, 2) == 1
+}
+
+/// `GenVars.ebonStone` / `GenVars.ebonStoneWall` (`GenVars.cs`; `Reset` seeds
+/// them at `WorldGen.cs:8345-8346`) — the corruption pair, 25/3 classic and
+/// 203/83 under the `flipInfections` swap (`:11298-11304`).
+fn ebon_ids(world: &World) -> (u16, u16) {
+    if world.seeds.flip_infections() {
+        (TILE_CRIMSTONE, WALL_CRIMSTONE)
+    } else {
+        (TILE_EBONSTONE, WALL_EBONSTONE)
+    }
+}
+
+/// `GenVars.crimStone` / `GenVars.crimStoneWall` (`GenVars.cs`; `Reset` seeds
+/// them at `WorldGen.cs:8344`) — the crimson pair, 203/83 classic and 25/3
+/// under the `flipInfections` swap. The crimson walkers (`CrimStart`,
+/// `CrimVein`, `CrimEnt`, `CrimPlaceHearts`) read this pair.
+fn crim_ids(world: &World) -> (u16, u16) {
+    if world.seeds.flip_infections() {
+        (TILE_EBONSTONE, WALL_EBONSTONE)
+    } else {
+        (TILE_CRIMSTONE, WALL_CRIMSTONE)
+    }
+}
+
 // --- the pass ----------------------------------------------------------------
 
 /// `CorruptionAndCrimson` (`WorldGen.cs:13868-14554`). The prologue scans the
 /// jungle/snow extents, then `num10 = maxTilesX * 0.00045` biomes are placed
 /// by the shared centre/band retry; the crimson branch walks `CrimStart` and
 /// scatters style-1 altars, the corruption branch cuts the chasms and wraps
-/// the orbs in ebonstone. `GenVars.flipInfections` is a secret-seed branch —
-/// the classic path never swaps the flavours.
+/// the orbs in ebonstone. The drunk world halves the count and runs both
+/// flavours (`:13938`, `:14279`) with each band's centre drawn from its own
+/// world half (`:13962`, `:14302`); `GenVars.flipInfections`
+/// (`:11298-11304`) swaps the ebonstone/crimstone pairs so the branches trade
+/// their walkers.
 pub(crate) fn corruption_and_crimson(
     world: &mut World,
     rng: &mut Rng,
@@ -169,6 +230,14 @@ pub(crate) fn corruption_and_crimson(
     dungeon_location: i32,
     crimson: bool,
 ) {
+    // The secret-seed context read off the world (`World::seeds` — the
+    // `generate` publication of `GenOptions::flags`). `crimsonLeft` is the
+    // Reset half-roll the drunk anchor arms read; it re-derives the stream,
+    // so it must run before this pass draws anything.
+    let flip_infections = world.seeds.flip_infections();
+    let (ebon_stone, ebon_wall) = ebon_ids(world);
+    let drunk = drunk(world);
+    let crimson_left = crimson_left(rng);
     // `double num = GenVars.worldSurfaceLow; double num2 = Main.worldSurface`
     // (`:13870-13871`; the surfaceIsInSpace/noSurface overrides are secret
     // seeds).
@@ -204,7 +273,16 @@ pub(crate) fn corruption_and_crimson(
     // doubling is a secret seed).
     let num8 = 500i32;
     let num9 = 100i32;
-    let num10 = world.width as f64 * 0.00045;
+    let mut num10 = world.width as f64 * 0.00045;
+    // `bool flag = WorldGen.crimson; if (WorldGen.drunkWorldGen) { flag = true;
+    // num10 /= 2.0; }` (`:13936-13941`) — the drunk world halves the biome
+    // count and forces the crimson pass on. `:14279`'s `flag = false` re-arms
+    // the corruption pass afterwards, so both flavours run.
+    let mut flag = crimson;
+    if drunk {
+        flag = true;
+        num10 /= 2.0;
+    }
     // `for (int k = 0; (double)k < num10; k++)` — a fractional bound still
     // runs the ceil count.
     let count = num10.ceil() as i32;
@@ -221,8 +299,9 @@ pub(crate) fn corruption_and_crimson(
     let mut hearts: Vec<(i32, i32)> = Vec::new();
     // `WorldGen.oceanLevel` (`:4447`): `(worldSurface + rockLayer) / 2 + 40`.
     let ocean_level = (world_surface + rock_layer) / 2.0 + 40.0;
-    if crimson {
-        // --- the crimson branch (`:13946-14277`) ---
+    if flag {
+        // --- the crimson branch (`:13946-14277`); the drunk `flag = true`
+        // (`:13938`) runs it even on a corruption-flavoured world ---
         for _k in 0..count {
             let Some((num15, num16, num17)) = evil_band_retry(
                 world,
@@ -231,35 +310,111 @@ pub(crate) fn corruption_and_crimson(
                 (num3, num4),
                 dungeon_location,
                 true,
+                drunk,
+                crimson_left,
             ) else {
                 continue; // the D15 valve
             };
             if num17 <= num16 {
                 continue; // D15: a degenerate band runs no body
             }
-            // `if (!GenVars.flipInfections) WorldGen.CrimStart(num15, (int)num
-            // - 10);` (`:14044-14047`).
-            crim_start(world, rng, num15, num as i32 - 10, num2, &mut hearts);
-            // The flipInfections chasm block (`:14048-14077`) is out of scope.
-            for l in num16..num17 {
-                convert_surface_jungle_grass(
-                    world,
-                    rng,
-                    l,
-                    (num16, num17),
-                    num,
-                    num2,
-                    TILE_CRIMSON_JUNGLE_GRASS,
-                );
+            if flip_infections {
+                // The flipInfections chasm block (`:14048-14077`): the
+                // corruption walker (`ChasmRunner` reads `GenVars.ebonStone` /
+                // `ebonStoneWall`, i.e. crimstone 203 / wall 83 under the
+                // swap), interleaved with the per-column jungle conversion.
+                let mut num20 = 0i32;
+                for l in num16..num17 {
+                    if num20 > 0 {
+                        num20 -= 1;
+                    }
+                    if l == num15 || num20 == 0 {
+                        let mut num53 = num as i32;
+                        while (num53 as f64) < num2 - 1.0 {
+                            if active_at(world, l, num53) || wall_at(world, l, num53) > 0 {
+                                if l == num15 {
+                                    num20 = 20;
+                                    let steps = rng.range(0, 150) + 150;
+                                    chasm_runner(
+                                        world,
+                                        rng,
+                                        l,
+                                        num53,
+                                        steps,
+                                        true,
+                                        num2,
+                                        rock_layer,
+                                        ebon_stone,
+                                        ebon_wall,
+                                    );
+                                } else if rng.range(0, 35) == 0 && num20 == 0 {
+                                    num20 = 30;
+                                    let steps = rng.range(0, 50) + 50;
+                                    chasm_runner(
+                                        world,
+                                        rng,
+                                        l,
+                                        num53,
+                                        steps,
+                                        true,
+                                        num2,
+                                        rock_layer,
+                                        ebon_stone,
+                                        ebon_wall,
+                                    );
+                                }
+                                break;
+                            }
+                            num53 += 1;
+                        }
+                    }
+                    convert_surface_jungle_grass(
+                        world,
+                        rng,
+                        l,
+                        (num16, num17),
+                        num,
+                        num2,
+                        TILE_CRIMSON_JUNGLE_GRASS,
+                    );
+                }
+            } else {
+                // `if (!GenVars.flipInfections) WorldGen.CrimStart(num15,
+                // (int)num - 10);` (`:14044-14047`).
+                crim_start(world, rng, num15, num as i32 - 10, num2, &mut hearts);
+                for l in num16..num17 {
+                    convert_surface_jungle_grass(
+                        world,
+                        rng,
+                        l,
+                        (num16, num17),
+                        num,
+                        num2,
+                        TILE_CRIMSON_JUNGLE_GRASS,
+                    );
+                }
             }
             evil_shell(world, rng, (num16, num17), num, num2, true);
             altar_scatter(world, rng, (num16, num17), num2, ocean_level);
-            // The flipInfections orb-surround (`:14236-14267`) is out of scope.
+            // The flipInfections orb-surround (`:14236-14267`): the C# writes
+            // the literal crimstone 203, `GenVars.ebonStone`'s swapped id.
+            if flip_infections {
+                orb_surround_blob(world, rng, (num16, num17), ebon_stone);
+            }
         }
         // `if (!GenVars.flipInfections) WorldGen.CrimPlaceHearts();`
         // (`:14273-14277`) — after the whole biome loop.
-        crim_place_hearts(world, rng, &hearts);
-    } else {
+        if !flip_infections {
+            crim_place_hearts(world, rng, &hearts);
+        }
+    }
+    // `if (WorldGen.drunkWorldGen) flag = false;` (`:14279-14281`) — the
+    // corruption pass is re-armed, so a drunk world runs BOTH flavours from
+    // the halved count (the two arms draw opposite world halves).
+    if drunk {
+        flag = false;
+    }
+    if !flag {
         // --- the corruption branch (`:14280-14554`) ---
         for _k in 0..count {
             let Some((num46, num47, num48)) = evil_band_retry(
@@ -269,22 +424,30 @@ pub(crate) fn corruption_and_crimson(
                 (num3, num4),
                 dungeon_location,
                 false,
+                drunk,
+                crimson_left,
             ) else {
                 continue; // the D15 valve
             };
             if num48 <= num47 {
                 continue; // D15: a degenerate band runs no body
             }
-            // The flipInfections CrimStart (`:14381-14384`) is out of scope.
+            // `if (GenVars.flipInfections) WorldGen.CrimStart(num46, (int)num
+            // - 10);` (`:14381-14384`) — the flipped corruption biome grows
+            // the crimson walker instead of the chasms.
+            if flip_infections {
+                crim_start(world, rng, num46, num as i32 - 10, num2, &mut hearts);
+            }
             let mut num51 = 0i32;
             for num52 in num47..num48 {
                 // The chasm attempts (`:14384-14401`, the `!flipInfections`
                 // arm): cooldown first, then the centre column or a cooled-down
-                // column scans for its surface hit.
-                if num51 > 0 {
+                // column scans for its surface hit. The whole block — the
+                // `num51` cooldown included — is skipped under the swap.
+                if !flip_infections && num51 > 0 {
                     num51 -= 1;
                 }
-                if num52 == num46 || num51 == 0 {
+                if !flip_infections && (num52 == num46 || num51 == 0) {
                     let mut num53 = num as i32;
                     while (num53 as f64) < num2 - 1.0 {
                         if active_at(world, num52, num53) || wall_at(world, num52, num53) > 0 {
@@ -335,9 +498,15 @@ pub(crate) fn corruption_and_crimson(
                 );
             }
             evil_shell(world, rng, (num47, num48), num, num2, false);
-            // The flipInfections CrimPlaceHearts arm is out of scope; the
-            // `else` arm is the orb-surround blob (`:14524-14545`).
-            orb_surround_blob(world, rng, (num47, num48), TILE_EBONSTONE);
+            // `if (GenVars.flipInfections) WorldGen.CrimPlaceHearts(); else
+            // { ...orb-surround blob... }` (`:14509-14545`) — the swapped
+            // corruption biome ends with the crimson hearts, not the
+            // ebonstone orb surround.
+            if flip_infections {
+                crim_place_hearts(world, rng, &hearts);
+            } else {
+                orb_surround_blob(world, rng, (num47, num48), TILE_EBONSTONE);
+            }
         }
     }
 }
@@ -347,6 +516,8 @@ pub(crate) fn corruption_and_crimson(
 /// dungeon-side 400-clamps). Returns `(centre, start, end)` or `None` when
 /// the D15 valve fired. The desert-overlap retry gates are skipped (D17 —
 /// the port carries no `UndergroundDesertLocation`; they draw no RNG).
+/// The drunk arms (`:13961-13964` crimson, `:14302-14304` corruption) pass
+/// `drunk`/`crimson_left` when the world carries the flag.
 fn evil_band_retry(
     world: &World,
     rng: &mut Rng,
@@ -354,6 +525,8 @@ fn evil_band_retry(
     jungle_band: (i32, i32),
     dungeon_location: i32,
     crimson: bool,
+    drunk: bool,
+    crimson_left: bool,
 ) -> Option<(i32, i32, i32)> {
     let max_x = world.width;
     let mut snow = snow_band; // num11/num12 crimson, num42/num43 corruption
@@ -367,9 +540,35 @@ fn evil_band_retry(
         }
         // `int num18 = maxTilesX / 2; int num19 = 200;` (`:13966-13967`).
         let num18 = max_x / 2;
-        let num19 = 200i32;
-        // `num46 = Next(num8, maxTilesX - num8)` (`:13969`).
-        centre = rng.range(500, max_x - 500);
+        let mut num19 = 200i32;
+        // `num46 = Next(num8, maxTilesX - num8)` (`:13969`) — the classic
+        // whole-world draw.
+        if !drunk {
+            centre = rng.range(500, max_x - 500);
+        } else {
+            // The drunk anchor draw: the centre comes from the world half the
+            // flavour owns, `num8` = 500 marking the far margin. The two arms
+            // read `GenVars.crimsonLeft` with OPPOSITE polarity — the crimson
+            // branch takes the right half when the corruption owns the left
+            // (`:13962`) and the corruption branch the same way (`:14302`),
+            // which is what keeps the two flavours apart on a drunk world.
+            let half = max_x / 2;
+            if crimson {
+                // `:13961-13964` — `num19 = 100` on the crimson arm.
+                num19 = 100;
+                centre = if crimson_left {
+                    rng.range(500, half)
+                } else {
+                    rng.range(half, max_x - 500)
+                };
+            } else {
+                centre = if crimson_left {
+                    rng.range(half, max_x - 500)
+                } else {
+                    rng.range(500, half)
+                };
+            }
+        }
         // `num47 = num46 - Next(200) - 100; num48 = num46 + Next(200) + 100;`
         // (`:13971-13972`).
         start = centre - rng.range(0, 200) - 100;
@@ -1151,7 +1350,7 @@ fn chasm_runner_sideways(
             tail_steps,
             TILE_DEMONITE as i32,
             world_surface,
-            &TileRunnerOpts::default(),
+            &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
         );
     }
 }
@@ -1173,7 +1372,10 @@ fn place_evil_wall(world: &mut World, k: i32, l: i32, wall: u16) {
 /// `WorldGen.CrimStart` (`WorldGen.cs:75449-75714`): the winding crimstone
 /// blob down to `worldSurface + 100`, the 50 elliptical chambers, the 5-8
 /// veins recording their endpoints in `heartPos`, the entrance shaft and the
-/// per-column surface fill, then `CrimEnt`.
+/// per-column surface fill, then `CrimEnt`. The C# reads
+/// `GenVars.crimStone`/`crimStoneWall` throughout, so under `flipInfections`
+/// (`:11298-11304`) the walker paints ebonstone 25 / wall 3 — that is how the
+/// flipped corruption branch grows its biome (`:14381`).
 fn crim_start(
     world: &mut World,
     rng: &mut Rng,
@@ -1182,6 +1384,10 @@ fn crim_start(
     world_surface: f64,
     hearts: &mut Vec<(i32, i32)>,
 ) {
+    // `GenVars.crimStone` / `GenVars.crimStoneWall` (the flipInfections
+    // swap, `WorldGen.cs:11298-11304`): 203/83 classic, 25/3 when drunk
+    // && for-the-worthy && !remix.
+    let (crim_stone, crim_wall) = crim_ids(world);
     let num = world_surface; // the noSurface override is a secret seed
     let mut crim_dir = 1;
     // The surface walk-down (`:75456-75464`): clamp to the surface, then the
@@ -1225,17 +1431,17 @@ fn crim_start(
                 if m > num2 {
                     if manhattan < num3 * 0.3 {
                         set_active(world, l, m, false);
-                        set_wall(world, l, m, WALL_CRIMSTONE);
-                    } else if manhattan < num3 * 0.8 && wall_at(world, l, m) != WALL_CRIMSTONE {
+                        set_wall(world, l, m, crim_wall);
+                    } else if manhattan < num3 * 0.8 && wall_at(world, l, m) != crim_wall {
                         set_active(world, l, m, true);
-                        set_kind(world, l, m, TILE_CRIMSTONE);
+                        set_kind(world, l, m, crim_stone);
                         if manhattan < num3 * 0.6 {
-                            set_wall(world, l, m, WALL_CRIMSTONE);
+                            set_wall(world, l, m, crim_wall);
                         }
                     }
                 } else if manhattan < num3 * 0.3 && active_at(world, l, m) {
                     set_active(world, l, m, false);
-                    set_wall(world, l, m, WALL_CRIMSTONE);
+                    set_wall(world, l, m, crim_wall);
                 }
                 m += 1;
             }
@@ -1297,12 +1503,12 @@ fn crim_start(
                 let num14 = (num13 * num13 + num10 * num10).sqrt();
                 if num14 < num3 * 0.25 {
                     set_active(world, num7, num8, false);
-                    set_wall(world, num7, num8, WALL_CRIMSTONE);
-                } else if num14 < num3 * 0.4 && wall_at(world, num7, num8) != WALL_CRIMSTONE {
+                    set_wall(world, num7, num8, crim_wall);
+                } else if num14 < num3 * 0.4 && wall_at(world, num7, num8) != crim_wall {
                     set_active(world, num7, num8, true);
-                    set_kind(world, num7, num8, TILE_CRIMSTONE);
+                    set_kind(world, num7, num8, crim_stone);
                     if num14 < num3 * 0.35 {
-                        set_wall(world, num7, num8, WALL_CRIMSTONE);
+                        set_wall(world, num7, num8, crim_wall);
                     }
                 }
                 num8 += 1;
@@ -1391,7 +1597,7 @@ fn crim_start(
                 let num35 = (num34 * num34 + num31 * num31).sqrt();
                 if num35 < num3 * 0.2 * (rng.range(90, 111) as f64 * 0.01) {
                     set_active(world, num28, num29, false);
-                    set_wall(world, num28, num29, WALL_CRIMSTONE);
+                    set_wall(world, num28, num29, crim_wall);
                 } else {
                     if num35 >= num3 * 0.45 {
                         num29 += 1;
@@ -1403,11 +1609,11 @@ fn crim_start(
                     if num28 > num22 {
                         num22 = num28;
                     }
-                    if wall_at(world, num28, num29) != WALL_CRIMSTONE {
+                    if wall_at(world, num28, num29) != crim_wall {
                         set_active(world, num28, num29, true);
-                        set_kind(world, num28, num29, TILE_CRIMSTONE);
+                        set_kind(world, num28, num29, crim_stone);
                         if num35 < num3 * 0.35 {
-                            set_wall(world, num28, num29, WALL_CRIMSTONE);
+                            set_wall(world, num28, num29, crim_wall);
                         }
                     }
                 }
@@ -1419,19 +1625,19 @@ fn crim_start(
     // The per-column surface fill (`:75706-75713`).
     for num36 in num21..=num22 {
         let mut num37 = num2;
-        while (kind_at(world, num36, num37) == TILE_CRIMSTONE && active_at(world, num36, num37))
-            || wall_at(world, num36, num37) == WALL_CRIMSTONE
+        while (kind_at(world, num36, num37) == crim_stone && active_at(world, num36, num37))
+            || wall_at(world, num36, num37) == crim_wall
         {
             num37 += 1;
         }
         let mut num38 = rng.range(15, 20);
         while !active_at(world, num36, num37)
             && num38 > 0
-            && wall_at(world, num36, num37) != WALL_CRIMSTONE
+            && wall_at(world, num36, num37) != crim_wall
         {
             if can_evil_replace(world, num36, num37) {
                 num38 -= 1;
-                set_kind(world, num36, num37, TILE_CRIMSTONE);
+                set_kind(world, num36, num37, crim_stone);
                 set_active(world, num36, num37, true);
                 num37 += 1;
             } else {
@@ -1458,6 +1664,10 @@ fn crim_vein(
     velocity: (f64, f64),
     hearts: &mut Vec<(i32, i32)>,
 ) {
+    // `GenVars.crimStone` / `GenVars.crimStoneWall` (the flipInfections
+    // swap, `WorldGen.cs:11298-11304`): 203/83 classic, 25/3 when drunk
+    // && for-the-worthy && !remix.
+    let (crim_stone, crim_wall) = crim_ids(world);
     let mut num = rng.range(15, 26) as f64;
     let mut flag = true;
     let vector2d = velocity;
@@ -1489,12 +1699,12 @@ fn crim_vein(
                 let num5 = (num3 * num3 + num4 * num4).sqrt();
                 if num5 < num * 0.2 {
                     set_active(world, i, j, false);
-                    set_wall(world, i, j, WALL_CRIMSTONE);
-                } else if num5 < num * 0.5 && wall_at(world, i, j) != WALL_CRIMSTONE {
+                    set_wall(world, i, j, crim_wall);
+                } else if num5 < num * 0.5 && wall_at(world, i, j) != crim_wall {
                     set_active(world, i, j, true);
-                    set_kind(world, i, j, TILE_CRIMSTONE);
+                    set_kind(world, i, j, crim_stone);
                     if num5 < num * 0.4 {
-                        set_wall(world, i, j, WALL_CRIMSTONE);
+                        set_wall(world, i, j, crim_wall);
                     }
                 }
                 j += 1;
@@ -1530,6 +1740,10 @@ fn crim_vein(
 /// through crimstone only — the walk ends after 20 consecutive steps without
 /// a crimstone carve (each carve resets the counter).
 fn crim_ent(world: &mut World, rng: &mut Rng, position: (f64, f64), crim_dir: i32) {
+    // `GenVars.crimStone` (`WorldGen.cs:75795` reads the tile id only — the
+    // entrance tunnel carves no walls) — 203 classic, 25 under the
+    // flipInfections swap (`:11298-11304`).
+    let crim_stone = crim_ids(world).0;
     let mut num = 0.0f64;
     let mut num2 = rng.range(6, 11) as f64;
     let mut flag = true;
@@ -1559,7 +1773,7 @@ fn crim_ent(world: &mut World, rng: &mut Rng, position: (f64, f64), crim_dir: i3
                     let num4 = (j as f64 - pos_y).abs();
                     if (num3 * num3 + num4 * num4).sqrt() < num2 * 0.5
                         && active_at(world, i, j)
-                        && kind_at(world, i, j) == TILE_CRIMSTONE
+                        && kind_at(world, i, j) == crim_stone
                     {
                         set_active(world, i, j, false);
                         flag = true;
@@ -1578,8 +1792,14 @@ fn crim_ent(world: &mut World, rng: &mut Rng, position: (f64, f64), crim_dir: i3
 /// `WorldGen.CrimPlaceHearts` (`WorldGen.cs:75716-75762`): per recorded vein
 /// endpoint — the crimstone disc (`Next(16, 21)`, `< r*0.4`), then the hollow
 /// heart room (`Next(10, 14)`, `< r*0.3`), then `AddShadowOrb(...,
-/// crimsonHeart: true)`.
+/// crimsonHeart: true)`. Runs once per pass on the classic crimson branch
+/// (`:14273`) and once per band on the flipped corruption branch
+/// (`:14511-14513`), with the ids the `flipInfections` swap selects.
 fn crim_place_hearts(world: &mut World, rng: &mut Rng, hearts: &[(i32, i32)]) {
+    // `GenVars.crimStone` / `GenVars.crimStoneWall` (the flipInfections
+    // swap, `WorldGen.cs:11298-11304`): 203/83 classic, 25/3 when drunk
+    // && for-the-worthy && !remix.
+    let (crim_stone, crim_wall) = crim_ids(world);
     let mut num = 16;
     for i in 0..hearts.len() {
         num = rng.range(16, 21);
@@ -1592,8 +1812,8 @@ fn crim_place_hearts(world: &mut World, rng: &mut Rng, hearts: &[(i32, i32)]) {
                 let num3 = (k - y).abs() as f64;
                 if (num2 * num2 + num3 * num3).sqrt() < num as f64 * 0.4 {
                     set_active(world, j, k, true);
-                    set_kind(world, j, k, TILE_CRIMSTONE);
-                    set_wall(world, j, k, WALL_CRIMSTONE);
+                    set_kind(world, j, k, crim_stone);
+                    set_wall(world, j, k, crim_wall);
                 }
                 k += 1;
             }
@@ -1611,7 +1831,7 @@ fn crim_place_hearts(world: &mut World, rng: &mut Rng, hearts: &[(i32, i32)]) {
                 let num5 = (n - y).abs() as f64;
                 if (num4 * num4 + num5 * num5).sqrt() < num as f64 * 0.3 {
                     set_active(world, m, n, false);
-                    set_wall(world, m, n, WALL_CRIMSTONE);
+                    set_wall(world, m, n, crim_wall);
                 }
                 n += 1;
             }
@@ -2629,8 +2849,17 @@ mod tests {
     fn test_DW_4_3_band_retry_ledger() {
         let (world, _surface, _rock) = flat_world(60, 1800, 300);
         let mut rng = Rng(0xB4AD);
-        let band = evil_band_retry(&world, &mut rng, (1790, 10), (1790, 10), 1700, false)
-            .expect("the retry terminated");
+        let band = evil_band_retry(
+            &world,
+            &mut rng,
+            (1790, 10),
+            (1790, 10),
+            1700,
+            false,
+            false,
+            false,
+        )
+        .expect("the retry terminated");
         // The transcription.
         let mut rep = Rng(0xB4AD);
         let (max_x, dungeon_location) = (1800i32, 1700i32);
@@ -2676,6 +2905,215 @@ mod tests {
         assert_eq!(rng.0, rep.0, "the final stream state");
         // The band is sane on this world (the valve never fired).
         assert!(end > start);
+    }
+
+    /// M5-SEED-1: the drunk anchor draw (`WorldGen.cs:13962` crimson /
+    /// `:14302` corruption) picks the world half the flavour owns, reading
+    /// `GenVars.crimsonLeft` with opposite polarity on the two arms. The
+    /// classic draw is the whole-world `Next(num8, maxTilesX - num8)`.
+    #[test]
+    fn test_DW_4_3_drunk_anchor_takes_the_world_half() {
+        let (world, _surface, _rock) = flat_world(60, 1800, 300);
+        let half = world.width / 2;
+        // The classic arm is untouched by the drunk parameters.
+        let classic = evil_band_retry(
+            &world,
+            &mut Rng(0xB4AD),
+            (1790, 10),
+            (1790, 10),
+            1700,
+            false,
+            false,
+            false,
+        )
+        .expect("the retry terminated");
+        let reference = evil_band_retry(
+            &world,
+            &mut Rng(0xB4AD),
+            (1790, 10),
+            (1790, 10),
+            1700,
+            false,
+            false,
+            false,
+        )
+        .expect("the retry terminated");
+        assert_eq!(classic, reference, "the classic arm ignores the drunk flags");
+        // The crimson arm: `!crimsonLeft ? right : left`, and the centre
+        // exclusion narrows to ±100 (`:13961-13964`), so the settled centre
+        // never crosses the world's centre.
+        for (crimson_left, left) in [(true, true), (false, false)] {
+            let band = evil_band_retry(
+                &world,
+                &mut Rng(0xB4AD),
+                (1790, 10),
+                (1790, 10),
+                1700,
+                true,
+                true,
+                crimson_left,
+            )
+            .expect("the retry terminated");
+            if left {
+                assert!(band.0 < half, "crimsonLeft draws the left half ({})", band.0);
+            } else {
+                assert!(band.0 >= half, "!crimsonLeft draws the right half ({})", band.0);
+            }
+        }
+        // The corruption arm reads the same roll the other way round.
+        for (crimson_left, left) in [(true, false), (false, true)] {
+            let band = evil_band_retry(
+                &world,
+                &mut Rng(0xB4AD),
+                (1790, 10),
+                (1790, 10),
+                1700,
+                false,
+                true,
+                crimson_left,
+            )
+            .expect("the retry terminated");
+            if left {
+                assert!(band.0 < half, "crimsonLeft=false draws the left half ({})", band.0);
+            } else {
+                assert!(band.0 >= half, "crimsonLeft draws the right half ({})", band.0);
+            }
+        }
+    }
+
+    /// M5-SEED-1: the drunk half of the pass (`WorldGen.cs:13938`, `:14279`) —
+    /// a drunk world runs BOTH flavours from the halved count. On a
+    /// corruption-flavoured world the classic pass paints ebonstone chasms and
+    /// no crimstone; the drunk one paints both and its forced crimson arm
+    /// places the crimson hearts the classic corruption branch never writes.
+    /// On a crimson-flavoured world the halving is visible in the heart count
+    /// (`ceil(maxTilesX * 0.00045)` = 2 blobs against the drunk `ceil(...
+    /// / 2)` = 1).
+    #[test]
+    fn test_DW_4_3_drunk_runs_both_flavours() {
+        let run = |flags: crate::seeds::SeedFlags, crimson: bool| {
+            // A 4200-wide flat world (`:13927`'s count is 2 classic, 1 drunk).
+            // The surface row sits at 100 with `world_surface` 10 below it, so
+            // both walkers' surface scans find their hit.
+            let (mut world, surface, rock) = flat_world(100, 4200, 600);
+            world.seeds = flags;
+            corruption_and_crimson(
+                &mut world,
+                &mut Rng(0x0D12),
+                surface,
+                surface + 10.0,
+                rock,
+                4100,
+                crimson,
+            );
+            let count = |kind: u16, frame: Option<i32>| {
+                count_tiles(&world, &|t: &Tile| {
+                    t.active()
+                        && t.kind == kind
+                        && frame.map_or(true, |f| i32::from(t.frame_x) >= f)
+                })
+            };
+            (
+                count(TILE_EBONSTONE, None),
+                count(TILE_CRIMSTONE, None),
+                count(TILE_SHADOW_ORB, Some(36)),
+            )
+        };
+        // The corruption flavour.
+        let (classic_ebonstone, classic_crimstone, classic_hearts) =
+            run(crate::seeds::SeedFlags::default(), false);
+        assert!(classic_ebonstone > 0, "the classic corruption pass ({classic_ebonstone})");
+        assert_eq!(classic_crimstone, 0, "the classic corruption pass grows no crimstone");
+        assert_eq!(classic_hearts, 0, "the classic corruption branch places no hearts");
+        let (drunk_ebonstone, drunk_crimstone, drunk_hearts) =
+            run(crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::DRUNK), false);
+        assert!(drunk_ebonstone > 0, "the drunk corruption pass ({drunk_ebonstone})");
+        assert!(drunk_crimstone > 0, "the drunk pass also ran the crimson arm ({drunk_crimstone})");
+        assert!(drunk_hearts > 0, "the forced crimson arm placed its hearts ({drunk_hearts})");
+        // The crimson flavour: the halved count grows fewer hearts.
+        let (_, _, classic_crim_hearts) = run(crate::seeds::SeedFlags::default(), true);
+        let (_, _, drunk_crim_hearts) =
+            run(crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::DRUNK), true);
+        assert!(classic_crim_hearts > 0, "the classic crimson hearts ({classic_crim_hearts})");
+        assert!(
+            drunk_crim_hearts < classic_crim_hearts,
+            "the halved count grows fewer hearts ({drunk_crim_hearts} vs {classic_crim_hearts})"
+        );
+    }
+
+    /// M5-SEED-1: `GenVars.flipInfections` (`WorldGen.cs:11298-11304`) swaps
+    /// the two evil pairs, so the branches trade walkers: the corruption
+    /// branch grows `CrimStart` (`:14381-14384`) and ends with
+    /// `CrimPlaceHearts` (`:14511-14513`), while the crimson branch grows the
+    /// chasms (`:14048-14077`) and drops its own `CrimPlaceHearts`
+    /// (`:14273-14277`). The drunk flag keeps both arms running, so the test
+    /// reads the CORRUPTION arm's products: the crimson hearts, which only
+    /// `CrimPlaceHearts` writes and which no classic corruption-flavoured
+    /// world ever grows.
+    #[test]
+    fn test_DW_4_3_flip_infections_trades_the_walkers() {
+        // The id resolution itself.
+        let (classic, surface, rock) = flat_world(100, 4200, 600);
+        let mut flipped = classic.clone();
+        flipped.seeds = crate::seeds::SeedFlags::from(
+            crate::seeds::SeedFlags::DRUNK | crate::seeds::SeedFlags::FOR_THE_WORTHY,
+        );
+        assert_eq!(crim_ids(&classic), (TILE_CRIMSTONE, WALL_CRIMSTONE));
+        assert_eq!(ebon_ids(&classic), (TILE_EBONSTONE, WALL_EBONSTONE));
+        assert_eq!(crim_ids(&flipped), (TILE_EBONSTONE, WALL_EBONSTONE));
+        assert_eq!(ebon_ids(&flipped), (TILE_CRIMSTONE, WALL_CRIMSTONE));
+        let half = classic.width / 2;
+        let corruption_left = !crimson_left(&Rng(0xF11E));
+        let hearts = |world: &World| {
+            count_tiles(&world, &|t: &Tile| {
+                t.active() && t.kind == TILE_SHADOW_ORB && t.frame_x >= 36
+            })
+        };
+        let (mut base_world, _, _) = (classic, surface, rock);
+        corruption_and_crimson(
+            &mut base_world,
+            &mut Rng(0xF11E),
+            surface,
+            surface + 10.0,
+            rock,
+            4100,
+            false,
+        );
+        assert_eq!(hearts(&base_world), 0, "the classic corruption arm grows no hearts");
+        let mut flipped_world = flipped;
+        corruption_and_crimson(
+            &mut flipped_world,
+            &mut Rng(0xF11E),
+            surface,
+            surface + 10.0,
+            rock,
+            4100,
+            false,
+        );
+        let swapped = hearts(&flipped_world);
+        assert!(swapped > 0, "the flipped corruption arm grew the crimson heart walker");
+        // The hearts sit on the corruption arm's half — the same half the
+        // anchor draw picked (`:14302`'s `crimsonLeft ? right : left`), which
+        // ties the walker swap to the drunk anchor arms.
+        let mut wrong_half = 0usize;
+        for x in 0..flipped_world.width {
+            for y in 0..flipped_world.height {
+                let Some(t) = flipped_world.tile(x, y) else { continue };
+                if t.active() && t.kind == TILE_SHADOW_ORB && t.frame_x >= 36 {
+                    let on_left = x < half;
+                    if on_left != corruption_left {
+                        wrong_half += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(wrong_half, 0, "the hearts left the corruption half ({wrong_half})");
+        // And the ids they were painted with are the swapped pair: the blob
+        // underneath the hearts is ebonstone 25 with the ebonstone wall 3.
+        let blob = count_tiles(&flipped_world, &|t: &Tile| t.active() && t.kind == TILE_EBONSTONE);
+        let lining = count_tiles(&flipped_world, &|t: &Tile| t.wall == WALL_EBONSTONE);
+        assert!(blob > 0, "the swapped blob painted ebonstone ({blob})");
+        assert!(lining > 0, "the swapped blob painted the ebonstone wall ({lining})");
     }
 
     /// DW-4.3: the shell draw ledger — the per-column/per-tile draw order of
@@ -3235,7 +3673,7 @@ mod tests {
                 tail_steps,
                 TILE_DEMONITE as i32,
                 world_surface,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts { flags: world.seeds, ..TileRunnerOpts::default() },
             );
         }
     }
@@ -3304,7 +3742,16 @@ mod tests {
         let ocean_level = (num2 + rock) / 2.0 + 40.0;
         for _k in 0..count {
             let Some((num46, num47, num48)) =
-                evil_band_retry(&wb, &mut rep, (num5, num6), (num3, num4), 1700, false)
+                evil_band_retry(
+                    &wb,
+                    &mut rep,
+                    (num5, num6),
+                    (num3, num4),
+                    1700,
+                    false,
+                    false,
+                    false,
+                )
             else {
                 continue;
             };

@@ -59,11 +59,19 @@
 //!   `growth::spread_grass` (`growth.rs:601`, `WorldGen.cs:75146-75270`);
 //!   the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled —
 //!   the sweeps call it per neighbour instead.
-//! - no seed framework: the port carries no remix / not-the-bees /
-//!   tenth-anniversary / drunk / for-the-worthy flags (`GenOptions` is the
-//!   normal-world set), so those arms take the vanilla normal path; the
-//!   secret-seed `noSpiderCaves` pair (`WorldGen.cs:269-291`, `:2618`) is out
-//:   of scope.
+//! - M5-SEED-1 ports the for-the-worthy arms of this file against the world's
+//!   own flags (`World::seeds`, the `generate` publication of
+//!   `GenOptions::flags` — a classic world reads no flag and stays
+//!   byte-identical): the spider-cave attempt count (`WorldGen.cs:17378`),
+//!   the neon-moss x band (`:17503-17508`) and the neon-moss blob radius and
+//!   length (`:9802-9805`). Still unported: the remix, tenth-anniversary,
+//!   not-the-bees and dont-starve arms (alternative C# draw schedules, not
+//!   mere multipliers) and the secret-seed `noSpiderCaves` pair
+//!   (`:269-291`, `:2618`). The classic 0.38-0.62 neon-moss centre re-roll
+//!   (`:17510-17516`) is not ported either — the port's classic arm draws
+//!   `num4` once, and adding that re-roll would shift a classic world's
+//!   draws; the drunk world, whose C# arm *skips* the re-roll, therefore
+//!   matches the port's classic path exactly.
 //! - no `GenVars.shimmerPosition`/`shimmerSafetyDistance` in the port
 //!   (shimmer is not a worldgen liquid yet) — the moss pass's shimmer
 //!   exclusion arm (`WorldGen.cs:17585`, `:17604`, `:17614`) is skipped.
@@ -750,6 +758,22 @@ fn spread_moss(world: &mut World, x: i32, y: i32, moss_wall: u16, moss_tile: u16
     }
 }
 
+/// The neon-moss blob scale — `WorldGen.cs:9801-9805`'s
+/// `num3 = maxTilesX / 4200.0` with the for-the-worthy `*= 1.5`. Both the
+/// ellipse radius (`num`, `:9806`) and the step count (`num2`, `:9807`) ride
+/// it, so the for-the-worthy blob is wider and longer. Factored out of the
+/// walker so the multiplier is testable.
+fn neon_moss_scale(world: &World) -> f64 {
+    let mut scale = world.width as f64 / 4200.0;
+    if world
+        .seeds
+        .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+    {
+        scale *= 1.5;
+    }
+    scale
+}
+
 /// `WorldGen.neonMossBiome` (`WorldGen.cs:9783-9876`) — the downward ellipse
 /// walk painting the neon moss over the stone it crosses.
 #[allow(clippy::too_many_arguments)]
@@ -771,7 +795,10 @@ fn neon_moss_biome(
     }
     let mut radius = rng.range(60, 80) as f64;
     let mut steps = rng.range(30, 40) as i32;
-    let scale = world.width as f64 / 4200.0;
+    // `double num3 = maxTilesX / 4200.0; if (WorldGen.getGoodWorldGen) num3 *=
+    // 1.5;` (`:9801-9805`) — the for-the-worthy neon moss blob is 1.5x wider
+    // and takes 1.5x as many steps (`num`/`num2` are both scaled by `num3`).
+    let scale = neon_moss_scale(world);
     radius *= scale;
     steps = (steps as f64 * scale) as i32;
     let rock_layer = world.rock_layer;
@@ -828,6 +855,48 @@ fn neon_moss_biome(
 
 // --- the pass drivers --------------------------------------------------------
 
+/// The spider-cave attempt count — `WorldGen.cs:17365`'s
+/// `num2 = (int)(maxTilesX * 0.005)` with the for-the-worthy tripling
+/// (`:17378`). Factored out of the pass so the multiplier is testable.
+fn spider_attempts(world: &World) -> i32 {
+    let mut attempts = (world.width as f64 * 0.005) as i32;
+    // `else if (WorldGen.getGoodWorldGen) num2 *= 3;` (`:17378`) — the last
+    // arm of the C#'s if/else-if chain; the not-the-bees + for-the-worthy
+    // combo takes the FIRST branch (`num2 *= 2` with the 1000/5000 bounds,
+    // not ported), hence the guard. A classic world reads no flag and keeps
+    // the `maxTilesX * 0.005` count.
+    if !world.seeds.not_the_bees_and_for_the_worthy_no_celebration()
+        && world
+            .seeds
+            .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+    {
+        attempts *= 3;
+    }
+    attempts
+}
+
+/// The neon-moss anchor `num4` (`WorldGen.cs:17494-17516`): the C#'s
+/// `remix → tenthAnniversary → getGoodWorldGen → !drunk` x-band chain. Only
+/// the for-the-worthy arm is ported — it re-rolls until `num4` leaves the
+/// 0.42-0.48 band, so the biome avoids the world's centre strip. The remix
+/// and anniversary arms are alternative draw schedules (out of scope), and
+/// the classic `!drunk` 0.38-0.62 re-roll is deliberately NOT ported: the
+/// port's classic arm draws `num4` once (adding the re-roll would shift a
+/// classic world's draws), which is exactly what the C# drunk arm does — so a
+/// drunk world needs no extra draw.
+fn neon_moss_x(rng: &mut Rng, width: i32, flags: crate::seeds::SeedFlags) -> i32 {
+    let mut x = rng.range(100, width - 100);
+    if !flags.contains(crate::seeds::SeedFlags::REMIX)
+        && !flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+    {
+        while (x as f64) > width as f64 * 0.42 && (x as f64) < width as f64 * 0.48 {
+            x = rng.range(100, width - 100);
+        }
+    }
+    x
+}
+
 /// `Spider Caves` (`WorldGen.cs:17356-17427`).
 pub(crate) fn pass_spider_caves(
     world: &mut World,
@@ -839,7 +908,7 @@ pub(crate) fn pass_spider_caves(
     let mut placed = 0u32;
     let max_spider_count = 3500;
     let retries = world.width / 2;
-    let attempts = (world.width as f64 * 0.005) as i32;
+    let attempts = spider_attempts(world);
     let (min_count, max_count) = (500, max_spider_count);
     for _ in 0..attempts {
         let mut tries = 0i32;
@@ -914,7 +983,7 @@ pub(crate) fn pass_moss(
     let mut wanted = (world.width / 2100) as i32;
     let mut placed_count = 0i32;
     while placed_count < wanted {
-        let mut x = rng.range(100, world.width - 100);
+        let mut x = neon_moss_x(rng, world.width, world.seeds);
         let y = rng.range(rock_layer as i32 + 40, lava_line as i32 - 40);
         // The exclusion scan (`:17508-17573`).
         let mut rejected = false;
@@ -1421,5 +1490,117 @@ mod tests {
         let seat = w.index(110, 119);
         w.tiles[seat].flags |= FLAG_ACTIVE;
         assert!(!place_pot(&mut w, &mut rng, 110, 119, 19));
+    }
+
+    /// M5-SEED-1: `WorldGen.cs:17365`/`:17378` — the attempt count is
+    /// `maxTilesX * 0.005`, tripled for the worthy. A classic world reads no
+    /// flag and keeps the vanilla count.
+    #[test]
+    fn the_for_the_worthy_world_triples_the_spider_cave_attempts() {
+        let mut world = flat_world(2000, 600, 60);
+        let base = spider_attempts(&world);
+        assert_eq!(base, 10, "maxTilesX * 0.005");
+        world.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert_eq!(spider_attempts(&world), base * 3, "the for-the-worthy 3x");
+        // The C#'s FIRST branch is the not-the-bees + for-the-worthy combo
+        // (`num2 *= 2` with the 1000/5000 count bounds), which the port does
+        // not carry, so the 3x does not apply there either.
+        world.seeds = crate::seeds::SeedFlags::from(
+            crate::seeds::SeedFlags::NOT_THE_BEES | crate::seeds::SeedFlags::FOR_THE_WORTHY,
+        );
+        assert_eq!(
+            spider_attempts(&world),
+            base,
+            "the bees combo takes branch 1"
+        );
+    }
+
+    /// M5-SEED-1: `WorldGen.cs:17503-17508` — the for-the-worthy neon-moss
+    /// anchor is re-rolled out of the 0.42-0.48 band, while the classic (and
+    /// drunk) arm draws `num4` exactly once.
+    #[test]
+    fn the_for_the_worthy_neon_moss_anchor_avoids_the_centre_band() {
+        let width = 2000i32;
+        let (lo, hi) = (width as f64 * 0.42, width as f64 * 0.48);
+        let classic = crate::seeds::SeedFlags::default();
+        let worthy = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        let drunk = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::DRUNK);
+        let mut classic_saw_band = false;
+        let mut worthy_rerolled = false;
+        for seed in 0..512u64 {
+            // The seed is mixed multiplicatively: a run of consecutive seeds
+            // differing only in their low bits makes xorshift's linear step
+            // collapse (the 512 draws all land in one 100-tile window), so the
+            // sweep would never sample the centre band.
+            let mixed = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x4A11;
+            // The classic arm: one draw, no re-roll — the reference stream is
+            // a single `Next(100, maxTilesX - 100)`.
+            let mut plain = Rng(mixed);
+            let drawn = plain.range(100, width - 100);
+            let mut classic_rng = Rng(mixed);
+            let classic = neon_moss_x(&mut classic_rng, width, classic);
+            assert_eq!(classic, drawn, "the classic arm draws once (seed {seed})");
+            assert_eq!(classic_rng.0, plain.0, "and leaves the stream there");
+            if (drawn as f64) > lo && (drawn as f64) < hi {
+                classic_saw_band = true;
+            }
+            // The drunk arm skips the re-roll entirely, so it matches the
+            // classic path draw for draw.
+            let mut drunk_rng = Rng(mixed);
+            assert_eq!(neon_moss_x(&mut drunk_rng, width, drunk), drawn);
+            assert_eq!(drunk_rng.0, plain.0, "the drunk arm re-rolls nothing");
+            // The for-the-worthy arm: never inside the band, and the sweep
+            // catches at least one seed whose first draw was (so the re-roll
+            // is genuinely exercised).
+            let mut worthy_rng = Rng(mixed);
+            let anchored = neon_moss_x(&mut worthy_rng, width, worthy);
+            assert!(
+                !((anchored as f64) > lo && (anchored as f64) < hi),
+                "the worthy anchor left the 0.42-0.48 band (seed {seed})"
+            );
+            if worthy_rng.0 != plain.0 {
+                worthy_rerolled = true;
+            }
+        }
+        assert!(classic_saw_band, "the sweep never drew inside the band");
+        assert!(worthy_rerolled, "the re-roll never fired");
+    }
+
+    /// M5-SEED-1: `WorldGen.cs:9801-9805` — the neon-moss blob scale is
+    /// `maxTilesX / 4200.0`, 1.5x for the worthy (the radius `num` and the
+    /// step count `num2` both ride it).
+    #[test]
+    fn the_for_the_worthy_neon_moss_blob_scale() {
+        let mut world = flat_world(4200, 600, 60);
+        assert_eq!(neon_moss_scale(&world), 1.0, "the vanilla 4200 baseline");
+        world.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert_eq!(neon_moss_scale(&world), 1.5, "the for-the-worthy 1.5x");
+        // A sub-4200 world scales down before the for-the-worthy factor.
+        let mut small = flat_world(2100, 600, 60);
+        small.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert_eq!(neon_moss_scale(&small), 0.75);
+    }
+
+    /// M5-SEED-1: the for-the-worthy blob covers strictly more stone than the
+    /// classic one on identical worlds and seeds — `WorldGen.cs:9806-9807`
+    /// scales both `num` and `num2`.
+    #[test]
+    fn the_for_the_worthy_neon_moss_blob_covers_more_stone() {
+        let (mut classic, mut worthy) = {
+            let mut c = flat_world(2000, 600, 60);
+            carve_pocket(&mut c, 900, 200, 220, 140);
+            (c.clone(), c)
+        };
+        worthy.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        neon_moss_biome(&mut classic, &mut Rng(0x4E0A), 1000, 260, 520, NEON_MOSS[0]);
+        neon_moss_biome(&mut worthy, &mut Rng(0x4E0A), 1000, 260, 520, NEON_MOSS[0]);
+        let painted =
+            |w: &World| w.tiles.iter().filter(|t| t.kind == NEON_MOSS[0]).count();
+        let (base, big) = (painted(&classic), painted(&worthy));
+        assert!(base > 0, "the classic blob painted nothing ({base})");
+        assert!(
+            big > base,
+            "the worthy blob covered no more stone ({big} vs {base})"
+        );
     }
 }
