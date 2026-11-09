@@ -14,11 +14,13 @@
 //! `Step_PaintRoller` (:772-812), `Step_PaintBrush` (:727-770),
 //! `Step_PaintScrapper` (:678-725), `Step_Acorns` (:2032-2157),
 //! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
-//! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264) and
-//! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles)
-//! — the seed/herb/planting family plus the paint family, gated on item id
-//! / `createTile` and shared with the closest-to-mouse vote. The paint steps
-//! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
+//! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264),
+//! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles),
+//! `Step_EmptyBuckets` (:622-676) and `Step_BlocksLines` (:814-888, over the
+//! caller-passed `Lookup::smart_blocks_enabled`) — the seed/herb/planting
+//! family plus the paint family, gated on item id / `createTile` and shared
+//! with the closest-to-mouse vote. The paint steps read the caller-passed
+//! `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
@@ -67,6 +69,9 @@ pub const MOSS_ITEMS: [u16; 11] = [
 /// gates read the literal ids in the C# step bodies (no set exists for
 /// them).
 pub const PAINT_SCRAPER_ITEMS: [u16; 2] = [1100, 1545];
+/// `ItemID.Count` (`ItemID.cs:14861`): the item-id count the placement
+/// gates' range checks read.
+pub const ITEM_COUNT: u16 = 6196;
 
 /// The held-item fields the smart-cursor steps read (the C# reads them off
 /// `SmartCursorUsageInfo.item`).
@@ -114,6 +119,11 @@ pub struct Lookup {
     /// (the invisible flags, EchoCoating 5344), decoded by
     /// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44170`).
     pub paint_coating_lookup: u32,
+    /// `Player.SmartCursorSettings.SmartBlocksEnabled` (`Player.cs:331`):
+    /// the setting the block-lines step reads. It is a per-player settings
+    /// value the app persists (`settings_ui`/`menu` own the toggle), so the
+    /// port's caller passes it.
+    pub smart_blocks_enabled: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -183,12 +193,15 @@ fn is_lava(t: &Tile) -> bool {
     t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava
 }
 
-/// `Collision.EmptyTile` (`Collision.cs:1359-1386`) in the
-/// `ignoreTiles: true` form the placement filter uses (`Step_ClayPots`
-/// :418): the cell must not stand inside a player's or NPC's hitbox.
-/// tr-core carries no entity store — the tile half of the check is what
-/// `ignoreTiles` skips, and the entity arms wait on the app-side wiring.
-fn collision_empty_tile(_w: &crate::World, _i: i32, _j: i32, _ignore_tiles: bool) -> bool {
+/// `Collision.EmptyTile` (`Collision.cs:1359-1386`): the cell must not be
+/// an occupied tile (unless `ignoreTiles`) and must not stand inside a
+/// player's or NPC's hitbox. tr-core carries no entity store — the tile
+/// half is all the placement filters' `ignoreTiles` choice reads, and the
+/// entity arms wait on the app-side wiring.
+fn collision_empty_tile(w: &crate::World, i: i32, j: i32, ignore_tiles: bool) -> bool {
+    if !ignore_tiles && w.tile(i, j).is_some_and(Tile::active) {
+        return false;
+    }
     true
 }
 
@@ -1037,16 +1050,141 @@ pub fn step_gem_corns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+/// `SmartCursorHelper.AllowNormalBlockPlacementBehaviourForItemType`
+/// (`:211-222`): the block-placement steps' item gate — the staff/acorn axe
+/// (213/5295), the seed and moss items and any id past `ItemID.Count` take
+/// their own steps instead.
+fn allow_normal_block_placement(kind: u16) -> bool {
+    if kind >= ITEM_COUNT || kind == 213 || kind == 5295 {
+        return false;
+    }
+    !GRASS_SEED_ITEMS.contains(&kind) && !MOSS_ITEMS.contains(&kind)
+}
+
+/// `SmartCursorHelper.Step_EmptyBuckets` (`:622-676`): the held empty
+/// bucket (205) re-points at the closest liquid cell whose 3x3 box of the
+/// same liquid kind holds more than 100 (the bucket's minimum draw).
+pub fn step_empty_buckets(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:624` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 205 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:634` — the dry cell skips.
+            if t.liquid == 0 {
+                continue;
+            }
+            let kind = t.liquid_kind();
+            // `:639-648` — the 3x3 box sum of the same liquid kind (an
+            // out-of-world cell contributes nothing — the C#'s default
+            // `Tile` reads liquid 0 with kind `Water`, which only ever adds
+            // a zero).
+            let mut sum: u32 = 0;
+            for k in (i - 1)..=(i + 1) {
+                for m in (j - 1)..=(j + 1) {
+                    if let Some(t2) = w.tile(k, m) {
+                        if t2.liquid_kind() == kind {
+                            sum += t2.liquid as u32;
+                        }
+                    }
+                }
+            }
+            // `:650` — the 100-liquid minimum.
+            if sum > 100 {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_BlocksLines` (`:814-888`): the held block item
+/// re-points at the closest replaceable cell with one full-solid neighbour
+/// — the smart-blocks line placement.
+pub fn step_blocks_lines(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:817` — the single gate chain: the item range, the settings toggle,
+    // the createTile's presence, the placement-behaviour gate and the
+    // createTile's solid/non-solidTop/non-frameImportant flags.
+    let create_tile = l.item.create_tile;
+    if l.item.kind >= ITEM_COUNT
+        || !l.smart_blocks_enabled
+        || create_tile <= -1
+        || !allow_normal_block_placement(l.item.kind)
+        || !crate::tiledata::TILE_SOLID.has(create_tile as u16)
+        || crate::tiledata::TILE_SOLID_TOP.has(create_tile as u16)
+        || w.frame_important.get(create_tile as usize).copied() == Some(true)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    // `:822-830` — the screen-target pre-check: an occupied or out-of-rect
+    // target disables the scan.
+    let mut skip = w
+        .tile(l.screen_target.0, l.screen_target.1)
+        .is_some_and(Tile::active);
+    if !in_tile_bounds(
+        l.screen_target.0,
+        l.screen_target.1,
+        l.start_x,
+        l.start_y,
+        l.end_x,
+        l.end_y,
+    ) {
+        skip = true;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !skip {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let Some(t) = w.tile(i, j) else {
+                    continue;
+                };
+                // `:838` — the cell may be replaced.
+                if !t.active()
+                    || crate::tileobject::tile_cut(t.kind)
+                    || crate::tileobject::breakable_when_placing(t.kind)
+                {
+                    // `:841-856` — any of the four neighbours is a full
+                    // solid (`tileSolid && !tileSolidTop`).
+                    let anchored = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                        w.tile(i + dx, j + dy).is_some_and(|tn| {
+                            tn.active()
+                                && crate::tiledata::TILE_SOLID.has(tn.kind)
+                                && !crate::tiledata::TILE_SOLID_TOP.has(tn.kind)
+                        })
+                    });
+                    if anchored {
+                        cands.push((i, j));
+                    }
+                }
+            }
+        }
+    }
+    // `:871-881` — the `Collision.EmptyTile` filter (the default
+    // `ignoreTiles: false` — an occupied cell fails here even when the scan
+    // let it through as a cut tile), the closest pick and the
+    // `num != -1f` + InTileBounds commit guards.
+    let p = pick_closest_if(&cands, l.mouse, |x, y| collision_empty_tile(w, x, y, false))?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
 /// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
-/// Torch :142 → LawnMower :143 → PaintRoller :146 → PaintBrush :147 →
-/// PaintScrapper :148 → Acorns :149 → GemCorns :150 → AlchemySeeds :153 →
-/// PlanterBox :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's
-/// gate refuses a taken focus, so the first step that finds a spot wins —
-/// the C# straight-line chain.
+/// Torch :142 → LawnMower :143 → BlocksLines :145 → PaintRoller :146 →
+/// PaintBrush :147 → PaintScrapper :148 → Acorns :149 → GemCorns :150 →
+/// EmptyBuckets :151 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
+/// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
+/// first step that finds a spot wins — the C# straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -1056,18 +1194,20 @@ pub fn step_gem_corns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
 pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 15] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 17] = [
         step_pumpkin_seeds,
         step_grass_seeds,
         step_moss,
         step_pigronata,
         step_torch,
         step_lawn_mower,
+        step_blocks_lines,
         step_paint_roller,
         step_paint_brush,
         step_paint_scrapper,
         step_acorns,
         step_gem_corns,
+        step_empty_buckets,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
@@ -1166,6 +1306,7 @@ mod tests {
             weather: crate::growth::WeatherCtx::default(),
             paint_lookup: 0,
             paint_coating_lookup: 0,
+            smart_blocks_enabled: false,
         }
     }
 
@@ -1956,6 +2097,128 @@ mod tests {
             smart_cursor_lookup(&world, &sakura, -1, -1),
             Some((25, 21)),
             "the gem-corn step runs inside the lookup chain"
+        );
+    }
+
+    /// Water of the given amount at the cell (the fixture water: no liquid
+    /// flag, `liquid_kind() == Water`).
+    fn water_at(w: &mut crate::World, x: i32, y: i32, amount: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+    }
+
+    #[test]
+    fn test_smart_1_the_empty_bucket_finds_the_deep_liquid() {
+        // `Step_EmptyBuckets` :650 — the 3x3 box of the same liquid kind
+        // must hold more than 100.
+        let mut world = bare();
+        for x in 24..=26 {
+            for y in 14..=16 {
+                water_at(&mut world, x, y, 60);
+            }
+        }
+        let l = lookup(item(205), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&world, &l, -1, -1),
+            Some((25, 15)),
+            "the bucket re-points at the 540-liquid box"
+        );
+        // A shallow puddle (the 3x3 sum 45) is below the minimum.
+        let mut shallow = bare();
+        water_at(&mut shallow, 25, 15, 45);
+        let l2 = lookup(item(205), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&shallow, &l2, -1, -1),
+            None,
+            "the 45-liquid box is below the bucket's 100 minimum"
+        );
+        // The item gate: a non-bucket item skips the step.
+        let l3 = lookup(item(1), mouse_at(25, 15));
+        assert_eq!(
+            step_empty_buckets(&world, &l3, -1, -1),
+            None,
+            "the step's gate is item 205 only"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_empty_bucket_sums_only_the_same_kind() {
+        // `Step_EmptyBuckets` :644 — the box sum counts the matching
+        // `liquidType()` only: a lava pocket beside water does not lift the
+        // water total.
+        let mut world = bare();
+        for x in 24..=26 {
+            for y in 14..=16 {
+                water_at(&mut world, x, y, 60);
+            }
+        }
+        let i = world.index(25, 15);
+        world.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        world.tiles[i].liquid = 60; // lava: the water sum drops to 480
+        let l = lookup(item(205), mouse_at(25, 15));
+        // The water cells still total 480 > 100 → the water spot stands
+        // (the lava cell itself is a candidate of its own kind, 180).
+        let found = step_empty_buckets(&world, &l, -1, -1);
+        assert!(found.is_some(), "the water box still draws the bucket");
+    }
+
+    #[test]
+    fn test_smart_1_the_block_line_places_on_the_anchored_cell() {
+        // `Step_BlocksLines` :838-856 — a replaceable cell with one
+        // full-solid neighbour re-points; the settings toggle gates it.
+        let blocks = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(1, 1), mouse_at(25, 19)) // the stone block item
+        };
+        let world = w(); // the fixture's stone floor row at y = 20
+        assert_eq!(
+            step_blocks_lines(&world, &blocks, -1, -1),
+            Some((25, 19)),
+            "the block line re-points above the solid floor"
+        );
+        // The toggle off — the step no-ops (:817).
+        let off = lookup(placeable(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_blocks_lines(&world, &off, -1, -1),
+            None,
+            "SmartBlocksEnabled off disables the step"
+        );
+        // A solidTop createTile (the platform 19) is refused by the gate.
+        let platform = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(0, 19), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_blocks_lines(&world, &platform, -1, -1),
+            None,
+            "the solidTop createTile fails the gate"
+        );
+        // A fully occupied rect offers no line spot.
+        let mut occupied = w();
+        for y in 10..=19 {
+            put_row(&mut occupied, 20, 40, y, 1);
+        }
+        assert_eq!(
+            step_blocks_lines(&occupied, &blocks, -1, -1),
+            None,
+            "every cell occupied — no placement target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_block_line_refuses_the_seed_items() {
+        // `AllowNormalBlockPlacementBehaviourForItemType` (:217): a grass
+        // seed holding nothing to place — even with a createTile — is not a
+        // normal block placement.
+        let world = w();
+        let seed = Lookup {
+            smart_blocks_enabled: true,
+            ..lookup(placeable(62, 1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_blocks_lines(&world, &seed, -1, -1),
+            None,
+            "the grass seed takes its own step, not the block lines"
         );
     }
 }
