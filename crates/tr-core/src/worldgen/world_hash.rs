@@ -147,8 +147,14 @@ mod tests {
     /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
     /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
     /// pass — every world on every seed changes by design.
+    /// Re-pinned for M5-STRUCT-1: the `Statues` pass (`WorldGen.cs:16853-16970`)
+    /// lands at its vanilla slot before `Buried Chests` on its own
+    /// `pass_rng("Statues")` stream — the statues (and the `StatuesWithTraps`
+    /// dart traps + wires) join every world wide enough for a seat.
+    /// `SEED42_512` is UNCHANGED (the sub-vanilla width leaves the pass no
+    /// legal seat in its band); `DEFAULT_WORLD` changes by design.
     const SEED42_512: u32 = 3074238937;
-    const DEFAULT_WORLD: u32 = 4238218118;
+    const DEFAULT_WORLD: u32 = 346250723;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

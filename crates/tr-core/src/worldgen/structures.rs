@@ -549,3 +549,447 @@ pub(crate) fn pass_hell_forts(world: &mut World, hell_top: i32, rng: &mut super:
     }
     placed
 }
+
+// --- the statues (`Statues` `WorldGen.cs:16853-16970`) ------------------------
+
+/// `SetupStatueList` (`WorldGen.cs:4449-4488`) — the `GenVars.statueList`
+/// table (`GenVars.cs:276`) verbatim: the `for i < 44` loop `(105, i)` with
+/// the two overwrites (`list[34] = (349, 0)`, `list[43] = (105, 50)`) and
+/// the 29 appended styles, in their exact order. Each entry is
+/// (tile type, style) — the style feeds `Place2xX`'s frame math. A const
+/// table stands in for the C#'s pass-static list: `SetupStatueList` runs in
+/// `Reset` (`WorldGen.cs:11228`) and again per cave house
+/// (`HouseBuilder.cs:471`) — both calls write the same idempotent data, so
+/// one table serves every consumer.
+pub(crate) const STATUE_LIST: [(u16, i32); 73] = [
+    (105, 0),
+    (105, 1),
+    (105, 2),
+    (105, 3),
+    (105, 4),
+    (105, 5),
+    (105, 6),
+    (105, 7),
+    (105, 8),
+    (105, 9),
+    (105, 10),
+    (105, 11),
+    (105, 12),
+    (105, 13),
+    (105, 14),
+    (105, 15),
+    (105, 16),
+    (105, 17),
+    (105, 18),
+    (105, 19),
+    (105, 20),
+    (105, 21),
+    (105, 22),
+    (105, 23),
+    (105, 24),
+    (105, 25),
+    (105, 26),
+    (105, 27),
+    (105, 28),
+    (105, 29),
+    (105, 30),
+    (105, 31),
+    (105, 32),
+    (105, 33),
+    (349, 0), // `list[34]` — the king-statue overwrite
+    (105, 35),
+    (105, 36),
+    (105, 37),
+    (105, 38),
+    (105, 39),
+    (105, 40),
+    (105, 41),
+    (105, 42),
+    (105, 50), // `list[43]` — the second overwrite
+    (105, 63),
+    (105, 64),
+    (105, 65),
+    (105, 66),
+    (105, 68),
+    (105, 69),
+    (105, 70),
+    (105, 71),
+    (105, 72),
+    (105, 73),
+    (105, 75),
+    (105, 51),
+    (105, 52),
+    (105, 53),
+    (105, 54),
+    (105, 55),
+    (105, 56),
+    (105, 57),
+    (105, 58),
+    (105, 59),
+    (105, 60),
+    (105, 61),
+    (105, 62),
+    (105, 77),
+    (105, 78),
+    (105, 67),
+    (105, 74),
+    (105, 37),
+    (105, 2),
+];
+
+/// `GenVars.StatuesWithTraps` (`GenVars.cs:474-475`) — the statueList
+/// indices whose placement also arms a dart trap: {4, 7, 10, 18}.
+pub(crate) const STATUES_WITH_TRAPS: [usize; 4] = [4, 7, 10, 18];
+
+/// `WorldGen.Place2xX` (`WorldGen.cs:39663-39722`) for the statue family
+/// (105/349, reached through `PlaceTile`'s case group `:60066-60077`):
+/// the 2×3 body must be clear over both columns, the floor solid under
+/// both (`SolidTile2`), then the style frame math — `frameX = style * 36`
+/// with the `(105, 34) → (349, 0)` remap and the `style / 55` row offset
+/// (`num -= 1980 * (style/55)`, the `frameY` base `54 * (style/55)`).
+fn place_statue(world: &mut World, x: i32, y: i32, mut kind: u16, mut style: i32) -> bool {
+    let num3 = 3;
+    let mut num = style * 36;
+    let mut num2 = 0;
+    if kind == 105 && style == 34 {
+        kind = 349;
+        style = 0;
+        num = 0;
+    }
+    if kind == 105 {
+        let num4 = style / 55;
+        num -= 1980 * num4;
+        num2 += 54 * num4;
+    }
+    let mut ok = true;
+    for row in (y - num3 + 1)..(y + 1) {
+        for col in x..(x + 2) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+    }
+    if !super::evil::solid_tile2(world, x, y + 1) || !super::evil::solid_tile2(world, x + 1, y + 1) {
+        ok = false;
+    }
+    if !ok {
+        return false;
+    }
+    for row in 0..num3 {
+        for col in 0..2 {
+            let (px, py) = (x + col, y - num3 + 1 + row);
+            if !super::temple::in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind;
+            t.frame_y = (num2 + row * 18) as i16;
+            t.frame_x = (if col == 0 { num } else { num + 18 }) as i16;
+        }
+    }
+    true
+}
+
+/// `WorldUtils.WireLine` (`WorldUtils.cs:109-129`) — the L-shaped wire run:
+/// the bounding box is normalized on the `end` copy while `point`/`point2`
+/// keep the original coordinates, so the horizontal walk rides the start's
+/// Y and the vertical walk the end's X. `PlaceWire` (`WorldGen.cs:58111`)
+/// sets the first (red) wire colour, skipping cells already wired.
+fn wire_line(world: &mut World, x: i32, y: i32, x2: i32, y2: i32) {
+    let (mut start_x, mut start_y) = (x, y);
+    let (mut end_x, mut end_y) = (x2, y2);
+    if end_x < start_x {
+        std::mem::swap(&mut end_x, &mut start_x);
+    }
+    if end_y < start_y {
+        std::mem::swap(&mut end_y, &mut start_y);
+    }
+    for i in start_x..=end_x {
+        if !world.wires.get(i, y, crate::wiring::WireColor::Red) {
+            world.wires.set(i, y, crate::wiring::WireColor::Red, true);
+        }
+    }
+    for j in start_y..=end_y {
+        if !world.wires.get(x2, j, crate::wiring::WireColor::Red) {
+            world.wires.set(x2, j, crate::wiring::WireColor::Red, true);
+        }
+    }
+}
+
+/// `WorldGen.PlaceStatueTrap` (`WorldGen.cs:4490-4513`): the ±10 scan for
+/// the first empty cell over a solid non-162 support (`SolidTile2`), the
+/// dart trap 135 (`Place1x1` — `PlaceTile`'s case group `:59550`), then
+/// the wire back to the statue when the trap actually placed.
+fn place_statue_trap(world: &mut World, x: i32, y: i32) {
+    if !super::temple::in_world(world, x, y, 20) {
+        return;
+    }
+    for i in -10..=10 {
+        for j in -10..=10 {
+            let (cx, cy) = (x + i, y + j);
+            let (bx, by) = (x + i, y + j + 1);
+            let support = world.tile(bx, by).copied();
+            let empty = world.tile(cx, cy).is_some_and(|t| !t.active());
+            // The C# reads `tile2` (the candidate) before `PlaceTile` and
+            // re-reads the same reference after — the port re-reads the
+            // cell, which the write mutates in place.
+            if empty && support.is_some_and(|t| super::evil::solid_tile2(world, bx, by) && t.kind != 162)
+            {
+                if super::temple::in_world(world, cx, cy, 0) {
+                    let idx = world.index(cx, cy);
+                    let t = &mut world.tiles[idx];
+                    t.flags |= FLAG_ACTIVE;
+                    t.kind = 135;
+                    t.frame_y = 0; // `Place1x1` style 0: `frameX = 0`, `frameY = 18 * style`
+                }
+                if world.tile(cx, cy).is_some_and(|t| t.active() && t.kind == 135) {
+                    wire_line(world, x, y, cx, cy);
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// The `Statues` pass (`WorldGen.cs:16853-16970`): `statueList.Length * 2 *
+/// maxTilesX / 4200` statues, each placement on its own seat scan (a random
+/// x in the `[20, maxTilesX - 20)` band, a random y between the surface
+/// band and `maxTilesY - 300`, the `oceanDepths` re-roll, the scan down to
+/// the first solid). The list cursor advances only on a placement and wraps
+/// at `Length`; a failed seat burns one of 10000 attempts (`num4`). Its own
+/// `pass_rng("Statues")` stream models the vanilla per-pass reseed.
+///
+/// Deviations, both matching this module's header convention: the
+/// secret-seed arms (`noTrapsWorldGen`'s ×15, `skyblockWorldGen`, `starGame`)
+/// park with M5-SEED-1; the seat's `tileFrameImportant && !tileCut` gate
+/// (`:16846`) needs the `Main.tileFrameImportant`/`Main.tileCut` tables,
+/// which the port does not carry yet — `Place2xX`'s clear-cell check
+/// already refuses to overwrite an occupied seat, so the gate would only
+/// skip a redundant `SquareTileFrame` on a busy cell. `Statue`'s paint
+/// sweep (`WorldGen.cs:10563-10573`) and its `MarblePileWithStatues`
+/// caller (`:10538`) ride the M5-BIOME-2 marble piles.
+pub(crate) fn pass_statues(world: &mut World, rng: &mut super::Rng) -> u32 {
+    // `num2 = maxTilesX / 4200.0`; `num3 = (int)(statueList.Length * 2 * num2)`.
+    let num2 = world.width as f64 / 4200.0;
+    let num3 = ((STATUE_LIST.len() * 2) as f64 * num2) as i32;
+    // `num4 = 10000` (the skyblock override parks with M5-SEED-1).
+    let num4 = 10000;
+    // `oceanLevel` (`WorldGen.cs:4447`): `(worldSurface + rockLayer) / 2 + 40`.
+    let ocean_level = (world.world_surface + world.rock_layer) / 2.0 + 40.0;
+    // The y band floor `(int)(worldSurface * 2.0 + rockLayer) / 3` — the cast
+    // binds to the sum, the division is integer division.
+    let y_floor = ((world.world_surface * 2.0 + world.rock_layer) as i32) / 3;
+    let mut placed = 0u32;
+    let mut num = 0usize;
+    for _ in 0..num3 {
+        if num >= STATUE_LIST.len() {
+            num = 0;
+        }
+        let (kind, style) = STATUE_LIST[num];
+        let mut flag = false;
+        let mut num5 = 0;
+        while !flag {
+            let mut num6 = rng.range(20, world.width - 20);
+            let mut num7 = rng.range(y_floor, world.height - 300);
+            let mut num8 = 100;
+            while super::evil::ocean_depths(world, num6, num7, ocean_level) {
+                num8 -= 1;
+                if num8 <= 0 {
+                    break;
+                }
+                num6 = rng.range(20, world.width - 20);
+                num7 = rng.range(y_floor, world.height - 300);
+            }
+            if num8 <= 0 {
+                flag = true;
+            } else {
+                while !world.tile(num6, num7).is_some_and(|t| t.active()) {
+                    num7 += 1;
+                    if num7 >= world.height {
+                        break;
+                    }
+                }
+                if num7 >= world.height {
+                    flag = true;
+                } else {
+                    num7 -= 1;
+                    // `PlaceTile` calls `SquareTileFrame` unconditionally
+                    // (`:60077`), whatever `Place2xX` did with the seat.
+                    place_statue(world, num6, num7, kind, style);
+                    crate::edit::square_tile_frame_gen(world, num6, num7);
+                    // The stale-reference re-read: `tile` is the same object
+                    // `PlaceTile` mutated (`:16857`), so the check sees the
+                    // placed statue.
+                    let landed = world
+                        .tile(num6, num7)
+                        .is_some_and(|t| t.active() && t.kind == kind);
+                    if landed {
+                        flag = true;
+                        if STATUES_WITH_TRAPS.contains(&num) {
+                            place_statue_trap(world, num6, num7);
+                        }
+                        num += 1;
+                        placed += 1;
+                    } else {
+                        num5 += 1;
+                        if num5 >= num4 {
+                            flag = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    placed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tile::Tile;
+    use crate::world::World;
+    use crate::worldgen::{GenOptions, generate};
+
+    /// A 3-row floor at y=30 — the `SolidTile2` seat. 60×60 so the
+    /// statue-trap scan (the ±10 window behind `InWorld`'s 20-tile fluff,
+    /// `WorldGen.cs:9688`) has room.
+    fn test_world() -> World {
+        let mut w = World::new("t".into(), 60, 60);
+        for x in 2..58 {
+            for y in 30..33 {
+                let i = w.index(x, y);
+                let t = &mut w.tiles[i];
+                t.flags |= crate::tile::FLAG_ACTIVE;
+                t.kind = 1; // dirt — `TILE_SOLID`
+            }
+        }
+        w.world_surface = 25.0;
+        w.rock_layer = 45.0;
+        w
+    }
+
+    #[test]
+    fn the_statue_list_transcribes_the_source_table() {
+        // `SetupStatueList` (`WorldGen.cs:4449-4488`): 44 loop entries
+        // (105, 0..43), the two overwrites, 29 appends.
+        assert_eq!(STATUE_LIST.len(), 73);
+        for (i, (kind, style)) in STATUE_LIST.iter().take(44).enumerate() {
+            let expected = match i {
+                34 => (349, 0),
+                43 => (105, 50),
+                _ => (105, i as i32),
+            };
+            assert_eq!((*kind, *style), expected, "list[{i}]");
+        }
+        assert_eq!(STATUE_LIST[34], (349, 0), "`list[34] = (349, 0)`");
+        assert_eq!(STATUE_LIST[43], (105, 50), "`list[43] = (105, 50)`");
+        // The appended tail in its exact order.
+        let appended: Vec<i32> = STATUE_LIST[44..].iter().map(|&(_, s)| s).collect();
+        assert_eq!(
+            appended,
+            vec![
+                63, 64, 65, 66, 68, 69, 70, 71, 72, 73, 75, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+                61, 62, 77, 78, 67, 74, 37, 2
+            ]
+        );
+        // Only index 34 leaves the 105 family.
+        assert_eq!(
+            STATUE_LIST.iter().filter(|&&(k, _)| k != 105).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn place_statue_writes_the_2x3_frames() {
+        let mut w = test_world();
+        // style 2 → `frameX = 2 * 36` over the two columns, `frameY` 0/18/36.
+        assert!(place_statue(&mut w, 10, 29, 105, 2));
+        for row in 0..3 {
+            for col in 0..2 {
+                let t = w.tile(10 + col, 27 + row).unwrap();
+                assert!(t.active());
+                assert_eq!(t.kind, 105);
+                assert_eq!(t.frame_x, (36 * 2 + col * 18) as i16);
+                assert_eq!(t.frame_y, (row * 18) as i16);
+            }
+        }
+        // A style past 55 takes the row offset (54 + the −1980 x-shift).
+        assert!(place_statue(&mut w, 14, 29, 105, 56));
+        let t = w.tile(14, 27).unwrap();
+        assert_eq!(t.frame_x, (56 * 36 - 1980) as i16, "`num -= 1980 * (style/55)`");
+        assert_eq!(t.frame_y, 54, "`num2 += 54 * (style/55)`");
+        // The (105, 34) remap lands as a 349 king statue at style 0.
+        assert!(place_statue(&mut w, 18, 29, 105, 34));
+        let t = w.tile(18, 27).unwrap();
+        assert_eq!(t.kind, 349);
+        assert_eq!(t.frame_x, 0);
+    }
+
+    #[test]
+    fn place_statue_refuses_an_occupied_seat() {
+        let mut w = test_world();
+        // A torch in the body blocks the whole 2×3.
+        let i = w.index(20, 28);
+        w.tiles[i] = Tile {
+            kind: 4,
+            flags: crate::tile::FLAG_ACTIVE,
+            ..Tile::default()
+        };
+        assert!(!place_statue(&mut w, 20, 29, 105, 1));
+        assert!(w.tile(20, 27).is_some_and(|t| !t.active()), "nothing written");
+        // No floor under the feet either.
+        let mut bare = test_world();
+        let i = bare.index(30, 30);
+        bare.tiles[i] = Tile::default();
+        let i = bare.index(31, 30);
+        bare.tiles[i] = Tile::default();
+        assert!(!place_statue(&mut bare, 30, 29, 105, 1));
+    }
+
+    #[test]
+    fn place_statue_trap_arms_the_nearest_plate() {
+        let mut w = test_world();
+        place_statue(&mut w, 30, 29, 105, 3);
+        place_statue_trap(&mut w, 30, 29);
+        let traps: Vec<(i32, i32)> = (0..w.width)
+            .flat_map(|x| (0..w.height).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 135))
+            .collect();
+        assert_eq!(traps.len(), 1, "one dart trap, the first legal plate");
+        let (tx, ty) = traps[0];
+        // The plate sits on the floor row (the support is the row below).
+        assert_eq!(ty, 29, "the empty cell above the solid row");
+        // The L-shaped wire reaches the statue.
+        assert!(
+            w.wires.get(tx, ty, crate::wiring::WireColor::Red),
+            "the plate itself is wired"
+        );
+        assert!(
+            w.wires.get(30, 29, crate::wiring::WireColor::Red),
+            "the statue cell is wired"
+        );
+    }
+
+    #[test]
+    fn the_statues_pass_places_the_table_in_a_default_world() {
+        // `num3 = (int)(73 * 2 * 4200/4200) = 146` statues on the default
+        // world — the cursor wraps exactly once, so the single 349 entry
+        // (index 34) lands twice: 12 tiles of king statue.
+        let w = generate(&GenOptions::default());
+        let count = |kind: u16| w.tiles.iter().filter(|t| t.active() && t.kind == kind).count();
+        assert_eq!(count(349), 12, "two king statues ({})", count(349));
+        // The temple's own statues share tile 105; the pass's 105s sit on
+        // top of that floor.
+        assert!(count(105) > 800, "the statue tiles ({})", count(105));
+        // Every statue carries its list style — the frames are never the
+        // unset −1.
+        let framed = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && (t.kind == 105 || t.kind == 349))
+            .all(|t| t.frame_x >= 0 && t.frame_y >= 0);
+        assert!(framed, "the placed statues carry list frames");
+    }
+}
