@@ -40,8 +40,8 @@
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/hammer/gamepad
-//! solids, `UsingSmartCursorWithContinuity`'s lock state, the grapple target
-//! arms, the inventory-driven paint lookup (`Player.FindPaintOrCoating`,
+//! solids, `UsingSmartCursorWithContinuity`'s lock state, the
+//! inventory-driven paint lookup (`Player.FindPaintOrCoating`,
 //! `Player.cs:41927-41944`), and the app-side wiring (the reachable rect,
 //! the `App.smart_cursor` field, the settings gate).
 //!
@@ -134,6 +134,12 @@ pub struct ItemPort {
 pub struct Lookup {
     /// The held item.
     pub item: ItemPort,
+    /// `SmartCursorHelper._grappleTargets` — the live hook cells
+    /// (`:106-116`: the player's grappling projectiles' centers over 16),
+    /// rebuilt per lookup when the screen target sits outside the reachable
+    /// rect. Only `step_pickaxe_mine_solids`' walk reads them (the skip set
+    /// at `:2667`).
+    pub grapple_targets: Vec<(i32, i32)>,
     /// `SmartCursorUsageInfo.mouse` — the mouse world position.
     pub mouse: (f32, f32),
     /// `screenTargetX/Y` — the un-re-pointed cursor tile the steps' pre-checks
@@ -2635,7 +2641,9 @@ pub fn step_pickaxe_mine_solids(
     // `:2449-2488` — the walk: every start/end pair walks; every hit on the
     // way joins the targets (the endpoint's own hit and the full-solid
     // re-hit — the C#'s two adds, the grapple targets excluded).
-    let grapple_targets: Vec<(i32, i32)> = Vec::new();
+    // `SmartCursorHelper._grappleTargets` (`:106-116`) — the caller fills
+    // the hook cells (the app reads `App.grapple`).
+    let grapple_targets = l.grapple_targets.clone();
     let mut targets: Vec<(i32, i32)> = Vec::new();
     while !points.is_empty() && !endpoints.is_empty() {
         let (a, b) = (points[0], endpoints[0]);
@@ -3110,6 +3118,18 @@ pub fn reachable_rect(
 ///
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
+
+/// `SmartCursorHelper.cs:106-116` — the `_grappleTargets` fill: the player's
+/// grappling projectiles' **centers** over 16 (the C#'s `(int)Center.X / 16`
+/// truncation — the coordinate is pixels). The app reads the port's single
+/// `GrappleHook` and passes its position here.
+pub fn grapple_target_cells(centers: &[(f32, f32)]) -> Vec<(i32, i32)> {
+    centers
+        .iter()
+        .map(|&(cx, cy)| (cx as i32 / 16, cy as i32 / 16))
+        .collect()
+}
+
 pub fn smart_cursor_lookup(
     w: &crate::World,
     l: &Lookup,
@@ -3264,6 +3284,7 @@ mod tests {
     /// the mouse over the floor row, the screen target on the floor.
     fn lookup(item: ItemPort, mouse: (f32, f32)) -> Lookup {
         Lookup {
+        grapple_targets: Vec::new(),
             item,
             mouse,
             screen_target: (30, 19),
@@ -3342,6 +3363,50 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn grapple_target_cells_truncate_the_centers() {
+        // `SmartCursorHelper.cs:106-116`: the projectile centers (px) over
+        // 16 with the C#'s `(int)cx / 16` truncation — the negative side
+        // truncates toward zero, so the port's i32 division matches.
+        let cells = grapple_target_cells(&[
+            (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0),
+            (0.0, 0.0),
+            (-16.0, -33.0),
+            (15.9, 16.1),
+        ]);
+        assert_eq!(cells, vec![(35, 41), (0, 0), (-1, -2), (0, 1)]);
+    }
+
+    #[test]
+    fn the_pickaxe_solids_skips_the_grapple_cell_on_the_beam() {
+        // `:2475-2483` — the walk's solid re-add skips the
+        // `_grappleTargets` cells: a hook latched on the beam's stone drops
+        // that stone from the targets, so the beam finds nothing instead of
+        // the hooked cell.
+        let mut world = big();
+        put(&mut world, 35, 41, 1); // the stone on the beam
+        let clear = beam_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            step_pickaxe_mine_solids(&world, &clear, -1, -1),
+            Some((35, 41)),
+            "the clear beam mines the stone"
+        );
+        // The hook latched on that very cell: the solid re-add is skipped,
+        // the endpoint add drops it too (`col != b` fails at the hook), so
+        // the beam's only target is gone.
+        let hooked = Lookup {
+            grapple_targets: vec![(35, 41)],
+            ..beam_lookup(1, (760.0, 681.0))
+        };
+        assert_eq!(
+            step_pickaxe_mine_solids(&world, &hooked, -1, -1),
+            None,
+            "the hooked cell leaves the beam targetless"
+        );
+    }
+
+
     #[test]
     fn test_smart_1_a_torch_item_finds_the_floor_spot() {
         // `Step_Torch`: the held torch (item 8, in `ItemID.Sets.Torches`)
@@ -3379,6 +3444,7 @@ mod tests {
         let l = lookup(item(8), (30.0 * 16.0, 19.0 * 16.0));
         // The rect 25..=35 × 15..=19 keeps the torch inside the ±8 sweep.
         let l = Lookup {
+        grapple_targets: Vec::new(),
             start_x: 25,
             start_y: 15,
             end_x: 35,
@@ -3557,6 +3623,7 @@ mod tests {
         let mut world = w();
         put(&mut world, 30, 19, 1);
         let l = Lookup {
+        grapple_targets: Vec::new(),
             screen_target: (30, 19),
             ..lookup(placeable(0, 78), (25.0 * 16.0, 19.0 * 16.0))
         };
@@ -3771,6 +3838,7 @@ mod tests {
         let mut world = w();
         put(&mut world, 25, 19, 1);
         let l = Lookup {
+        grapple_targets: Vec::new(),
             paint_lookup: 3,
             ..lookup(item(1071), mouse_at(25, 19))
         };
@@ -3783,6 +3851,7 @@ mod tests {
         put(&mut painted, 25, 19, 1);
         paint_at(&mut painted, 25, 19, 3);
         let l2 = Lookup {
+        grapple_targets: Vec::new(),
             paint_lookup: 3,
             ..lookup(item(1071), mouse_at(25, 19))
         };
@@ -3809,6 +3878,7 @@ mod tests {
         fullbright_at(&mut world, 25, 19);
         put(&mut world, 26, 19, 1); // the plain neighbour
         let glow = Lookup {
+        grapple_targets: Vec::new(),
             paint_coating_lookup: 1,
             ..lookup(item(1543), mouse_at(26, 19)) // the Spectre brush
         };
@@ -3822,6 +3892,7 @@ mod tests {
         echo.set_invisible_block(25, 19, true);
         put(&mut echo, 26, 19, 1);
         let echo_l = Lookup {
+        grapple_targets: Vec::new(),
             paint_coating_lookup: 2,
             ..lookup(item(1071), mouse_at(26, 19))
         };
@@ -3840,6 +3911,7 @@ mod tests {
         let mut world = w();
         wall_at(&mut world, 25, 19, 1);
         let l = Lookup {
+        grapple_targets: Vec::new(),
             paint_lookup: 4,
             ..lookup(item(1072), mouse_at(25, 19))
         };
@@ -3852,6 +3924,7 @@ mod tests {
         wall_at(&mut painted, 25, 19, 1);
         painted.set_wall_paint(25, 19, 4);
         let l2 = Lookup {
+        grapple_targets: Vec::new(),
             paint_lookup: 4,
             ..lookup(item(1072), mouse_at(25, 19))
         };
@@ -3865,6 +3938,7 @@ mod tests {
         put(&mut solid, 25, 19, 1);
         wall_at(&mut solid, 25, 19, 1);
         let l3 = Lookup {
+        grapple_targets: Vec::new(),
             paint_lookup: 4,
             ..lookup(item(1072), mouse_at(25, 19))
         };
@@ -3894,6 +3968,7 @@ mod tests {
     /// gate refuses `startY <= 20`).
     fn acorn_lookup(kind: u16, mouse: (f32, f32)) -> Lookup {
         Lookup {
+        grapple_targets: Vec::new(),
             start_y: 21,
             end_y: 30,
             ..lookup(item(kind), mouse)
@@ -4191,6 +4266,7 @@ mod tests {
         // `Step_BlocksLines` :838-856 — a replaceable cell with one
         // full-solid neighbour re-points; the settings toggle gates it.
         let blocks = Lookup {
+        grapple_targets: Vec::new(),
             smart_blocks_enabled: true,
             ..lookup(placeable(1, 1), mouse_at(25, 19)) // the stone block item
         };
@@ -4209,6 +4285,7 @@ mod tests {
         );
         // A solidTop createTile (the platform 19) is refused by the gate.
         let platform = Lookup {
+        grapple_targets: Vec::new(),
             smart_blocks_enabled: true,
             ..lookup(placeable(0, 19), mouse_at(25, 19))
         };
@@ -4236,6 +4313,7 @@ mod tests {
         // normal block placement.
         let world = w();
         let seed = Lookup {
+        grapple_targets: Vec::new(),
             smart_blocks_enabled: true,
             ..lookup(placeable(62, 1), mouse_at(25, 19))
         };
@@ -4460,6 +4538,7 @@ mod tests {
         assert_eq!(state.locked_continuity_coords, None, "the coords reset");
         // Held — the locks stand (and the step may re-write them).
         let held = Lookup {
+        grapple_targets: Vec::new(),
             use_item_held: true,
             ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
         };
@@ -4478,6 +4557,7 @@ mod tests {
         let mut world = bare();
         put_row(&mut world, 20, 30, 18, 19);
         let l = Lookup {
+        grapple_targets: Vec::new(),
             use_item_held: true,
             ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
         };
@@ -4573,6 +4653,7 @@ mod tests {
         // Lock on, setting wants the actuated (false) state — the cell's
         // `inActive()` is false, so it matches.
         let locked_false = Lookup {
+        grapple_targets: Vec::new(),
             actuation_rod_lock: true,
             actuation_rod_lock_setting: false,
             ..lookup(item(3620), mouse_at(25, 19))
@@ -4584,6 +4665,7 @@ mod tests {
         );
         // Lock on, setting wants the inert (true) state — mismatch, no target.
         let locked_true = Lookup {
+        grapple_targets: Vec::new(),
             actuation_rod_lock: true,
             actuation_rod_lock_setting: true,
             ..lookup(item(3620), mouse_at(25, 19))
@@ -4635,6 +4717,7 @@ mod tests {
         red_wire_at(&mut world, 25, 19);
         // Cutter + red: the wired cell itself.
         let cutter = Lookup {
+        grapple_targets: Vec::new(),
             tool_mode: multi_tool_mode::RED | multi_tool_mode::CUTTER,
             ..lookup(item(3625), mouse_at(25, 19))
         };
@@ -4645,6 +4728,7 @@ mod tests {
         );
         // Red only (placement): the free neighbour.
         let place = Lookup {
+        grapple_targets: Vec::new(),
             tool_mode: multi_tool_mode::RED,
             ..lookup(item(3625), mouse_at(25, 19))
         };
@@ -4807,6 +4891,7 @@ mod tests {
         );
         // The gamepad arm (input state, caller-passed).
         let pad = Lookup {
+        grapple_targets: Vec::new(),
             using_gamepad: true,
             ..lookup(pickaxe(1, 1), mouse_at(25, 19))
         };
@@ -5025,6 +5110,7 @@ mod tests {
         // With the setting on, the axe's second call site runs after the
         // chain — the same tree still lands on its base.
         let after = Lookup {
+        grapple_targets: Vec::new(),
             smart_axe_after_pickaxe: true,
             ..lookup(axe_item(1), mouse_at(25, 19))
         };
@@ -5098,6 +5184,7 @@ mod tests {
     /// park them mid-world with the mouse to the right.
     fn beam_lookup(pick: i32, mouse: (f32, f32)) -> Lookup {
         Lookup {
+        grapple_targets: Vec::new(),
             player_position: (480.0, 660.0),
             // A rect that covers the beam (the player's row and the
             // target cells): the default fixture rect (y 10..19) sits
@@ -5163,6 +5250,7 @@ mod tests {
         put(&mut world, 35, 660 / 16 + 0, 1); // the stone on the player's row
         // The player's beam row: num5 = (660 + 0.1) / 16 = 41.
         let pad = Lookup {
+        grapple_targets: Vec::new(),
             using_gamepad: true,
             gamepad_idle: true,
             direction: 1,
@@ -5206,6 +5294,7 @@ mod tests {
     /// geometry as the mine-solids tests).
     fn hammer_lookup(hammer: i32, mouse: (f32, f32)) -> Lookup {
         Lookup {
+        grapple_targets: Vec::new(),
             player_position: (480.0, 660.0),
             start_x: 20,
             start_y: 30,

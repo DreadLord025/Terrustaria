@@ -5340,6 +5340,22 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
   keeps the worldgen stream).
 
+- **Lost-merge audit 2026-11-10** (the housekeeping pass over this session's
+  merged work): the grapple-targets cycle (`M7-SMARTCURSOR-1-grapple-targets`,
+  merged as `e611fbf4`) was silently dropped by the M5-SEED-2 commit
+  `2c572dfa` — its branch-based merge resolution replaced
+  `smart_cursor.rs` wholesale, reverting the `grapple_target_cells` collector,
+  the `Lookup` field and the app fill while leaving the empty stub. Re-landed
+  on `housekeeping-verify-landed-rows` from the merge's own delta (the three
+  tests re-run green). This is the third lossy merge in this repository's
+  history (AGENTS.md's 2026-11-08 incident #2, the chest-gen drops of
+  2026-11-09, now this) — the audit rule that caught it: before continuing in
+  a file you previously changed, grep for the symbols you added. The
+  catalog's stale rows were also corrected: `M5-SPREAD-1` is complete (every
+  Out item landed — the beach-shells arm closed the row) and the
+  `M5-DUNGEON` row's Out listed the entrance-hall precalculation as pending
+  when `dungeon.rs::walk_entrance_hall` already carries it.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
