@@ -2908,6 +2908,55 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Lunar pillars' display (M4-NPC-3l)
+
+The four celestial pillars had the third instance of the atlas bug and a
+shared-sheet bug: none of NPC_493/507/517 was in the load list (so every
+pillar drew nothing — the bestiary portraits were blank too), and all
+three kinds resolved through one `towers` field bound to NPC_493, so the
+Nebula and Solar pillars rendered the Stardust artwork at a guessed
+130x270 in the box's corner. Against `Main.cs:24159-24269`:
+
+- **The dedicated arm**: the pillars draw their single 174x364 frame
+  (`Main.npcFrameCount` 422/493/507/517 = 1) centred on the NPC's Centre
+  with `origin = halfSize` — not the generic bottom anchor, which would
+  sink the frame's 47-px vertical overhang into the ground. The new
+  `tower_draw` computes it; the frame overhangs the 130x270 box by ~22 px
+  horizontally and ~47 px vertically.
+- **One sheet per kind**: Stardust 493, Nebula 507, Solar 517 — and the
+  **missing Vortex pillar** (422, the fourth id in
+  `WorldGen.TriggerLunarApocalypse`'s shuffle) now exists end-to-end: the
+  kind, its stats (the same 20000/20/0/130x270 row as its siblings), the
+  shared aiStyle-94 machine, its `downed_tower_vortex`/`tower_active_vortex`
+  pair (the World fields already carried them, unset by any death until
+  now), the bestiary entry, the netglue spawn and the debuff immunity.
+- **The glow ghosts**: each pillar's arm draws four masked copies of its
+  own sheet at `velocity.RotatedBy(i·π/2) · offset` — the offset
+  `4 + |light − 0.5|·4` (the Solar's `2 + ·9` plus an extra +X 2). The
+  port renders them with the glow sheets' own alpha; the vanilla's
+  (64,64,64,0)·Opacity mask tint is a no-op in a premultiplied pipeline
+  (the same trade the Prime masks made).
+- **The pillars never flip** (no `spriteDirection` write in aiStyle 94),
+  so they join the `flips_on_sprite_dir` predicate like the martians and
+  the Prime family.
+- **Two identity bugs fixed on the way**: the Cultist's bestiary entry
+  carried the Vortex pillar's id 422 (the C#'s `CultistBoss` is 439) —
+  corrected, with the draw keeping the NPC_422 stand-in art since the port
+  ships no NPC_439 sheet; and the ui portraits' hand-maintained sheet
+  indices had drifted twice (the towers read slots 104-107 instead of the
+  true 110-113, the shards 19 rows off) — the index is now derived from
+  the entry's `net_id` through `BESTIARY_NPC_SHEET_IDS` +
+  `Lookups::bestiary_sheet_index`, which removes the drift class for
+  good.
+- Deviations: the Perlin force-field shield bubble
+  (`Main.cs:24239-24269`, a shader pass the port has no seam for) and the
+  towers' 180-tick death-fade dust (`NPC.cs:38970-39068`) stay
+  unmodelled, as does `WorldGen.TriggerLunarApocalypse` itself (the
+  pillars' spawn).
+
+Screenshots: `towers_solar.png` and `towers_vortex.png` (distinct per-kind
+art at the real 174x364 frames), both SHA256-stable across runs.
+
 ## The Twins' display (M4-NPC-3k)
 
 Retinazer and Spazmatism had the same v1 shape as the martians did: a
@@ -6740,6 +6789,18 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Crystal-shard wiring (M5-SPREAD-1, part 2)
+
+`growth::grow_crystal_shards` (the `hardUpdateWorld` `:69604-69644` arm — the
+shard-capable stones 117/116/164/402/403 below the rock layer, the `Next(5)`
+gate, the 4-dir pick that never grows upward, the leaf-quiet neighbour, the
+radius-6 tile-129 density under 2, the `Next(18)` style with the 1/50 big
+shard 18+Next(6)) was ported and unit-tested but unreferenced: the app driver
+runs `spread::hard_update_world`, which carried only the chlorophyte arms.
+The shard arm now runs at that function's head — the C#'s own position — so
+the app's growth tick grows shards. Runtime-only, so the worldgen hashes are
+untouched.
+
 ## Dungeon crawler wiring (M5-DUNGEON)
 
 The pipeline's `Dungeon` step moved from the shape-level approximation
@@ -8293,3 +8354,4 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 (worldgen-local — needs a `World` field), the angler quest state (no port
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
+surface branch of the tower-place retry is constants-off.

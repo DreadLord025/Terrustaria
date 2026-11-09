@@ -106,10 +106,9 @@ fn main() -> Result<()> {
     };
 
     log::info!("world: {}", world_path.display());
-    // The world plus its side sections (the v7 chest records, M6-SAVE-1b, and
-    // the v8 banner counts, M6-SAVE-1c) — the seed store the `App` merges
-    // ahead of the load-time loot roll.
-    let (world, side) = app::load_world(&world_path)?;
+    // The world plus its v7 chest records (M6-SAVE-1b) — the seed store the
+    // `App` merges ahead of the load-time loot roll.
+    let (world, chests) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
         "assets/Content not found: copy the retail Content directory next to the executable",
@@ -142,7 +141,7 @@ fn main() -> Result<()> {
     let mut app = app::App::new(
         settings,
         world,
-        side,
+        chests,
         world_path,
         atlas,
         font_atlas,
