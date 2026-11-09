@@ -385,6 +385,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     app.edit_target = Some((tx, ty));
+    // `Player.cs:25446` — the smart cursor re-points the tile target
+    // (`SmartCursorHelper.SmartCursorLookup`) before the mining/placement
+    // arms below run; the vanilla writeback sets `Player.tileTargetX/Y`
+    // alongside `Main.SmartCursorX/Y` (`:157-162`).
+    let (tx, ty) = match super::smart_cursor::repoint(app, tx, ty, (world_pos.x, world_pos.y)) {
+        Some((sx, sy)) => {
+            app.edit_target = Some((sx, sy));
+            (sx, sy)
+        }
+        None => (tx, ty),
+    };
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");
