@@ -361,9 +361,11 @@ pub struct PrefixedStats {
 }
 
 /// The prefixed stats of `kind` (`Item.Prefix` on a fresh `SetDefaults`
-/// item). Returns `None` for the unregistered kinds.
+/// item). Returns `None` for the unregistered kinds. The base row rides
+/// `registry::item` — the M4-PROJ-6 corrections seam (the corrected
+/// 3377/3779/3787 staff rows must reach the prefixed math).
 pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
-    let def = itemdata::ITEMS.get(kind as usize)?;
+    let def = crate::registry::item(kind)?;
     if prefix == 0 {
         return Some(PrefixedStats {
             damage: def.damage,

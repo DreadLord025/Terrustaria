@@ -181,6 +181,69 @@ pub const BOMB_FISH: u16 = 519;
 /// The sticky/hover bomb set of `AI_016_Bombs` (`Projectile.cs:46955`): the
 /// kinds that snap to a wall instead of bouncing.
 pub const STICKY_BOMBS: [u16; 7] = [37, 397, 470, 519, 773, 911, 1087];
+/// The magic (caster) families of M4-PROJ-6: the kind ids below are the
+/// verbatim `ProjectileID` values, their `SetDefaults` arms cited per row in
+/// [`proj_data`]. The AI arms land in Phases 3-4 — the rows here declare the
+/// vanilla `aiStyle` so the dispatch reaches them.
+/// `ProjectileID.BallofFire` (15) — the Flower of Fire's shot.
+pub const BALL_OF_FIRE: u16 = 15;
+/// `ProjectileID.MagicMissile` (16) — the channeled aimed spell.
+pub const MAGIC_MISSILE: u16 = 16;
+/// `ProjectileID.GreenLaser` (20) — the Space Gun's aiStyle-1 rider.
+pub const GREEN_LASER: u16 = 20;
+/// `ProjectileID.WaterBolt` (27) — the Water Bolt spell.
+pub const WATER_BOLT: u16 = 27;
+/// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
+pub const FLAMELASH: u16 = 34;
+/// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
+pub const DEMON_SCYTHE: u16 = 45;
+/// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
+pub const RAINBOW_ROD_BULLET: u16 = 79;
+/// `ProjectileID.IceBlock` (80) — the Ice Rod's placed-block projectile.
+pub const ICE_BLOCK: u16 = 80;
+/// `ProjectileID.PurpleLaser` (88) — the Laser Rifle's aiStyle-1 rider.
+pub const PURPLE_LASER: u16 = 88;
+/// `ProjectileID.CrystalStorm` (94) — the Crystal Storm's shard volley.
+pub const CRYSTAL_STORM: u16 = 94;
+/// `ProjectileID.CursedFlame` (95) — the friendly companion of the hostile
+/// `CursedFlameHostile` 96 ([`CURSED_FLAME`]).
+pub const CURSED_FLAME_FRIENDLY: u16 = 95;
+/// `ProjectileID.AmethystBolt` (121) — the gem-staff family (aiStyle 29).
+pub const GEM_BOLT_AMETHYST: u16 = 121;
+/// `ProjectileID.TopazBolt` (122).
+pub const GEM_BOLT_TOPAZ: u16 = 122;
+/// `ProjectileID.SapphireBolt` (123).
+pub const GEM_BOLT_SAPPHIRE: u16 = 123;
+/// `ProjectileID.EmeraldBolt` (124).
+pub const GEM_BOLT_EMERALD: u16 = 124;
+/// `ProjectileID.RubyBolt` (125).
+pub const GEM_BOLT_RUBY: u16 = 125;
+/// `ProjectileID.DiamondBolt` (126).
+pub const GEM_BOLT_DIAMOND: u16 = 126;
+/// `ProjectileID.BallofFrost` (253) — the Flower of Frost's shot.
+pub const BALL_OF_FROST: u16 = 253;
+/// `ProjectileID.MagnetSphereBall` (254) — the Magnet Sphere's ball (aiStyle
+/// 47); it spawns the bolt 255.
+pub const MAGNET_SPHERE_BALL: u16 = 254;
+/// `ProjectileID.MagnetSphereBolt` (255) — the ball's shot (aiStyle 48).
+pub const MAGNET_SPHERE_BOLT: u16 = 255;
+/// `ProjectileID.InfernoFriendlyBolt` (295) — the Inferno Fork's bolt
+/// (aiStyle 50); it spawns the blast 296 on death.
+pub const INFERNO_FORK_BOLT: u16 = 295;
+/// `ProjectileID.Blast` (296) — the fork's on-death explosion (aiStyle 50).
+pub const INFERNO_BLAST: u16 = 296;
+/// `ProjectileID.VenomFang` (355) — the Poison Staff's aiStyle-1 rider.
+pub const VENOM_FANG: u16 = 355;
+/// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
+pub const FROST_BOLT: u16 = 359;
+/// `ProjectileID.AmberBolt` (597) — the Amber Staff's gem bolt.
+pub const GEM_BOLT_AMBER: u16 = 597;
+/// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
+pub const SPIRIT_FLAME: u16 = 659;
+/// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
+pub const SKY_FRACTURE: u16 = 660;
+/// `ProjectileID.BookOfSkullsSkull` (837) — the Book of Skulls' rider.
+pub const BOOK_OF_SKULLS: u16 = 837;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -260,7 +323,9 @@ const RESET_STATE: (bool, i32, bool, i32, i32, f32) = (false, -2, false, -1, 0, 
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
-/// families are M4-PROJ follow-ups.
+/// families are M4-PROJ follow-ups. The magic (caster) families'
+/// (M4-PROJ-6) rows sit in `ProjectileID` order at the end of the match:
+/// their `aiStyle` values declare the dispatch arm Phases 3-4 add.
 pub fn proj_data(kind: u16) -> Option<ProjData> {
     let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap, state) =
         match kind {
@@ -636,6 +701,92 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
+            // order) --- the aiStyle declaration is what Phases 3-4 need; the
+            // AI arms land beside the arrow/boomerang/bomb arms in those
+            // phases.
+            // `:964-973` — the ball of fire: 16x16, aiStyle 8, alpha 100.
+            BALL_OF_FIRE => (16.0, 16.0, 8, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 1.0)),
+            // `:974-984` — the magic missile: 32x32, aiStyle 9, alpha 100,
+            // ignoreWater (the local immunity stays at the reset — only
+            // 34/79 carry the 12-tick cooldown).
+            MAGIC_MISSILE => (32.0, 32.0, 9, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 1.0)),
+            // `:1018-1029` — the green laser: 4x4, aiStyle 1 (the rider
+            // hook), `penetrate = 3`, `extraUpdates = 2`, `scale = 0.65f`,
+            // `timeLeft = 600`.
+            GREEN_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, (false, -2, false, -1, 0, 0.65)),
+            // `:1095-1105` — the water bolt: 16x16, aiStyle 8, alpha 255,
+            // `penetrate = 10` and `timeLeft /= 2` off the 3600 reset
+            // (`:787`) — 1800.
+            WATER_BOLT => (16.0, 16.0, 8, 10, 1800, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
+            // 2`, the local-NPC immunity with the 12-tick cooldown.
+            FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
+            // `penetrate = 5`, `scale = 0.9f`.
+            DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
+            // `:1594-1606` — the rainbow rod's bullet: 32x32, aiStyle 9,
+            // `penetrate = 3`, the local immunity with the 12-tick cooldown.
+            RAINBOW_ROD_BULLET => (32.0, 32.0, 9, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // `:1607-1618` — the ice block: 16x16, aiStyle 22,
+            // `tileCollide = false` (the placed phase writes tiles).
+            ICE_BLOCK => (16.0, 16.0, 22, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:1702-1712` — the purple laser: 6x6, aiStyle 1 (the rider
+            // hook), `penetrate = 3`, `extraUpdates = 4`, `scale = 0.65f`,
+            // `timeLeft = 600`.
+            PURPLE_LASER => (6.0, 6.0, 1, 3, 600, 4, true, false, false, (false, -2, false, -1, 0, 0.65)),
+            // `:1777-1790` — the crystal storm: 8x8, aiStyle 24, alpha 50,
+            // `scale = 1.2f`, `penetrate = 1`, `timeLeft = 600`, ignoreWater.
+            CRYSTAL_STORM => (8.0, 8.0, 24, 1, 600, 0, true, false, false, (false, -2, false, -1, 50, 1.2)),
+            // `:1792-1804` — the friendly cursed flame: 16x16, aiStyle 8,
+            // alpha 100, `penetrate = 2` (the hostile twin 96 rides above).
+            CURSED_FLAME_FRIENDLY => (16.0, 16.0, 8, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 1.0)),
+            // `:2105-2158` + `ApplyGemStaffStats` (`:10683-10689`) — the gem
+            // bolts 121-126: 10x10, aiStyle 29, alpha 255, the shared
+            // `friendly` / `usesLocalNPCImmunity = true` /
+            // `localNPCHitCooldown = 60` / `timeLeft = 300` group (the
+            // `penetrate = 1` reset holds).
+            GEM_BOLT_AMETHYST
+            | GEM_BOLT_TOPAZ
+            | GEM_BOLT_SAPPHIRE
+            | GEM_BOLT_EMERALD
+            | GEM_BOLT_RUBY
+            | GEM_BOLT_DIAMOND => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),
+            // `:3358-3368` — the ball of frost: 16x16, aiStyle 8, alpha 100
+            // (coldDamage — no slot field yet).
+            BALL_OF_FROST => (16.0, 16.0, 8, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 1.0)),
+            // `:3369-3377` — the magnet sphere's ball: 38x38, aiStyle 47,
+            // `timeLeft = 900` (its bolt 255 rides aiStyle 48 below).
+            MAGNET_SPHERE_BALL => (38.0, 38.0, 47, 1, 900, 0, true, false, false, RESET_STATE),
+            // `:3378-3387` — the ball's bolt: 8x8, aiStyle 48,
+            // `extraUpdates = 100`, `timeLeft = 100`.
+            MAGNET_SPHERE_BOLT => (8.0, 8.0, 48, 1, 100, 100, true, false, false, RESET_STATE),
+            // `:3849-3858` — the inferno fork's bolt: 12x12, aiStyle 50,
+            // alpha 255.
+            INFERNO_FORK_BOLT => (12.0, 12.0, 50, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3859-3868` — the bolt's on-death blast: 150x150, aiStyle 50,
+            // alpha 255, `tileCollide = false`, `penetrate = -1`.
+            INFERNO_BLAST => (150.0, 150.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:4451-4463` — the venom fang: 12x12, aiStyle 1 (the rider
+            // hook), alpha 255, `penetrate = 5`, the local immunity with
+            // the 10-tick cooldown, `timeLeft = 58`.
+            VENOM_FANG => (12.0, 12.0, 1, 5, 58, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `:4497-4507` — the frost staff's bolt: 14x14, aiStyle 28,
+            // alpha 255, `penetrate = 2` (coldDamage — no slot field yet).
+            FROST_BOLT => (14.0, 14.0, 28, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6461-6470` + `ApplyGemStaffStats` (`:10683-10689`) — the
+            // Amber Staff's bolt, the gem-bolt family's seventh kind.
+            GEM_BOLT_AMBER => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),
+            // `:7083-7094` — the spirit flame: 8x8, aiStyle 129, alpha 255,
+            // `timeLeft = 240`, `tileCollide = false`, `penetrate = -1`.
+            SPIRIT_FLAME => (8.0, 8.0, 129, -1, 240, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:7096-7107` — the sky fracture: 10x10, aiStyle 1 (the rider
+            // hook), alpha 255, `timeLeft = 600`, `extraUpdates = 1`.
+            SKY_FRACTURE => (10.0, 10.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:8124-8135` — the book of skulls' skull: 26x26, aiStyle 1
+            // (the rider hook), alpha 255, `penetrate = 3`, `timeLeft =
+            // 480`, `tileCollide = false`.
+            BOOK_OF_SKULLS => (26.0, 26.0, 1, 3, 480, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             _ => return None,
         };
     let (
@@ -2761,12 +2912,12 @@ mod widened_state_tests {
             let row = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
             assert_reset_row(row);
         }
-        // The magic kinds are still rowless (Phase 2 fills them) — and they
-        // must reach the spawn as `None`, never an inert slot.
-        assert!(
-            proj_data(359).is_none(),
-            "the Frost Staff bolt has no row yet"
-        );
+        // The magic kinds now carry rows (Phase 2) with their own state, so
+        // they sit outside the baseline reset sweep — the Frost Staff bolt's
+        // row (`:4497-4507`) overrides alpha/penetrate.
+        let frost = proj_data(FROST_BOLT).unwrap_or_else(|| panic!("the Frost Staff bolt lost its row"));
+        assert_eq!(frost.alpha, 255, "`alpha = 255` (`:4497-4507`)");
+        assert_eq!(frost.penetrate, 2);
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -2874,11 +3025,18 @@ mod widened_state_tests {
     #[test]
     fn test_dw_1_2_an_unported_kind_spawns_nothing() {
         // The seam Phase 2 rides: a kind without a row returns `None` instead
-        // of an inert slot (the M4-PROJ-1 silent-None trap).
+        // of an inert slot (the M4-PROJ-1 silent-None trap). The magic kinds
+        // have rows now (Phase 2); the follow-up aiStyles stay rowless.
         let mut pool = ProjectilePool::new();
         assert!(
-            pool.spawn_with_data(121, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
-                .is_none()
+            pool.spawn_with_data(114, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
+                .is_none(),
+            "the Unholy Trident bolt (aiStyle 27) is a follow-up row"
+        );
+        assert!(
+            pool.spawn_with_data(187, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
+                .is_none(),
+            "the flame jet stays a passthrough"
         );
         assert_eq!(pool.active_count(), 0);
     }
@@ -2892,5 +3050,214 @@ mod widened_state_tests {
         assert!(!p.channel);
         assert_eq!(p.channel_item, 0, "no item is being channelled");
         assert_eq!(p.channel_target, Vec2::ZERO);
+    }
+}
+
+#[cfg(test)]
+mod magic_data_tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    /// Every in-scope magic kind with its verbatim `SetDefaults` slice:
+    /// (kind, w, h, aiStyle, penetrate, timeLeft, extraUpdates, tileCollide,
+    /// alpha, scale, usesLocalNPCImmunity, localNPCHitCooldown) — the
+    /// `Projectile.cs` per-type arms in `ProjectileID` order. `timeLeft`'s
+    /// 3600 is the reset value (`:787`); the C# citation per arm rides the
+    /// comment under each line.
+    const MAGIC_ROWS: [(u16, f32, f32, u8, i32, i32, u32, bool, i32, f32, bool, i32); 28] = [
+        // `:964-973` BallofFire — 16x16, aiStyle 8, alpha 100.
+        (BALL_OF_FIRE, 16.0, 16.0, 8, 1, 3600, 0, true, 100, 1.0, false, -2),
+        // `:974-984` MagicMissile — 32x32, aiStyle 9, alpha 100.
+        (MAGIC_MISSILE, 32.0, 32.0, 9, 1, 3600, 0, true, 100, 1.0, false, -2),
+        // `:1018-1029` GreenLaser — the aiStyle-1 rider.
+        (GREEN_LASER, 4.0, 4.0, 1, 3, 600, 2, true, 0, 0.65, false, -2),
+        // `:1095-1105` WaterBolt — `timeLeft /= 2` off the 3600 reset.
+        (WATER_BOLT, 16.0, 16.0, 8, 10, 1800, 0, true, 255, 1.0, false, -2),
+        // `:1162-1173` Flamelash — the 12-tick local cooldown.
+        (FLAMELASH, 32.0, 32.0, 9, 2, 3600, 0, true, 0, 1.0, true, 12),
+        // `:1283-1294` DemonScythe — scale 0.9.
+        (DEMON_SCYTHE, 48.0, 48.0, 18, 5, 3600, 0, true, 100, 0.9, false, -2),
+        // `:1594-1606` RainbowRodBullet — penetrate 3, cooldown 12.
+        (RAINBOW_ROD_BULLET, 32.0, 32.0, 9, 3, 3600, 0, true, 0, 1.0, true, 12),
+        // `:1607-1618` IceBlock — tileCollide false.
+        (ICE_BLOCK, 16.0, 16.0, 22, 1, 3600, 0, false, 0, 1.0, false, -2),
+        // `:1702-1712` PurpleLaser — extraUpdates 4.
+        (PURPLE_LASER, 6.0, 6.0, 1, 3, 600, 4, true, 0, 0.65, false, -2),
+        // `:1777-1790` CrystalStorm — alpha 50, scale 1.2.
+        (CRYSTAL_STORM, 8.0, 8.0, 24, 1, 600, 0, true, 50, 1.2, false, -2),
+        // `:1792-1804` CursedFlame — penetrate 2.
+        (CURSED_FLAME_FRIENDLY, 16.0, 16.0, 8, 2, 3600, 0, true, 100, 1.0, false, -2),
+        // `:2105-2158` + `:10683-10689` the gem bolts 121-126 — the shared
+        // `ApplyGemStaffStats` group.
+        (GEM_BOLT_AMETHYST, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        (GEM_BOLT_TOPAZ, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        (GEM_BOLT_SAPPHIRE, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        (GEM_BOLT_EMERALD, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        (GEM_BOLT_RUBY, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        (GEM_BOLT_DIAMOND, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        // `:3358-3368` BallofFrost.
+        (BALL_OF_FROST, 16.0, 16.0, 8, 1, 3600, 0, true, 100, 1.0, false, -2),
+        // `:3369-3377` MagnetSphereBall — timeLeft 900.
+        (MAGNET_SPHERE_BALL, 38.0, 38.0, 47, 1, 900, 0, true, 0, 1.0, false, -2),
+        // `:3378-3387` MagnetSphereBolt — extraUpdates 100, timeLeft 100.
+        (MAGNET_SPHERE_BOLT, 8.0, 8.0, 48, 1, 100, 100, true, 0, 1.0, false, -2),
+        // `:3849-3858` InfernoFriendlyBolt — alpha 255.
+        (INFERNO_FORK_BOLT, 12.0, 12.0, 50, 1, 3600, 0, true, 255, 1.0, false, -2),
+        // `:3859-3868` the bolt's blast — tileCollide false, penetrate -1.
+        (INFERNO_BLAST, 150.0, 150.0, 50, -1, 3600, 0, false, 255, 1.0, false, -2),
+        // `:4451-4463` VenomFang — the 10-tick cooldown, timeLeft 58.
+        (VENOM_FANG, 12.0, 12.0, 1, 5, 58, 0, true, 255, 1.0, true, 10),
+        // `:4497-4507` FrostBoltStaff — alpha 255, penetrate 2.
+        (FROST_BOLT, 14.0, 14.0, 28, 2, 3600, 0, true, 255, 1.0, false, -2),
+        // `:6461-6470` + `:10683-10689` AmberBolt — the family's seventh.
+        (GEM_BOLT_AMBER, 10.0, 10.0, 29, 1, 300, 0, true, 255, 1.0, true, 60),
+        // `:7083-7094` SpiritFlame — tileCollide false, penetrate -1.
+        (SPIRIT_FLAME, 8.0, 8.0, 129, -1, 240, 0, false, 255, 1.0, false, -2),
+        // `:7096-7107` SkyFracture — extraUpdates 1.
+        (SKY_FRACTURE, 10.0, 10.0, 1, 1, 600, 1, true, 255, 1.0, false, -2),
+        // `:8124-8135` BookOfSkullsSkull — tileCollide false, timeLeft 480.
+        (BOOK_OF_SKULLS, 26.0, 26.0, 1, 3, 480, 0, false, 255, 1.0, false, -2),
+    ];
+
+    #[test]
+    fn the_magic_family_data_map_is_verbatim() {
+        // DW-2.1: every in-scope magic kind has its `proj_data` row, the
+        // verbatim `SetDefaults` slice against the C# arms cited per row.
+        for &(kind, w, h, ai, pen, tl, ex, tc, alpha, scale, uses_local, cd) in &MAGIC_ROWS {
+            let row = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
+            assert_eq!(
+                (row.w, row.h, row.ai_style, row.penetrate, row.time_left, row.extra_updates, row.tile_collide),
+                (w, h, ai, pen, tl, ex, tc),
+                "kind {kind}"
+            );
+            assert_eq!((row.alpha, row.scale), (alpha, scale), "kind {kind}");
+            assert_eq!(
+                (row.uses_local_immunity, row.local_hit_cooldown),
+                (uses_local, cd),
+                "kind {kind}"
+            );
+            // No magic arm touches the id-static immunity or the flags — the
+            // C# reset holds (`:714-715`, `:466`, `:778-779`).
+            assert!(!row.uses_id_static_immunity, "kind {kind}");
+            assert_eq!(row.id_static_hit_cooldown, -1, "kind {kind}");
+            assert!(!row.arrow && !row.trap, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_dw_2_1_the_rider_kinds_spawn_through_the_seam() {
+        // DW-2.1: without a row, `spawn_with_data_ai`'s leading
+        // `proj_data(kind)?` drops the shot silently (the M4-PROJ-1d trap) —
+        // the five aiStyle-1 riders spawn and carry their rows onto the slot.
+        let mut pool = ProjectilePool::new();
+        // (kind, w, h, penetrate, timeLeft, extraUpdates, scale, alpha, tileCollide)
+        let cases: [(u16, f32, f32, i32, i32, u32, f32, i32, bool); 5] = [
+            (GREEN_LASER, 4.0, 4.0, 3, 600, 2, 0.65, 0, true),
+            (PURPLE_LASER, 6.0, 6.0, 3, 600, 4, 0.65, 0, true),
+            (BOOK_OF_SKULLS, 26.0, 26.0, 3, 480, 0, 1.0, 255, false),
+            (VENOM_FANG, 12.0, 12.0, 5, 58, 0, 1.0, 255, true),
+            (SKY_FRACTURE, 10.0, 10.0, 1, 600, 1, 1.0, 255, true),
+        ];
+        for (i, &(kind, w, h, pen, tl, ex, scale, alpha, tc)) in cases.iter().enumerate() {
+            let slot = pool
+                .spawn_with_data(kind, 32.0 * i as f32, 32.0, 4.0, 0.0, 15, 3.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert_eq!(p.kind, kind);
+            assert_eq!((p.w, p.h), (w, h), "kind {kind}");
+            assert_eq!((p.penetrate, p.max_penetrate), (pen, pen), "kind {kind}");
+            assert_eq!(p.time_left, tl, "kind {kind}");
+            assert_eq!(p.extra_updates, ex, "kind {kind}");
+            assert!((p.scale - scale).abs() < f32::EPSILON, "kind {kind}");
+            assert_eq!((p.alpha, p.tile_collide), (alpha, tc), "kind {kind}");
+            // The spawner's inputs ride on top.
+            assert_eq!(p.damage, 15, "kind {kind}");
+            assert_eq!(p.knock_back, 3.0, "kind {kind}");
+            assert_eq!(pool.active_count(), i + 1);
+        }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    #[test]
+    fn test_dw_2_2_the_gem_bolt_rows_spawn_with_the_local_immunity() {
+        // DW-2.2: `ApplyGemStaffStats` (`Projectile.cs:10683-10689`) —
+        // friendly, `usesLocalNPCImmunity = true`, `localNPCHitCooldown =
+        // 60`, `timeLeft = 300` — rides the row onto the slot through
+        // `spawn_with_data`, for all seven gem kinds.
+        let mut pool = ProjectilePool::new();
+        for kind in [
+            GEM_BOLT_AMETHYST,
+            GEM_BOLT_TOPAZ,
+            GEM_BOLT_SAPPHIRE,
+            GEM_BOLT_EMERALD,
+            GEM_BOLT_RUBY,
+            GEM_BOLT_DIAMOND,
+            GEM_BOLT_AMBER,
+        ] {
+            let slot = pool
+                .spawn_with_data(kind, 32.0, 32.0, 0.0, 0.0, 15, 3.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert!(p.uses_local_immunity, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, 60, "kind {kind}");
+            assert_eq!(p.time_left, 300, "kind {kind}");
+            assert_eq!(p.alpha, 255, "kind {kind}");
+            assert_eq!((p.w, p.h), (10.0, 10.0), "kind {kind}");
+        }
+        // The gate the cooldown arms still bites: one hit, then the local
+        // entry holds the re-hits off for 60 ticks.
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut npc = Npc::spawn_slime(&w, 20).unwrap();
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        let slot = pool
+            .spawn_with_data(GEM_BOLT_AMETHYST, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        // The row's `penetrate = 1` would end the bolt on its first hit;
+        // open the headroom so the 60-tick cooldown is what gates the second
+        // hit (the immunity fields stay the row's).
+        let p = &mut pool.slots_mut()[slot];
+        p.max_penetrate = 3;
+        p.penetrate = 3;
+        let hp0 = npc.hp;
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        assert_eq!(npc.hp, hp0 - 10);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        assert_eq!(npc.hp, hp0 - 10, "the 60-tick cooldown gates the re-hit");
+    }
+
+    #[test]
+    fn test_dw_2_1_the_out_of_scope_kinds_stay_rowless() {
+        // The follow-up aiStyles keep no row: the unported-kind spawn must
+        // reach the caller as `None`, never an inert slot (the plan's OUT
+        // list — the follow-up row and the hostile riders; the Golem's
+        // fireball 258 already rides a pre-existing row, the hostile
+        // style-8 rider of the same kind, and keeps it).
+        for kind in [114u16, 116, 206, 297, 356, 409, 502, 617, 633] {
+            assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
+        }
+        assert!(proj_data(GOLEM_FIREBALL).is_some(), "the Golem's 258 row stays");
+        // The saucer stand-ins (447/450, aiStyle 79/80 as style numbers) are
+        // distinct from the magic kinds 79/80 — no collision.
+        assert_eq!(proj_data(SAUCER_DEATHRAY).unwrap().ai_style, 79);
+        assert_eq!(proj_data(RAINBOW_ROD_BULLET).unwrap().ai_style, 9);
+        assert_eq!(proj_data(SAUCER_MISSILE).unwrap().ai_style, 80);
+        assert_eq!(proj_data(ICE_BLOCK).unwrap().ai_style, 22);
+        assert_eq!(proj_data(MAGIC_MISSILE).unwrap().ai_style, 9);
+        assert_eq!(proj_data(BALL_OF_FROST).unwrap().ai_style, 8);
     }
 }
