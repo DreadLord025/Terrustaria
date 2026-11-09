@@ -5079,6 +5079,15 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   mahogany chests; a kind-341 anchor keeps just the repeated rows. The
   mahogany block itself needs no new rows.
 
+- **The cactus seed arms** (`GrowCactus`, `WorldGen.cs:56590-56699` — the
+  M5-SPREAD-1 cactus slice, over the M5-SEED-1 `World.seeds` flags): the
+  drunk world's density cap widens to `Next(11, 20)` (the classic worlds
+  keep `Next(11, 13)`) and the remix world skips the `cactusWaterLimit` 25
+  box above the surface (`!remixWorld || !(j > worldSurface)`). Still open
+  in `grow_cactus`: the tall-column fork branch (`:56736-56770` — the
+  side shoots at `Next(3)` and the tip at `num6 < Next(2, 8)`), which the
+  port's num6==0 arm does not reach.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
