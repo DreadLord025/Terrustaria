@@ -7215,6 +7215,22 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   lacking the channel (the C#'s border reads never happen; the port's
   out-of-world reads return false, which only ever adds a candidate the
   `InTileBounds` gate then drops).
+- **The track step's bearing comes from the player's CENTRE, not the
+  cursor.** `Step_MinecartTracks`' first block (`:1170-1171`) normalises
+  `Main.MouseWorld - providedInfo.Center` — the player's box centre
+  (`Entity.cs:50-54`'s `position + (width/2f, height/2f)`, the FLOAT
+  halves) — into the eight direction flags, so the track's growth
+  direction follows where the player LOOKS rather than where the cursor
+  points. `SafeNormalize`'s zero/NaN default is `Vector2.UnitY` (downward).
+  The second block (the pressure track, `:1268`) ignores the bearing and
+  extends left/right only.
+- **The track scan anchors on EVERY track cell, not the line's end.** The
+  C# adds the six directional neighbours for every track-314 cell in the
+  reachable rect, so a diagonal jog in the track extends from each jogged
+  cell; the shared pick then keeps only the freestanding candidates
+  (`:1250-1256`: no track directly above or below) and the closest to the
+  mouse. The tests pin both halves: a track under a candidate drops it, and
+  the line's tail (the second track cell) extends in its own direction.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
