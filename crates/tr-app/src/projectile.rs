@@ -18,6 +18,21 @@
 //!   `localNPCHitCooldown = -2` (`:464`), `idStaticNPCHitCooldown = -1`
 //!   (`:466`), `immunityIdentity = type` (`:782`)
 //!
+//! The ammo-resolution rows (M3-ITEM-6, 2026-11-09): the `proj_data` block at
+//! the end of the match carries the kinds `Player.PickAmmo`
+//! (`Player.cs:53458-53683`) resolves, so `spawn_with_data_ai` no longer
+//! silently no-ops on them (Phase 1's deviation). Dropped vanilla fields
+//! with no port consumer (documented ANALYSIS deviations — Phase 5 writes the
+//! entries): `alpha`, `scale` (the Snowman rockets' `scale = 0.9` keeps the
+//! 14x14 box), `ignoreWater`, `drawLayer`, `hide`, `ranged`,
+//! `usesOwnerLight`, and the per-type `knockBack` (`NewProjectile` applies the
+//! spawner's KnockBack after `SetDefaults`, `:10858-10880`). The unported
+//! aiStyles 147/75/10/181 carry their vanilla value in the row and ride the
+//! documented stand-in dispatch (their AI ports are M4-PROJ's). The poison
+//! dart's `usesLocalNPCImmunity` + `localNPCHitCooldown = -1` (`:6953-6968`)
+//! stays deferred: its row predates the two schema fields and the M3-ITEM-6
+//! freeze on existing rows keeps the default until a follow-up.
+//!
 //! NPC-side per-owner i-frames: `NPC.immune[256]` (decremented once per NPC
 //! update, `NPC.cs:90454-90459`), stored on [`crate::npc::Npc`].
 //!
@@ -215,7 +230,15 @@ fn can_explode_tile(kind: u16, frame_y_variant: i32) -> bool {
 
 /// The `SetDefaults` slice of the aiStyle-1/14 families (`Projectile.cs`):
 /// the box, the AI style, the penetrate/timeLeft overrides and the flags the
-/// flight behaves on. The damage stays the spawner's input.
+/// flight behaves on. The damage and the knockback stay the spawner's input
+/// (`NewProjectile` applies them after `SetDefaults`, `:10858-10880`).
+///
+/// M3-ITEM-6 (2026-11-09): the immunity pair below joined the schema so the
+/// ammo-resolution rows can carry the vanilla `usesLocalNPCImmunity` +
+/// `localNPCHitCooldown` values; every row that predates the two fields keeps
+/// the pool defaults. The remaining vanilla fields (`alpha`, `scale`,
+/// `ignoreWater`, `drawLayer`, `hide`, `ranged`, `usesOwnerLight`) have no
+/// consumer in the port and are dropped — see the module doc.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProjData {
     pub w: f32,
@@ -231,11 +254,27 @@ pub struct ProjData {
     pub arrow: bool,
     /// `Projectile.trap`.
     pub trap: bool,
+    /// `usesLocalNPCImmunity` (`:464`'s default false) — only when set does
+    /// the pool decay and consult the slot's local-NPC immunity entries
+    /// (`Update`'s `DecrementLocalImmuneTimeCounters`).
+    pub uses_local_immunity: bool,
+    /// `localNPCHitCooldown` (the `:464` default −2) — the ticks the local
+    /// entry gates a re-hit after a hit writes it.
+    pub local_hit_cooldown: i32,
 }
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
 /// families are M4-PROJ follow-ups.
+///
+/// The ammo-resolution rows (M3-ITEM-6 Phase 2): the kinds
+/// `Player.PickAmmo`'s resolution chain (`Player.cs:53458-53683`) resolves —
+/// the launcher rockets, the 1.4.4 rocket family, the Celebration/gunProj
+/// rockets, the sand family, the arrow overrides and the fairy shot — must
+/// carry rows here or `spawn_with_data_ai` silently no-ops and the shot
+/// vanishes (Phase 1's deviation, fixed by this block). Their aiStyles
+/// 16 dispatch to `ai_bomb`; 147/75/10/181 stay unported stand-ins (the rows
+/// carry the vanilla value for the later AI port — M4-PROJ).
 pub fn proj_data(kind: u16) -> Option<ProjData> {
     let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap) =
         match kind {
@@ -380,8 +419,81 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
             // ...)` — the 1500-px leaping shot).
             BETSY_FIREBALL => (22.0, 22.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The ammo-resolution rows (M3-ITEM-6 Phase 2): `friendly` is the
+            // pool default for every one of them and `ranged` has no consumer,
+            // so neither rides the tuple. The launcher rockets
+            // (`Projectile.cs:2222-2338`) — 14x14, aiStyle 16 (the bomb
+            // family), `penetrate = -1`; 133/136/139/142 add the
+            // local-immunity pair (the overlay below).
+            133..=144 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The Snowman Cannon's four rockets (`:4308-4320`) — the same row;
+            // their `scale = 0.9f` is dropped (no consumer), so the port keeps
+            // the full 14x14 box.
+            338..=341 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The 1.4.4 rocket family (`:7939-7952`) — the eight rockets each
+            // of the Grenade/Rocket/Proximity launchers resolves to (776-801)
+            // plus the Snowman Cannon's 803-810. 779/783 sit inside the C#
+            // range but no launcher's rocket resolves to them, so the guard
+            // leaves them row-less.
+            776..=801 | 803..=810 if kind != 779 && kind != 783 => {
+                (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            // The Celebration rockets (`:7584-7605` — both arms identical):
+            // 14x14, aiStyle 147, `penetrate = 1`, `extraUpdates = 2` and
+            // `timeLeft = 360 * MaxUpdates` = 360 × (`extraUpdates + 1`) = 1080
+            // (`MaxUpdates`'s getter, `:554-561`; `alpha = 255` dropped).
+            715..=718 => (14.0, 14.0, 147, 1, 1080, 2, true, false, false),
+            // The four gunProj rockets (`:6618-6630` 615, `:6767-6779` 630/705,
+            // `:7571-7582` 714): 22x22, aiStyle 75, `penetrate = -1`,
+            // `tileCollide = false` (the drawLayer/usesOwnerLight/ignoreWater
+            // fields have no consumer).
+            615 | 630 | 705 | 714 => (
+                22.0,
+                22.0,
+                75,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+            ),
+            // The sand family (`:1248-1258` 42, `:1449-1462` 65, `:1470-1480`
+            // 68, `:4438-4449` 354): 10x10, aiStyle 10, `extraUpdates = 1`.
+            // The Sandgun's own 42 sets no penetrate (the stock 1), the three
+            // sand-block conversions `penetrate = -1`; their per-type
+            // knockBack (8 / 6) is dropped — the spawner's input wins.
+            42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false),
+            65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false),
+            // The arrow overrides — 117 the Bone Arrow (`:2058-2068`,
+            // `extraUpdates = 2`), 469 the Bee Arrow (`:5429-5441`,
+            // `alpha = 255` dropped), 485 the Hellwing (`:5604-5615` — 24x24,
+            // `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
+            // `penetrate = 3`) and 819 the Blood Rain arrow (`:7993-8002` —
+            // `extraUpdates = 1`, `alpha`/`hide` dropped): 10x10 aiStyle-1
+            // arrows, `timeLeft = 1200` (485's 24x24 box aside).
+            117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false),
+            469 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false),
+            495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false),
+            819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false),
+            // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
+            // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
+            // `ignoreWater` dropped — its local-immunity pair
+            // (`localNPCHitCooldown = 60`) rides the overlay below.
+            932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false),
             _ => return None,
         };
+    // The `SetDefaults` inner ifs that add the local-immunity pair on top of
+    // the row above: `:2222-2338`'s 133/136/139/142, `:7939-7952`'s
+    // 777/781/785/788/794/797/800 (the C# lists 800 twice — harmless) and
+    // `:8842-8856`'s 932. Every other kind — including every row that predates
+    // the two schema fields — keeps the pool defaults (`:464`: false / −2).
+    let (uses_local_immunity, local_hit_cooldown) = match kind {
+        133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
+        932 => (true, 60),
+        _ => (false, -2),
+    };
     Some(ProjData {
         w,
         h,
@@ -392,6 +504,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         tile_collide,
         arrow,
         trap,
+        uses_local_immunity,
+        local_hit_cooldown,
     })
 }
 
@@ -1058,8 +1172,9 @@ impl ProjectilePool {
 
     /// `NewProjectile` + `SetDefaults` in one: applies the family's
     /// [`proj_data`] slice (the box, the penetrate/timeLeft overrides, the
-    /// extraUpdates) on top of the spawn arguments. `None` when the kind has
-    /// no ported data — the caller decides whether that is fatal.
+    /// extraUpdates and the local-immunity pair) on top of the spawn
+    /// arguments. `None` when the kind has no ported data — the caller decides
+    /// whether that is fatal.
     pub fn spawn_with_data(
         &mut self,
         kind: u16,
@@ -1110,8 +1225,8 @@ impl ProjectilePool {
             time_left: data.time_left,
             max_penetrate: data.penetrate,
             penetrate: data.penetrate,
-            uses_local_immunity: false,
-            local_hit_cooldown: -2,
+            uses_local_immunity: data.uses_local_immunity,
+            local_hit_cooldown: data.local_hit_cooldown,
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: data.extra_updates,
@@ -2296,5 +2411,277 @@ mod bomb_tests {
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the gravity tail adds 0.2"
         );
+    }
+}
+
+#[cfg(test)]
+mod ammo_proj_tests {
+    use super::*;
+
+    /// DW-2.1: every kind in the resolved-projectile set (Phase 1's pair table
+    /// + the per-weapon overrides) carries a `proj_data` row with the vanilla
+    /// `Projectile.cs` values — the rows that stop `spawn_with_data_ai`'s
+    /// silent no-op. `friendly`/`ranged` have no consumer, so neither rides
+    /// the tuple.
+    #[test]
+    fn test_DW_2_1_the_resolved_kinds_all_have_rows() {
+        // The launcher rockets (`Projectile.cs:2222-2338`): 14x14, aiStyle 16,
+        // penetrate -1, the stock timeLeft; 133/136/139/142 add the
+        // local-immunity pair.
+        for kind in 133..=144u16 {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} has no row"));
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 16, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            let immune = matches!(kind, 133 | 136 | 139 | 142);
+            assert_eq!(d.uses_local_immunity, immune, "kind {kind}");
+            assert_eq!(
+                d.local_hit_cooldown,
+                if immune { -1 } else { -2 },
+                "kind {kind}"
+            );
+        }
+        // The Snowman Cannon's rockets (`:4308-4320`) — the same row; the
+        // dropped `scale = 0.9` keeps the 14x14 box and the immunity default.
+        for kind in 338..=341u16 {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 16, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, -2, "kind {kind}");
+        }
+        // The 1.4.4 rocket family (`:7939-7952`): the eight rockets per
+        // launcher (776-801) plus the Snowman Cannon's 803-810; the
+        // local-immunity pair rides 777/781/785/788/794/797/800.
+        for kind in (776..=801u16).filter(|k| !matches!(k, 779 | 783)) {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} has no row"));
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 16, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            let immune = matches!(kind, 777 | 781 | 785 | 788 | 794 | 797 | 800);
+            assert_eq!(d.uses_local_immunity, immune, "kind {kind}");
+            assert_eq!(
+                d.local_hit_cooldown,
+                if immune { -1 } else { -2 },
+                "kind {kind}"
+            );
+        }
+        for kind in 803..=810u16 {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 16, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+        }
+        // 779/783 sit inside the C# range but no launcher resolves to them —
+        // the scope list excludes them, so the row-less Kinds stay row-less.
+        assert!(proj_data(779).is_none());
+        assert!(proj_data(783).is_none());
+        // The Celebration rockets (`:7584-7605`): aiStyle 147 (the unported
+        // stand-in), penetrate 1, extraUpdates 2 and
+        // `timeLeft = 360 * MaxUpdates` = 360 × (2 + 1) = 1080
+        // (`MaxUpdates`'s getter, `:554-561`).
+        for kind in 715..=718u16 {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 147, "kind {kind}");
+            assert_eq!(d.penetrate, 1, "kind {kind}");
+            assert_eq!(d.extra_updates, 2, "kind {kind}");
+            assert_eq!(d.time_left, 1080, "kind {kind}");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+        }
+        // The four gunProj rockets (`:6618-6630` 615, `:6767-6779` 630/705,
+        // `:7571-7582` 714): 22x22, aiStyle 75 (unported), penetrate -1,
+        // `tileCollide = false`, the stock timeLeft.
+        for kind in [615u16, 630, 705, 714] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (22.0, 22.0), "kind {kind}");
+            assert_eq!(d.ai_style, 75, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+        }
+        // The sand family (`:1248-1258`, `:1449-1462`, `:1470-1480`,
+        // `:4438-4449`): 10x10, aiStyle 10 (unported), extraUpdates 1; 42
+        // keeps the stock penetrate 1 (its arm sets none), the three
+        // sand-block conversions penetrate -1.
+        let sand = proj_data(42).unwrap();
+        assert_eq!((sand.w, sand.h), (10.0, 10.0));
+        assert_eq!(sand.ai_style, 10);
+        assert_eq!(sand.extra_updates, 1);
+        assert_eq!(sand.penetrate, 1);
+        assert!(sand.tile_collide);
+        assert!(!sand.arrow);
+        for kind in [65u16, 68, 354] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
+            assert_eq!(d.ai_style, 10, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.extra_updates, 1, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+        }
+        // The arrow overrides: 117 (`:2058-2068`, extraUpdates 2), 469
+        // (`:5429-5441`), 495 (`:5681-5692`, penetrate 3), 819
+        // (`:7993-8002`, extraUpdates 1) — 10x10 aiStyle-1 arrows with
+        // timeLeft 1200.
+        for (kind, pen, extra) in [(117u16, 1, 2), (469, 1, 0), (495, 3, 0), (819, 1, 1)] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
+            assert_eq!(d.ai_style, 1, "kind {kind}");
+            assert_eq!(d.penetrate, pen, "kind {kind}");
+            assert_eq!(d.extra_updates, extra, "kind {kind}");
+            assert_eq!(d.time_left, 1200, "kind {kind}");
+            assert!(d.arrow, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+        }
+        // The Hellwing 485 (`:5604-5615`): the 24x24 box, penetrate -1.
+        let hellwing = proj_data(485).unwrap();
+        assert_eq!((hellwing.w, hellwing.h), (24.0, 24.0));
+        assert_eq!(hellwing.ai_style, 1);
+        assert_eq!(hellwing.penetrate, -1);
+        assert_eq!(hellwing.time_left, 1200);
+        assert!(hellwing.arrow);
+        // The fairy shot 932 (`:8842-8856`): aiStyle 181 (unported), penetrate
+        // 5, timeLeft 120 and the only row whose immunity pair carries a real
+        // cooldown (60).
+        let fairy = proj_data(932).unwrap();
+        assert_eq!((fairy.w, fairy.h), (10.0, 10.0));
+        assert_eq!(fairy.ai_style, 181);
+        assert_eq!(fairy.penetrate, 5);
+        assert_eq!(fairy.time_left, 120);
+        assert!(fairy.arrow);
+        assert_eq!(fairy.extra_updates, 0);
+        assert!(fairy.uses_local_immunity);
+        assert_eq!(fairy.local_hit_cooldown, 60);
+    }
+
+    /// DW-2.2: the rows reach the pool — the Rocket Launcher's RocketI (134),
+    /// the Snowman Cannon's 338 and the Cluster Rocket I's 776 spawn through
+    /// `spawn_with_data_ai` with the row's box and immunity data; the
+    /// damage/knockback stay the spawner's input.
+    #[test]
+    fn test_DW_2_2_the_rows_reach_the_spawner() {
+        let mut pool = ProjectilePool::new();
+        for kind in [134u16, 338, 776] {
+            let row = proj_data(kind).unwrap();
+            let slot = pool
+                .spawn_with_data_ai(kind, 160.0, 200.0, 4.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            let p = &pool.slots[slot];
+            assert_eq!(p.kind, kind);
+            assert_eq!((p.w, p.h), (row.w, row.h), "kind {kind}");
+            assert_eq!(p.time_left, row.time_left, "kind {kind}");
+            assert_eq!(p.penetrate, row.penetrate, "kind {kind}");
+            assert_eq!(p.max_penetrate, row.penetrate, "kind {kind}");
+            assert_eq!(p.extra_updates, row.extra_updates, "kind {kind}");
+            assert_eq!(p.tile_collide, row.tile_collide, "kind {kind}");
+            assert_eq!(
+                p.uses_local_immunity, row.uses_local_immunity,
+                "kind {kind}"
+            );
+            assert_eq!(p.local_hit_cooldown, row.local_hit_cooldown, "kind {kind}");
+            // None of the three carries the immunity pair: the C#'s lists are
+            // 133/136/139/142 (`:2222-2338`) and 777/781/785/788/794/797/800
+            // (`:7939-7952`) — 776 is a plain Rocket-Launcher rocket — and the
+            // Snowman Cannon's rows set none. The immunity-carrying rows are
+            // pinned in the DW-2.1 table and the per-family spawn test.
+            assert!(!p.uses_local_immunity, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, -2, "kind {kind}");
+            // `NewProjectile`'s parameters ride after `SetDefaults`
+            // (`:10858-10880`): the damage/knockback inputs win.
+            assert_eq!(p.damage, 40, "kind {kind}");
+            assert_eq!(p.knock_back, 2.0, "kind {kind}");
+        }
+    }
+
+    /// The rest of the resolved families reach the pool (the Test Plan's
+    /// per-family spawn assertions): the sand family, the four gunProj
+    /// rockets, the Celebration rockets, the arrow overrides and the fairy
+    /// shot — whose 932 row is the only one carrying the cooldown-60 immunity
+    /// pair end to end.
+    #[test]
+    fn test_the_resolved_rows_reach_the_pool_per_family() {
+        // (kind, w, h, penetrate, extra_updates, time_left, uses_local,
+        //  local_hit_cooldown)
+        let cases: &[(u16, f32, f32, i32, u32, i32, bool, i32)] = &[
+            (42, 10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, false, -2),
+            (65, 10.0, 10.0, -1, 1, TIME_LEFT_DEFAULT, false, -2),
+            (68, 10.0, 10.0, -1, 1, TIME_LEFT_DEFAULT, false, -2),
+            (354, 10.0, 10.0, -1, 1, TIME_LEFT_DEFAULT, false, -2),
+            (615, 22.0, 22.0, -1, 0, TIME_LEFT_DEFAULT, false, -2),
+            (630, 22.0, 22.0, -1, 0, TIME_LEFT_DEFAULT, false, -2),
+            (705, 22.0, 22.0, -1, 0, TIME_LEFT_DEFAULT, false, -2),
+            (714, 22.0, 22.0, -1, 0, TIME_LEFT_DEFAULT, false, -2),
+            (715, 14.0, 14.0, 1, 2, 1080, false, -2),
+            (716, 14.0, 14.0, 1, 2, 1080, false, -2),
+            (717, 14.0, 14.0, 1, 2, 1080, false, -2),
+            (718, 14.0, 14.0, 1, 2, 1080, false, -2),
+            (117, 10.0, 10.0, 1, 2, 1200, false, -2),
+            (469, 10.0, 10.0, 1, 0, 1200, false, -2),
+            (485, 24.0, 24.0, -1, 0, 1200, false, -2),
+            (495, 10.0, 10.0, 3, 0, 1200, false, -2),
+            (819, 10.0, 10.0, 1, 1, 1200, false, -2),
+            (932, 10.0, 10.0, 5, 0, 120, true, 60),
+        ];
+        let mut pool = ProjectilePool::new();
+        for &(kind, w, h, pen, extra, time_left, immune, cd) in cases {
+            let row = proj_data(kind).unwrap();
+            let slot = pool
+                .spawn_with_data(kind, 160.0, 200.0, 4.0, 0.0, 40, 2.0)
+                .unwrap();
+            let p = &pool.slots[slot];
+            assert_eq!(p.kind, kind, "kind {kind}");
+            assert_eq!((p.w, p.h), (w, h), "kind {kind}");
+            assert_eq!(p.penetrate, pen, "kind {kind}");
+            assert_eq!(p.max_penetrate, pen, "kind {kind}");
+            assert_eq!(p.extra_updates, extra, "kind {kind}");
+            assert_eq!(p.time_left, time_left, "kind {kind}");
+            assert_eq!(p.uses_local_immunity, immune, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, cd, "kind {kind}");
+            assert_eq!(p.damage, 40, "kind {kind}");
+            assert_eq!(p.knock_back, 2.0, "kind {kind}");
+            // The spawner feeds from the row — the two agree.
+            assert_eq!((row.w, row.h), (w, h), "kind {kind}");
+            assert_eq!(row.penetrate, pen, "kind {kind}");
+            assert_eq!(row.extra_updates, extra, "kind {kind}");
+            assert_eq!(row.time_left, time_left, "kind {kind}");
+            assert_eq!(row.uses_local_immunity, immune, "kind {kind}");
+            assert_eq!(row.local_hit_cooldown, cd, "kind {kind}");
+        }
+    }
+
+    /// The two new schema fields leave every existing row on the pool
+    /// defaults — the Phase 2 freeze (no behaviour change for existing
+    /// spawns), and the poison dart's deferred `:6953-6968` immunity pair
+    /// stays recorded in the module doc until a follow-up.
+    #[test]
+    fn test_the_resolved_rows_leave_the_existing_spawns_untouched() {
+        for kind in [
+            WOODEN_ARROW,
+            FLAME_ARROW,
+            MUSKET_BALL,
+            POISON_DART,
+            TRAP_SPEAR,
+            BOMB,
+        ] {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, -2, "kind {kind}");
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(POISON_DART, 160.0, 200.0, 4.0, 0.0, 10, 0.0)
+            .unwrap();
+        let p = &pool.slots[slot];
+        assert!(!p.uses_local_immunity);
+        assert_eq!(p.local_hit_cooldown, -2);
+        assert_eq!((p.w, p.h), (10.0, 10.0));
+        assert_eq!(p.extra_updates, 5);
+        assert_eq!(p.damage, 10);
     }
 }
