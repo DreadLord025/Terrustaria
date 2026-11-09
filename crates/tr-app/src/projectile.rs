@@ -263,6 +263,39 @@ pub const YOYO_KINDS: [u16; 21] = [
     TERRARIAN_YOYO,
     HIVE_FIVE,
 ];
+/// The flail family (aiStyle 15 — `AI_015_Flails` `Projectile.cs:43724-44169`).
+/// Every row rides `DefaultToFlail()` (`:10753-10762`: aiStyle 15, drawLayer 7,
+/// friendly, `penetrate = -1`, melee, `usesLocalNPCImmunity` with
+/// `localNPCHitCooldown = 10`); the per-kind `SetDefaults` rows set the boxes.
+pub const BALL_O_HURT: u16 = 25;
+pub const BLUE_MOON: u16 = 26;
+pub const SUNFURY: u16 = 35;
+pub const DAO_OF_POW: u16 = 63;
+pub const THE_MEATBALL: u16 = 154;
+pub const FLOWER_POW: u16 = 247;
+pub const DRIPPLER_FLAIL: u16 = 757;
+pub const MACE: u16 = 947;
+pub const FLAMING_MACE: u16 = 948;
+pub const FLAIRON: u16 = 1058;
+/// The whole aiStyle-15 weapon set — the kinds `DefaultToFlail` covers.
+pub const FLAIL_KINDS: [u16; 10] = [
+    BALL_O_HURT,
+    BLUE_MOON,
+    SUNFURY,
+    DAO_OF_POW,
+    THE_MEATBALL,
+    FLOWER_POW,
+    DRIPPLER_FLAIL,
+    MACE,
+    FLAMING_MACE,
+    FLAIRON,
+];
+/// The flail family's helper projectiles: the Drippler's extra ball 928
+/// (`Projectile.cs:8793`), the Flower Pow petal 248 (`:3306`) and the Flairon
+/// bubble 405 (`:4857`).
+pub const DRIPPLER_EXTRA_BALL: u16 = 928;
+pub const FLOWER_POW_PETAL: u16 = 248;
+pub const FLAIRON_BUBBLE: u16 = 405;
 /// `ProjectileID.Bomb` (`Projectile.cs:1106-1112`).
 pub const BOMB: u16 = 28;
 /// `ProjectileID.Dynamite` (`Projectile.cs:1113-1121`).
@@ -499,6 +532,111 @@ struct YoyoTick {
     beam: Option<YoyoBeamRequest>,
 }
 
+/// The shared (non-per-kind) locals of `AI_015_Flails`
+/// (`Projectile.cs:43746-43760`), with the meleeSpeed-scaled ones marked.
+const FLAIL_THROW_MAX_DISTANCE: f32 = 800.0; // num3
+const FLAIL_RETRACT_ACCEL: f32 = 3.0; // num4 (scaled)
+const FLAIL_REEL_ACCEL: f32 = 6.0; // num6 (scaled)
+const FLAIL_SPIN_SOFT_ACCEL: f32 = 1.0; // num8 (scaled)
+const FLAIL_SPIN_PULL_SPEED: f32 = 14.0; // num9 (scaled)
+const FLAIL_SPIN_INNER_RADIUS: f32 = 60.0; // num10
+const FLAIL_HELD_NPC_COOLDOWN: f32 = 10.0; // num11
+const FLAIL_FLIGHT_NPC_COOLDOWN: f32 = 10.0; // num13
+
+/// `AI_015_Flails`'s per-kind parameter locals — the switch at
+/// `Projectile.cs:43761-43823` on top of the defaults. The C# scales
+/// `num2/num4/num5/num6/num7/num8/num9` by `1f / player.meleeSpeed` at
+/// `:43824-43831`; the AI applies that to the speed/accel fields once.
+#[derive(Clone, Copy)]
+pub struct FlailParams {
+    /// `num` — the state-1 flight ticks before the retract transition.
+    pub flight_ticks: f32,
+    /// `num2` — the throw speed (px/tick).
+    pub throw_speed: f32,
+    /// `num5` — the state-2 retract speed (and its kill distance).
+    pub retract_speed: f32,
+    /// `num7` — the state-4 reel-in kill distance.
+    pub reel_kill_distance: f32,
+    /// `num12` — the held state's `localNPCHitCooldown`.
+    pub spin_npc_cooldown: f32,
+    /// `num15` — the held-orbit radius around the mounted center.
+    pub orbit_radius: f32,
+}
+
+/// The per-kind switch verbatim (`Projectile.cs:43761-43823`); an unlisted
+/// kind keeps the shared defaults (`num 10, num2 24, num5 16, num7 48, num12
+/// 15, num15 30`). `num14 = num + 5f` (`:43759`) is derived, not stored.
+const FLAIL_PARAMS: &[(u16, FlailParams)] = &[
+    // 947/948 — the Mace/Flaming Mace pair shares one row.
+    (
+        MACE,
+        FlailParams { flight_ticks: 13.0, throw_speed: 12.0, retract_speed: 8.0, reel_kill_distance: 13.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    (
+        FLAMING_MACE,
+        FlailParams { flight_ticks: 13.0, throw_speed: 12.0, retract_speed: 8.0, reel_kill_distance: 13.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 25 Ball O' Hurt.
+    (
+        BALL_O_HURT,
+        FlailParams { flight_ticks: 15.0, throw_speed: 14.0, retract_speed: 10.0, reel_kill_distance: 15.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 154 The Meatball.
+    (
+        THE_MEATBALL,
+        FlailParams { flight_ticks: 15.0, throw_speed: 15.0, retract_speed: 11.0, reel_kill_distance: 16.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 26 Blue Moon.
+    (
+        BLUE_MOON,
+        FlailParams { flight_ticks: 15.0, throw_speed: 16.0, retract_speed: 13.0, reel_kill_distance: 17.0, spin_npc_cooldown: 15.0, orbit_radius: 32.0 },
+    ),
+    // 35 Sunfury.
+    (
+        SUNFURY,
+        FlailParams { flight_ticks: 15.0, throw_speed: 17.0, retract_speed: 14.0, reel_kill_distance: 18.0, spin_npc_cooldown: 15.0, orbit_radius: 37.0 },
+    ),
+    // 63 The Dao of Pow.
+    (
+        DAO_OF_POW,
+        FlailParams { flight_ticks: 13.0, throw_speed: 21.0, retract_speed: 20.0, reel_kill_distance: 24.0, spin_npc_cooldown: 12.0, orbit_radius: 30.0 },
+    ),
+    // 757 Drippler Flail.
+    (
+        DRIPPLER_FLAIL,
+        FlailParams { flight_ticks: 13.0, throw_speed: 22.0, retract_speed: 22.0, reel_kill_distance: 26.0, spin_npc_cooldown: 12.0, orbit_radius: 35.0 },
+    ),
+    // 247 Flower Pow.
+    (
+        FLOWER_POW,
+        FlailParams { flight_ticks: 13.0, throw_speed: 23.0, retract_speed: 16.0, reel_kill_distance: 48.0, spin_npc_cooldown: 12.0, orbit_radius: 40.0 },
+    ),
+    // 1058 Flairon.
+    (
+        FLAIRON,
+        FlailParams { flight_ticks: 16.0, throw_speed: 23.0, retract_speed: 16.0, reel_kill_distance: 48.0, spin_npc_cooldown: 10.0, orbit_radius: 45.0 },
+    ),
+];
+
+/// The flail family's parameters — the lookup the AI runs once per tick.
+/// `Projectile.cs:43746-43831`'s table semantics.
+pub fn flail_params(kind: u16) -> FlailParams {
+    FLAIL_PARAMS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or(
+            FlailParams {
+                flight_ticks: 10.0,
+                throw_speed: 24.0,
+                retract_speed: 16.0,
+                reel_kill_distance: 48.0,
+                spin_npc_cooldown: 15.0,
+                orbit_radius: 30.0,
+            },
+            |(_, p)| *p,
+        )
+}
+
 /// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
 /// the SetDefaults body; every other kind (and the unlisted yoyos) keeps the
 /// stock 1f.
@@ -511,6 +649,10 @@ fn set_defaults_scale(kind: u16) -> f32 {
         563 => 1.05,
         564 => 1.075,
         603 => 1.15,
+        // The flail family's per-kind `scale` (`Projectile.cs`'s SetDefaults
+        // rows; the unlisted flails keep the stock 1f).
+        25 => 0.9,
+        26 | 35 | 154 => 0.8,
         _ => 1.0,
     }
 }
@@ -632,6 +774,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
                 (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
             }
+            // The flail family (`DefaultToFlail` `:10753-10762` — aiStyle 15,
+            // `penetrate = -1`, melee, the local-immunity pair 10 via the
+            // overlay below); the boxes are the per-kind `SetDefaults` rows:
+            // 25/26/35/63/154 22×22 (`:1079`-`:2418`), 947/948 20×20 (`:8941`),
+            // 247/757 34×34 (`:3299`/`:7807`), 1058 26×26 (`:9998`).
+            BALL_O_HURT | BLUE_MOON | SUNFURY | DAO_OF_POW | THE_MEATBALL => {
+                (22.0, 22.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            MACE | FLAMING_MACE => (20.0, 20.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            FLOWER_POW | DRIPPLER_FLAIL => {
+                (34.0, 34.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            FLAIRON => (26.0, 26.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The flail family's helpers: the Drippler's extra ball 928
+            // (`:8793` — 34×34, aiStyle 14, `penetrate = 2`, `timeLeft = 250`),
+            // the Flower Pow petal 248 (`:3306` — 18×18, aiStyle 1, melee) and
+            // the Flairon bubble 405 (`:4857` — 14×14, aiStyle 70,
+            // `penetrate = 1`, `timeLeft = 120`; its `alpha = 255` rides the
+            // spawn site). The flail AI spawns all three.
+            DRIPPLER_EXTRA_BALL => (34.0, 34.0, 14, 2, 250, 0, true, false, false),
+            FLOWER_POW_PETAL => (18.0, 18.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            FLAIRON_BUBBLE => (14.0, 14.0, 70, 1, 120, 0, true, false, false),
             // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
             // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
             // ticks for the bombs, 300 for the dynamite. The sticky set
@@ -799,6 +963,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
         85 => (true, -1),
         932 => (true, 60),
+        // `DefaultToFlail`'s pair (`:10753-10762`) — the ten flail kinds.
+        BALL_O_HURT | BLUE_MOON | SUNFURY | DAO_OF_POW | THE_MEATBALL | FLOWER_POW
+        | DRIPPLER_FLAIL | MACE | FLAMING_MACE | FLAIRON => (true, 10),
         _ => (false, -2),
     };
     Some(ProjData {
@@ -3349,6 +3516,107 @@ mod bomb_tests {
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the gravity tail adds 0.2"
         );
+    }
+
+    #[test]
+    fn the_flail_data_is_verbatim() {
+        // `Projectile.cs`'s SetDefaults + `DefaultToFlail` (`:10753-10762`):
+        // every flail kind is aiStyle 15, `penetrate = -1`, melee, the
+        // local-immunity pair (usesLocalNPCImmunity, cooldown 10), with the
+        // per-kind boxes and scales.
+        let boxes = [
+            (BALL_O_HURT, (22.0, 22.0), 0.9),
+            (BLUE_MOON, (22.0, 22.0), 0.8),
+            (SUNFURY, (22.0, 22.0), 0.8),
+            (DAO_OF_POW, (22.0, 22.0), 1.0),
+            (THE_MEATBALL, (22.0, 22.0), 0.8),
+            (FLOWER_POW, (34.0, 34.0), 1.0),
+            (DRIPPLER_FLAIL, (34.0, 34.0), 1.0),
+            (MACE, (20.0, 20.0), 1.0),
+            (FLAMING_MACE, (20.0, 20.0), 1.0),
+            (FLAIRON, (26.0, 26.0), 1.0),
+        ];
+        for (kind, (w, h), scale) in boxes {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} has no row"));
+            assert_eq!((d.w, d.h), (w, h), "kind {kind}'s box");
+            assert_eq!(d.ai_style, 15, "kind {kind}'s aiStyle");
+            assert_eq!(d.penetrate, -1, "kind {kind}'s penetrate");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}'s timeLeft");
+            assert_eq!(d.extra_updates, 0, "kind {kind}'s extraUpdates");
+            assert!(d.tile_collide, "kind {kind}'s tileCollide");
+            assert_eq!(d.scale, scale, "kind {kind}'s SetDefaults scale");
+            assert!(d.uses_local_immunity, "kind {kind}'s local immunity arm");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {kind}'s localNPCHitCooldown");
+        }
+        // The helper rows (`:8793` 928, `:3306` 248, `:4857` 405).
+        let ball = proj_data(DRIPPLER_EXTRA_BALL).unwrap();
+        assert_eq!((ball.w, ball.h, ball.ai_style, ball.penetrate), (34.0, 34.0, 14, 2));
+        assert_eq!(ball.time_left, 250);
+        let petal = proj_data(FLOWER_POW_PETAL).unwrap();
+        assert_eq!((petal.w, petal.h, petal.ai_style), (18.0, 18.0, 1));
+        let bubble = proj_data(FLAIRON_BUBBLE).unwrap();
+        assert_eq!(
+            (bubble.w, bubble.h, bubble.ai_style, bubble.penetrate, bubble.time_left),
+            (14.0, 14.0, 70, 1, 120)
+        );
+    }
+
+    #[test]
+    fn the_flail_params_table_is_verbatim() {
+        // `Projectile.cs:43761-43823`'s per-kind switch; the names carry the
+        // C# locals so a future re-read of the C# words re-checks itself.
+        let want = [
+            // (kind, num, num2, num5, num7, num12, num15)
+            (MACE, 13.0, 12.0, 8.0, 13.0, 15.0, 30.0),
+            (FLAMING_MACE, 13.0, 12.0, 8.0, 13.0, 15.0, 30.0),
+            (BALL_O_HURT, 15.0, 14.0, 10.0, 15.0, 15.0, 30.0),
+            (THE_MEATBALL, 15.0, 15.0, 11.0, 16.0, 15.0, 30.0),
+            (BLUE_MOON, 15.0, 16.0, 13.0, 17.0, 15.0, 32.0),
+            (SUNFURY, 15.0, 17.0, 14.0, 18.0, 15.0, 37.0),
+            (DAO_OF_POW, 13.0, 21.0, 20.0, 24.0, 12.0, 30.0),
+            (DRIPPLER_FLAIL, 13.0, 22.0, 22.0, 26.0, 12.0, 35.0),
+            (FLOWER_POW, 13.0, 23.0, 16.0, 48.0, 12.0, 40.0),
+            (FLAIRON, 16.0, 23.0, 16.0, 48.0, 10.0, 45.0),
+        ];
+        for (kind, num, num2, num5, num7, num12, num15) in want {
+            let p = flail_params(kind);
+            assert_eq!(
+                (p.flight_ticks, p.throw_speed, p.retract_speed, p.reel_kill_distance, p.spin_npc_cooldown, p.orbit_radius),
+                (num, num2, num5, num7, num12, num15),
+                "kind {kind}'s parameter row"
+            );
+        }
+        // The unlisted defaults (`:43746-43760`).
+        let base = flail_params(1);
+        assert_eq!(
+            (base.flight_ticks, base.throw_speed, base.retract_speed, base.reel_kill_distance, base.spin_npc_cooldown, base.orbit_radius),
+            (10.0, 24.0, 16.0, 48.0, 15.0, 30.0),
+            "the shared defaults"
+        );
+    }
+
+    #[test]
+    fn every_flail_kind_spawns_from_the_generic_throw() {
+        // The no-`proj_data` trap (`spawn_with_data_ai_owned` returns None):
+        // with the rows landed every flail kind spawns at the player center.
+        for kind in FLAIL_KINDS {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data_ai(kind, 100.0, 100.0, 1.0, 0.0, 15, 5.0, 0.0, 0.0);
+            assert!(slot.is_some(), "kind {kind} spawns");
+            let p = &pool.slots[slot.unwrap()];
+            assert_eq!(p.kind, kind);
+            assert_eq!(p.vel, Vec2::new(1.0, 0.0), "kind {kind} keeps the throw velocity");
+            assert_eq!(p.ai[0], 0.0, "kind {kind} starts in the hold state");
+        }
+        // Dirty: a kind with no row still spawns nothing (never panics).
+        assert!(pool_spawn_none_for_unknown());
+    }
+
+    fn pool_spawn_none_for_unknown() -> bool {
+        let mut pool = ProjectilePool::new();
+        // 60_000: a u16 id with no `proj_data` row (the vanilla set ends 5009).
+        pool.spawn_with_data_ai(60_000, 0.0, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0)
+            .is_none()
     }
 
     #[test]
