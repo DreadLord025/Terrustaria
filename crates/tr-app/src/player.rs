@@ -1064,11 +1064,11 @@ impl Player {
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
         self.cart_mounted = true;
-        // `:6226` — the minecart buff for 3600 ticks.
-        self.buffs.add_buff(CART_MOUNT_BUFF, 3600);
-        // The bottom-center resize 42 -> 52 (`:6266-6272` — the generic
-        // `heightBoost` branch; carts have no `PlayerSize` delegate).
-        self.y -= CART_MOUNT_HEIGHT - HEIGHT;
+        // M2-MOUNT-3: through the mount framework — `SetMount(6)` grants the
+        // row's buff 118 for 3600 (`:6226`) and applies the heightBoost 10
+        // bottom-center growth 42 -> 52 (`:6266-6272`). The same-id guard
+        // (`:6198`) keeps a re-mount a no-op, so the ride state stays.
+        self.set_mount(crate::mount::MOUNT_MINECART, self.wet);
     }
 
     /// `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the cart is not in
@@ -1097,13 +1097,22 @@ impl Player {
             return; // `:6146-6149` — the `!_active` guard
         }
         self.cart_mounted = false;
-        self.buffs.clear_buff(CART_MOUNT_BUFF); // `:6151`
+        // M2-MOUNT-3: the framework's `Dismount` clears the mount buff
+        // (`:6151`); the caller has already passed `CanDismountWithResult`,
+        // so the space probe inside would also succeed.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
         self.cart_flip = false; // `:6157-6160`
         self.last_boost = (0, 0);
         self.full_rotation = 0.0; // `:6161-6162`
         self.full_rotation_origin = (0.0, 0.0);
         self.on_track = false;
+        // The box restore: `mount_cart` now grows through the framework's
+        // `grow_hitbox` (`self.height = 52`), so the drop returns it to 42
+        // bottom-anchored (`:6182-6185`).
         self.y += CART_MOUNT_HEIGHT - HEIGHT;
+        self.height = HEIGHT;
     }
 
     /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
@@ -1245,6 +1254,14 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.buffs.clear_buff(CART_MOUNT_BUFF);
+        // M2-MOUNT-3: the cart row lives in `MountState` now, so the revive
+        // strip clears it like every other mount (`Player.cs:38908`) — the
+        // framework's dismount returns the box with it, and the spawn
+        // position is rebuilt below anyway.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
+        self.height = HEIGHT;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
         // revive clears the sit/sleep state.
         self.sit_up();

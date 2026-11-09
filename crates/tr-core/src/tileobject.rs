@@ -1411,12 +1411,48 @@ pub fn is_vine(kind: u16) -> bool {
     IS_VINE.contains(&kind)
 }
 
-fn not_really_solid(kind: u16) -> bool {
+pub(crate) fn not_really_solid(kind: u16) -> bool {
     NOT_REALLY_SOLID.contains(&kind)
+}
+
+/// `WorldGen.CanCutTile` (`WorldGen.cs:86828-86842`, the
+/// `TileCuttingContext.TilePlacement` arm — the context does not reach the
+/// body): the cell may be cut during placement when the tile below is not
+/// a pot/planter-box/seed-provider seat (78/380/579), the wall behind is
+/// not the unsafe dungeon wall 350, and a pumpkin (254) is ripe
+/// (`frameX >= 144` — the grown frame).
+pub(crate) fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
+    let (Some(here), Some(below)) = (world.tile(x, y), world.tile(x, y + 1)) else {
+        return false;
+    };
+    if here.wall != 350 && below.kind != 78 && below.kind != 380 && below.kind != 579 {
+        if here.kind == 254 {
+            return here.frame_x >= 144;
+        }
+        return true;
+    }
+    false
 }
 
 pub(crate) fn is_tile_table(kind: u16) -> bool {
     is_table(kind)
+}
+
+/// `WorldGen.IsOpenDoorAnchorFrame` (`WorldGen.cs:69171-69184`): the open
+/// door's 11 (framed off, type 11) whose frame column anchors a wall grid
+/// point — the columns 0..17 (the top frame) and 54..71 (the bottom).
+pub(crate) fn is_open_door_anchor_frame(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() || t.kind != 11 {
+        return false;
+    }
+    let num = t.frame_x % 72;
+    if num >= 18 {
+        return num >= 54;
+    }
+    true
 }
 
 pub(crate) fn is_table(kind: u16) -> bool {

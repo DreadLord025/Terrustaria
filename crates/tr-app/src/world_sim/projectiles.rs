@@ -40,6 +40,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     };
     // The closure's disjoint field captures keep the step borrow
     // (`projectile_step`) apart from the pool/world/npcs/player set.
+    // Only this machine's projectiles simulate here — a peer's shots ride
+    // the `27` wire (`Projectile.cs:17210`'s owner gate), and the
+    // server-owned hostile shots (owner 255) only on the host / single-player
+    // (`spawn_hostile`).
+    let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -48,6 +53,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             aim,
             app.player.as_mut(),
             &mut app.item_rng,
+            local_owner,
+            hostile_local,
         );
     });
     app.projectile_step.cap_backlog();

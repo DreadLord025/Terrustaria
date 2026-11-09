@@ -5,7 +5,7 @@ use glam::Vec2;
 use tr_core::TILE_PX;
 use winit::keyboard::KeyCode;
 
-use crate::app::{pan_step, App};
+use crate::app::App;
 
 /// The swapchain size in pixels (the deterministic fallback mirrors the
 /// `TR_SHOT`/headless default of 1280x720).
@@ -32,7 +32,7 @@ pub(crate) fn pan_camera(app: &mut App, dt: f32) {
     if dir != Vec2::ZERO {
         app.camera += dir.normalize() * 900.0 * dt / app.zoom;
     }
-    if let Some(step) = pan_step() {
+    if let Some(step) = crate::env::pan_step() {
         app.camera.x += step * TILE_PX;
     }
 }

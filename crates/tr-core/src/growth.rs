@@ -139,29 +139,247 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
 /// `WorldGen.IsTileTypeFitForTree` (`:29695-29710`).
 pub const TREE_SOILS: [u16; 12] = [2, 23, 60, 70, 109, 147, 199, 477, 492, 633, 661, 662];
 
+/// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
+/// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields: the
+/// app's weather clock passes the live values.
+#[derive(Clone, Copy, Default)]
+pub struct WeatherCtx {
+    /// `Main.raining`.
+    pub raining: bool,
+    /// `Main.cloudAlpha`.
+    pub cloud_alpha: f32,
+    /// `Main.remixWorld`.
+    pub remix_world: bool,
+}
+
+/// `WorldGen.IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+/// per-style condition an herb may be harvested with a seed in hand —
+/// style 0 daybloom (day), 1 moonglow (night), 3 deathweed (night +
+/// blood moon / full moon), 4 waterleaf (rain or any cloud), 5 fireblossom
+/// (dry or below the surface, late afternoon).
+pub fn is_alchemy_plant_harvestable(world: &World, style: i32, y: i32, wx: &WeatherCtx) -> bool {
+    if style == 0 && world.day_time {
+        return true;
+    }
+    if style == 1 && !world.day_time {
+        return true;
+    }
+    if style == 3 && !world.day_time && (world.blood_moon || world.moon_phase == 0) {
+        return true;
+    }
+    if style == 4 && (wx.raining || wx.cloud_alpha > 0.0) {
+        return true;
+    }
+    if style == 5 {
+        let mut flag = y as f64 > world.world_surface;
+        if wx.remix_world {
+            flag = y < world.height - 350;
+        }
+        // The C# `(!Main.raining | flag)` is the bitwise bool `|` — both
+        // operands are pure, so `||` is equivalent.
+        if ((!wx.raining || flag) && world.time > 40500.0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+/// the grown herbs 83/84 carry the seed-harvest arm — 84 always is, and
+/// 83 when its style's condition holds (the plain herb 82 never is).
+pub fn is_harvestable_herb_with_seed(
+    world: &World,
+    kind: u16,
+    style: i32,
+    y: i32,
+    wx: &WeatherCtx,
+) -> bool {
+    match kind {
+        82 => false,
+        83 | 84 => kind == 84 || is_alchemy_plant_harvestable(world, style, y, wx),
+        _ => false,
+    }
+}
+
 pub fn is_tile_type_fit_for_tree(kind: u16) -> bool {
     TREE_SOILS.contains(&kind)
 }
 
+/// `TileID.Sets.CommonSapling` (`TileID.cs:493`): the sapling tiles — the
+/// ash-tree sapling 20, the gem saplings 590, the sakura 595 and the
+/// willow 615. `EmptyTileCheck`'s `ignoreID` arm and the smart-cursor
+/// seed steps' proximity gates read it.
+pub const COMMON_SAPLINGS: [u16; 4] = [20, 590, 595, 615];
+
+/// Membership in [`COMMON_SAPLINGS`] (`TileID.Sets.CommonSapling`,
+/// `TileID.cs:493`).
+pub fn is_common_sapling(kind: u16) -> bool {
+    COMMON_SAPLINGS.contains(&kind)
+}
+
+/// `WorldGen.GemTreeGroundTest` (`WorldGen.cs:30304-30315`): the stone or
+/// moss conversion tiles — the gem trees' ground. The C#'s arrays are
+/// length `TileID.Count`, so a `u16` id is always in range and its
+/// `tileType < 0` guard is vacuous in the port.
+fn gem_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_CONVERSION_STONE.has(kind) || crate::tiledata::SET_CONVERSION_MOSS.has(kind)
+}
+
+/// `WorldGen.VanityTreeGroundTest` (`WorldGen.cs:30317-30328`): the grass
+/// conversion tiles minus the corruption/crimson pair (23/199).
+fn vanity_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_GRASS.has(kind) && kind != 23 && kind != 199
+}
+
+/// `WorldGen.AshTreeGroundTest` (`WorldGen.cs:30330-30341`): ash grass only.
+fn ash_tree_ground_test(kind: u16) -> bool {
+    kind == 633
+}
+
+/// `WorldGen.GrowTreeSettings` (`WorldGen.cs:3825-4048`'s struct): one
+/// gem/vanity/ash tree profile. The C#'s `GroundTest`/`WallTest` delegates
+/// are the port's [`GroundTestKind`]; the wall arm stays out — no
+/// smart-cursor step reads it (the C#'s other callers do).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GrowTreeSettings {
+    /// `GroundTest` — the delegate the C# stores per profile.
+    pub ground: GroundTestKind,
+    /// `TreeTileType` — the tree-top tile the profile grows.
+    pub tree_tile_type: u16,
+    /// `TreeHeightMin`.
+    pub tree_height_min: i32,
+    /// `TreeHeightMax`.
+    pub tree_height_max: i32,
+    /// `TreeTopPaddingNeeded`.
+    pub tree_top_padding_needed: i32,
+    /// `SaplingTileType` — the profile's sapling (`EmptyTileCheck`'s
+    /// ignore id and the proximity gate's set).
+    pub sapling_tile_type: u16,
+}
+
+/// The C#'s `GrowTreeSettings.Profiles`' `GroundTest` delegates
+/// (`WorldGen.cs:30304-30341`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroundTestKind {
+    /// `WorldGen.GemTreeGroundTest`.
+    Gem,
+    /// `WorldGen.VanityTreeGroundTest`.
+    Vanity,
+    /// `WorldGen.AshTreeGroundTest`.
+    Ash,
+}
+
+impl GroundTestKind {
+    /// The delegate's call (the C#'s `profile.GroundTest(tileType)`).
+    pub fn test(&self, kind: u16) -> bool {
+        match self {
+            GroundTestKind::Gem => gem_tree_ground_test(kind),
+            GroundTestKind::Vanity => vanity_tree_ground_test(kind),
+            GroundTestKind::Ash => ash_tree_ground_test(kind),
+        }
+    }
+}
+
+impl GrowTreeSettings {
+    /// The C#'s `Profiles` static table (`WorldGen.cs:3930-4022`): every
+    /// gem tree shares the heights 12/7, the padding 4 and the sapling 590;
+    /// the sakura's sapling is 595, the willow's 615 and the ash's 20.
+    pub const GEM_TREE_RUBY: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Gem,
+        tree_tile_type: 587,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 590,
+    };
+    /// `Profiles.GemTree_Diamond` (`WorldGen.cs:3942`).
+    pub const GEM_TREE_DIAMOND: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 588, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Topaz` (`WorldGen.cs:3952`).
+    pub const GEM_TREE_TOPAZ: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 583, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amethyst` (`WorldGen.cs:3962`).
+    pub const GEM_TREE_AMETHYST: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 584, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Sapphire` (`WorldGen.cs:3972`).
+    pub const GEM_TREE_SAPPHIRE: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 585, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Emerald` (`WorldGen.cs:3982`).
+    pub const GEM_TREE_EMERALD: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 586, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amber` (`WorldGen.cs:3992`).
+    pub const GEM_TREE_AMBER: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 589, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.VanityTree_Sakura` (`WorldGen.cs:4002`).
+    pub const VANITY_TREE_SAKURA: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 596,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 595,
+    };
+    /// `Profiles.VanityTree_Willow` (`WorldGen.cs:4012`).
+    pub const VANITY_TREE_WILLOW: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 616,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 615,
+    };
+    /// `Profiles.Tree_Ash` (`WorldGen.cs:4022`).
+    pub const TREE_ASH: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Ash,
+        tree_tile_type: 634,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 20,
+    };
+}
+
+/// `WorldGen.GrowTreeSettings.Profiles.TryGetFromItemId`
+/// (`WorldGen.cs:3853-3884`): the seed items that carry a profile — the
+/// seven gem seeds 4851-4857, the willow 4907 and the sakura 4871. (The
+/// ash profile's only entry is `TryGetFromTreeId`'s tree tile 634 — the
+/// C# has no ash SEED item, so no item id reaches it here.)
+pub fn grow_tree_profile_from_item(item: u16) -> Option<GrowTreeSettings> {
+    match item {
+        4857 => Some(GrowTreeSettings::GEM_TREE_AMBER),
+        4852 => Some(GrowTreeSettings::GEM_TREE_AMETHYST),
+        4856 => Some(GrowTreeSettings::GEM_TREE_DIAMOND),
+        4854 => Some(GrowTreeSettings::GEM_TREE_EMERALD),
+        4855 => Some(GrowTreeSettings::GEM_TREE_RUBY),
+        4853 => Some(GrowTreeSettings::GEM_TREE_SAPPHIRE),
+        4851 => Some(GrowTreeSettings::GEM_TREE_TOPAZ),
+        4907 => Some(GrowTreeSettings::VANITY_TREE_WILLOW),
+        4871 => Some(GrowTreeSettings::VANITY_TREE_SAKURA),
+        _ => None,
+    }
+}
+
 /// `WorldGen.EmptyTileCheck(startX, endX, startY, endY, ignoreID = 20)`
-/// (`:31453-31520`'s shape): every cell in the box is inactive (or the
-/// ignored sapling kind — `TileID.Sets.CommonSapling[20]` makes flag=true).
+/// (`:31453-31520`): every cell in the box is inactive — or a
+/// `CommonSapling` when the passed `ignoreID` is itself a sapling (the
+/// C#'s two-part flag arm, `:31471-31475` + `:31501`).
 pub fn empty_tile_check(
     world: &World,
     start_x: i32,
     end_x: i32,
     start_y: i32,
     end_y: i32,
-    ignore: Option<u16>,
+    ignore_id: Option<u16>,
 ) -> bool {
     if start_x < 0 || end_x >= world.width as i32 || start_y < 0 || end_y >= world.height as i32 {
         return false;
     }
+    let flag = ignore_id.is_some_and(is_common_sapling);
     for x in start_x..=end_x {
         for y in start_y..=end_y {
             let t = world.tile(x, y);
             if let Some(t) = t {
-                if t.active() && Some(t.kind) != ignore {
+                if t.active() && !(flag && is_common_sapling(t.kind)) {
                     return false;
                 }
             }
@@ -1155,5 +1373,68 @@ mod tests {
         // The frozen time picks nothing.
         let picks = update_world(&mut w, 1, false, true, true, &mut rng);
         assert_eq!(picks, 0);
+    }
+
+    #[test]
+    fn the_alch_harvest_matrix_runs_the_style_conditions() {
+        // `IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+        // per-style gates, against a daytime world under the surface
+        // (world_surface = 100 in the 4200×400 fixture).
+        let mut w = world();
+        let dry = WeatherCtx::default();
+        let rainy = WeatherCtx {
+            raining: true,
+            ..WeatherCtx::default()
+        };
+        // style 0 (daybloom): day only.
+        w.day_time = true;
+        assert!(is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        w.day_time = false;
+        assert!(!is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        // style 1 (moonglow): night only.
+        assert!(is_alchemy_plant_harvestable(&w, 1, 120, &dry));
+        // style 3 (deathweed): night + (blood moon or full moon) — the
+        // fixture's moon_phase 0 is the full moon.
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.moon_phase = 4;
+        assert!(!is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = true;
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = false;
+        // style 4 (waterleaf): rain or any cloud.
+        assert!(!is_alchemy_plant_harvestable(&w, 4, 120, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &rainy));
+        let cloudy = WeatherCtx {
+            cloud_alpha: 0.1,
+            ..WeatherCtx::default()
+        };
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &cloudy));
+        // style 5 (fireblossom): late afternoon (the C#'s
+        // `Main.time > 40500.0` is strict) + the rain/height arm — the
+        // herb harvests when it is not raining, or when it sits BELOW the
+        // surface (`y > worldSurface`, the rows the rain does not reach).
+        w.time = 40501.0;
+        assert!(is_alchemy_plant_harvestable(&w, 5, 90, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 5, 120, &rainy));
+        assert!(!is_alchemy_plant_harvestable(&w, 5, 90, &rainy));
+        // An unknown style never harvests.
+        assert!(!is_alchemy_plant_harvestable(&w, 2, 90, &dry));
+    }
+
+    #[test]
+    fn the_seed_harvest_arm_covers_the_grown_herbs() {
+        // `IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+        // 83/84 — 84 always, 83 through its style, 82 never.
+        let mut w = world();
+        w.day_time = true;
+        let dry = WeatherCtx::default();
+        assert!(!is_harvestable_herb_with_seed(&w, 82, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 84, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        w.day_time = false;
+        assert!(!is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 1, 90, &dry));
+        // A non-herb kind never harvests.
+        assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
     }
 }
