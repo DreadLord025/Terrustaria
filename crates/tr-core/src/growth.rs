@@ -422,10 +422,16 @@ pub fn attempt_grow_tree_from_sapling(
                 try_growing_tree_by_type(world, 634, x, y, rng);
                 true
             } else if (6..=9).contains(&style) {
-                // The C#'s underground gate parks with the underground
-                // dispatcher; the port's overground call grows the palm
-                // shape through the worldgen palms — documented deviation.
-                false
+                // The C#'s underground gate (`:72844-72847`): the
+                // underground call only proceeds on the notTheBees/remix
+                // seeds; the port's overground call always proceeds.
+                if underground
+                    && !world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+                    && !world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+                {
+                    return false;
+                }
+                try_growing_tree_by_type(world, 323, x, y, rng)
             } else {
                 if underground {
                     false
@@ -2087,6 +2093,57 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn the_palm_sapling_grows_the_leaning_trunk() {
+        // `AttemptToGrowTreeFromSapling`'s style-6-9 arm (`:72838-72848`) →
+        // `TryGrowingTreeByType(323)` → `GrowPalmTree` (`:27116-27202`): the
+        // sand ground, the 10-20 height roll, the base 66-column, the top
+        // 22·Next(4,7) column and the lean walk's frameY offsets.
+        let mut w = world();
+        for dx in -3i32..=3 {
+            put(&mut w, 100 + dx, 220, 53, 0);
+        }
+        put(&mut w, 100, 219, 20, 6 * 54); // the style-6 sapling frame
+        let mut rng = FastRandom::new(11);
+        let grew = attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng);
+        assert!(grew, "the palm sapling grows on sand");
+        assert!(
+            w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 323 && t.frame_x == 66),
+            "the base wrote the 66-column palm"
+        );
+        let trunk: Vec<(i16, i16)> = (195..=219)
+            .filter(|&row| w.tile(100, row).is_some_and(|t| t.active() && t.kind == 323))
+            .map(|row| {
+                let t = w.tile(100, row).unwrap();
+                (t.frame_x, t.frame_y)
+            })
+            .collect();
+        assert!(
+            (10..=20).contains(&trunk.len()),
+            "the trunk spans the height roll ({})",
+            trunk.len()
+        );
+        let top = trunk[0];
+        assert!(matches!(top.0, 88 | 110 | 132), "the top column {top:?}");
+    }
+
+    #[test]
+    fn the_palm_sapling_refuses_the_wrong_ground() {
+        // A sapling over non-sand ground never grows a palm (the ground
+        // test at `:27147-27149`).
+        let mut w = world();
+        for dx in -3i32..=3 {
+            put(&mut w, 100 + dx, 220, 2, 0); // forest grass, not sand
+        }
+        put(&mut w, 100, 219, 20, 6 * 54);
+        let mut rng = FastRandom::new(11);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng),
+            "the non-sand ground refuses the palm"
+        );
+    }
+
     #[test]
     fn the_sakura_sapling_grows_the_vanity_tree() {
         // `AttemptToGrowTreeFromSapling`'s 595 arm (`:72850-72861`) →
@@ -2418,6 +2475,11 @@ pub fn try_growing_tree_by_type(
         596 => GrowTreeSettings::VANITY_TREE_SAKURA,
         616 => GrowTreeSettings::VANITY_TREE_WILLOW,
         634 => GrowTreeSettings::TREE_ASH,
+        // The palms ride their own port (`grow_palm_tree` below), not a
+        // settings profile — the kind-20 styles 6-9 arm's target.
+        323 => {
+            return grow_palm_tree(world, x, y, rng);
+        }
         _ => return false,
     };
     grow_tree_with_settings(world, x, y, profile, rng)
@@ -2628,4 +2690,122 @@ fn write_tree_frame(
     t.set_paint(paint);
     t.frame_x = fx as i16;
     t.frame_y = fy as i16;
+}
+
+/// `WorldGen.GrowPalmTree` (`WorldGen.cs:27116-27202`) — the palm trunk on
+/// tile 323 (the kind-20 styles 6-9 sapling arm's target). The twin port
+/// `worldgen::ocean::grow_palm_tree` rides the worldgen `Rng` stream
+/// (`oceancave`/`AddTrees`); the growth pass keeps its own `FastRandom`
+/// stream, so the arm is ported locally here (the `growth::spread_grass` /
+/// `evil::spread_grass` precedent) — same maths, same frame table.
+///
+/// `treeHeightAddon`/`ignoreWalls` park (every ported caller passes 0 /
+/// false) and the `RangeFrame`/`NetMessage` closing arms do not exist in
+/// the port (documented in ANALYSIS).
+pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> bool {
+    if i < 0 || y < 0 || i >= world.width || y >= world.height {
+        return false;
+    }
+    let mut num = y;
+    // The 20-walk (`:27124-27129`).
+    while world
+        .tile(i, num)
+        .is_some_and(|t| t.active() && t.kind == 20)
+    {
+        num += 1;
+        if world.tile(i, num).is_none() {
+            return false;
+        }
+    }
+    let ground = match world.tile(i, num) {
+        Some(t) if t.active() && !t.half_brick() && t.slope() == 0 => t,
+        _ => return false,
+    };
+    // `BlockColorAndCoating` (`:27134`): the ground's paint rides the trunk.
+    // The tenthAnniversary colour roll (`:27135-27138`) parks with M5-SEED-1.
+    let paint = ground.paint();
+    // The wall test + the liquid gate (`:27142-27146`).
+    let wall_ok = world
+        .tile(i, num - 1)
+        .is_some_and(|t| ALLOWS_PLANTS_TO_GROW.contains(&t.wall));
+    if world.tile(i, num - 1).is_some_and(|t| t.liquid != 0) || !wall_ok {
+        return false;
+    }
+    // The sand ground (`:27147-27149`).
+    if !matches!(ground.kind, 53 | 234 | 116 | 112) {
+        return false;
+    }
+    // The clear boxes (`:27150-27157`).
+    if !empty_tile_check(world, i, i, num - 2, num - 1, Some(20)) {
+        return false;
+    }
+    let num2 = 20;
+    if !empty_tile_check(world, i - 1, i + 1, num - num2, num - 3, Some(20)) {
+        return false;
+    }
+    // The height roll and the lean (`:27158-27159`).
+    let num3 = rng.next_range(10, 21);
+    let num4 = rng.next_range(-8, 9) * 2;
+    let mut num5: i16 = 0;
+    for j in 0..num3 {
+        if j == 0 {
+            // The base (`:27168-27176`): the 66-column, the straight frameY.
+            let idx = world.index(i, num - 1);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = 66;
+            t.frame_y = 0;
+            continue;
+        }
+        if j == num3 - 1 {
+            // The top (`:27177-27185`): the 22·Next(4, 7) column.
+            let fx = 22 * rng.next_range(4, 7);
+            let idx = world.index(i, num - 1 - j);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = num5;
+            continue;
+        }
+        // The middle (`:27186-27200`): the lean advance first, then the
+        // 22·Next(0, 3) column — the vanilla draw order.
+        {
+            // The lean walk (`:27175-27183`): the decompiled guard is an
+            // always-true chain (`… || true`), so the advance fires whenever
+            // the fraction `j / num3` is at or above 0.25 — the `Next(13)` /
+            // `Next(9)` / `Next(5)` draws stay in their short-circuit order
+            // (they advance while the branch's rolls happen in vanilla).
+            let num6 = j as f64 / num3 as f64;
+            if num6 >= 0.25 {
+                let mut done = false;
+                if num6 < 0.5 && rng.next(13) == 0 {
+                    done = true;
+                }
+                if !done && num6 < 0.7 && rng.next(9) == 0 {
+                    done = true;
+                }
+                if !done && !(num6 < 0.95) {
+                    done = true;
+                }
+                if !done && rng.next(5) != 0 {
+                    done = true;
+                }
+                // the trailing `|| true` — the group is always true.
+                num5 += (num4.signum() * 2) as i16;
+            }
+        }
+            let fx = 22 * rng.next_range(0, 3);
+            let idx = world.index(i, num - 1 - j);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 323;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = num5;
+        }
+    true
 }
