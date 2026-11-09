@@ -8594,3 +8594,46 @@ Out: the remaining C# sections — signs (no port store), the angler quest state
 (no port fields), the TownManager rooms, the weighted pressure plates (no port
 store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
 bestiary's Sights/Chats sub-blocks — each needs its own scope.
+## Dungeon entrance halls (M5-DUNGEON, the precalculated arm)
+
+`MakeDungeon`'s main loop's precalculated entrance-hall arm is ported:
+`DungeonCrawler.MakeDungeon_GenerateNextEntranceHall_Precalculated`
+(`DungeonCrawler.cs:520-553`) over
+`LegacyEntranceDungeonHall.LegacyHall`'s precalculated path
+(`Halls/LegacyEntranceDungeonHall.cs:19-260`). The walk from the shaft's
+head toward the surface entrance runs until the pass's step budget (the C#'s
+`num2`, the port's `DungeonSetup::steps`) is spent — the budget clamp
+`Math.Max(1, (int)dist - amountPassed)`, the `Vector2D.Lerp` end point per
+remaining fraction, the brick shell rect (±4/±6 jitter), the inner wall rect,
+the interior carve at the 0.5 ratio with the ±1/2 bump, and the
+`createdDungeonEntranceOnSurface` flag on the spent budget. The
+precalculated path skips the C#'s surface-detection arm (the
+`!UsePrecalculatedEntrance` guard) exactly as the source does.
+
+- **The geometry deviation (recorded, ANALYSIS).** The vanilla finds its
+  surface entrance by the searched X offset (the entrance strengths) and
+  walks halls from the dungeon anchor up to it; the port's tower stands at
+  the anchor's own X, so the port's walk goes straight up the anchor's
+  column to the tower's top row. The visible result matches the vanilla
+  shape — the entrance tower's brick shell ±(strength+4) above the entrance
+  point — and the world hashes are re-pinned (every world with a dungeon
+  changes by design; `SEED42_512` 3541994916, `DEFAULT_WORLD` 602739768).
+- **The port's omissions (recorded):** the room-protection bookkeeping
+  (`DungeonUtils.GetHighestProtectionTypeFromPoint` — no port room records),
+  the platform data list (`dungeonData.dungeonPlatformData`), the bounds
+  tracker (`dungeonData.dungeonBounds`), the `Override*` settings arms
+  (their only caller is the wrapper, which sets `OverrideSteps`), the
+  DualDungeon `CrackedBrickChance = 0`, the wall-paint clear (the port's
+  extras never carry dungeon writes), and the UN-precalculated path's slant
+  rolls / `num3` direction pick (only the precalculated arm is walked).
+- Tests: `test_dungeon_1_the_drunk_start_row_pins_the_surface_plus_70` and
+  its classic twin re-pinned to the entrance shell's top rows,
+  `test_dungeon_2_the_precalculated_entrance_hall_walks_and_clamps`,
+  `test_dungeon_2_the_entrance_hall_falls_back_and_flags_the_surface`.
+  Suite 2742 / 0.
+
+Out: the `DungeonGlobal*` feature passes (banners/chests/bookshelves/doors/
+lights/paintings/platforms/spikes/drop traps/ground furniture — they ride
+the room records the port does not keep), the UN-precalculated entrance arm
+(its slant path — only the precalculated caller exists), and the biome
+styles (dual-dungeon only, M5-SEED-1/2).
