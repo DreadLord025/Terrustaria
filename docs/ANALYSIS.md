@@ -6961,3 +6961,60 @@ Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
 metamorphoses, the VortexHunter's shared shooter block and the tower
 spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
 tables themselves stay open.
+
+## The Moon Lord family (M4-EVENT-10)
+
+**The ids are 396/397/398/400/401, not 517** — `NPCID.cs:11469-11479`: the
+Moon Lord is `MoonLordHead` 396, `MoonLordHand` 397, `MoonLordCore` 398,
+`MoonLordFreeEye` 400 (the True Eye of Cthulhu) and `MoonLordLeechBlob`
+401. 517 is the Solar Tower (M4-EVENT-8). The boss bar reads 396/397/398
+(`MoonLordProgressBar.ValidIds`) and the boss-head index for 396 is 8.
+
+- **The core (aiStyle 77, `NPC.cs:41157-41575`)** runs six `ai[0]` phases.
+  The spawn-in (-1) arms `wants_moon_parts` at the 60th tick → the two
+  hands at `Center.X + seat*800 - 400, Center.Y - 100` with `ai[2] =
+  seat`, the head at `Center.Y - 400`, all carrying the core's index in
+  `ai[3]` (the port stores them in `moon_parts[0..2]`). The cruise (0/1)
+  hovers 130 px above the player at the 8-px cap over the 0.5 smoothing;
+  past 2400 px the core teleports to the player lifted 150 px and the
+  parts ride it in the pre-pass. The crash drama (2) rises at the 0.98
+  lerp toward (0, -0.5), throws the 622 smoke every 15 ticks inside
+  [90, 480) and ends at 600 with `life = 0` → `downed_moon_lord`
+  (`DoDeathEvents`'s 398 row). The despawn (3) clears the parts at 60.
+  A missing part opens the death ride — the port's pre-pass mirrors the
+  live parts into `moon_parts` so the check reads them.
+- **The hands (aiStyle 78, `:41577-42082`)** run `MoonLordAttacksArray`'s
+  two rows (the 600-tick loop): attack 0 the hover at the (±350, -100)
+  side slot, 1 the Phantasmal Eyes — the 56-tick eyelid cycle with the
+  452 (30) every 4 ticks over the ring, 2 the flood — six 454s (40) on
+  the 30-tick cadence, the 20-px travel and the release wave (the 462 at
+  30 from 350 px above the hand) at the 292nd tick, 3 the retargeting
+  laser — the 462 (30) at the -14/-7/0 ticks. The frame box clamps the
+  hand to the core-centred wander limits.
+- **The head (aiStyle 79, `:42084-42457`)** sits on the fixed 400-px slot
+  and runs the head row: the deathray attack fires the 455 (75) on the
+  180th in-attack tick sweeping at ±2π/540, the leech attack fires the
+  456 per player within 3000 px and grows a 401 clot per leeched player
+  at 120/180/240, and the laser attack throws the 462 (30).
+- **The True Eye (aiStyle 81, `:42459-42880`)** runs
+  `MoonLordAttacksArray2`: the 53-tick drift attacks sandwich the aimed
+  laser (462, 35), the orbit (the inward 454 ring then the release) and
+  the ring's 452 (35) volley every 10 ticks in the 150-tick window. A
+  dying hand or head spawns one (`checkDead`'s 397/396 rows), each with
+  the phase offset `188 + 400 * (1 + already-spawned)`.
+- **The leech blob (aiStyle 82, `:36629-36756`)** glides 90 ticks to the
+  head, then drains 1000 hp in the order head → core → hand0 → hand1
+  and dies.
+
+Deviations: the 452/454/455/456 projectile engines (the vanilla's
+aiStyles 82-85 — the homing eye, the sphere's lock, the deathray's
+LaserScan, the leech's buff application) are unmodelled; the pool's
+`proj_data` rows carry their boxes/flags only. `MoonlordDeathDrama`'s
+light/explosion/pieces event is unmodelled (the port's drama is the
+timer + the 622 smoke). The core's `SpawnOnPlayer`/`MoonLordCountdown`
+(`Main.cs:64987-64993`), the Celestial Sigil (item 3601 →
+`StartImpendingDoom(720)`), the boss bar/head textures and the 3544/58
+loot rows stay open. The `FindFrame` cases port their counters (the
+396's 4×8 accumulator with the rand boost folded into a hash, the 397's
+frameCounter/7, the 398's 30/6, the 400's 16/4) — the 398's gore burst
+on its first frame is unmodelled.

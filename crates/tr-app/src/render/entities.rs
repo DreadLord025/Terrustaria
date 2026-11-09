@@ -221,6 +221,11 @@ pub(crate) struct NpcAssets {
     /// walkers but each keeps its own sheet.
     pub(crate) brain_scrambler: Option<BgTex>,
     pub(crate) ray_gunner: Option<BgTex>,
+    /// `NPC_396` — the Moon Lord's eye (8 rows of 38x56), `NPC_397` —
+    /// the hand (4 rows of 46x66), `NPC_398` — the core (5 rows),
+    /// `NPC_400` — the True Eye (4 rows of 60x60), `NPC_401` — the leech
+    /// clot (1 frame of 30x30).
+    pub(crate) moon_lord_parts: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
     pub(crate) scutlix_rider: Option<BgTex>,
@@ -340,6 +345,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        moon_lord_parts: sky_tex(atlas, "NPC_396", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -1237,6 +1243,39 @@ pub(crate) fn draw_npcs(
                 assets.shard_hovers.as_ref(),
                 assets.shard_hovers.as_ref().map_or(56.0, |t| t.h / 13.0),
                 [30.0, 56.0],
+                [n.x, n.y],
+            ),
+            // The Moon Lord family: the per-part rows (38x56 / 46x66 /
+            // 60x60 / 30x30) over the 396 sheet's strips — the core and
+            // the leech ride their own 1-row strips.
+            NpcKind::MoonLordHead => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(56.0, |t| t.h / 8.0),
+                [38.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordHand => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordCore => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordFreeEye => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(60.0, |t| t.h / 8.0),
+                [60.0, 60.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordLeechBlob => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(30.0, |t| t.h / 8.0),
+                [30.0, 30.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
