@@ -515,6 +515,14 @@ fn portrait_data(
         NpcKind::NebulaBeast => 116,      // NPC_423
         NpcKind::VortexRifleman => 117,   // NPC_425
         NpcKind::VortexSoldier => 118,    // NPC_429
+        NpcKind::StardustSpiderBig => 131, // NPC_409
+        NpcKind::StardustSpiderSmall => 132, // NPC_410
+        NpcKind::StardustSoldier => 133, // NPC_411
+        NpcKind::SolarDrakomire => 134,  // NPC_415
+        NpcKind::SolarDrakomireRider => 135, // NPC_416
+        NpcKind::SolarSroller => 136,   // NPC_417
+        NpcKind::SolarCorite => 137,    // NPC_418
+        NpcKind::SolarSelenian => 138,  // NPC_419
         NpcKind::NebulaFloater => 128,    // NPC_420
         NpcKind::BrainSuckler => 129,   // NPC_421
         NpcKind::Predictor => 130,      // NPC_424
@@ -866,6 +874,55 @@ fn portrait_data(
         // The Moon Lord family's portraits over the 396 sheet's rows.
         // The vortex trio's portraits over the 426 sheet's 15 rows.
         // The nebula trio's portraits over the 420 sheet's rows.
+        // The tower mobs' portraits over the 409 sheet's rows.
+        (NpcKind::StardustSpiderBig, _) => {
+            let h = lookups.bestiary_npc_sheets[132]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::StardustSpiderSmall, _) => {
+            let h = lookups.bestiary_npc_sheets[138]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::StardustSoldier, _) => {
+            let h = lookups.bestiary_npc_sheets[144]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SolarDrakomire, _) => {
+            let h = lookups.bestiary_npc_sheets[150]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::SolarDrakomireRider, _) => {
+            let h = lookups.bestiary_npc_sheets[156]
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::SolarSroller, _) => {
+            let h = lookups.bestiary_npc_sheets[162]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::SolarCorite, _) => {
+            let h = lookups.bestiary_npc_sheets[168]
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::SolarSelenian, _) => {
+            let h = lookups.bestiary_npc_sheets[174]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
         (NpcKind::NebulaFloater, _) => {
             let h = lookups.bestiary_npc_sheets[128]
                 .map(|s| s.height as f32 / 6.0)

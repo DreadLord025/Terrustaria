@@ -240,6 +240,13 @@ pub(crate) struct NpcAssets {
     /// `NPC_420` — the NebulaFloater (6 rows of 40x40), `NPC_421` — the
     /// BrainSuckler (6 rows of 44x44), `NPC_424` — the Predictor (12
     /// rows of 22x56).
+    /// `NPC_409` — the StardustSpiderBig (4 rows), `NPC_410` — the
+    /// StardustSpiderSmall (11 rows), `NPC_411` — the StardustSoldier
+    /// (5 rows), `NPC_415` — the SolarDrakomire (1 row), `NPC_416` —
+    /// the rider (10 rows), `NPC_417` — the SolarSroller (10 rows),
+    /// `NPC_418` — the SolarCorite (15 rows), `NPC_419` — the
+    /// SolarSelenian (8 rows).
+    pub(crate) tower_mobs: Option<BgTex>,
     pub(crate) nebula_trio: Option<BgTex>,
     pub(crate) vortex_trio: Option<BgTex>,
     pub(crate) moon_lord_parts: Option<BgTex>,
@@ -362,6 +369,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        tower_mobs: sky_tex(atlas, "NPC_409", None),
         nebula_trio: sky_tex(atlas, "NPC_420", None),
         vortex_trio: sky_tex(atlas, "NPC_426", None),
         moon_lord_parts: sky_tex(atlas, "NPC_396", None),
@@ -1305,6 +1313,55 @@ pub(crate) fn draw_npcs(
             ),
             // The nebula trio: the floater 40x40 / the suckler 44x44 / the
             // predictor 22x56 over the 420 sheet's 6 rows.
+            // The stardust/solar tower mobs' strips over the 409 sheet.
+            NpcKind::StardustSpiderBig => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(42.0, |t| t.h / 4.0),
+                [34.0, 42.0],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustSpiderSmall => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(22.0, |t| t.h / 11.0),
+                [22.0, 22.0],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustSoldier => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 5.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarDrakomire => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 1.0),
+                [60.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarDrakomireRider => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 13.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarSroller => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(52.0, |t| t.h / 10.0),
+                [46.0, 52.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarCorite => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(38.0, |t| t.h / 15.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::SolarSelenian => (
+                assets.tower_mobs.as_ref(),
+                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 8.0),
+                [22.0, 56.0],
+                [n.x, n.y],
+            ),
             NpcKind::NebulaFloater => (
                 assets.nebula_trio.as_ref(),
                 assets.nebula_trio.as_ref().map_or(40.0, |t| t.h / 6.0),
