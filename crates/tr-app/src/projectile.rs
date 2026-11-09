@@ -17,6 +17,12 @@
 //! - defaults: `timeLeft = 3600` (`:787`), `penetrate = 1`,
 //!   `localNPCHitCooldown = -2` (`:464`), `idStaticNPCHitCooldown = -1`
 //!   (`:466`), `immunityIdentity = type` (`:782`)
+//! - the whip family (M4-PROJ-7): `DefaultToWhip()` `:10704-10718` (aiStyle
+//!   165), `AI_165_Whip()` `:47667-48270` (the swing machine — the curve and
+//!   the sweep live in [`tr_core::whip`]), `Projectile.Colliding`'s whip arm
+//!   `:15716-15737` (the swept-span multi-hit) and the on-hit arms
+//!   (`StatusNPC`'s `ApplyWhipDebuffs` `:11727-11750`, the per-type switch
+//!   `:13882-13956`); the tag stack itself is `tag_effects.rs`.
 //!
 //! The ammo-resolution rows (M3-ITEM-6, 2026-11-09): the `proj_data` block at
 //! the end of the match carries the kinds `Player.PickAmmo`
@@ -44,11 +50,25 @@ use std::collections::HashMap;
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
+use tr_core::loot::DropRng;
+
+/// The Moon Lord whip's extra-arm spawn request — `AI_165_Whip`'s
+/// `NewProjectile(this.type, ..., ai0 = 0, ai1 = Main.rand.NextFloatDirection(),
+/// ai2 = 10 + this.ai[2])` (`Projectile.cs:47710`). The pool spawns it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WhipArmSpawn {
+    pub ai1: f32,
+    pub ai2: f32,
+    /// The aim direction (`player.DirectionTo(Main.MouseScreen +
+    /// Main.screenPosition).SafeNormalize(velocity) * velocity.Length()`,
+    /// `:47709`) — the live aim when the step carries one.
+    pub dir: Vec2,
+}
 
 /// The pool's kind ids are the C# `ProjectileID` values (`ProjectileID.cs`
 /// — the M4-PROJ-1 placeholder internal table was migrated to the verbatim
@@ -153,6 +173,47 @@ pub const DARK_MAGE_MARKER: u16 = 673;
 pub const DARK_MAGE_FLAME: u16 = 675;
 /// `ProjectileID.DD2BetsyBreath` (687) — Betsy's breath
 /// (`AI_110`'s `NewProjectile(..., 687, 35, ...)`).
+// --- the whip family (M4-PROJ-7): `ProjectileID.Sets.IsAWhip`
+// (`ProjectileID.cs:193`) — the 18 kinds, all `DefaultToWhip()`'s slice
+// (`Projectile.cs:10704-10718`: 18x18, aiStyle 165, penetrate -1,
+// tileCollide false, usesLocalNPCImmunity, localNPCHitCooldown -1).
+/// `ProjectileID.BlandWhip` (841).
+pub const BLAND_WHIP: u16 = 841;
+/// `ProjectileID.SwordWhip` (847) — `extraUpdates = 2` (`:8157`).
+pub const SWORD_WHIP: u16 = 847;
+/// `ProjectileID.MaceWhip` (848).
+pub const MACE_WHIP: u16 = 848;
+/// `ProjectileID.ScytheWhip` (849) — `extraUpdates = 2` (`:8166`).
+pub const SCYTHE_WHIP: u16 = 849;
+/// `ProjectileID.CoolWhip` (912).
+pub const COOL_WHIP: u16 = 912;
+/// `ProjectileID.FireWhip` (913).
+pub const FIRE_WHIP: u16 = 913;
+/// `ProjectileID.ThornWhip` (914).
+pub const THORN_WHIP: u16 = 914;
+/// `ProjectileID.RainbowWhip` (915).
+pub const RAINBOW_WHIP: u16 = 915;
+/// `ProjectileID.BoneWhip` (952).
+pub const BONE_WHIP: u16 = 952;
+/// `ProjectileID.CobWhip` (1028) — the progress remap (`:48286-48289`).
+pub const COB_WHIP: u16 = 1028;
+/// `ProjectileID.CorruptWhip` (1029).
+pub const CORRUPT_WHIP: u16 = 1029;
+/// `ProjectileID.CrimsonWhip` (1030).
+pub const CRIMSON_WHIP: u16 = 1030;
+/// `ProjectileID.MeteorWhip` (1031).
+pub const METEOR_WHIP: u16 = 1031;
+/// `ProjectileID.FlowerWhip` (1032).
+pub const FLOWER_WHIP: u16 = 1032;
+/// `ProjectileID.EelWhip` (1033).
+pub const EEL_WHIP: u16 = 1033;
+/// `ProjectileID.ConstellationWhip` (1034).
+pub const CONSTELLATION_WHIP: u16 = 1034;
+/// `ProjectileID.MoonLordWhip` (1035) — the extra-arm spawner
+/// (`:47703-47712`).
+pub const MOON_LORD_WHIP: u16 = 1035;
+/// `ProjectileID.SlimeWhip` (1104).
+pub const SLIME_WHIP: u16 = 1104;
 pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
@@ -672,7 +733,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
             // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
-            TERRARIAN_BEAM => (14.0, 14.0, 115, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            TERRARIAN_BEAM => (
+                14.0,
+                14.0,
+                115,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+            ),
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
@@ -724,6 +795,210 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
             // ...)` — the 1500-px leaping shot).
             BETSY_FIREBALL => (22.0, 22.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The whip family — `DefaultToWhip()`'s slice (`:10704-10718`): 18x18,
+            // aiStyle 165, penetrate -1, tileCollide false, timeLeft the 3600
+            // default, extraUpdates 1 (2 for the SwordWhip/ScytheWhip,
+            // `:8157`/`:8166`), `usesLocalNPCImmunity` + `localNPCHitCooldown
+            // = -1` (applied by `set_whip_params`). The reach lives in the
+            // `tr_core::whip` curve, not in the box.
+            BLAND_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            SWORD_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                false,
+                false,
+                false,
+            ),
+            MACE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            SCYTHE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                false,
+                false,
+                false,
+            ),
+            COOL_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            FIRE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            THORN_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            RAINBOW_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            BONE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            COB_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            CORRUPT_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            CRIMSON_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            METEOR_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            FLOWER_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            EEL_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            CONSTELLATION_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            MOON_LORD_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
+            SLIME_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false,
+            ),
             // The ammo-resolution rows (M3-ITEM-6 Phase 2): `friendly` is the
             // pool default for every one of them and `ranged` has no consumer,
             // so neither rides the tuple. The launcher rockets
@@ -873,13 +1148,38 @@ pub struct Projectile {
     pub id_static_hit_cooldown: i32,
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
-    /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
-    /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
-    pub ai: [f32; 3],
+    /// The C# `ai[0..3]` scratch array — the aiStyle-1 flight counter lives
+    /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`),
+    /// `ai[1]` is the yoyo/whip spin seed and `ai[2]` the Moon Lord whip's
+    /// extra-arm counter (`AI_165_Whip`'s `ai[2] >= 10f`, `:47703`).
+    pub ai: [f32; 4],
     /// The C# `localAI[0..2]` scratch array — the yoyo family's lifetime tick
     /// counter (`localAI[0]`, `AI_099_2_Yoyos` `Projectile.cs:67745`) and the
-    /// Terrarian's beam timer (`localAI[1]`, `:67778`).
+    /// Terrarian's beam timer (`localAI[1]`, `:67778`); the Moon Lord whip's
+    /// arm budget roll (`localAI[1] = 1 + Main.rand.Next(3)`, `:47669-47672`)
+    /// and the per-type on-hit latches (`localAI[0]`, `:13907`) ride the first
+    /// two slots.
     pub local_ai: [f32; 3],
+    /// `Projectile.spriteDirection` (`:47679`).
+    pub sprite_direction: i32,
+    /// `WhipTagEffect.CanRunHitEffects`'s minion/sentry gate
+    /// (`GameContent/Items/WhipTagEffect.cs:81-85`): `minion || MinionShot ||
+    /// sentry || SentryShot`. Set by the minion/sentry spawns (M4-PROJ-8);
+    /// false until then — the tag damage math only fires for those shots.
+    pub is_summon_shot: bool,
+    /// `ApplyStatsFromSource`'s `tagEffectType` (`:11125`) — the whip's item
+    /// id when the firing item carries a `UniqueTagEffects` row (M4-PROJ-7).
+    pub tag_effect_type: u16,
+    /// `ApplyStatsFromSource`'s `bonusTagDamage` (`:11127`) — the item's
+    /// (or the parent's) bonus tag damage, the minion prefixes' row.
+    pub bonus_tag_damage: i32,
+    /// The whip swing's `GetWhipSettings` cache — `itemAnimationMax *
+    /// MaxUpdates` (`Projectile.cs:48339`), written by [`ProjectilePool::
+    /// set_whip_params`] at spawn.
+    pub whip_settings: Option<tr_core::whip::WhipSettings>,
+    /// The whip's held-item `useAnimation` (`FillWhipControlPoints`'s
+    /// `ContentSamples.ItemsByType[heldItem.type].useAnimation`, `:48301`).
+    pub whip_use_animation: f32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -936,8 +1236,14 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
-            ai: [0.0; 3],
+            ai: [0.0; 4],
             local_ai: [0.0; 3],
+            sprite_direction: 1,
+            is_summon_shot: false,
+            tag_effect_type: 0,
+            bonus_tag_damage: 0,
+            whip_settings: None,
+            whip_use_animation: 0.0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -955,6 +1261,13 @@ impl Default for Projectile {
 }
 
 impl Projectile {
+    /// The box center — `Projectile.Center` (`Entity.cs`'s `Center`), the
+    /// pool's uniform center for the box tests (the whip's *hit* comes from
+    /// the swept curve, not from this).
+    pub fn center(&self) -> (f32, f32) {
+        (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5)
+    }
+
     fn shuriken(x: f32, y: f32, vx: f32, vy: f32, crit: bool) -> Self {
         Self {
             active: true,
@@ -1921,6 +2234,67 @@ impl Projectile {
         }
     }
 
+    /// `AI_165_Whip()` (`Projectile.cs:47667-48270`) — the whip swing machine's
+    /// state half: the arm-budget roll, the rotation, the sub-step counter, the
+    /// position from the arm anchor along the velocity, the `spriteDirection`
+    /// and the `timeToFlyOut` kill. The curve and the sweep are
+    /// [`tr_core::whip`]'s; the dust/orchestra arms are the render follow-up.
+    /// Returns the Moon Lord whip's extra-arm spawn request.
+    fn ai_whip(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        aim: Option<Vec2>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<WhipArmSpawn> {
+        let kind = self.kind;
+        // `:47669-47672`: the Moon Lord whip's arm budget, rolled once.
+        if kind == MOON_LORD_WHIP && self.local_ai[1] == 0.0 {
+            self.local_ai[1] = 1.0 + rng.next_range(0, 3) as f32;
+        }
+        // `:47674`: the rotation is the velocity's, plus a quarter turn.
+        self.rot = self.vel.to_angle() + std::f32::consts::PI / 2.0;
+        // `:47675`.
+        self.ai[0] += 1.0;
+        let Some(settings) = self.whip_settings else {
+            return None;
+        };
+        let time_fly_out = settings.time_fly_out;
+        let Some((ax, ay)) = owner else {
+            return None;
+        };
+        // `:47678`: `Center = GetArmPosition() + velocity * (ai[0] - 1)`. The
+        // port's arm anchor is the player center (the deviation record).
+        let arm = Vec2::new(ax, ay);
+        let center = arm + self.vel * (self.ai[0] - 1.0);
+        self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:47679`.
+        self.sprite_direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        // `:47680-47684`.
+        if self.ai[0] >= time_fly_out {
+            self.active = false;
+            self.time_left = 0;
+            return None;
+        }
+        // `:47703-47712`: the Moon Lord whip's extra arms, up to three.
+        if kind == MOON_LORD_WHIP && self.ai[2] < 10.0 {
+            let num = self.ai[0] / time_fly_out * 3.0;
+            if self.ai[2] < num {
+                self.ai[2] += 1.0;
+                // The spin roll: `Main.rand.NextFloatDirection()`
+                // (`Utils.cs:1203`, [−1,1)); the aim is the live one or the
+                // whip's own velocity (the pool tests have no mouse).
+                let ai1 = rng.next_float() * 2.0 - 1.0;
+                let dir = aim.unwrap_or_else(|| self.vel.normalize_or_zero());
+                return Some(WhipArmSpawn {
+                    ai1,
+                    ai2: 10.0 + self.ai[2],
+                    dir,
+                });
+            }
+        }
+        None
+    }
+
     /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
     /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
     /// scan sets `velocity = (0, -0.2)`); the gravity tail (`:47505-47520`)
@@ -2355,7 +2729,7 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
-            ai: [1.0, 0.0, 0.0],
+            ai: [1.0, 0.0, 0.0, 0.0],
             // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
             // flight is the custom falling-tile mode, not an aiStyle arm.
             w: 10.0,
@@ -2371,6 +2745,94 @@ impl ProjectilePool {
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
         Some(slot)
+    }
+
+    /// The whip's spawn completion — `DefaultToWhip()`'s immunity pair
+    /// (`Projectile.cs:10704-10718`), `ApplyStatsFromSource`'s tag copy
+    /// (`:11125-11136`), the `itemAnimationMax` (`:48339`'s
+    /// `timeToFlyOut` input) and the `GetWhipSettings` cache. Called by the
+    /// fire path right after the spawn and by the Moon Lord arms.
+    pub fn set_whip_params(
+        &mut self,
+        slot: usize,
+        tag_effect_type: u16,
+        bonus_tag_damage: i32,
+        item_animation_max: f32,
+    ) {
+        let p = &mut self.slots[slot];
+        if !tr_core::whip::is_whip(p.kind) {
+            return;
+        }
+        p.uses_local_immunity = true;
+        p.local_hit_cooldown = -1;
+        p.tag_effect_type = tag_effect_type;
+        p.bonus_tag_damage = bonus_tag_damage;
+        p.whip_use_animation = item_animation_max;
+        self.set_whip_settings(slot, item_animation_max);
+    }
+
+    /// The settings slice recomputed off the slot's `ai[2]` (the Moon Lord
+    /// arms' `30 * MaxUpdates` override reads it, `Projectile.cs:48413`).
+    fn set_whip_settings(&mut self, slot: usize, animation: f32) {
+        let (kind, max_updates, ai2) = {
+            let p = &self.slots[slot];
+            (p.kind, 1 + p.extra_updates, p.ai[2])
+        };
+        self.slots[slot].whip_settings = Some(tr_core::whip::get_whip_settings(
+            kind,
+            animation,
+            max_updates as f32,
+            ai2,
+            false,
+        ));
+    }
+
+    /// The Moon Lord whip's arm spawn (`Projectile.cs:47710`) — a full copy of
+    /// the parent from the player center, `ai1` the spin roll and `ai2` the arm
+    /// counter, with the parent's tag data (`ApplyStatsFromSource`'s
+    /// `EntitySource_Parent` arm, `:11136`) and its own `GetWhipSettings`
+    /// override (`30 * MaxUpdates` for the arms, `:48410-48417`).
+    fn spawn_whip_arm(&mut self, parent: usize, arm: WhipArmSpawn, owner: Option<(f32, f32)>) {
+        let (kind, damage, kb, tag_type, tag_bonus, animation) = {
+            let p = &self.slots[parent];
+            (
+                p.kind,
+                p.damage,
+                p.knock_back,
+                p.tag_effect_type,
+                p.bonus_tag_damage,
+                p.whip_use_animation,
+            )
+        };
+        // `:47710`: from the player center (`player.Center.X, player.Center.Y`).
+        let (cx, cy) = match owner {
+            Some(c) => c,
+            None => self.slots[parent].center(),
+        };
+        let speed = self.slots[parent].vel.length();
+        let dir = if arm.dir == Vec2::ZERO {
+            Vec2::X
+        } else {
+            arm.dir
+        };
+        let Some(slot) = self.spawn_with_data_ai(
+            kind,
+            cx,
+            cy,
+            dir.x * speed,
+            dir.y * speed,
+            damage,
+            kb,
+            0.0,
+            arm.ai1,
+        ) else {
+            return;
+        };
+        let p = &mut self.slots[slot];
+        p.ai[2] = arm.ai2;
+        p.tag_effect_type = tag_type;
+        p.bonus_tag_damage = tag_bonus;
+        self.set_whip_settings(slot, animation);
     }
 
     /// `NewProjectile` + `SetDefaults` in one: applies the family's
@@ -2472,7 +2934,7 @@ impl ProjectilePool {
             uses_id_static_immunity: data.uses_id_static,
             id_static_hit_cooldown: data.id_static_hit_cooldown,
             extra_updates: data.extra_updates,
-            ai: [ai0, ai1, 0.0],
+            ai: [ai0, ai1, 0.0, 0.0],
             w: data.w,
             h: data.h,
             tile_collide: data.tile_collide,
@@ -2505,11 +2967,16 @@ impl ProjectilePool {
         out
     }
 
+    /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
+    /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
+    /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
+    /// roll), so do the yoyos and the throw's crit roll.
     pub fn update(
         &mut self,
         world: &mut World,
         npcs: &mut [Npc],
         owner: Option<(f32, f32)>,
+        aim: Option<Vec2>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
         rng: &mut dyn tr_core::loot::DropRng,
@@ -2532,10 +2999,15 @@ impl ProjectilePool {
             }
             // `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`):
             // the PVP frames plus the slot's local-NPC cooldowns decay first.
+            // Only **positive** counters decay — the negative sentinels (the
+            // whip's `localNPCHitCooldown = -1`) block their NPC for the
+            // slot's whole life, so the C# `if (x > 0) x--` arm must be kept.
             if self.slots[i].uses_local_immunity {
                 let base = i * 256;
                 for v in &mut self.local_immunity[base..base + 256] {
-                    *v = (*v - 1).max(0);
+                    if *v > 0 {
+                        *v -= 1;
+                    }
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
@@ -2609,10 +3081,12 @@ impl ProjectilePool {
                                 (p.owner, p.kind)
                             };
                             let flag = self.slots[..i].iter().any(|p| {
-                                p.active && p.owner == slot_owner && p.kind == slot_kind && p.ai[0] >= -1.0
+                                p.active
+                                    && p.owner == slot_owner
+                                    && p.kind == slot_kind
+                                    && p.ai[0] >= -1.0
                             });
-                            let tick =
-                                self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
+                            let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
                             // `:67764-67771` — the sweep flips the whole
                             // owner's aiStyle-99 set with `ai[0] >= 0f` to the
                             // return state.
@@ -2638,6 +3112,14 @@ impl ProjectilePool {
                                     b.damage,
                                     b.knock_back,
                                 );
+                            }
+                        }
+                        165 => {
+                            // `AI_165_Whip` (`:47667-48270`): the swing
+                            // machine. The Moon Lord whip's extra arms are
+                            // pool spawns, so the request comes back out.
+                            if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng) {
+                                self.spawn_whip_arm(i, arm, owner);
                             }
                         }
                         _ => {}
@@ -2679,7 +3161,7 @@ impl ProjectilePool {
             if self.slots[i].detonated {
                 self.explode_bomb(i, world, npcs);
             }
-            self.damage_pve(i, npcs);
+            self.damage_pve(i, npcs, owner, player.as_deref_mut(), rng);
             // The hostile shots' player contact (`Projectile.Damage_PVP`'s
             // single-player stand-in): the box overlap -> `Player.hurt`
             // (the iframes gate inside), the shot dies on the hit.
@@ -2728,7 +3210,13 @@ impl ProjectilePool {
         p.tile_collide = false;
         p.detonated = false;
         // `Damage()` — the PVE walk through the resized box.
-        self.damage_pve(slot, npcs);
+        self.damage_pve(
+            slot,
+            npcs,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(0),
+        );
         // `Kill_ExplodeTiles`: the radius circle kills the tiles
         // (`ExplodeTiles` `:78707+` — the distance check per tile), the
         // 3×3 walls around each kill follow (`:78741-78762`).
@@ -2807,9 +3295,19 @@ impl ProjectilePool {
     /// `Damage_PVE` + `Damage_PVE_Inner` (`:12562-12700`) with the on-hit
     /// immunity application (`:14087-14119`). Single-hit slots bypass the
     /// per-owner gate (`flag3`, `:12620-12624`) and set no immunity
-    /// (`:14112-14119`).
-    fn damage_pve(&mut self, slot: usize, npcs: &mut [Npc]) {
-        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
+    /// (`:14112-14119`). The whips replace the point test with the
+    /// swept-span curve (`Projectile.Colliding`'s whip arm `:15716-15737`)
+    /// and run their on-hit arms (`:13579-13956`).
+    fn damage_pve(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        owner: Option<(f32, f32)>,
+        mut player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
+        let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
                 return;
@@ -2825,6 +3323,37 @@ impl ProjectilePool {
                 p.pos + Vec2::splat(SIZE * 0.5),
             )
         };
+        // The whip sweep — `FillWhipControlPoints`' live and previous frames
+        // (`frameOffset` 0 / −1, `Projectile.cs:15718-15722`), filled once per
+        // tick off the owner's arm anchor.
+        let (whip_now, whip_prev) = if is_whip {
+            let p = &self.slots[slot];
+            let Some(settings) = p.whip_settings else {
+                return;
+            };
+            let arm = owner
+                .map(|(x, y)| Vec2::new(x, y))
+                .unwrap_or(p.pos + Vec2::new(p.w * 0.5, p.h * 0.5));
+            let build = |frame_offset: i32| {
+                let inputs = tr_core::whip::WhipCurveInputs {
+                    kind: p.kind,
+                    ai0: p.ai[0],
+                    frame_offset,
+                    ai1: p.ai[1],
+                    sprite_direction: p.sprite_direction,
+                    rotation: p.rot,
+                    arm_position: arm,
+                    held_use_animation: p.whip_use_animation,
+                    whip_range_multiplier: 1.0,
+                    velocity_len: p.vel.length(),
+                    get_actual_collision_points: true,
+                };
+                tr_core::whip::fill_whip_control_points(&inputs, &settings)
+            };
+            (build(0), build(-1))
+        } else {
+            (Vec::new(), Vec::new())
+        };
         // `keepIterating`: the walk stops once a hit consumed the projectile.
         for (idx, n) in npcs.iter_mut().enumerate() {
             if n.hp <= 0 {
@@ -2836,25 +3365,68 @@ impl ProjectilePool {
             }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
-            if !single_hit && n.immune[owner] != 0 {
+            if !single_hit && n.immune[owner_idx] != 0 {
                 continue;
             }
-            if !n.contains(center.x, center.y) {
+            let touches = if is_whip {
+                let (nw, nh) = n.size();
+                tr_core::whip::sweep_hits(
+                    &whip_now,
+                    &whip_prev,
+                    self.slots[slot].w as i32,
+                    self.slots[slot].h as i32,
+                    tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32),
+                )
+            } else {
+                n.contains(center.x, center.y)
+            };
+            if !touches {
                 continue;
             }
-            let landed = n.hurt_from_projectile(damage, center.x, kb, crit);
+            let hit = center;
+            // `:12919-12933`: the tag-damage math runs on the hit's damage —
+            // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
+            // rejects every ported shot until M4-PROJ-8, the synthetic tests
+            // set the slot flag directly.
+            let (dmg, hit_crit) =
+                self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            let landed = n.hurt_from_projectile(dmg, hit.x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
-                n.immune[owner] = 0;
+                n.immune[owner_idx] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
             } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
-                n.immune[owner] = 0;
+                n.immune[owner_idx] = 0;
                 self.id_static.insert(
                     (self.slots[slot].kind, idx as u16),
                     self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
                 );
             } else if max_penetrate != 1 {
-                n.immune[owner] = OWNER_IMMUNE_TICKS;
+                n.immune[owner_idx] = OWNER_IMMUNE_TICKS;
+            }
+            if landed {
+                // `:13579-13581`: the whip debuffs (`StatusNPC`'s
+                // `ApplyWhipDebuffs`).
+                if is_whip {
+                    self.whip_debuffs(slot, n, rng);
+                }
+                // `:13581-13584`: any tag-carrying item's projectile applies
+                // its tag to the hit NPC (the whip's, in the port today).
+                let tag_type = self.slots[slot].tag_effect_type;
+                if tag_type > 0 {
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.try_apply_tag_to_npc(tag_type, idx, n.kind);
+                    }
+                }
+                // `:14258`-onwards + `:13882-13956`: the aiStyle-165 on-hit
+                // arms (the minion target, the per-type switch).
+                if is_whip {
+                    self.whip_on_hit(slot, idx as u16, player.as_deref_mut());
+                }
+                // `:13658`: the tag stack's on-hit pass — the proc consume
+                // (and the Constellation's immediate proc enable, its
+                // `OnTaggedHit`).
+                self.tag_on_hit(slot, idx as u16, player.as_deref_mut());
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -2863,6 +3435,165 @@ impl ProjectilePool {
                     break;
                 }
             }
+        }
+    }
+
+    /// The tag-damage math of `Damage_PVE_Inner`'s `12919-12933` block: the
+    /// player's stack `ModifyHit`es every active tag that marks this NPC, the
+    /// damage goes through `SummonTagDamageMultiplier[type]` and the total
+    /// multiplier, and the tag's forced crit wins over the slot's.
+    /// `WhipTagEffect.CanRunHitEffects` (`:75-86`) gates on the summon/sentry
+    /// shot kinds — the port has none yet, so `is_summon_shot` (set by
+    /// M4-PROJ-8's minion/sentry spawns) rejects everything until then.
+    fn tag_damage_for(
+        &self,
+        slot: usize,
+        npc_idx: u16,
+        base: i32,
+        crit: bool,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> (i32, bool) {
+        let p = &self.slots[slot];
+        if !p.is_summon_shot || p.owner == 255 {
+            return (base, crit);
+        }
+        let Some(player) = player else {
+            return (base, crit);
+        };
+        let mut changes = tr_core::whip::TagDamageChanges::none();
+        for tag_type in player.tag_effects.active_types() {
+            player
+                .tag_effects
+                .modify_hit(npc_idx as usize, tag_type, &mut changes, rng);
+        }
+        let crit = changes.crit.unwrap_or(crit);
+        (
+            crate::tag_effects::apply_tag_damage(base, &changes, p.bonus_tag_damage, p.kind),
+            crit,
+        )
+    }
+
+    /// `TagEffectStack.OnHit` (`Projectile.cs:13658` → `TagEffectStack.cs:115-121`):
+    /// the proc-window consume. The proc bodies' spawns are the deferred
+    /// follow-ups; the consume decision and the Constellation's immediate
+    /// `TryEnableProcOnNPC` (`WhipTagEffect_Constellation.cs:10-14`) land here.
+    fn tag_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        let (tag_type, proj_kind) = {
+            let p = &self.slots[slot];
+            (p.tag_effect_type, p.kind)
+        };
+        if tag_type == 0 {
+            return;
+        }
+        if let Some(p) = player.as_deref_mut() {
+            p.tag_effects.on_hit(npc_idx as usize, tag_type, proj_kind);
+            if tr_core::whip::tag_effect(tag_type)
+                .is_some_and(|e| tr_core::whip::constellation_enables_proc_on_tag(e))
+            {
+                // `WhipTagEffect_Constellation.OnTaggedHit` — the proc arms
+                // on the very hit that tagged it.
+                p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+            }
+        }
+    }
+
+    /// `ApplyWhipDebuffs` (`Projectile.cs:11727-11750`, called from `StatusNPC`
+    /// at `:13580`).
+    fn whip_debuffs(&mut self, slot: usize, npc: &mut Npc, rng: &mut dyn tr_core::loot::DropRng) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            FIRE_WHIP => npc.buffs.add_buff(323, 240), // Hellfire
+            COOL_WHIP => npc.buffs.add_buff(324, 240), // Frostburn
+            THORN_WHIP => {
+                // `:11738` — the 1/5 roll, from the item stream.
+                if rng.next_range(0, 5) == 0 {
+                    npc.buffs.add_buff(20, 180); // Poisoned
+                }
+            }
+            EEL_WHIP => npc.buffs.add_buff(362, 240), // Electrified
+            SCYTHE_WHIP => npc.buffs.add_buff(310, 240), // Oiled
+            _ => {}
+        }
+    }
+
+    /// The whip on-hit arms of `Damage_PVE_Inner` (`Projectile.cs:13579-13956`):
+    /// `StatusNPC`'s `ApplyWhipDebuffs` (`:11727-11750`, called from `StatusNPC`
+    /// at `:13580`), the `MinionAttackTargetNPC` override (`:14258-14263`) and
+    /// the per-type switch arms that do not need the tag module — the 912/1028
+    /// unconditional player buffs (`:13923`, `:13934`) and the `local_ai[0]`
+    /// latches (`:13907`). The tag stack's arms (`TryApplyTagToNPC`
+    /// `:13583`, the `TryEnableProcOnNPC`/`CanProcOnNPC`/`RemoveAllProcs`
+    /// seams `:13912-13956`) are `tag_effects.rs`'s — see the seams marked
+    /// below.
+    #[allow(clippy::too_many_arguments)]
+    /// The aiStyle-165 on-hit arms after the tag application
+    /// (`Projectile.cs:14258-13956`'s `TryDoingOnHitEffects` positions): the
+    /// `MinionAttackTargetNPC` override (`:14258-14263`) and the per-type
+    /// switch (`:13882-13956`) with the tag stack's seams filled.
+    fn whip_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        let kind = self.slots[slot].kind;
+        let tag_type = self.slots[slot].tag_effect_type;
+        // `:14258-14263`: every aiStyle-165 hit retargets the minions.
+        if let Some(p) = player.as_deref_mut() {
+            p.minion_attack_target_npc = npc_idx as i16;
+        }
+        // `:13882-13956`: the per-type switch.
+        match kind {
+            FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
+                // `:13907-13911`: the first hit of this slot arms the proc
+                // window in the player's stack.
+                if self.slots[slot].local_ai[0] == 0.0 {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                    }
+                }
+            }
+            COOL_WHIP => {
+                // `:13923` — the unconditional player buff grant (the deferred
+                // 917 snowflake spawn waits on the derived buff gate).
+                if let Some(p) = player.as_deref_mut() {
+                    p.buffs.add_buff(312, 180);
+                }
+            }
+            COB_WHIP => {
+                // `:13934` — same shape for the CobWhip (the deferred 1036
+                // spark + the 365 gate).
+                if let Some(p) = player.as_deref_mut() {
+                    p.buffs.add_buff(365, 180);
+                }
+            }
+            SWORD_WHIP | EEL_WHIP | MOON_LORD_WHIP => {
+                // `:13947-13951`: the proc arms on every hit.
+                if let Some(p) = player.as_deref_mut() {
+                    p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                }
+            }
+            CONSTELLATION_WHIP => {
+                // `:13938`: the first hit with the proc window armed spawns
+                // the star fan (deferred) and clears every proc window.
+                let armed = player
+                    .as_deref()
+                    .is_some_and(|p| p.tag_effects.can_proc(tag_type, npc_idx as usize));
+                if self.slots[slot].local_ai[0] == 0.0 && armed {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.remove_all_procs(tag_type);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -2896,7 +3627,7 @@ impl ProjectilePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -2936,7 +3667,17 @@ mod tests {
             0.0,
         );
         assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
-        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w.clone(),
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
         // The friendly shuriken at the same spot never hurts the player.
@@ -2956,6 +3697,7 @@ mod tests {
             &mut w.clone(),
             &mut [],
             Some((pcx2, pcy2)),
+            None,
             Some(&mut player2),
             YoyoInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
@@ -2972,7 +3714,17 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            world,
+            std::slice::from_mut(npc),
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
     }
 
     #[test]
@@ -3023,7 +3775,17 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut world,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             !pool.slots()[slot].active,
             "penetrate 1 → dead after the hit"
@@ -3167,7 +3929,17 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -3189,7 +3961,17 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut world,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -3209,7 +3991,7 @@ mod falling_tests {
     // build the world, then pass it mutably.
 
     fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
-        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
         let i = w.index(x, y);
         w.tiles[i] = Tile {
             kind: 1,
@@ -3224,7 +4006,17 @@ mod falling_tests {
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -3244,7 +4036,17 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -3261,7 +4063,7 @@ mod falling_tests {
         let mut pool = ProjectilePool::new();
         let mut w = world();
         put_solid(&mut w, 10, 24);
-        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
         for y in [21, 22] {
             let i = w.index(10, y);
             w.tiles[i] = Tile {
@@ -3287,7 +4089,17 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -3297,7 +4109,7 @@ mod falling_tests {
 #[cfg(test)]
 mod arrow_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -3375,13 +4187,33 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(
             pool.slots[0].vel.y, 0.0,
             "no gravity for the first 14 ticks"
         );
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -3405,7 +4237,17 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3427,7 +4269,17 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3447,10 +4299,30 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the 6th tick adds 0.2"
@@ -3461,7 +4333,7 @@ mod arrow_tests {
 #[cfg(test)]
 mod boomerang_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -3513,10 +4385,30 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((320.0, 320.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -3543,7 +4435,17 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((100.0, 260.0)),
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -3571,7 +4473,7 @@ mod boomerang_tests {
             damage: 10,
             ..Default::default()
         };
-        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        pool.slots[0].ai = [1.0, 0.0, 0.0, 0.0];
         let mut w = world();
         // A wall directly on the path home.
         for y in 18..20 {
@@ -3581,7 +4483,17 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((80.0, 308.0)),
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -3603,11 +4515,21 @@ mod boomerang_tests {
             damage: 10,
             ..Default::default()
         };
-        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        pool.slots[0].ai = [1.0, 0.0, 0.0, 0.0];
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((100.0, 200.0)),
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3620,7 +4542,7 @@ mod boomerang_tests {
 #[cfg(test)]
 mod bomb_tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -3668,7 +4590,17 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
@@ -3699,7 +4631,17 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[0].active);
         assert!(
@@ -3739,7 +4681,17 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -3758,14 +4710,34 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
             "no gravity before tick 5"
         );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -3827,11 +4799,7 @@ mod bomb_tests {
         assert_eq!(yoyo_max_range(WOOD_YOYO), 130.0);
         assert_eq!(yoyo_max_range(TERRARIAN_YOYO), 400.0, "the Terrarian's 400");
         assert_eq!(yoyo_max_range(CODE1_YOYO), 220.0);
-        assert_eq!(
-            yoyo_max_range(KRAKEN_YOYO),
-            380.0,
-            "the Kraken is listed"
-        );
+        assert_eq!(yoyo_max_range(KRAKEN_YOYO), 380.0, "the Kraken is listed");
         assert_eq!(
             yoyo_max_range(FORMAT_C_YOYO),
             320.0,
@@ -3858,8 +4826,21 @@ mod bomb_tests {
             .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
             .expect("the Terrarian data row exists");
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
-        assert!(pool.slots[wood].active, "the slot survives its first update");
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(
+            pool.slots[wood].active,
+            "the slot survives its first update"
+        );
         assert!(pool.slots[terrarian].active);
         assert_eq!(
             pool.slots[terrarian].local_ai[0], 1.0,
@@ -3936,6 +4917,7 @@ mod yoyo_tests {
                 &mut [],
                 Some((320.0, 320.0)),
                 None,
+                None,
                 inputs(Some((420.0, 320.0)), true),
                 &mut fast_seed(),
                 0,
@@ -3947,8 +4929,15 @@ mod yoyo_tests {
         let cx = p.pos.x + p.w * 0.5;
         let cy = p.pos.y + p.h * 0.5;
         let dist = ((cx - 420.0).powi(2) + (cy - 320.0).powi(2)).sqrt();
-        assert!(dist < 12.0, "the yoyo hovers at the aim point (dist {dist})");
-        assert!(p.vel.length() < 0.5, "the hover damps: {:?}", p.vel.length());
+        assert!(
+            dist < 12.0,
+            "the yoyo hovers at the aim point (dist {dist})"
+        );
+        assert!(
+            p.vel.length() < 0.5,
+            "the hover damps: {:?}",
+            p.vel.length()
+        );
         assert_eq!(p.local_ai[0], 60.0, "60 ticks of lifetime clock");
         assert_eq!((p.ai[0], p.ai[1]), (420.0, 320.0), "the clamped aim");
     }
@@ -3964,6 +4953,7 @@ mod yoyo_tests {
             &mut w,
             &mut [],
             Some((320.0, 320.0)),
+            None,
             None,
             inputs(Some((620.0, 320.0)), true),
             &mut fast_seed(),
@@ -3992,6 +4982,7 @@ mod yoyo_tests {
                 &mut [],
                 Some((320.0, 320.0)),
                 None,
+                None,
                 inputs(Some((380.0, 320.0)), true),
                 &mut fast_seed(),
                 0,
@@ -4004,6 +4995,7 @@ mod yoyo_tests {
             &mut w,
             &mut [],
             Some((320.0, 320.0)),
+            None,
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
@@ -4026,6 +5018,7 @@ mod yoyo_tests {
             &mut [],
             Some((320.0, 320.0)),
             None,
+            None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
             0,
@@ -4036,6 +5029,7 @@ mod yoyo_tests {
             &mut [],
             Some((320.0, 320.0)),
             None,
+            None,
             inputs(Some((380.0, 320.0)), false),
             &mut fast_seed(),
             0,
@@ -4043,7 +5037,10 @@ mod yoyo_tests {
         );
         assert_eq!(pool.slots[0].ai[0], -1.0);
         assert_eq!(pool.slots[0].ai[1], 0.0);
-        assert!(!pool.slots[0].tile_collide, "the return drops tile collision");
+        assert!(
+            !pool.slots[0].tile_collide,
+            "the return drops tile collision"
+        );
     }
 
     #[test]
@@ -4061,6 +5058,7 @@ mod yoyo_tests {
                 &mut [],
                 Some((320.0, 320.0)),
                 None,
+                None,
                 inputs(Some((450.0, 320.0)), true),
                 &mut fast_seed(),
                 0,
@@ -4073,6 +5071,7 @@ mod yoyo_tests {
             &mut w,
             &mut [],
             Some((120.0, 320.0)),
+            None,
             None,
             inputs(Some((450.0, 320.0)), true),
             &mut fast_seed(),
@@ -4097,16 +5096,14 @@ mod yoyo_tests {
             &mut [],
             Some((320.0, 320.0)),
             None,
+            None,
             inputs(Some((320.0, 320.0)), false),
             &mut fast_seed(),
             0,
             true,
         );
         assert_eq!(pool.slots[slot].ai[0], -1.0, "released");
-        assert!(
-            !pool.slots[slot].active,
-            "caught within the 23.5 px radius"
-        );
+        assert!(!pool.slots[slot].active, "caught within the 23.5 px radius");
         assert_eq!(pool.slots[slot].time_left, 0);
     }
 
@@ -4122,6 +5119,7 @@ mod yoyo_tests {
             &mut w,
             &mut [],
             Some((0.0, 320.0)),
+            None,
             None,
             inputs(Some((2500.0, 320.0)), false),
             &mut fast_seed(),
@@ -4144,23 +5142,28 @@ mod yoyo_tests {
             &mut [],
             Some((320.0, 320.0)),
             None,
+            None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
             0,
             true,
         );
-        assert_eq!(pool.slots[0].time_left, 5, "re-pinned to 6 then decremented");
+        assert_eq!(
+            pool.slots[0].time_left, 5,
+            "re-pinned to 6 then decremented"
+        );
         pool.update(
             &mut w,
             &mut [],
             Some((320.0, 320.0)),
+            None,
             None,
             YoyoInputs {
                 aim: Some((380.0, 320.0)),
                 channel: true,
                 player_dead: true,
             },
-        &mut tr_core::tile_light::FastRandom::new(7),
+            &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
         );
@@ -4179,6 +5182,7 @@ mod yoyo_tests {
             &mut w,
             &mut [],
             Some((320.0, 320.0)),
+            None,
             None,
             inputs(Some((380.0, 320.0)), true),
             &mut fast_seed(),
@@ -4208,6 +5212,7 @@ mod yoyo_tests {
                 &mut w,
                 &mut [],
                 Some((416.0, 448.0)),
+                None,
                 None,
                 inputs(Some((600.0, 448.0)), true),
                 &mut fast_seed(),
@@ -4240,6 +5245,7 @@ mod yoyo_tests {
                 &mut [],
                 Some((500.0, 448.0)),
                 None,
+                None,
                 YoyoInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
@@ -4270,6 +5276,7 @@ mod yoyo_tests {
                 &mut [],
                 Some((320.0, 320.0)),
                 None,
+                None,
                 inputs(Some((380.0, 320.0)), true),
                 &mut fast_seed(),
                 0,
@@ -4291,6 +5298,7 @@ mod yoyo_tests {
                 &mut w,
                 &mut [],
                 Some((320.0, 320.0)),
+                None,
                 None,
                 YoyoInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
@@ -4325,7 +5333,17 @@ mod yoyo_tests {
         // its expiry sweeps the pair into the return, where the owner's catch
         // collects them — the assertions below read the final state.
         for _ in 0..200 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
         }
         assert!(
             pool.slots[second].local_ai[0] > pool.slots[first].local_ai[0],
@@ -4365,7 +5383,17 @@ mod yoyo_tests {
         let mut max_first = 0.0f32;
         let mut max_second = 0.0f32;
         for _ in 0..30 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                Some((320.0, 320.0)),
+                None,
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
             max_first = max_first.max(pool.slots[first].vel.length());
             max_second = max_second.max(pool.slots[second].vel.length());
         }
@@ -4387,6 +5415,7 @@ mod yoyo_tests {
                 &mut w,
                 &mut [],
                 Some((320.0, 320.0)),
+                None,
                 None,
                 inputs(Some((120.0, 320.0)), true),
                 &mut fast_seed(),
@@ -4424,18 +5453,30 @@ mod yoyo_tests {
         let aim = inputs(Some((400.0, 312.0)), true);
         let mut beam = None;
         for _ in 0..6 {
-            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some((320.0, 312.0)),
+                None,
+                None,
+                aim,
+                &mut fast_seed(),
+                0,
+                true,
+            );
             beam = beam.or_else(|| {
-                (0..MAX_PROJECTILES).find(|&i| {
-                    pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM
-                })
+                (0..MAX_PROJECTILES)
+                    .find(|&i| pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM)
             });
         }
         let beam = beam.expect("the 6-tick beam spawn");
         // The retarget: the near slime at (438, 320) — the beam's velocity
         // points right and down by the 6.4 px/tick (8 × 0.8) aim.
         let v = pool.slots[beam].vel;
-        assert!(v.x > 0.0 && v.y > 0.0, "the beam retargets at the slime: {v:?}");
+        assert!(
+            v.x > 0.0 && v.y > 0.0,
+            "the beam retargets at the slime: {v:?}"
+        );
         assert!(
             v.length() > 5.0 && v.length() < 8.0,
             "the 8 px/tick aim after the ×0.8 damp: {}",
@@ -4447,7 +5488,17 @@ mod yoyo_tests {
         // not recycled by a later spawn.
         pool.slots[terrarian].active = false;
         for _ in 0..59 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut fast_seed(),
+                0,
+                true,
+            );
         }
         assert!(!pool.slots[beam].active, "the beam fades out and dies");
         assert_eq!(pool.slots[beam].alpha, 255, "the full fade");
@@ -4463,13 +5514,495 @@ mod yoyo_tests {
                 .spawn_with_data_ai(WOOD_YOYO, 432.0, 320.0, 0.0, 0.0, 9, 2.5, -2.0, 0.0)
                 .unwrap();
             let mut w = world();
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut fast_seed(),
+                0,
+                true,
+            );
             pool.slots[slot].penetrate
         };
         let a = roll_once();
         let b = roll_once();
         assert_eq!(a, b, "the seeded pair rolls identically");
         assert!((3..7).contains(&a), "the 3..7 roll: {a}");
+    }
+}
+
+// --- the whip family (M4-PROJ-7) -----------------------------------------
+#[cfg(test)]
+mod whip_tests {
+    use super::*;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    /// A solid-floor world — the slime needs a spawn column
+    /// (`Npc::spawn_slime` above solid tiles).
+    fn ground() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn one_npc(world: &World) -> Npc {
+        Npc::spawn_slime(world, 20).unwrap()
+    }
+
+    // `DefaultToWhip()`'s slice + `AI_165_Whip`'s state machine, the swept
+    // hit and the on-hit arms. The pure geometry is `tr_core::whip`'s tests.
+    /// One swing sub-step with the owner's center as the arm anchor (the
+    /// `GetArmPosition` stand-in) and the aim along +X.
+    fn whip_tick(
+        pool: &mut ProjectilePool,
+        world: &mut World,
+        npcs: &mut [Npc],
+        center: (f32, f32),
+    ) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            world,
+            npcs,
+            Some(center),
+            Some(Vec2::new(1.0, 0.0)),
+            None,
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+    }
+
+    /// The first `FastRandom` seed whose `next_range(0, 5)` rolls 0 — the
+    /// ThornWhip's 1/5 debuff roll (`:11738`).
+    fn thorn_seed() -> u64 {
+        for seed in 1u64..200 {
+            if tr_core::tile_light::FastRandom::new(seed).next_range(0, 5) == 0 {
+                return seed;
+            }
+        }
+        1
+    }
+
+    fn whip_at(center: (f32, f32), kind: u16, damage: i32) -> ProjectilePool {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(kind, center.0, center.1, 4.0, 0.0, damage, 2.0)
+            .expect("a free slot");
+        pool.set_whip_params(slot, 0, 0, 30.0);
+        pool
+    }
+
+    #[test]
+    fn the_whip_data_slice_is_verbatim() {
+        for kind in tr_core::whip::IS_A_WHIP {
+            let data = proj_data(kind).expect("a whip row");
+            assert_eq!((data.w, data.h), (18.0, 18.0), "{kind}");
+            assert_eq!(data.ai_style, 165, "{kind}");
+            assert_eq!(data.penetrate, -1, "{kind}");
+            assert!(!data.tile_collide, "{kind}");
+            let extra = if kind == SWORD_WHIP || kind == SCYTHE_WHIP {
+                2
+            } else {
+                1
+            };
+            assert_eq!(data.extra_updates, extra, "{kind}");
+        }
+        assert_eq!(proj_data(MOON_LORD_WHIP).unwrap().extra_updates, 1);
+        // Not a whip.
+        assert!(proj_data(864).map_or(true, |d| d.ai_style != 165));
+    }
+
+    #[test]
+    fn the_whip_swing_flies_out_from_the_anchor_and_dies() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, BLAND_WHIP, 14);
+        // `:47674` — the rotation is the velocity's + a quarter turn, and the
+        // `spriteDirection` faces the aim. `extraUpdates = 1` runs 2 sub-steps
+        // per tick, so one tick lands `ai[0] = 2`.
+        whip_tick(&mut pool, &mut w, &mut [], center);
+        assert!((pool.slots[0].rot - std::f32::consts::PI / 2.0).abs() < 1e-6);
+        assert_eq!(pool.slots[0].sprite_direction, 1);
+        assert_eq!(pool.slots[0].ai[0], 2.0, "the sub-step counter");
+        // `:47678`: the last sub-step's center sits at `arm + velocity * (ai0-1)`.
+        let (cx, cy) = pool.slots[0].center();
+        assert!((cx - (center.0 + 4.0)).abs() < 1e-3 && (cy - center.1).abs() < 1e-3);
+        // The swing runs `timeToFlyOut = 30 * 2 = 60` sub-steps and then kills.
+        let mut ticks = 1;
+        while pool.slots[0].active {
+            whip_tick(&mut pool, &mut w, &mut [], center);
+            ticks += 1;
+            assert!(ticks < 200, "the swing must end");
+        }
+        assert_eq!(ticks, 30, "60 sub-steps at 2 per tick");
+        assert_eq!(pool.slots[0].ai[0], 60.0, "the sub-steps ran out");
+        // The SwordWhip/ScytheWhip's 3 sub-steps per tick shorten the tick
+        // count, not the sub-step count.
+        let mut pool2 = {
+            let mut p = ProjectilePool::new();
+            let s = p
+                .spawn_with_data(SWORD_WHIP, center.0, center.1, 4.0, 0.0, 55, 2.0)
+                .unwrap();
+            p.set_whip_params(s, 0, 0, 28.0);
+            p
+        };
+        let mut ticks2 = 0;
+        while pool2.slots[0].active {
+            whip_tick(&mut pool2, &mut w, &mut [], center);
+            ticks2 += 1;
+            assert!(ticks2 < 200);
+        }
+        assert_eq!(ticks2, 28, "84 sub-steps at 3 per tick");
+        assert_eq!(pool2.slots[0].local_hit_cooldown, -1, "the sentinel");
+        assert_eq!(pool2.slots[0].ai[0], 28.0 * 3.0, "the sub-steps ran out");
+    }
+
+    #[test]
+    fn the_whip_hits_each_npc_once_across_the_swing() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut npcs = [one_npc(&w)];
+        // The NPC sits in the whip's reach along the aim.
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let start_hp = npcs[0].hp;
+        let mut pool = whip_at(center, BLAND_WHIP, 14);
+        let mut ticks = 0;
+        while pool.slots[0].active {
+            whip_tick(&mut pool, &mut w, &mut npcs, center);
+            ticks += 1;
+            assert!(ticks < 200);
+        }
+        // The `-1` sentinel blocks the re-hits for the slot's whole life, so
+        // the total taken is exactly one hit (the decay regression: the old
+        // `(v - 1).max(0)` decay turned the sentinel into 0 on the next tick).
+        assert_eq!(npcs[0].hp, start_hp - 14, "exactly one hit per slot");
+        assert_eq!(npcs[0].immune[0], 0, "the per-owner i-frames do not gate");
+        // The slot's own immunity row for the NPC holds the sentinel.
+        assert_eq!(pool.local_immunity[..256][0], -1);
+    }
+
+    #[test]
+    fn the_whip_debuff_rows_are_verbatim() {
+        // The ThornWhip's 1/5 roll needs a seed whose first draw is 0.
+        let seed = thorn_seed();
+
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let cases: [(u16, i32, i32); 5] = [
+            (FIRE_WHIP, 323, 240),   // Hellfire
+            (COOL_WHIP, 324, 240),   // Frostburn
+            (EEL_WHIP, 362, 240),    // Electrified
+            (SCYTHE_WHIP, 310, 240), // Oiled
+            (THORN_WHIP, 20, 180),   // Poisoned (the 1/5 roll — force it)
+        ];
+        for (kind, buff, time) in cases {
+            // The Slime is Poisoned-immune (`debuff_immune_ids`' kind-1
+            // row), so the Zombie (no immunity rows) carries the debuff cases.
+            let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+            npcs[0].x = center.0 + 20.0;
+            npcs[0].y = center.1 - 12.0;
+            let mut pool = whip_at(center, kind, 20);
+            let mut rng = tr_core::tile_light::FastRandom::new(seed);
+            // The swing's reach grows with the curve, so run the swing until
+            // the sweep touches the NPC (the debuff lands with the hit).
+            let mut ticks = 0;
+            while npcs[0].buffs.find_buff_index(buff).is_none() {
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    Some(center),
+                    Some(Vec2::new(1.0, 0.0)),
+                    None,
+                    YoyoInputs::default(),
+                    &mut rng,
+                    0,
+                    true,
+                );
+                ticks += 1;
+                assert!(ticks < 60, "{kind} must hit within its swing");
+            }
+            let idx = npcs[0].buffs.find_buff_index(buff).unwrap();
+            assert_eq!(npcs[0].buffs.buff_time[idx], time, "{kind}");
+        }
+    }
+
+    #[test]
+    fn the_moon_lord_whip_spawns_its_arms() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, MOON_LORD_WHIP, 110);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        // The arm budget roll (`:47669-47672`) fires on the first sub-step.
+        pool.update(
+            &mut w,
+            &mut [],
+            Some(center),
+            Some(Vec2::new(1.0, 0.0)),
+            None,
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert!(
+            (1.0..=3.0).contains(&pool.slots[0].local_ai[1]),
+            "the budget roll is 1..3"
+        );
+        // The three arms spawn while `ai[0]/timeToFlyOut*3 > ai[2]` and carry
+        // the ai[2] counter and the arms' settings override (`30 * MaxUpdates`)
+        // — each lives 60 sub-steps of its own, so count the concurrency peak.
+        let mut peak_arms = 0;
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut [],
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                None,
+                YoyoInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            let arms = pool
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.ai[2] >= 10.0)
+                .count();
+            peak_arms = peak_arms.max(arms);
+        }
+        assert_eq!(peak_arms, 3, "the Moon Lord whip throws its three arms");
+        // The arms that are still alive carry the override.
+        let alive: Vec<_> = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.ai[2] >= 10.0)
+            .collect();
+        for p in alive {
+            let settings = p.whip_settings.expect("the arm's settings");
+            assert_eq!(settings.time_fly_out, 60.0, "the arm lives 30*MaxUpdates");
+            assert_eq!(p.tag_effect_type, 0);
+        }
+    }
+
+    #[test]
+    fn the_whip_hit_tags_the_npc_for_the_summon_bonus() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let npc_idx = 0usize;
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        // `ApplyStatsFromSource` — the firing item's tag row (4911 = CoolWhip).
+        pool.slots[0].tag_effect_type = 4911;
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            if !pool.slots[0].active {
+                break;
+            }
+        }
+        // `:13581-13584`: the hit applied the tag to the player's stack.
+        assert!(
+            player.tag_effects.is_npc_tagged(4911, npc_idx),
+            "the whip tags the NPC for the summoners"
+        );
+    }
+
+    #[test]
+    fn a_tagged_summon_shot_takes_the_damage_bonus() {
+        let mut w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        // The tag is applied out-of-band (another whip already tagged it).
+        player
+            .tag_effects
+            .try_apply_tag_to_npc(4672, 0, npcs[0].kind);
+        let start = npcs[0].hp;
+        // A friendly arrow-style shot over the NPC with the summon-shot flag
+        // the tag math gates on (`WhipTagEffect.CanRunHitEffects`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                WOODEN_ARROW,
+                npcs[0].x + 5.0,
+                npcs[0].y + 5.0,
+                0.0,
+                0.0,
+                10,
+                0.0,
+            )
+            .unwrap();
+        pool.slots[slot].is_summon_shot = true;
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        // The BlandWhip's TagDamage 4 at the 1f multiplier: 10 + 4 = 14.
+        assert_eq!(start - npcs[0].hp, 14, "the tagged summon shot takes +4");
+        // Without the gate the shot is a plain hit.
+        let start2 = npcs[0].hp;
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data(
+                WOODEN_ARROW,
+                npcs[0].x + 5.0,
+                npcs[0].y + 5.0,
+                0.0,
+                0.0,
+                10,
+                0.0,
+            )
+            .unwrap();
+        pool2.slots[s2].is_summon_shot = false;
+        pool2.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_eq!(start2 - npcs[0].hp, 10, "the ungated shot is plain");
+    }
+
+    #[test]
+    fn the_constellation_first_hit_arms_and_clears_the_proc_window() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        // Two swings must land on the same NPC — park it above its death.
+        npcs[0].hp = 4000;
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let mut pool = whip_at(center, CONSTELLATION_WHIP, 130);
+        pool.slots[0].tag_effect_type = 5479;
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        // The swing until the hit lands.
+        let mut ticks = 0;
+        while !player.tag_effects.is_npc_tagged(5479, 0) {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            ticks += 1;
+            assert!(ticks < 60, "the whip must hit");
+        }
+        // `WhipTagEffect_Constellation.OnTaggedHit` arms the window on the
+        // tagging hit (the mark stands 480 ticks — the second swing's first
+        // hit consumes it and clears every proc window).
+        assert!(
+            player.tag_effects.can_proc(5479, 0),
+            "the tagging hit arms the proc window"
+        );
+        // The second swing: its first hit latches (the `OnTaggedHit` re-arm
+        // keeps the window standing, so the latch is the observable).
+        let mut pool2 = whip_at(center, CONSTELLATION_WHIP, 130);
+        pool2.slots[0].tag_effect_type = 5479;
+        let mut ticks2 = 0;
+        while pool2.slots[0].local_ai[0] == 0.0 {
+            pool2.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            ticks2 += 1;
+            assert!(ticks2 < 60, "the second whip must hit");
+        }
+        assert_eq!(pool2.slots[0].local_ai[0], 1.0, "the latch");
+    }
+
+    #[test]
+    fn the_cool_whip_grants_its_buff_on_every_hit() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [one_npc(&w)];
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        pool.slots[0].tag_effect_type = 4911;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            if !pool.slots[0].active {
+                break;
+            }
+        }
+        // `:13923` — the unconditional 312/180 grant (the deferred 917 spawn).
+        let idx = player
+            .buffs
+            .find_buff_index(312)
+            .expect("the CoolWhip buff");
+        assert_eq!(player.buffs.buff_time[idx], 180);
     }
 }
 
@@ -4813,9 +6346,15 @@ mod phasmal_projectile_tests {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -2,
             extra_updates: 0,
-            ai: [0.0; 3],
+            ai: [0.0; 4],
             local_ai: [0.0; 3],
+            sprite_direction: 1,
+            is_summon_shot: false,
+            tag_effect_type: 0,
+            bonus_tag_damage: 0,
             direction: 1,
+            whip_settings: None,
+            whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
             falling_tile: None,

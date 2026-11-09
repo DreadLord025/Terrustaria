@@ -1728,6 +1728,14 @@ impl App {
                         // hover machines up beside the player once spawned.
                         "retinazer" => NpcKind::Retinazer,
                         "spazmatism" => NpcKind::Spazmatism,
+                        // The Lunar pillars (M4-NPC-3l): the four towers
+                        // spawn on the ground beneath the player (their
+                        // machines hover them up over the first ticks).
+                        "stardust" => NpcKind::StardustTower,
+                        "nebula" => NpcKind::NebulaTower,
+                        "solar" => NpcKind::SolarTower,
+                        "vortex" => NpcKind::VortexTower,
+                        "cultist" => NpcKind::AncientCultist,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();

@@ -1750,6 +1750,11 @@ fn granite_cleanup(
 /// and the descending shaft, then 3 corridor levels of the dungeon brick
 /// with the dungeon walls, the corridors carved inward. The brick colour
 /// rides the world's dungeon roll (41 blue / 43 green / 44 pink).
+///
+/// Retired from the pipeline 2026-11-09 (M5-DUNGEON): the faithful crawler
+/// (`worldgen/dungeon.rs::generate_dungeon`) took the step's slot — kept for
+/// its tests and as the reconciliation reference.
+#[allow(dead_code)]
 pub(crate) fn pass_dungeon(
     world: &mut World,
     surface: &[i32],
