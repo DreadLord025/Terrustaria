@@ -1247,14 +1247,13 @@ mod tests {
         assert_eq!(loaded.tile_entities, bag.tile_entities);
         assert_eq!(loaded.town_rooms, bag.town_rooms);
 
-        // …and the flip is visible: pointers 3..8 are real codecs, 9..10 are
-        // still Phase 6's.
+        // …and the flip is visible: pointers 3..8 are real codecs, and Phase 6
+        // (bestiary/creative powers) flipped 9..10, so every section's codec
+        // has landed.
         for def in crate::wld::sections::DEFS {
-            let want = def.pointer <= 8;
-            assert_eq!(
+            assert!(
                 (def.implemented)(),
-                want,
-                "pointer {} ({})",
+                "pointer {} ({}) has no reader",
                 def.pointer,
                 def.name
             );

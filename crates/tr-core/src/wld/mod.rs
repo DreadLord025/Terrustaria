@@ -1289,19 +1289,26 @@ mod tests {
     }
 
     #[test]
-    fn save_refuses_a_section_that_has_data_but_no_writer() {
+    fn save_writes_every_section_that_has_a_writer() {
+        // Phase 6 landed the last two stub lanes (bestiary, creative powers),
+        // so all eleven sections now have writers and `to_bytes`'s "data but no
+        // writer" bail cannot trigger through the registry any more — this test
+        // is the flip's record: the bag below used to be refused, one section
+        // at a time. The bail itself stays in `to_bytes` as the guard for a
+        // section added without a codec.
         let world = World::new("t".into(), 8, 6);
         let mut data = SectionData::default();
-        // Chests/signs/plates/TEs/town rooms all carry real codecs since
-        // phases 3-5, so the examples move to the two lanes Phase 6 still owns
-        // (creative powers, bestiary); the assertion is unchanged.
         data.creative_powers
             .records
             .push((0, sections::WldCreativeValue::Bool(true)));
-        assert!(to_bytes(&world, &data, 1).is_err());
-        data.creative_powers.records.clear();
         data.bestiary.kills.push(("Slime".into(), 1));
-        assert!(to_bytes(&world, &data, 1).is_err());
+        data.bestiary.sights.push("Slime".into());
+        let file = to_bytes(&world, &data, 1).expect("every section has a writer now");
+        let table = SectionTable::open(&file).expect("opens");
+        let loaded = load_sections(&table).expect("walks its sections");
+        assert_eq!(loaded.bestiary.kills, data.bestiary.kills);
+        assert_eq!(loaded.bestiary.sights, data.bestiary.sights);
+        assert_eq!(loaded.creative_powers.records, data.creative_powers.records);
     }
 
     // --- the Phase 1 review's carried probes ---------------------------------
