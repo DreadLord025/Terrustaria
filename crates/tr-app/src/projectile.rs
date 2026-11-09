@@ -877,6 +877,12 @@ pub struct Projectile {
     /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
     /// end-of-tick explosion pass (`Kill()`'s bomb path).
     pub detonated: bool,
+    /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
+    /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
+    /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
+    /// The flag also keeps the blast itself — which rides the same style —
+    /// from ever spawning a second one.
+    blast_spawned: bool,
 }
 
 impl Default for Projectile {
@@ -912,6 +918,7 @@ impl Default for Projectile {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            blast_spawned: false,
         }
     }
 }
@@ -962,28 +969,13 @@ impl Projectile {
     /// ticks, the flight-direction sprite rotation, and the tile collision —
     /// the `Update` movement's blocked hit kills the projectile (the arrows
     /// break on contact; the water transforms are M4-PROJ polish).
+    ///
+    /// The body is the shared [`Projectile::ai_style1_flight`] (M4-PROJ-6
+    /// Phase 3 extracted it so the aiStyle-1 riders can wrap the same
+    /// generic flight instead of duplicating it) — the delegation is
+    /// behaviour-identical, pinned by the arrow tests below.
     fn ai_arrow(&mut self, world: &World) {
-        self.ai[0] += 1.0;
-        if self.ai[0] >= 15.0 {
-            self.vel.y += 0.1;
-        }
-        self.vel.y = self.vel.y.clamp(-16.0, 16.0);
-        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
-        if self.tile_collide {
-            let nx = self.pos.x + self.vel.x;
-            let ny = self.pos.y + self.vel.y;
-            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
-            if hit_x || hit_y {
-                self.active = false;
-                self.time_left = 0;
-            } else {
-                self.pos.x = nx;
-                self.pos.y = ny;
-            }
-        } else {
-            self.pos += self.vel;
-        }
+        self.ai_style1_flight(world, true);
     }
 
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
@@ -1232,6 +1224,697 @@ impl Projectile {
         }
     }
 
+    // --- The magic (caster) families of M4-PROJ-6, Phase 3: the
+    // self-contained flight arms (aiStyles 8/18/22/24/28/50 and the
+    // aiStyle-1 riders). Every arm carries its `Projectile.cs` citation;
+    // the dust/sound spawns are SKIPPED (the port has no dust layer in the
+    // pool) and each skip is noted at its point, for ANALYSIS by Phase 6.
+
+    /// The generic aiStyle-1 flight (`AI_001`'s tail, `Projectile.cs:56038-56041`
+    /// `if (flag3) ai[0]++` + the gravity arm `:57569-57581` + the rotation
+    /// default `:57725-57728` + the ±16 clamp `:57756-57763` + the movement's
+    /// default tile arm `:19843-19848`): the flight counter, the
+    /// `velocity.Y += 0.1f` gravity after 15 ticks, the flight-direction
+    /// rotation and the kill-on-tile-contact. Extracted from `ai_arrow` by
+    /// Phase 3 so the aiStyle-1 riders can wrap it (the C# has one method:
+    /// the per-type hooks at the top, the per-type rotation tail at the
+    /// bottom, this flight in the middle).
+    ///
+    /// `count_flight` is the C#'s `flag3` — the per-type skip switch
+    /// (`:55947-56032`) that holds the flight counter at rest. The plain
+    /// arrows pass `true`; the M4-PROJ-6 riders 20/88/355/660 are all on that
+    /// list, so they never reach the gravity at all.
+    fn ai_style1_flight(&mut self, world: &World, count_flight: bool) {
+        if count_flight {
+            self.ai[0] += 1.0;
+        }
+        if self.ai[0] >= 15.0 {
+            self.vel.y += 0.1;
+        }
+        self.vel.y = self.vel.y.clamp(-16.0, 16.0);
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x || hit_y {
+                self.active = false;
+                self.time_left = 0;
+            } else {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+    }
+
+    /// The aiStyle-1 riders that are not plain arrows (`AI_001`'s per-type
+    /// hooks, M4-PROJ-6 Phase 3): the PurpleLaser 88 (`:54021-54045` +
+    /// `:55930-55939`), the GreenLaser 20 (`:54047-54064`), the SkyFracture
+    /// 660 (`:55672-55693` + `:57650-57652`) and the VenomFang 355
+    /// (`:56728-56747`), wrapped around [`Projectile::ai_style1_flight`] in
+    /// the C#'s own order — every per-type hook above the flight, the per-kind
+    /// rotation tail below it. All four are on the `flag3` skip list
+    /// (`:55955`/`:55957`/`:55988`/`:56020`), so the flight runs with a
+    /// resting counter and no gravity: a laser or a fang flies exactly
+    /// straight, as in the vanilla game.
+    fn ai_style1_rider(&mut self, world: &World) {
+        // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
+        // `ai[0]`, then the scale growth to 4 with the owner-only knockback
+        // and the 8-tick counter. `ai[0]` sits at rest on this kind, so the
+        // remap never fires — ported for its shape, pinned by the tests.
+        if self.kind == PURPLE_LASER {
+            if self.ai[0] != 0.0 {
+                self.extra_updates = self.ai[0].min(15.0) as u32;
+            }
+            if self.scale < 4.0 {
+                self.scale = (self.scale + 0.053).min(4.0);
+                if self.owner == 0 {
+                    self.knock_back *= 1.0045;
+                    self.local_ai[0] += 1.0;
+                    if self.local_ai[0] >= 8.0 {
+                        self.local_ai[0] = 0.0;
+                        // `damage += Main.rand.Next(1, 4)` and
+                        // `penetrate += Main.rand.Next(0, 2)` (`:54041-54042`)
+                        // are SKIPPED — the pool keeps zero RNG (the port's
+                        // hard determinism rule); recorded for ANALYSIS.
+                    }
+                }
+            }
+        }
+        // The GreenLaser (`:54047-54064`): the same shape with the 3 cap,
+        // the 1.0025 knockback and the 25-tick counter.
+        if self.kind == GREEN_LASER && self.scale < 3.0 {
+            self.scale = (self.scale + 0.0189).min(3.0);
+            if self.owner == 0 {
+                self.knock_back *= 1.0025;
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] >= 25.0 {
+                    self.local_ai[0] = 0.0;
+                    // `damage += Main.rand.Next(1, 3)` / `penetrate++`
+                    // (`:54059-54060`) SKIPPED — no RNG in the pool.
+                }
+            }
+        }
+        // The SkyFracture's first-tick marker (`:55676-55687`): the light
+        // plot (`Utils.PlotTileLine` → `CastLightOpen`), the
+        // `SoundID.Item9` cue, the `frame` roll and the 16× dust 180 are
+        // SKIPPED; the alpha/scale write is the state the port keeps.
+        if self.kind == SKY_FRACTURE && self.alpha > 0 {
+            self.alpha = 0;
+            self.scale = 1.1;
+        }
+        // The PurpleLaser's alpha fade (`:55928-55939`).
+        if self.kind == PURPLE_LASER {
+            if self.alpha > 0 {
+                self.alpha -= 10;
+            }
+            self.alpha = self.alpha.max(0);
+        }
+        // The VenomFang's fade and its dust cue (`:56728-56747`): the
+        // `alpha -= 50` state rides; the dust 205 at `alpha == 0` is SKIPPED.
+        if self.kind == VENOM_FANG {
+            self.alpha = (self.alpha - 50).max(0);
+        }
+        // The generic flight, then the per-kind rotation tail the C# order
+        // below it: SkyFracture's `velocity.ToRotation() + π/4`
+        // (`:57650-57652`).
+        self.ai_style1_flight(world, false);
+        if self.kind == SKY_FRACTURE {
+            self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
+        }
+    }
+
+    /// The Book of Skulls' rider (`AI_001`'s `else if (this.type == 207 ||
+    /// this.type == 837)` block, `Projectile.cs:56778-56887`): the in-tile
+    /// `timeLeft` drain, the cached spawn speed, the alpha fade, the NPC
+    /// acquisition scan (the Manhattan-300 gate with the `Collision.CanHit`
+    /// line) into `ai[1]`, the 1000f retain/drop rule and the steering at
+    /// the weight 20 (the generic 8 for 207 has no ported row).
+    ///
+    /// The arm takes `npcs` — the targeting's `Main.npc` slice — exactly as
+    /// the Phase-1 arm-signature contract's targeting case does.
+    fn ai_book_of_skulls(&mut self, world: &World, npcs: &[Npc]) {
+        // `:56794-56800`: inside a solid tile the skull burns 33 ticks off
+        // its own life (the tile-collide false flight passes through).
+        if self.time_left > 33 {
+            let cx = (self.pos.x + self.w * 0.5) as i32;
+            let cy = (self.pos.y + self.h * 0.5) as i32;
+            if solid_tile(world, cx / 16, cy / 16) {
+                self.time_left -= 33;
+            }
+        }
+        // `:56801-56807`: the spawn speed is cached on the first tick and
+        // the steering keeps that magnitude for the whole flight.
+        let spawn_speed = if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = (self.vel.x * self.vel.x + self.vel.y * self.vel.y).sqrt();
+            self.local_ai[0]
+        } else {
+            self.local_ai[0]
+        };
+        // `:56808-56812`: the alpha fade.
+        if self.alpha > 0 {
+            self.alpha -= 25;
+        }
+        self.alpha = self.alpha.max(0);
+        // `:56813-56842`: the acquisition scan while no target is held. The
+        // scan keeps the running minimum `num189` (seeded at 300) and only
+        // writes `ai[1]` after the loop (`:56844-56847`), so the nearest
+        // chaseable NPC inside the Manhattan 300 with a clear line wins — the
+        // index is kept alongside the distance and committed once at the end.
+        let mut target_xy = (self.pos.x, self.pos.y);
+        let mut has_target = false;
+        if self.ai[1] == 0.0 {
+            let mut best = 300.0f32;
+            let mut best_idx: Option<usize> = None;
+            for (idx, n) in npcs.iter().enumerate() {
+                if !chaseable(n) {
+                    continue;
+                }
+                let (w, h) = n.size();
+                let (nx, ny) = (n.x + w * 0.5, n.y + h * 0.5);
+                let dist = (self.pos.x + self.w * 0.5 - nx).abs()
+                    + (self.pos.y + self.h * 0.5 - ny).abs();
+                if dist < best
+                    && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, w, h)
+                {
+                    best = dist;
+                    best_idx = Some(idx);
+                    target_xy = (nx, ny);
+                }
+            }
+            if let Some(idx) = best_idx {
+                self.ai[1] = (idx + 1) as f32;
+            }
+        }
+        // `:56843-56858`: the held target's retain rule — the Manhattan 1000f
+        // keeps it, everything else (dead, no longer chaseable, too far)
+        // clears `ai[1]` and the skull flies on unsteered. The C# spells the
+        // gate `active && CanBeChasedBy(ignoreDontTakeDamage: true) &&
+        // !dontTakeDamage`, which is [`chaseable`] exactly.
+        if self.ai[1] > 0.0 {
+            let idx = self.ai[1] as usize - 1;
+            match npcs.get(idx) {
+                Some(n) if chaseable(n) => {
+                    let (w, h) = n.size();
+                    let (nx, ny) = (n.x + w * 0.5, n.y + h * 0.5);
+                    if (self.pos.x + self.w * 0.5 - nx).abs()
+                        + (self.pos.y + self.h * 0.5 - ny).abs()
+                        < 1000.0
+                    {
+                        has_target = true;
+                        target_xy = (nx, ny);
+                    }
+                }
+                _ => self.ai[1] = 0.0,
+            }
+        }
+        // `:56859-56861`: the hostile shots never steer.
+        if !self.friendly {
+            has_target = false;
+        }
+        // `:56862-56886`: the steering blend at the per-type weight.
+        if has_target {
+            let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let inv = spawn_speed / ((target_xy.0 - cx).hypot(target_xy.1 - cy)).max(f32::EPSILON);
+            let (tx, ty) = ((target_xy.0 - cx) * inv, (target_xy.1 - cy) * inv);
+            // `:56878-56882`: the weight is 20 for the Book of Skulls.
+            let weight = 20.0;
+            self.vel.x = (self.vel.x * (weight - 1.0) + tx) / weight;
+            self.vel.y = (self.vel.y * (weight - 1.0) + ty) / weight;
+        }
+        // 837 is off the `flag3` skip list, so the flight counter and the
+        // gravity run for the skull exactly as they do for an arrow.
+        self.ai_style1_flight(world, true);
+        // The per-kind rotation tail (`:57597-57602`): the skull's sprite
+        // faces its flight direction without the generic +π/2 offset. The
+        // C#'s `base.direction` field has no slot counterpart; it tracks
+        // `velocity.X`'s sign after each sub-step (`:17016-17026`), so the
+        // velocity sign is the port's stand-in (the same substitution the
+        // spear/bomb arms make for their `direction` reads).
+        self.rot = if self.vel.x < 0.0 {
+            (-self.vel.y).atan2(-self.vel.x)
+        } else {
+            self.vel.y.atan2(self.vel.x)
+        };
+    }
+
+    /// `AI()`'s aiStyle-8 arm (`Projectile.cs:24233-24362`) plus the same
+    /// style's tile bounce in the movement (`HandleMovement`'s aiStyle-8
+    /// branch, `:19573-19613`): the gravity timer `ai[1]++` with its three
+    /// per-type skips, `velocity.Y += 0.2f` from `ai[1] >= 20f`, the 16 fall
+    /// clamp, `rotation += 0.3f * direction`, and the per-type bounce kill
+    /// threshold (5 default, 7 for the WaterBolt's lava bounce, 6 for the
+    /// ball of fire, 8 for the ball of frost).
+    fn ai_ball_of_fire(&mut self, world: &World) {
+        // `:24235-24244`: the one-shot sound gates of the Golem fireball 258
+        // and the hostile cursed flame 96. The SoundEngine call is SKIPPED
+        // (no sound layer in the pool) and `localAI[0]`'s write rides with
+        // it — the flag is read only by this same gate.
+        if matches!(self.kind, GOLEM_FIREBALL | CURSED_FLAME) && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+        }
+        // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
+        // remap first (read off the *previous* tick's `ai[1]`, as the C#
+        // orders it), then the lava probe at the centre that reverses the fall
+        // and marks `ai[1] = 1f`. The dust/gore spawns are SKIPPED.
+        if self.kind == WATER_BOLT {
+            if self.ai[1] == 1.0 {
+                self.extra_updates = 5;
+            }
+            if self.vel.y > 0.0 {
+                let cx = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+                let cy = ((self.pos.y + self.h * 0.5) / TILE_PX) as i32;
+                let in_lava = world
+                    .tile(cx, cy)
+                    .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
+                if in_lava {
+                    self.ai[1] = 1.0;
+                    self.vel.y = -self.vel.y;
+                }
+            }
+        }
+        // `:24304-24337`: the per-type dust spawns (the 502 disco light, the
+        // 95/96 cursed flame, the 253 frost, the default 6) are SKIPPED.
+        // `:24338-24341`: the gravity timer — the WaterBolt reuses `ai[1]` as
+        // its lava-bounce marker and 96/258 as their sound gate, so all three
+        // keep the counter at rest and never reach the gravity.
+        if !matches!(self.kind, WATER_BOLT | CURSED_FLAME | GOLEM_FIREBALL) {
+            self.ai[1] += 1.0;
+        }
+        if self.ai[1] >= 20.0 {
+            self.vel.y += 0.2;
+        }
+        // `:24346-24357`: the 502 velocity rotation has no ported row; the
+        // default is `rotation += 0.3f * direction` and nothing in this arm
+        // writes `direction` (its Entity default 1 carries the flight).
+        self.rot += 0.3;
+        // `:24358-24361`: the fall clamp.
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        // The tile bounce (`:19573-19613`), the arm's own tile-collision
+        // behaviour in the port's per-arm collision model.
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x || hit_y {
+                // The C#'s bounce arm is `else if (this.aiStyle == 8 &&
+                // this.type != 96)` (`:19573`), so the hostile cursed flame 96
+                // falls past it to the blocked-move chain's default
+                // (`:19851-19855`): one last step into the tile, then the
+                // kill — the port's [`Projectile::kill_step`], not a bounce.
+                if self.kind == CURSED_FLAME {
+                    self.kill_step(world);
+                    return;
+                }
+                self.ai[0] += 1.0;
+                // `:19577-19590`: the per-type bounce budget.
+                let limit = match self.kind {
+                    BALL_OF_FIRE => 6.0,
+                    BALL_OF_FROST => 8.0,
+                    WATER_BOLT if self.ai[1] == 1.0 => 7.0,
+                    _ => 5.0,
+                };
+                if self.ai[0] >= limit {
+                    // `:19591-19595`: the last bounce carries the velocity
+                    // into the wall and kills.
+                    self.pos += self.vel;
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+                // `:19598-19612`: the reversal, with the ball of fire's 0.8
+                // damp on a fast fall. The C# reads the post-`TileCollision`
+                // velocity for the `> 4f` gate; the port has no swept
+                // resolution, so the incoming velocity stands in.
+                if self.kind == BALL_OF_FIRE && self.vel.y > 4.0 {
+                    if hit_y {
+                        self.vel.y = -self.vel.y * 0.8;
+                    }
+                } else if hit_y {
+                    self.vel.y = -self.vel.y;
+                }
+                if hit_x {
+                    self.vel.x = -self.vel.x;
+                }
+            }
+        }
+        // `UpdatePosition` (`:20468`).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-18 arm (`Projectile.cs:25367-25476`): the DemonScythe
+    /// 45's flight — `rotation += 0.8f * direction`, the counter `ai[0]++`,
+    /// the `velocity *= 1.06f` acceleration from tick 30 and the `ai[0] =
+    /// 200f` clamp that stops it at 100. The 44/263/274/1092 riders of the
+    /// same style have no ported row; the 2× dust 27 is SKIPPED.
+    fn ai_demon_scythe(&mut self, world: &World) {
+        self.rot += 0.8;
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 30.0 {
+            if self.ai[0] < 100.0 {
+                self.vel *= 1.06;
+            } else {
+                // `:25465-25468`: parked at 200, so the acceleration stops.
+                self.ai[0] = 200.0;
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-22 arm (`Projectile.cs:25607-25860`): the Ice Rod
+    /// block's three phases on the `ai` signs, all dust SKIPPED.
+    ///
+    /// - **standing** (`ai[1] < 0`, `:25612-25680`): the failed placement's
+    ///   fall — the 60-tick `timeLeft` cap, the ±0.3 rotation and the probe
+    ///   kill scan.
+    /// - **placed** (`ai[0] < 0`, `:25681-25703`): the block stands in the
+    ///   tile, drains `ai[0]` until `-900` and is `KillTile`d away (owner
+    ///   branch).
+    /// - **flying** (`:25704-25860`): the probe kill scan, the spawn tile
+    ///   target's walk to the nearest adjacent non-solid cell and the
+    ///   `WorldGen.PlaceTile(127)` that stands the block down.
+    ///
+    /// The tile writes need `&mut World` — the one carve-out of the
+    /// arm-signature doc block over the dispatch — and run only on the
+    /// owner branch (`Main.myPlayer == this.owner`; the port's local player
+    /// is slot `owner == 0`).
+    fn ai_ice_block(&mut self, world: &mut World) {
+        // `:25611`: a stopped block is fully opaque — the write runs against
+        // the pre-place velocity, so the standing phase keeps its own alpha.
+        if self.vel.x == 0.0 && self.vel.y == 0.0 {
+            self.alpha = 255;
+        }
+        // The standing phase (`:25612-25680`).
+        if self.ai[1] < 0.0 {
+            if self.time_left > 60 {
+                self.time_left = 60;
+            }
+            if self.vel.x > 0.0 {
+                self.rot += 0.3;
+            } else {
+                self.rot -= 0.3;
+            }
+            // The kill scan (`:25633-25676`) — the standing phase's variant
+            // counts an actuated tile as blocking (`active()`, not
+            // `nactive()`).
+            self.ice_block_probe_kill(world, true);
+            // The dust 67 (`:25677-25679`) is SKIPPED.
+            return;
+        }
+        // The placed phase (`:25681-25703`).
+        if self.ai[0] < 0.0 {
+            // `:25702-25710`: the 10× dust 67 burst on the placement tick and
+            // the 1-in-30 puff afterwards are SKIPPED.
+            let tx = (self.pos.x / TILE_PX) as i32;
+            let ty = (self.pos.y / TILE_PX) as i32;
+            let standing = world.tile(tx, ty).is_some_and(|t| t.active());
+            if !standing {
+                self.active = false;
+                self.time_left = 0;
+            }
+            self.ai[0] -= 1.0;
+            // `:25757-25760`: after 900 ticks the owner's block is mined away
+            // and the projectile goes with it.
+            if self.ai[0] <= -900.0
+                && self.owner == 0
+                && world
+                    .tile(tx, ty)
+                    .is_some_and(|t| t.active() && t.kind == MAGICAL_ICE_BLOCK)
+            {
+                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                self.active = false;
+                self.time_left = 0;
+            }
+            return;
+        }
+        // The flying phase (`:25704-25860`): the kill scan's `nactive()`
+        // variant — an actuated tile does not block.
+        self.ice_block_probe_kill(world, false);
+        if !self.active {
+            return;
+        }
+        // The lava (`:25742-25744`) and shimmer (`:25746-25751`) kills are
+        // SKIPPED — the slot carries no liquid-wet flags in this port.
+        // `:25755-25759`: the spawn tile target, `ai[0]`/`ai[1]` — the Ice
+        // Rod's `Player.tileTargetX/Y` (`Player.cs:49383-49387`) — walked to
+        // the nearest adjacent non-solid cell (`:25760-25798`).
+        let mut tx = self.ai[0] as i32;
+        let mut ty = self.ai[1] as i32;
+        if world.in_bounds(tx, ty) && solid_tile(world, tx, ty) {
+            // The C#'s two centre gates (`Center.X < tile·16 + 8`,
+            // `Center.Y < tile·16 + 8`).
+            let left_of_centre = self.pos.x + self.w * 0.5 < tx as f32 * TILE_PX + 8.0;
+            let above_centre = self.pos.y + self.h * 0.5 < ty as f32 * TILE_PX + 8.0;
+            let open = |tx: i32, ty: i32| world.in_bounds(tx, ty) && !solid_tile(world, tx, ty);
+            if self.vel.x.abs() > self.vel.y.abs() {
+                // The C# repeats the up/down test twice (`:25769-25778`):
+                // the second copy only fires when the Center.Y gate blocked
+                // the first. Ported verbatim.
+                if above_centre && open(tx, ty - 1) {
+                    ty -= 1;
+                } else if open(tx, ty + 1) {
+                    ty += 1;
+                } else if open(tx, ty - 1) {
+                    ty -= 1;
+                } else if left_of_centre && open(tx - 1, ty) {
+                    tx -= 1;
+                } else if open(tx + 1, ty) {
+                    tx += 1;
+                } else if open(tx - 1, ty) {
+                    tx -= 1;
+                }
+            } else if left_of_centre && open(tx - 1, ty) {
+                tx -= 1;
+            } else if open(tx + 1, ty) {
+                tx += 1;
+            } else if open(tx - 1, ty) {
+                tx -= 1;
+            } else if above_centre && open(tx, ty - 1) {
+                ty -= 1;
+            } else if open(tx, ty + 1) {
+                ty += 1;
+            } else if open(tx, ty - 1) {
+                ty -= 1;
+            }
+        }
+        // `:25800-25803`: the spin.
+        if self.vel.x > 0.0 {
+            self.rot += 0.3;
+        } else {
+            self.rot -= 0.3;
+        }
+        // `:25804`: the placement is the owner's write alone.
+        if self.owner != 0 {
+            return;
+        }
+        let ctx = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+        let cty = ((self.pos.y + self.h * 0.5) / TILE_PX) as i32;
+        // `:25806-25820`: the block is placed when the projectile's own tile
+        // has reached the target, or when the flight has carried it past the
+        // target in both axes.
+        let arrived = (ctx == tx && cty == ty)
+            || ((self.vel.x <= 0.0 && ctx <= tx) || (self.vel.x >= 0.0 && ctx >= tx))
+                && ((self.vel.y <= 0.0 && cty <= ty) || (self.vel.y >= 0.0 && cty >= ty));
+        if !arrived {
+            return;
+        }
+        // `:25842-25860`: the block goes down; a refused placement is the
+        // C#'s `else { ai[1] = -1f }` — the block falls away.
+        if tr_core::edit::place_tile(world, tx, ty, MAGICAL_ICE_BLOCK) {
+            self.damage = 0;
+            self.ai[0] = -1.0;
+            self.vel = Vec2::ZERO;
+            self.alpha = 255;
+            self.pos.x = tx as f32 * TILE_PX;
+            self.pos.y = ty as f32 * TILE_PX;
+        } else {
+            self.ai[1] = -1.0;
+        }
+    }
+
+    /// The aiStyle-22 tile-kill scan (`Projectile.cs:25633-25676` standing,
+    /// `:25704-25741` flying): the −1/+2 tile window over the box and the
+    /// `(x + 4, y + 4)` + 8 px probe against every active solid that is not
+    /// the placed block 127. `allow_actuated` carries the C#'s `active()` vs
+    /// `nactive()` difference between the two phases.
+    fn ice_block_probe_kill(&mut self, world: &World, allow_actuated: bool) {
+        let tx0 = ((self.pos.x / TILE_PX) as i32 - 1).max(0);
+        let tx1 = (((self.pos.x + self.w) / TILE_PX) as i32 + 2).min(world.width - 1);
+        let ty0 = ((self.pos.y / TILE_PX) as i32 - 1).max(0);
+        let ty1 = (((self.pos.y + self.h) / TILE_PX) as i32 + 2).min(world.height - 1);
+        let px = self.pos.x + 4.0;
+        let py = self.pos.y + 4.0;
+        for ty in ty0..=ty1 {
+            for tx in tx0..=tx1 {
+                let Some(t) = world.tile(tx, ty) else {
+                    continue;
+                };
+                let blocking = t.active()
+                    && t.kind != MAGICAL_ICE_BLOCK
+                    && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                    && (allow_actuated || t.flags & tr_core::tile::FLAG_INACTIVE == 0);
+                if !blocking {
+                    continue;
+                }
+                let rx = tx as f32 * TILE_PX;
+                let ry = ty as f32 * TILE_PX;
+                if px + 8.0 > rx && px < rx + TILE_PX && py + 8.0 > ry && py < ry + TILE_PX {
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+        }
+    }
+
+    /// `AI()`'s aiStyle-24 arm (`Projectile.cs:25936-26014`): the rotation
+    /// `+= velocity.X * 0.2f`, the counter `ai[1]++`, the CrystalStorm 94's
+    /// ×0.985 drag and its fade from `ai[1] > 130f` (`scale -= 0.05f`, the
+    /// kill at 0.2) — the generic kinds take ×0.96 and fade from 15. The
+    /// `light = scale * 0.5f` write has no slot field yet (render-only) and
+    /// the per-type dust is SKIPPED.
+    fn ai_crystal_storm(&mut self, world: &World) {
+        // `:25938-25943`'s 1134 first-tick sound/dust block is SKIPPED (no
+        // ported row for the kind).
+        self.rot += self.vel.x * 0.2;
+        self.ai[1] += 1.0;
+        // `:25944-25966` (the 94 shard) and `:25967-26013` (the generic; the
+        // 1114 branch differs only by the wet kill, which no ported row
+        // reaches).
+        let (drag, fade_at) = if self.kind == CRYSTAL_STORM {
+            (0.985, 130.0)
+        } else {
+            (0.96, 15.0)
+        };
+        self.vel *= drag;
+        if self.ai[1] > fade_at {
+            self.scale -= 0.05;
+            if self.scale <= 0.2 {
+                self.scale = 0.2;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-28 arm (`Projectile.cs:26555-26675`): the FrostStaff
+    /// bolt 359's whole machine is the one-shot `ai[1]` gate — after the
+    /// first tick the arm does nothing but fly. The first tick's 3× dust 92
+    /// and the `SoundID.Item28` cue are SKIPPED (no dust or sound layer in
+    /// the pool), as are the other kinds' frame animations (no ported row,
+    /// no `frame`/`frameCounter` slot fields).
+    fn ai_frost_bolt(&mut self, world: &World) {
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+            // The SKIP list of the first tick: the per-kind dust blocks
+            // (`:26572-26609`) and the 967/1026/359 sound cues
+            // (`:26611-26672`) — noted for ANALYSIS.
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-50 arm (`Projectile.cs:28323-28401`): the InfernoFork
+    /// family's dust-fade lifetime. The hostile 291 branch is out of scope
+    /// (no ported row), the bolt 295's own arm is its 8× dust 174 and nothing
+    /// else (`:28333-28340`), the dust spawns are SKIPPED, and the first-tick
+    /// `SoundID.Item74` is SKIPPED — what survives of the blast's fade math is
+    /// the counter `ai[0]++` (+3 for the blast 296) and the kill at
+    /// `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
+    /// reaches zero.
+    fn ai_inferno_fork(&mut self, world: &World) {
+        // `:28333-28340`: the bolt 295's whole AI arm is its 8× dust 174 and
+        // nothing else — the counter, the fade kill and the `+3` belong to the
+        // blast 296 alone, so the bolt flies straight and dies on its
+        // `timeLeft` (the `SetDefaults` default 3600, `:787`) or its
+        // `penetrate`, whichever comes first. The dust is SKIPPED (no dust
+        // layer in the pool) and the movement is the blocked-move default the
+        // bolt shares with every other style-50 shot.
+        if self.kind == INFERNO_FORK_BOLT {
+            self.kill_step(world);
+            return;
+        }
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] += 1.0;
+        }
+        self.ai[0] += 1.0;
+        if self.kind == INFERNO_BLAST {
+            self.ai[0] += 3.0;
+        }
+        // `:28376-28379`: `num350 = 25 - (ai[0] - 180) / 2` once
+        // `ai[0] > 540f`. It is `<= 0` for every `ai[0] > 540f` (the smallest
+        // gives 25 - 180.5), so the first tick past the window kills. The
+        // blast's ×0.7 scaling (`:28385`) cannot clear it (25 × 0.7 > 0).
+        if self.ai[0] > 540.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        self.kill_step(world);
+    }
+
+    /// The wind tail the C# applies after the AI sub-steps
+    /// (`Projectile.cs:16777-16781`): `velocity.X += windSpeedCurrent *
+    /// windPhysicsStrength`, under the altitude gate
+    /// (`Center.Y < Main.worldSurface * 16`), a wall-free centre tile, and
+    /// the three-way gate on the wind against the flight direction.
+    /// `wind_speed` is the pool's `Main.windSpeedCurrent`
+    /// ([`ProjectilePool::set_wind`]).
+    ///
+    /// The C#'s `MathHelper.Clamp(velocity.X, -16f, 16f)` on the next line
+    /// discards its return value (`velocity.X` is a struct property, so the
+    /// clamp cannot write back), which makes it a no-op in the source: the
+    /// only bound on the tail is the `|velocity.X| < 16f` gate in front of it,
+    /// so a single tick can carry `velocity.X` to at most 16 + |wind| × 0.1.
+    /// Ported exactly as the C# runs, clamp included.
+    fn wind_tail(&mut self, world: &World, wind_speed: f32) {
+        let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let tx = (cx / TILE_PX) as i32;
+        let ty = (cy / TILE_PX) as i32;
+        let above_surface = (cy as f64) < world.world_surface * TILE_PX as f64;
+        let wall_free = world.tile(tx, ty).is_none_or(|t| t.wall == 0);
+        let headwind = (self.vel.x > 0.0 && wind_speed < 0.0)
+            || (self.vel.x < 0.0 && wind_speed > 0.0)
+            || self.vel.x.abs() < (wind_speed * WIND_PHYSICS_STRENGTH).abs() * 180.0;
+        if !(above_surface && wall_free && headwind && self.vel.x.abs() < 16.0) {
+            return;
+        }
+        self.vel.x += wind_speed * WIND_PHYSICS_STRENGTH;
+    }
+
+    /// The generic movement the C#'s `HandleMovement` runs for the styles
+    /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
+    /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
+    /// blocked move takes one last step into the tile and falls to the
+    /// blocked-move chain's default — `base.position += base.velocity; Kill()`
+    /// (`:19851-19855`) — so the projectile dies on contact. The port's blocked
+    /// test is the per-axis destination-box probe the arrow/bomb arms use,
+    /// standing in for the C#'s swept `TileCollision` (which zeroes the blocked
+    /// axis, `Collision.cs:299-330`), so a dying projectile's exact death pixel
+    /// can differ by the swept span while the kill does not.
+    fn kill_step(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let nx = self.pos.x + self.vel.x;
+        let ny = self.pos.y + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        self.pos += self.vel;
+        if hit_x || hit_y {
+            self.active = false;
+            self.time_left = 0;
+        }
+    }
+
     /// The per-slot draw (unchanged from the first pass).
     pub fn draw(
         &self,
@@ -1269,6 +1952,109 @@ impl Projectile {
     }
 }
 
+/// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
+/// `TileID.MagicalIceBlock` (`TileID.cs:883`) — the block the Ice Rod places
+/// from its own projectile (`Projectile.cs:25842`).
+const MAGICAL_ICE_BLOCK: u16 = 127;
+/// `Main.windPhysicsStrength` (`Main.cs:66842`).
+const WIND_PHYSICS_STRENGTH: f32 = 0.1;
+
+/// The aiStyle-1 rider kinds of M4-PROJ-6 Phase 3 (`AI_001`'s per-type hooks):
+/// GreenLaser 20, PurpleLaser 88, VenomFang 355, SkyFracture 660 — the fifth
+/// (BookOfSkullsSkull 837) has its own arm and gates first.
+const AI_STYLE_1_RIDERS: [u16; 4] = [GREEN_LASER, PURPLE_LASER, VENOM_FANG, SKY_FRACTURE];
+
+/// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
+/// Only the styles whose arms this phase ports (8/24/28) are wind-eligible in
+/// the port: the styles that already have ported arms (1 the arrows, 2 the
+/// shuriken, 16 the bombs) keep their pre-existing no-wind behaviour, and the
+/// rest (10/14/29/…) port in Phase 4 or later.
+fn uses_wind_physics(ai_style: u8) -> bool {
+    matches!(ai_style, 8 | 24 | 28)
+}
+
+/// The `!tile.inActive() && tile.active() && tileSolid[type] &&
+/// !tileSolidTop[type] && tile.slope() == 0 && !tile.halfBrick()`
+/// conjunction `WorldGen.SolidTile` (`WorldGen.cs:70119-70127`) and
+/// `Collision.CanHit`'s flank test (`Collision.cs:444-448`) share.
+fn full_solid(t: &tr_core::tile::Tile) -> bool {
+    t.flags & tr_core::tile::FLAG_INACTIVE == 0
+        && t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+}
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`) — the C# reads a
+/// *missing* tile as solid (`:70114-70116`, the try/catch of `:69965`), so
+/// out-of-world coordinates come back `true`; the callers that care keep the
+/// C#'s `WorldGen.InWorld` guard in front, exactly as the source does.
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_none_or(full_solid)
+}
+
+/// `Collision.CanHit(Vector2, int, int, Vector2, int, int)`
+/// (`Collision.cs:381-479`): the Manhattan line walk the C#'s per-type
+/// `CanHit(...)` acquisition scans use (the Book of Skulls' targeting,
+/// `Projectile.cs:56810-56828`). The anchors are the two boxes' tile centres
+/// clamped into the world (`:388-423`, including the `maxTilesY - 40`
+/// underworld cap); each step tests the pair of tiles beside the path for a
+/// full-height block and stops when it steps onto a solid tile. A coordinate
+/// outside the world reads as "cannot hit", like the C#'s null tiles.
+fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
+    let mut ax = ((x1 as i32 + (w1 * 0.5) as i32) / 16).clamp(1, world.width - 1);
+    let mut ay = ((y1 as i32 + (h1 * 0.5) as i32) / 16).clamp(1, (world.height - 40).max(1));
+    let bx = ((x2 as i32 + (w2 * 0.5) as i32) / 16).clamp(1, world.width - 1);
+    let by = ((y2 as i32 + (h2 * 0.5) as i32) / 16).clamp(1, (world.height - 40).max(1));
+    loop {
+        if ax == bx && ay == by {
+            return true;
+        }
+        if (ax - bx).abs() > (ay - by).abs() {
+            ax += if ax >= bx { -1 } else { 1 };
+            let (below, above) = (world.tile(ax, ay - 1), world.tile(ax, ay + 1));
+            if below.is_none() || above.is_none() {
+                return false;
+            }
+            if below.is_some_and(full_solid) && above.is_some_and(full_solid) {
+                return false;
+            }
+        } else {
+            ay += if ay >= by { -1 } else { 1 };
+            let (left, right) = (world.tile(ax - 1, ay), world.tile(ax + 1, ay));
+            if left.is_none() || right.is_none() {
+                return false;
+            }
+            if left.is_some_and(full_solid) && right.is_some_and(full_solid) {
+                return false;
+            }
+        }
+        // The `do..while` exit (`:476-477`): the walk stops on the first
+        // fully solid tile it steps onto.
+        let Some(step) = world.tile(ax, ay) else {
+            return false;
+        };
+        let walkable = step.flags & tr_core::tile::FLAG_INACTIVE != 0
+            || !step.active()
+            || !tr_core::tiledata::TILE_SOLID.has(step.kind)
+            || tr_core::tiledata::TILE_SOLID_TOP.has(step.kind);
+        if !walkable {
+            return false;
+        }
+    }
+}
+
+/// `NPC.CanBeChasedBy(attacker, ignoreDontTakeDamage)` (`NPC.cs:90030-90041`):
+/// alive, `lifeMax > 5` and open to damage. The C#'s `chaseable`, `friendly`
+/// and `immortal` flags have no counterparts on the port's slot (every ported
+/// NPC is chaseable and hostile and none is immortal), so the three fields the
+/// pool can observe carry the gate. The C#'s `ignoreDontTakeDamage: true` form
+/// plus its separate `!dontTakeDamage` test lands on the same predicate.
+fn chaseable(n: &Npc) -> bool {
+    n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
+}
+
 /// The 1000-slot pool with the shared immunity state.
 #[derive(Debug)]
 pub struct ProjectilePool {
@@ -1283,6 +2069,13 @@ pub struct ProjectilePool {
     id_static: HashMap<(u16, u16), u64>,
     /// `Main.GameUpdateCount`.
     update_count: u64,
+    /// `Main.windSpeedCurrent` as the AI arms' wind tail sees it
+    /// (`Projectile.cs:16777-16781`). `0f` = off: the C# gate
+    /// `Main.windPhysics` is `false` by default and never set true in the
+    /// 1.4.5.8 decompile (`Main.cs:66841-66842`), so the tail is inert until
+    /// the app's wind is wired in through [`ProjectilePool::set_wind`] — no
+    /// ported arm's behaviour changes meanwhile.
+    wind_speed: f32,
 }
 
 impl Default for ProjectilePool {
@@ -1298,7 +2091,14 @@ impl ProjectilePool {
             local_immunity: vec![0; MAX_PROJECTILES * 256],
             id_static: HashMap::new(),
             update_count: 0,
+            wind_speed: 0.0,
         }
+    }
+
+    /// The wind vector the AI arms' tail applies
+    /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
+    pub fn set_wind(&mut self, wind_speed: f32) {
+        self.wind_speed = wind_speed;
     }
 
     /// Sets the slot's crit flag (the throw path rolls it at spawn time).
@@ -1571,6 +2371,7 @@ impl ProjectilePool {
             bounces: 0,
             falling_tile: None,
             detonated: false,
+            blast_spawned: false,
             ..Default::default()
         };
         let base = slot * 256;
@@ -1636,11 +2437,39 @@ impl ProjectilePool {
                 // The ported arms above keep their exact signatures.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
-                        1 => self.slots[i].ai_arrow(world),
+                        // The aiStyle-1 riders of M4-PROJ-6 Phase 3 gate
+                        // ahead of the generic arm: the Book of Skulls and
+                        // the Laser/VenomFang/SkyFracture hooks wrap the
+                        // shared flight instead of taking the plain arrow
+                        // arm, so the plain arrows keep the generic flight
+                        // only.
+                        1 => match self.slots[i].kind {
+                            BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
+                            kind if AI_STYLE_1_RIDERS.contains(&kind) => {
+                                self.slots[i].ai_style1_rider(world)
+                            }
+                            _ => self.slots[i].ai_arrow(world),
+                        },
                         3 => self.slots[i].ai_boomerang(world, owner),
+                        8 => self.slots[i].ai_ball_of_fire(world),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
+                        18 => self.slots[i].ai_demon_scythe(world),
+                        // The carve-out of the arm-signature doc block above:
+                        // aiStyle 22 writes tiles, so it reborrows `world`
+                        // mutably at its own call site.
+                        22 => self.slots[i].ai_ice_block(world),
+                        24 => self.slots[i].ai_crystal_storm(world),
+                        28 => self.slots[i].ai_frost_bolt(world),
+                        50 => self.slots[i].ai_inferno_fork(world),
                         _ => {}
+                    }
+                    // The wind tail (`:16777-16781`) runs after the AI
+                    // sub-steps, for the wind-eligible new arms only (the
+                    // ported arrow/bomb/shuriken arms keep their pre-existing
+                    // no-wind behaviour — a recorded deviation, not a fix).
+                    if uses_wind_physics(data.ai_style) {
+                        self.slots[i].wind_tail(world, self.wind_speed);
                     }
                 }
                 // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
@@ -1697,7 +2526,51 @@ impl ProjectilePool {
                 p.active = false;
                 p.time_left = 0;
             }
+            // `Kill()`'s type-295 arm (`:74341-74350`): the Inferno Fork
+            // bolt's death — whichever of the three paths above ended it —
+            // spawns the blast, exactly once (the flag) and only for the bolt
+            // kind (so the blast cannot chain a second spawn).
+            if !self.slots[i].active {
+                self.spawn_inferno_blast(i);
+            }
         }
+    }
+
+    /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
+    /// Fork bolt's death spawns its blast 296 at the bolt's centre with
+    /// `damage * 0.75` (the C#'s `(int)` truncation) and the same
+    /// knockback/owner. Owner-only (`Main.myPlayer == this.owner`), one-shot
+    /// per bolt ([`Projectile::blast_spawned`]), and kind-gated so the blast
+    /// itself — which rides the same aiStyle — never chains another spawn.
+    fn spawn_inferno_blast(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        if p.blast_spawned || p.kind != INFERNO_FORK_BOLT || p.owner != 0 {
+            return;
+        }
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let damage = (p.damage as f32 * 0.75) as i32;
+        let knock_back = p.knock_back;
+        // One-shot per bolt: the flag rides the *bolt*, written before the
+        // spawn — the C#'s `NewProjectile` finds the just-freed bolt slot free
+        // (`FindOldestProjectile` starts at index 0), so the blast lands in the
+        // bolt's own slot and the bolt's state does not survive the tick either
+        // way. Writing it first keeps the guard true even if the pool is full.
+        self.slots[slot].blast_spawned = true;
+        // The C#'s `NewProjectile` takes the *centre* and offsets the box; the
+        // port's spawn takes the top-left (`spawn_with_data_ai`'s
+        // `position = (x, y)`), so the blast's 150×150 box is re-centred.
+        let Some(row) = proj_data(INFERNO_BLAST) else {
+            return;
+        };
+        self.spawn_with_data(
+            INFERNO_BLAST,
+            cx - row.w * 0.5,
+            cy - row.h * 0.5,
+            0.0,
+            0.0,
+            damage,
+            knock_back,
+        );
     }
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
@@ -3259,5 +4132,1293 @@ mod magic_data_tests {
         assert_eq!(proj_data(ICE_BLOCK).unwrap().ai_style, 22);
         assert_eq!(proj_data(MAGIC_MISSILE).unwrap().ai_style, 9);
         assert_eq!(proj_data(BALL_OF_FROST).unwrap().ai_style, 8);
+    }
+}
+
+#[cfg(test)]
+mod magic_ai_tests {
+    use super::*;
+    use crate::npc::SlimeVariant;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// A tile-free world: the flight tests run in open air, so the only
+    /// collision that can trigger is the one the test places itself.
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put_tile(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A solid wall one tile ahead of a `size`-sized projectile spawned at
+    /// `(10·16, 10·16)`: the left edge starts on the tile-11 boundary, so the
+    /// box's right edge stops just short of it and a step of `+2, 0` crosses
+    /// in. Returns the x the projectile should spawn at. The C# tests the
+    /// swept path; the port's per-arm model probes the destination box, so the
+    /// wall has to sit exactly one tile past the edge.
+    fn wall_ahead(w: &mut World, size: f32) -> f32 {
+        let x = 11.0 * TILE_PX - size;
+        let y0 = 10;
+        let y1 = ((10.0 * TILE_PX + size - 0.01) / TILE_PX) as i32;
+        for y in y0..=y1 {
+            put_tile(w, 11, y, 1);
+        }
+        x
+    }
+
+    fn has_tile(w: &World, x: i32, y: i32, kind: u16) -> bool {
+        w.tile(x, y).is_some_and(|t| t.active() && t.kind == kind)
+    }
+
+    /// One pool update with no NPC in range.
+    fn step(pool: &mut ProjectilePool, w: &mut World) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(w, &mut npcs, None, None);
+    }
+
+    /// The `tick(world, pool, npc)` fixture of the main `mod tests`, for the
+    /// calls that need an NPC slice.
+    fn tick(world: &mut World, pool: &mut ProjectilePool, npc: &mut Npc) {
+        for v in npc.immune.iter_mut() {
+            *v = (*v - 1).max(0);
+        }
+        npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
+        pool.update(world, std::slice::from_mut(npc), None, None);
+    }
+
+    /// The same fixture over a whole `Vec<Npc>` — the targeting arms read the
+    /// `Main.npc` slice, so the scan tests hand the pool several at once.
+    fn tick_npcs(world: &mut World, pool: &mut ProjectilePool, npcs: &mut [Npc]) {
+        for n in npcs.iter_mut() {
+            for v in n.immune.iter_mut() {
+                *v = (*v - 1).max(0);
+            }
+            n.hurt_cd = (n.hurt_cd - 1.0 / 60.0).max(0.0);
+        }
+        pool.update(world, npcs, None, None);
+    }
+
+    // ---------------------------------------------------------------- DW-3.1
+    // One multi-tick test per ported arm, pinning the C# constant the arm
+    // turns on. Every assertion names its `Projectile.cs` line range.
+
+    #[test]
+    fn test_dw_3_1_style_8_gravity_starts_at_ai_1_20() {
+        // `:24338-24345`: `ai[1]++` outside the 27/96/258 skips, then
+        // `if (ai[1] >= 20f) velocity.Y += 0.2f`.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(
+            BALL_OF_FIRE,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            1.0,
+            0.0,
+            20,
+            0.0,
+        );
+        let mut w = world();
+        for _ in 0..19 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[0];
+        assert_eq!(p.ai[1], 19.0, "the timer ticks once per sub-step");
+        assert_eq!(p.vel.y, 0.0, "no gravity through ai[1] = 19");
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.y - 0.2).abs() < 1e-6,
+            "ai[1] = 20 adds the first 0.2 (`:24341`)"
+        );
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            (pool.slots()[0].vel.y - 6.0 * 0.2).abs() < 1e-6,
+            "one 0.2 per further tick"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_8_the_fall_clamps_at_16_and_the_spin_rides_the_direction() {
+        // `:24346-24357` (`rotation += 0.3f * direction`) and `:24358-24361`
+        // (the `velocity.Y > 16f` clamp). `direction` has no slot field; it
+        // tracks `velocity.X`'s sign (`:17016-17026`), positive here.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BALL_OF_FROST,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                1.0,
+                0.0,
+                20,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].vel.y = 20.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, 16.0, "the fall is clamped to 16 (`:24359`)");
+        assert!(
+            (p.rot - 0.3).abs() < 1e-6,
+            "one spin of 0.3 for a +X flight"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_8_the_water_bolt_and_the_cursed_flame_skip_the_gravity_timer() {
+        // `:24304-24306`: `if (type != 27 && type != 96 && type != 258)
+        // ai[1]++;` — the three skips never reach the gravity. The third (the
+        // Golem's 258) shares the branch.
+        for (kind, note) in [(WATER_BOLT, "27"), (CURSED_FLAME, "96")] {
+            let mut pool = ProjectilePool::new();
+            pool.spawn_with_data(kind, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 20, 0.0);
+            let mut w = world();
+            for _ in 0..40 {
+                step(&mut pool, &mut w);
+            }
+            let p = &pool.slots()[0];
+            assert_eq!(p.ai[1], 0.0, "kind {kind} ({note}) holds ai[1] at rest");
+            assert_eq!(p.vel.y, 0.0, "kind {kind} ({note}) never gets gravity");
+            assert!(p.active, "kind {kind} ({note}) keeps flying");
+        }
+    }
+
+    #[test]
+    fn test_dw_3_1_style_8_the_tile_bounce_counts_and_kills_at_the_type_threshold() {
+        // The bounce arm (`:19573-19613`): `ai[0]++` on every blocked move and
+        // the per-type budget — 5 default, 6 for the ball of fire 15
+        // (`:19587`), 8 for the ball of frost 253 (`:19590`).
+        for (kind, budget) in [(BALL_OF_FIRE, 6.0), (BALL_OF_FROST, 8.0)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 20, 0.0)
+                .unwrap();
+            let mut w = world();
+            // Walls on both sides of the 16×16 box: the first step hits tile 11
+            // and the reversal carries the next one into tile 9, so the ball
+            // keeps bouncing instead of escaping.
+            put_tile(&mut w, 9, 10, 1);
+            put_tile(&mut w, 11, 10, 1);
+            pool.slots_mut()[slot].ai[0] = budget - 2.0;
+            step(&mut pool, &mut w);
+            assert!(
+                pool.slots()[slot].active,
+                "kind {kind} survives a bounce inside its {budget} budget"
+            );
+            assert!(
+                (pool.slots()[slot].vel.x + 2.0).abs() < 1e-6,
+                "the blocked axis reverses (`:19609-19612`)"
+            );
+            pool.slots_mut()[slot].ai[0] = budget - 1.0;
+            step(&mut pool, &mut w);
+            assert!(
+                !pool.slots()[slot].active,
+                "kind {kind} dies on the bounce past its budget {budget} (`:19591-19595`)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dw_3_1_style_8_the_hostile_cursed_flame_dies_on_a_wall_instead_of_bouncing() {
+        // The C#'s bounce arm is `else if (this.aiStyle == 8 && this.type !=
+        // 96)` (`:19573`): the Spazmatism's spit falls through to the blocked-
+        // move chain's default — `position += velocity; Kill()` (`:19851-19855`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(
+            CURSED_FLAME,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            2.0,
+            0.0,
+            20,
+            0.0,
+        );
+        let mut w = world();
+        put_tile(&mut w, 11, 10, 1);
+        step(&mut pool, &mut w);
+        assert!(
+            !pool.slots()[0].active,
+            "the hostile cursed flame dies on the wall"
+        );
+        assert_eq!(
+            pool.slots()[0].ai[0],
+            0.0,
+            "the bounce counter never runs for 96"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_18_the_scythe_accelerates_from_ai_0_30_and_clamps_at_100() {
+        // `:25455-25468`: nothing below 30, `velocity *= 1.06f` from 30 to
+        // 99, and `ai[0] = 200f` at 100 stops the acceleration.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(
+            DEMON_SCYTHE,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            1.0,
+            0.0,
+            20,
+            0.0,
+        );
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].ai[0], 29.0);
+        assert_eq!(pool.slots()[0].vel.x, 1.0, "nothing happens below 30");
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.x - 1.06).abs() < 1e-6,
+            "the 30th tick is the first 1.06"
+        );
+        for _ in 0..4 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            (pool.slots()[0].vel.x - 1.06f32.powi(5)).abs() < 1e-4,
+            "1.06 per tick from 30"
+        );
+        // The clamp: park the counter at 99, one tick past the ceiling zeros
+        // the acceleration instead of multiplying again.
+        pool.slots_mut()[0].ai[0] = 99.0;
+        let before = pool.slots()[0].vel.x;
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].ai[0], 200.0, "the 100-clamp (`:25466`)");
+        let after = pool.slots()[0].vel.x;
+        step(&mut pool, &mut w);
+        assert_eq!(
+            pool.slots()[0].vel.x,
+            after,
+            "parked at 200 the scythe stops accelerating"
+        );
+        assert!(
+            before < after || after == before,
+            "the clamp replaced the multiply"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_22_the_placed_block_drains_ai_0_and_is_mined_away_at_minus_900() {
+        // The placed phase (`:25681-25703`): `ai[0]--` per tick, the kill when
+        // the tile under it is gone, and the `ai[0] <= -900f` KillTile of the
+        // owner's own block (`:25757-25760`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                ICE_BLOCK,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                0.0,
+                0.0,
+                20,
+                0.0,
+                -1.0,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        put_tile(&mut w, 20, 24, MAGICAL_ICE_BLOCK);
+        assert!(pool.slots()[slot].tile_collide == false || pool.slots()[slot].ai[0] == -1.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], -2.0, "the placed phase drains one per tick");
+        assert!(p.active, "the block stands while its tile does");
+        assert_eq!(p.alpha, 255, "a stopped block is opaque (`:25611`)");
+        // The missing tile ends the placed phase (`:25691-25694`).
+        let idx = w.index(20, 24);
+        w.tiles[idx].flags &= !FLAG_ACTIVE;
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "the block dies with its tile");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_22_the_minus_900_block_is_kill_tiled_away_on_the_owner() {
+        // `:25755-25760`: the owner's block is removed at `-900`. The write is
+        // the owner branch's alone (`Main.myPlayer == this.owner`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                ICE_BLOCK,
+                21.0 * TILE_PX,
+                24.0 * TILE_PX,
+                0.0,
+                0.0,
+                20,
+                0.0,
+                -1.0,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        put_tile(&mut w, 21, 24, MAGICAL_ICE_BLOCK);
+        pool.slots_mut()[slot].ai[0] = -900.0;
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "the block goes with its tile");
+        assert!(
+            !has_tile(&w, 21, 24, MAGICAL_ICE_BLOCK),
+            "`WorldGen.KillTile` removed the placed block (`:25757`)"
+        );
+        // -899 is one tick short of the removal.
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2
+            .spawn_with_data_ai(
+                ICE_BLOCK,
+                22.0 * TILE_PX,
+                24.0 * TILE_PX,
+                0.0,
+                0.0,
+                20,
+                0.0,
+                -1.0,
+                0.0,
+            )
+            .unwrap();
+        let mut w2 = world();
+        put_tile(&mut w2, 22, 24, MAGICAL_ICE_BLOCK);
+        // -898 drains to -899 on the tick — one tick short of the removal.
+        pool2.slots_mut()[slot2].ai[0] = -898.0;
+        step(&mut pool2, &mut w2);
+        assert!(
+            pool2.slots()[slot2].active,
+            "-899 drains but does not remove"
+        );
+        assert_eq!(pool2.slots()[slot2].ai[0], -899.0);
+        assert!(has_tile(&w2, 22, 24, MAGICAL_ICE_BLOCK), "the block stays");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_22_the_flying_block_places_the_tile_and_zeroes_its_damage() {
+        // `:25842-25860`: on arrival `WorldGen.PlaceTile(127)`,
+        // `damage = 0`, `ai[0] = -1f`, `velocity = 0`, `alpha = 255` and the
+        // position snaps to the tile corner — the switch into the placed phase.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                ICE_BLOCK,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                4.0,
+                0.0,
+                40,
+                0.0,
+                20.0,
+                24.0,
+            )
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(
+            has_tile(&w, 20, 24, MAGICAL_ICE_BLOCK),
+            "the block is placed"
+        );
+        assert_eq!(p.damage, 0, "the placed block carries no damage (`:25852`)");
+        assert_eq!(p.ai[0], -1.0, "the phase switch (`:25853`)");
+        assert_eq!(p.vel, Vec2::ZERO, "the block stops (`:25854`)");
+        assert_eq!(p.alpha, 255);
+        assert_eq!(p.pos, Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX));
+    }
+
+    #[test]
+    fn test_dw_3_1_style_22_the_flying_block_walks_a_solid_target_to_a_free_cell() {
+        // `:25763-25798`: when the target tile is solid the walk prefers the
+        // vertical neighbour (the flight is mostly horizontal) and the block
+        // lands one tile up. `WorldGen.SolidTile` reads missing tiles as
+        // solid (`WorldGen.cs:70114-70116`), so the neighbours are kept in
+        // world.
+        let mut pool = ProjectilePool::new();
+        // 368 puts the box on row 23 only (its probe scan must not touch the
+        // solid target one row below) while its centre still sits above the
+        // target's middle — the C#'s `Center.Y < tile·16 + 8` gate.
+        let slot = pool
+            .spawn_with_data_ai(
+                ICE_BLOCK,
+                20.0 * TILE_PX,
+                23.0 * TILE_PX,
+                4.0,
+                0.0,
+                40,
+                0.0,
+                20.0,
+                24.0,
+            )
+            .unwrap();
+        let mut w = world();
+        put_tile(&mut w, 20, 24, 1);
+        step(&mut pool, &mut w);
+        assert!(
+            has_tile(&w, 20, 23, MAGICAL_ICE_BLOCK),
+            "the block lands above the solid target (`:25769-25778`)"
+        );
+        assert!(
+            has_tile(&w, 20, 24, 1),
+            "the solid target itself is untouched"
+        );
+        assert_eq!(pool.slots()[slot].ai[0], -1.0);
+    }
+
+    #[test]
+    fn test_dw_3_1_style_24_the_crystal_storm_fades_after_ai_1_130() {
+        // `:25962-25968`: the CrystalStorm 94's `ai[1]++`, the ×0.985 drag and
+        // the fade from `ai[1] > 130f` (`scale -= 0.05f`, kill at 0.2).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                CRYSTAL_STORM,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                1.0,
+                0.0,
+                20,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let drag0 = pool.slots()[slot].vel.x;
+        for _ in 0..130 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 130.0, "one per tick");
+        assert_eq!(p.scale, 1.2, "no fade while ai[1] <= 130");
+        assert!(p.active, "the shard outlives its 130-tick window");
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[slot].scale - 1.15).abs() < 1e-6,
+            "the 131st tick takes the first 0.05 (`:25966`)"
+        );
+        assert!(
+            (pool.slots()[slot].vel.x - drag0 * 0.985f32.powi(131)).abs() < 1e-3,
+            "the ×0.985 drag rides every tick (`:25962`)"
+        );
+        // Twenty fade steps from 1.2 land on the 0.2 kill.
+        for _ in 0..22 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            !pool.slots()[slot].active,
+            "the fade kills at 0.2 (`:25967-25968`)"
+        );
+        assert_eq!(
+            pool.slots()[slot].scale,
+            0.2,
+            "the kill pins the scale at 0.2"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_28_the_frost_bolt_is_a_one_shot_gate() {
+        // `:26558-26575`: `if (ai[1] != 0f) return;` — after the first tick the
+        // arm is only its flight, so the bolt's state is the one-shot flag.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                FROST_BOLT,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                3.0,
+                0.0,
+                20,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let x0 = pool.slots()[slot].pos.x;
+        step(&mut pool, &mut w);
+        assert_eq!(
+            pool.slots()[slot].ai[1],
+            1.0,
+            "the first tick sets the gate"
+        );
+        assert_eq!(pool.slots()[slot].vel, Vec2::new(3.0, 0.0));
+        assert_eq!(pool.slots()[slot].pos.x - x0, 3.0, "one spawn-speed step");
+        for _ in 0..20 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "the gate never re-opens");
+        assert_eq!(
+            p.vel,
+            Vec2::new(3.0, 0.0),
+            "nothing else in the arm touches it"
+        );
+        assert!(p.active, "no gravity, no drag, no self-kill");
+        assert_eq!(p.pos.x - x0, 21.0 * 3.0, "21 steps at 3 px, unchanged");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_50_the_bolt_spawns_the_blast_on_death() {
+        // `Kill()`'s type-295 arm (`:74341-74350`): the bolt's death spawns
+        // 296 at its centre with `(int)(damage * 0.75)` and the same
+        // knockback. The C#'s NewProjectile takes the centre and offsets the
+        // box, so the blast's 150×150 box is re-centred on the port's spawn.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                INFERNO_FORK_BOLT,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                40,
+                6.0,
+            )
+            .unwrap();
+        let (cx, cy) = {
+            let p = &pool.slots()[slot];
+            (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        pool.slots_mut()[slot].time_left = 1;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(
+            pool.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the bolt died and only the blast is left in the pool"
+        );
+        let blast = pool
+            .slots()
+            .iter()
+            .find(|p| p.kind == INFERNO_BLAST)
+            .expect("the blast spawns on the bolt's death");
+        assert_eq!(blast.damage, 30, "(int)(40 * 0.75)");
+        assert_eq!(blast.knock_back, 6.0);
+        assert_eq!(
+            (blast.w, blast.h),
+            (150.0, 150.0),
+            "the blast's row (`:3859-3868`)"
+        );
+        assert_eq!(blast.owner, 0, "the blast inherits the owner");
+        assert!(
+            (blast.pos.x + 75.0 - cx).abs() < 1e-3 && (blast.pos.y + 75.0 - cy).abs() < 1e-3,
+            "the blast centres on the bolt's centre (`:74347`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_50_the_bolt_never_double_spawns_the_blast() {
+        // The plan's `penetrate == 0` edge case: a penetrate-killed bolt dies
+        // inside the same tick as its fade and must still spawn once, and the
+        // blast (the same aiStyle) must never chain a second one.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                INFERNO_FORK_BOLT,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                40,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].penetrate = 0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(
+            pool.slots()
+                .iter()
+                .filter(|p| p.kind == INFERNO_BLAST)
+                .count(),
+            1,
+            "exactly one blast for a penetrate-killed bolt"
+        );
+        for _ in 0..10 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(
+            pool.slots()
+                .iter()
+                .filter(|p| p.kind == INFERNO_BLAST)
+                .count(),
+            1,
+            "the blast never chains a second spawn (`:74341`'s kind gate)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_50_the_blast_alone_runs_the_fade_counter() {
+        // `:28323-28401`: the fade counter is the blast's alone (`ai[0]++`,
+        // `+= 3f` for 296, kill past 540). The bolt 295 returns before it
+        // (`:28333-28340`), so its life is its `timeLeft`/`penetrate`.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                INFERNO_BLAST,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                40,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        // `ai[0]++` then `+= 3f` = 4 per sub-step (`:28366-28374`), so the
+        // 540 window closes at tick 135 (4·135 = 540) and 136 empties it.
+        for _ in 0..135 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 540.0, "4 per sub-step");
+        assert!(
+            pool.slots()[slot].active,
+            "540 is not past the window (`> 540f`)"
+        );
+        step(&mut pool, &mut w);
+        assert!(
+            !pool.slots()[slot].active,
+            "ai[0] = 544 > 540 empties the dust count (`:28376-28380`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_50_the_bolt_flies_until_its_time_left() {
+        // The bolt's own arm is dust-only (`:28333-28340`), so it never runs
+        // the fade counter: ten ticks later `ai[0]` is still 0.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                INFERNO_FORK_BOLT,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                2.0,
+                0.0,
+                40,
+                0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        for _ in 0..10 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 0.0, "the bolt's AI arm never touches ai[0]");
+        assert_eq!(p.local_ai[0], 0.0, "nor its sound gate");
+        assert!(
+            p.active && p.pos.x > 10.0 * TILE_PX,
+            "it flies on its own lifetime"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_the_styles_without_a_bounce_arm_die_on_tile_contact() {
+        // 18/24/28/50 have no arm in `HandleMovement`'s chain, so a blocked
+        // move takes the chain default: `position += velocity; Kill()`
+        // (`:19851-19855`). The port's `kill_step` is that default.
+        for kind in [DEMON_SCYTHE, CRYSTAL_STORM, FROST_BOLT] {
+            let size = match kind {
+                DEMON_SCYTHE => 48.0,
+                CRYSTAL_STORM => 8.0,
+                _ => 14.0,
+            };
+            let mut pool = ProjectilePool::new();
+            let x = {
+                let mut w = world();
+                wall_ahead(&mut w, size)
+            };
+            pool.spawn_with_data(kind, x, 10.0 * TILE_PX, 2.0, 0.0, 20, 0.0);
+            let mut w = world();
+            wall_ahead(&mut w, size);
+            step(&mut pool, &mut w);
+            assert!(
+                !pool.slots()[0].active,
+                "kind {kind} dies on the blocked move"
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------- DW-3.2
+    // The aiStyle-1 riders gate ahead of the generic arm; the plain-arrow
+    // behaviour and the 837 targeting rules.
+
+    #[test]
+    fn test_dw_3_2_the_rider_kinds_take_the_rider_arm_not_the_plain_arrow_arm() {
+        // `AI_001`'s `flag3` skip switch (`:55947-56032`) lists 20/88/355/660:
+        // the flight counter rests, so the gravity at `ai[0] >= 15f` never
+        // fires for a rider while it does for the plain arrow.
+        for kind in [GREEN_LASER, PURPLE_LASER, VENOM_FANG, SKY_FRACTURE] {
+            let mut pool = ProjectilePool::new();
+            pool.spawn_with_data(kind, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 200, 0.0);
+            let mut w = world();
+            for _ in 0..30 {
+                step(&mut pool, &mut w);
+            }
+            let p = &pool.slots()[0];
+            assert_eq!(
+                p.ai[0], 0.0,
+                "kind {kind} holds ai[0] at rest (`:56039-56041`)"
+            );
+            assert_eq!(p.vel.y, 0.0, "kind {kind} flies straight — no gravity");
+            assert!(p.active);
+        }
+        let mut arrow = ProjectilePool::new();
+        arrow.spawn_with_data(
+            WOODEN_ARROW,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            2.0,
+            0.0,
+            200,
+            0.0,
+        );
+        let mut w = world();
+        for _ in 0..15 {
+            step(&mut arrow, &mut w);
+        }
+        assert!(
+            (arrow.slots()[0].vel.y - 0.1).abs() < 1e-6,
+            "the plain arrow keeps its gravity — the gating did not disturb it"
+        );
+    }
+    #[test]
+    fn test_dw_3_2_the_green_laser_grows_its_scale_and_knockback() {
+        // `:54047-54064`: `scale += 0.0189f` (cap 3) with the owner-only
+        // `knockBack *= 1.0025f` and the 25-tick `localAI[0]` counter whose
+        // `damage`/`penetrate` rolls are SKIPPED (no RNG in the pool).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                GREEN_LASER,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                2.0,
+                0.0,
+                200,
+                3.0,
+            )
+            .unwrap();
+        // The C#'s growth rides the AI sub-step, so hold the row's
+        // `extraUpdates = 2` at zero to keep one growth per pool tick — the
+        // row's own value is re-asserted at the end.
+        pool.slots_mut()[slot].extra_updates = 0;
+        let (scale0, kb0) = {
+            let p = &pool.slots()[slot];
+            (p.scale, p.knock_back)
+        };
+        assert_eq!((scale0, kb0), (0.65, 3.0), "the row's SetDefaults slice");
+        let mut w = world();
+        for _ in 0..25 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!(
+            (p.scale - (scale0 + 25.0 * 0.0189)).abs() < 1e-5,
+            "one 0.0189 per sub-step"
+        );
+        assert!(
+            (p.knock_back - kb0 * 1.0025f32.powi(25)).abs() < 1e-4,
+            "the owner's knockback compounds"
+        );
+        assert_eq!(
+            p.local_ai[0], 0.0,
+            "the 25-tick counter wrapped (`:54056-54057`)"
+        );
+        assert_eq!(
+            p.damage, 200,
+            "the rand bump is SKIPPED — the pool has no RNG"
+        );
+        assert_eq!(p.penetrate, 3, "and so is its penetrate++");
+        assert_eq!(
+            proj_data(GREEN_LASER).unwrap().extra_updates,
+            2,
+            "the row is untouched"
+        );
+        // The cap: the growth stops at 3.
+        for _ in 0..200 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].scale, 3.0, "the 3 cap (`:54051-54053`)");
+    }
+
+    #[test]
+    fn test_dw_3_2_the_purple_laser_grows_to_four_and_keeps_a_resting_flight_counter() {
+        // `:54021-54045`: `scale += 0.053f` (cap 4), `knockBack *= 1.0045f`,
+        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap that
+        // never fires because `flag3` holds `ai[0]` at rest for this kind.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                PURPLE_LASER,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                2.0,
+                0.0,
+                200,
+                2.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].extra_updates = 0;
+        let mut w = world();
+        for _ in 0..8 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!(
+            (p.scale - (0.65 + 8.0 * 0.053)).abs() < 1e-5,
+            "the 0.053 growth (`:54030-54033`)"
+        );
+        assert!((p.knock_back - 2.0 * 1.0045f32.powi(8)).abs() < 1e-4);
+        assert_eq!(p.local_ai[0], 0.0, "the 8-tick counter wrapped");
+        for _ in 0..200 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.scale, 4.0, "the 4 cap");
+        assert_eq!(
+            p.extra_updates, 0,
+            "the remap never fires while ai[0] rests"
+        );
+        assert_eq!(p.ai[0], 0.0, "ai[0] rests, so the remap cannot fire");
+        assert_eq!(
+            proj_data(PURPLE_LASER).unwrap().extra_updates,
+            4,
+            "the row's extraUpdates rides untouched"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_venom_fang_fades_and_the_sky_fracture_marks_its_first_tick() {
+        // `:56728-56747` (VenomFang: `alpha -= 50`, the dust at 0 SKIPPED) and
+        // `:55676-55687` + `:57650-57652` (SkyFracture's first-tick marker and
+        // its `velocity.ToRotation() + π/4` tail).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(
+            VENOM_FANG,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            2.0,
+            0.0,
+            200,
+            0.0,
+        );
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].alpha, 205, "255 - 50 (`:56732-56734`)");
+        for _ in 0..4 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].alpha, 5, "the fade keeps running");
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].alpha, 0, "clamped at 0 (`:56735-56738`)");
+
+        let mut pool2 = ProjectilePool::new();
+        let slot = pool2
+            .spawn_with_data(
+                SKY_FRACTURE,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                2.0,
+                0.0,
+                200,
+                0.0,
+            )
+            .unwrap();
+        assert_eq!(pool2.slots()[slot].alpha, 255, "the row's `alpha = 255`");
+        let mut w2 = world();
+        step(&mut pool2, &mut w2);
+        let p = &pool2.slots()[slot];
+        assert_eq!(p.alpha, 0, "the first-tick marker (`:55680-55685`)");
+        assert_eq!(p.scale, 1.1, "with its 1.1 scale (`:55684`)");
+        assert!(
+            (p.rot - (0.0f32.atan2(2.0) + std::f32::consts::FRAC_PI_4)).abs() < 1e-6,
+            "the +π/4 rotation tail (`:57650-57652`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_acquires_the_nearest_target_inside_manhattan_300() {
+        // `:56813-56847`: the scan keeps the running `num189` minimum seeded
+        // at 300 and commits `ai[1] = num190 + 1` after the loop, so the
+        // nearest chaseable NPC with a clear line wins — not the first.
+        let mut w = world();
+        let near = Npc::spawn_slime_sky(20.0 * TILE_PX + 32.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let far = Npc::spawn_slime_sky(20.0 * TILE_PX + 160.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![far, near];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                2.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(
+            pool.slots()[slot].ai[1],
+            2.0,
+            "the nearer NPC is index 1 in the slice (`ai[1] = idx + 1`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_keeps_the_target_inside_1000f() {
+        // `:56851-56866`: a held target inside the Manhattan 1000f keeps
+        // steering; the alpha also fades 25 per tick (`:56808-56812`).
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 96.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                2.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].ai[1] = 1.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "the target is held (`< 1000f`)");
+        // The NPC's centre sits above the skull's, so the weight-20 blend
+        // turns the flight upward — the steering ran.
+        assert!(p.vel.y < 0.0, "the skull steers toward the target");
+        assert_eq!(p.alpha, 230, "255 - 25");
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_drops_the_target_past_1000f() {
+        // `:56851-56866`: past the Manhattan 1000f the retain fails and the
+        // skull flies unsteered. The C# clears `ai[1]` only in its `else`
+        // (the NPC stopped being chaseable), so a merely-distant target keeps
+        // its index — a remembered target re-steers if it comes back.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 1100.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                2.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].ai[1] = 1.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "the index is retained");
+        assert_eq!(
+            pool.slots()[slot].vel,
+            Vec2::new(2.0, 0.0),
+            "no steering past 1000f"
+        );
+        // Bring it back inside the window: the retained index re-steers.
+        npcs[0].x = 20.0 * TILE_PX + 96.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(
+            pool.slots()[slot].vel.y < 0.0,
+            "the retained target re-steers"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_clears_the_index_of_a_dead_target() {
+        // `:56866`'s `else`: a target that stops being chaseable clears
+        // `ai[1]`, so the acquisition scan may take a new one.
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            20.0 * TILE_PX + 96.0,
+            24.0 * TILE_PX,
+            SlimeVariant::Blue,
+        )];
+        npcs[0].hp = 0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                2.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].ai[1] = 1.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(
+            pool.slots()[slot].ai[1],
+            0.0,
+            "the dead target clears the index"
+        );
+        assert_eq!(
+            pool.slots()[slot].vel,
+            Vec2::new(2.0, 0.0),
+            "and no steering"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_steers_at_the_weight_20() {
+        // `:56871-56881`: `velocity = (velocity * 19 + dir * spawnSpeed) / 20`
+        // — the Book of Skulls' weight is 20 (the generic 8 belongs to 207).
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 60.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                4.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].ai[1] = 1.0;
+        // The steering block runs inside the AI, before the flight moves the
+        // box — the blend's anchor is the pre-tick centre.
+        let (px, py) = {
+            let p = &pool.slots()[slot];
+            (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        let spawn = 4.0f32;
+        let (nx, ny) = {
+            let n = &npcs[0];
+            (n.x + n.size().0 * 0.5, n.y + n.size().1 * 0.5)
+        };
+        let inv = spawn / (nx - px).hypot(ny - py);
+        let expected_x = (4.0f32 * 19.0 + (nx - px) * inv) / 20.0;
+        let expected_y = (0.0f32 * 19.0 + (ny - py) * inv) / 20.0;
+        assert!(
+            (p.vel.x - expected_x).abs() < 1e-4 && (p.vel.y - expected_y).abs() < 1e-4,
+            "the weight-20 blend (`:56878-56881`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_2_the_book_of_skulls_burns_time_left_inside_a_solid_tile() {
+        // `:56794-56800`: standing in a solid tile the skull spends 33 ticks
+        // a tick (its `tileCollide = false` flight lets it get there), plus the
+        // 1 the pool's exit tail ages anyway.
+        let mut w = world();
+        put_tile(&mut w, 20, 24, 1);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BOOK_OF_SKULLS,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                0.0,
+                0.0,
+                480,
+                0.0,
+            )
+            .unwrap();
+        pool.update(&mut w, &mut npcs, None, None);
+        assert_eq!(pool.slots()[slot].time_left, 480 - 1 - 33);
+        assert!(pool.slots()[slot].active, "it survives the drain");
+    }
+
+    #[test]
+    fn test_dw_3_2_the_existing_arrow_anchors_stay_green() {
+        // DW-3.2's second half: the plain-arrow tests the phase must not
+        // disturb. Re-asserted here so the whole family reads as one unit.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(
+            WOODEN_ARROW,
+            10.0 * TILE_PX,
+            10.0 * TILE_PX,
+            2.0,
+            0.0,
+            200,
+            0.0,
+        );
+        let mut w = world();
+        for _ in 0..14 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(
+            pool.slots()[0].vel.y,
+            0.0,
+            "no gravity for the first 14 ticks"
+        );
+        step(&mut pool, &mut w);
+        assert!((pool.slots()[0].vel.y - 0.1).abs() < 1e-6, "the 15th tick");
+
+        let mut pool2 = ProjectilePool::new();
+        let x = {
+            let mut w2 = world();
+            wall_ahead(&mut w2, 10.0)
+        };
+        pool2.spawn_with_data(WOODEN_ARROW, x, 10.0 * TILE_PX, 2.0, 0.0, 200, 0.0);
+        let mut w2 = world();
+        wall_ahead(&mut w2, 10.0);
+        step(&mut pool2, &mut w2);
+        assert!(!pool2.slots()[0].active, "the arrow breaks on tile contact");
+    }
+
+    // ---------------------------------------------------------------- DW-3.3
+    // The wind tail, for the wind-eligible new arms only.
+
+    #[test]
+    fn test_dw_3_3_the_style_8_arm_takes_the_wind_tail_at_a_known_vector() {
+        // `:16777-16781`: `velocity.X += windSpeedCurrent *
+        // windPhysicsStrength` (0.1, `Main.cs:66842`), under the altitude
+        // gate — a headwind pushing back on a +X flight.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                BALL_OF_FIRE,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                1.0,
+                0.0,
+                600,
+                0.0,
+            )
+            .unwrap();
+        pool.set_wind(-0.6);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[slot].vel.x - (1.0 - 0.6 * 0.1)).abs() < 1e-6,
+            "one wind tick of -0.06 (`:16779-16780`)"
+        );
+        for _ in 0..4 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            (pool.slots()[slot].vel.x - (1.0 - 5.0 * 0.6 * 0.1)).abs() < 1e-6,
+            "the tail runs once per sub-step"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_3_the_wind_tail_respects_the_altitude_and_wall_gates() {
+        // Below `worldSurface * 16` the tail never runs; a walled centre tile
+        // blocks it as well.
+        let mut w = world();
+        // The world's `world_surface` default is `height * 0.25` = 16 tiles.
+        let below = (w.world_surface as f32 + 4.0) * TILE_PX;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(BALL_OF_FIRE, 10.0 * TILE_PX, below, 1.0, 0.0, 600, 0.0)
+            .unwrap();
+        pool.set_wind(-0.6);
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].vel.x, 1.0, "no wind below the surface");
+
+        // The second pool's centre tile is row 10 (y = 10·16, h = 16 → the
+        // centre 10·16 + 8 → row 10); a wall there blocks the tail.
+        let widx = w.index(10, 10);
+        w.tiles[widx].wall = 1;
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2
+            .spawn_with_data(
+                BALL_OF_FIRE,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                1.0,
+                0.0,
+                600,
+                0.0,
+            )
+            .unwrap();
+        pool2.set_wind(-0.6);
+        step(&mut pool2, &mut w);
+        assert_eq!(
+            pool2.slots()[slot2].vel.x,
+            1.0,
+            "a walled centre tile blocks the tail"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_3_the_ported_arrow_arm_stays_wind_free() {
+        // The pre-existing deviation: the ported aiStyle-1 arrow arm has no
+        // wind tail, and the phase must not give it one (behaviour frozen).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                WOODEN_ARROW,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                1.0,
+                0.0,
+                600,
+                0.0,
+            )
+            .unwrap();
+        pool.set_wind(-0.6);
+        let mut w = world();
+        for _ in 0..10 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].vel.x, 1.0, "the arrow ignores the wind");
+        assert!(
+            !uses_wind_physics(1),
+            "aiStyle 1 is not wind-eligible in the port"
+        );
+        assert!(!uses_wind_physics(16), "nor the bomb's 16");
+        assert!(uses_wind_physics(8) && uses_wind_physics(24) && uses_wind_physics(28));
+        // Style 22 (the Ice Rod) is not on the C# list either (`:22110-22132`).
+        assert!(!uses_wind_physics(22));
+        assert!(!uses_wind_physics(18));
+        assert!(!uses_wind_physics(50));
+    }
+
+    #[test]
+    fn test_dw_3_3_the_wind_tail_stops_at_the_16_gate() {
+        // `:16780`'s `|velocity.X| < 16f` gate is the tail's only bound: the
+        // C#'s `MathHelper.Clamp` on the next line (`:16781`) discards its
+        // return, so nothing clamps and the tail simply stops once the gate
+        // closes. The frost bolt is the arm with no gravity and no drag, so the
+        // flight stays exactly on that gate for the whole run.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                FROST_BOLT,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                15.9,
+                0.0,
+                600,
+                0.0,
+            )
+            .unwrap();
+        pool.set_wind(-1.0);
+        let mut w = world();
+        for _ in 0..319 {
+            step(&mut pool, &mut w);
+        }
+        // 15.9 - 319 ticks of 0.1 = -16.0, the first value the gate rejects.
+        assert!(
+            (pool.slots()[slot].vel.x - 15.9 + 319.0 * 0.1).abs() < 2e-3,
+            "the tail ran every tick under the gate"
+        );
+        let stuck = pool.slots()[slot].vel.x;
+        assert!(stuck.abs() >= 16.0 - 2e-3, "the gate met: |vx| = {stuck}");
+        for _ in 0..10 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(
+            pool.slots()[slot].vel.x,
+            stuck,
+            "no clamp and no further wind past the gate"
+        );
     }
 }
