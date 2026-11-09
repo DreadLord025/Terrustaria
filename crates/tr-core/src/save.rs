@@ -33,7 +33,12 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// the town NPCs (`SaveNPCs`'s block B, `WorldFile.cs:1703-1750`); v11 appended the
 /// saved ore tiers (`WorldGen.SavedOreTiers`, the C#'s world-flags bytes,
 /// `WorldFile.cs:1315-1321` + `:1444-1450`).
-pub const VERSION: u32 = 11;
+/// v12 appended the two secret-seed bitmasks (the classic `World.seeds` u16
+/// — the `SaveWorldFlags` nine booleans, `WorldFile.cs:1238-1250` — and the
+/// M5-SEED-2 `World.micro_seeds` u64); the C# `.wld` stores the nine
+/// booleans in the flags block and re-derives the micro seeds from the seed
+/// text, so the port carries both as its own tail block.
+pub const VERSION: u32 = 12;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -344,6 +349,11 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
             w.write_all(&t.to_le_bytes())?;
         }
     }
+    // v12: the secret-seed bitmasks — the classic u16 (`World.seeds`, the
+    // `SaveWorldFlags` nine booleans) then the micro u64
+    // (`World.micro_seeds`, the 37 `SecretSeed` flags).
+    w.write_all(&world.seeds.sum().to_le_bytes())?;
+    w.write_all(&world.micro_seeds.sum().to_le_bytes())?;
     Ok(())
 }
 
@@ -662,6 +672,11 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
             };
         }
     }
+    // v12: the secret-seed bitmasks (the classic u16, then the micro u64).
+    if version >= 12 {
+        world.seeds = crate::seeds::SeedFlags::from_sum(r.u16()?);
+        world.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(r.u64()?);
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -887,7 +902,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        assert_eq!(&buf[8..12], &[11, 0, 0, 0], "the writer emits the current v11");
+        assert_eq!(&buf[8..12], &[12, 0, 0, 0], "the writer emits the current v12");
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -918,8 +933,8 @@ mod tests {
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&12u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 12 is unsupported");
+        buf[8..12].copy_from_slice(&13u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 13 is unsupported");
     }
 
     #[test]
@@ -964,11 +979,24 @@ mod tests {
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
-        // fixed flags block + four empty colour counts + one empty entity
-        // count sit after it — [presence][x: i32][y: i32] — poison the x.
-        let tail = buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4 + 1) - 9;
-        buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
+        // The v5 tail is the last 9 bytes AHEAD of the v6..v12 sections:
+        // the fixed flags block + the four empty colour counts + one empty
+        // entity count + the chests + banners + bestiary + NPC counts and
+        // the v12 bitmasks (2 + 8) sit after it — poison the x.
+        // Locate the v5 tail by its own bytes — [presence][x][y] = 1, 30,
+        // 20 — rather than by counting the v6..v12 sections behind it (that
+        // count changes every time a section lands).
+        let pattern = {
+            let mut p = vec![1u8];
+            p.extend_from_slice(&30i32.to_le_bytes());
+            p.extend_from_slice(&20i32.to_le_bytes());
+            p
+        };
+        let at = buf
+            .windows(pattern.len())
+            .position(|w| w == pattern.as_slice())
+            .expect("the bed-spawn tail is in the payload");
+        buf[at + 1..at + 5].copy_from_slice(&99999i32.to_le_bytes());
         assert_eq!(parse(&buf).unwrap().0.bed_spawn, None);
     }
 
@@ -996,8 +1024,8 @@ mod tests {
     }
 
     #[test]
-    fn m5_seed_1_the_secret_seed_flags_round_trip_in_v6() {
-        // M5-SEED-1: the v6 block carries the classic secret-seed flags
+    fn m5_seed_1_the_secret_seed_flags_round_trip_in_v12() {
+        // M5-SEED-1: the v12 block carries the classic secret-seed flags
         // (`WorldFile.SaveWorldFlags`'s nine booleans as the port's
         // `serializedSeedsSum` bitmask); a classic world keeps all bits 0 and
         // a seed world survives the save/load.
@@ -1015,6 +1043,31 @@ mod tests {
         assert_eq!(back.seeds, classic.seeds);
     }
 
+    #[test]
+    fn m5_seed_2_the_micro_seed_flags_round_trip_in_v12() {
+        // M5-SEED-2: the v12 block also carries the 37 micro-seed flags as
+        // the u64 bitmask; a classic world keeps all bits 0 and a seeded
+        // world survives the save/load.
+        let mut w = World::new("Test".into(), 32, 32);
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        assert_eq!(back_micro(&buf), 0, "a classic world writes no micro bits");
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
+        w.micro_seeds = crate::seeds::micro_flags_for_texts(["pumpkinseason", "arachnophobia"]);
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        assert_eq!(back_micro(&buf), w.micro_seeds.sum());
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.micro_seeds, w.micro_seeds);
+        // A v11 file (the same stream minus the v12 block, the version byte
+        // restored) loads as the classic world it was.
+        buf.truncate(buf.len() - 10);
+        buf[8..12].copy_from_slice(&11u32.to_le_bytes());
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
+    }
+
     /// A `WorldSide` carrying only the chest records (the v7 tests).
     fn chest_side(chests: &[ChestRecord]) -> WorldSide {
         WorldSide { chests: chests.to_vec(), banners: Vec::new(), bestiary: Vec::new(), npcs: Vec::new(), ore_tiers: None}
@@ -1023,8 +1076,12 @@ mod tests {
     /// The v6 block's u16 bitmask, read back out of the written buffer — the
     /// two bytes ahead of the fixed v7 flags block.
     fn back_flags(buf: &[u8]) -> u16 {
-        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1) - 2;
-        u16::from_le_bytes([buf[tail], buf[tail + 1]])
+        u16::from_le_bytes([buf[buf.len() - 10], buf[buf.len() - 9]])
+    }
+
+    /// The v12 block's micro u64 bitmask (the buffer's last eight bytes).
+    fn back_micro(buf: &[u8]) -> u64 {
+        u64::from_le_bytes(buf[buf.len() - 8..].try_into().unwrap())
     }
 
     #[test]
@@ -1218,7 +1275,7 @@ mod tests {
         ];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        assert_eq!(&buf[8..12], &[11, 0, 0, 0], "the writer emits the current v11");
+        assert_eq!(&buf[8..12], &[12, 0, 0, 0], "the writer emits the current v12");
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
         assert_eq!(back_chests, chests);

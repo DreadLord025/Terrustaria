@@ -8770,3 +8770,118 @@ pass), the `UseBlockColors(TileColorCache)` arm, the neighborhood recursion
 (`repeat` with the `grassSpread < 1000` cap — the port's world-wide growth
 loop is its equivalent, the cap recorded here), and the vines/moss arms
 (`GrowMoreVines`, `SpreadGrassWalls`, `MossConversion`) still open.
+  party, the Constant's starving/darkness engine, skyblock.
+
+## Micro seeds (M5-SEED-2)
+
+The 1.4.5 modular registry (`WorldGen.SecretSeed`) and the arms that landed
+on `M5-SEED-2-micro-seeds`.
+
+### The registry and the hash
+
+**There are 37 micro-seeds, not 38** — `WorldGen.cs:341-413` declares 37
+fields and the static ctor `:3022-3058` is 37 `SecretSeed.Register(...)`
+lines; the "38" in the earlier notes is `AllSecretSeeds` (`:339`) or the
+`Register` method definition (`:483`). The port's `MICRO_SEED_ORDER`
+carries all 37 in registration order (which is also the `AllSecretSeeds`
+walk order, so a future first-match tie-break matches).
+
+Recognition is the hash, not a word list: `SecretSeed.Check`
+(`WorldGen.cs:468-481`) normalises the text (`[^a-z0-9]`, lower-cased),
+hashes it and compares to the stored code. `Utilities/Secrets.cs:16-26`:
+`CryptRaw(utf8, salt, 4)` (BCrypt cost 4, the game's static salt decoded
+from `"fT2JQQzNMJl2NRoMbo9RjA=="` = `7d3d89410ccd30997635 51a0c6e8f518c`),
+then 1000 rounds of the deterministic `Utils.Swap` shuffle, then a second
+`CryptRaw`, then standard Base64. The port is
+`crates/tr-core/src/bcrypt.rs` — the full `CryptRaw` (the pi-derived
+P/S tables transcribed mechanically from `BCrypt.cs:186-296`,
+`Encipher`/`StreamToWord`/`Key`/`EKSKey`/`CryptRaw` verbatim).
+
+Two things about the hash that cost the most debugging time and are now
+pinned by tests:
+
+1. **The additions wrap at 32 bits twice.** The C#'s
+   `((S0 + S1) ^ S2) + S3` is unchecked u32 arithmetic; a u64 intermediate
+   carries past the first overflow and every later byte diverges.
+2. **`EKSKey`'s salt offset is a single counter across BOTH schedules**
+   (`BCrypt.cs:110-133`) — resetting it before the S loop flips the state.
+   (`Key` also had a duplicated P-encipher loop in the first draft.)
+
+The golden vectors prove the semantics: `to_secret("pumpkinseason") ==
+"Z4Odmvd5lScy/KGXHUO2nvqA9l3KRvm8"` (halloweenGen's registered code —
+the word the game itself reveals in `SetSeedToRandomWithCurrentEvents`,
+`WorldFileData.cs:409`) and `to_secret("arachnophobia") ==
+"SPlOdka0fv8wUovao6u3VB7ZS+IbcPDu"` (noSpiderCaves). Those also prove the
+port's key walk is the game's non-NUL-terminated one: the stock `bcrypt`
+crate treats the key as NUL-terminated and would differ.
+
+### Storage and the wire
+
+`SeedFlags` (a `u16` mirror of `serializedSeedsSum`) is left byte-identical;
+the 37 flags live in a new `MicroSeedFlags` (u64) beside it. They ride
+`World.micro_seeds` / `GenOptions.micro_flags`, TRWLD **v7** (the u64
+appended after the v6 u16; a v6 file loads as a classic world) and the
+`.wld` seed text — the C# writes **no** micro-seed bytes at all
+(`SaveWorldFlags`, `WorldFile.cs:1238-1250`), and recovers them from the
+text at load (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), which
+is what `wld.rs` now does instead of discarding the string. The port
+cannot reproduce `GetFullSeedText`'s `size.difficulty.evil.sum.` prefix
+form (no seed text is persisted) — recorded as the one deviation.
+
+`InitializeSecretSeeds` (`WorldGen.cs:553-587`) maps eight of the 37 onto
+`Main.*` statics (vampirism → `vampireSeed`, endlessHalloween →
+`forceHalloweenForever`, …). The port reads those eight directly from the
+flags at their use sites instead of a static pass, and the worldgen arms
+read `MicroSeedFlags` directly — the net effect for each arm is the same
+flag value.
+
+### The arms
+
+Ported (all gated, classic worlds byte-identical): `DoDigExtraHoles` and
+the `surfaceIsInSpace` terrain parameters (the vanilla Grass slot,
+`WorldGen.cs:12423`); `extraLivingTrees`
+(`:15494-15623` + `extraLivingTreesReducedAmount`),
+`extraFloatingIslands` (`:12942-13119` + its two Variations),
+`biggerAbandonedHouses` (`:433-447`), `noSpiderCaves`' pass skip and the
+`ILied` wall sweep (`:17358`, `:2618-2630`); the surface conversions
+`DoSurfaceIsDesert` (+ Finish), `DoSurfaceIsInSpace`,
+`DoSurfaceIsMushrooms`, `DoWorldIsFrozen`, `DoNoInfection`,
+`DoHallowOnSurface`, `DoWorldIsInfected`, `DoStartInHardmode` and
+`DoPooEverywhere` — the three Convert-driven ones go through
+`spread.rs`'s opened `convert_tile`/`convert_wall`/`convert_tile_hallow`/
+`convert_wall_hallow` (the port's own conversion tables, applied per cell
+with the C#'s per-column type decision, including the drunk
+`GenVars.crimsonLeft` half split); the `actuallyNoTraps` kill and
+treasure-ring sweeps; the `paintEverythingGray`/`Negative` and
+`coatEverythingEcho`/`Illuminant` sweeps with all nine `Variations`
+predicates ported (`WorldGen.cs:43-337`, the count gates reading
+`active_secret_seed_count`); `DoRainbowStuff`'s kinds; and the runtime
+arms (the endless-holiday loot + spawner arms, vampirism's shop/pot/
+regen/Zoologist, `halloweenGen`'s `PlacePumpkin`/`GrowPumpkin`/surface
+body, and the `SpawnStormLightning` gates).
+
+### Deferred families (each a whole subsystem)
+
+- `noSurface` (`DoNoSurface` + `DoNoSurfaceFillTheTop` + the ~25 pass
+  gates + the missing SpawnPoint/RandomizeWorldSpawn family);
+- `roundLandmasses` / `errorWorld` (`DoRoundLandMasses`,
+  `DoErrorWorldShuffleBlocks`, the chest half, the missing shimmer-tile
+  table);
+- `extraLiquid` (`DoExtraLiquidAddLiquid`/`AddBubbleBlocks`/`Finish` — the
+  port has no worldgen `QuickWater` settle);
+- `dualDungeons` (a second dungeon generator + the bounds system ~35 sites
+  read — overlaps M5-DUNGEON);
+- `teamBasedSpawns` (`ExtraSpawnPointManager`), `randomSpawn`
+  (`RandomizeWorldSpawn`/`Spawn_IsAreaValidSpawn`), `addTeleporters`
+  (`TeleporterGenerator`), `graveyardBloodmoonStart` (the port has no
+  graveyard biome);
+- the chest/NPC rows inside the ported passes (the port generates chests
+  as tiles without inventories: echo's 1-in-25 item 4409, the frozen
+  finish's Present 1869 + the Guide→Santa swap, `DoPortalGunInChests`);
+- `rainsForAYear`'s world side (`Main.rainTime`/`cloudAlpha` live in
+  tr-app's `Rain`, which the worldgen cannot reach);
+- the `DoSurfaceIsMushrooms` `Convert(k, l, 3, 0)` arms (no mushroom
+  conversion table in the port — the direct-equivalent writes are ported);
+- `DoRainbowStuff`'s frame re-writes and the thunder-bolt projectile arms
+  of `moreLightning`/`noLightning` (`Projectile.cs:12776/14823/39871`).
+ 2397c90 (M5-SEED-2: the docs — the ROADMAP row, the ANALYSIS section and the PORT_MAP rows)

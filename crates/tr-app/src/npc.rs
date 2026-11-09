@@ -4723,10 +4723,6 @@ impl Npc {
             // Case 50 — King Slime (`NPC.cs:73380-73414`): airborne snaps to
             // frame 4, holds it 4 steps, then frame 5; landing returns to 4 and
             // the grounded cycle runs frames 0..=3 (never reaching 4).
-            // Case 50 — King Slime (`NPC.cs:73380-73414`): the 6-row strip
-            // (`Main.npcFrameCount[50]` = 6, NPC_50 = 174x720, 120-px rows);
-            // the air snaps up to row 4 and holds 5, the landing falls back
-            // to 4, the grounded walk rides 0..3 with the `num2` boosts.
             NpcKind::KingSlime => {
                 if self.vy != 0.0 {
                     if self.frame < 4 {
