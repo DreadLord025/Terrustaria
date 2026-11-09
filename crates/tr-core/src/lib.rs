@@ -34,6 +34,7 @@ pub mod tile_light;
 pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
+pub mod whip;
 pub mod fishing;
 pub mod ores;
 pub mod spread;

@@ -27,7 +27,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.dev_throw = false;
     }
     // The boomerangs' return seek reads the owner's center (`AI_003`'s
-    // `Main.player[owner]` inputs).
+    // `Main.player[owner]` inputs); the whips anchor their curve on the same
+    // center (the `GetArmPosition` stand-in) and aim the Moon Lord arms
+    // along `swing_aim` (`AI_165_Whip`'s mouse aim, `:47709`).
     let owner = app.player.as_ref().map(|p| {
         let (x, y) = p.center();
         (x, y)
@@ -45,14 +47,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             )
         }),
-        channel: app.player.is_some()
-            && app.mine_down
-            && {
-                let held = app.inventory[app.selected];
-                held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
-            },
+        channel: app.player.is_some() && app.mine_down && {
+            let held = app.inventory[app.selected];
+            held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
+        },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
     };
+    // The whips anchor their curve on the player center and aim the Moon
+    // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
+    // — `inputs.aim` minus the center, so the two systems share one read.
+    let aim = inputs
+        .aim
+        .zip(owner)
+        .map(|((ax, ay), (ox, oy))| (Vec2::new(ax - ox, ay - oy)).normalize_or_zero())
+        .filter(|d| *d != Vec2::ZERO);
     // The closure's disjoint field captures keep the step borrow
     // (`projectile_step`) apart from the pool/world/npcs/player set. The
     // yoyo rolls (`Projectile.cs:67746`'s jitter, `:67886`'s beam rolls,
@@ -69,6 +77,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             &mut app.world,
             &mut app.npcs,
             owner,
+            aim,
             app.player.as_mut(),
             inputs,
             &mut rng,
@@ -77,4 +86,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
+    // tower's mark resolves into the NPC vec here (the pool can't grow it).
+    for (kind, x, y) in app.projectiles.drain_mark_spawns() {
+        let k = crate::npc::NpcKind::from_u16(kind).unwrap_or(crate::npc::NpcKind::Slime);
+        let mut n = crate::npc::Npc::new(k, x, y, 1, 0.0);
+        n.hp = n.max_hp;
+        n.worm_id = 1;
+        app.npcs.push(n);
+    }
 }

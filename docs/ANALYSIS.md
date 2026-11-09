@@ -2908,6 +2908,71 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+### The EoC task's loss and re-land (M4-NPC-3n)
+
+The smart-cursor agent's `5075a462` "sync" merge resolved its conflicts by
+taking its own branch's wholesale tree, which predated `07c1d4e4` — main
+lost the entire M4-NPC-3m task (the case-4 `find_frame`, the 110x166
+frames, the `halfSize` override, the `eoc` hook name and the ROADMAP
+row). The AGENTS.md hazard ("another agent's merge reverts a finished
+feature — verify your markers after every merge") caught it in the audit
+log (`git show origin/main:... | grep -c`), and the work was cherry-picked
+back on this branch. The lesson joins the 2026-11-08 incidents list: a
+"sync" merge whose message says it restores dropped work is exactly where
+someone else's finished work gets dropped again.
+
+## The draw-anchor overrides (M4-NPC-3n)
+
+`Main.cs:23048`'s switch overrides the per-kind draw anchor in two ways,
+and the port now models both:
+
+- `halfSize` (the origin point that lands on the anchor) shifts the frame
+  by `override − frame_h / 2`: the EoC/Twins' (55, 107) gives +24/+7, and
+  the Plantera head's absolute 77 (over its 86-px row's 43) gives +34.
+- `num47`/`num46` are flat pixel nudges: the Plantera head's +26, the
+  Brain's `+50 · scale`, the DD2 group's negative shifts (the
+  javelineers' −8, the bombers' −5, the Wither Beasts' −3).
+
+`npc_anchor_nudge` sums them and is applied once after the draw match, so
+every generic-anchored kind takes its own value; the towers, the saucer
+family and the Deerclops compute their own positions in dedicated
+`DrawNPCDirect` arms and are excluded, exactly like the C#. The still
+unported arms (626/627's wet dual switch, 692's `num46 = wet ? 10 : 6`,
+688/694's direction terms, 469's ai[2]-gated +14, and the DD2 sprite
+effects/flip toggles) are the follow-ups.
+
+## The Eye of Cthulhu's display (M4-NPC-3m)
+
+The EoC's `find_frame` arm ran an 8-tick strip over all six rows of its
+sheet, and its comment described a "pupil blink" that does not exist in
+the decompile. `case 4/125/126` (`NPC.cs:76905-76926`) is ONE shared
+machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
+
+- The 20-tick counter walks the bands rows 0/1/2 (splits at 7/14/21,
+  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 onto the
+  phase-2 rows 3/4/5. The Twins ported this in M4-NPC-3k; the EoC was
+  still on the v1 strip, so the boss and its summonable twins animated
+  differently.
+- **The sheet is 110x996** (six 166-px rows, `Main.npcFrameCount[4] = 6`)
+  and the v1 squeezed each row into a 110-px quad at the box's corner —
+  a horizontally stretched, vertically cropped eye. `boss_draw` now
+  takes the real 110x166 frames at the generic anchor (the same shape
+  the Twins ride, whose 200-px rows come off the same helper).
+- **The `halfSize` override** (`Main.cs:23051-23056`): the C#'s draw sets
+  `halfSize = (55, 107)` for all three kinds — the point that lands on
+  the NPC's anchor. For a 166-px row the sheet-derived half is 83, so the
+  override pushes the frame's centre 24 px lower (the Twins' 200-px rows:
+  7 px). `boss_half_size` folds that into the anchor as
+  `override − frame_h/2`, which is the shift the C#'s formula produces.
+- The rest of the C#'s override switch (the Plantera head's absolute 77
+  with `num47 += 26`, the Brain's `+50·scale`, the small walkers' +4/+8,
+  the DD2 families' negative nudges, the 626/627 wet switch) stays the
+  documented follow-up — the `case 4/125/126` trio is the only override
+  that is a plain (55, 107).
+
+Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
+SHA256-stable across runs.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -6816,6 +6881,18 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Crystal-shard wiring (M5-SPREAD-1, part 2)
+
+`growth::grow_crystal_shards` (the `hardUpdateWorld` `:69604-69644` arm — the
+shard-capable stones 117/116/164/402/403 below the rock layer, the `Next(5)`
+gate, the 4-dir pick that never grows upward, the leaf-quiet neighbour, the
+radius-6 tile-129 density under 2, the `Next(18)` style with the 1/50 big
+shard 18+Next(6)) was ported and unit-tested but unreferenced: the app driver
+runs `spread::hard_update_world`, which carried only the chlorophyte arms.
+The shard arm now runs at that function's head — the C#'s own position — so
+the app's growth tick grows shards. Runtime-only, so the worldgen hashes are
+untouched.
+
 ## Dungeon crawler wiring (M5-DUNGEON)
 
 The pipeline's `Dungeon` step moved from the shape-level approximation
@@ -7523,6 +7600,38 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
+- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
+  The C# has no candidate list and no final `InTileBounds` commit gate for
+  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
+  and the vote compares the FINAL `(num2, k)` positions (the column's base).
+  The port keeps both off: a trunk column at the rect's bottom row votes its
+  base at the row below the rect. The trunk arm's right/left frame shifts are
+  also asymmetric in the C# (the right arms test `num2 + 1`, the left
+  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
+  CURRENT cell (the earlier shift may already have moved it). The axe step
+  runs at two call sites, per the `SmartAxeAfterPickaxe` settings toggle
+  (`Player.cs:333`, caller-passed on `Lookup`).
+- **`hit_line` is ported in-module until the app-side Collision lands.** The
+  C#'s `Collision.HitLine` (`Collision.cs:780-969`) is a Bresenham-ish walker
+  whose `ignoreX`/`ignoreY` arms turn off the perpendicular hit checks (the
+  mine step passes the walk's own direction so the side it came from never
+  blocks) and whose `ignoreTargets` (the grapple hooks) never block. The
+  port keeps the sequential-if clamps (a true `clamp` panics on the port's
+  small test worlds, where `maxY - 40 < 1`), the C#'s catch arm as a
+  `Result` error returning the START cell, and the two floating-point
+  fractional strides (`num5`/`num6`) exactly. When the app-side Collision
+  port arrives, the walker moves next to its LOS siblings.
+- **`Step_Pickaxe_MineSolids`' beam is a start-grid → end-grid walk.** The
+  step fills `_points` from the player's edge and `_endpoints` from the
+  mouse's edge (the `InWorld(num8, num9, 40)` fluff gate on the endpoints —
+  the port checks `40..=width-40`/`40..=height-40`, `WorldGen.cs:9688-9696`),
+  then pops the pair head and walks it with `HitLine`, adding every hit
+  twice (the off-endpoint hit and the full-solid re-hit — the C#'s two adds,
+  the grapple targets excluded). The unkillable targets are dropped with
+  `edit::can_kill_tile` (the same `|_, _| false` chest-store convention as
+  the force-cursor step), and the vote runs from the player's centre — on a
+  client the neighbouring miners perturb that centre by ±12 px per parity
+  (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -8235,6 +8344,64 @@ Deviations: the dust arms, the ground-avoidance tile scan
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
 
+## Whips & tag damage (M4-PROJ-7)
+
+The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
+the pure geometry (`tr-core/src/whip.rs`: `GetWhipSettings` `:48337-48419`,
+`FillWhipControlPoints` `:48278-48335` and the `Colliding` whip arm `:15716-15737`)
+and the state (`crates/tr-app/src/projectile.rs`'s `ai_whip`, the 18 `proj_data`
+rows off `DefaultToWhip()` `:10704-10718`). The tag-damage system is
+`crates/tr-app/src/tag_effects.rs` (`TagEffectStack.cs` + `TagEffectState.cs`),
+the tag table's `TagDamage` column is the `WhipTagEffect` initializer
+(`ItemID.cs:1473-1580`) — NOT the item damage — and the tagged-hit math is the
+`Projectile.cs:12924` line, gated by `WhipTagEffect.CanRunHitEffects`'s
+minion/sentry shot test.
+
+Deviations recorded here:
+
+1. **The arm anchor.** C# anchors the curve on `Player.GetArmPosition()` =
+   `OffsetsPlayerOnhand[bodyFrame.Y / 56] * 2` (a 20-row table,
+   `Main.cs:66615`); the port's player has no body frame, so the anchor is the
+   player center (`Player::center()`). The whip's hitbox shifts by the on-hand
+   offset's order (≤12 px); the render pass can adopt the frame row. The sweep
+   itself (the curve's shape, the reach formula, the union test) is 1:1.
+2. **The whip never self-crits.** `DefaultToWhip` sets no melee/ranged/magic
+   flag, so `Projectile.Damage`'s crit block (`:12892-12899`) never fires for a
+   whip — the vanilla whip crits only through a tag's `CritChance` (4679: 10,
+   5478: 5, 5479: 15, 4914: 10, 5480: 10). The generic throw path rolls crit at
+   spawn for every other shot; the whip branch passes `crit = false` so a
+   proc-less tag cannot force the variance.
+3. **The local-immunity decay.** C#'s `DecrementLocalImmuneTimeCounters` decays
+   only **positive** counters (`:17274-17277`), so the whip's
+   `localNPCHitCooldown = -1` sentinel never expires: each whip projectile hits
+   each NPC once. The pool's Rust decay was `(v - 1).max(0)`, which turned the
+   sentinel into 0 on the next tick (every whip re-hitting each NPC per tick);
+   it now decays positives only, and `the_whip_hits_each_npc_once_across_the_swing`
+   pins the behaviour.
+4. **The press edge.** The use path compared `mine_released`/`mine_prev_down`
+   against the *same* frame's input (the assignments run at the top of
+   `update_editing`), so the non-`autoReuse` gate
+   (`Player.cs:42733`'s `controlUseItem && releaseUseItem`) was dead. The
+   previous frame's edges are captured before the overwrite and the gates read
+   them — the whip's one-swing-per-press behaviour (and the shuriken's) depend
+   on it.
+5. **Deferred (documented follow-ups).** The tag effects' projectile spawns —
+   916 (DarkHarvest), 917 (CoolWhip snowflake), 918 (Firecracker explosion),
+   1036 (CobWhip spark), 1037 (Starcrash meteor), 1038 (FlowerWhip petals),
+   1039 (Constellation star fan), 1045 + `SpawnMoonLordWhipProc`'s `Next(1,4)`
+   eye beams and the ElectricEel's chain damage (`TryHittingNPC`) — wait for
+   their projectile kinds; the whip's tile-cutting arm
+   (`Projectile.cs:15210-15220`), the melee-enchant `StatusNPC` arms, the
+   half-flight and proc sounds, the dust/particle orchestras, the draw ribbon
+   (`Main.cs:36547`'s `GetWhipAnimationPercent`), `heldProj`/`drawLayer`,
+   `MinionAttackTargetNPC`'s consumers (M4-PROJ-8), the player-side melee tag
+   hook (`Player.cs:44448-44451`) and the accessory modifiers
+   (`whipRangeMultiplier`, `maxTagEffects`, `tagEffectDuration` — the defaults
+   1/1/1.0 port, the M3-EQUIP arms wait) stay out until their own rows.
+6. **The tag gate.** No ported shot is a minion/sentry shot, so
+   `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
+   `is_summon_shot` slot flag carries the gate and the tests set it directly,
+   so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death →
@@ -8278,4 +8445,80 @@ tick → the Moon Lord's spawn.
 Deviations: the Moon Lord's boss bar/head textures, the `MoonLordShake`
 scene filter, the music ducking and the countdown UI are unmodelled; the
 `GetRidOfCultists` ritual-cleanup arm is constants-off; the remix/no-
+surface branch of the tower-place retry is constants-off.## .trwld v8 — the banner kill counts (M6-SAVE-1c)
+
+The banner tally now rides the world file. The entry points grew a
+`WorldSide { chests, banners }` (rather than more return tuples — new sections
+extend the struct) and the v8 tail is a `u32` count, then per banner the id and
+the kill count: the C# `BannerSystem.Save` shape (`int32` per banner id,
+`BannerSystem.cs:172-186`).
+
+- **The deviations.** The vanilla rides these counts inside the world-flags
+  block as a dense array; the port's `BannerSystem` keeps them sparse
+  (`BTreeMap` by banner id), so each record carries its id. `Load`
+  (`BannerSystem.cs:188-212`) replaces the tally wholesale — the port's
+  `load_pairs` inserts the recorded entries, and a recorded **0 stays in the
+  map** so a zeroed banner round-trips (the C# keeps only the entries its
+  count array carries). `claimableBanners` (the ushort array `:172-186`) is
+  not modelled in the port and stays out.
+- **The app wiring.** `save_world` collects `banners.pairs()` (ascending
+  banner-id order) beside the chests; `App::new` restores the tally through
+  `BannerSystem::load_pairs` at construction, so the placed banners' strength
+  (`banner_buff_for`) reads the real counts after a reload.
+- Tests: `dw_2_3_the_banner_counts_round_trip_in_v8` (zeroed and
+  999999999-range counts), `dw_2_3_a_v7_payload_loads_no_banners`,
+  `dw_2_3_a_truncated_banner_section_bails`,
+  `dw_2_3_the_banner_section_is_deterministic`, and the app pair
+  `dw_2_3_a_saved_banner_tally_round_trips_through_the_app` (two NPC
+  families' counts survive, with an empty-store control). Suite 2632 / 0.
+
+Out: the remaining C# sections — signs (no port store), the NPC block
+(names/homes/homeless, App-side `App.npcs`), the bestiary kill pairs (today
+the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
+(worldgen-local — needs a `World` field), the angler quest state (no port
+fields), the TownManager rooms, the weighted pressure plates (no port store),
+the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## The lunar battery projectiles (M4-EVENT-16)
+
+The Moon Lord's and the pillars' shots run through six aiStyles, all ported
+in `projectile.rs`'s pool dispatch.
+
+- **452 PhantasmalEye (aiStyle 82)** drifts in three legs: 45 ticks, then
+  the drift angle negates; 90 more, then `ai[1]` becomes the target player
+  index; then the homing — the 14-px target over the 0.6 lerp with the Y
+  floor of 6 and an accel that ramps 0.4 → 0 as `ai[2]` ages 0→90, killing
+  at 30 px. Every leg's drift rotates `velocity.X` off `ai[1]`, clamps to
+  ±6, drifts Y by −0.08 (−0.2 when rising) and floors at −7.
+- **454 PhantasmalSphere (aiStyle 83)** fades its alpha by 6 and sets
+  `scale = 1 - alpha/255`; while `ai[0] < 30` it locks its position to
+  `Main.npc[ai[1]].Center - halfbox - velocity` (the hand's held charge),
+  then decays at 0.96 and cycles its 2 frames. The damage suppression
+  (`Projectile.cs:15406-15412`) rides the same window.
+- **455 PhantasmalDeathray (aiStyle 84)** derives its position from the
+  host every tick — the (27, 59) ellipse for the Moon Lord head, (30, 30)
+  for the True Eye — scaled by the host's `localAI[1]` open factor and
+  rotated by its `localAI[0]` aim. Its heading sweeps by `ai[0]` per tick
+  (the ±2π/540 the head's spawn sets), it lives 180 ticks with the
+  `sin(t·π/180)·10` scale curve, and its length smooths toward the port's
+  tile ray at 0.5 (0.75 when the host can't see its player).
+- **456 MoonLeech (aiStyle 85)** runs the outbound leg at the 16-px cap
+  toward its player, applies buff 145 (840 classic / 960 expert) once at
+  the 20-px contact, and after 330 ticks (or the player's death) flips
+  `ai[0]` negative for the return leg that dies at the head.
+- **540 StardustMark (aiStyle 103)** fades in over 30 ticks and spawns the
+  NPC id carried in `localAI[0]` (the tower's mark: 405/402/407 picked
+  from the culled list), then fades out. The port's pool can't grow the NPC
+  vec, so the spawn rides `wants_mark_spawn` out to `drain_mark_spawns`.
+- **574 NebulaEye (aiStyle 102)** is dragged along its host's frame delta
+  while `ai[0] < 180`, homing at the ±0.15/±0.075 accel clamped to 6 px.
+- **629 TowerDamageBolt (aiStyle 122)** homes at 5 px toward the host tower
+  in `ai[0]` and dies with it; on contact the dispatch spends the tower's
+  `ShieldStrengthTower*` (clamped at 0) — the M4-EVENT-7 shield's drain.
+
+Deviations: the pool's spawn carries no `ai[1]` whoAmI, so the machines
+link their host by kind (the nearest living MoonLordHead/FreeEye,
+MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
+the 452's `Player.FindClosest` folds into the owner's centre; the 456's
+expert duration stays classic until the difficulty modes land.
