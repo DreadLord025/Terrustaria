@@ -701,6 +701,15 @@ fn stock_band(band: Band, ctx: &Context, chest_style: i32, rng: &mut u64) -> Vec
             }
         }
     }
+    // `:37386-37393` — the jungle family's (`flag4`) pair: the 1/4 and
+    // 1/50 rows. Both chest-tile blocks carry the same pair (`:37470-47479`),
+    // so the rows apply to either anchor kind.
+    if ctx.jungle && next(rng, 4) == 0 {
+        out.push(Row::plain(2204));
+    }
+    if ctx.jungle && next(rng, 50) == 0 {
+        out.push(Row::plain(753));
+    }
     // `:37415-37448` — the skyware family's tail (`flag12`): the Sky Mill at
     // 1/3, one of the six pottery pieces and the Cloud stack 50-101. The
     // pottery row used to ride the `wood_family` approximation at 1/2; the
@@ -728,6 +737,11 @@ fn stock_band(band: Band, ctx: &Context, chest_style: i32, rng: &mut u64) -> Vec
     }
     if ctx.ice && next(rng, 50) == 0 {
         out.push(Row::stacked(669, 1));
+    }
+    // `:37406-47409` — the water family's (`flag13`) row: the unconditional
+    // globe (the 467-tile twin at `:47406`).
+    if ctx.water {
+        out.push(Row::plain(2195));
     }
     if ctx.wood_family() && next(rng, 2) == 0 {
         out.push(Row::stacked(2198, ranged(rng, 50, 101) as u32));
@@ -885,6 +899,32 @@ fn stock_chest(
             if next(rng, 10) == 0 {
                 rows.push(Row::plain(5525));
             }
+        }
+    }
+    // The wooden-chest family tails (`:37440-47500`, the
+    // `itemIndex > 0 && chestTileType == 21` block — every band): the
+    // `num9` 23-27 style row and the flag13 water pair — the flag12 tail
+    // (2197/pottery/751) already lands in `stock_band`. These two rows
+    // landed once (2026-11-09, `600dafdb`) and were dropped by a later
+    // merge's resolution; restored here with the vanilla citations intact.
+    // The mahogany-tile 467 counterparts (`:37466-47500`) need the chest
+    // kind plumbed through `stock_chest` — parked (ANALYSIS).
+    // `:37453-47455` — the styles 23-27 pottery row at 1/2 (the sweep's
+    // `chest_style` off the anchor's `frame_x / 18`).
+    if (23..=27).contains(&chest_style) && next(rng, 2) == 0 {
+        rows.push(Row::plain(5234));
+    }
+    // `:37529-37531` — the skyware style-13 pottery row: a SECOND 1/2 roll
+    // on its own (the vanilla keeps the two style rows separate).
+    if chest_style == 13 && next(rng, 2) == 0 {
+        rows.push(Row::plain(5234));
+    }
+    if ctx.water {
+        // `flag13` `:37457-47469` — the 1/5 raincoat, else the 3-7 potions.
+        if next(rng, 5) == 0 {
+            rows.push(Row::plain(2767));
+        } else {
+            rows.push(Row::stacked(2766, ranged(rng, 3, 8) as u32));
         }
     }
     rows
@@ -1514,6 +1554,87 @@ mod tests {
         let rows2 = stock_chest(&w, 30, 49, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
         let wands2 = rows2.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
         assert_eq!(wands2, 0, "the once-per-world grant does not repeat ({wands2})");
+    }
+
+
+
+    #[test]
+    fn the_remaining_tail_rows_roll_at_the_vanilla_odds() {
+        // The `itemIndex > 0 && chestTileType == 21` block's remaining rows
+        // (`:37384-47500`): the flag4 pair (1/4 + 1/50), the flag13 globe
+        // (unconditional), the style-23-27 pottery row (1/2) and the style-13
+        // row (a second 1/2), and the flag13 water pair (1/5 raincoat, else
+        // 3-7 potions). The flag4 pair and the globe ride the families
+        // either tile block carries, so they apply to both anchor kinds.
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+
+        // A water-family anchor (tile 4869 beside the seat) takes the globe
+        // unconditionally and exactly one of the water pair.
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -1i32..=0 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 4869,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        put_chest(&mut w, 100, 198);
+        let mut rng = 3u64 | 1;
+        let rows = stock_chest(&w, 100, 198, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        assert!(
+            rows.iter().any(|r| r.kind == 2195),
+            "the flag13 globe is unconditional"
+        );
+        let water: Vec<u16> = rows
+            .iter()
+            .filter(|r| r.kind == 2766 || r.kind == 2767)
+            .map(|r| r.kind)
+            .collect();
+        assert_eq!(water.len(), 1, "exactly one water row ({water:?})");
+
+        // A jungle-family anchor (tile 60 beside the seat): the flag4 pair
+        // fires only on its odds — search a stream where the 1/4 row lands.
+        let mut w = rig();
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-1, 0)] {
+            let i = w.index(100 + dx, 198 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 60,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 100, 198);
+        let hits = (1u64..400).filter(|&seed| {
+            let mut rng = seed | 1;
+            stock_chest(&w, 100, 198, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                .iter()
+                .any(|r| r.kind == 2204)
+        }).count();
+        assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
+        assert!(hits < 400, "and not on every one — the 1/4 gate is real");
+
+        // A style-13 anchor takes its own 1/2 pottery row.
+        let mut w = rig();
+        put_chest(&mut w, 100, 198);
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].frame_x = 18 * 13;
+                w.tiles[i].frame_y = 18 * dy as i16;
+            }
+        }
+        let rows13 = (1u64..64).any(|seed| {
+            let mut rng = seed | 1;
+            stock_chest(&w, 100, 198, false, 13, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                .iter()
+                .any(|r| r.kind == 5234)
+        });
+        assert!(rows13, "the style-13 row fires on some stream");
     }
 
 

@@ -5003,6 +5003,21 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
   chest cycle note).
 
+- **The chest 21-block remaining rows** (`AddBuriedChest`'s
+  `itemIndex > 0 && chestTileType == 21` block, `WorldGen.cs:37384-47500` —
+  the M5-CHEST-gen flag4/flag13 slice): the flag4 pair (the 1/4 and 1/50
+  rows — both chest-tile blocks carry the same pair, so they apply to
+  either anchor kind), the flag13 globe (unconditional), the style-13
+  pottery row (5234, its own 1/2 roll — the vanilla keeps it separate from
+  the style-23-27 row), plus the re-landed style-23-27 row and flag13 water
+  pair. **The re-landing is the notable part**: those two rows merged once
+  (`600dafdb`) and a later merge's resolution dropped them silently — the
+  determinism suite passed because the roll is only observed in chests the
+  affected families stock, and no test counted the rows. The rows now carry
+  their citations; the parked items stay parked (the mahogany-tile 467
+  counterparts need the chest kind plumbed, the seed-flavour rows wait for
+  M5-SEED-1).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
