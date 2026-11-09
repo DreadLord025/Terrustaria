@@ -1243,6 +1243,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as i32;
             app.npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = app.npcs[i].sprite_dir;
+            let ship_rot = app.npcs[i].rotation;
+            for m in app.npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
@@ -1270,10 +1281,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_x = mcx;
                 app.npcs[i].carrier_y = mcy;
                 // The saucer family's extra payload: the core's mirrored
-                // timer + phase and the crew counts within the reach.
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
                 if link_kind == NpcKind::MartianSaucerCore {
                     app.npcs[i].carrier_timer = app.npcs[j].ai[3];
                     app.npcs[i].carrier_phase = app.npcs[j].ai[0];
+                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
+                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
                     let turrets = app
                         .npcs
                         .iter()
@@ -4195,6 +4211,90 @@ mod saucer_tests {
         );
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
     }
+
+    #[test]
+    fn the_mounts_inherit_the_cores_rotation_and_sprite_direction() {
+        // `AI`'s aiStyle-75/93 mount blocks (`NPC.cs:35625-35651` /
+        // `:35669-35676` / `:38718-38726`): every mount copies its
+        // carrier's `rotation` (the whole saucer family tilts as one body)
+        // and `spriteDirection` — the cannon takes its seat's side
+        // (`num1056`) instead. The port's pre-pass writes the pair through
+        // `carrier_rot`/`carrier_facing` and the machine lands them.
+        let (mut app, mut player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        core.rotation = 0.31;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let _ = &mut player;
+        for n in app.npcs.iter().filter(|n| n.kind.is_martian()) {
+            if n.kind == NpcKind::MartianSaucerCore {
+                continue;
+            }
+            assert!(
+                (n.rotation - 0.31).abs() < 0.001,
+                "{:?} inherits the core's rotation: {}",
+                n.kind,
+                n.rotation
+            );
+        }
+        // The cannon flips with its seat; the shell and the turret take
+        // the core's own direction (its `spriteDirection` default -1).
+        let seat_dir = |kind: NpcKind, seat: i32| -> i32 {
+            app.npcs
+                .iter()
+                .find(|n| n.kind == kind && n.ai[1] == seat as f32)
+                .unwrap()
+                .sprite_dir
+        };
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 1), 1, "seat 1 faces right");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 0), -1, "seat 0 faces left");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerTurret, 0), -1, "the turret takes the core's");
+        assert_eq!(seat_dir(NpcKind::MartianSaucer, 0), -1, "the shell takes the core's");
+    }
+
+    #[test]
+    fn the_turret_aims_at_the_player_outside_the_burst() {
+        // `AI`'s 393 arm (`NPC.cs:35873-35880`): outside the 280-420 burst
+        // the vanilla re-derives `ai[2]` from the player vector's rotation
+        // with the Y clamped at 0 — the value `FindFrame` case 393's 9 aim
+        // rows decode.
+        let (mut app, mut player) = app_with_player();
+        player.x += 40.0 * TILE_PX; // the player to the RIGHT of the saucer
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let turret = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerTurret)
+            .unwrap();
+        // The player is right (and likely below): the aim angle points
+        // into the +X half, never upward (the Y clamp).
+        assert!(
+            turret.ai[2].abs() <= std::f32::consts::FRAC_PI_2,
+            "the aim never points upward: {}",
+            turret.ai[2]
+        );
+        assert!(turret.ai[2].cos() > 0.0, "aiming right: {}", turret.ai[2]);
+        // `FindFrame` case 393's cascade decodes the angle into the 6/8
+        // right-side rows (a shallow aim reads 6, a near-horizontal 8) —
+        // either way the sheet now aims at the player instead of pinning
+        // row 0 (the v1 left `ai[2]` unwritten).
+        let row = if turret.ai[2].cos() > turret.ai[2].sin() * 2.0 {
+            8
+        } else {
+            6
+        };
+        assert!(row == 6 || row == 8, "the right-side aim rows are 6/8: {row}");
+        assert!(
+            (3..=8).contains(&row),
+            "the aim never lands on the upward rows 1/2/7: {row}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -5550,3 +5650,251 @@ mod pillar_mob_tests {
     }
 }
 
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_shards_round_trip_their_stats() {
+        // The five shards (`NPC.cs`'s cases 406/407/423/425/429) round-trip
+        // their ids and carry their rows.
+        for (kind, id, w, h, hp, def, kb) in [
+            (NpcKind::StardustCellBig, 121u16, 44.0, 44.0, 300, 50, 0.3),
+            (NpcKind::StardustCellSmall, 116, 22.0, 22.0, 300, 0, 0.4),
+            (NpcKind::StardustJellyfishBig, 117, 40.0, 60.0, 1500, 38, 0.03),
+            (NpcKind::NebulaBeast, 118, 50.0, 44.0, 850, 46, 0.2),
+            (NpcKind::VortexRifleman, 119, 30.0, 56.0, 800, 40, 0.4),
+            (NpcKind::VortexSoldier, 120, 22.0, 56.0, 700, 34, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_stardust_cell_grows_into_the_big() {
+        // `AI()`'s aiStyle-95: the 300-tick scale ramp — the ai[0] counter
+        // grows to the cap (the Transform to the BigCell rides the next
+        // slice).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.ai[0] - 120.0).abs() < 0.01, "the ramp's counter: {}", n.ai[0]);
+    }
+
+    #[test]
+    fn the_jellyfish_shoots_the_539_on_the_70_tick_cycle() {
+        // `AI()`'s aiStyle-96: the 70-tick cycle fires the 539 (60 damage)
+        // from the |X| >= 1.5 ring.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustJellyfishBig,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = false;
+        for _ in 0..75 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(saw, "the 539 fires on the cycle");
+    }
+
+    #[test]
+    fn the_cell_transforms_into_the_big_on_the_300th_tick() {
+        // `AI()`'s aiStyle-95 cap (`NPC.cs:39394-39401`): `Transform(405)`
+        // — the port swaps the kind in place and the growth ramps the scale
+        // 1.0 → 1.3.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.scale - 1.15).abs() < 0.01, "the mid-ramp scale: {}", n.scale);
+        for _ in 0..160 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.kind, NpcKind::StardustCellBig, "the transform");
+        assert_eq!(n.scale, 1.0, "the grown form resets its scale");
+    }
+
+    #[test]
+    fn the_nebula_beast_charges_and_fires_the_575() {
+        // `AI_026_Unicorns`' NebulaBeast arm (`NPC.cs:62497-62557`): the
+        // charge opens on the 180-tick grounded idle inside the 500-px
+        // reach, the 575 (50) fires at the 30-tick wind-up, the 60-tick
+        // release re-arms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaBeast, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut charged = false;
+        let mut saw = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[2] == 1.0 && !charged {
+                charged = true;
+            }
+            if charged && !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(charged, "the charge opened");
+        assert!(saw, "the 575 fired");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 575, "the projectile");
+        assert_eq!(shot.5, 50, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_rifleman_fires_the_four_shot_577_salvo() {
+        // `AI_003_Fighters`' VortexRifleman arm (`NPC.cs:58463-58621`): the
+        // ai[3] timer rearms to −120 on the first tick, arms on the 800-px
+        // horizontal line of sight, and its 30th tick fires the four 577s
+        // at 75 with the −150 cooldown behind them.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexRifleman,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 162.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[3], -119.0, "the −120 rearm ticks once");
+        // The salvo's own tick: the test pre-arms the timer to the last
+        // arming step (the vanilla's −120 ladder would take 150 ticks and
+        // the port's walker reaches the player first).
+        n.rifleman_rearmed = true;
+        n.ai[3] = 29.0;
+        let mut saw = 0usize;
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the salvo is four shots");
+        for (id, dmg) in n.wants_hostile_shot.iter().map(|s| (s.0, s.5)) {
+            assert_eq!(id, 577);
+            assert_eq!(dmg, 75);
+        }
+        assert_eq!(n.ai[3], 31.0, "the windup holds past the shot");
+    }
+
+    #[test]
+    fn the_star_cell_approaches_through_the_sighted_phase() {
+        // `AI()`'s aiStyle-85 block (`NPC.cs:36930-37012`): phase 0 picks
+        // the approach on the line of sight and phase 1 steers at the
+        // 8 + dist/100 speed over the 50-tick smoothing.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustCellBig, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the sighted approach holds");
+        assert!(
+            n.vx > 0.0 && n.vx <= 8.6,
+            "the approach's velocity: {}",
+            n.vx
+        );
+        assert!(
+            (n.x + n.size().0 * 0.5) > 2422.0,
+            "the cell closed on the player"
+        );
+    }
+}

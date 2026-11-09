@@ -163,7 +163,9 @@ Terrustaria is an ongoing effort, not a finished game. Everything below is still
 
 **Systems and interface**
 
-- The proper inventory, crafting, chest, NPC-shop and settings screens — most of the UI.
+- The proper inventory, crafting, chest and NPC-shop screens — most of the UI (the
+  settings screens are done: the vanilla config keys, defaults and rows; only the
+  in-game options window vanilla opens over the inventory is still missing).
 - The complete NPC and projectile rosters and their AI.
 - Wiring and mechanisms, signs, and the advanced world-editing tools.
 - **Networking** (multiplayer), plus reading and writing the original Terraria world format.

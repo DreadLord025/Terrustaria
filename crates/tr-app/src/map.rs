@@ -155,15 +155,26 @@ pub fn map_frame_rect(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) ->
 }
 
 /// Minimap geometry (`Main.cs:55503-55546`): a 240x240 panel anchored at
-/// `minimap::minimap_origin` (`Main.cs:55508-55509` — `(screen_w - 292, 90)`
-/// at the reference `MapScale = 1`) showing `240 / scale` tiles around the view
-/// centre.
-pub fn map_minimap_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
+/// `minimap::minimap_origin_raw` (`Main.cs:55508-55511`) showing `240 / scale`
+/// tiles around the view centre. `scale` is `Main.mapMinimapScale` (the zoom
+/// axis, clamped `0.2..3`, `Main.cs:55515-55522`) and `map_scale` is
+/// `Main.MapScale` (clamped `[0.5,1]`, `Main.cs:4494`): the whole tile pass is
+/// drawn inside `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`), so
+/// the destination rect is the raw one multiplied by it. The full map is a
+/// different scale (`Main.mapFullscreenScale`, `Main.cs:55390`) and does not
+/// read `MapScale`.
+pub fn map_minimap_quad(
+    center_tile: [f32; 2],
+    scale: f32,
+    map_scale: f32,
+    screen: Vec2,
+    world: &World,
+) -> MapQuad {
     let scale = scale.clamp(0.2, 3.0);
-    // `Main.cs:55508-55509`, consolidated onto `minimap::minimap_origin`
+    // `Main.cs:55508-55511`, consolidated onto `minimap::minimap_origin_raw`
     // (identical to the former hardcode `[screen.x - 292.0, 90.0]` at
     // `MapScale = 1` — pinned by `minimap_quad_matches_the_panel` below).
-    let panel = crate::ui::minimap::minimap_origin(screen);
+    let panel = crate::ui::minimap::minimap_origin_raw(screen, map_scale);
     let win = 240.0 / scale;
     let a = center_tile[0].floor() - win * 0.5;
     let b = center_tile[1].floor() - win * 0.5;
@@ -177,12 +188,16 @@ pub fn map_minimap_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: 
         -(center_tile[1] - center_tile[1].floor()) * scale,
     ];
     MapQuad {
-        dest: [
-            panel[0] + (x0 - a) * scale + sub[0],
-            panel[1] + (y0 - b) * scale + sub[1],
-            (x1 - x0) * scale,
-            (y1 - y0) * scale,
-        ],
+        // The raw rect, then the `MapScale` batch transform (`Main.cs:55309-55329`).
+        dest: crate::ui::minimap::scale_rect(
+            [
+                panel[0] + (x0 - a) * scale + sub[0],
+                panel[1] + (y0 - b) * scale + sub[1],
+                (x1 - x0) * scale,
+                (y1 - y0) * scale,
+            ],
+            map_scale,
+        ),
         uv: [
             x0 / world.width as f32,
             y0 / world.height as f32,
@@ -519,16 +534,21 @@ impl WorldMap {
         }
     }
 
-    /// `Main.DrawMap` minimap branch (`Main.cs:55503-55546`). The minimap is centred
-    /// on the **view centre** (`Main.cs:55537-55538`), so the caller passes that tile.
+    /// `Main.DrawMap` minimap branch (`Main.cs:55503-55546`): the minimap is centred
+    /// on the **view centre** (`Main.cs:55537-55538`), so the caller passes that
+    /// tile, and `MapRenderer.DrawMap` (`MapRenderer.cs:380`) draws the one tile
+    /// quad from `map_minimap_quad`'s `MapScale`-scaled destination. `map_scale` is
+    /// `Main.MapScale` (`Main.cs:4494`/`:67297`) — the zoom axis
+    /// `self.minimap_scale` is a separate multiplier (`Main.cs:55515-55522`).
     pub fn draw_minimap(
         &self,
         r: &mut SpriteRenderer,
         world: &World,
         screen: Vec2,
         center_tile: [f32; 2],
+        map_scale: f32,
     ) {
-        let q = map_minimap_quad(center_tile, self.minimap_scale, screen, world);
+        let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
@@ -769,7 +789,7 @@ mod tests {
     #[test]
     #[ignore]
     fn loads_a_real_vanilla_map() {
-        let Ok(path) = std::env::var("TR_VANILLA_MAP") else {
+        let Some(path) = crate::env::var_raw("TR_VANILLA_MAP") else {
             return;
         };
         let bytes = std::fs::read(&path).expect("read map");
@@ -943,7 +963,7 @@ mod tests {
     fn minimap_clamps_to_the_world_edge() {
         // Main.cs:55295-55296 + 55591-55607: the minimap caps at maxTilesX-10 / maxTilesY-19.
         let w = map_world();
-        let q = map_minimap_quad([4190.0, 1180.0], 1.05, Vec2::new(1600.0, 900.0), &w);
+        let q = map_minimap_quad([4190.0, 1180.0], 1.05, 1.0, Vec2::new(1600.0, 900.0), &w);
         let win = 240.0 / 1.05;
         let a = 4190.0 - win / 2.0;
         let b = 1180.0 - win / 2.0;
@@ -970,7 +990,7 @@ mod tests {
     fn minimap_quad_matches_the_panel() {
         // `Main.cs:55503-55546`.
         let w = map_world();
-        let q = map_minimap_quad([500.0, 300.0], 1.05, Vec2::new(1600.0, 900.0), &w);
+        let q = map_minimap_quad([500.0, 300.0], 1.05, 1.0, Vec2::new(1600.0, 900.0), &w);
         let eps = 1e-3;
         for (got, want) in q.dest.iter().zip([1308.0, 90.0, 240.0, 240.0]) {
             assert_close(*got, want, eps);
@@ -985,19 +1005,106 @@ mod tests {
         }
     }
 
-    /// The panel top-left is exactly `minimap::minimap_origin(screen)` at every
-    /// interior view centre — the consolidation of the old hardcode
-    /// `(screen.x - 292, 90)` onto the shared anchor (`Main.cs:55508-55509`).
+    /// The panel top-left is exactly `minimap::minimap_origin_raw(screen,
+    /// map_scale)` scaled back onto the screen at every interior view centre —
+    /// the consolidation of the old hardcode `(screen.x - 292, 90)` onto the
+    /// shared anchor (`Main.cs:55508-55511`).
     #[test]
     fn minimap_panel_uses_the_shared_anchor() {
         let w = map_world();
         for width in [1280.0f32, 1600.0, 1920.0] {
             let screen = Vec2::new(width, 900.0);
-            let q = map_minimap_quad([2100.0, 355.0], 1.05, screen, &w);
-            let origin = crate::ui::minimap::minimap_origin(screen);
+            let q = map_minimap_quad([2100.0, 355.0], 1.05, 1.0, screen, &w);
+            let origin = crate::ui::minimap::minimap_origin_raw(screen, 1.0);
             assert_close(q.dest[0], origin[0], 1e-3);
             assert_close(q.dest[1], origin[1], 1e-3);
         }
+    }
+
+    /// DW-4.2: `Main.cs:55309-55329` — the tile pass is drawn inside
+    /// `Matrix.CreateScale(Main.MapScale)`, so the destination rect is the raw
+    /// one multiplied by the scale: the panel's visible left edge is
+    /// `screenWidth - anchorLeft(MapScale)` (`Main.cs:55275-55276`, `:55508-55511`)
+    /// and the drawn tile size and shown window both shrink with the scale.
+    /// The zoom axis (`Main.mapMinimapScale`, clamped `0.2..3`,
+    /// `Main.cs:55515-55522`) is a separate multiplier and is NOT scaled.
+    #[test]
+    fn minimap_quad_scales_the_tile_pass_by_map_scale() {
+        let w = map_world();
+        let screen = Vec2::new(1600.0, 900.0);
+        let eps = 1e-3;
+        // The clamp bounds (`Main.cs:4494`): `InitialMapScale = 1f` (`:67297`)
+        // and the 0.5 floor.
+        for map_scale in [1.0f32, 0.5] {
+            let q = map_minimap_quad([500.0, 300.0], 1.05, map_scale, screen, &w);
+            let raw = map_minimap_quad([500.0, 300.0], 1.05, 1.0, screen, &w);
+            // The visible anchor moves with `MapScale` (`Main.cs:55275-55276`):
+            // the raw origin divided by the scale times the scale back is exactly
+            // `screenWidth - anchorLeft` (`Main.cs:55508-55511`).
+            let anchor = crate::ui::minimap::minimap_anchor(map_scale);
+            assert_close(q.dest[0], screen.x - anchor.0 as f32, eps);
+            assert_close(q.dest[1], anchor.1 as f32, eps);
+            // The tile size and the shown window follow the transform: a 240 px
+            // raw panel covers `240 * map_scale` screen px.
+            assert_close(q.dest[2], 240.0 * map_scale, eps);
+            assert_close(q.dest[3], 240.0 * map_scale, eps);
+            // The zoom axis is untouched: the same tiles are in view either way,
+            // so the UV rect does not move with `MapScale`.
+            assert_close(q.uv[0], raw.uv[0], eps);
+            assert_close(q.uv[1], raw.uv[1], eps);
+            assert_close(q.uv[2], raw.uv[2], eps);
+            assert_close(q.uv[3], raw.uv[3], eps);
+        }
+        // The clamp bounds (`Main.cs:4494`): the 0.5 floor halves the panel.
+        let half = map_minimap_quad([500.0, 300.0], 1.05, 0.5, screen, &w);
+        assert_close(half.dest[2], 120.0, eps);
+        // The zoom axis clamps at 0.2..3 on its own (`Main.cs:55515-55522`)
+        // and is never scaled by `MapScale`: the shown tile window (the UV rect)
+        // is identical at either scale, and only the drawn size follows the
+        // transform. Zoomed all the way out the window hits the world edge, so
+        // the quad's own clamp shifts the left edge — the invariant is the size.
+        for zoom in [3.0f32, 0.1] {
+            let wide = map_minimap_quad([500.0, 300.0], zoom, 1.0, screen, &w);
+            let scaled = map_minimap_quad([500.0, 300.0], zoom, 0.5, screen, &w);
+            for (a, b) in wide.uv.iter().zip(scaled.uv) {
+                assert_close(*a, b, eps);
+            }
+            assert_close(scaled.dest[2], wide.dest[2] * 0.5, eps);
+            assert_close(scaled.dest[3], wide.dest[3] * 0.5, eps);
+        }
+        // An interior view centre keeps the anchor assertion at every scale: the
+        // panel's visible top-left is `screenWidth - anchorLeft(MapScale)`.
+        for map_scale in [1.0f32, 0.5] {
+            let q = map_minimap_quad([2100.0, 355.0], 3.0, map_scale, screen, &w);
+            let anchor = crate::ui::minimap::minimap_anchor(map_scale);
+            assert_close(q.dest[0], screen.x - anchor.0 as f32, eps);
+            assert_close(q.dest[1], anchor.1 as f32, eps);
+        }
+    }
+
+    /// DW-4.2's "full map unchanged": the fullscreen map is drawn at
+    /// `Main.mapFullscreenScale` (default 4f, `Main.cs:66756`, read at
+    /// `Main.cs:55390`) — a different axis from `Main.MapScale` (`:4494`), which
+    /// only enters the minimap branch (`:55309-55329`). The full-map geometry at
+    /// the vanilla default therefore keeps the source oracle and is untouched by
+    /// the minimap anchor change.
+    #[test]
+    fn full_map_scale_is_its_own_axis() {
+        let w = map_world();
+        let q = map_full_quad([2100.0, 355.0], 4.0, Vec2::new(1600.0, 900.0), &w);
+        assert_eq!(
+            q.dest,
+            [
+                800.0 - 2090.0 * 4.0,
+                450.0 - 345.0 * 4.0,
+                4179.0 * 4.0,
+                1170.0 * 4.0
+            ]
+        );
+        assert_eq!(
+            q.uv,
+            [10.0 / 4200.0, 10.0 / 1200.0, 4189.0 / 4200.0, 1180.0 / 1200.0]
+        );
     }
 
     // ---- Task 7: biome `MapBG` backdrop (`Main.DrawMapFullscreenBackground`) ----

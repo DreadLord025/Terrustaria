@@ -75,6 +75,14 @@ impl Tile {
         self.flags & FLAG_ACTIVE != 0
     }
 
+    /// `Tile.inActive` (`Tile.cs:606-608`): the framed-off flag — a placed
+    /// tile that renders and behaves as absent (`nactive` is its negation
+    /// of `active`).
+    #[inline]
+    pub fn inactive(&self) -> bool {
+        self.flags & FLAG_INACTIVE != 0
+    }
+
     #[inline]
     pub fn half_brick(&self) -> bool {
         self.flags & FLAG_HALF_BRICK != 0

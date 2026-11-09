@@ -27,6 +27,7 @@ mod mini_biomes;
 mod noise;
 mod ocean;
 mod pipeline;
+mod spider_gem_moss;
 mod structures;
 mod surface;
 mod temple;

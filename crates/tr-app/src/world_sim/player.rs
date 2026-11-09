@@ -10,13 +10,7 @@ use crate::player::PlayerInput;
 
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
-    static HOLD: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
-    let (hold_right, hold_jump) = *HOLD.get_or_init(|| {
-        let v = std::env::var("TR_HOLD")
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        (v.contains("right"), v.contains("jump"))
-    });
+    let (hold_right, hold_jump) = crate::env::hold_input();
     // `Player.cs:24772-24803`: while the map is fullscreen every movement control
     // is zeroed, so the player stands still and the WASD keys pan the map.
     let map_open = app.map.as_ref().is_some_and(|m| m.open);
@@ -48,17 +42,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
         app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
     );
-    let hook_type = *crate::grapple::HOOK_TYPE.get_or_init(|| {
-        std::env::var("TR_HOOK")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-            .unwrap_or(13)
-    });
+    let hook_type = crate::env::hook_type();
     // `TR_CART` pins the minecart mount (the granting item, QuickMount and the
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
     // `TR_HOOK` parse above, so a dismount re-mounts on the next tick.
-    static CART_PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let cart_pin = *CART_PIN.get_or_init(|| std::env::var("TR_CART").is_ok());
+    let cart_pin = crate::env::cart_pin();
     if let Some(p) = app.player.as_mut() {
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
