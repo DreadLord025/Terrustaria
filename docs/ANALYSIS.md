@@ -7417,6 +7417,23 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
+- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
+  The C# has no candidate list and no final `InTileBounds` commit gate for
+  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
+  and the vote compares the FINAL `(num2, k)` positions (the column's base).
+  The port keeps both off: a trunk column at the rect's bottom row votes its
+  base at the row below the rect. The trunk arm's right/left frame shifts are
+  also asymmetric in the C# (the right arms test `num2 + 1`, the left
+  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
+  CURRENT cell (the earlier shift may already have moved it).
+- **The axe step runs at two call sites, per the settings toggle.**
+  `SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`) moves the axe
+  step before or after the pickaxe family in the chain; the port calls it at
+  both C# sites (before the force-cursor step with the flag off, after the
+  chain with it on) and exposes the flag on `Lookup::smart_axe_after_pickaxe`
+  (app-side setting, caller-passed). The pickaxe family itself
+  (`Step_Pickaxe_MineShinies`/`MineSolids`) is unported, so the "after" site
+  follows the force-cursor step today.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
