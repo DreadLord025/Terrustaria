@@ -8495,3 +8495,41 @@ link their host by kind (the nearest living MoonLordHead/FreeEye,
 MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
 the 452's `Player.FindClosest` folds into the owner's centre; the 456's
 expert duration stays classic until the difficulty modes land.
+
+## The Vortex ritual projectiles (M4-EVENT-17)
+
+The vortex tower's ritual arms (the port's `update_ancient_cultist`'s
+`:39273-39336` machine) throw two markers, both carried by the pool's
+aiStyle-108 machine.
+
+- **579 (the portal)** and **578 (the lightning)** share a 32×32 box with
+  `tileCollide = false` and `ignoreWater`. The marker's timeline
+  (`Projectile.cs:33679-33988`) is `ai[0] <= 50` (the wind-up, dust only),
+  `<= 90` (the charge: `scale = (ai[0] - 50)/40`, `alpha = 255 -
+  255·scale`, `rotation -= π/20`), `<= 120` (the full charge: `scale = 1`,
+  `alpha = 0`, `rotation -= π/60`) and the dissolve (`scale = 1 -
+  (ai[0] - 120)/60`, `alpha = 255 - 255·scale`, `rotation -= π/30`, dying
+  at `alpha >= 255`). The 578's first tick stores the aim rotation
+  (`Player.FindClosest`'s centre → `ai[1]`, the zero fallback `UnitY`).
+- **At the 90th tick** the 578 spawns the **580 VortexLightning** — the aim
+  vector × 8 behind the centre, damage 50 (`:33841`'s call), knockback 1,
+  `ai0 = ai[1]` (the bolt's spin) and `ai1 = rand(80)` (the wand's seed);
+  the 579 spawns **two VortexAliens (427)** at its centre with
+  `-UnitY.RotatedByRandom(2π) * rand(4, 9) - UnitY * 2`.
+- **580 (aiStyle 88, 14×14, `extraUpdates = 4`, `ignoreWater`)** runs the
+  ritual bolt: the `localAI[0] == 0 && ai[0] >= 900` wrap latch
+  (`ai[0] -= 1000`, `localAI[0] = -1`), then the moving arm integrates the
+  velocity and stops it on a solid tile (`:32308`), the stopped arm dies
+  after `extraUpdates * 2` ticks (`:32156-32174`) and the moving arm's
+  wand (`:32195-32249`) draws the per-step lateral jitter with the
+  100-roll rejection (`Y <= -0.02`, `|X| <= 40`) and accumulates
+  `localAI[0]`.
+- The resolution seam: the projectile can't grow the NPC vec, so the 579's
+  aliens ride the M4-EVENT-16 intent (`wants_mark_spawn`, now carrying
+  the (kind, x, y, vx, vy) payload) out to the world_sim's
+  `drain_mark_spawns`; the 580's spawn rides `wants_ritual_bolt`.
+
+Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
+dusts), the sounds and the light are unmodelled; the wand's
+`UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
+late-stage clone spawn (`:32251-32257`) is unmodelled.
