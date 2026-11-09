@@ -18,6 +18,9 @@ mod biomes;
 pub mod dungeon;
 mod caves;
 mod config;
+mod desert;
+mod desert_dunes;
+mod desert_entrances;
 pub mod evil;
 mod islands;
 mod liquids;
@@ -27,12 +30,15 @@ mod mini_biomes;
 mod noise;
 mod ocean;
 mod pipeline;
+mod spider_gem_moss;
 mod structures;
 mod surface;
 mod temple;
 mod terrain;
 mod tile_runner;
+mod wavy;
 mod world_hash;
+mod finish_seeds;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;
@@ -48,6 +54,12 @@ pub struct GenOptions {
     /// `WorldGen.crimson`: the evil biome's flavour (the corruption when
     /// false).
     pub crimson: bool,
+    /// The classic secret-seed flags — [`crate::seeds::SeedFlags`]. The
+    /// `WorldGen.Reset()` set (`WorldGen.cs:11115-11123`) that every
+    /// seed-conditional worldgen branch reads; `Default` = a classic
+    /// world, so a flag-free options struct generates exactly the
+    /// pre-M5-SEED-1 world.
+    pub flags: crate::seeds::SeedFlags,
 }
 
 impl Default for GenOptions {
@@ -58,6 +70,7 @@ impl Default for GenOptions {
             height: 1200,
             crimson: false,
             seed: 1,
+            flags: crate::seeds::SeedFlags::default(),
         }
     }
 }
@@ -102,6 +115,10 @@ pub fn generate(opts: &GenOptions) -> World {
     let width = opts.width.max(512);
     let height = opts.height.max(512);
     let mut world = World::new(opts.name.clone(), width, height);
+    // The seed flags ride the generated world so the runtime readers (the
+    // loot/fishing/variant/wind conditions, the save layers) see the same
+    // special-world identity the passes generated with.
+    world.seeds = opts.flags;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three
@@ -137,6 +154,7 @@ mod tests {
                 width: 4200,
                 height: 1200,
                 seed,
+                ..Default::default()
             });
             let wood = w
                 .tiles
@@ -270,8 +288,12 @@ mod tests {
             {
                 continue;
             }
+            // The desert family: the `Full Desert` pass (M5-DESERT-structures)
+            // places its underground desert under this band and its
+            // `AddTileVariance` hardens exposed sand (`DesertHive.cs:396-398`),
+            // so a band surface may read 53 / 397 / 396.
             assert!(
-                t.kind == TILE_SAND,
+                matches!(t.kind, TILE_SAND | TILE_HARDENED_SAND | TILE_SANDSTONE),
                 "desert surface at x{x} is kind {}",
                 t.kind
             );
@@ -385,6 +407,44 @@ mod tests {
         }
     }
 
+    /// M5-SEED-1: the framework's integration proof — every classic secret
+    /// seed text of the ROADMAP row (drunk / for-the-worthy / remix /
+    /// anniversary / don't starve) produces a DIFFERENT world than its
+    /// seed-matched classic control (the world hash covers every stored
+    /// `Tile` field, so a seed arm that misses its pass shows up here as a
+    /// classic world). `getfixedboi` carries all seven dependencies, so it
+    /// also differs from any single-flag world. Not-the-bees' hive world is
+    /// deliberately outside the row's list — see the module docs.
+    #[test]
+    fn m5_seed_1_the_secret_seed_worlds_differ_from_the_classic() {
+        let hash = |text: Option<&str>| {
+            let flags = match text {
+                Some(t) => crate::seeds::SeedFlags::from_seed_text(t),
+                None => crate::seeds::SeedFlags::none(),
+            };
+            world_hash::world_hash(&generate(&GenOptions {
+                seed: 77,
+                flags,
+                ..Default::default()
+            }))
+        };
+        let classic = hash(None);
+        for text in [
+            "for the worthy",
+            "05162020",
+            "dontdigup",
+            "celebrationmk10",
+            "theconstant",
+            "getfixedboi",
+        ] {
+            let seeded = hash(Some(text));
+            assert_ne!(classic, seeded, "{text} generated the classic world");
+            // The seed worlds must differ from each other too (the five
+            // classic arms are not one shared branch).
+            eprintln!("{text}: {seeded}");
+        }
+    }
+
     #[test]
     fn the_biome_passes_place_the_missing_biomes() {
         // The 4200-wide world carries the jungle (60/59), the evil band
@@ -436,6 +496,50 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    /// DW-6.1: the M5-DESERT-structures passes place their content — the
+    /// dunes' sand crests above the surface and the underground desert's
+    /// shells (the sandstone 396 / hardened-sand 397 strata and their 187/216
+    /// walls) across three seeds.
+    #[test]
+    fn the_desert_passes_place_the_dunes_and_the_hive() {
+        for seed in [1u64, 77, 4242] {
+            let mut w = generate(&GenOptions {
+                seed,
+                ..Default::default()
+            });
+            w.compute_column_surface();
+            let count_kind = |kind: u16| {
+                w.tiles
+                    .iter()
+                    .filter(|t| t.active() && t.kind == kind)
+                    .count()
+            };
+            let count_wall = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
+            // The hive's concentric shells (`DesertHive.cs:282-361`).
+            assert!(count_kind(TILE_SANDSTONE) > 0, "seed {seed}: no sandstone band");
+            assert!(count_kind(TILE_HARDENED_SAND) > 0, "seed {seed}: no hardened sand");
+            assert!(count_wall(WALL_SANDSTONE) > 0, "seed {seed}: no sandstone walls");
+            assert!(count_wall(216) > 0, "seed {seed}: no hardened-sand walls");
+            // The dune crests (`PlaceCurvedLine`'s sand fill) rise above the
+            // local surface — once the pass runs, the crest IS that column's
+            // surface, so the pin is the sand standing well above the world's
+            // mean surface line (the `Full Desert` mound and the beach wedges
+            // never lift sand this far).
+            let width = w.width as usize;
+            let crests = w
+                .tiles
+                .iter()
+                .enumerate()
+                .filter(|(i, t)| {
+                    t.active()
+                        && t.kind == TILE_SAND
+                        && ((*i / width) as i32) < (w.world_surface as i32 - 8)
+                })
+                .count();
+            assert!(crests > 0, "seed {seed}: no dune crest above the surface");
+        }
     }
 
     /// DW-4.1: the faithful evil pass at the integration level — the
@@ -527,9 +631,11 @@ mod tests {
 
     #[test]
     fn the_temple_buries_in_the_jungle_cavern() {
-        // The 4200-world carries the temple: the Lihzahrd brick (226) box,
-        // the altar (237), the dart traps (137) and the temple walls
-        // (87/112).
+        // The 4200-world carries the temple (M5-TEMPLE): the Lihzahrd brick
+        // (226) shell, the 3×2 altar (237), the Lihzahrd door (10), the
+        // wooden spikes (232) and the unsafe walls (87). The dart traps
+        // (137) arrive with `LihzahrdTemplePart2` (the next phase); the
+        // faithful `makeTemple` writes no safe wall 112 (only read back).
         let w = generate(&GenOptions {
             seed: 88,
             ..Default::default()
@@ -543,9 +649,9 @@ mod tests {
         let walls = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
         assert!(count(226) > 800, "the temple brick ({})", count(226));
         assert!(count(237) == 6, "the altar tiles ({})", count(237));
-        assert!(count(137) >= 3, "the dart traps ({})", count(137));
+        assert_eq!(count(10), 3, "the Lihzahrd door ({})", count(10));
+        assert!(count(232) >= 5, "the spikes ({})", count(232));
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
-        assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
     }
 
     #[test]

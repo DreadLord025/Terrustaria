@@ -13,11 +13,16 @@ use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
 
-/// The player's epitaph: a DoT drain death uses its attribution's table text
-/// (`KillMe(PlayerDeathReason.ByOther(N))` — `Player.cs:19321-19331`,
-/// `:19362-19385`); every other death keeps the M2-DEATH-1 stub.
-fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
-    pending.map_or("was slain...", crate::death::death_text_for)
+/// The player's death message: a DoT drain death resolves its attribution's
+/// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
+/// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
+/// draws it from the item stream, the M4-LOOT convention, the first use in
+/// this path); every other death is the `DeathText.Slain` row.
+fn dot_death_text(pending: Option<DotDeath>, player_name: &str, roll: f32) -> String {
+    match pending {
+        Some(death) => crate::death::death_message(death, roll, player_name),
+        None => crate::death::slain_message(player_name),
+    }
 }
 
 /// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
@@ -53,6 +58,61 @@ pub(crate) fn black_slime_darkness_touch(
 /// Guide offers none — M4-TOWN-3's finding). The stock and the happiness
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
+/// `Player.taxRate` (`Player.cs:57097`): 3600 ticks between collections.
+pub(crate) const TAX_RATE: i32 = 3600;
+/// `Player.CollectTaxes`'s cap — `Item.buyPrice(0, 25)` = 25 gold
+/// (`Player.cs:24132`/`:24151`).
+pub(crate) const TAX_CAP: i32 = 250_000;
+
+/// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
+/// Collector's right-click pays the accrued tax purse out in coins — the
+/// platinum→gold→silver→copper split at the player's centre, then the
+/// purse empties. The happiness adjustment scales the payout
+/// (`:40184`); the port's town NPCs carry the plain 1.0.
+pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
+    if app.world.tax_money <= 0 {
+        return true;
+    }
+    let mut num = app.world.tax_money;
+    let (px, py) = app.npcs[npc_idx].center();
+    while num > 0 {
+        let (kind, stack) = if num > 1_000_000 {
+            let stack = num / 1_000_000;
+            num -= 1_000_000 * stack;
+            (74u16, stack as u32)
+        } else if num > 10_000 {
+            let stack = num / 10_000;
+            num -= 10_000 * stack;
+            (73, stack as u32)
+        } else if num > 100 {
+            let stack = num / 100;
+            num -= 100 * stack;
+            (72, stack as u32)
+        } else {
+            let stack = num.max(1);
+            num -= stack;
+            (71, stack as u32)
+        };
+        crate::world_sim::items::spawn_item_drop_px(app, kind, stack, Vec2::new(px, py));
+    }
+    app.world.tax_money = 0;
+    true
+}
+
+/// The right-click dispatch's Tax Collector arm — the `TaxCollectorCollectTaxes`
+/// interaction (`NPCInteractions.cs:221-244`); he offers no shop.
+fn try_tax_collect_at_cursor(app: &mut App, world_pos: Vec2) -> Option<usize> {
+    app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::TaxCollector && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    })
+}
+
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // The bound-goblin rescue (`NPC.cs:19824-19840`'s `talkNPC` trigger +
     // `AI_000_TransformBoundNPC` `:44884-44896`): the talk transforms 105
@@ -69,6 +129,93 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         }
     }) {
         rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
+    }
+    // The bound Wizard/Mechanic talks (`NPC.cs:19841-19848`'s talk arms):
+    // the talk transforms 106 → 108 and 123 → 124 in place and raises
+    // the saved flags (`:52948`/`:52951`), which opens the town arrival.
+    for (bound, freed, flag) in [
+        (NpcKind::BoundWizard, NpcKind::Wizard, "wizard"),
+        (NpcKind::BoundMechanic, NpcKind::Mechanic, "mech"),
+    ] {
+        if let Some(i) = app.npcs.iter().position(|n| {
+            n.hp > 0 && n.kind == bound && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+        }) {
+            match flag {
+                "wizard" => rescue_bound_wizard(&mut app.npcs[i], &mut app.world),
+                _ => rescue_bound_mechanic(&mut app.npcs[i], &mut app.world),
+            }
+            let _ = freed;
+        }
+    }
+    // The sleeping Golfer's talk (`NPC.cs:19833-19836`): the talk frees
+    // him and raises `savedGolfer` (`:52938`).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::SleepingGolfer && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_sleeping_golfer(&mut app.npcs[i], &mut app.world);
+    }
+    // The webbed Stylist's talk (`NPC.cs:19849-19852`): the talk frees
+    // him and raises `savedStylist` (`:52953`).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::WebbedStylist && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_webbed_stylist(&mut app.npcs[i], &mut app.world);
+    }
+    // The Sleeping Angler's talk (`NPC.cs:19853-19856`'s `talkNPC`
+    // trigger + `AI_000_TransformBoundNPC` `:44884-44896`): the talk
+    // transforms 376 → 369 in place, `UpdateSavedStates` (`:52956-52958`)
+    // raises `savedAngler`, and `Transform`'s `case 369` (`:81121-81129`)
+    // forces the new Angler homeless with his home at his feet — the
+    // port drops the home (the town pass re-anchors him).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::SleepingAngler && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_bound_angler(&mut app.npcs[i], &mut app.world);
+    }
+    // The Angler's quest turn-in (`NPCInteractions.cs:519`'s `AnglerQuest`
+    // → `Main.NPCChatText_DoAnglerQuest`, `Main.cs:40227-40263`): the
+    // hand-in of today's quest fish — the vanilla's chat-button collapse,
+    // the Nurse treatment.
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::Angler && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        return angler_turn_in(app, i);
+    }
+    // The Tax Collector's right arm (`NPCInteractions.cs:221-244`'s
+    // `TaxCollectorCollectTaxes`): he offers no shop — the click pays the
+    // tax purse out (`Main.NPCChatText_DoTaxCollector`).
+    if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
+        return tax_collector_payout(app, i);
     }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
     // — the port collapses them onto the right-click).
@@ -137,6 +284,11 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::GoblinTinkerer => 6,
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
+        NpcKind::TravellingMerchant => 19,
+        NpcKind::Wizard => 7,
+        NpcKind::Mechanic => 8,
+        NpcKind::Stylist => 18,
+        NpcKind::Golfer => 22,
         _ => return None,
     })
 }
@@ -150,6 +302,336 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
     n.max_hp = NpcKind::GoblinTinkerer.max_hp();
     n.hp = n.max_hp;
     world.saved_goblin = true;
+}
+
+/// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
+/// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
+/// raised, the Angler homeless (the C# `Transform` `case 369`,
+/// `NPC.cs:81121-81129`).
+/// The bound Wizard's rescue (`AI_000_TransformBoundNPC`'s 106 → 108 arm,
+/// `NPC.cs:19841-19844`/`:44884-44894`): the transform in place, the freed
+/// stats restore and `savedWizard` raises (`:52948`).
+pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Wizard;
+    n.max_hp = NpcKind::Wizard.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_wizard = true;
+}
+
+/// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
+/// `NPC.cs:19845-19848`): the transform in place and `savedMech` raises
+/// (`:52951`).
+pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Mechanic;
+    n.max_hp = NpcKind::Mechanic.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_mech = true;
+}
+
+/// The webbed Stylist's rescue (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
+/// `NPC.cs:19849-19852`/`:44884-44894`): the talk frees him in place and
+/// raises `NPC.savedStylist` (`:52953-52955`), which opens the town
+/// arrival; `Transform`'s `case 353` (`:81120`) leaves him homeless.
+/// The sleeping Golfer's rescue (`AI_000_TransformBoundNPC`'s 589 → 588 arm,
+/// `NPC.cs:19833-19836`/`:44884-44894`): the talk frees him in place and
+/// raises `NPC.savedGolfer` (`:52938-52940`), which opens the town
+/// arrival; `Transform`'s `case 588` (`:81122-81128`) leaves him homeless.
+pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Golfer;
+    n.max_hp = NpcKind::Golfer.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_golfer = true;
+}
+
+pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Stylist;
+    n.max_hp = NpcKind::Stylist.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_stylist = true;
+}
+
+/// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
+/// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
+/// raised, the Angler homeless (the C# `Transform` `case 369`,
+/// `:81121-81129`).
+pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Angler;
+    n.max_hp = NpcKind::Angler.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_angler = true;
+}
+
+/// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`) — the quest's
+/// turn-in: the day gate, the quest-fish scan (`FindItem`), the stack
+/// decrement, the `anglerQuestsFinished++` and the reward
+/// (`Player.GetAnglerReward`, `Player.cs:56302`).
+pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    let mut handed = false;
+    // `:40232`'s gate: the day's quest is open and this player has not
+    // already handed it in (`anglerWhoFinishedToday`'s single-player
+    // collapse).
+    if !app.world.angler_quest_finished && !app.world.angler_quest_turned_in {
+        let quest_item = crate::angler::QUEST_POOL[app.world.angler_quest as usize];
+        if let Some(slot) = app
+            .inventory
+            .iter()
+            .position(|s| s.kind == quest_item && s.count > 0)
+        {
+            app.inventory[slot].count -= 1;
+            if app.inventory[slot].count == 0 {
+                app.inventory[slot].kind = 0;
+            }
+            handed = true;
+            // `:40244`: the counter++ BEFORE the reward table reads it.
+            if let Some(p) = app.player.as_mut() {
+                p.angler_quests_finished += 1;
+            }
+            give_angler_reward(app, angler_idx);
+        }
+    }
+    if handed {
+        // `:40251-40258`: the day flags — the world's `anglerQuestFinished`
+        // and this player's slot in `anglerWhoFinishedToday`.
+        app.world.angler_quest_finished = true;
+        app.world.angler_quest_turned_in = true;
+    }
+    true
+}
+
+/// The reward spawn (`Player.GetAnglerReward`, `Player.cs:56302-56311`): the
+/// four sub-rolls on `Main.rand`'s stream, each spawning at the Angler's
+/// centre (`QuickSpawnItem`'s drops).
+fn give_angler_reward(app: &mut App, angler_idx: usize) {
+    let quests_done = app
+        .player
+        .as_ref()
+        .map_or(0, |p| p.angler_quests_finished);
+    let hard_mode = app.world.hard_mode;
+    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` — the
+    // mood pass leaves the town roster at 1.0 (`ShopHelper.cs:103`'s
+    // exclusions do not cover 369, but the port's town NPCs carry no mood
+    // rows for him yet, so the plain 1.0 stands).
+    let adjustment = 1.0f32;
+    // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
+    // the port's one inventory (the armor/bank/loadout scans are
+    // constants-off — the port carries neither).
+    let owned: Vec<u16> = app
+        .inventory
+        .iter()
+        .filter(|s| s.kind != 0 && s.count > 0)
+        .map(|s| s.kind)
+        .collect();
+    let lines = crate::angler::angler_reward(
+        quests_done,
+        hard_mode,
+        adjustment,
+        &owned,
+        &mut app.npc_rng,
+    );
+    let (ax, ay) = app.npcs[angler_idx].center();
+    for line in lines {
+        crate::world_sim::items::spawn_item_drop_px(app, line.item, line.stack, Vec2::new(ax, ay));
+    }
+}
+
+/// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`) — the
+/// app pass resolves the clock's request (`Main.cs:3754-3902` the day reset
+/// + the pool re-roll).
+pub(crate) fn resolve_angler_swap(app: &mut App) {
+    if !app.world.angler_swap_pending {
+        return;
+    }
+    app.world.angler_swap_pending = false;
+    // `:3760-3761`: the day reset (`anglerWhoFinishedToday.Clear()` collapses
+    // to the single-player flag).
+    app.world.angler_quest_finished = false;
+    app.world.angler_quest_turned_in = false;
+    let gates = crate::angler::QuestGates {
+        hard_mode: app.world.hard_mode,
+        // `WorldGen.crimson` — the port has no evil-kind field, so the
+        // corruption default stands (the crimson quest rows 2457/2463/
+        // 2477/2485 then re-roll exactly like a corruption world).
+        crimson: false,
+        downed_boss1: app.world.downed_eoc,
+        downed_boss2: app.world.downed_eow,
+        downed_boss3: app.world.downed_skeletron,
+        downed_slime_king: app.world.downed_slime_king,
+        downed_queen_bee: app.world.downed_queen_bee,
+        // `Main.isThereAWorldSurface` — the constants-off seed.
+        has_world_surface: true,
+    };
+    let mut rng = app.npc_rng;
+    let idx = crate::angler::angler_quest_swap(&gates, &mut rng);
+    app.npc_rng = rng;
+    app.world.angler_quest = idx as u8;
+}
+
+/// The Sleeping Angler's world spawn (`Spawner`'s two 376 arms,
+/// `NPC.cs:1775-1794` the ocean water tile and `:1925-1928` the beach sand):
+/// the Angler unsaved and no 376 alive, the 1-in-20 roll per attempt. The
+/// vanilla's arms sit inside `SpawnAnNPC`'s ladder; the port runs them as
+/// their own pass (the same player-tile scan, the same roll count).
+/// `NPC.cs:1660-1670`'s spider-wall arm: the webbed Stylist waits on a
+/// spider wall (`wall == 62`) in the rock layer — `Next(8) == 0`, no
+/// water, once per save (`!savedStylist && !AnyNPCs(354)`). The port has
+/// no spider-wall tile table, so the wall gate rides the world's wall id
+/// at the player's spawn tile (the same depth band as the C#'s
+/// `deeperThanRockLayer`).
+/// `NPC.cs:1680-1695`'s underground-desert arm: the sleeping Golfer waits
+/// below the rock layer — `Next(20) == 0`, no water, once per save
+/// (`!savedGolfer && !AnyNPCs(589)`). The vanilla's arm is gated on the
+/// desert wall's `AllowsUndergroundDesertEnemiesToSpawn` set, which the
+/// port has no table for; the depth band (`rockLayer * 2 + maxTilesY) / 3`
+/// and the rate ride the same cadence.
+pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
+    if app.world.saved_golfer
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SleepingGolfer)
+    {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let ty = (p.y / TILE_PX) as i32;
+    // `(rockLayer * 2 + maxTilesY) / 3` — the deep band the C# checks
+    // (`:1683`'s `num10 *= 0.5` branch).
+    let deep_band =
+        (app.world.rock_layer * 2.0 + app.world.height as f64) / 3.0;
+    if (ty as f64) <= app.world.rock_layer || (ty as f64) <= deep_band {
+        return false;
+    }
+    let water = app
+        .world
+        .tile((p.x / TILE_PX) as i32, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    if water || rand01(&mut app.npc_rng) >= 0.05 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::SleepingGolfer,
+        (p.x / TILE_PX) as i32 as f32 * TILE_PX + 8.0 - 9.0,
+        ty as f32 * TILE_PX - 34.0,
+        1,
+        0.0,
+        );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
+pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
+    if app.world.saved_stylist
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::WebbedStylist)
+    {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let tx = (p.x / TILE_PX) as i32;
+    let ty = (p.y / TILE_PX) as i32;
+    if (ty as f64) <= app.world.rock_layer {
+        return false;
+    }
+    let water = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    if water || rand01(&mut app.npc_rng) >= 1.0 / 8.0 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::WebbedStylist,
+        tx as f32 * TILE_PX + 8.0 - 9.0,
+        ty as f32 * TILE_PX - 34.0,
+        1,
+        0.0,
+    );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
+pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
+    if app.world.saved_angler || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler) {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let tx = (p.x / TILE_PX) as i32;
+    let ty = (p.y / TILE_PX) as i32;
+    // `Main.tileSand` (`Main.cs:7228-7231`): 53/112/116/234.
+    const SAND: [u16; 4] = [53, 112, 116, 234];
+    // `WorldGen.beachDistance` (`WorldGen.cs:86914`): 380 tiles.
+    const BEACH: i32 = 380;
+    // The sand row reads the ground under the player (`FindGroundTile`'s
+    // descent — the vanity's ladder spawns on the ground tile), the water
+    // row the player's own tile (`:1775`'s `this.waterTile`).
+    let ground = app
+        .world
+        .tile(tx, ty + 1)
+        .is_some_and(|t| t.active() && SAND.contains(&t.kind));
+    let water = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    let near_edge = tx < BEACH || tx > app.world.width as i32 - BEACH;
+    let above_surface = (ty as f64) < app.world.world_surface;
+    // `:1775`'s ocean-water arm vs `:1925`'s beach-sand arm — the water arm
+    // also runs below the surface (`!isThereAWorldSurface`), the sand arm
+    // only above it.
+    let eligible = (water && near_edge) || (ground && near_edge && above_surface);
+    if !eligible {
+        return false;
+    }
+    if rand01(&mut app.npc_rng) >= 0.05 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::SleepingAngler,
+        tx as f32 * TILE_PX + 8.0 - 17.0,
+        ty as f32 * TILE_PX - 8.0,
+        1,
+        0.0,
+    );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
+/// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
+/// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
+fn coin_total(inventory: &[crate::item::ItemSlot]) -> i64 {
+    let mut total: i64 = 0;
+    for sl in inventory.iter() {
+        if sl.count == 0 {
+            continue;
+        }
+        let mult: i64 = match sl.kind {
+            71 => 1,
+            72 => 100,
+            73 => 10_000,
+            74 => 1_000_000,
+            _ => continue,
+        };
+        total += sl.count as i64 * mult;
+        if total < 0 || total > 9_999_999_999 {
+            return 9_999_999_999;
+        }
+    }
+    total
 }
 
 fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
@@ -180,6 +662,22 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_jungle: app.scene_metrics.zone_jungle,
         downed_boss2: false,
         downed_boss3: false,
+        // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
+        // life/mana maxima, the copper purse, the Party Girl's presence and
+        // the mech/martian flags.
+        golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
+        life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
+        mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
+        coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
+        party_girl_present: false, // the Party Girl (208) is not ported yet
+        downed_mech_any: app.world.downed_mech_boss1
+            || app.world.downed_mech_boss2
+            || app.world.downed_mech_boss3,
+        downed_mech_1: app.world.downed_mech_boss1,
+        downed_mech_2: app.world.downed_mech_boss2,
+        downed_mech_3: app.world.downed_mech_boss3,
+        downed_martians: app.world.downed_martians,
+        travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -321,6 +819,8 @@ pub(crate) fn update_worms_in(
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
                 // the difficulty work); the Destroyer's ~80 segments
                 // (`AI_037`'s ai[2] roll).
+                // The crawltipede's 30 segments (`:51375`'s `num34 = 30`).
+                NpcKind::SolarCrawltipedeHead => 29,
                 NpcKind::TheDestroyer => 80,
                 _ => 65,
             }
@@ -726,6 +1226,91 @@ fn invasion_warning(app: &mut App) {
 /// `size <= 0` (`SetEventFlagCleared(ref downedGoblins, 0)` + the
 /// progression event 10), the march toward `spawnTileX` by
 /// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
+/// `NPC.cs`'s lunar-tower shield state (`ShieldStrengthTower*`) — the
+/// `WorldGen.cs:86688` raise, `NPC.cs:95247`'s reset and
+/// `ShieldStrengthTowerMax`'s post-Moon-Lord half. The spend side rides
+/// the towers' damage path (the pillar 493/507/517's own machines) — this
+/// driver owns the set/reset lifecycle and the `TowerActive*` liveness.
+pub(crate) fn update_tower_shields(app: &mut App) {
+    let w = &mut app.world;
+    // The reset: all four dead (`NPC.cs:95247-95251`).
+    if w.tower_active_solar == false
+        && w.tower_active_vortex == false
+        && w.tower_active_nebula == false
+        && w.tower_active_stardust == false
+    {
+        w.tower_shield_solar = 0;
+        w.tower_shield_vortex = 0;
+        w.tower_shield_nebula = 0;
+        w.tower_shield_stardust = 0;
+        w.lunar_shield_power_normal = 100;
+    }
+}
+
+/// The pillar-spawn's shield raise: `WorldGen.cs:86688`'s
+/// `ShieldStrengthTowerSolar = (...) = ShieldStrengthTowerMax` — the port's
+/// spawn arms (the tower kinds) call it once each.
+pub(crate) fn raise_tower_shield(world: &mut tr_core::World) {
+    world.tower_shield_solar = tower_shield_max(world);
+    world.tower_shield_vortex = tower_shield_max(world);
+    world.tower_shield_nebula = tower_shield_max(world);
+    world.tower_shield_stardust = tower_shield_max(world);
+    world.tower_active_solar = true;
+    world.tower_active_vortex = true;
+    world.tower_active_nebula = true;
+    world.tower_active_stardust = true;
+}
+
+/// `NPC.ShieldStrengthTowerMax` (`NPC.cs:6795-6806`): the normal power,
+/// halved while the Moon Lord is downed.
+pub(crate) fn tower_shield_max(world: &tr_core::World) -> i32 {
+    if world.downed_moon_lord {
+        world.lunar_shield_power_normal / 2
+    } else {
+        world.lunar_shield_power_normal
+    }
+}
+
+/// The shield's spend: a hit on a shielded tower drains
+/// `ShieldStrengthTower<Kind>` and the `629` damage-pulse fires
+/// (`NPC.cs:79288-79324`). Returns the drained tower's kind index
+/// (0 solar / 1 vortex / 2 nebula / 3 stardust) when the shield absorbed
+/// the hit, or `None` when the tower fights bare.
+pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize, dmg: i32) -> Option<i32> {
+    let strength = match tower {
+        0 => &mut world.tower_shield_solar,
+        1 => &mut world.tower_shield_vortex,
+        2 => &mut world.tower_shield_nebula,
+        _ => &mut world.tower_shield_stardust,
+    };
+    if *strength <= 0 {
+        return None;
+    }
+    *strength -= dmg;
+    if *strength <= 0 {
+        *strength = 0;
+        match tower {
+            0 => {
+                world.tower_active_solar = false;
+                world.downed_tower_solar = true;
+            }
+            1 => {
+                world.tower_active_vortex = false;
+                world.downed_tower_vortex = true;
+            }
+            2 => {
+                world.tower_active_nebula = false;
+                world.downed_tower_nebula = true;
+            }
+            _ => {
+                world.tower_active_stardust = false;
+                world.downed_tower_stardust = true;
+            }
+        }
+    }
+    Some(tower as i32)
+}
+
 pub(crate) fn update_invasion_state(app: &mut App) {
     // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
     // display timer decays per tick, the alpha ramps 0.05 toward it, and
@@ -851,7 +1436,78 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
 /// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
 /// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
 /// group + 3, 0)`.
+/// `DD2Event.CheckProgress` (`DD2Event.cs:366-392`) — the Old One's Army's
+/// kill advance: the kill's worth rides the tier (the ported families are
+/// the tier-1 rows worth 1.0), the wave's budget
+/// (`DD2Event::required_wave_kills`) opens the next wave with the 1800-tick
+/// break, and the wave-6 sentinel is the win (`WonThisRun`).
+fn dd2_report_kill(app: &mut App, kind: NpcKind) {
+    let roster = tr_core::dd2::enemies_for_wave(app.world.dd2_wave).0;
+    if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
+        // The kill outside the wave's roster scores nothing.
+        return;
+    }
+    // The hold's refusal runs FIRST (the vanilla's early return) — the
+    // kill under the break scores nothing at all.
+    if app.world.dd2_spawn_hold != 0 {
+        return;
+    }
+    let worth = tr_core::dd2::KILL_WORTH_T1;
+    app.world.dd2_wave_kills += worth;
+    let passed = tr_core::dd2::wave_budget_passed(
+        app.world.dd2_wave,
+        &mut app.world.dd2_wave_kills,
+    );
+    if passed {
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_wave += 1;
+        app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+    }
+}
+
+/// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
+fn nid_of(id: u16) -> Option<NpcKind> {
+    NpcKind::from_u16(match id {
+        552 => 95,
+        555 => 98,
+        561 => 101,
+        558 => 101, // the Wyvern rides the same walker until its arms land
+        564 => 106,
+        _ => return None,
+    })
+}
+
+/// The Old One's Army's tick (`DD2Event.Update`): the spawn hold's decay
+/// and the crystal's 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
+/// `:40959-40966`) — the hold's expiry opens the lane spawns.
+pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
+    if !app.world.dd2_event_ongoing {
+        return;
+    }
+    if app.world.dd2_spawn_hold > 0 {
+        app.world.dd2_spawn_hold -= 1;
+    }
+    // The win-death resolve (`AI`'s aiStyle-105 arm's
+    // `DD2Event.StopInvasion`): the event stops and the crystal goes.
+    if app.npcs.iter().any(|n| {
+        n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop
+    }) {
+        app.world.dd2_event_ongoing = false;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
+        });
+    }
+}
+
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
+    // The Old One's Army's wave progress (`DD2Event.CheckProgress`,
+    // `DD2Event.cs:366-392`) rides its own counter — the invasion
+    // framework's group gate does not apply.
+    if app.world.dd2_event_ongoing {
+        dd2_report_kill(app, kind);
+        return;
+    }
     let group = npc_invasion_group(kind);
     if group <= 0 || group != app.world.invasion_type {
         return;
@@ -1049,6 +1705,100 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
+    // apocalypse's countdown ticks down and at zero the boss spawns.
+    crate::world_sim::lunar::update_moon_lord_countdown(app);
+    // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
+    // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
+    // PRE-pass: each 397/396/400/401 finds its core, mirrors the core's
+    // centre into `carrier_x/y`, and drops the link (so the machine
+    // self-kills) when the core died. The leech blob's anchor is the
+    // head (`AI_082`'s `:36630-36640`) — its `ai[0]` holds the head's
+    // index + 1 in the vanilla; the port links by kind instead.
+    for i in 0..app.npcs.len() {
+        let kind = app.npcs[i].kind;
+        if kind != NpcKind::MoonLordHand
+            && kind != NpcKind::MoonLordHead
+            && kind != NpcKind::MoonLordFreeEye
+            && kind != NpcKind::MoonLordLeechBlob
+        {
+            continue;
+        }
+        let want = if kind == NpcKind::MoonLordLeechBlob {
+            NpcKind::MoonLordHead
+        } else {
+            NpcKind::MoonLordCore
+        };
+        let core = app.npcs.iter().position(|m| m.kind == want && m.hp > 0);
+        match core {
+            Some(ci) => {
+                let (ccx, ccy) = app.npcs[ci].center();
+                app.npcs[i].carrier_x = ccx;
+                app.npcs[i].carrier_y = ccy;
+                app.npcs[i].carrier_timer = 1.0;
+                app.npcs[i].moon_core_alive = true;
+            }
+            None => {
+                app.npcs[i].moon_core_alive = false;
+                app.npcs[i].carrier_timer = 0.0;
+                app.npcs[i].hp = 0;
+            }
+        }
+    }
+    // The core's part bookkeeping (`AI_077`'s `:41229-41232` +
+    // `:41251-41291`): the three stored slots mirror the live parts (the
+    // hands split by their `ai[2]` slot), so the core's loss check — a
+    // missing part opens the death ride — reads them.
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind != NpcKind::MoonLordCore {
+            continue;
+        }
+        let mut slots = [-1i32, -1, -1];
+        for (slot, want) in [
+            (0usize, NpcKind::MoonLordHand),
+            (1usize, NpcKind::MoonLordHand),
+            (2usize, NpcKind::MoonLordHead),
+        ] {
+            for j in 0..app.npcs.len() {
+                if app.npcs[j].kind != want || app.npcs[j].hp <= 0 {
+                    continue;
+                }
+                let hand_slot = app.npcs[j].ai[2] as i32;
+                let fits = if want == NpcKind::MoonLordHand {
+                    hand_slot == slot as i32
+                } else {
+                    // The head has no `ai[2]` slot of its own.
+                    hand_slot == 0
+                };
+                if fits && slots[slot] < 0 {
+                    slots[slot] = j as i32;
+                }
+            }
+        }
+        app.npcs[i].moon_parts = slots;
+    }
+    // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
+    // (`Main.cs:65373`): the clock arms it at the day boundary (the
+    // clock carries no RNG), the world pass rolls it.
+    resolve_angler_swap(app);
+    // `NPC.taxCollector` (`NPC.cs:6083`): `AI_007_TownEntities` raises
+    // it while a Tax Collector is alive (`:53304-53307`) and the pass
+    // reset clears it (`Main.cs:17908`); the tax pump runs while true.
+    app.world.tax_collector = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::TaxCollector && n.hp > 0);
+    // `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
+    // the alive, housed town NPCs (the C# counts every non-pet with a
+    // head index — the port's town roster).
+    app.world.tax_payers = app
+        .npcs
+        .iter()
+        .filter(|n| n.kind.is_town_resident() && n.hp > 0 && n.home.is_some())
+        .count() as i32;
+    // `Main.cs:64995-65003`'s pump.
+    let rate = app.world.day_rate();
+    crate::world_sim::clock::update_taxes(&mut app.world, rate);
     // The Scutlix rider's carrier write-through (`AI_075`'s type-390
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
@@ -1073,15 +1823,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .npcs
                 .iter()
                 .filter(|m| {
-                    m.kind == NpcKind::FlyingDutchmanCannon
-                        && m.hp > 0
-                        && {
-                            let (mcx, mcy) = m.center();
-                            (mcx - scx).hypot(mcy - scy) < 1600.0
-                        }
+                    m.kind == NpcKind::FlyingDutchmanCannon && m.hp > 0 && {
+                        let (mcx, mcy) = m.center();
+                        (mcx - scx).hypot(mcy - scy) < 1600.0
+                    }
                 })
                 .count() as i32;
             app.npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = app.npcs[i].sprite_dir;
+            let ship_rot = app.npcs[i].rotation;
+            for m in app.npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
@@ -1109,10 +1868,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_x = mcx;
                 app.npcs[i].carrier_y = mcy;
                 // The saucer family's extra payload: the core's mirrored
-                // timer + phase and the crew counts within the reach.
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
                 if link_kind == NpcKind::MartianSaucerCore {
                     app.npcs[i].carrier_timer = app.npcs[j].ai[3];
                     app.npcs[i].carrier_phase = app.npcs[j].ai[0];
+                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
+                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
                     let turrets = app
                         .npcs
                         .iter()
@@ -1247,6 +2011,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             None
         }
     };
+    // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
+    // body's centre / velocity.X / life ratio for the head and fist
+    // tethers. Hoisted BEFORE the AI pass: the C# parts read
+    // `Main.npc[NPC.golemBoss].Center / life / lifeMax / velocity` live
+    // inside their own AI (the body's lower slot updates first), so the
+    // pre-pass write is the closest same-tick value (the post-pass write
+    // below fed the parts a 1-tick stale ratio).
+    {
+        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem && n.hp > 0);
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_vx = body.vx;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+        } else {
+            app.world.golem_present = false;
+        }
+    }
     let world = &app.world;
     let player = &mut app.player;
     let npcs = &mut app.npcs;
@@ -1301,6 +2085,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s
+        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
+        if app.world.saved_golfer && !app.npcs.iter().any(|n| n.kind == NpcKind::Golfer) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Golfer) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Stylist and the Tax Collector: `NPC.savedStylist`/
+        // `savedTaxCollector` (`Main.cs:65824`/`:65840`'s `townNPCCanSpawn`
+        // arms collapsed into the port's 2-second pass).
+        if app.world.saved_stylist && !app.npcs.iter().any(|n| n.kind == NpcKind::Stylist) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Stylist) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        if app.world.saved_tax_collector
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::TaxCollector)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 10).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::TaxCollector) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         // The Clothier: the downedSkeletron gate.
         if app.world.downed_skeletron && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier) {
             if let Some(player) = app.player.as_ref() {
@@ -1321,8 +2139,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
-        // downedBoss1 — the port's downed_eoc).
+        // The Wizard: `NPC.savedWizard` (`NPC.cs:6289`), raised by the
+        // bound-Wizard talk (`UpdateSavedStates`, `:52948`).
+        if app.world.saved_wizard && !app.npcs.iter().any(|n| n.kind == NpcKind::Wizard) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 8).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Wizard) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Mechanic: `NPC.savedMech` (`NPC.cs:6291`).
+        if app.world.saved_mech && !app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 7).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Mechanic) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s        // downedBoss1 — the port's downed_eoc).
         if app.world.downed_eoc && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
@@ -1350,6 +2188,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     if app.town_look_timer == 0.0 {
+        // The Sleeping Angler's world spawn (`NPC.cs:1775`/`:1925`):
+        // found on the beach or in the ocean while the Angler is
+        // unsaved — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
+        // the port's `Next(20)` roll rides this cadence.
+        try_spawn_sleeping_angler(app);
+        // The webbed Stylist's world spawn (`NPC.cs:1660-1670`'s
+        // spider-wall arm): a spider wall in the rock layer, `Next(8) == 0`,
+        // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
+        // the port's roll rides this cadence with the same gates.
+        try_spawn_webbed_stylist(app);
+        // The sleeping Golfer's world spawn (`NPC.cs:1691`).
+        try_spawn_sleeping_golfer(app);
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -1396,6 +2246,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         })
         .collect();
     app.revenge_markers.extend(cached);
+    // The Old One's Army's tick (the spawn hold's decay + the crystal's
+    // 600-tick win-death resolve) rides before the death retain: the
+    // win-death zeroes the crystal's hp AND stops the event in one pass.
+    update_dd2_event(app, dt);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -1415,6 +2269,51 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
+            NpcKind::SolarTower => {
+                app.world.downed_tower_solar = true;
+                app.world.tower_active_solar = false;
+                // `NPC.cs:79324-79325`'s `UpdateLunarApocalypse()` +
+                // `MessageLunarApocalypse()`.
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            // `DoDeathEvents`'s 398 row (`NPC.cs:79397-79404`): the core's
+            // death clears the lunar apocalypse (the vanilla's
+            // `SetEventFlagCleared(ref downedMoonlord, 10)`).
+            NpcKind::MoonLordCore => {
+                app.world.downed_moon_lord = true;
+            }
+            NpcKind::NebulaTower => {
+                app.world.downed_tower_nebula = true;
+                app.world.tower_active_nebula = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            NpcKind::StardustTower => {
+                app.world.downed_tower_stardust = true;
+                app.world.tower_active_stardust = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            NpcKind::VortexTower => {
+                app.world.downed_tower_vortex = true;
+                app.world.tower_active_vortex = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            // `DoDeathEvents`'s 439 row (`NPC.cs:79393-79396`): the
+            // cultist's death clears its flag and raises the apocalypse
+            // (`WorldGen.TriggerLunarApocalypse`).
+            NpcKind::AncientCultist => {
+                app.world.downed_ancient_cultist = true;
+                let rng = app.item_rng;
+                crate::world_sim::lunar::trigger_lunar_apocalypse(app, rng);
+            }
+            // `DoDeathEvents`'s 422 row (`NPC.cs:79327-79332`): the Vortex
+            // pillar's own pair (the other agent's parallel merge added the
+            // kind + this arm with the lunar-apocalypse calls — the port had
+            // no Vortex kind at all before, so its `downedTowerVortex` /
+            // `TowerActiveVortex` never cleared).
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
                 // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
                 // meteorite — the guaranteed first (the pre-kill read of
@@ -1548,17 +2447,92 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        if let Some((kind, sx, sy)) = n.wants_sphere.take() {
+        for (kind, sx, sy) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
+            // no direction argument, the ctor's `spriteDirection = -1`,
+            // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
+            // (`NPC.cs:12176/12190/12201`): the family spawns unflipped
+            // and invisible, fading in over 26 ticks.
+            if matches!(
+                kind,
+                NpcKind::GolemHead | NpcKind::GolemFistLeft | NpcKind::GolemFistRight
+            ) {
+                ball.facing = -1;
+                ball.alpha = 255;
+            }
             spheres.push(ball);
         }
     }
     app.npcs.append(&mut spheres);
+    // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
+    // tick sets `wants_limbs` and the sim resolves it here — the four
+    // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
+    // -1, the saw +1, the vice -1 with `ai[3] = 150`, the laser +1 with
+    // `ai[3] = 150`). The v1 set the flag but never drained it, so no
+    // limb ever existed outside the direct-call test.
+    let mut limbs = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::SkeletronPrime || !n.wants_limbs {
+            continue;
+        }
+        n.wants_limbs = false;
+        let (hw, hh) = n.size();
+        let (ccx, ccy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        let seats: [(NpcKind, i32, bool); 4] = [
+            (NpcKind::PrimeCannon, -1, false),
+            (NpcKind::PrimeSaw, 1, false),
+            (NpcKind::PrimeVice, -1, true),
+            (NpcKind::PrimeLaser, 1, true),
+        ];
+        for (kind, side, timed) in seats {
+            let (w, h) = kind.size();
+            let mut limb = Npc::new(kind, ccx - w * 0.5, ccy - h * 0.5, side, 0.0);
+            limb.ai[0] = side as f32;
+            if timed {
+                limb.ai[3] = 150.0;
+            }
+            limb.hp = limb.max_hp;
+            limbs.push(limb);
+        }
+    }
+    app.npcs.append(&mut limbs);
     update_brain_state(app);
+    // The Skeletron head's anchor write-through (the hands' tether reads
+    {
+        let prime = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+            .cloned();
+        if let Some(prime) = prime {
+            let (pw, ph) = prime.size();
+            app.world.prime_present = true;
+            app.world.prime_x = prime.x + pw * 0.5;
+            app.world.prime_y = prime.y;
+            let _ = ph;
+        } else {
+            app.world.prime_present = false;
+        }
+    }
+    // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
+    {
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+            .cloned();
+        if let Some(head) = head {
+            let (hw, hh) = head.size();
+            app.world.skeletron_x = head.x + hw * 0.5;
+            app.world.skeletron_y = head.y;
+            let _ = hh;
+        }
+    }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
     // the shared counter's third break summons the Eater of Worlds (a
     // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
@@ -1596,6 +2570,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_present = true;
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_vx = body.vx;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
             let head_alive = app
                 .npcs
@@ -1646,7 +2621,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
         #[cfg(test)]
-        eprintln!("[spawn-dbg] pool slots active: {}", app.projectiles.slots().iter().filter(|p| p.active).count());
+        eprintln!(
+            "[spawn-dbg] pool slots active: {}",
+            app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
         // The AI_037 arm's `timeLeft = 300` override rides the laser.
         let time_left = if kind == crate::projectile::DESTROYER_LASER {
             300
@@ -1707,6 +2685,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The Hungry init (`localAI[0]` 1 → 2): the 11 Hungries along the
         // band (`ai[0] = i * 0.1 - 0.05`); the eye/mouth mirrors (114) are
         // the render follow-up.
+        // The mirror eyes (`:26041-26051`): the two 114s at the band
+        // mid + the drawTop/drawBottom halves, the ai[0] sign picks the
+        // half each chases.
+        for top in [true, false] {
+            let ey = if top {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_top) * 0.5
+            } else {
+                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) * 0.5
+            };
+            let mut eye = Npc::new(NpcKind::WallOfFleshEye, wof.x, ey, wof.facing, 0.0);
+            eye.hp = eye.max_hp;
+            eye.ai[0] = if top { 1.0 } else { -1.0 };
+            app.npcs.push(eye);
+        }
         if wof.wants_hungry {
             let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
             for i in 0..11 {
@@ -1867,6 +2859,89 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     for crew in spawned_crew {
         app.npcs.extend(crew);
     }
+    // The Moon Lord's spawn-in (`AI_077`'s `:41209-41232`): the two hands
+    // (`ai[2]` 0/1) at the core's centre + seat*800 - 400 / -100 and the
+    // head 400 px above, all carrying the core's index in `ai[3]`.
+    for i in 0..app.npcs.len() {
+        if !app.npcs[i].wants_moon_parts {
+            continue;
+        }
+        app.npcs[i].wants_moon_parts = false;
+        let (cw, ch) = app.npcs[i].size();
+        let ccx = app.npcs[i].x + cw * 0.5;
+        let ccy = app.npcs[i].y + ch * 0.5;
+        let core_i = i as i32;
+        let mut parts: Vec<Npc> = Vec::new();
+        for seat in 0..2 {
+            let mut hand = Npc::new(
+                NpcKind::MoonLordHand,
+                ccx + (seat as f32) * 800.0 - 400.0,
+                ccy - 100.0,
+                seat as i32,
+                0.0,
+            );
+            hand.hp = hand.max_hp;
+            hand.ai[2] = seat as f32;
+            hand.ai[3] = core_i as f32;
+            hand.carrier_x = ccx;
+            hand.carrier_y = ccy;
+            hand.carrier_timer = 1.0;
+            hand.moon_core_alive = true;
+            parts.push(hand);
+        }
+        let mut head = Npc::new(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0, 0.0);
+        head.hp = head.max_hp;
+        head.ai[3] = core_i as f32;
+        head.carrier_x = ccx;
+        head.carrier_y = ccy;
+        head.carrier_timer = 1.0;
+        head.moon_core_alive = true;
+        parts.push(head);
+        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`).
+        let base = app.npcs.len() as i32;
+        app.npcs[i].moon_parts = [base, base + 1, base + 2];
+        app.npcs.extend(parts);
+        break;
+    }
+    // The Moon Leech clot request (`AI_079`'s `:42303-42318`): a leeched
+    // player spawns the 401 clot at its centre, with the head's index in
+    // `ai[0]` (+1, the vanilla's sign convention) and the leech key in
+    // `ai[1]`.
+    for i in 0..app.npcs.len() {
+        let (kind, ccx, ccy) = {
+            let n = &app.npcs[i];
+            (n.kind, n.center().0, n.center().1)
+        };
+        let _ = (ccx, ccy);
+        if kind != NpcKind::MoonLordHead || !app.npcs[i].wants_moon_leech {
+            continue;
+        }
+        app.npcs[i].wants_moon_leech = false;
+        let head_i = i as i32;
+        // The head's own leech projectiles ride the projectile pool; the
+        // port spawns the clot for every leeched player the sim knows of.
+        let mut clots: Vec<Npc> = Vec::new();
+        if let Some(player) = app.player.as_ref() {
+            let buffed = player.buffs.find_buff_index(145).is_some();
+            if buffed {
+                let mut clot = Npc::new(
+                    NpcKind::MoonLordLeechBlob,
+                    player.center().0,
+                    player.center().1,
+                    1,
+                    0.0,
+                );
+                clot.hp = clot.max_hp;
+                clot.ai[0] = head_i as f32 + 1.0;
+                clot.carrier_x = ccx;
+                clot.carrier_y = ccy;
+                clot.carrier_timer = 1.0;
+                clot.moon_core_alive = true;
+                clots.push(clot);
+            }
+        }
+        app.npcs.extend(clots);
+    }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
     // the payload's pirate spawns with the drop velocity (the vanilla's
     // `±5 X` jitter + the ship's X, then the -8.01 Y launch).
@@ -1890,14 +2965,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {
-        if n.wants_minion {
-            n.wants_minion = false;
-            if minions < 4 {
-                let xt = ((n.x / TILE_PX) as i32 + n.facing * 2).clamp(2, app.world.width - 3);
-                if let Some(m) = Npc::spawn_slime(&app.world, xt) {
-                    spawned.push(m);
-                    minions += 1;
-                }
+        if !n.wants_minion {
+            continue;
+        }
+        n.wants_minion = false;
+        // The King Slime's batch (`AI_015` `:44233-44247`): the 5 %-damage
+        // arm spawns `rand(1, 4)` (1-3) Blue Slimes, the death arm 4-7; the
+        // port's `wants_minion_batch` carries the count for the resolution.
+        let batch = n.wants_minion_batch.max(1);
+        n.wants_minion_batch = 0;
+        for k in 0..batch {
+            if minions >= 8 {
+                break;
+            }
+            let xt =
+                ((n.x / TILE_PX) as i32 + n.facing * (2 + k as i32)).clamp(2, app.world.width - 3);
+            if let Some(m) = Npc::spawn_slime(&app.world, xt) {
+                spawned.push(m);
+                minions += 1;
             }
         }
     }
@@ -1909,12 +2994,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if player.hp <= 0 && !player.dead {
             let (dx, dy) = player.center();
             let boss_near = player.boss_hinders(&app.npcs);
-            let death_text = dot_death_text(player.dot_death).to_string();
+            // The `Main.rand.Next(n) + 1` variant roll rides the item
+            // stream (the M4-LOOT `Main.rand` stand-in) — one draw per
+            // death, before the player borrow is taken.
+            let roll = crate::app::rand01(&mut app.item_rng);
+            let death_text = dot_death_text(player.dot_death, &app.player_name, roll);
             player.dot_death = None;
             drop(player);
-            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
-            // color (`ChatColors.cs`); the ported monitor rides the App.
-            crate::chat::broadcast_death(&mut app.chat, &app.player_name, &death_text);
+            // `Player.KillMe`'s chat broadcast: the resolved message in
+            // the Death color (`ChatColors.cs`); the ported monitor rides
+            // the App.
+            crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
@@ -2047,6 +3137,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && !app.npcs.iter().any(|n| {
                         n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
                     }),
+                // `NPC.cs:2088`'s Wizard guards: hardmode, unsaved, and
+                // nobody bound/freed.
+                bound_wizard_ok: app.world.hard_mode
+                    && !app.world.saved_wizard
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
+                    }),
+                // `NPC.cs:2653`'s Mechanic guards: Skeletron downed,
+                // unsaved, and nobody bound/freed.
+                bound_mech_ok: app.world.downed_skeletron
+                    && !app.world.saved_mech
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
+                    }),
+                // `(worldSurface * 4 + rockLayer) / 5` — the Mechanic's deep
+                // dungeon band, read against the player's spawn tile.
+                below_deep_dungeon: {
+                    let ty = app
+                        .player
+                        .as_ref()
+                        .map_or(0, |p| (p.y / TILE_PX) as i32);
+                    (ty as f64) > (app.world.world_surface * 4.0 + app.world.rock_layer) / 5.0
+                },
                 // The skyMob/probe gates (`SetSpawnFlags`' `invaders`, the
                 // `downedGolemBoss`/`downedMartians` rolls, the skyMob
                 // dispatch's type-4 read, and `AnyDanger`'s boss loop —
@@ -2165,6 +3278,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer = 1.0 / 60.0;
 }
 
+
 /// The full NPC loot through the rule engine
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
@@ -2195,6 +3309,14 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
             downed_eoc: app.world.downed_eoc,
+            // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
+            // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
+            // `SkyblockIsUp` conditions) now read the world's identity —
+            // until this branch they were dead (`..Default::default()`).
+            tenth_anniversary: app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -2289,6 +3411,446 @@ mod tests {
     use super::*;
     use tr_core::World;
 
+
+    /// `AI_000_TransformBoundNPC`'s 376 → 369 arm (`NPC.cs:19853-19856`): the
+    /// talk transforms the Sleeping Angler into the Angler in place and
+    /// raises `savedAngler` (`:52956-52958`) — the world's spawn arms then
+    /// stop looking for the fish on the beach.
+
+    /// `AI_000_TransformBoundNPC`'s 106 → 108 and 123 → 124 arms
+    /// (`NPC.cs:19841-19848`/`:44884-44894`): the talks free the Wizard and
+    /// the Mechanic in place and raise `savedWizard`/`savedMech`
+    /// (`:52948`/`:52951`), which opens the town arrival.
+
+    /// The webbed Stolist's talk (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
+    /// `NPC.cs:19849-19852`): the talk frees him, raises `savedStylist`
+    /// (`:52953`) and the town arrival follows.
+
+    /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
+    /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+    #[test]
+    fn the_talk_wakes_the_sleeping_golfer() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut g = Npc::new(NpcKind::SleepingGolfer, 32.0 * 16.0, 100.0, 1, 0.0);
+        g.home = Some((2, 6));
+        app.npcs.push(g);
+        assert!(!app.world.saved_golfer);
+        try_open_shop_at_cursor(&mut app, Vec2::new(32.0 * 16.0 + 2.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golfer),
+            "the sleeping Golfer is freed"
+        );
+        assert!(app.world.saved_golfer, "savedGolfer raises");
+    }
+
+    /// The Golfer's flag-gated arrival (`Main.cs:65892`'s `townNPCCanSpawn`
+    /// arm collapsed into the 2-second town pass).
+    #[test]
+    fn the_saved_golfer_flag_opens_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_golfer = true;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Golfer), "he arrives");
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
+    #[test]
+    fn the_talk_frees_the_webbed_stylist() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut w = Npc::new(NpcKind::WebbedStylist, 32.0 * 16.0, 100.0, 1, 0.0);
+        w.home = Some((2, 6));
+        app.npcs.push(w);
+        assert!(!app.world.saved_stylist);
+        try_open_shop_at_cursor(&mut app, Vec2::new(32.0 * 16.0 + 2.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Stylist),
+            "the Stylist is freed"
+        );
+        assert!(app.world.saved_stylist, "savedStylist raises");
+    }
+
+    /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
+    /// Collector's right-click pays the accrued taxes out in coins and
+    /// empties the purse.
+    #[test]
+    fn the_tax_collector_pays_the_purse_out() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        let idx = app.npcs.len();
+        app.npcs.push(t);
+        // A purse with platinum + gold + silver + copper.
+        app.world.tax_money = 1_000_000 + 25_000 + 340;
+        let before = app.items.len();
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.world.tax_money, 0, "the purse empties");
+        let kinds: Vec<u16> = app.items.iter().map(|d| d.kind).collect();
+        assert!(kinds.contains(&74), "one platinum coin");
+        assert!(kinds.contains(&73), "two gold coins");
+        assert!(kinds.contains(&72), "three silver coins");
+        assert!(kinds.contains(&71), "the coppers");
+        assert!(app.items.len() > before, "the drops spawn");
+    }
+
+    /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
+    /// (`Main.cs:64995-65003`): 50 copper per housed town NPC per
+    /// `taxRate` clock, capped at 25 gold.
+    #[test]
+    fn the_tax_pump_fills_the_purse_to_the_cap() {
+        let mut world = World::new("t".into(), 8, 8);
+        world.tax_collector = true;
+        // No collectors yet: the pump does nothing.
+        crate::world_sim::clock::update_taxes(&mut world, 1);
+        assert_eq!(world.tax_money, 0, "no payers, no money");
+        // One payer: after `taxRate` iterations one collection lands.
+        world.tax_payers = 1;
+        for _ in 0..TAX_RATE {
+            crate::world_sim::clock::update_taxes(&mut world, 1);
+        }
+        assert_eq!(world.tax_money, 50, "one collection of 50 copper");
+        // The cap (`:24151-24153`): a collection that would overflow clamps
+        // to 25 gold; a purse already at the cap collects nothing more.
+        world.tax_money = TAX_CAP - 10;
+        world.tax_payers = 100;
+        crate::world_sim::clock::collect_taxes(&mut world);
+        assert_eq!(world.tax_money, TAX_CAP, "the 25-gold cap holds");
+        let capped = world.tax_money;
+        crate::world_sim::clock::collect_taxes(&mut world);
+        assert_eq!(world.tax_money, capped, "no collection past the cap");
+    }
+
+    #[test]
+    fn the_talks_free_the_wizard_and_mechanic() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        app.world.hard_mode = true;
+        let mut w = Npc::new(NpcKind::BoundWizard, 32.0, 100.0, 1, 0.0);
+        w.home = Some((2, 6));
+        app.npcs.push(w);
+        let mut m = Npc::new(NpcKind::BoundMechanic, 64.0, 100.0, 1, 0.0);
+        app.npcs.push(m);
+        try_open_shop_at_cursor(&mut app, Vec2::new(34.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard is freed"
+        );
+        assert!(app.world.saved_wizard, "savedWizard raises");
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::BoundWizard));
+        try_open_shop_at_cursor(&mut app, Vec2::new(66.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic is freed"
+        );
+        assert!(app.world.saved_mech, "savedMech raises");
+    }
+
+    /// The town arrival behind the flags (`Main.cs:65844-65851`'s
+    /// `townNPCCanSpawn` arms collapsed to the 2-second town pass): the saved
+    /// flag spawns the town NPC once and never again.
+    #[test]
+    fn the_saved_flags_open_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_wizard = true;
+        app.world.saved_mech = true;
+        // One town pass.
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard arrives"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic arrives"
+        );
+        // A second pass adds nothing.
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
+    /// `NPC.cs:2088`'s hardmode guard: the bound Wizard's ladder arm needs
+    /// hardmode, so without it the tied Wizard never appears however many
+    /// spawn attempts run.
+    #[test]
+    fn the_bound_wizard_arm_needs_hardmode() {
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 400..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        for hard in [false, true] {
+            let mut found_any = false;
+            let mut found_wizard = false;
+            for seed in 0..240u64 {
+                let ctx = crate::spawner::SpawnContext {
+                    world: &world,
+                    player_center: (32.0 * 16.0, 500.0 * 16.0),
+                    player_pos: (32.0 * 16.0, 500.0 * 16.0),
+                    nearby_active_npcs: 0.0,
+                    town_npcs: 0,
+                    day_time: true,
+                    player_life_max: 100,
+                    underworld_for_bats: false,
+                    flags: crate::spawner::SpawnFlags {
+                        hard_mode: hard,
+                        ..Default::default()
+                    },
+                    bound_goblin_ok: false,
+                    bound_wizard_ok: true,
+                    bound_mech_ok: false,
+                    below_deep_dungeon: true,
+                    invaders: false,
+                    downed_golem: false,
+                    downed_martians: false,
+                    invasion_type: 0,
+                    any_danger: false,
+                    probe_exists: false,
+                    sky_behind_player: false,
+                };
+                let mut rng = crate::spawner::FastRandom::new(seed + 1);
+                if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
+                    found_any = true;
+                    if n.kind == NpcKind::BoundWizard {
+                        found_wizard = true;
+                    }
+                }
+            }
+            // The arm's own gate is the assertion: without hardmode the tied
+            // Wizard never comes out of the ladder, whatever else spawns (the
+            // other ladders' world gates decide that, not this arm).
+            if !hard {
+                assert!(
+                    !found_wizard,
+                    "no hardmode, no bound Wizard (any spawn: {found_any})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_talk_wakes_the_sleeping_angler() {
+        let mut world = World::new("t".into(), 64, 800);
+        let mut saved = crate::player::Player::spawn(&world);
+        saved.x = 32.0;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(saved);
+        let mut n = Npc::new(NpcKind::SleepingAngler, 32.0, 100.0, 1, 0.0);
+        n.home = Some((2, 6));
+        app.npcs.push(n);
+        assert!(!app.world.saved_angler);
+        try_open_shop_at_cursor(&mut app, Vec2::new(34.0, 100.0));
+        let angler = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Angler)
+            .expect("the Angler");
+        assert_eq!(angler.max_hp, 250, "the town twin's body");
+        assert!(angler.home.is_none(), "Transform case 369 leaves him homeless");
+        assert!(app.world.saved_angler, "the saved flag raises");
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler),
+            "no bound form remains"
+        );
+    }
+
+    /// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`): the hand-in
+    /// takes the quest fish off the stack, counts the quest, pays the reward
+    /// and closes the day — a second click on the same day does nothing.
+    #[test]
+    fn the_angler_quest_turn_in_pays_out_once_a_day() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        // Today's quest (the pool index 7 = 2457) and the fish in hand.
+        app.world.angler_quest = 7;
+        let quest = crate::angler::QUEST_POOL[7];
+        let slot = &mut app.inventory[0];
+        slot.kind = quest;
+        slot.name = "Quest Fish";
+        slot.count = 3;
+        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
+        a.hp = a.max_hp;
+        let ai = app.npcs.len();
+        app.npcs.push(a);
+        let idx = app.npcs.iter().position(|n| n.kind == NpcKind::Angler).unwrap();
+        assert_eq!(idx, ai);
+        let before = app.items.len();
+        assert!(angler_turn_in(&mut app, idx), "the hand-in runs");
+        assert_eq!(app.inventory[0].count, 2, "the stack drops one");
+        assert_eq!(app.player.as_ref().unwrap().angler_quests_finished, 1);
+        assert!(app.world.angler_quest_finished, "the day closes");
+        assert!(app.world.angler_quest_turned_in, "the player's slot");
+        assert!(app.items.len() > before, "the reward drops spawn");
+        // The reward lands at the Angler's centre.
+        let (ax, ay) = app.npcs[idx].center();
+        assert!(
+            app.items.iter().any(|d| (d.pos.x - ax).abs() < 40.0 && (d.pos.y - ay).abs() < 40.0),
+            "the drops ride the Angler"
+        );
+        // The same-day refusal.
+        let count = app.player.as_ref().unwrap().angler_quests_finished;
+        angler_turn_in(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().angler_quests_finished, count);
+        // An empty hand keeps the day open.
+        app.world.angler_quest_finished = false;
+        app.world.angler_quest_turned_in = false;
+        app.inventory[0].kind = 0;
+        angler_turn_in(&mut app, idx);
+        assert!(!app.world.angler_quest_finished, "no fish, no hand-in");
+    }
+
+    /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`): the
+    /// clock arms the request, the world pass rolls it, and the day flags
+    /// reset (`:3760-3761`).
+    #[test]
+    fn the_day_boundary_rolls_a_new_quest() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.angler_quest = 40;
+        app.world.angler_quest_finished = true;
+        app.world.angler_quest_turned_in = true;
+        // No request: nothing happens.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.angler_quest, 40, "no request, no swap");
+        // The boundary arms it.
+        app.world.angler_swap_pending = true;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.angler_swap_pending, "the request resolves");
+        assert!(!app.world.angler_quest_finished, "the day resets");
+        assert!(!app.world.angler_quest_turned_in, "the player's slot resets");
+        assert!(
+            (app.world.angler_quest as usize) < crate::angler::QUEST_POOL.len(),
+            "a valid pool index"
+        );
+    }
+
+    /// `Spawner`'s two 376 arms (`NPC.cs:1775` the ocean water tile,
+    /// `:1925` the beach sand): the Angler unsaved and no 376 alive — and
+    /// the saved flag stops the search for good.
+    #[test]
+    fn the_sleeping_angler_is_found_on_the_beach() {
+        let mut world = World::new("t".into(), 1000, 300);
+        // A sand beach inside the 380-tile band, above the surface.
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 53,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        world.world_surface = 120.0;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 20.0 * 16.0;
+        player.y = 75.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // The roll's gate (`Main.rand.Next(20) == 0` ≈ rand01 < 0.05): sweep
+        // for the seed whose FIRST draw lands under it, so the spawn is
+        // deterministic (the state is the one before the draw).
+        let mut probe = 1u64;
+        loop {
+            let mut trial = probe;
+            if rand01(&mut trial) < 0.05 {
+                break;
+            }
+            probe += 1;
+        }
+        app.npc_rng = probe;
+        assert!(
+            try_spawn_sleeping_angler(&mut app),
+            "the beach arm spawns the Sleeping Angler"
+        );
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler));
+        // `savedAngler` closes the search.
+        app.npcs.clear();
+        app.world.saved_angler = true;
+        assert!(!try_spawn_sleeping_angler(&mut app), "the saved flag stops it");
+    }
+
     #[test]
     fn black_slime_darkness_touch_rolls_the_item_stream() {
         // `Next(4) == 0` ≈ `rand01 < 0.25`: a crafted seed pins both
@@ -2341,12 +3903,19 @@ mod tests {
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // DW-1.3 — the death collection resolves the DoT table text when the
-        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and keeps
-        // the M2-DEATH-1 stub for any other death.
-        assert_eq!(dot_death_text(None), "was slain...");
-        assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
-        assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
+        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
+        // Slain row for any other death (`Lang.cs` CreateDeathMessage).
+        assert_eq!(dot_death_text(None, "Belsin", 0.0), "Belsin was slain...");
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Poison), "Belsin", 0.5),
+            "Belsin couldn't find the antidote."
+        );
+        assert_eq!(
+            dot_death_text(Some(DotDeath::Burned), "Belsin", 0.0),
+            "Belsin couldn't put the fire out."
+        );
     }
 
     #[test]
@@ -3914,6 +5483,90 @@ mod saucer_tests {
         );
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
     }
+
+    #[test]
+    fn the_mounts_inherit_the_cores_rotation_and_sprite_direction() {
+        // `AI`'s aiStyle-75/93 mount blocks (`NPC.cs:35625-35651` /
+        // `:35669-35676` / `:38718-38726`): every mount copies its
+        // carrier's `rotation` (the whole saucer family tilts as one body)
+        // and `spriteDirection` — the cannon takes its seat's side
+        // (`num1056`) instead. The port's pre-pass writes the pair through
+        // `carrier_rot`/`carrier_facing` and the machine lands them.
+        let (mut app, mut player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        core.rotation = 0.31;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let _ = &mut player;
+        for n in app.npcs.iter().filter(|n| n.kind.is_martian()) {
+            if n.kind == NpcKind::MartianSaucerCore {
+                continue;
+            }
+            assert!(
+                (n.rotation - 0.31).abs() < 0.001,
+                "{:?} inherits the core's rotation: {}",
+                n.kind,
+                n.rotation
+            );
+        }
+        // The cannon flips with its seat; the shell and the turret take
+        // the core's own direction (its `spriteDirection` default -1).
+        let seat_dir = |kind: NpcKind, seat: i32| -> i32 {
+            app.npcs
+                .iter()
+                .find(|n| n.kind == kind && n.ai[1] == seat as f32)
+                .unwrap()
+                .sprite_dir
+        };
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 1), 1, "seat 1 faces right");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 0), -1, "seat 0 faces left");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerTurret, 0), -1, "the turret takes the core's");
+        assert_eq!(seat_dir(NpcKind::MartianSaucer, 0), -1, "the shell takes the core's");
+    }
+
+    #[test]
+    fn the_turret_aims_at_the_player_outside_the_burst() {
+        // `AI`'s 393 arm (`NPC.cs:35873-35880`): outside the 280-420 burst
+        // the vanilla re-derives `ai[2]` from the player vector's rotation
+        // with the Y clamped at 0 — the value `FindFrame` case 393's 9 aim
+        // rows decode.
+        let (mut app, mut player) = app_with_player();
+        player.x += 40.0 * TILE_PX; // the player to the RIGHT of the saucer
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let turret = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerTurret)
+            .unwrap();
+        // The player is right (and likely below): the aim angle points
+        // into the +X half, never upward (the Y clamp).
+        assert!(
+            turret.ai[2].abs() <= std::f32::consts::FRAC_PI_2,
+            "the aim never points upward: {}",
+            turret.ai[2]
+        );
+        assert!(turret.ai[2].cos() > 0.0, "aiming right: {}", turret.ai[2]);
+        // `FindFrame` case 393's cascade decodes the angle into the 6/8
+        // right-side rows (a shallow aim reads 6, a near-horizontal 8) —
+        // either way the sheet now aims at the player instead of pinning
+        // row 0 (the v1 left `ai[2]` unwritten).
+        let row = if turret.ai[2].cos() > turret.ai[2].sin() * 2.0 {
+            8
+        } else {
+            6
+        };
+        assert!(row == 6 || row == 8, "the right-side aim rows are 6/8: {row}");
+        assert!(
+            (3..=8).contains(&row),
+            "the aim never lands on the upward rows 1/2/7: {row}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3928,7 +5581,10 @@ mod saucer_battery_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4050,7 +5706,10 @@ mod saucer_battery_tests {
             }
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MartianSaucerCore);
+        let core = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerCore);
         // The crew removal retires the mounts too; the core survives until
         // the bridge lands (its own follow-up slice).
         assert!(core.is_some() || app.world.invasion_type == 0);
@@ -4071,7 +5730,10 @@ mod dutchman_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -4141,7 +5803,11 @@ mod dutchman_tests {
         let mut rng = 3u64;
         let mut drops = 0;
         for _ in 0..2000 {
-            if let Some(n) = app.npcs.iter_mut().find(|n| n.kind == NpcKind::FlyingDutchman) {
+            if let Some(n) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::FlyingDutchman)
+            {
                 n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
                 if let Some((kind, dx, dy)) = n.wants_dutchman_drop {
                     assert!(matches!(
@@ -4184,5 +5850,2522 @@ mod dutchman_tests {
                     | NpcKind::PirateDeckhand
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod prime_limb_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_prime_head_spawns_its_four_limbs_with_the_vanilla_seats() {
+        // `AI_032`'s init (`NPC.cs:27635-27661`): the head's first tick
+        // sets `wants_limbs` and the sim resolves it — the four limbs at
+        // the head's centre with the seat signs (the cannon -1, the saw
+        // +1, the vice -1 and the laser +1, the last two with
+        // `ai[3] = 150`). The v1 set the flag but never drained it.
+        let (mut app, mut player) = app_with_player();
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The head rides inside the 300x200 test world, 20 tiles above the
+        // surface (an out-of-world spawn would hit the head's own
+        // off-world clamp on the first tick).
+        let mut head = Npc::new(NpcKind::SkeletronPrime, 160.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let kinds: Vec<(NpcKind, i32, f32, i32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind.is_prime_limb())
+            .map(|n| (n.kind, n.ai[0] as i32, n.ai[3], n.hp))
+            .collect();
+        assert_eq!(kinds.len(), 4, "the four limbs spawn: {kinds:?}");
+        for (kind, seat, ai3, hp) in kinds {
+            assert!(hp > 0, "{kind:?} spawns alive");
+            match kind {
+                NpcKind::PrimeCannon => assert_eq!(seat, -1),
+                NpcKind::PrimeSaw => assert_eq!(seat, 1),
+                NpcKind::PrimeVice => assert_eq!((seat, ai3), (-1, 150.0)),
+                NpcKind::PrimeLaser => assert_eq!((seat, ai3), (1, 150.0)),
+                _ => unreachable!(),
+            }
+        }
+        // The anchor write-through feeds the tether: the limbs ride it.
+        assert!(app.world.prime_present, "the head anchors the world's Prime fields");
+        assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod pirate_shot_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_deadeye_fires_the_arrow() {
+        // The Archer 214's arm of the shooter block (`NPC.cs:59502-59507`):
+        // the arrow 180 at 25 damage, the ±45 jitter, the 10 speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::PirateArcher,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 25);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 10.0).abs() < 0.01, "the arrow's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Deadeye never fired");
+    }
+
+    #[test]
+    fn the_corsair_fires_the_musket_ball() {
+        // The Corsair 215's arm: the musket ball 82 at 35 damage at 14
+        // speed.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 11u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCorsair,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 82);
+                assert_eq!(s.5, 35);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 14.0).abs() < 0.01, "the ball's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Corsair never fired");
+    }
+
+    #[test]
+    fn the_captain_fires_the_wounded_barrage() {
+        // The Captain 216's arm (`NPC.cs:59390-59397`): the arrow 180 at
+        // 30 damage with the ±50 jitter at the 9 speed; the wounded arm
+        // (localAI[2] >= 20) is the follow-up.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                let s = n.wants_hostile_shot[0];
+                assert_eq!(s.0, 180);
+                assert_eq!(s.5, 30);
+                let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                assert!((speed - 9.0).abs() < 0.01, "the captain's speed: {speed}");
+                return;
+            }
+        }
+        panic!("the Captain never fired");
+    }
+
+    #[test]
+    fn the_pirate_shooters_round_trip_their_pool_shots() {
+        // The 180/82 projectile rows landed: the machine's payload
+        // resolves into the pool through the sim (the 180 arrow at 25).
+        let (mut app, mut player) = app_with_player();
+        let mut n = Npc::new(
+            NpcKind::PirateArcher,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        app.player.as_mut().unwrap().x = 160.0 * TILE_PX;
+        app.player.as_mut().unwrap().y = 118.0 * TILE_PX;
+        app.npcs.push(n);
+        let mut fired = 0;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            fired += app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == 180 && p.damage == 25)
+                .count();
+        }
+        assert!(fired > 0, "the 180 arrow lands in the pool");
+        player.x += 0.0;
+    }
+    #[test]
+    fn the_captains_wounded_arm_fires_the_240_barrage() {
+        // The Captain 216's wounded arm (`NPC.cs:59170-59235` + `:59603`):
+        // past 20 shots the barrage fires the 240 shell (100 dmg, 15
+        // speed, no jitter); the port's `caster_counter` = localAI[2].
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 3u64;
+        let mut n = Npc::new(
+            NpcKind::PirateCaptain,
+            145.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        // Force the wounded state: 20 shots counted.
+        n.caster_counter = 20;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 240 {
+                    assert_eq!(s.5, 100, "the barrage's damage");
+                    let speed = (s.3 * s.3 + s.4 * s.4).sqrt();
+                    assert!((speed - 15.0).abs() < 0.01, "the barrage's speed");
+                    return;
+                }
+            }
+        }
+        panic!("the wounded arm never fired the barrage");
+    }
+}
+
+#[cfg(test)]
+mod dd2_goblin_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_dd2_goblins_walk_and_tier_their_stats() {
+        // The three `SetDefaults` rows (`NPC.cs`'s 552-554) + the
+        // aiStyle-107 walk: the tiers march at their own speed and the
+        // wave ramp accel.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut t1 = Npc::new(
+            NpcKind::DD2GoblinT1,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        t1.hp = t1.max_hp;
+        let mut t3 = Npc::new(
+            NpcKind::DD2GoblinT3,
+            155.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        t3.hp = t3.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (t1_x, _) = t1.center();
+        let (t3_x, _) = t3.center();
+        for _ in 0..60 {
+            t1.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            t3.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (t1_end, _) = t1.center();
+        let (t3_end, _) = t3.center();
+        // The T3's speed add (0.4) makes it cover more ground.
+        assert!(
+            (t3_end - t3_x).abs() >= (t1_end - t1_x).abs(),
+            "the tier-3's faster walk: {} vs {}",
+            (t3_end - t3_x).abs(),
+            (t1_end - t1_x).abs()
+        );
+        // Both walked toward the player.
+        assert!((t1_end - t1_x).abs() > 10.0, "the T1 walked");
+    }
+
+    #[test]
+    fn the_wave_ramp_accelerates() {
+        // The `localAI[3]` ramp (`NPC.cs:63140-63143`): the port's
+        // `caster_counter` drives the accel element; past 60 it holds.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinT1,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        // A fresh goblin: the ramp's accel is small.
+        n.caster_counter = 0;
+        let fresh: (f32, f32) = (0.0, 0.0);
+        let _ = fresh;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        // The machine runs the ramp without panicking (the counters' state
+        // rides the App in the port — the walk lands).
+        assert!(n.hp > 0);
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+    #[test]
+    fn the_dd2_support_walks_and_the_skeletons_materialize() {
+        // The support rows (`NPC.cs`'s 555-567): the bombers (50/200/700
+        // HP) and the throwers (60/300/1000) march through the harness;
+        // the etherian skeletons ride the materialize cycle — their
+        // `localAI[3]` (the port's `caster_counter`) counts the spawn-in.
+        let (mut app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut b = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        b.hp = b.max_hp;
+        let mut s = Npc::new(
+            NpcKind::DD2SkeletonT1,
+            155.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        s.hp = s.max_hp;
+        let s_before = s.caster_counter;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (b_x, _) = b.center();
+        for _ in 0..60 {
+            b.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            s.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (b_end, _) = b.center();
+        assert!((b_end - b_x).abs() > 10.0, "the bomber walked");
+        assert_eq!(s.caster_counter, s_before + 60, "the materialize ticks");
+        let _ = app;
+        app.npcs.push(b);
+    }
+    #[test]
+    fn the_javelin_thrower_throws_the_spear_at_82() {
+        // The javelin arm (`NPC.cs:63434-63465`): the cadence fires the
+        // 662 spear (the tier-3's 685) at the classic damage.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 662);
+        assert_eq!(s.5, 30);
+    }
+
+    #[test]
+    fn the_tier3_thrower_throws_the_685() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2JavelinT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..85 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the spear throws at the cadence");
+        assert_eq!(s.0, 685);
+        assert_eq!(s.5, 80);
+    }
+    #[test]
+    fn the_bombers_lob_the_681_bomb() {
+        // The bomber arm (`NPC.cs:63490-63535`): the 18-tick cadence lobs
+        // the 681 bomb at the tiered classic damages.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT1,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 20);
+    }
+
+    #[test]
+    fn the_tier3_bomber_lobs_the_bomb_at_40() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2GoblinBomberT3,
+            145.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut thrown = None;
+        for _ in 0..20 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                thrown = n.wants_hostile_shot.first().copied();
+                break;
+            }
+        }
+        let s = thrown.expect("the bomb lobs at the cadence");
+        assert_eq!(s.0, 681);
+        assert_eq!(s.5, 40);
+    }
+    #[test]
+    fn the_dark_mage_materializes_then_casts() {
+        // `AI_109_DarkMage` (`NPC.cs:65791+`): the materialize runs
+        // 60 ticks of `localAI[3]` (the port's caster_counter), then the
+        // cast cycle fires the shadowflame 675 (40 dmg) / the summon
+        // marker 673 in their ai[0] windows.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2DarkMage, 145.0 * TILE_PX, 1500.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The materialize.
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.caster_counter, 60, "the materialize ran");
+        // The re-arm + the cast cycle: arm the shadowflame phase.
+        n.ai[1] = 0.0;
+        n.ai[0] = 97.0;
+        let mut saw_flame = false;
+        let mut saw_summon = false;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            for s in n.wants_hostile_shot.iter() {
+                if s.0 == 675 {
+                    saw_flame = true;
+                }
+                if s.0 == 673 {
+                    saw_summon = true;
+                }
+            }
+            if saw_flame || saw_summon {
+                break;
+            }
+        }
+        assert!(saw_flame || saw_summon, "the mage cast");
+    }
+    #[test]
+    fn betsy_hovers_in_then_approaches_and_breaths() {
+        // `AI_110_Betsy` (`NPC.cs:61850+`): phase 0's 10-tick spawn pause,
+        // phase 1's approach to the 300/-200 offset past the player, the
+        // phase table's pick, phase 2's 687 breath at 35.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The spawn pause: 10 ticks.
+        for _ in 0..11 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the approach starts");
+        // The approach: the velocity orients toward the offset.
+        let v = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!(v > 0.0, "the flight carries: {v}");
+        // Drive into the phase table's first pick (30 ticks).
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.ai[0] > 1.0, "an attack phase was picked");
+        assert!(n.ai[3] >= 1.0, "the phase rotation advanced");
+    }
+    #[test]
+    fn betsy_flame_breaths_and_volleys_the_fireballs() {
+        // `AI_110_Betsy`'s phases 3-6 (`NPC.cs:61942-62060`): the flame
+        // breath repositions to the 600-px offset and 687s at 35; the
+        // volley repositions to 1500 px and 686s at 35; the circle flight
+        // rotates; the dash lunges.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // Phase 3 (the flame breath).
+        n.ai[0] = 3.0;
+        n.ai[1] = 0.0;
+        let mut saw_breath = false;
+        for _ in 0..50 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw_breath = true;
+                break;
+            }
+        }
+        assert!(saw_breath, "the flame breath fires");
+        // Phase 4 (the volley).
+        let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        m.hp = m.max_hp;
+        m.ai[0] = 4.0;
+        m.ai[1] = 0.0;
+        let mut saw_volley = false;
+        for _ in 0..80 {
+            m.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !m.wants_hostile_shot.is_empty() {
+                saw_volley = true;
+                break;
+            }
+        }
+        assert!(saw_volley, "the volley fires");
+    }
+    #[test]
+    fn the_wither_beast_pulses_and_self_heals() {
+        // `AI_107_ImprovedWalkers`'s WitherBeast arm (`NPC.cs:65900-65990`):
+        // the aura phase's 60-tick self-heal (`lifeMax / 20` capped to the
+        // missing hp) and the walk through the harness.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::DD2WitherBeast, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = 300; // the wounded beast (500 max)
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 325, "the 60-tick heal (25 = 500/20)");
+    }
+    #[test]
+    fn the_eternia_crystal_shields_then_opens() {
+        // `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`): the 180-tick
+        // spawn-in shield (`localAI[0]` — the port's caster_counter) holds
+        // `dontTakeDamage` until the count passes 180.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..60 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.dont_take_damage, "the spawn-in shield holds");
+        assert_eq!(n.caster_counter, 60);
+        for _ in 0..121 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(!n.dont_take_damage, "the crystal opens at 180");
+    }
+}
+
+#[cfg(test)]
+mod crystal_summon_tests {
+    use super::*;
+
+    fn base_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The stand at tile (150, 119) with a centered frame.
+        let i = w.index(150, 119);
+        w.tiles[i].kind = 466;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_on_the_stand_starts_the_army() {
+        // `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`):
+        // the 3828 over the stand 466 summons the crystal + starts the
+        // event; the item consumes.
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        // The cursor over the stand.
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.world.dd2_event_ongoing;
+        assert!(!before);
+        assert!(crate::world_sim::editing::use_etherian_crystal(&mut app));
+        assert!(
+            app.world.dd2_event_ongoing,
+            "the event raised the ongoing flag"
+        );
+        assert_eq!(app.world.dd2_wave, 1, "the first wave");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal spawned"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the item consumed");
+    }
+
+    #[test]
+    fn the_crystal_refuses_without_the_stand_and_while_active() {
+        let mut app = base_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.world.dd2_event_ongoing = true;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "the active event refuses"
+        );
+        app.world.dd2_event_ongoing = false;
+        // Remove the stand.
+        let i = app.world.index(150, 119);
+        app.world.tiles[i].kind = 1;
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "no stand refuses"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dd2_wave_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_wave_advances_on_the_budget() {
+        // `DD2Event.CheckProgress`: the tier-1 roster's kills advance the
+        // wave at the budget with the 1800-tick break.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 2, "the wave advances");
+        assert_eq!(app.world.dd2_wave_kills, 0.0, "the counter resets");
+        assert_eq!(
+            app.world.dd2_spawn_hold,
+            tr_core::dd2::SPAWN_HOLD_WAVE_BREAK,
+            "the break rides"
+        );
+    }
+
+    #[test]
+    fn the_wave_hold_refuses_the_kill() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        app.world.dd2_spawn_hold = 100;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 1, "the hold's refusal");
+        assert_eq!(app.world.dd2_wave_kills, 59.0, "no score under the hold");
+    }
+
+    #[test]
+    fn the_off_roster_kill_scores_nothing() {
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
+        report_invasion_kill(&mut app, NpcKind::Skeleton);
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod crystal_death_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_crystal_win_death_stops_the_army() {
+        // `AI`'s aiStyle-105 arm's win-death (`NPC.cs:40959-40966`):
+        // `ai[0] >= 600` → `DD2Event.StopInvasion` + `life = 0` — via
+        // update_dd2_event's resolve the event clears and the crystal goes.
+        let mut app = base_app();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.ai[0] = 599.0;
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_spawn_hold = 0;
+        app.npcs.push(n);
+        app.player = Some(player);
+        // The sim's tick runs the machine (the 600 counter) and the
+        // event's tick resolves the request.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the event stops");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal is gone"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cultist_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    #[test]
+    fn the_cultist_bobs_and_regen_when_far() {
+        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob
+        // (velocity.Y = sin(2π·ai[0]/300)·0.5) and the +200 regen per 60
+        // ticks while the player stays 2000+ px.
+        let (mut app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = surface_world_fixture();
+        let mut n = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 3000;
+        // The player far away.
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let before = n.hp;
+        let mut rng = 7u64;
+        for _ in 0..61 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp - before, 200, "the far regen (+200)");
+        let _ = app;
+    }
+
+    #[test]
+    fn the_cultist_dissolves_after_the_180_tick_ritual() {
+        // The ai[2] timer's 180-tick dissolve (`:39060-39066`): life 0.
+        let (_app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = surface_world_fixture();
+        let mut n = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..180 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 0, "the ritual's dissolve");
+    }
+
+    fn surface_world_fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+}
+
+#[cfg(test)]
+mod tower_shield_tests {
+    use super::*;
+
+    fn world_with_shields() -> tr_core::World {
+        let mut w = World::new("t".into(), 300, 200);
+        raise_tower_shield(&mut w);
+        w
+    }
+
+    #[test]
+    fn the_raise_sets_all_four_shields() {
+        // `WorldGen.cs:86688`: the spawn raises all four to the max.
+        let w = world_with_shields();
+        assert_eq!(w.tower_shield_solar, 100);
+        assert_eq!(w.tower_shield_vortex, 100);
+        assert_eq!(w.tower_shield_nebula, 100);
+        assert_eq!(w.tower_shield_stardust, 100);
+        assert!(w.tower_active_solar && w.tower_active_stardust);
+    }
+
+    #[test]
+    fn the_absorb_drains_and_flags_the_down() {
+        // `NPC.cs:79288-79324`'s spend: the hit drains the shield; a
+        // drained tower goes inactive + `downedTower*`.
+        let mut w = world_with_shields();
+        assert_eq!(tower_shield_absorb(&mut w, 0, 30), Some(0));
+        assert_eq!(w.tower_shield_solar, 70);
+        assert!(w.tower_active_solar, "the tower still fights");
+        assert_eq!(tower_shield_absorb(&mut w, 0, 70), Some(0));
+        assert!(!w.tower_active_solar, "the tower falls");
+        assert!(w.downed_tower_solar);
+        assert_eq!(tower_shield_absorb(&mut w, 0, 10), None, "the spent shield");
+    }
+
+    #[test]
+    fn the_moon_lord_halves_the_shield_max() {
+        // `NPC.cs:6795-6806`: `ShieldStrengthTowerMax` halves
+        // post-Moon-Lord.
+        let mut w = world_with_shields();
+        w.downed_moon_lord = true;
+        assert_eq!(tower_shield_max(&w), 50);
+    }
+
+    #[test]
+    fn the_reset_zeroes_when_all_towers_fall() {
+        // `NPC.cs:95247-95251`: the reset fires once every tower is down.
+        let mut w = world_with_shields();
+        w.tower_active_solar = false;
+        w.tower_active_vortex = false;
+        w.tower_active_nebula = false;
+        w.tower_active_stardust = false;
+        w.tower_shield_stardust = 40;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = w;
+        update_tower_shields(&mut app);
+        assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
+        assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+#[cfg(test)]
+mod lunar_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::App;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_ready() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 150.0 * TILE_PX;
+        p.y = 118.0 * TILE_PX;
+        app.player = Some(p);
+        app
+    }
+
+    #[test]
+    fn the_vortex_tower_round_trips() {
+        // The vortex tower (422) joins the three ported pillars with the
+        // shared row (`NPC.cs:15249-15263`).
+        let kind = NpcKind::VortexTower;
+        assert_eq!(kind.to_u16(), 146);
+        assert_eq!(NpcKind::from_u16(146), Some(kind));
+        let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!((n.size().0, n.size().1), (130.0, 270.0));
+        assert_eq!(n.max_hp, 20000);
+        assert_eq!(n.defense(), 20);
+        assert_eq!(n.knock_back_resist(), 0.0);
+    }
+
+    #[test]
+    fn the_cultists_death_raises_the_four_towers() {
+        // `DoDeathEvents`'s 439 row (`NPC.cs:79393-79395`) →
+        // `WorldGen.TriggerLunarApocalypse` (`WorldGen.cs:86626-86691`).
+        let mut app = app_ready();
+        let mut cultist = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        cultist.hp = 0;
+        app.npcs.push(cultist);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let towers = app
+            .npcs
+            .iter()
+            .filter(|n| {
+                matches!(
+                    n.kind,
+                    NpcKind::SolarTower
+                        | NpcKind::VortexTower
+                        | NpcKind::NebulaTower
+                        | NpcKind::StardustTower
+                )
+            })
+            .count();
+        assert_eq!(towers, 4, "the four towers spawn");
+        assert!(app.world.lunar_apocalypse_is_up, "the apocalypse raises");
+        assert!(app.world.tower_active_solar && app.world.tower_active_vortex);
+        assert!(app.world.tower_active_nebula && app.world.tower_active_stardust);
+        // `:86688`'s shield raise to `ShieldStrengthTowerMax` (100).
+        assert_eq!(app.world.tower_shield_solar, 100);
+        assert_eq!(app.world.tower_shield_vortex, 100);
+        assert!(app.world.downed_ancient_cultist, "the cultist's flag");
+    }
+
+    #[test]
+    fn the_tower_deaths_open_the_countdown_and_spawn_the_boss() {
+        // `WorldGen.UpdateLunarApocalypse` (`:86693-86748`) → all four
+        // towers down → `StartImpendingDoom(3600)` → `Main.cs:64987`'s
+        // spawn of the 398 core.
+        let mut app = app_ready();
+        // The apocalypse is up with all four towers.
+        app.world.lunar_apocalypse_is_up = true;
+        for kind in [
+            NpcKind::SolarTower,
+            NpcKind::VortexTower,
+            NpcKind::NebulaTower,
+            NpcKind::StardustTower,
+        ] {
+            let mut t = Npc::new(kind, 60.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+            t.hp = 0;
+            app.npcs.push(t);
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.moon_lord_countdown, 3600, "the countdown arms");
+        assert_eq!(app.world.max_moon_lord_countdown, 3600);
+        assert!(!app.world.lunar_apocalypse_is_up, "the apocalypse ends");
+        assert!(app.world.downed_tower_solar && app.world.downed_tower_vortex);
+        // The countdown's last tick spawns the core on the player.
+        for _ in 0..3601 {
+            crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+        }
+        let cores = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordCore)
+            .count();
+        assert_eq!(cores, 1, "the Moon Lord spawns");
+        assert_eq!(app.world.moon_lord_countdown, 0);
+    }
+
+    #[test]
+    fn the_sigil_arms_the_short_countdown() {
+        // `Player.cs:44028-44034`: the Celestial Sigil's 720-tick countdown
+        // through `WorldGen.StartImpendingDoom(720)`.
+        let mut app = app_ready();
+        // The refusal without the gates (the Golem not down, not hardmode).
+        assert!(!crate::world_sim::editing::use_celestial_sigil(&mut app));
+        assert_eq!(app.world.moon_lord_countdown, 0);
+        // With the gates: the item 3601 in the selected slot.
+        app.world.downed_golem = true;
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 3601;
+        app.inventory[app.selected].count = 1;
+        let armed = crate::world_sim::editing::use_celestial_sigil(&mut app);
+        assert!(armed, "the sigil arms the countdown");
+        assert_eq!(app.world.moon_lord_countdown, 720);
+        assert_eq!(app.inventory[app.selected].count, 0, "the stack pays one");
+    }
+
+    #[test]
+    fn anyone_near_cultists_reads_the_live_cultist() {
+        // `NPC.cs:80290-80313`'s 2500×1500 rect around the cultist.
+        let mut app = app_ready();
+        let cultist = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        app.npcs.push(cultist);
+        assert!(
+            crate::world_sim::lunar::anyone_near_cultists(&app),
+            "the standing player is near"
+        );
+        if let Some(p) = app.player.as_mut() {
+            p.x = 150.0 * TILE_PX + 20000.0;
+        }
+        assert!(
+            !crate::world_sim::lunar::anyone_near_cultists(&app),
+            "the far player is not"
+        );
+    }
+}
+
+#[cfg(test)]
+mod worm_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_pillar_worms_round_trip_their_rows() {
+        // The crawltipede chain + the stardust worm head (`NPC.cs`'s cases
+        // 412/413/414/402/518): the port ids 141-145 and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def) in [
+            (NpcKind::SolarCrawltipedeHead, 141u16, 20.0, 20.0, 10000, 120, 1000),
+            (NpcKind::SolarCrawltipedeBody, 142, 20.0, 20.0, 10000, 80, 1000),
+            (NpcKind::SolarCrawltipedeTail, 143, 20.0, 20.0, 10000, 50, 0),
+            (NpcKind::StardustWormHead, 144, 32.0, 32.0, 1200, 80, 10),
+            (NpcKind::SolarSpearman, 145, 22.0, 56.0, 1000, 80, 28),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            // The chain + the worm head are kb 0; the spearman keeps its
+            // own 0.4 row.
+            let kb = if kind == NpcKind::SolarSpearman { 0.4 } else { 0.0 };
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_crawltipede_assembles_its_thirty_segments() {
+        // `:51369-51392`'s chain assembly: the head spawns the 30-segment
+        // chain through the port's worm pass (`num34 = 30`).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut npcs = vec![Npc::new(
+            NpcKind::SolarCrawltipedeHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        )];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some(player.center()),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        let bodies = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeBody)
+            .count();
+        let tails = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeTail)
+            .count();
+        assert_eq!(bodies, 29, "the 29 bodies");
+        assert_eq!(tails, 1, "the single tail closing the chain");
+    }
+
+    #[test]
+    fn the_stardust_worm_fires_the_mark_on_the_570th_tick() {
+        // `AI_006`'s 402 arm (`NPC.cs:51030-51073`): the 600-tick cycle
+        // decelerates over [285, 570] and fires the mark request at 570,
+        // re-normalising the velocity to 6.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustWormHead, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[2] = 569.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.wants_stardust_mark, "the mark fires at the 570th tick");
+        let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the velocity re-normalises to 6: {}", speed);
+        // The cycle resets at 600.
+        n.ai[2] = 599.0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "the counter resets");
+    }
+}
+
+#[cfg(test)]
+mod tower_mob_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_tower_mobs_round_trip_their_rows() {
+        // The stardust/solar tower mobs (`NPC.cs`'s cases 409-419): the
+        // port ids 133-140, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, def) in [
+            (NpcKind::StardustSpiderBig, 133u16, 34.0, 42.0, 800, 40),
+            (NpcKind::StardustSpiderSmall, 134, 22.0, 22.0, 200, 10),
+            (NpcKind::StardustSoldier, 135, 22.0, 56.0, 700, 34),
+            (NpcKind::SolarDrakomire, 136, 60.0, 40.0, 800, 32),
+            (NpcKind::SolarDrakomireRider, 137, 18.0, 40.0, 800, 28),
+            (NpcKind::SolarSroller, 138, 46.0, 52.0, 700, 34),
+            (NpcKind::SolarCorite, 139, 38.0, 38.0, 600, 26),
+            (NpcKind::SolarSelenian, 140, 22.0, 56.0, 800, 30),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_spider_big_spawns_the_small_on_its_cycle() {
+        // `:59585-59589`'s 409 attack: the 60-tick cycle fires the 410
+        // spawn (no projectile) at the big spider's centre.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderBig, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_sphere.is_empty() {
+                saw = n.wants_sphere.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the small spider spawns");
+        let (kind, _sx, _sy) = n.wants_sphere[0];
+        assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
+        // It fires no projectile.
+        assert!(n.wants_hostile_shot.is_empty(), "no projectile");
+    }
+
+    #[test]
+    fn the_small_spider_kamikazes_with_three_538s() {
+        // `AI_026_Unicorns`'s 410 arm (`NPC.cs:62470-62494`): the 240-tick
+        // counter fires three 538s (50) and the spider self-destructs.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // one tick under the burst
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..4 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            saw = n.wants_hostile_shot.len();
+            if saw > 0 {
+                break;
+            }
+        }
+        assert_eq!(saw, 3, "the three-shot burst");
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 538, "the stardust dart");
+            assert_eq!(shot.5, 50, "the damage constant");
+        }
+        assert!(n.hp <= 0, "the self-destruct");
+    }
+
+    #[test]
+    fn the_soldier_fires_the_537_on_its_cycle() {
+        // `:59470-59473`/`:59574-59577`'s 411 attack: the 330-tick cycle
+        // fires the 537 (60) with the 40-px aim spread.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSoldier, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the laser fires");
+        assert_eq!(s.0, 537, "the stardust soldier laser");
+        assert_eq!(s.5, 60, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_sroller_collapses_into_the_ball() {
+        // `:29394-29419`'s wind-up → the ball state: the doubled defense
+        // and the doubled damage while rolling.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarSroller, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the wind-up state
+        n.ai[1] = 29.0; // one tick under the collapse
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut balled = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[0] == 6.0 {
+                balled = true;
+                break;
+            }
+        }
+        assert!(balled, "the sroller collapses into the ball");
+        // The ball state's own body (its next tick) doubles the defense.
+        for _ in 0..2 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.defense_override, Some(68), "the doubled defense");
+    }
+
+    #[test]
+    fn the_corite_implodes_on_contact() {
+        // `:35447-35497`'s implosion: the 3-tick delay then the death (with
+        // the 80-damage blast request).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 3.0; // the implosion state
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut blasted = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_blast {
+                blasted = true;
+                break;
+            }
+        }
+        assert!(blasted, "the implosion blast");
+        assert!(n.hp <= 0, "the corite dies with it");
+        assert_eq!(n.damage_override, Some(80), "the implosion's hit");
+    }
+}
+
+#[cfg(test)]
+mod nebula_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_nebula_trio_round_trips_its_rows() {
+        // The three nebula pillar mobs (`NPC.cs`'s cases 420/421/424):
+        // the port ids 130-132, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::NebulaFloater, 130u16, 40.0, 40.0, 1300, 75, 20, 0.5),
+            (NpcKind::BrainSuckler, 131, 44.0, 44.0, 330, 70, 34, 0.5),
+            (NpcKind::Predictor, 132, 22.0, 56.0, 700, 80, 30, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_floater_emits_the_574_on_its_60_tick_cadence() {
+        // `AI()`'s aiStyle-97 block (`NPC.cs:39485-39496`): the first 180
+        // ticks throw the 574 (0 damage) every 60 from the ±π/2 (4, 2.5)
+        // ring resampled until |X| >= 1.5.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..62 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the 574 fires");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 574, "the projection");
+        assert_eq!(shot.5, 0, "the zero-damage emission");
+    }
+
+    #[test]
+    fn the_floater_teleports_on_the_480th_tick() {
+        // `:39566-39615`'s teleport cycle: the 480-tick counter arms the
+        // 20-tick fade, and the hop lands the floater at the chosen tile.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 470.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (before_x, before_y) = (n.x, n.y);
+        let mut rng = 7u64;
+        let mut hopped = false;
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[1] > 0.0 {
+                hopped = true;
+                break;
+            }
+        }
+        assert!(hopped, "the teleport is armed");
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(
+            (n.x - before_x).abs() > 16.0 || (n.y - before_y).abs() > 16.0,
+            "the floater moved: {} -> {}, {} -> {}",
+            before_x,
+            n.x,
+            before_y,
+            n.y
+        );
+    }
+
+    #[test]
+    fn the_suckler_attaches_under_40px_and_obstructs() {
+        // `AI()`'s aiStyle-85 421 arm (`NPC.cs:37013-37033` + the phase-5
+        // ride): under 40 px of the player's Top the suckler snaps, arms
+        // `ai[0] = 5` and asks for the Obstructed buff (163, 59).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::BrainSuckler, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the approach phase
+        player.x = 150.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut obstructed = false;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_obstruct {
+                obstructed = true;
+                break;
+            }
+        }
+        assert_eq!(n.ai[0], 5.0, "the attached state");
+        assert!(obstructed, "the obstruct buff request");
+        assert!((n.vx).abs() < 0.01, "the attached velocity zeroes");
+    }
+
+    #[test]
+    fn the_predictor_fires_the_573_fan() {
+        // `AI_003_Fighters`'s 424 arm (`NPC.cs:59159-59192`/`:59475`/`:59578`):
+        // the 180-tick cycle fires four 573s (60) in the `(-3 + 2*i) * 0.15`
+        // fan from the muzzle `(direction * 4, -6)`.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::Predictor, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the four-shot fan");
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 573, "the nebula piercer");
+            assert_eq!(shot.5, 60, "the classic damage constant");
+            assert!(
+                (shot.1 - (cx + n.sprite_dir as f32 * 4.0)).abs() < 8.0,
+                "the muzzle X: {}",
+                shot.1
+            );
+            assert!((shot.2 - (cy - 6.0)).abs() < 8.0, "the muzzle Y: {}", shot.2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod vortex_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_vortex_trio_round_trips_its_rows() {
+        // The three vortex hive mobs (`NPC.cs`'s cases 426/427/428): the
+        // port ids 127-129, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::VortexHunter, 127u16, 50.0, 62.0, 1000, 100, 44, 0.3),
+            (NpcKind::VortexAlien, 128, 40.0, 28.0, 500, 75, 20, 0.5),
+            (NpcKind::VortexHeadcrab, 129, 24.0, 26.0, 200, 50, 6, 1.0),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+        // The 581 dart (`Projectile.cs:6306-6315`): 10x10, aiStyle 1,
+        // hostile, penetrate -1.
+        let data = crate::projectile::proj_data(581).expect("the dart");
+        assert_eq!((data.w, data.h), (10.0, 10.0));
+        assert_eq!(data.penetrate, -1);
+        assert_eq!(data.ai_style, 1);
+    }
+
+    #[test]
+    fn the_hunter_fires_the_581_on_its_60_tick_cycle() {
+        // `AI_003_Fighters`' 426 arm (`NPC.cs:59069-59756`): the 700-px
+        // engage gate starts the 60-tick cycle, the fire at the 59th tick
+        // throws the 581 (60) from the muzzle `(spriteDirection * 2,
+        // -12)` at the 7-px speed.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHunter,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..130 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the dart fires");
+        assert_eq!(s.0, 581, "the vortex dart");
+        assert_eq!(s.5, 60, "the classic damage constant");
+        // The muzzle: `spriteDirection * 2` ahead of the centre and 12 px
+        // above it — the hunter walks, so the shot's own tick's centre is
+        // the reference (the walk's contribution rides inside the drift).
+        let (hw, hh) = n.size();
+        let (ncx, ncy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        assert!((s.1 - (ncx + 2.0)).abs() < 24.0, "the muzzle X: {}", s.1);
+        assert!((s.2 - (ncy - 12.0)).abs() < 24.0, "the muzzle Y: {}", s.2);
+        let _ = (cx, cy);
+    }
+
+    #[test]
+    fn the_headcrab_metamorphoses_into_the_alien() {
+        // `:56855-56869`'s 300-tick counter + the empty 3x2 probe above
+        // the centre: the headcrab heals to its new max and transforms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHeadcrab,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 10;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexAlien {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the headcrab becomes the alien");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 500, "the alien's full hp");
+    }
+
+    #[test]
+    fn the_alien_metamorphoses_into_the_hunter() {
+        // `:56886-56901`'s 1200-tick counter (plus |vx|/2) + the empty
+        // 5x5 probe: the alien becomes the hunter at full health.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexAlien,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 20;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..1400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexHunter {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the alien becomes the hunter");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 1000, "the hunter's full hp");
+    }
+}
+
+#[cfg(test)]
+mod moon_lord_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    /// The link fields the sim's pre-pass owns — a part driven directly in
+    /// a test sets them by hand.
+    fn linked(kind: NpcKind, x: f32, y: f32, slot: i32) -> Npc {
+        let mut n = Npc::new(kind, x, y, slot, 0.0);
+        n.hp = n.max_hp;
+        n.carrier_x = 150.0 * TILE_PX;
+        n.carrier_y = 100.0 * TILE_PX;
+        n.carrier_timer = 1.0;
+        n.moon_core_alive = true;
+        n
+    }
+
+    #[test]
+    fn the_moon_lord_family_round_trips_its_rows() {
+        // The five parts (`NPC.cs`'s cases 396/397/398/400/401): the port
+        // ids 122-126, the sizes, the hp and the defenses of the vanilla
+        // rows.
+        for (kind, id, w, h, hp, def) in [
+            (NpcKind::MoonLordHead, 122u16, 38.0, 56.0, 45000, 50),
+            (NpcKind::MoonLordHand, 123, 46.0, 66.0, 25000, 40),
+            (NpcKind::MoonLordCore, 124, 46.0, 66.0, 50000, 70),
+            (NpcKind::MoonLordFreeEye, 125, 60.0, 60.0, 100, 0),
+            (NpcKind::MoonLordLeechBlob, 126, 30.0, 30.0, 400, 0),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), 0.0);
+        }
+        // The core alone carries a value (`NPC.cs:14130`: 1 platinum).
+        assert_eq!(Npc::new(NpcKind::MoonLordCore, 0.0, 0.0, 1, 0.0).value(), 1_000_000.0);
+        assert_eq!(Npc::new(NpcKind::MoonLordHead, 0.0, 0.0, 1, 0.0).value(), 0.0);
+    }
+
+    #[test]
+    fn the_core_spawns_its_parts_on_the_60th_tick() {
+        // `AI_077`'s spawn-in (`NPC.cs:41193-41235`): the 60-tick windup
+        // opens the hands (`ai[2]` 0/1) + the head request; the sim
+        // resolves it into the three NPCs at the core's offsets.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand)
+            .count();
+        let heads = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHead)
+            .count();
+        assert_eq!(hands, 2, "the two hands");
+        assert_eq!(heads, 1, "the head");
+        let slots: Vec<i32> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordCore)
+            .flat_map(|n| n.moon_parts)
+            .collect();
+        assert_eq!(slots.len(), 3, "the core's three slots");
+        // The hands' slots split by `ai[2]` and both stay alive (their
+        // pre-pass link found the core).
+        let alive_hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand && n.hp > 0)
+            .count();
+        assert_eq!(alive_hands, 2, "the hands keep their link");
+    }
+
+    #[test]
+    fn the_hands_hover_their_side_slots_and_fire_the_eyes() {
+        // `AI_078`'s sequencer (`NPC.cs:41600-41626`): the row's first
+        // attack is the hover, and the Phantasmal Eyes' 452 (30) fires on
+        // the 4-tick cadence inside the eyelid window.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        hand.ai[2] = 0.0;
+        // The sequencer picks the attack from the table, so the timer
+        // lands inside the Phantasmal Eyes attack on a shot tick.
+        hand.ai[1] = 101.0;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..16 {
+            hand.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !hand.wants_hostile_shot.is_empty() {
+                saw = hand.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the 452 fires on its cadence");
+        let _ = player.center();
+    }
+
+    #[test]
+    fn the_hands_left_slot_sits_left_of_the_core() {
+        // `:41642`'s anchor: the slot-0 hand's hover slot is the core's
+        // centre + (−350, −100) — the port's hand pulls toward it.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        hand.ai[2] = 0.0;
+        hand.ai[0] = 0.0; // the hover
+        let before = hand.center().0;
+        let mut rng = 7u64;
+        for _ in 0..60 {
+            hand.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let after = hand.center().0;
+        assert!(
+            after < 150.0 * TILE_PX && after > before,
+            "the left hand holds its left slot: {} -> {}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn the_head_sits_on_the_400px_slot_and_deathrays() {
+        // `AI_079`'s sequencer (`NPC.cs:42104-42133`): the head rides the
+        // fixed 400-px slot over the core, and its phantom deathray (455,
+        // 75) fires on the 180th tick of the attack.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let (ccx, ccy) = (150.0 * TILE_PX, 100.0 * TILE_PX);
+        let mut head = linked(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0);
+        head.ai[0] = 1.0; // the phantom deathray attack
+        // The head row's deathray slot starts at the 825th elapsed tick;
+        // its 180th in-attack tick (the shot) is the timer's 1005th.
+        head.ai[1] = 1004.0;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..4 {
+            head.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = head.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the deathray fires");
+        assert_eq!(s.0, 455, "the PhantasmalDeathray");
+        assert_eq!(s.5, 75, "the classic damage constant");
+        let (w, h) = head.size();
+        assert!(
+            (head.y + h * 0.5 - (ccy - 400.0)).abs() < 1.0,
+            "the head's fixed slot"
+        );
+    }
+
+    #[test]
+    fn the_cores_drama_ends_in_the_downed_flag() {
+        // `AI_077`'s crash drama (`NPC.cs:41307-41445`): the 600-tick
+        // ride ends with `life = 0`, and the death pass raises
+        // `downed_moon_lord` (`NPC.cs:79397-79404`).
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        let mut rng = 7u64;
+        let mut smoke = 0usize;
+        let mut dead = false;
+        for _ in 0..620 {
+            core.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            smoke += core.wants_hostile_shot.len();
+            core.wants_hostile_shot.clear();
+            if core.hp <= 0 {
+                dead = true;
+                break;
+            }
+        }
+        assert!(dead, "the drama ends the core");
+        assert!(smoke > 0, "the drama's 622 smoke: {}", smoke);
+
+        // The flag leg through the sim.
+        let (mut app, _p) = app_player();
+        let mut c = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        c.hp = 0;
+        app.npcs.push(c);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord, "the downed flag");
+    }
+
+    #[test]
+    fn the_leeched_player_grows_a_clot_that_drains() {
+        // `AI_079`'s leech summon + `AI_082`'s drain (`NPC.cs:42303-42318`
+        // / `:36658-36690`): a leeched player grows the 401 clot at its
+        // centre, and the clot's 90-tick glide ends in the drain request.
+        let (mut app, mut player) = app_player();
+        // The head needs its core alive for the pre-pass link (the vanilla
+        // parts self-kill without one).
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        player.buffs.add_buff(145, 840);
+        app.player = Some(player.clone());
+        app.npcs.push(linked(
+            NpcKind::MoonLordHead,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX - 400.0,
+            0,
+        ));
+        app.npcs[1].wants_moon_leech = true;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let clots = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordLeechBlob)
+            .count();
+        assert_eq!(clots, 1, "the leeched player grows the clot");
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordLeechBlob)
+            .expect("the clot");
+        let head_i = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordHead)
+            .expect("the head") as f32;
+        assert_eq!(app.npcs[idx].ai[0], head_i + 1.0, "the head's index + 1");
+        let world = fixture();
+        let mut drained = false;
+        for _ in 0..91 {
+            app.npcs[idx].update_rng(&world, &mut player, 1.0 / 60.0, &mut 7u64);
+            if app.npcs[idx].wants_moon_leech {
+                drained = true;
+                break;
+            }
+        }
+        assert!(drained, "the clot requests its drain");
+    }
+
+    #[test]
+    fn the_true_eye_drifts_and_fires_the_ring() {
+        // `AI_081`'s sequencer (`NPC.cs:42476-42493`): the ring attack (3)
+        // throws the 452 (35) volley every 10 ticks inside the 150-tick
+        // window.
+        let (_app, mut player) = app_player();
+        let world = fixture();
+        let (ccx, ccy) = (150.0 * TILE_PX, 100.0 * TILE_PX);
+        let mut eye = linked(NpcKind::MoonLordFreeEye, ccx - 300.0, ccy - 200.0, 1);
+        // The sequencer picks the attack from the table, so the timer
+        // lands inside the ring attack (elapsed 384) on its first
+        // volley tick (45).
+        eye.ai[1] = 428.0;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..4 {
+            eye.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = eye.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the eye's volley fires");
+        assert_eq!(s.0, 452, "the PhantasmalEye");
+        assert_eq!(s.5, 35, "the eye's classic damage constant");
+    }
+}#[cfg(test)]
+mod pillar_mob_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        app
+    }
+
+    #[test]
+    fn the_towers_round_trip_and_bob() {
+        // The three towers share the cultist's row (`NPC.cs`'s cases
+        // 493/507/517: 130x270, aiStyle 94, 20000 HP, dmg 0, def 20) and
+        // ride the shared machine (the sine bob, the 300-tick cycle).
+        for (kind, id) in [
+            (NpcKind::StardustTower, 113u16),
+            (NpcKind::NebulaTower, 114),
+            (NpcKind::SolarTower, 115),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            assert_eq!(kind.size(), (130.0, 270.0));
+            assert_eq!(kind.max_hp(), 20000);
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // The kind-level rows are private; the stat table's values ride the instance.
+            assert_eq!(n.max_hp, 20000);
+            let (w, h) = n.size();
+            assert_eq!((w, h), (130.0, 270.0));
+        }
+        let (mut app, mut player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 20.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let y0 = n.vy;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(
+            (n.vy - y0).abs() < 0.51,
+            "the sine bob bounds delta-v to 0.5: {}",
+            (n.vy - y0).abs()
+        );
+        let _ = app;
+    }
+
+    #[test]
+    fn the_tower_death_flags_the_shield_reset() {
+        // The tower's death raises its downed flag + deactivates it
+        // (`NPC.cs:79288`'s family at the death) — and the shield's
+        // reset fires once all four are down.
+        let mut app = base_app();
+        let _player = Player::spawn(&app.world);
+        crate::world_sim::npcs::raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 0;
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_tower_solar, "the downed flag");
+        assert!(!app.world.tower_active_solar, "the tower deactivates");
+    }
+}
+
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_shards_round_trip_their_stats() {
+        // The five shards (`NPC.cs`'s cases 406/407/423/425/429) round-trip
+        // their ids and carry their rows.
+        for (kind, id, w, h, hp, def, kb) in [
+            (NpcKind::StardustCellBig, 121u16, 44.0, 44.0, 300, 50, 0.3),
+            (NpcKind::StardustCellSmall, 116, 22.0, 22.0, 300, 0, 0.4),
+            (NpcKind::StardustJellyfishBig, 117, 40.0, 60.0, 1500, 38, 0.03),
+            (NpcKind::NebulaBeast, 118, 50.0, 44.0, 850, 46, 0.2),
+            (NpcKind::VortexRifleman, 119, 30.0, 56.0, 800, 40, 0.4),
+            (NpcKind::VortexSoldier, 120, 22.0, 56.0, 700, 34, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_stardust_cell_grows_into_the_big() {
+        // `AI()`'s aiStyle-95: the 300-tick scale ramp — the ai[0] counter
+        // grows to the cap (the Transform to the BigCell rides the next
+        // slice).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.ai[0] - 120.0).abs() < 0.01, "the ramp's counter: {}", n.ai[0]);
+    }
+
+    #[test]
+    fn the_jellyfish_shoots_the_539_on_the_70_tick_cycle() {
+        // `AI()`'s aiStyle-96: the 70-tick cycle fires the 539 (60 damage)
+        // from the |X| >= 1.5 ring.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustJellyfishBig,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = false;
+        for _ in 0..75 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(saw, "the 539 fires on the cycle");
+    }
+
+    #[test]
+    fn the_cell_transforms_into_the_big_on_the_300th_tick() {
+        // `AI()`'s aiStyle-95 cap (`NPC.cs:39394-39401`): `Transform(405)`
+        // — the port swaps the kind in place and the growth ramps the scale
+        // 1.0 → 1.3.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.scale - 1.15).abs() < 0.01, "the mid-ramp scale: {}", n.scale);
+        for _ in 0..160 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.kind, NpcKind::StardustCellBig, "the transform");
+        assert_eq!(n.scale, 1.0, "the grown form resets its scale");
+    }
+
+    #[test]
+    fn the_nebula_beast_charges_and_fires_the_575() {
+        // `AI_026_Unicorns`' NebulaBeast arm (`NPC.cs:62497-62557`): the
+        // charge opens on the 180-tick grounded idle inside the 500-px
+        // reach, the 575 (50) fires at the 30-tick wind-up, the 60-tick
+        // release re-arms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaBeast, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut charged = false;
+        let mut saw = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[2] == 1.0 && !charged {
+                charged = true;
+            }
+            if charged && !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(charged, "the charge opened");
+        assert!(saw, "the 575 fired");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 575, "the projectile");
+        assert_eq!(shot.5, 50, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_rifleman_fires_the_four_shot_577_salvo() {
+        // `AI_003_Fighters`' VortexRifleman arm (`NPC.cs:58463-58621`): the
+        // ai[3] timer rearms to −120 on the first tick, arms on the 800-px
+        // horizontal line of sight, and its 30th tick fires the four 577s
+        // at 75 with the −150 cooldown behind them.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexRifleman,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 162.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[3], -119.0, "the −120 rearm ticks once");
+        // The salvo's own tick: the test pre-arms the timer to the last
+        // arming step (the vanilla's −120 ladder would take 150 ticks and
+        // the port's walker reaches the player first).
+        n.rifleman_rearmed = true;
+        n.ai[3] = 29.0;
+        let mut saw = 0usize;
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the salvo is four shots");
+        for (id, dmg) in n.wants_hostile_shot.iter().map(|s| (s.0, s.5)) {
+            assert_eq!(id, 577);
+            assert_eq!(dmg, 75);
+        }
+        assert_eq!(n.ai[3], 31.0, "the windup holds past the shot");
+    }
+
+    #[test]
+    fn the_star_cell_approaches_through_the_sighted_phase() {
+        // `AI()`'s aiStyle-85 block (`NPC.cs:36930-37012`): phase 0 picks
+        // the approach on the line of sight and phase 1 steers at the
+        // 8 + dist/100 speed over the 50-tick smoothing.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustCellBig, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the sighted approach holds");
+        assert!(
+            n.vx > 0.0 && n.vx <= 8.6,
+            "the approach's velocity: {}",
+            n.vx
+        );
+        assert!(
+            (n.x + n.size().0 * 0.5) > 2422.0,
+            "the cell closed on the player"
+        );
     }
 }

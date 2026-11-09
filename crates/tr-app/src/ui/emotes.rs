@@ -5,22 +5,64 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::push_whole;
+use super::uistate::{self, Style};
 use super::text;
 use crate::assets::{self, Lookups};
 
-/// The `EmoteButton` cell — the buttons ride the sheet's 2-frame columns;
-/// the 44 px grid cell keeps the 4-emote-per-row rhythm visible.
-const CELL: f32 = 44.0;
-/// The wheel grid's 8 columns (the sheet's 8-frame width / 2 frames).
-const COLS: usize = 8;
-/// The visible rows before the scroll eats the rest (the panel fits 10).
-const ROWS: usize = 10;
+/// `EmotesGroupListItem.SIZE_PER_EMOTE` (`EmotesGroupListItem.cs:15`) — the
+/// `EmoteButton` cell is the sheet's 36x36 frame (`EmoteButton.cs:32-36`), the
+/// port's old 44 px stand-in.
+pub const CELL: f32 = 36.0;
+/// `EmotesGroupListItem._maxEmotesPerRow` (`:21`), hard-overridden to 14 in the
+/// ctor (`:25`).
+pub const COLS: usize = 14;
 
-/// The wheel's grid rect — the bestiary panel's body (the shared container
-/// style, `UIEmotesMenu.cs:48-69`'s 0.875-wide panel).
-fn grid_rect(screen: Vec2) -> [f32; 4] {
-    let panel = super::bestiary::panel_rect(screen);
-    [panel[0] + 12.0, panel[1] + 44.0, panel[2] - 24.0, panel[3] - 44.0 - 60.0]
+/// How many wheel rows the panel's grid fits (`GetEntriesToShow`'s
+/// `rectangle.Height / 72` analogue, `UIBestiaryTest.cs:357-362` — here the
+/// 36 px cell).
+pub fn visible_rows(grid: &[f32; 4]) -> usize {
+    ((grid[3] / CELL) as usize).max(1)
+}
+
+/// `UIEmotesMenu.OnActivate`'s outer container (`UIEmotesMenu.cs:30-44`,
+/// `:45-49`): a **590 px wide** box — not the bestiary panel it used to borrow —
+/// centred, `Top 220 / Height −220` in the menu and `Top 120 / Height −120`
+/// in-game (`:39-41`'s else arm). The port reaches the wheel only from the
+/// in-game inventory (`clicks.rs:295`), so the in-game branch is implemented and
+/// the menu split is recorded as a gap (plan §Phase 4).
+pub fn panel_rect(screen: Vec2, in_game: bool) -> [f32; 4] {
+    let (top, height) = if in_game {
+        (120.0, Style::new(-120.0, 1.0))
+    } else {
+        (220.0, Style::new(-220.0, 1.0))
+    };
+    uistate::resolve(
+        [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
+        Style::px(0.0),                // `Left` unset
+        Style::px(top),                // `_outerContainer.Top` (`:39`/`:41`)
+        Style::px(590.0),              // `Width.Set(590f, 0f)` (`:48`)
+        height,                        // `Height.Set(-120f/-220f, 1f)` (`:40`/`:42`)
+        0.5,                           // `HAlign = 0.5f` (`:49`)
+        0.0,
+        0.0,
+        0.0,
+        590.0,
+        [0.0; 4],
+    )
+}
+
+/// The wheel's grid rect — the `UIList`'s body inside the panel
+/// (`UIEmotesMenu.cs:52-57`: `Width (−25, 1)`, `Height (−50, 1)`, `Top 50`,
+/// `HAlign 0.5`), with the Back row below it (`:59-69`, `VAlign 1`, `Top −25`,
+/// 50 tall) left out of the hit/draw area.
+pub fn grid_rect(screen: Vec2) -> [f32; 4] {
+    let panel = panel_rect(screen, true);
+    [
+        panel[0] + 12.0,
+        panel[1] + 40.0,
+        panel[2] - 24.0,
+        panel[3] - 40.0 - 60.0,
+    ]
 }
 
 /// The emote id under the cursor (the scroll-shifted grid).
@@ -31,12 +73,18 @@ pub fn card_at(screen: Vec2, mouse: Vec2, scroll: i32) -> Option<i32> {
     }
     let col = ((mouse.x - rect[0]) / CELL) as usize;
     let row = ((mouse.y - rect[1]) / CELL) as usize;
-    let visible_rows = ((rect[3] / CELL) as usize).min(ROWS);
-    if col >= COLS || row >= visible_rows {
+    if col >= COLS || row >= visible_rows(&rect) {
         return None;
     }
     let idx = row * COLS + col + scroll as usize;
     (idx < crate::emotes::EMOTE_COUNT as usize).then_some(idx as i32)
+}
+
+/// `back_hit` against *this* panel (`UIEmotesMenu.cs:59-69`'s Back) — the
+/// bestiary twin reads the bestiary container, so the wheel keeps its own.
+fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
+    let r = super::bestiary::back_rect(panel);
+    mouse.x >= r[0] && mouse.x <= r[0] + r[2] && mouse.y >= r[1] && mouse.y <= r[1] + r[3]
 }
 
 /// The full wheel + bubble draw (`EmoteBubble.DrawAll` + the menu state).
@@ -88,7 +136,7 @@ pub fn draw(
     if !emotes.menu_open {
         return;
     }
-    let panel = super::bestiary::panel_rect(screen);
+    let panel = panel_rect(screen, true);
     r.push_ui_sprite(
         [panel[0], panel[1]],
         [panel[2], panel[3]],
@@ -101,8 +149,7 @@ pub fn draw(
         let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
         let sh = sheet.height as f32 / crate::emotes::SHEET_ROWS as f32;
         let sw = sheet.width as f32 / 8.0;
-        let visible_rows = ((rect[3] / CELL) as usize).min(ROWS);
-        for row in 0..visible_rows {
+        for row in 0..visible_rows(&rect) {
             for col in 0..COLS {
                 let idx = row * COLS + col + emotes.scroll as usize;
                 if idx >= crate::emotes::EMOTE_COUNT as usize {
@@ -134,6 +181,107 @@ pub fn draw(
         &style,
         "Back",
         text_w,
-        super::bestiary::back_hit(screen, mouse),
+        back_hit(&panel, mouse),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dw_4_1_the_in_game_container_is_the_c_sharp_split() {
+        // `UIEmotesMenu.cs:39-41`'s in-game arm: Top 120, Height -120, and
+        // `InitializePage`'s 590-wide box (`:48`) — centred at 1600: x = 505.
+        let p = panel_rect(Vec2::new(1600.0, 900.0), true);
+        assert_eq!(p, [505.0, 120.0, 590.0, 780.0]);
+        // 1280x720: the same box, height 720 - 120 = 600.
+        let p = panel_rect(Vec2::new(1280.0, 720.0), true);
+        assert_eq!(p, [345.0, 120.0, 590.0, 600.0]);
+        // A narrow screen: the container is a fixed 590 wide (`Width.Set(590f, 0f)`),
+        // centred — it does not shrink.
+        let p = panel_rect(Vec2::new(640.0, 480.0), true);
+        assert_eq!(p[2], 590.0);
+        // The Back row sits at the container's bottom.
+        let back = crate::ui::bestiary::back_rect(&p);
+        assert_eq!(back[1] + back[3], p[1] + p[3] - 25.0);
+    }
+
+    #[test]
+    fn dw_4_2_every_emote_id_is_reachable_at_36px_and_14_per_row() {
+        // `EmotesGroupListItem.cs:15`/`:25`: 36 px cells, 14 per row — the port's
+        // flat roster against the same lattice.
+        let screen = Vec2::new(1600.0, 900.0);
+        let grid = grid_rect(screen);
+        let rows = visible_rows(&grid);
+        assert!(rows >= 1);
+        for scroll in 0..=(crate::emotes::EMOTE_COUNT as usize).div_ceil(COLS) {
+            for row in 0..rows {
+                for col in 0..COLS {
+                    let idx = row * COLS + col + scroll;
+                    if idx >= crate::emotes::EMOTE_COUNT as usize {
+                        continue;
+                    }
+                    let cx = grid[0] + col as f32 * CELL + CELL * 0.5;
+                    let cy = grid[1] + row as f32 * CELL + CELL * 0.5;
+                    assert_eq!(
+                        card_at(screen, Vec2::new(cx, cy), scroll as i32),
+                        Some(idx as i32),
+                        "id {idx} at row {row}, col {col}, scroll {scroll}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dw_4_3_the_scroll_clamps_at_both_ends_and_resets_on_open() {
+        let mut e = crate::emotes::EmoteSystem::default();
+        e.open();
+        assert_eq!(e.scroll, 0);
+        // Scrolling up from the top stays at 0 (`UIScrollbar.cs:37-47`).
+        e.scroll_by(-3, 5);
+        assert_eq!(e.scroll, 0);
+        // And past the last row the offset stops at the roster's end.
+        let total_rows = (crate::emotes::EMOTE_COUNT as usize).div_ceil(COLS);
+        for _ in 0..total_rows + 10 {
+            e.scroll_by(1, 5);
+        }
+        assert_eq!(e.scroll as usize, total_rows - 5);
+        // Each open resets it (`UIEmotesMenu.OnActivate`'s rebuild).
+        e.open();
+        assert_eq!(e.scroll, 0);
+        e.close();
+        assert!(!e.menu_open);
+        assert_eq!(e.scroll, 0);
+    }
+
+    #[test]
+    fn dw_4_3_a_partial_last_row_stays_hittable() {
+        // 151 emotes / 14 per row leaves a partial last row; its cells resolve
+        // until the roster runs out and `card_at` returns None.
+        let screen = Vec2::new(1600.0, 900.0);
+        let grid = grid_rect(screen);
+        let last = (crate::emotes::EMOTE_COUNT as usize - 1) / COLS;
+        let col = (crate::emotes::EMOTE_COUNT as usize - 1) % COLS;
+        let cx = grid[0] + col as f32 * CELL + CELL * 0.5;
+        let cy = grid[1] + last as f32 * CELL + CELL * 0.5;
+        assert_eq!(
+            card_at(screen, Vec2::new(cx, cy), 0),
+            Some(crate::emotes::EMOTE_COUNT - 1)
+        );
+        let cx2 = grid[0] + (col + 1) as f32 * CELL + CELL * 0.5;
+        assert_eq!(card_at(screen, Vec2::new(cx2, cy), 0), None);
+    }
+
+    #[test]
+    fn dw_4_3_the_back_row_hangs_off_the_wheel_container() {
+        // The wheel's Back is half the *wheel* container's width, not the
+        // bestiary panel's it used to borrow.
+        let panel = panel_rect(Vec2::new(1600.0, 900.0), true);
+        let back = crate::ui::bestiary::back_rect(&panel);
+        assert_eq!(back[2], (590.0 - 10.0) * 0.5);
+        assert!(back_hit(&panel, Vec2::new(back[0] + 10.0, back[1] + 10.0)));
+        assert!(!back_hit(&panel, Vec2::new(back[0] - 10.0, back[1] + 10.0)));
+    }
 }

@@ -13,7 +13,8 @@
 //! Scope (M2-MOUNT-1, framework + ground mounts): the 12 ground-mount rows
 //! (Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk, the three horses,
 //! PogoStick, WoFGoat, QueenSlime) and the state/equip core. Out of scope:
-//! the hover/flyer fatigue pool (M2-MOUNT-2), everything minecart
+//! the hover/flyer fatigue pool (M2-MOUNT-2) and the minecart rows
+//! (M2-MOUNT-3), everything minecart
 //! (`SetAsMinecart` `Mount.cs:2747-2799`, SuperCart — M2-MOUNT-3), the
 //! per-type abilities (`UpdateDrill`/`UseAbility` — M2-MOUNT-4), the net sync
 //! (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
@@ -718,6 +719,589 @@ const QUEEN_SLIME: MountData = MountData {
 /// fills all 66 in `Initialize`; ids outside this slice are rejected by
 /// `set_mount` — deviation recorded in ANALYSIS "Mounts framework (M2-MOUNT-1)",
 /// the remaining categories land with M2-MOUNT-2/3/4.
+// -- Hover/flier rows (M2-MOUNT-2, `Mount.cs:696-2567`) -----------------------
+
+/// 2 Pigron (`Mount.cs:752-804`): partial flight, `flightTimeMax` 160.
+static PIGRON_Y_OFFSETS: [i32; 16] = [
+    22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 24, 26, 24, 22,
+];
+const PIGRON: MountData = MountData {
+    id: 2,
+    buff: 129,
+    height_boost: 20,
+    flight_time_max: 160,
+    run_speed: 5.0,
+    dash_speed: 9.0,
+    acceleration: 0.08,
+    jump_height: 10,
+    jump_speed: 6.01,
+    spawn_dust: 58,
+    total_frames: 16,
+    standing: FrameSet { start: 7, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 11, count: 5, delay: 12, loops: false },
+    flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
+    in_air: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    idle: FrameSet { start: 8, count: 3, delay: 20, loops: false },
+    swim: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    back_sheet: "Mount_Pigron",
+    x_offset: 1,
+    y_offset: 8,
+    player_y_offsets: &PIGRON_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 22,
+    ..BASE
+};
+
+/// 5 Bee (`Mount.cs:1163-1217`): hover, 320 fuel + 320 fatigue, wings. The
+/// C# `backTextureExtra` (the animated wing strip, `Mount_BeeWings`) rides no
+/// back-extra draw slot yet (only the glow slots exist) — a documented
+/// deviation until the mount layers grow one.
+static BEE_Y_OFFSETS: [i32; 12] = [16, 16, 16, 16, 16, 16, 16, 16, 18, 16, 16, 16];
+const BEE: MountData = MountData {
+    id: 5,
+    buff: 132,
+    height_boost: 16,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    run_speed: 2.0,
+    dash_speed: 2.0,
+    acceleration: 0.16,
+    jump_height: 10,
+    jump_speed: 4.0,
+    block_extra_jumps: true,
+    spawn_dust: 152,
+    total_frames: 12,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 0, count: 5, delay: 12, loops: false },
+    flying: FrameSet { start: 5, count: 3, delay: 12, loops: false },
+    in_air: FrameSet { start: 5, count: 3, delay: 12, loops: false },
+    idle: FrameSet { start: 8, count: 4, delay: 12, loops: true },
+    swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    back_sheet: "Mount_Bee",
+    x_offset: 1,
+    y_offset: 4,
+    player_y_offsets: &BEE_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 18,
+    ..BASE
+};
+
+/// 7 UFO (`Mount.cs:1218-1272`): hover, no fatigue penalty (ignores fatigue).
+const UFO: MountData = MountData {
+    id: 7,
+    buff: 141,
+    height_boost: 16,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    run_speed: 8.0,
+    dash_speed: 8.0,
+    acceleration: 0.16,
+    jump_height: 10,
+    jump_speed: 4.0,
+    block_extra_jumps: true,
+    spawn_dust: 226,
+    spawn_dust_no_gravity: true,
+    total_frames: 8,
+    standing: FrameSet { start: 0, count: 8, delay: 4, loops: false },
+    running: FrameSet { start: 0, count: 8, delay: 4, loops: false },
+    flying: FrameSet { start: 0, count: 8, delay: 4, loops: false },
+    in_air: FrameSet { start: 0, count: 8, delay: 4, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 12, loops: true },
+    swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    front_sheet: "Mount_UFO",
+    front_extra_sheet: "Mount_UFOGlow",
+    x_offset: 1,
+    y_offset: 4,
+    player_y_offsets: &[16; 8],
+    body_frame: 3,
+    player_head_offset: 18,
+    ..BASE
+};
+
+/// 8 Drill (`Mount.cs:1273-1341`): swim 4, hover, light-emitting.
+const DRILL: MountData = MountData {
+    id: 8,
+    buff: 142,
+    height_boost: 16,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 1.0,
+    uses_hover: true,
+    swim_speed: 4.0,
+    run_speed: 6.0,
+    dash_speed: 4.0,
+    acceleration: 0.16,
+    jump_height: 10,
+    jump_speed: 4.0,
+    block_extra_jumps: true,
+    spawn_dust: 226,
+    total_frames: 1,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    flying: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    in_air: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    back_sheet: "Mount_DrillRing",
+    front_sheet: "Mount_DrillSeat",
+    front_extra_sheet: "Mount_DrillDiode",
+    x_offset: 1,
+    y_offset: 4,
+    player_y_offsets: &[4; 1],
+    body_frame: 3,
+    player_head_offset: 18,
+    ..BASE
+};
+
+/// 12 CuteFishron (`Mount.cs:1536-1590`): swim 16, swim frames, hover with the
+/// half speed multiplier (`MountFishronSpecial` — not ported). The back-glow
+/// strip `Mount_CuteFishron2` also rides no slot yet (same deviation as the
+/// Bee's back-extra).
+static FISHRON_Y_OFFSETS: [i32; 23] = [12; 23];
+const CUTE_FISHRON: MountData = MountData {
+    id: 12,
+    buff: 168,
+    height_boost: 14,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    swim_speed: 16.0,
+    run_speed: 2.0,
+    dash_speed: 1.0,
+    acceleration: 0.2,
+    jump_height: 4,
+    jump_speed: 3.0,
+    block_extra_jumps: true,
+    spawn_dust: 15,
+    total_frames: 23,
+    standing: FrameSet { start: 8, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 8, count: 7, delay: 14, loops: false },
+    flying: FrameSet { start: 0, count: 8, delay: 16, loops: false },
+    in_air: FrameSet { start: 0, count: 8, delay: 6, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 15, count: 8, delay: 4, loops: false },
+    back_sheet: "Mount_CuteFishron1",
+    x_offset: 2,
+    y_offset: 16,
+    player_y_offsets: &FISHRON_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 16,
+    ..BASE
+};
+
+/// 23 WitchBroom (`Mount.cs:1740-1794`): hover, `inAir` 6/8 band, heightBoost 0.
+static BROOM_Y_OFFSETS: [i32; 6] = [6, 6, 6, 6, 6, 6];
+const WITCH_BROOM: MountData = MountData {
+    id: 23,
+    buff: 230,
+    height_boost: 0,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    run_speed: 9.0,
+    dash_speed: 9.0,
+    acceleration: 0.16,
+    jump_height: 10,
+    jump_speed: 4.0,
+    block_extra_jumps: true,
+    spawn_dust: 43,
+    spawn_dust_no_gravity: true,
+    total_frames: 6,
+    standing: FrameSet { start: 0, count: 1, delay: 0, loops: false },
+    running: FrameSet { start: 0, count: 1, delay: 0, loops: false },
+    flying: FrameSet { start: 0, count: 1, delay: 0, loops: false },
+    in_air: FrameSet { start: 0, count: 6, delay: 8, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: true },
+    swim: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    back_sheet: "Extra_113",
+    x_offset: -2,
+    y_offset: 8,
+    player_y_offsets: &BROOM_Y_OFFSETS,
+    body_frame: 0,
+    player_head_offset: 0,
+    ..BASE
+};
+
+/// 44 PirateShip (`Mount.cs:1900-1938`): hover, the running-only row.
+static PIRATE_Y_OFFSETS: [i32; 10] = [9; 10];
+const PIRATE_SHIP: MountData = MountData {
+    id: 44,
+    buff: 279,
+    height_boost: 24,
+    flight_time_max: 320,
+    fatigue_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    run_speed: 3.0,
+    dash_speed: 6.0,
+    acceleration: 0.12,
+    jump_height: 3,
+    jump_speed: 1.0,
+    swim_speed: 3.0,
+    block_extra_jumps: true,
+    spawn_dust: 228,
+    total_frames: 10,
+    running: FrameSet { start: 0, count: 10, delay: 8, loops: false },
+    front_sheet: "Extra_166",
+    x_offset: 0,
+    y_offset: 8,
+    player_y_offsets: &PIRATE_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 16,
+    ..BASE
+};
+
+/// 48 DarkMageBook (`Mount.cs:2101-2143`): `usesHover` but `CanFly` false
+/// (`Mount.cs:2860-2879`); hover without flight fuel, `flag4` off so the
+/// acceleration term never applies.
+static BOOK_Y_OFFSETS: [i32; 6] = [15, 15, 13, 13, 13, 15];
+const DARK_MAGE_BOOK: MountData = MountData {
+    id: 48,
+    buff: 283,
+    height_boost: 14,
+    flight_time_max: 320,
+    uses_hover: true,
+    run_speed: 8.0,
+    dash_speed: 8.0,
+    acceleration: 0.2,
+    jump_height: 5,
+    jump_speed: 6.0,
+    swim_speed: 8.0,
+    spawn_dust: 62,
+    total_frames: 6,
+    running: FrameSet { start: 0, count: 6, delay: 8, loops: false },
+    back_sheet: "Extra_170",
+    x_offset: 1,
+    y_offset: 16,
+    player_y_offsets: &BOOK_Y_OFFSETS,
+    body_frame: 0,
+    player_head_offset: 16,
+    ..BASE
+};
+
+/// 49 LavaShark (`Mount.cs:2144-2192`): `CanHover` only in the swim state,
+/// `flightTimeMax` 0, `fatigueMax` 320.
+static LAVA_SHARK_Y_OFFSETS: [i32; 8] = [10; 8];
+const LAVA_SHARK: MountData = MountData {
+    id: 49,
+    buff: 305,
+    height_boost: 8,
+    run_speed: 2.0,
+    dash_speed: 1.0,
+    acceleration: 0.4,
+    jump_height: 4,
+    jump_speed: 3.0,
+    swim_speed: 14.0,
+    block_extra_jumps: true,
+    flight_time_max: 0,
+    fatigue_max: 320,
+    uses_hover: true,
+    spawn_dust: 35,
+    total_frames: 8,
+    standing: FrameSet { start: 4, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 4, count: 4, delay: 14, loops: false },
+    in_air: FrameSet { start: 4, count: 1, delay: 6, loops: false },
+    swim: FrameSet { start: 0, count: 4, delay: 16, loops: false },
+    back_sheet: "Extra_172",
+    x_offset: 2,
+    y_offset: 1,
+    player_y_offsets: &LAVA_SHARK_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 16,
+    ..BASE
+};
+
+/// 56 Bat (`Mount.cs:2416-2478`): dismounts on item use, no fuel, hover with
+/// the dash-speed rise cap.
+const BAT: MountData = MountData {
+    id: 56,
+    buff: 377,
+    flight_time_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    dismounts_on_item_use: true,
+    block_extra_jumps: true,
+    dash_speed: 4.5,
+    run_speed: 4.5,
+    acceleration: 0.2,
+    jump_height: 8,
+    jump_speed: 5.0,
+    spawn_dust: 31,
+    total_frames: 16,
+    standing: FrameSet { start: 0, count: 1, delay: 6, loops: false },
+    dashing: FrameSet { start: 9, count: 6, delay: 40, loops: false },
+    flying: FrameSet { start: 1, count: 8, delay: 5, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    running: FrameSet { start: 1, count: 8, delay: 5, loops: false },
+    in_air: FrameSet { start: 1, count: 8, delay: 5, loops: false },
+    swim: FrameSet { start: 1, count: 8, delay: 5, loops: false },
+    front_sheet: "Extra_274",
+    x_offset: -4,
+    y_offset: -1,
+    player_y_offsets: &[0; 16],
+    body_frame: 3,
+    player_head_offset: -24,
+    ..BASE
+};
+
+/// 61 Pixie (`Mount.cs:2479-2542`): same flight shape as the Bat.
+const PIXIE: MountData = MountData {
+    id: 61,
+    buff: 384,
+    flight_time_max: 320,
+    fall_damage: 0.0,
+    uses_hover: true,
+    dismounts_on_item_use: true,
+    block_extra_jumps: true,
+    dash_speed: 4.5,
+    run_speed: 4.5,
+    acceleration: 0.2,
+    jump_height: 8,
+    jump_speed: 5.0,
+    spawn_dust: 43,
+    spawn_dust_no_gravity: true,
+    total_frames: 4,
+    standing: FrameSet { start: 0, count: 4, delay: 8, loops: false },
+    dashing: FrameSet { start: 0, count: 4, delay: 2, loops: false },
+    flying: FrameSet { start: 0, count: 4, delay: 6, loops: false },
+    idle: FrameSet { start: 0, count: 4, delay: 8, loops: true },
+    running: FrameSet { start: 0, count: 4, delay: 6, loops: false },
+    in_air: FrameSet { start: 0, count: 4, delay: 6, loops: false },
+    swim: FrameSet { start: 0, count: 4, delay: 6, loops: false },
+    front_sheet: "Extra_290",
+    front_extra_sheet: "Extra_291",
+    x_offset: -2,
+    y_offset: -1,
+    player_y_offsets: &[0; 4],
+    body_frame: 0,
+    player_head_offset: -24,
+    ..BASE
+};
+// -- Minecart rows (M2-MOUNT-3, `Mount.cs:912-1110` `SetAsMinecart`) -----------
+
+/// `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared cart body —
+/// `Minecart`/Sparks dust 213, heightBoost 10, flightTimeMax 0, fallDamage 1,
+/// run/dash 13, accel 0.04, jump 15/5.15, blockExtraJumps, 3 frames, the
+/// standing 1/12/0 + running 3/12/0 bands, only the front texture.
+const fn cart(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
+    MountData {
+        id,
+        buff,
+        minecart: true,
+        spawn_dust: 213,
+        height_boost: 10,
+        flight_time_max: 0,
+        fall_damage: 1.0,
+        run_speed: 13.0,
+        dash_speed: 13.0,
+        acceleration: 0.04,
+        jump_height: 15,
+        jump_speed: 5.15,
+        block_extra_jumps: true,
+        total_frames: 3,
+        standing: FrameSet {
+            start: 0,
+            count: 1,
+            delay: 12,
+            loops: false,
+        },
+        running: FrameSet {
+            start: 0,
+            count: 3,
+            delay: 12,
+            loops: false,
+        },
+        flying: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        in_air: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        idle: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        swim: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        front_sheet,
+        x_offset: 1,
+        y_offset: 13,
+        player_y_offsets: &[8; 3],
+        body_frame: 3,
+        player_head_offset: 14,
+        ..BASE
+    }
+}
+
+/// `SetAsMinecart` with the vertical offsets (`Mount.cs:1097` Fart, `:1105`
+/// Terra-Fart): `yOffset = 13 + verticalOffset` (= 3), the y-offsets
+/// `8 - verticalOffset + playerVerticalOffset` (= 0). The shared offsets are
+/// STATIC so the row stays a promoted `const` (`'static` borrow).
+const CART_VO_Y_OFFSETS: [i32; 3] = [0, 0, 0];
+
+const fn cart_vo(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
+    MountData {
+        y_offset: 13 - 10,
+        player_y_offsets: &CART_VO_Y_OFFSETS,
+        ..cart(id, buff, front_sheet)
+    }
+}
+
+/// `MountID.Minecart` — the base cart's row id (`MountID.cs`: `Minecart = 6`).
+pub(crate) const MOUNT_MINECART: i32 = 6;
+
+/// 6 Minecart (`Mount.cs:912-963`, hand-written; identical to the
+/// `SetAsMinecart` body): the base cart, buff 118, `Mount_Minecart`.
+const MINECART: MountData = MountData {
+    id: 6,
+    buff: 118,
+    ..cart(6, 118, "Mount_Minecart")
+};
+
+/// 11 MinecartMech (`Mount.cs:1483-1535`, hand-written): heightBoost 12,
+/// playerYOffsets 9, xOffset -1, yOffset 11, the mech body + glow textures.
+const MINECART_MECH: MountData = MountData {
+    id: 11,
+    buff: 166,
+    minecart: true,
+    spawn_dust: 0,
+    height_boost: 12,
+    flight_time_max: 0,
+    fall_damage: 1.0,
+    run_speed: 13.0,
+    dash_speed: 13.0,
+    acceleration: 0.04,
+    jump_height: 15,
+    jump_speed: 5.15,
+    block_extra_jumps: true,
+    total_frames: 3,
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 3,
+        delay: 12,
+        loops: false,
+    },
+    front_sheet: "MinecartMechMount",
+    front_extra_sheet: "MinecartMechMountGlow",
+    x_offset: -1,
+    y_offset: 11,
+    player_y_offsets: &[9; 3],
+    body_frame: 3,
+    player_head_offset: 14,
+    ..BASE
+};
+
+/// 13 MinecartWood (`Mount.cs:1591-1641`, hand-written): run/dash 10, accel
+/// 0.03, jump 12, buff 184, `MinecartWoodMount`.
+const MINECART_WOOD: MountData = MountData {
+    id: 13,
+    buff: 184,
+    minecart: true,
+    spawn_dust: 213,
+    height_boost: 10,
+    flight_time_max: 0,
+    fall_damage: 1.0,
+    run_speed: 10.0,
+    dash_speed: 10.0,
+    acceleration: 0.03,
+    jump_height: 12,
+    jump_speed: 5.15,
+    block_extra_jumps: true,
+    total_frames: 3,
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 3,
+        delay: 12,
+        loops: false,
+    },
+    front_sheet: "MinecartWoodMount",
+    x_offset: 1,
+    y_offset: 13,
+    player_y_offsets: &[8; 3],
+    body_frame: 3,
+    player_head_offset: 14,
+    ..BASE
+};
+
+/// 16 FishMinecart (`Mount.cs:1044-1086`, hand-written; identical to the
+/// `SetAsMinecart` body), buff 210, `FishMinecartMount`.
+const FISH_MINECART: MountData = MountData {
+    id: 16,
+    buff: 210,
+    ..cart(16, 210, "Mount_FishMinecart")
+};
+
+/// 39 DiggingMoleMinecart (`Mount.cs:1027-1042`): `SetAsMinecart` +
+/// yOffset −2, front-extra `Extra_165`, run/dash 6, accel 0.02.
+const MOLE_MINECART: MountData = MountData {
+    id: 39,
+    buff: 272,
+    ..MountData {
+        y_offset: 13 - 2,
+        front_extra_sheet: "Extra_165",
+        run_speed: 6.0,
+        dash_speed: 6.0,
+        acceleration: 0.02,
+        ..cart(39, 272, "Extra_155")
+    }
+};
+
+// The plain `SetAsMinecart` cosmetic rows (`Mount.cs:966-1024`).
+const DESERT_MINECART: MountData = cart(15, 208, "Mount_DesertMinecart");
+const BEE_MINECART: MountData = cart(18, 220, "Extra_108");
+const LADYBUG_MINECART: MountData = cart(19, 222, "Extra_109");
+const PIGRON_MINECART: MountData = cart(20, 224, "Extra_110");
+const SUNFLOWER_MINECART: MountData = cart(21, 226, "Extra_111");
+const HELL_MINECART: MountData = cart(22, 228, "Extra_112");
+const SHROOM_MINECART: MountData = MountData {
+    front_extra_sheet: "Extra_116",
+    ..cart(24, 231, "Extra_115")
+};
+const AMETHYST_MINECART: MountData = cart(25, 233, "Extra_117");
+const TOPAZ_MINECART: MountData = cart(26, 235, "Extra_118");
+const SAPPHIRE_MINECART: MountData = cart(27, 237, "Extra_119");
+const EMERALD_MINECART: MountData = cart(28, 239, "Extra_120");
+const RUBY_MINECART: MountData = cart(29, 241, "Extra_121");
+const DIAMOND_MINECART: MountData = cart(30, 243, "Extra_122");
+const AMBER_MINECART: MountData = cart(31, 245, "Extra_123");
+const BEETLE_MINECART: MountData = cart(32, 247, "Extra_124");
+const MEOWMERE_MINECART: MountData = cart(33, 249, "Extra_125");
+const PARTY_MINECART: MountData = cart(34, 251, "Extra_126");
+const PIRATE_MINECART: MountData = cart(35, 253, "Extra_127");
+const STEAMPUNK_MINECART: MountData = cart(36, 255, "Extra_128");
+const HELLWIZARD_MINECART: MountData = cart(38, 269, "Extra_150");
+const FART_MINECART: MountData = cart_vo(51, 338, "Extra_246");
+const TERRA_FART_MINECART: MountData = cart_vo(53, 346, "Extra_251");
 pub(crate) static MOUNTS: &[MountData] = &[
     RUDOLPH,        // 0
     BUNNY,          // 1
@@ -731,6 +1315,44 @@ pub(crate) static MOUNTS: &[MountData] = &[
     POGO_STICK,     // 43
     WOF_GOAT,       // 47
     QUEEN_SLIME,    // 50
+    PIGRON,         // 2
+    BEE,            // 5
+    UFO,            // 7
+    DRILL,          // 8
+    CUTE_FISHRON,   // 12
+    WITCH_BROOM,    // 23
+    PIRATE_SHIP,    // 44
+    DARK_MAGE_BOOK, // 48
+    LAVA_SHARK,     // 49
+    BAT,            // 56
+    PIXIE,          // 61
+    MINECART,          // 6
+    MINECART_MECH,     // 11
+    MINECART_WOOD,     // 13
+    FISH_MINECART,     // 16
+    DESERT_MINECART,   // 15
+    BEE_MINECART,      // 18
+    LADYBUG_MINECART,  // 19
+    PIGRON_MINECART,   // 20
+    SUNFLOWER_MINECART,// 21
+    HELL_MINECART,     // 22
+    SHROOM_MINECART,   // 24
+    AMETHYST_MINECART, // 25
+    TOPAZ_MINECART,    // 26
+    SAPPHIRE_MINECART, // 27
+    EMERALD_MINECART,  // 28
+    RUBY_MINECART,     // 29
+    DIAMOND_MINECART,  // 30
+    AMBER_MINECART,    // 31
+    BEETLE_MINECART,   // 32
+    MEOWMERE_MINECART, // 33
+    PARTY_MINECART,    // 34
+    PIRATE_MINECART,   // 35
+    STEAMPUNK_MINECART,// 36
+    HELLWIZARD_MINECART,// 38
+    MOLE_MINECART,     // 39
+    FART_MINECART,     // 51
+    TERRA_FART_MINECART,// 53
 ];
 
 /// The saddle items — `Item.SetDefaults`' `Item.mountType` assignments:
@@ -741,7 +1363,7 @@ pub(crate) static MOUNTS: &[MountData] = &[
 /// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
 /// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
 /// Slime Mount Saddle 4981 -> 50.
-const MOUNT_ITEMS: [(u16, i32); 12] = [
+const MOUNT_ITEMS: [(u16, i32); 49] = [
     (1914, 0),
     (2428, 1),
     (2430, 3),
@@ -754,6 +1376,56 @@ const MOUNT_ITEMS: [(u16, i32); 12] = [
     (4791, 43),
     (4795, 47),
     (4981, 50),
+    // `Item.SetDefaults`' `mountType` assignments (M2-MOUNT-2):
+    // `:24056` Scaly Truffle 2429 -> 2, `:24307` Honeyed Goggles 2502 -> 5,
+    // `:26440` Cosmic Car Key 2769 -> 7, `:26452` Drill Containment Unit
+    // 2768 -> 8, `:30779` Shrimpy Truffle 3367 -> 12, `:37573` Witch Broom
+    // 4444 -> 23, `:39413` 4792/4796 -> 44/48, `:39535` Superheated Blood
+    // 4828 -> 49, `:44035` 5597 -> 56, `:44459` 5662 -> 61.
+    (2429, 2),
+    (2502, 5),
+    (2769, 7),
+    (2768, 8),
+    (3367, 12),
+    (4444, 23),
+    (4792, 44),
+    (4796, 48),
+    (4828, 49),
+    (5597, 56),
+    (5662, 61),
+    // The cart items (`Item.DefaultToMinecart`, `Item.cs:48395-48400` +
+    // the per-item call sites): 2343 -> 6, 3353 -> 11, 4066 -> 15,
+    // 4067 -> 16, 4426 -> 18, 4427 -> 19, 4428 -> 20, 4429 -> 21,
+    // 4443 -> 22, 4450 -> 24, 4451 -> 25, 4452 -> 26, 4453 -> 27,
+    // 4454 -> 28, 4455 -> 29, 4456 -> 30, 4467 -> 31, 4468 -> 32,
+    // 4469 -> 33, 4470 -> 34, 4471 -> 35, 4472 -> 36, 4745 -> 38,
+    // 4763 -> 39, 5125 -> 51, 5288 -> 53.
+    (2343, 6),
+    (3353, 11),
+    (4066, 15),
+    (4067, 16),
+    (4426, 18),
+    (4427, 19),
+    (4428, 20),
+    (4429, 21),
+    (4443, 22),
+    (4450, 24),
+    (4451, 25),
+    (4452, 26),
+    (4453, 27),
+    (4454, 28),
+    (4455, 29),
+    (4456, 30),
+    (4467, 31),
+    (4468, 32),
+    (4469, 33),
+    (4470, 34),
+    (4471, 35),
+    (4472, 36),
+    (4745, 38),
+    (4763, 39),
+    (5125, 51),
+    (5288, 53),
 ];
 
 /// `Item.mountType` for the ported rows.
@@ -1317,6 +1989,121 @@ impl MountState {
         true
     }
 
+
+    /// `Mount.DoesHoverIgnoresFatigue` (`Mount.cs:3553-3560`): the fatigue-free
+    /// hover set — the UFO, Drill, CuteFishron, WitchBroom, PirateShip,
+    /// LavaShark, Bat and Pixie never build fatigue.
+    pub(crate) fn does_hover_ignore_fatigue(&self) -> bool {
+        matches!(self.kind, 7 | 8 | 12 | 23 | 44 | 49 | 56 | 61)
+    }
+
+    /// `Mount.FatigueRecovery` (`Mount.cs:2961-2971`): -2 per resting tick,
+    /// called by the player whenever `velocity.Y == 0`.
+    pub(crate) fn fatigue_recovery(&mut self) {
+        if self.fatigue > 2.0 {
+            self.fatigue -= 2.0;
+        } else {
+            self.fatigue = 0.0;
+        }
+    }
+
+    /// `Mount.Hover` (`Mount.cs:3340-3543`): the hover branch of the mounted
+    /// vertical movement. Returns the integrated `velocity.Y`; the caller
+    /// treats the branch as consumed (the gravity arm is inside, like the
+    /// original's `else if` chain). `control_up` has no port key yet (the
+    /// wings' hold-up), so the ascent is `control_jump` only.
+    pub(crate) fn hover_integrate(
+        &mut self,
+        vy: f32,
+        control_up: bool,
+        control_jump: bool,
+        control_down: bool,
+        gravity: f32,
+    ) -> f32 {
+        let Some(row) = self.data() else { return vy };
+        // `:3553` — the flag: the free-hover set never drains fatigue.
+        let flag = self.does_hover_ignore_fatigue();
+        // `:3377-3381` — the active-hover frame states; the lava shark (49)
+        // only in its swim state, the Bat (56) and Pixie (61) also dashing.
+        let flag2 = match self.kind {
+            49 => self.frame_state == 4,
+            56 | 61 => matches!(self.frame_state, 2 | 3),
+            _ => matches!(self.frame_state, 2 | 4),
+        };
+        let mut num3 = if self.fatigue_max > 0.0 {
+            (self.fatigue / self.fatigue_max).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if flag {
+            num3 = 0.0;
+        }
+        let num = if self.kind == 12 { 0.5 } else { 1.0 };
+        if flag2 {
+            // `:3369-3383` — the fuel drain lives INSIDE the hover arm: the
+            // flight seconds first, then the fatigue pool builds (1.0 per
+            // tick, gravity/defaultGravity); empties the hover.
+            let mut fuel = true;
+            if !flag {
+                if self.fly_time > 0 {
+                    self.fly_time -= 1;
+                } else if self.fatigue < self.fatigue_max {
+                    self.fatigue += 1.0;
+                } else {
+                    fuel = false;
+                }
+            }
+            // `:3384` — the acceleration applies unless the DarkMageBook.
+            let flag4 = self.kind != 48;
+            let mut num4 = 4.0 * num3;
+            let mut num5 = 4.0 * num3;
+            if self.kind == 48 {
+                num4 = 0.0;
+                num5 = 0.0;
+            }
+            if num4 == 0.0 {
+                num4 = -0.001;
+            }
+            if num5 == 0.0 {
+                num5 = -0.001;
+            }
+            let mut vy = vy;
+            if flag4 && (control_up || control_jump) && fuel {
+                // `:3392-3401` — the ascend target: fatigue slows the rise;
+                // the Bat/Pixie cap at their dash speed.
+                num4 = -2.0 - 6.0 * (1.0 - num3);
+                if self.kind == 48 {
+                    num4 /= 3.0;
+                }
+                if matches!(self.kind, 56 | 61) {
+                    num4 = -row.dash_speed;
+                }
+                vy -= row.acceleration * num;
+            } else if control_down {
+                num5 = 8.0;
+                if matches!(self.kind, 56 | 61) {
+                    num5 = row.dash_speed;
+                }
+                vy += row.acceleration * num;
+            } else if num5 != -0.001 || num4 != -0.001 {
+                // `:3418-3421` — the idle drift: gravity with a 4*num3 fall
+                // cap (only when a real cap exists).
+                vy += gravity;
+                num5 = 4.0 * num3;
+            }
+            // `:3454-3472` — the vertical clamp toward num4.
+            if vy < num4 {
+                vy += row.acceleration * num;
+                if vy > num4 {
+                    vy = num4;
+                }
+            }
+            return vy;
+        }
+        // `:3472-3486` — not hovering.
+        vy + gravity
+    }
+
     /// `Mount.AbilityRecovery` (`Mount.cs:2938-2959`): the charge fills while
     /// charging, decays one per tick otherwise; the cooldown and the duration
     /// count down. (The ability consumers themselves are M2-MOUNT-4.)
@@ -1416,6 +2203,24 @@ impl MountState {
         row.idle.count != 0 && self.idle_time >= self.idle_time_next
     }
 
+    /// Test-only: the frame state the hover gates read.
+    #[cfg(test)]
+    pub(crate) fn test_set_frame_state(&mut self, state: i32) {
+        self.frame_state = state;
+    }
+
+    /// Test-only: the flight budget value (`reset_flight_time` writes it too).
+    #[cfg(test)]
+    pub(crate) fn test_set_fly_time(&mut self, t: i32) {
+        self.fly_time = t;
+    }
+
+    /// Test-only: the fatigue pool value.
+    #[cfg(test)]
+    pub(crate) fn test_set_fatigue(&mut self, v: f32) {
+        self.fatigue = v;
+    }
+
     // The M2-MOUNT-2 rows (wing-allowed, additive-stat mounts) do not exist
     // yet; these test-only overrides let the merge branches be exercised now.
     #[cfg(test)]
@@ -1454,6 +2259,151 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_cart_rows_carry_the_setas_minecart_body() {
+        // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus
+        // the base cart's own fields.
+        let m = mount_data(6).expect("the base minecart row");
+        assert!(m.minecart);
+        assert_eq!(m.buff, 118);
+        assert_eq!(m.height_boost, 10);
+        assert_eq!(m.flight_time_max, 0);
+        assert_eq!(m.fall_damage, 1.0);
+        assert_eq!(m.run_speed, 13.0);
+        assert_eq!(m.acceleration, 0.04);
+        assert_eq!(m.jump_height, 15);
+        assert_eq!(m.jump_speed, 5.15);
+        assert!(m.block_extra_jumps);
+        assert_eq!(m.total_frames, 3);
+        assert_eq!(m.player_y_offsets.len(), m.total_frames as usize);
+        assert_eq!(m.standing.count, 1);
+        assert_eq!(m.running.count, 3);
+        assert_eq!(m.flying.count, 0);
+        assert_eq!(m.front_sheet, "Mount_Minecart");
+        // The cosmetic variants (`Mount.cs:966-1110`): all 27 cart rows.
+        for id in [6, 11, 13, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 38, 39, 51, 53] {
+            let row = mount_data(id).unwrap_or_else(|| panic!("cart row {id}"));
+            assert!(row.minecart, "row {id} is a cart");
+            assert_eq!(row.flight_time_max, 0, "row {id} cannot fly");
+            assert!(!row.can_use_wings, "row {id} suppresses wings");
+        }
+        // The mech/wood/mole overrides.
+        let mech = mount_data(11).unwrap();
+        assert_eq!(mech.height_boost, 12);
+        assert_eq!(mech.x_offset, -1);
+        assert_eq!((mech.y_offset, mech.player_head_offset), (11, 14));
+        let wood = mount_data(13).unwrap();
+        assert_eq!((wood.run_speed, wood.acceleration), (10.0, 0.03));
+        let mole = mount_data(39).unwrap();
+        assert_eq!((mole.run_speed, mole.acceleration), (6.0, 0.02));
+        assert_eq!(mole.y_offset, 13 - 2);
+        // The fart carts' vertical offsets (`Mount.cs:1097`, `:1105`).
+        let fart = mount_data(51).unwrap();
+        assert_eq!(fart.y_offset, 13 - 10);
+        assert_eq!(fart.player_y_offsets[0], 0);
+    }
+
+    #[test]
+    fn the_cart_items_summon_their_rows() {
+        // `Item.DefaultToMinecart` (`Item.cs:48395-48400` + the per-item sites).
+        let pairs = [
+            (2343, 6),
+            (3353, 11),
+            (4066, 15),
+            (4067, 16),
+            (4426, 18),
+            (4443, 22),
+            (4450, 24),
+            (4469, 33),
+            (4472, 36),
+            (4745, 38),
+            (4763, 39),
+            (5125, 51),
+            (5288, 53),
+        ];
+        for (item, id) in pairs {
+            assert_eq!(mount_type_of_item(item), Some(id), "item {item}");
+        }
+        // A saddle still routes to its own row (the shared table grew).
+        assert_eq!(mount_type_of_item(1914), Some(0));
+        assert_eq!(mount_type_of_buff(118), Some(6), "the cart buff maps back to its row");
+    }
+
+    #[test]
+    fn the_flyer_rows_answer_the_flight_gates() {
+        // `Mount.CanFly` (`:2860-2879`): `flightTimeMax > 0`, the Dark Mage
+        // Book (48) excluded; `CanHover` (`:2881-2896`) needs `usesHover`
+        // (the lava shark only while swimming).
+        let mut m = MountState::default();
+        // The Pigron flies (160 partial) and does not hover.
+        m.set_mount(2, false);
+        assert!(m.can_fly());
+        assert!(!m.can_hover());
+        m.dismount();
+        // The Book hovers but never flies.
+        m.set_mount(48, false);
+        assert!(!m.can_fly());
+        assert!(m.can_hover());
+        m.dismount();
+        // The lava shark hovers only in the swim frame state.
+        m.set_mount(49, false);
+        assert!(!m.can_fly(), "flightTimeMax is 0");
+        m.test_set_frame_state(2);
+        assert!(!m.can_hover());
+        m.test_set_frame_state(4);
+        assert!(m.can_hover());
+        m.dismount();
+        // The UFO ignores fatigue; the Pigron builds it.
+        m.set_mount(7, false);
+        assert!(m.does_hover_ignore_fatigue());
+        m.dismount();
+        m.set_mount(2, false);
+        assert!(!m.does_hover_ignore_fatigue());
+    }
+
+    #[test]
+    fn the_hover_fuel_drains_and_the_fatigue_builds() {
+        let mut m = MountState::default();
+        m.set_mount(5, false);
+        assert!(m.can_hover());
+        m.test_set_frame_state(2);
+        // A fresh mount has an empty flight budget (`:6218`), so the very
+        // first hover tick burns fatigue (gravity/defaultGravity = 1).
+        let vy = m.hover_integrate(-4.0, false, true, false, 0.4);
+        assert_eq!(m.fly_time(), 0);
+        assert_eq!(m.fatigue, 1.0);
+        // Ascending (control_jump) subtracts the acceleration: vy gets more
+        // negative, i.e. upward, and saturates at the fatigue-scaled cap.
+        assert!(vy < -4.0);
+        // The grounded refill restores the budget (`ResetFlightTime`), then
+        // the flight seconds burn before the fatigue builds again.
+        m.test_set_fatigue(0.0);
+        m.reset_flight_time(0.0);
+        assert_eq!(m.fly_time(), 320);
+        let vy = m.hover_integrate(-4.0, false, true, false, 0.4);
+        assert_eq!(m.fly_time(), 319);
+        assert_eq!(m.fatigue, 0.0);
+        assert!(vy < -4.0);
+        // Not hovering (frame state 0): pure gravity, no fuel drain.
+        m.test_set_frame_state(0);
+        let vy = m.hover_integrate(1.0, false, false, false, 0.4);
+        assert_eq!(vy, 1.4);
+        assert_eq!(m.fly_time(), 319);
+    }
+
+    #[test]
+    fn the_hover_fatigue_recovers_on_rest() {
+        // `Mount.FatigueRecovery` (`Mount.cs:2961-2971`): -2 to 0.
+        let mut m = MountState::default();
+        m.set_mount(5, false);
+        m.test_set_fatigue(7.0);
+        m.fatigue_recovery();
+        assert_eq!(m.fatigue, 5.0);
+        m.test_set_fatigue(1.0);
+        m.fatigue_recovery();
+        assert_eq!(m.fatigue, 0.0);
+    }
+
     use super::*;
 
     #[test]
@@ -1508,8 +2458,14 @@ mod tests {
             None,
             "dismount while inactive is a no-op (:6144)"
         );
-        // unknown id (2 Pigron is not in the partial table) is rejected
-        assert_eq!(m.set_mount(2, false), None);
+        // The wet gate: the Bee (5) cannot mount in water (`Mount.cs:6205`).
+        assert_eq!(m.set_mount(5, true), None);
+        // The Pigron (2) equips normally on dry land.
+        assert_eq!(
+            m.set_mount(2, false).map(|e| e.add_buff),
+            Some(129)
+        );
+        m.dismount();
         let equip = m.set_mount(10, false).expect("unicorn equips");
         assert_eq!(
             equip,

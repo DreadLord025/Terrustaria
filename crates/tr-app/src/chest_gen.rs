@@ -30,6 +30,7 @@
 use crate::chest::WorldChest;
 use crate::item::{ItemSlot, EMPTY_SLOT};
 use crate::prefix;
+use tr_core::save::ChestRecord;
 use tr_core::world::World;
 use tr_core::tile::FLAG_ACTIVE;
 
@@ -158,32 +159,97 @@ impl DungeonCycle {
     }
 }
 
+/// `WorldGen.GetNextJungleChestItem` (`WorldGen.cs:10170-10196`): the jungle
+/// chests' main item — the `GenVars.JungleItemCount % 4` cycle over the
+/// living-wood wand family {211, 212, 213, 964} with the two rare overrides
+/// (`Next(15) == 0` → 2292, else `Next(20) == 0` → 3017), the counter
+/// advancing once per item (`:10196`).
+///
+/// The counter's walk is the port's approximation: vanilla's
+/// `JungleItemCount` advances once per *attempted* shrine chest, in the
+/// `GenVars.JChestX[i]` spot order (`ChestsInJungleShrines` `WorldGen.cs:17219`),
+/// while the port's load-time sweep advances it once per stocked jungle
+/// anchor, in the scan order — the same per-world counter semantics
+/// (deterministic across loads), a different order (ANALYSIS "World chest
+/// loot (M5-CHEST-gen)"). The `Prefix(-1)` on the row rides the caller, the
+/// vanilla slot-0 arm's `chest.item[0].Prefix(-1)` (`:36230`).
+struct JungleCycle {
+    count: u32,
+}
+
+impl JungleCycle {
+    fn new() -> Self {
+        Self { count: 0 }
+    }
+
+    /// The next main item. The vanilla draw order is exact: the cycle pick
+    /// is branch-free, the `Next(15)` gate rolls first and the `Next(20)`
+    /// gate only rolls on its else (`:10186-10194`).
+    fn take(&mut self, rng: &mut u64) -> u16 {
+        let mut item = match self.count % 4 {
+            0 => 211,
+            1 => 212,
+            2 => 213,
+            _ => 964,
+        };
+        if next(rng, 15) == 0 {
+            item = 2292;
+        } else if next(rng, 20) == 0 {
+            item = 3017;
+        }
+        self.count += 1;
+        item
+    }
+}
+
 /// The per-chest context the style dispatcher reads (`flag*` arms of
 /// `:36010-36205`): the jungle/mahogany/skyware/idol/dungeon flags
 /// approximated by the anchors' surroundings.
 struct Context {
-    /// `flag2` — the deep-jungle wood family (tile 119/337 walls or the
-    /// jungle grass at the anchor).
+    /// `flag4` — the jungle family (the C# reads `chestStyle == 10`
+    /// `:36089`, which the port cannot see: `worldgen::structures::place_chest`
+    /// writes the plain frames — the port's stand-in is the jungle grass
+    /// 60 at the anchor).
     jungle: bool,
+    /// `flag6` — the living-tree family (wall 244 at the anchor, the C#'s
+    /// `:36135-36144` condition).
+    living_tree: bool,
     /// `flag3` — the pyramid sandstone (485/216 walls).
     pyramid: bool,
     /// `flag4` — the living mahogany family (wall 63 wood walls + the tulip
     /// 1683/the 2422 column in the room).
     mahogany: bool,
-    /// `flag6` — the ice family (147/161/162/197 floor, the shrine bricks).
+    /// `flag2` — the ice family (the 147/161/162/197 floor / the style 11,
+    /// the C#'s `:36064` condition).
     ice: bool,
     /// `flag7` — the granite/marble family (the 164/401 walls).
     granite: bool,
     /// `flag8` — the dungeon idol (`flag9`-style 464/241 walls).
     idol: bool,
-    /// `flag9` — the dungeon-key family (`wallDungeon[]`).
+    /// `flag9` — the dungeon-key family (`Main.wallDungeon`, the walls the
+    /// dungeon zone requires — `tr_core::scene::is_dungeon_wall`); the port's
+    /// dungeon pass writes 7/8/9 (`worldgen/biomes.rs:1754`), so the probe
+    /// reads those instead of the old wall-24 stand-in.
     dungeon: bool,
-    /// `flag12` — the skyware family (the floating-island houses: the
-    /// snow/ice walls + the 48...  the vanilla probes the sky cloud walls
-    /// 216/187).
+    /// `flag12` — the skyware family (the floating-island houses). The C#
+    /// probes the sky cloud walls (`HouseBuilder`'s cloud interiors); the
+    /// port's island houses write `WALL_CLOUD` = 73
+    /// (`worldgen/islands.rs:26`/`:133`), so the probe reads that — the old
+    /// 216/187 probe now reads the underground desert's shell walls
+    /// (`worldgen/desert.rs`'s `WALL_HARDENED_SAND`) and misfired there.
     sky: bool,
     /// `flag13` — the water/beach family.
     water: bool,
+}
+
+impl Context {
+    /// The port's merged wood family — the pre-existing approximation arms
+    /// (the pottery and the 2198 rows) ran on one flag before the flag4 /
+    /// flag6 split; they keep the combined gate so their behaviour is
+    /// unchanged.
+    fn wood_family(&self) -> bool {
+        self.jungle || self.living_tree
+    }
 }
 
 fn context_at(world: &World, x: i32, y: i32) -> Context {
@@ -205,15 +271,26 @@ fn context_at(world: &World, x: i32, y: i32) -> Context {
             })
         })
     };
+    let wall_near_where = |pred: &dyn Fn(u16) -> bool| {
+        (-2..=2).any(|dx| {
+            (-2..=0).any(|dy| {
+                world
+                    .tile(x + dx, y + dy)
+                    .is_some_and(|t| pred(t.wall))
+            })
+        })
+    };
+    let dungeon_wall = |wx: u16| tr_core::scene::is_dungeon_wall(wx);
     Context {
-        jungle: near(60) || wall_near(244),
+        jungle: near(60),
+        living_tree: wall_near(244),
         pyramid: wall_near(216) || wall_near(187),
         mahogany: wall_near(63),
         ice: near(147) || near(161) || near(162) || near(197),
         granite: wall_near(164) || wall_near(401),
         idol: wall_near(464) || wall_near(241),
-        dungeon: wall_near(24),
-        sky: wall_near(187) || wall_near(216),
+        dungeon: wall_near_where(&dungeon_wall),
+        sky: wall_near(73),
         water: near(4869) || wall_near(24),
     }
 }
@@ -275,7 +352,13 @@ fn deep_weapon(rng: &mut u64, deepest: bool) -> Row {
 /// The depth band's stock (`while (itemIndex == 0)` — the loop keeps the
 /// vanilla order; the `AddBuriedChest` block closes with the `Next(12)`
 /// voice-change row `:37546`).
-fn stock_band(band: Band, ctx: &Context, rng: &mut u64) -> Vec<Row> {
+fn stock_band(
+    band: Band,
+    ctx: &Context,
+    chest_style: i32,
+    chest_kind: u16,
+    rng: &mut u64,
+) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::with_capacity(16);
     // Row 0: the special slot/weapon (`flag*` extras follow the main item).
     match band {
@@ -624,9 +707,24 @@ fn stock_band(band: Band, ctx: &Context, rng: &mut u64) -> Vec<Row> {
             }
         }
     }
-    // `:37536-37540` — the wooden-chest extras (itemIndex > 0 && type 21):
-    // the jungle/ice/furniture piles and the style-23-27 pottery.
-    if ctx.jungle && next(rng, 2) == 0 {
+    // `:37386-37393` — the jungle family's (`flag4`) pair: the 1/4 and
+    // 1/50 rows. Both chest-tile blocks carry the same pair (`:37470-47479`),
+    // so the rows apply to either anchor kind.
+    if ctx.jungle && next(rng, 4) == 0 {
+        out.push(Row::plain(2204));
+    }
+    if ctx.jungle && next(rng, 50) == 0 {
+        out.push(Row::plain(753));
+    }
+    // `:37415-37448` — the skyware family's tail (`flag12`): the Sky Mill at
+    // 1/3, one of the six pottery pieces and the Cloud stack 50-101. The
+    // pottery row used to ride the `wood_family` approximation at 1/2; the
+    // C# gates it on `flag12` (the floating-island houses) unconditionally,
+    // and this task re-gates it to `ctx.sky`.
+    if ctx.sky && next(rng, 3) == 0 {
+        out.push(Row::stacked(2197, 1));
+    }
+    if ctx.sky {
         let pottery = match next(rng, 6) {
             0 => 5258,
             1 => 5226,
@@ -636,18 +734,76 @@ fn stock_band(band: Band, ctx: &Context, rng: &mut u64) -> Vec<Row> {
             _ => 5388,
         };
         out.push(Row::stacked(pottery, 1));
+        // The Cloud stack is 21-block only (`:37447-37453`) — the 467 block
+        // stops at the pottery.
+        if chest_kind == 21 {
+            out.push(Row::stacked(751, ranged(rng, 50, 101) as u32));
+        }
     }
-    if ctx.ice && next(rng, 2) == 0 {
+    // `:37400-37407` — the ice family's tail: the Ice Machine at 1/7 and the
+    // Fish at 1/50.
+    if ctx.ice && next(rng, 7) == 0 {
         out.push(Row::stacked(2198, 1));
     }
-    if ctx.jungle && next(rng, 2) == 0 {
-        out.push(Row::stacked(2198, ranged(rng, 50, 101) as u32));
+    if ctx.ice && next(rng, 50) == 0 {
+        out.push(Row::stacked(669, 1));
     }
-    // `:37546` — the voice-change row (1/12).
-    if next(rng, 12) == 0 {
+    // `:37406-47409` — the water family's (`flag13`) row: the unconditional
+    // globe (the 21-block only — the 467 block has no such row).
+    if ctx.water && chest_kind == 21 {
         out.push(Row::plain(2195));
     }
+    // `:47412-47416` — the dungeon family's (`flag9`) row at 1/8 (the
+    // `getGoodWorld` 5515 arm at `:47417-47421` parks with M5-SEED-1).
+    if ctx.dungeon && chest_kind == 21 && next(rng, 8) == 0 {
+        out.push(Row::plain(2192));
+    }
+    if ctx.wood_family() && next(rng, 2) == 0 {
+        out.push(Row::stacked(2198, ranged(rng, 50, 101) as u32));
+    }
+    // `:37419-37422` — the temple family (`flag13`, chest style 16): the
+    // Lihzahrd Furnace unconditionally, then the Solar Tablet at 1/5 or the
+    // Lunar Tablet Fragment stack 3-7.
+    if chest_style == 16 {
+        out.push(Row::stacked(2195, 1));
+        if next(rng, 5) == 0 {
+            out.push(Row::stacked(2767, 1));
+        } else {
+            out.push(Row::stacked(2766, ranged(rng, 3, 8) as u32));
+        }
+    }
+    // `:37543-37547` — the voice-change row (1/12): `Item.GetRandomVoiceItem`'s
+    // fourteen-item table (`Item.cs:49427-49450`). The vampire-seed monster
+    // voice row (`AddMonsterVoiceChangeItemToChest`, `:37549`) has no port
+    // seed model and is skipped.
+    if next(rng, 12) == 0 {
+        let mut voice = Row::plain(voice_change_item(rng));
+        roll_prefix_on(rng, &mut voice);
+        out.push(voice);
+    }
     out
+}
+
+/// `Item.GetRandomVoiceItem` (`Item.cs:49427-49450`): the fourteen-item voice
+/// table, `Next(14)` picking one (case 0 and the unreachable upper cases fall
+/// to 5499).
+fn voice_change_item(rng: &mut u64) -> u16 {
+    match next(rng, 14) {
+        1 => 5500,
+        2 => 5501,
+        3 => 5502,
+        4 => 5503,
+        5 => 5504,
+        6 => 5505,
+        7 => 5506,
+        8 => 5507,
+        9 => 5508,
+        10 => 5509,
+        11 => 5484,
+        12 => 5485,
+        13 => 5534,
+        _ => 5499,
+    }
 }
 
 fn silver_bar() -> u16 {
@@ -668,32 +824,123 @@ fn ore_pick() -> u16 {
 
 /// One anchored chest's stock decided by its surroundings: the fixed
 /// special slot (`GetDungeonLootAndChestStyle`'s dungeon cycle, the
-/// underwater override 939), then the depth band rows.
+/// `GetNextJungleChestItem` cycle, the underwater override 939), then the
+/// depth band rows.
 fn stock_chest(
     world: &World,
     x: i32,
     y: i32,
     hell: bool,
+    chest_style: i32,
+    chest_kind: u16,
     dungeon: &mut DungeonCycle,
+    jungle: &mut JungleCycle,
+    genned_wands: &mut bool,
     rng: &mut u64,
 ) -> Vec<Row> {
     let ctx = context_at(world, x, y);
     let band = band_for(y, world.world_surface, world.rock_layer as f64, world.height);
-    let mut rows = stock_band(band, &ctx, rng);
-    if !ctx.dungeon {
-        // The non-dungeon natural chests carry no fixed special slot in
-        // this port slice (the vanilla num10 assignment rides the
-        // placement-style dispatcher [7]); the underwater/water-style
-        // chests carry the 939 override.
-        if ctx.water {
-            rows.insert(0, Row::plain(UNDERWATER_ITEM));
-        }
-    } else {
+    let mut rows = stock_band(band, &ctx, chest_style, chest_kind, rng);
+    if ctx.dungeon {
         // The dungeon-family chests cycle the fixed loot item
         // (`DungeonUtils.cs:342-355`); the shallow caves roll the plain
         // `num10 == 0` skip.
         if let Some(item) = dungeon.take(hell) {
             rows.insert(0, Row::plain(item.0));
+        }
+    } else if ctx.jungle {
+        // The jungle family's main item — the `GetNextJungleChestItem`
+        // cycle replaces the band-weapon approximation on slot 0. The
+        // vanilla water override only fires on `num10 == 0`
+        // (`:36201-36203`), so the cycle wins over it wherever both
+        // families read true.
+        let mut row = Row::plain(jungle.take(rng));
+        roll_prefix_on(rng, &mut row);
+        rows.insert(0, row);
+    } else if ctx.water {
+        // The non-dungeon natural chests carry no fixed special slot in
+        // this port slice (the vanilla num10 assignment rides the
+        // placement-style dispatcher [7]); the underwater/water-style
+        // chests carry the 939 override.
+        rows.insert(0, Row::plain(UNDERWATER_ITEM));
+    }
+    // The fixed rows' family extras (`AddBuriedChest`'s two `num10 > 0`
+    // arms, the vanilla order: the surface arm's flag6 first `:36236-36257`,
+    // then the deep arm's flag2/flag3/flag4 `:36806-36847`); the tenth
+    // anniversary's flag11 rows park with M5-SEED-1.
+    if band == Band::Surface {
+        if ctx.living_tree {
+            // `flag6` `:36240-36257`.
+            if next(rng, 3) == 0 {
+                rows.push(Row::plain(5629));
+            }
+            if next(rng, 6) == 0 && next(rng, 2) == 0 {
+                rows.push(Row::plain(4429));
+            } else if next(rng, 6) == 0 {
+                rows.push(Row::plain(4427));
+            }
+            if next(rng, 3) != 0 {
+                rows.push(Row::plain(5528));
+            }
+        }
+    } else if band != Band::Deepest {
+        // The deep arm (the vanilla `num7 < maxTilesY - 250` branch).
+        if ctx.ice {
+            // `flag2` `:36809-36813`.
+            if next(rng, 5) == 0 {
+                rows.push(Row::plain(3199));
+            }
+        }
+        if ctx.mahogany {
+            // `flag3` `:36814-36823`.
+            if next(rng, 7) == 0 {
+                rows.push(Row::plain(4346));
+            }
+            if next(rng, 15) == 0 {
+                rows.push(Row::plain(4066));
+            }
+        }
+        if ctx.jungle {
+            // `flag4` `:36824-36844`: the once-per-world living-wood wands
+            // (`GenVars.gennedLivingMahoganyWands` — the sweep's state, the
+            // vanilla fairness flag) then the two 1/10 rows.
+            if !*genned_wands || next(rng, 5) == 0 {
+                *genned_wands = true;
+                rows.push(Row::plain(3360));
+                rows.push(Row::plain(3361));
+            }
+            if next(rng, 10) == 0 {
+                rows.push(Row::plain(4426));
+            }
+            if next(rng, 10) == 0 {
+                rows.push(Row::plain(5525));
+            }
+        }
+    }
+    // The wooden-chest family tails (`:37384-47400`, the
+    // `itemIndex > 0 && chestTileType == 21` block — every band): the two
+    // style rows and the flag13 water pair. The mahogany-tile 467 block
+    // (`:47466-47500`) carries NONE of them — it repeats only the flag4 /
+    // flag2 / flag12 rows, which land ungated in `stock_band` — so these
+    // three arms gate on the anchor kind. The style rows landed once
+    // (2026-11-09, `600dafdb`) and were dropped by a later merge's
+    // resolution; restored with the citations intact.
+    // `:37453-47455` — the styles 23-27 pottery row at 1/2 (the sweep's
+    // `chest_style` off the anchor's `frame_x / 18`).
+    if chest_kind == 21 && (23..=27).contains(&chest_style) && next(rng, 2) == 0 {
+        rows.push(Row::plain(5234));
+    }
+    // `:37529-37531` — the skyware style-13 pottery row: a SECOND 1/2 roll
+    // on its own (the vanilla keeps the two style rows separate).
+    if chest_kind == 21 && chest_style == 13 && next(rng, 2) == 0 {
+        rows.push(Row::plain(5234));
+    }
+    if chest_kind == 21 && ctx.water {
+        // `flag13` `:37457-47469` — the 1/5 raincoat, else the 3-7 potions.
+        if next(rng, 5) == 0 {
+            rows.push(Row::plain(2767));
+        } else {
+            rows.push(Row::stacked(2766, ranged(rng, 3, 8) as u32));
         }
     }
     rows
@@ -715,20 +962,48 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
     let mut rng = seed | 1;
     let mut out: Vec<WorldChest> = Vec::new();
     let mut dungeon = DungeonCycle::new();
+    let mut jungle = JungleCycle::new();
+    // `GenVars.gennedLivingMahoganyWands` — false per world (`GenVars`'
+    // reset), the flag4 arm's once-per-world fairness (`:36824`).
+    let mut genned_wands = false;
     for y in 1..world.height - 1 {
         for x in 1..world.width - 1 {
             let Some(t) = world.tile(x, y) else { continue };
             if !t.active() || !CHEST_KINDS.contains(&t.kind) {
                 continue;
             }
-            if t.frame_x != 0 || t.frame_y != 0 {
+            // Every chest's LEFT cell carries `frame_x = 18 * style` in the
+            // port's tile-object writer (`tileobject.rs:2072-2082`), so a
+            // styled chest (the temple's 16, the jungle's 10, the water 17)
+            // is an anchor too — the old `frame_x != 0` gate skipped them
+            // (`frame_y` stays 0 on the left cell). The RIGHT half is also a
+            // multiple of 18 (`frame_x = 18 + 18 * style`), so the anchor
+            // picks the left cell only: no chest-kind tile directly left.
+            if t.frame_y != 0 || t.frame_x % 18 != 0 {
                 continue;
             }
+            if let Some(left) = world.tile(x - 1, y) {
+                if left.active() && CHEST_KINDS.contains(&left.kind) {
+                    continue;
+                }
+            }
+            let chest_style = t.frame_x as i32 / 18;
             if t.flags & FLAG_ACTIVE == 0 {
                 continue;
             }
             let hell = doubled_hell_depth(world, y);
-            let rows = stock_chest(world, x, y, hell, &mut dungeon, &mut rng);
+            let rows = stock_chest(
+                world,
+                x,
+                y,
+                hell,
+                chest_style,
+                t.kind,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &mut rng,
+            );
             if rows.is_empty() {
                 continue;
             }
@@ -764,9 +1039,67 @@ fn doubled_hell_depth(world: &World, y: i32) -> bool {
     y > world.height - 205
 }
 
+/// M6-SAVE-1b: the save's v7 chest records (`save::load`, `SaveChests`'s
+/// write-side twin `WorldFile.cs:1606-1676`) as a seed store for
+/// [`merge_store`] — the load half of `App::save_world`'s record build.
+///
+/// The anchor cull is the vanilla `LoadChests` validity sweep
+/// (`WorldFile.cs:2723-2805`, `FixAgainstExploits`): a record survives only when
+/// its `(x, y)` is an active chest tile of kind 21/341 in the loaded world, so
+/// a hand-edited or stale save cannot resurrect a chest over plain air.
+///
+/// Deviation: the vanilla writes a fixed `maxItems` (40) slots per chest; the
+/// port keeps the store's implicit-air compression (trailing airs dropped,
+/// interior airs explicit) — `save::ChestRecord`'s documented shape, which the
+/// open path materializes into the 40-slot window anyway.
+pub(crate) fn store_from_records(
+    world: &World,
+    records: &[ChestRecord],
+) -> Vec<crate::chest::WorldChest> {
+    let mut out = Vec::with_capacity(records.len());
+    for rec in records {
+        // `FixAgainstExploits`'s tile read: an out-of-bounds, inactive or
+        // non-chest-tile anchor drops the record (the C# nulls the slot).
+        let Some(tile) = world.tile(rec.x, rec.y) else {
+            continue;
+        };
+        if !tile.active() || !CHEST_KINDS.contains(&tile.kind) {
+            continue;
+        }
+        let slots = rec
+            .slots
+            .iter()
+            .map(|item| {
+                if item.stack <= 0 {
+                    EMPTY_SLOT
+                } else {
+                    ItemSlot {
+                        kind: item.kind,
+                        // `Item.SetDefaults`'s registry name — the store's
+                        // items are registry-named (`chest::set_chest_slot`).
+                        name: crate::registry::name(item.kind),
+                        count: item.stack as u32,
+                        prefix: item.prefix as u16,
+                    }
+                }
+            })
+            .collect();
+        out.push(WorldChest {
+            tile: (rec.x, rec.y),
+            slots,
+            // M6-SAVE-1 phase 3's fold: the name and the slot count ride the
+            // entity (`WorldFile.cs:1641-1642` writes both per chest); the
+            // implicit-air store still reads back through the 40-slot window.
+            name: rec.name.clone(),
+            max_items: rec.slots.len().max(crate::chest::DEFAULT_MAX_ITEMS as usize),
+        });
+    }
+    out
+}
+
 /// Merges the load-time roll with a pre-seeded store (the `TR_CHEST`
-/// fixture): the fixture's chests keep their slots, the roll's own anchors
-/// append after them.
+/// fixture, or M6-SAVE-1b's loaded records): the seeded chests keep their
+/// slots, the roll's own anchors append after them.
 pub(crate) fn merge_store(mut rolled: Vec<crate::chest::WorldChest>, seeded: Vec<crate::chest::WorldChest>) -> Vec<crate::chest::WorldChest> {
     let taken: std::collections::HashSet<(i32, i32)> =
         seeded.iter().map(|c| c.tile).collect();
@@ -987,4 +1320,535 @@ mod tests {
             "the loaded roster leads on the .wld path"
         );
     }
+    #[test]
+    fn the_jungle_cycle_walks_the_four_item_table() {
+        // `GetNextJungleChestItem`'s `JungleItemCount % 4` table
+        // (`WorldGen.cs:10170-10196`) — a seed whose override draws miss
+        // shows the raw 4-step cycle.
+        let seed = (1u64..2000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                let mut cycle = JungleCycle::new();
+                (0..4).all(|_| {
+                    let item = cycle.take(&mut rng);
+                    matches!(item, 211 | 212 | 213 | 964)
+                })
+            })
+            .expect("a clean seed exists in the first 2000");
+        let mut rng = seed | 1;
+        let mut cycle = JungleCycle::new();
+        let items: Vec<u16> = (0..4).map(|_| cycle.take(&mut rng)).collect();
+        assert_eq!(items, vec![211, 212, 213, 964], "the 4-step wand table");
+        // The counter wraps at 4 — the fifth draw starts the cycle again.
+        assert_eq!(cycle.count, 4);
+    }
+
+    #[test]
+    fn the_jungle_cycle_overrides_roll_the_rare_items() {
+        // The two overrides: `Next(15) == 0` → 2292 (checked first), else
+        // `Next(20) == 0` → 3017 (the else-only roll).
+        let flower_seed = (1u64..4000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                JungleCycle::new().take(&mut rng) == 2292
+            })
+            .expect("the 1/15 override is reachable");
+        let mut rng = flower_seed | 1;
+        assert_eq!(JungleCycle::new().take(&mut rng), 2292, "`Next(15) == 0`");
+        let shell_seed = (1u64..4000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                JungleCycle::new().take(&mut rng) == 3017
+            })
+            .expect("the 1/20 override is reachable");
+        let mut rng = shell_seed | 1;
+        assert_eq!(JungleCycle::new().take(&mut rng), 3017, "`Next(20) == 0`");
+    }
+
+    #[test]
+    fn jungle_chests_stock_the_cycle_item() {
+        // A jungle-family anchor (tile 60 near the anchor) stocks the
+        // cycle item on slot 0 — not the band weapon the approximation
+        // used before.
+        let mut w = rig();
+        // The jungle grass beside the chest seat (`context_at`'s `near(60)`).
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-2, -2)] {
+            let i = w.index(100 + dx, 199 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 60,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 100, 198);
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut rng = 42u64 | 1;
+        let mut genned_wands = false;
+        let rows = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let slot0 = &rows[0];
+        assert!(
+            matches!(slot0.kind, 211 | 212 | 213 | 964 | 2292 | 3017),
+            "slot 0 rides the jungle cycle ({})",
+            slot0.kind
+        );
+        assert_eq!(jungle.count, 1, "the counter advances per stocked chest");
+        // A second jungle chest in the same world takes the next cycle
+        // entry when no override fires — the per-world counter semantics.
+        let mut seen_next = false;
+        for seed in 1..4000 {
+            let mut rng2 = seed | 1;
+            let mut c2 = JungleCycle::new();
+            let first = c2.take(&mut rng2);
+            let second = c2.take(&mut rng2);
+            if matches!(first, 211 | 212 | 213 | 964) && matches!(second, 212 | 213 | 964 | 2292) {
+                seen_next = true;
+                break;
+            }
+        }
+        assert!(seen_next, "the counter walks the table");
+    }
+
+
+
+    /// A rig tall enough for a real Deep band (`y < height - 250` past the
+    /// rock layer): the 200x300 rig collapses its band to Deepest below the
+    /// rock line, where the vanilla deep arm (`num7 < maxTilesY - 250`)
+    /// does not run.
+    fn deep_rig() -> World {
+        let mut w = World::new("t".into(), 200, 600);
+        w.world_surface = 200.0;
+        w.rock_layer = 300.0;
+        w.seed = 42;
+        for x in 0..200 {
+            for y in 341..344 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        w
+    }
+
+    /// The sky probe reads the port's own writer: the floating-island houses
+    /// write `WALL_CLOUD` = 73 (`worldgen/islands.rs:26`/`:133`), not the
+    /// vanilla 216/187 cloud walls (216 is the underground desert's shell —
+    /// `worldgen/desert.rs`).
+    #[test]
+    fn the_sky_probe_reads_the_cloud_wall() {
+        let mut w = rig();
+        // A cloud wall near the anchor: the skyware family's tail rows fire.
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(120 + dx, 197 + dy);
+                w.tiles[i].wall = 73;
+            }
+        }
+        let ctx = context_at(&w, 120, 198);
+        assert!(ctx.sky, "the cloud wall reads as the skyware family");
+        let mut w2 = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w2.index(120 + dx, 197 + dy);
+                w2.tiles[i].wall = 216; // the underground desert's shell
+            }
+        }
+        let ctx2 = context_at(&w2, 120, 198);
+        assert!(!ctx2.sky, "the desert's shell wall is not the skyware family");
+        assert!(ctx2.pyramid, "and it reads as the pyramid/desert family");
+    }
+
+    /// The dungeon probe reads the dungeon walls (7/8/9, the port's own
+    /// `biomes.rs:1754`) instead of the old wall-24 stand-in — the port's
+    /// dungeon pass never writes 24.
+    #[test]
+    fn the_dungeon_probe_reads_the_dungeon_walls() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(120 + dx, 197 + dy);
+                w.tiles[i].wall = 8;
+            }
+        }
+        assert!(context_at(&w, 120, 198).dungeon, "wall 8 reads as the dungeon");
+        let mut w2 = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w2.index(120 + dx, 197 + dy);
+                w2.tiles[i].wall = 24; // the old stand-in
+            }
+        }
+        assert!(!context_at(&w2, 120, 198).dungeon, "wall 24 does not");
+    }
+
+    /// The anchor gate decodes the chest style off the left cell's
+    /// `frame_x / 18` (the port's tile-object writer), so the temple's
+    /// style-16 chests are stocked and counted once.
+    #[test]
+    fn styled_chests_stock_and_decode_their_style() {
+        let mut w = rig();
+        // A style-16 chest: the left cell at frame_x = 288 (`tileobject.rs`).
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = w.index(60 + dx, 197 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 21,
+                frame_x: (288 + dx * 18) as i16,
+                frame_y: (dy * 18) as i16,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let chests = generate_world_chests(&w);
+        assert_eq!(chests.len(), 1, "the styled chest stocks once");
+        // `flag13` (`:37419-37427`): the Lihzahrd Furnace guaranteed, then the
+        // Solar Tablet at 1/5 or the Lunar Tablet stack.
+        let kinds: Vec<u16> = chests[0].slots.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&2195), "the temple furnace landed: {kinds:?}");
+        assert!(
+            kinds.iter().any(|k| *k == 2766 || *k == 2767),
+            "a temple tablet landed: {kinds:?}"
+        );
+    }
+
+    /// The 1/12 voice-change row rolls `Item.GetRandomVoiceItem`'s
+    /// fourteen-item table (`Item.cs:49427-49450`) — not a fixed item.
+    #[test]
+    fn the_voice_change_row_rolls_the_fourteen_item_table() {
+        let table = [
+            5499u16, 5500, 5501, 5502, 5503, 5504, 5505, 5506, 5507, 5508, 5509, 5484, 5485, 5534,
+        ];
+        // The row is unconditional per chest up to its 1/12 gate, so many
+        // seeds cover the table.
+        let mut seen = Vec::new();
+        for seed in 1u64..600 {
+            let mut rng = seed | 1;
+            if next(&mut rng, 12) == 0 {
+                let item = voice_change_item(&mut rng);
+                assert!(table.contains(&item), "item {item} is outside the table");
+                if !seen.contains(&item) {
+                    seen.push(item);
+                }
+            }
+        }
+        assert!(seen.len() >= 10, "the table is covered: {seen:?}");
+    }
+
+    /// The ice family's tail rolls the Ice Machine at 1/7 and the Fish at 1/50
+    /// (`:37397-37407`) — both land over a seed sweep.
+    #[test]
+    fn the_ice_tail_rolls_the_machine_and_the_fish() {
+        let mut w = deep_rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 340 + dy);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 147,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        put_chest(&mut w, 100, 340);
+        let mut machines = 0;
+        let mut fish = 0;
+        let mut runs = 0;
+        for seed in 1u64..900 {
+            let mut dungeon = DungeonCycle::new();
+            let mut jungle = JungleCycle::new();
+            let mut genned_wands = false;
+            let mut rng = seed | 1;
+            let rows = stock_chest(
+                &w,
+                100,
+                338,
+                false,
+                0,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &mut rng,
+            );
+            runs += 1;
+            machines += rows.iter().filter(|r| r.kind == 2198).count();
+            fish += rows.iter().filter(|r| r.kind == 669).count();
+        }
+        assert!(machines > 0, "the Ice Machine row fires ({machines}/{runs})");
+        assert!(fish > 0, "the Fish row fires ({fish}/{runs})");
+        // The odds: 1/7 and 1/50 — the machine row is the more common one.
+        assert!(
+            machines > fish,
+            "the 1/7 machine row beats the 1/50 fish row ({machines} vs {fish})"
+        );
+    }
+
+    #[test]
+    fn the_family_extras_roll_at_the_vanilla_odds() {
+        // The two fixed-row family arms (`AddBuriedChest`'s `num10 > 0`
+        // branches): the surface arm's flag6 (living-tree) extras and the
+        // deep arm's flag2/flag3/flag4 extras, each at its vanilla odds.
+        // The rig is a plain surface natural chest (no family flags), so
+        // the arms add nothing.
+        let mut w = rig();
+        put_chest(&mut w, 100, 198);
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+        let mut rng = 42u64 | 1;
+        let plain = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let family_ids: &[u16] = &[5629, 4429, 4427, 5528, 3199, 4346, 4066, 3360, 3361, 4426, 5525];
+        assert!(
+            !plain.iter().any(|r| family_ids.contains(&r.kind)),
+            "a family-less chest takes no family extras"
+        );
+
+        // The ice family (flag2, tiles 147/161/162/197 near the anchor) in
+        // the deep band: the 1/5 3199 arm.
+        let mut w = deep_rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 340 + dy);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 147,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        put_chest(&mut w, 100, 340);
+        // The tail rows added after the deep arm (the ice machine/fish, the
+        // voice change) moved the stream, so the 1/5 row's seed is swept.
+        let hit = (1u64..500).find(|seed| {
+            let mut dungeon = DungeonCycle::new();
+            let mut jungle = JungleCycle::new();
+            let mut genned_wands = false;
+            let mut rng = seed | 1;
+            let rows =
+                stock_chest(&w, 100, 338, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+            rows.iter().any(|r| r.kind == 3199)
+        });
+        assert!(hit.is_some(), "the ice family's 1/5 row fires");
+    }
+
+    #[test]
+    fn the_living_wood_wands_grant_once_per_world() {
+        // The flag4 arm's `GenVars.gennedLivingMahoganyWands` fairness: the
+        // first jungle chest grants 3360+3361 unconditionally, later ones
+        // only on the 1/5 roll.
+        let mut w = World::new("t".into(), 60, 320);
+        w.world_surface = 20.0;
+        w.rock_layer = 40.0;
+        w.seed = 42;
+        for x in 0..60 {
+            for y in 50..53 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        // The jungle grass beside the anchor (`context_at`'s `near(60)`) in
+        // the deep band (y=49: past the rock layer, under `height - 250`).
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1)] {
+            let i = w.index(30 + dx, 49 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 60,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 30, 49);
+        // A seed whose SECOND stock_chest misses the 1/5 wand roll: the
+        // fairness gate then keeps the pair granted once for the world.
+        let seed = (1u64..400)
+            .find(|&s| {
+                let wands = |rows: &[Row]| {
+                    rows.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count()
+                };
+                let mut dungeon = DungeonCycle::new();
+                let mut jungle = JungleCycle::new();
+                let mut genned_wands = false;
+                let mut rng = s | 1;
+                let first = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+                let second = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+                wands(&first) == 2 && wands(&second) == 0
+            })
+            .expect("a seed whose second call misses the 1/5 roll exists");
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+        let mut rng = seed | 1;
+        let rows = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        assert!(genned_wands, "the fairness flag trips on the first grant");
+        let wands = rows.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
+        assert_eq!(wands, 2, "both wands row together ({wands})");
+        // A second chest with the same seed now needs the 1/5 roll — with
+        // this stream it does not fire again, so the pair is granted once.
+        let rows2 = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let wands2 = rows2.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
+        assert_eq!(wands2, 0, "the once-per-world grant does not repeat ({wands2})");
+    }
+
+
+
+    #[test]
+    fn the_remaining_tail_rows_roll_at_the_vanilla_odds() {
+        // The `itemIndex > 0 && chestTileType == 21` block's remaining rows
+        // (`:37384-47500`): the flag4 pair (1/4 + 1/50), the flag13 globe
+        // (unconditional), the style-23-27 pottery row (1/2) and the style-13
+        // row (a second 1/2), and the flag13 water pair (1/5 raincoat, else
+        // 3-7 potions). The flag4 pair and the globe ride the families
+        // either tile block carries, so they apply to both anchor kinds.
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+
+        // A water-family anchor (tile 4869 beside the seat) takes the globe
+        // unconditionally and exactly one of the water pair.
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -1i32..=0 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 4869,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        put_chest(&mut w, 100, 198);
+        let mut rng = 3u64 | 1;
+        let rows = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        assert!(
+            rows.iter().any(|r| r.kind == 2195),
+            "the flag13 globe is unconditional"
+        );
+        let water: Vec<u16> = rows
+            .iter()
+            .filter(|r| r.kind == 2766 || r.kind == 2767)
+            .map(|r| r.kind)
+            .collect();
+        assert_eq!(water.len(), 1, "exactly one water row ({water:?})");
+
+        // A jungle-family anchor (tile 60 beside the seat): the flag4 pair
+        // fires only on its odds — search a stream where the 1/4 row lands.
+        let mut w = rig();
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-1, 0)] {
+            let i = w.index(100 + dx, 198 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 60,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 100, 198);
+        let hits = (1u64..400).filter(|&seed| {
+            let mut rng = seed | 1;
+            stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                .iter()
+                .any(|r| r.kind == 2204)
+        }).count();
+        assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
+        assert!(hits < 400, "and not on every one — the 1/4 gate is real");
+
+        // A style-13 anchor takes its own 1/2 pottery row.
+        let mut w = rig();
+        put_chest(&mut w, 100, 198);
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].frame_x = 18 * 13;
+                w.tiles[i].frame_y = 18 * dy as i16;
+            }
+        }
+        let rows13 = (1u64..64).any(|seed| {
+            let mut rng = seed | 1;
+            stock_chest(&w, 100, 198, false, 13, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                .iter()
+                .any(|r| r.kind == 5234)
+        });
+        assert!(rows13, "the style-13 row fires on some stream");
+    }
+
+
+
+    #[test]
+    fn the_21_block_rows_gate_on_the_chest_kind() {
+        // The vanilla `itemIndex > 0 && chestTileType == 21` block's rows
+        // (`:37384-47400`) apply to the wooden chests only; the mahogany
+        // (467/341) block (`:47466-47500`) repeats just the flag4/flag2/
+        // flag12 rows. The port gates the 21-only rows on the anchor kind.
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+
+        // A dungeon-family anchor: the flag9 row (2192) rolls 1/8.
+        let mut w = rig();
+        for dx in -2i32..=2 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].wall = 8; // a dungeon wall
+            }
+        }
+        put_chest(&mut w, 100, 198);
+        let hits = (1u64..600)
+            .filter(|&seed| {
+                let mut rng = seed | 1;
+                stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                    .iter()
+                    .any(|r| r.kind == 2192)
+            })
+            .count();
+        assert!(hits > 0, "the 1/8 flag9 row fires on some stream ({hits})");
+        assert!(hits < 600, "and not on every one — the 1/8 gate is real");
+
+        // A kind-341 (mahogany) anchor with a water + sky-25 context takes
+        // none of the 21-only rows, while a kind-21 anchor does.
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -1i32..=0 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].kind = 4869; // the water family's tile
+            }
+        }
+        // The mahogany chest tile 341 at the anchor.
+        put_chest(&mut w, 100, 198);
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].kind = 341;
+            }
+        }
+        let mut rng = 3u64 | 1;
+        let mahog = stock_chest(&w, 100, 198, false, 25, 341, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        assert!(
+            !mahog.iter().any(|r| matches!(r.kind, 2766 | 2767 | 5234)),
+            "the 21-only rows skip the mahogany anchor: {:?}",
+            mahog.iter().map(|r| r.kind).collect::<Vec<_>>()
+        );
+
+        // The same surroundings on a kind-21 anchor take them (on some stream).
+        let mut w2 = rig();
+        for dx in -2i32..=0 {
+            for dy in -1i32..=0 {
+                let i = w2.index(100 + dx, 198 + dy);
+                w2.tiles[i].kind = 4869;
+            }
+        }
+        put_chest(&mut w2, 100, 198);
+        let rows21 = (1u64..64).find(|&seed| {
+            let mut rng = seed | 1;
+            stock_chest(&w2, 100, 198, false, 25, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+                .iter()
+                .any(|r| matches!(r.kind, 2766 | 2767 | 5234))
+        });
+        assert!(rows21.is_some(), "the 21 anchor takes a 21-only row");
+    }
+
+
 }

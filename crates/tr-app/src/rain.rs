@@ -160,6 +160,32 @@ pub struct ThunderInputs {
     pub graveyard_intensity: f32,
     /// `Main.shimmerAlpha` (mutes `NewLightning`).
     pub shimmer_alpha: f32,
+    /// `Main.thunderSkipSound` (`Main.cs:58759`): the strike's cue is
+    /// skipped. Only `NewLightning(instant: true, skipSound: true)`
+    /// (`ParticleOrchestrator.cs:1043`, unported) sets it, so it stays false
+    /// in the port — carried here because the strike gate reads it.
+    pub thunder_skip_sound: bool,
+    /// `Main.SceneMetrics.Center` (`Main.cs:58752`): the strike's origin.
+    pub scene_center: [f32; 2],
+    /// `Main.worldSurface * 16` (`Main.cs:58764`'s `num2`): the strike's y
+    /// clamp.
+    pub world_surface_px: f32,
+}
+
+/// One thunder strike cue (`Main.cs:58747-58766`), produced by
+/// [`Rain::thunder_step`] and played by the weather tick.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ThunderStrike {
+    /// The `Sounds/Thunder_<0..5>` cue family (`LegacySoundPlayer.cs:454`).
+    pub cue: &'static str,
+    /// The strike position in world pixels (already the C#'s `(int)` cast).
+    pub x: f32,
+    pub y: f32,
+    /// `Main.rand.Next(-10, 11) * 0.01` (`LegacySoundPlayer.cs:471`): the
+    /// instance pitch jitter. The port's source plumbing has no pitch control
+    /// (the liquid-loop deviation is the same), so the roll is consumed for
+    /// stream fidelity and the value carried unused.
+    pub pitch: f32,
 }
 
 /// Bridges the Rain stream into [`tr_core::loot::DropRng`] for `Luck.RollLuck`
@@ -178,11 +204,8 @@ impl tr_core::loot::DropRng for RainLootRng<'_> {
 
 impl Rain {
     pub fn new(seed: u64) -> Self {
-        let forced = std::env::var("TR_RAIN")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            .map(|v| v.clamp(0.0, 1.75));
-        let start_calm = std::env::var_os("TR_NO_WEATHER").is_some();
+        let forced = crate::env::rain_forced().map(|v| v.clamp(0.0, 1.75));
+        let start_calm = crate::env::no_weather();
         Self::with_forced(seed, forced, start_calm)
     }
 
@@ -233,6 +256,13 @@ impl Rain {
     /// fountain (`tile.frameX == 90`) case.
     pub fn is_raining(&self) -> bool {
         self.raining
+    }
+
+    /// A test hook (not a behaviour): sets `Main.raining` for the scene-scan
+    /// tests without running the event machine (`Main.cs:64725`'s setter).
+    #[cfg(test)]
+    pub(crate) fn set_raining_for_test(&mut self, raining: bool) {
+        self.raining = raining;
     }
 
     pub fn drop_count(&self) -> usize {
@@ -380,12 +410,40 @@ impl Rain {
     /// `lightningDecay`; at delay 0 the storming roll re-arms with the
     /// rain/wind tier multipliers. `weather` carries the cross-system inputs
     /// the vanilla reads from Main statics.
-    pub(crate) fn thunder_step(&mut self, weather: ThunderInputs) {
+    ///
+    /// Returns the thunder strike cue when the delay reaches 0 this tick
+    /// (`Main.cs:58752-58761`, M6-AUDIO-1) — the position, the focus/skip
+    /// gate and the cue-slot/pitch rolls all resolve inside Rain's own
+    /// stream like the vanilla's `Main.rand` draws.
+    pub(crate) fn thunder_step(&mut self, weather: ThunderInputs) -> Option<ThunderStrike> {
+        let mut strike = None;
         if self.thunder_delay > 0 {
             self.thunder_delay -= 1;
             if self.thunder_delay == 0 {
-                // `Main.cs:58756-58766`: the thunder sound plays `thunderDistance
-                // * 15` px away (the audio cue is not in the port's 8-cue set).
+                // `Main.cs:58751-58768`: the strike — the position
+                // (`thunderDistance * 15` off the scene centre, clamped to
+                // `worldSurface * 16 - 500`) behind the focus/skip gate, then
+                // the case-43 cue family and its pitch jitter.
+                let flip_left = self.range(0, 2) == 0;
+                let (x, y) = crate::ambient_sound::thunder_strike_position(
+                    (weather.scene_center[0], weather.scene_center[1]),
+                    self.thunder_distance as f32,
+                    flip_left,
+                    weather.world_surface_px,
+                );
+                if crate::ambient_sound::thunder_plays_when_focused(
+                    true,
+                    weather.thunder_skip_sound,
+                ) {
+                    let (cue, pitch) = crate::ambient_sound::thunder_cue_slot(
+                        self.range(0, 6),
+                        // `Main.rand.Next(-10, 11)` (`LegacySoundPlayer.cs:471`).
+                        self.range(0, 21) as i32 - 10,
+                    );
+                    strike = Some(ThunderStrike { cue, x, y, pitch });
+                }
+                // The vanilla drains `thunderDistance` to 0 with the strike;
+                // the re-arm roll below reads it as 0.
                 self.thunder_distance = 0;
             }
         }
@@ -443,6 +501,7 @@ impl Rain {
                 self.new_lightning(weather.shimmer_alpha);
             }
         }
+        strike
     }
 
     /// `Main.UpdateTime`'s rain section (`Main.cs:64833-64949`), driven once per
@@ -1029,6 +1088,55 @@ mod tests {
             rain.thunder_step(ThunderInputs::default());
         }
         assert_eq!(rain.flash, 0.0, "flash must decay to zero");
+    }
+
+    #[test]
+    fn thunder_step_emits_one_strike_when_the_delay_runs_out() {
+        // M6-AUDIO-1: `Main.cs:58751-58766`'s strike — a delay of 1 fires its
+        // cue on the next tick and the strike consumes Rain's own stream
+        // (the flip, the slot, the pitch — three draws per strike).
+        let mut rain = Rain::with_forced(31, None, false);
+        rain.thunder_delay = 1;
+        rain.thunder_distance = 4;
+        let weather = ThunderInputs {
+            scene_center: [800.0, 600.0],
+            world_surface_px: 4000.0,
+            ..Default::default()
+        };
+        // Delay 1 → the strike fires with distance 4 → ±60 px off the centre,
+        // the y untouched above the surface clamp.
+        let strike = rain.thunder_step(weather).expect("a strike");
+        assert!((strike.x == 740.0) || (strike.x == 860.0), "x = {}", strike.x);
+        assert_eq!(strike.y, 600.0);
+        assert!(strike.cue.starts_with("Thunder_"), "cue {}", strike.cue);
+        assert!((-0.10..=0.10).contains(&strike.pitch), "pitch {}", strike.pitch);
+        assert_eq!(rain.thunder_delay, 0);
+        assert_eq!(rain.thunder_distance, 0, "the vanilla drains it with the strike");
+        // No delay: no strike, and the stream is untouched.
+        assert_eq!(rain.thunder_step(weather), None);
+    }
+
+    #[test]
+    fn thunder_step_is_deterministic_per_seed() {
+        // The same seed must produce the same strike stream (the
+        // per-consumer-stream convention, `rain.rs`'s module doc).
+        let play = || {
+            let mut rain = Rain::with_forced(37, None, false);
+            rain.thunder_delay = 1;
+            let weather = ThunderInputs {
+                scene_center: [800.0, 600.0],
+                world_surface_px: 4000.0,
+                ..Default::default()
+            };
+            (0..3)
+                .filter_map(|_| {
+                    rain.thunder_delay = 1;
+                    rain.thunder_distance = 4;
+                    rain.thunder_step(weather)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(play(), play());
     }
 
     #[test]

@@ -30,19 +30,16 @@ pub struct Style {
 
 impl Style {
     /// `StyleDimension.FromPixelsAndPercent(px, pct)` (`StyleDimension.cs:44-46`).
-    #[allow(dead_code)] // Consumed by Tasks 3-8 (the negative-offset setters).
     pub const fn new(px: f32, pct: f32) -> Self {
         Self { px, pct }
     }
 
     /// `StyleDimension.FromPixels` (`StyleDimension.cs:24-27`).
-    #[allow(dead_code)] // Consumed by Tasks 3-8 (the pixel setters).
     pub const fn px(px: f32) -> Self {
         Self { px, pct: 0.0 }
     }
 
     /// `StyleDimension.FromPercent` (`StyleDimension.cs:29-32`).
-    #[allow(dead_code)] // Consumed by Tasks 3-8 (the percent-based setters).
     pub const fn pct(pct: f32) -> Self {
         Self { px: 0.0, pct }
     }
@@ -82,7 +79,6 @@ fn xna_clamp(value: f32, min: f32, max: f32) -> f32 {
 /// resolve against (`UIElement.cs:298-303`), which `inner` below applies.
 /// The returned rect is the element's OUTER rect (== `GetDimensions()` at 0
 /// margins, `UIElement.cs:385-388`).
-#[allow(dead_code)] // Consumed by Tasks 3-8 (every screen's layout()).
 #[allow(clippy::too_many_arguments)]
 pub fn resolve(
     parent: [f32; 4],
@@ -112,7 +108,6 @@ pub fn resolve(
 
 /// The element's inner rect = outer − padding (`UIElement.GetInnerDimensions`,
 /// the `Recalculate` tail `UIElement.cs:298-303`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub fn inner(rect: [f32; 4], padding: [f32; 4]) -> [f32; 4] {
     [
         rect[0] + padding[0],
@@ -125,42 +120,35 @@ pub fn inner(rect: [f32; 4], padding: [f32; 4]) -> [f32; 4] {
 // --- The vanilla UI colours the P6 screens share (bytes, pre-`tint`) ---------
 
 /// `Main.OurFavoriteColor = new Color(255, 231, 69)` (`Main.cs:66748`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub const OUR_FAVORITE_COLOR: [u8; 4] = [255, 231, 69, 255];
 
 /// `Colors.FancyUIFatButtonMouseOver = Main.OurFavoriteColor` (`ID/Colors.cs:157`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub const FANCY_UI_FAT_BUTTON_MOUSE_OVER: [u8; 4] = OUR_FAVORITE_COLOR;
 
 /// `Colors.InventoryDefaultColor = new Color(63, 65, 151, 255)` (`ID/Colors.cs:158`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub const INVENTORY_DEFAULT_COLOR: [u8; 4] = [63, 65, 151, 255];
 
 /// `Main.mcColor = new Color(1f, 0.6f, 0f)` (`Main.cs:66765`) — the mediumcore
 /// card colour; `(byte)(0.6f * 255) = 153`.
-#[allow(dead_code)] // Consumed by Tasks 3-4.
 pub const MC_COLOR: [u8; 4] = [255, 153, 0, 255];
 
 /// `Main.hcColor = new Color(1f, 0.15f, 0.1f)` (`Main.cs:66766`) — the hardcore
 /// card colour; XNA `(byte)` truncation: `(byte)(0.15f*255) = 38`, `(byte)(0.1f*255) = 25`.
-#[allow(dead_code)] // Consumed by Tasks 3-4.
 pub const HC_COLOR: [u8; 4] = [255, 38, 25, 255];
 
 /// `Main.creativeModeColor = Color.Lerp(Color.HotPink, Color.White, 0.1f)`
 /// (`Main.cs:66767`) — the Journey card colour; `Lerp` truncates per channel:
 /// `(105 + (255-105)*0.1f) = 120`, `(180 + (255-180)*0.1f) = 187.5 -> 187`.
-#[allow(dead_code)] // Consumed by Tasks 3-4.
 pub const CREATIVE_MODE_COLOR: [u8; 4] = [255, 120, 187, 255];
 
 /// `Main.legendaryModeColor = Color.LimeGreen` (`Main.cs:66768`).
-#[allow(dead_code)] // Consumed by Tasks 3-4.
+#[allow(dead_code)] // Parked: the legendary-difficulty UI (its consumer) is not ported yet.
 pub const LEGENDARY_MODE_COLOR: [u8; 4] = [50, 205, 50, 255];
 
 /// `Color.Lerp(White, (63,65,151), 0.85) * 0.9` — the creation-screen
 /// separators (`UICharacterCreation.cs:448,777`, `UIWorldCreation.cs:309`).
 /// XNA truncates to bytes after each step: `Lerp -> (91, 93, 166, 255)`,
 /// `*0.9 -> (81, 83, 149, 229)`.
-#[allow(dead_code)] // Consumed by Tasks 7-8.
 pub const CREATION_SEPARATOR_COLOR: [u8; 4] = [81, 83, 149, 229];
 
 // --- Utils.DrawSplicedPanel --------------------------------------------------
@@ -177,7 +165,6 @@ pub const CREATION_SEPARATOR_COLOR: [u8; 4] = [81, 83, 149, 229];
 /// asymmetric call stays faithful (don't "fix" the source, P4 Uncertainty-9
 /// precedent). The box is clamped to at least `left+right` x `top+bottom`
 /// first (`Utils.cs:2582-2587`).
-#[allow(dead_code)] // Consumed by Tasks 3-4 (the card DrawPanel calls).
 pub fn spliced_rects(
     rect: [f32; 4],
     left: f32,
@@ -254,7 +241,6 @@ fn push_sheet(
 
 /// `Utils.DrawSplicedPanel` (`Utils.cs:2581-2600`, the draw). `sheet == None`
 /// draws nothing, so `Lookups::default()` is safe (Review Focus 7).
-#[allow(dead_code)] // Consumed by Tasks 3-4 (the card panels) and 7-8.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_spliced_panel(
     r: &mut SpriteRenderer,
@@ -285,17 +271,14 @@ pub fn draw_spliced_panel(
 // --- UITextPanel -------------------------------------------------------------
 
 /// `UIPanel.BorderColor = Color.Black` (`UIPanel.cs:18`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub const TEXT_PANEL_BORDER: [u8; 4] = [0, 0, 0, 255];
 
 /// `UIPanel.BackgroundColor = new Color(63, 82, 151) * 0.7f` (`UIPanel.cs:20`),
 /// XNA byte truncation: `(44, 57, 105, 178)`.
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub const TEXT_PANEL_BG: [u8; 4] = [44, 57, 105, 178];
 
 /// `FadedMouseOver`'s panel background, `new Color(73, 94, 171)`
 /// (`UICharacterSelect.cs:125`).
-#[allow(dead_code)] // Consumed by Tasks 3-4.
 pub const FADED_MOUSE_OVER_BG: [u8; 4] = [73, 94, 171, 255];
 
 /// `UITextPanel<T>` (`UITextPanel.cs`): a 9-slice `UIPanel` (default
@@ -304,7 +287,6 @@ pub const FADED_MOUSE_OVER_BG: [u8; 4] = [73, 94, 171, 255];
 /// string width — `Font.MeasureString(text).X` on the **Death** font when
 /// `large`, the Mouse font otherwise (`UITextPanel.cs:126-131`); every use of
 /// it applies `_textScale` exactly once, like `_textSize` does (`:132`).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 pub struct TextPanelStyle {
     /// `_textScale` (`UITextPanel.cs:12`).
     pub text_scale: f32,
@@ -325,7 +307,7 @@ pub struct TextPanelStyle {
 /// caller-resolved hint box (the rect the layout pass produced). The C# clamps
 /// the *width* through the layout pass; here the hint box already carries the
 /// width the caller wants, so only the `SetText` minimums can grow it.
-#[allow(dead_code)] // Consumed by Tasks 3-8.
+#[allow(dead_code)] // Parked: no caller yet (the creation-screen panels measure their own text).
 pub fn text_panel_rect(style: &TextPanelStyle, text_w: f32, box_hint: [f32; 4]) -> [f32; 4] {
     // `this._textSize = new Vector2(MeasureString(text).X, large ? 32f : 16f) * textScale;` (`:132`).
     let text_size_x = text_w * style.text_scale;
@@ -371,7 +353,6 @@ fn panel_text(
 /// `Colors.FancyUIFatButtonMouseOver`); idle keeps `style`'s own pair (the
 /// `FadedMouseOut` restore, `:129-133`). Missing sheets/fonts draw what they
 /// can and panic nowhere (Review Focus 7).
-#[allow(dead_code)] // Consumed by Tasks 3-8.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_text_panel(
     r: &mut SpriteRenderer,
@@ -451,7 +432,7 @@ pub fn draw_text_panel(
 /// (the rect is the caller's — the button is texture-sized, `:30-33`) tinted
 /// `Color * (hover ? 1.0 : 0.4)` (`:51`); the hover border sheet drawn *over*
 /// the base at full tint (`BorderColor`, `:52-55`). `None` sheets draw nothing.
-#[allow(dead_code)] // Consumed by Tasks 3-4 (the card buttons).
+#[allow(dead_code)] // Parked: no caller yet (the card buttons use the text-button path).
 pub fn draw_image_button(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -513,7 +494,6 @@ fn push_centred(
 /// highlight = selected — followed here.) The back panel dims to
 /// `Color.White * 0.4` when not hovered (`:72`); the border/highlight/middle/
 /// icon draw at full strength. Missing sheets draw nothing (Review Focus 7).
-#[allow(dead_code)] // Consumed by Tasks 7-8 (categories/options).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_colored_image_button(
     r: &mut SpriteRenderer,

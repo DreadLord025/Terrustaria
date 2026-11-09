@@ -46,6 +46,14 @@ impl FastRandom {
             .wrapping_add(2654435769)
             .wrapping_add((y as i64 as u64) << 6)
             .wrapping_add((y as i64 as u64) >> 2);
+        self.with_modifier_u64(modifier)
+    }
+
+    /// `FastRandom.WithModifier(ulong modifier)` (`FastRandom.cs:27`): the
+    /// modifier advanced once, then XORed into the current seed — the hive-wide
+    /// re-seed the `DesertHive` carve opens with (`DesertHive.cs:226`) and the
+    /// granite biome's (`GraniteBiome.cs:298`).
+    pub fn with_modifier_u64(&self, modifier: u64) -> Self {
         Self {
             seed: Self::next_seed(modifier) ^ self.seed,
         }
@@ -61,6 +69,13 @@ impl FastRandom {
     /// `FastRandom.NextFloat` (`FastRandom.cs:53`).
     pub fn next_float(&mut self) -> f32 {
         self.next_bits(24) as f32 * 5.9604645e-8
+    }
+
+    /// `FastRandom.NextDouble` (`FastRandom.cs:58`): the f32 quirk kept
+    /// verbatim — the 32-bit draw widens through `float` (so it can read
+    /// negative) and scales by 2^-31, the C#'s `4.656613E-10f`.
+    pub fn next_double(&mut self) -> f64 {
+        (self.next_bits(32) as f32 * f32::from_bits(0x3000_0000)) as f64
     }
 
     /// `FastRandom.Next(int max)` (`FastRandom.cs:63-76`): uniform in `0..max`.

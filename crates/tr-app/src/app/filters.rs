@@ -64,7 +64,7 @@ pub(crate) struct EnvPins {
 
 impl EnvPins {
     pub(crate) fn from_env() -> Self {
-        Self::from_lookup(|var| std::env::var(var).ok())
+        Self::from_lookup(crate::env::lookup())
     }
 
     /// The injectable body of [`EnvPins::from_env`].

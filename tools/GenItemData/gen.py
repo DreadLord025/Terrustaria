@@ -848,6 +848,13 @@ def exec_stmts(stmts, ctx, type_value, src, casemap=None, in_switch=False):
     for st in stmts:
         if ctx.returned:
             return
+        if ctx.brk:
+            # A `break` from an inner body exits the enclosing statement list
+            # too — C# `if (type < 3315 || type > 3317) { break; } goto case
+            # 3262;` (Item.cs:30037-30041) never reaches its goto; without this
+            # the guard-broken id fell through into the goto's case body (the
+            # yoyo template over every unmatched id of the switch).
+            return
         kind = st[0]
         line = st[1]
         if kind == "break":

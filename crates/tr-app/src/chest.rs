@@ -1454,7 +1454,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
     // (`ChestUI.RenameChestSubmit`/`RenameChestCancel` + `Close`).
     app.open_keyboard_with_tail(
         Request {
-            label: keyboard::ENTER_NEW_NAME.into(),
+            label: crate::ui::keyboard::enter_new_name(),
             initial,
             allow_empty: false,
             max_length: CHEST_MAX_NAME_LENGTH,
@@ -1756,8 +1756,12 @@ mod tests {
         // Tile 88 dressers read frameX / 54 (`:137-139`).
         assert_eq!(default_chest_name(88, 0), "Dresser");
         assert_eq!(default_chest_name(88, 54), "Ebonwood Dresser");
-        // A style with no placing item and no twin rule renders nothing.
-        assert_eq!(default_chest_name(467, 0), "");
+        // A style with no placing item and no twin rule renders nothing —
+        // style 13 of tile 467 (frame 13×36) has no chest item. (The regen in
+        // M4-PROJ-4 restored styles 0-12/14's placing items from the C#
+        // `createTile`/`placeStyle` rows, so style 0 now names the Crystal
+        // Chest.)
+        assert_eq!(default_chest_name(467, 468), "");
     }
 
     // --- Phase 2: the open/close + locking interaction -----------------------
@@ -2942,7 +2946,7 @@ mod tests {
             let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_ref() else {
                 panic!("the rename keyboard is live");
             };
-            assert_eq!(s.request.label, keyboard::ENTER_NEW_NAME);
+            assert_eq!(s.request.label, crate::ui::keyboard::enter_new_name());
             assert_eq!(s.request.initial, "Chest", "the tile default prefills");
             assert_eq!(s.state.text, "Chest");
             assert_eq!(s.request.allow_empty, false, "the ctor default (:147-156)");

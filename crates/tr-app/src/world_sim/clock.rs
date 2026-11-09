@@ -1,21 +1,23 @@
 //! The world clock (plan stage A4): `Main.time`'s day/night wrap, the `TR_DAY`
 //! freeze pin and the `Main.Disco*` colour cycle.
 
-use std::sync::OnceLock;
-
 use tr_core::World;
 
 use crate::app::App;
 
-/// `TR_DAY` pins the sky for screenshots; time-of-day advancement pauses.
-pub(crate) fn time_frozen() -> bool {
-    static FROZEN: OnceLock<bool> = OnceLock::new();
-    *FROZEN.get_or_init(|| std::env::var_os("TR_DAY").is_some())
-}
-
 /// `Main.time`: a 15-minute day (`0..54000`) and a 9-minute night (`0..32400`) at 60
-/// ticks per second, times the dial fast-forward rate.
-pub(crate) fn advance_time(world: &mut World, dt: f32) {
+/// ticks per second, times the dial fast-forward rate. Returns the `(blood moon,
+/// eclipse)` starts so the host broadcasts them (`ChatColors.World`); `roll01` is
+/// the caller's dawn/dusk roll stream, `any_player_life_over_120` the
+/// `statLifeMax > 120` gate (`Main.cs:65342-65349`).
+pub(crate) fn advance_time(
+    world: &mut World,
+    dt: f32,
+    roll01: f64,
+    any_player_life_over_120: bool,
+) -> (bool, bool) {
+    let mut blood_moon_started = false;
+    let mut eclipse_started = false;
     // `Main.cs:64962-64965`: `UpdateTimeRate()` picks the rate, then the full
     // `dt * 60 * dayRate` add lands before the boundary checks read the
     // post-add value. The 0.1 s dt clamp (`frame.rs`) caps the add at 360 —
@@ -31,6 +33,9 @@ pub(crate) fn advance_time(world: &mut World, dt: f32) {
             // moon) — event rolls land with M4.
             world.fast_forward_to_dusk = false;
             world.moondial_cooldown = world.moondial_cooldown.saturating_sub(1);
+            // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`).
+            blood_moon_started =
+                world.roll_blood_moon(roll01, false, any_player_life_over_120, false);
             // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;` —
             // the overshoot past the boundary is discarded, not wrapped.
             t = 0.0;
@@ -53,12 +58,50 @@ pub(crate) fn advance_time(world: &mut World, dt: f32) {
         } else {
             world.moon_phase + 1
         };
+        // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()`
+        // (`Main.cs:65373`) — the day's quest re-roll is the FIRST call
+        // in the C#'s StartDay; the port arms the request and the app
+        // pass rolls it (the clock carries no RNG).
+        world.angler_swap_pending = true;
         // `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`):
         // the smashed orb arms the goblin rolls; the `StartInvasion`
         // request resolves in the app pass (the players' gate).
-        world.roll_morning_invasion((t / 32400.0).fract().abs() as f64 * 0.9999);
+        // `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`),
+        // after the `stopEvents` gate — the port has no stop-events system, so
+        // the hardmode + mechs roll always applies.
+        eclipse_started = world.roll_eclipse(roll01, world.hard_mode, world.downed_mech_boss_any());
+        world.roll_morning_invasion(roll01);
     }
     world.time = t;
+    (blood_moon_started, eclipse_started)
+}
+
+/// `Main.cs:64995-65003`'s tax pump: while a Tax Collector is alive the
+/// player's `taxTimer` counts the dayRate iterations and every
+/// `Player.taxRate` (3600) ticks collects the taxes.
+pub(crate) fn update_taxes(world: &mut tr_core::World, day_rate: i32) {
+    if !world.tax_collector {
+        return;
+    }
+    world.tax_timer += day_rate;
+    if world.tax_timer < crate::world_sim::npcs::TAX_RATE {
+        return;
+    }
+    world.tax_timer -= crate::world_sim::npcs::TAX_RATE;
+    collect_taxes(world);
+}
+
+/// `Player.CollectTaxes` (`Player.cs:24129-24155`): 50 copper per housed,
+/// living, non-pet town NPC per collection, capped at 25 gold
+/// (`Item.buyPrice(0, 25)`).
+pub(crate) fn collect_taxes(world: &mut tr_core::World) {
+    if !world.tax_collector || world.tax_money >= crate::world_sim::npcs::TAX_CAP {
+        return;
+    }
+    world.tax_money += 50 * world.tax_payers;
+    if world.tax_money > crate::world_sim::npcs::TAX_CAP {
+        world.tax_money = crate::world_sim::npcs::TAX_CAP;
+    }
 }
 
 /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
@@ -113,6 +156,41 @@ pub(crate) fn advance_disco(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_dusk_boundary_rolls_and_reports_the_blood_moon() {
+        // The StartNight boundary returns the event so the host broadcasts.
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = true;
+        w.time = 53999.0;
+        w.sundial_cooldown = 4;
+        w.moondial_cooldown = 2;
+        // The roll in the 1-in-9 window with a 120+ player.
+        let (blood, eclipse) = advance_time(&mut w, 5.0, 0.1, true);
+        assert!(blood);
+        assert!(!eclipse);
+        assert!(w.blood_moon);
+        assert!(!w.day_time);
+        // The blood moon force-resets both dial cooldowns.
+        assert_eq!(w.moondial_cooldown, 0);
+        assert_eq!(w.sundial_cooldown, 0);
+    }
+
+    #[test]
+    fn the_dawn_boundary_rolls_and_reports_the_eclipse() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = false;
+        w.time = 32399.0;
+        w.hard_mode = true;
+        w.downed_mech_boss1 = true;
+        w.sundial_cooldown = 6;
+        let (blood, eclipse) = advance_time(&mut w, 5.0, 0.02, true);
+        assert!(!blood);
+        assert!(eclipse);
+        assert!(w.eclipse);
+        assert!(w.day_time);
+        assert_eq!(w.sundial_cooldown, 0, "the eclipse force-resets it");
+    }
+
     use super::*;
 
     #[test]
@@ -120,11 +198,11 @@ mod tests {
         let mut w = World::new("t".into(), 8, 8);
         w.time = 53999.0;
         w.day_time = true;
-        advance_time(&mut w, 1.0);
+        advance_time(&mut w, 1.0, 0.5, false);
         assert!(!w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
         w.time = 32399.0;
-        advance_time(&mut w, 1.0);
+        advance_time(&mut w, 1.0, 0.5, false);
         assert!(w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
     }
@@ -139,7 +217,7 @@ mod tests {
         w.time = 32040.0;
         w.moon_phase = 3;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert!(w.day_time, "StartDay ran on the crossing tick");
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;` —
         // the overshoot is discarded, not wrapped into the new half.
@@ -156,7 +234,7 @@ mod tests {
         w.time = 53640.0;
         w.moon_phase = 2;
         w.fast_forward_to_dusk = true;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert!(!w.day_time, "StartNight ran on the crossing tick");
         // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;`.
         assert_eq!(w.time, 0.0);
@@ -175,7 +253,7 @@ mod tests {
         w.fast_forward_to_dawn = true;
         assert!(w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 60);
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert!(
             !w.fast_forward_to_dawn,
             "the flag clears on the transition tick"
@@ -183,7 +261,7 @@ mod tests {
         assert!(!w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 1);
         // The next add runs at dayRate 1: a 1 s step advances 60 ticks, not 3600.
-        advance_time(&mut w, 1.0);
+        advance_time(&mut w, 1.0, 0.5, false);
         assert_eq!(w.time, 60.0);
     }
 
@@ -214,13 +292,13 @@ mod tests {
         w.time = 32395.0;
         w.sundial_cooldown = 3;
         w.moondial_cooldown = 5;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert_eq!(w.sundial_cooldown, 2, "dawn decrements the sundial");
         assert_eq!(w.moondial_cooldown, 5, "StartDay leaves the moondial alone");
         // The following dusk decrements the moondial only.
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert_eq!(w.moondial_cooldown, 4, "dusk decrements the moondial");
         assert_eq!(w.sundial_cooldown, 2, "StartNight leaves the sundial alone");
     }
@@ -232,11 +310,11 @@ mod tests {
         let mut w = World::new("t".into(), 8, 8);
         w.day_time = false;
         w.time = 32395.0;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert_eq!(w.sundial_cooldown, 0);
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert_eq!(w.moondial_cooldown, 0);
     }
 
@@ -253,12 +331,12 @@ mod tests {
         w.day_time = false;
         w.time = 32400.0 - 360.0;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert!(w.day_time, "exactly one transition fired");
         assert_eq!(w.time, 0.0);
         // From the fresh day start (rate back to 1) the next step stays inside
         // the day half — no dusk this call.
-        advance_time(&mut w, 0.1);
+        advance_time(&mut w, 0.1, 0.5, false);
         assert!(w.day_time);
         assert!(
             (0.0..54000.0).contains(&w.time),

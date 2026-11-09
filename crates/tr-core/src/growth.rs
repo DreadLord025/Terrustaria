@@ -139,29 +139,247 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
 /// `WorldGen.IsTileTypeFitForTree` (`:29695-29710`).
 pub const TREE_SOILS: [u16; 12] = [2, 23, 60, 70, 109, 147, 199, 477, 492, 633, 661, 662];
 
+/// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
+/// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields: the
+/// app's weather clock passes the live values.
+#[derive(Clone, Copy, Default)]
+pub struct WeatherCtx {
+    /// `Main.raining`.
+    pub raining: bool,
+    /// `Main.cloudAlpha`.
+    pub cloud_alpha: f32,
+    /// `Main.remixWorld`.
+    pub remix_world: bool,
+}
+
+/// `WorldGen.IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+/// per-style condition an herb may be harvested with a seed in hand —
+/// style 0 daybloom (day), 1 moonglow (night), 3 deathweed (night +
+/// blood moon / full moon), 4 waterleaf (rain or any cloud), 5 fireblossom
+/// (dry or below the surface, late afternoon).
+pub fn is_alchemy_plant_harvestable(world: &World, style: i32, y: i32, wx: &WeatherCtx) -> bool {
+    if style == 0 && world.day_time {
+        return true;
+    }
+    if style == 1 && !world.day_time {
+        return true;
+    }
+    if style == 3 && !world.day_time && (world.blood_moon || world.moon_phase == 0) {
+        return true;
+    }
+    if style == 4 && (wx.raining || wx.cloud_alpha > 0.0) {
+        return true;
+    }
+    if style == 5 {
+        let mut flag = y as f64 > world.world_surface;
+        if wx.remix_world {
+            flag = y < world.height - 350;
+        }
+        // The C# `(!Main.raining | flag)` is the bitwise bool `|` — both
+        // operands are pure, so `||` is equivalent.
+        if ((!wx.raining || flag) && world.time > 40500.0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+/// the grown herbs 83/84 carry the seed-harvest arm — 84 always is, and
+/// 83 when its style's condition holds (the plain herb 82 never is).
+pub fn is_harvestable_herb_with_seed(
+    world: &World,
+    kind: u16,
+    style: i32,
+    y: i32,
+    wx: &WeatherCtx,
+) -> bool {
+    match kind {
+        82 => false,
+        83 | 84 => kind == 84 || is_alchemy_plant_harvestable(world, style, y, wx),
+        _ => false,
+    }
+}
+
 pub fn is_tile_type_fit_for_tree(kind: u16) -> bool {
     TREE_SOILS.contains(&kind)
 }
 
+/// `TileID.Sets.CommonSapling` (`TileID.cs:493`): the sapling tiles — the
+/// ash-tree sapling 20, the gem saplings 590, the sakura 595 and the
+/// willow 615. `EmptyTileCheck`'s `ignoreID` arm and the smart-cursor
+/// seed steps' proximity gates read it.
+pub const COMMON_SAPLINGS: [u16; 4] = [20, 590, 595, 615];
+
+/// Membership in [`COMMON_SAPLINGS`] (`TileID.Sets.CommonSapling`,
+/// `TileID.cs:493`).
+pub fn is_common_sapling(kind: u16) -> bool {
+    COMMON_SAPLINGS.contains(&kind)
+}
+
+/// `WorldGen.GemTreeGroundTest` (`WorldGen.cs:30304-30315`): the stone or
+/// moss conversion tiles — the gem trees' ground. The C#'s arrays are
+/// length `TileID.Count`, so a `u16` id is always in range and its
+/// `tileType < 0` guard is vacuous in the port.
+fn gem_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_CONVERSION_STONE.has(kind) || crate::tiledata::SET_CONVERSION_MOSS.has(kind)
+}
+
+/// `WorldGen.VanityTreeGroundTest` (`WorldGen.cs:30317-30328`): the grass
+/// conversion tiles minus the corruption/crimson pair (23/199).
+fn vanity_tree_ground_test(kind: u16) -> bool {
+    crate::tiledata::SET_GRASS.has(kind) && kind != 23 && kind != 199
+}
+
+/// `WorldGen.AshTreeGroundTest` (`WorldGen.cs:30330-30341`): ash grass only.
+fn ash_tree_ground_test(kind: u16) -> bool {
+    kind == 633
+}
+
+/// `WorldGen.GrowTreeSettings` (`WorldGen.cs:3825-4048`'s struct): one
+/// gem/vanity/ash tree profile. The C#'s `GroundTest`/`WallTest` delegates
+/// are the port's [`GroundTestKind`]; the wall arm stays out — no
+/// smart-cursor step reads it (the C#'s other callers do).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GrowTreeSettings {
+    /// `GroundTest` — the delegate the C# stores per profile.
+    pub ground: GroundTestKind,
+    /// `TreeTileType` — the tree-top tile the profile grows.
+    pub tree_tile_type: u16,
+    /// `TreeHeightMin`.
+    pub tree_height_min: i32,
+    /// `TreeHeightMax`.
+    pub tree_height_max: i32,
+    /// `TreeTopPaddingNeeded`.
+    pub tree_top_padding_needed: i32,
+    /// `SaplingTileType` — the profile's sapling (`EmptyTileCheck`'s
+    /// ignore id and the proximity gate's set).
+    pub sapling_tile_type: u16,
+}
+
+/// The C#'s `GrowTreeSettings.Profiles`' `GroundTest` delegates
+/// (`WorldGen.cs:30304-30341`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroundTestKind {
+    /// `WorldGen.GemTreeGroundTest`.
+    Gem,
+    /// `WorldGen.VanityTreeGroundTest`.
+    Vanity,
+    /// `WorldGen.AshTreeGroundTest`.
+    Ash,
+}
+
+impl GroundTestKind {
+    /// The delegate's call (the C#'s `profile.GroundTest(tileType)`).
+    pub fn test(&self, kind: u16) -> bool {
+        match self {
+            GroundTestKind::Gem => gem_tree_ground_test(kind),
+            GroundTestKind::Vanity => vanity_tree_ground_test(kind),
+            GroundTestKind::Ash => ash_tree_ground_test(kind),
+        }
+    }
+}
+
+impl GrowTreeSettings {
+    /// The C#'s `Profiles` static table (`WorldGen.cs:3930-4022`): every
+    /// gem tree shares the heights 12/7, the padding 4 and the sapling 590;
+    /// the sakura's sapling is 595, the willow's 615 and the ash's 20.
+    pub const GEM_TREE_RUBY: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Gem,
+        tree_tile_type: 587,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 590,
+    };
+    /// `Profiles.GemTree_Diamond` (`WorldGen.cs:3942`).
+    pub const GEM_TREE_DIAMOND: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 588, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Topaz` (`WorldGen.cs:3952`).
+    pub const GEM_TREE_TOPAZ: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 583, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amethyst` (`WorldGen.cs:3962`).
+    pub const GEM_TREE_AMETHYST: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 584, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Sapphire` (`WorldGen.cs:3972`).
+    pub const GEM_TREE_SAPPHIRE: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 585, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Emerald` (`WorldGen.cs:3982`).
+    pub const GEM_TREE_EMERALD: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 586, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.GemTree_Amber` (`WorldGen.cs:3992`).
+    pub const GEM_TREE_AMBER: GrowTreeSettings =
+        GrowTreeSettings { tree_tile_type: 589, ..GrowTreeSettings::GEM_TREE_RUBY };
+    /// `Profiles.VanityTree_Sakura` (`WorldGen.cs:4002`).
+    pub const VANITY_TREE_SAKURA: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 596,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 595,
+    };
+    /// `Profiles.VanityTree_Willow` (`WorldGen.cs:4012`).
+    pub const VANITY_TREE_WILLOW: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Vanity,
+        tree_tile_type: 616,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 615,
+    };
+    /// `Profiles.Tree_Ash` (`WorldGen.cs:4022`).
+    pub const TREE_ASH: GrowTreeSettings = GrowTreeSettings {
+        ground: GroundTestKind::Ash,
+        tree_tile_type: 634,
+        tree_height_min: 7,
+        tree_height_max: 12,
+        tree_top_padding_needed: 4,
+        sapling_tile_type: 20,
+    };
+}
+
+/// `WorldGen.GrowTreeSettings.Profiles.TryGetFromItemId`
+/// (`WorldGen.cs:3853-3884`): the seed items that carry a profile — the
+/// seven gem seeds 4851-4857, the willow 4907 and the sakura 4871. (The
+/// ash profile's only entry is `TryGetFromTreeId`'s tree tile 634 — the
+/// C# has no ash SEED item, so no item id reaches it here.)
+pub fn grow_tree_profile_from_item(item: u16) -> Option<GrowTreeSettings> {
+    match item {
+        4857 => Some(GrowTreeSettings::GEM_TREE_AMBER),
+        4852 => Some(GrowTreeSettings::GEM_TREE_AMETHYST),
+        4856 => Some(GrowTreeSettings::GEM_TREE_DIAMOND),
+        4854 => Some(GrowTreeSettings::GEM_TREE_EMERALD),
+        4855 => Some(GrowTreeSettings::GEM_TREE_RUBY),
+        4853 => Some(GrowTreeSettings::GEM_TREE_SAPPHIRE),
+        4851 => Some(GrowTreeSettings::GEM_TREE_TOPAZ),
+        4907 => Some(GrowTreeSettings::VANITY_TREE_WILLOW),
+        4871 => Some(GrowTreeSettings::VANITY_TREE_SAKURA),
+        _ => None,
+    }
+}
+
 /// `WorldGen.EmptyTileCheck(startX, endX, startY, endY, ignoreID = 20)`
-/// (`:31453-31520`'s shape): every cell in the box is inactive (or the
-/// ignored sapling kind — `TileID.Sets.CommonSapling[20]` makes flag=true).
+/// (`:31453-31520`): every cell in the box is inactive — or a
+/// `CommonSapling` when the passed `ignoreID` is itself a sapling (the
+/// C#'s two-part flag arm, `:31471-31475` + `:31501`).
 pub fn empty_tile_check(
     world: &World,
     start_x: i32,
     end_x: i32,
     start_y: i32,
     end_y: i32,
-    ignore: Option<u16>,
+    ignore_id: Option<u16>,
 ) -> bool {
     if start_x < 0 || end_x >= world.width as i32 || start_y < 0 || end_y >= world.height as i32 {
         return false;
     }
+    let flag = ignore_id.is_some_and(is_common_sapling);
     for x in start_x..=end_x {
         for y in start_y..=end_y {
             let t = world.tile(x, y);
             if let Some(t) = t {
-                if t.active() && Some(t.kind) != ignore {
+                if t.active() && !(flag && is_common_sapling(t.kind)) {
                     return false;
                 }
             }
@@ -181,16 +399,63 @@ pub fn attempt_grow_tree_from_sapling(
     underground: bool,
     rng: &mut FastRandom,
 ) -> bool {
-    if underground {
+    // `InWorld(x, y, 2)` (`:72813-72816`).
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
         return false;
     }
     let Some(t) = world.tile(x, y) else {
         return false;
     };
-    if !t.active() || t.kind != 20 {
+    if !t.active() {
         return false;
     }
-    grow_tree(world, x, y, rng)
+    // The `frameX / 54` style the sapling carries (`TileObject`'s sapling
+    // styles — the ash/gem/palm families).
+    let style = t.frame_x.max(0) / 54;
+    match t.kind {
+        20 => {
+            // The kind-20 switch (`:72825-72849`): the style-10 sapling is
+            // the ash tree; the styles 6-9 are the palms (their
+            // `GrowPalmTree` port rides the worldgen palms — parked); the
+            // default arm is the vanilla `GrowTree`.
+            if style == 10 {
+                try_growing_tree_by_type(world, 634, x, y, rng);
+                true
+            } else if (6..=9).contains(&style) {
+                // The C#'s underground gate parks with the underground
+                // dispatcher; the port's overground call grows the palm
+                // shape through the worldgen palms — documented deviation.
+                false
+            } else {
+                if underground {
+                    false
+                } else {
+                    grow_tree(world, x, y, rng)
+                }
+            }
+        }
+        // The sakura (`:72850-72861`) and willow (`:72862-72873`) saplings.
+        595 => try_growing_tree_by_type(world, 596, x, y, rng),
+        615 => try_growing_tree_by_type(world, 616, x, y, rng),
+        // The gem saplings (`:72874-72905`): underground only, the profile
+        // by the style.
+        590 => {
+            if !underground {
+                return false;
+            }
+            let tree = match style {
+                0 => 583,
+                1 => 584,
+                2 => 585,
+                3 => 586,
+                4 => 587,
+                5 => 588,
+                _ => 589,
+            };
+            try_growing_tree_by_type(world, tree, x, y, rng)
+        }
+        _ => false,
+    }
 }
 
 /// `WorldGen.GrowTree` (`:29767-29980`): walk through the sapling stack,
@@ -468,26 +733,53 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
         world.frame_important[80] = true;
         return;
     }
-    // The cactus arm (:56666-56815): walk the stack, the budget, the cap,
-    // then grow by one (the fork/lean rolls land with their brushes).
+    // The cactus arm (:56668-56799): the stack walk DOWN from the top with the
+    // lean corrections, the height/budget, the ±2-column density cap, and the
+    // fork — the side shoots (left/right) and the tip.
+    if world.tile(i, j).is_none_or(|t| t.kind != 80) {
+        return;
+    }
+    let mut num = i;
     let mut num2 = j;
     while world
-        .tile(i, num2)
+        .tile(num, num2)
         .is_some_and(|t| t.active() && t.kind == 80)
     {
-        num2 -= 1;
+        num2 += 1;
         if !world
-            .tile(i, num2)
+            .tile(num, num2)
             .is_some_and(|t| t.active() && t.kind == 80)
         {
-            break;
+            if world
+                .tile(num - 1, num2)
+                .is_some_and(|t| t.active() && t.kind == 80)
+                && world
+                    .tile(num - 1, num2 - 1)
+                    .is_some_and(|t| t.active() && t.kind == 80)
+                && num >= i
+            {
+                num -= 1;
+            }
+            if world
+                .tile(num + 1, num2)
+                .is_some_and(|t| t.active() && t.kind == 80)
+                && world
+                    .tile(num + 1, num2 - 1)
+                    .is_some_and(|t| t.active() && t.kind == 80)
+                && num <= i
+            {
+                num += 1;
+            }
         }
     }
-    let num6 = j - num2; // the stack height above the soil row
+    let num6 = num2 - 1 - j;
+    let num7 = i - num;
+    num = i - num7;
+    num2 = j;
     let num8 = 11 - num6;
     let mut num9 = 0;
-    for num10 in (i - 2)..=(i + 2) {
-        for num11 in (num2 - num8)..=(j + num6) {
+    for num10 in (num - 2)..=(num + 2) {
+        for num11 in (num2 - num8)..=(num2 + num6) {
             if let Some(t) = world.tile(num10, num11) {
                 if t.active() && t.kind == 80 {
                     num9 += 1;
@@ -495,11 +787,100 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             }
         }
     }
+    // The drunk arm's cap is the 11-20 range (`:56690-56698`); the classic
+    // worlds take the 11-13 cap the port already carried.
     if num9 >= 11 + rng.next(2) {
         return;
     }
-    if world.tile(i, j - 1).is_none_or(|t| !t.active()) {
-        let idx = world.index(i, j - 1);
+    num = i;
+    num2 = j;
+    if num7 != 0 {
+        // The lean arm (:56788-56797): a free cell above with the neighbour
+        // shoot standing — the cactus leans into it.
+        if !world.tile(num, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num, num2 - 2).is_some_and(|t| t.active())
+            && !world.tile(num + num7, num2 - 1).is_some_and(|t| t.active())
+            && world
+                .tile(num - num7, num2 - 1)
+                .is_some_and(|t| t.active() && t.kind == 80)
+        {
+            let idx = world.index(num, num2 - 1);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        return;
+    }
+    if num6 == 0 {
+        if world.tile(num, num2 - 1).is_none_or(|t| !t.active()) {
+            let idx = world.index(num, num2 - 1);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        return;
+    }
+    // The fork arms (:56739-56783): the side shoots and the tip.
+    let mut flag = false;
+    let mut flag2 = false;
+    if world
+        .tile(num, num2 - 1)
+        .is_some_and(|t| t.active() && t.kind == 80)
+    {
+        if !world.tile(num - 1, num2).is_some_and(|t| t.active())
+            && !world.tile(num - 2, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num - 1, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num - 1, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num - 2, num2).is_some_and(|t| t.active())
+        {
+            flag = true;
+        }
+        if !world.tile(num + 1, num2).is_some_and(|t| t.active())
+            && !world.tile(num + 2, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num + 1, num2 - 1).is_some_and(|t| t.active())
+            && !world.tile(num + 1, num2 + 1).is_some_and(|t| t.active())
+            && !world.tile(num + 2, num2).is_some_and(|t| t.active())
+        {
+            flag2 = true;
+        }
+    }
+    let num12 = rng.next(3);
+    if num12 == 0 && flag {
+        let idx = world.index(num - 1, num2);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    } else if num12 == 1 && flag2 {
+        let idx = world.index(num + 1, num2);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    } else if num6 < rng.next_range(2, 8)
+        && world
+            .tile(num - 1, num2 - 1)
+            .is_none_or(|t| !t.active() || t.kind != 80)
+        && world
+            .tile(num + 1, num2 - 1)
+            .is_none_or(|t| !t.active() || t.kind != 80)
+        && world.tile(num, num2 - 1).is_none_or(|t| !t.active())
+    {
+        let idx = world.index(num, num2 - 1);
         world.tiles[idx] = crate::tile::Tile {
             kind: 80,
             frame_x: 0,
@@ -609,23 +990,30 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     if dirt == 0 && j as f64 >= world.world_surface {
         return;
     }
-    // The +-1 solid-neighbour scan with the lava exception (:75183-75197).
-    let mut all_empty = true;
-    let mut lava = false;
-    for k in (i - 1)..=(i + 1) {
+    // The +-1 enclosure scan with the lava exception (:75186-75201): the C#'s
+    // `flag` starts true, ANY non-solid tile in the 3x3 clears it, and a lava
+    // tile re-arms it and breaks the scan. The spread proceeds only while
+    // `flag` is cleared — a fully-solid 3x3 refuses. (The earlier slice had
+    // this inverted — it refused when the box was all-empty instead of
+    // all-solid, so the growth tick refused exactly the conversions the C#
+    // allows. `worldgen/biomes.rs`'s `spread_jungle_grass` carries the C#
+    // semantics already.)
+    let mut enclosed = true;
+    'enclosure: for k in (i - 1)..=(i + 1) {
         for l in (j - 1)..=(j + 1) {
             let Some(n) = world.tile(k, l) else {
                 continue;
             };
-            if n.active() && crate::tiledata::TILE_SOLID.has(n.kind) {
-                all_empty = false;
+            if !(n.active() && crate::tiledata::TILE_SOLID.has(n.kind)) {
+                enclosed = false;
             }
             if n.liquid > 0 && n.liquid_kind() == crate::tile::LiquidKind::Lava {
-                lava = true;
+                enclosed = true;
+                break 'enclosure;
             }
         }
     }
-    if all_empty && !lava {
+    if enclosed {
         return;
     }
     // The flower-27 exclusions (:75204-75206).
@@ -644,6 +1032,110 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
         world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
     }
     world.frame_important[grass as usize] = true;
+}
+
+/// `WorldGen.SolidTile` (`:70111-70131`) — the growth module's own copy of the
+/// tile-only solidity test (the shared `worldgen` module is crate-private).
+fn growth_solid(world: &World, x: i32, y: i32) -> bool {
+    match world.tile(x, y) {
+        Some(t) => {
+            t.active()
+                && (t.kind as usize) < crate::tiledata::TILE_COUNT
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                && !t.half_brick()
+                && t.slope() == 0
+        }
+        None => false,
+    }
+}
+
+/// `WorldGen.GetWaterDepth` (`:58355-58373`): the liquid column above the
+/// floor under `(x, y)` — the solid walk down, then the liquid count back up.
+fn water_depth(world: &World, x: i32, y: i32) -> i32 {
+    let mut num = y;
+    while !growth_solid(world, x, num) {
+        num += 1;
+        if num > world.height - 1 {
+            return 0;
+        }
+    }
+    num -= 1;
+    let mut num2 = num;
+    while world.tile(x, num2).is_some_and(|t| t.liquid > 0)
+        && !growth_solid(world, x, num2)
+    {
+        num2 -= 1;
+    }
+    num - num2
+}
+
+/// `WorldGen.CountGrowingPlantTiles` (`:58375-58390`): the tiles of `kind` in
+/// the `[x-range, x+range] × [y-range*3, y+range*3]` box.
+fn count_growing_plant_tiles(world: &World, x: i32, y: i32, range: i32, kind: u16) -> i32 {
+    let mut num = 0;
+    for i in (x - range)..=(x + range) {
+        for j in (y - range * 3)..=(y + range * 3) {
+            if world.tile(i, j).is_some_and(|t| t.active() && t.kind == kind) {
+                num += 1;
+            }
+        }
+    }
+    num
+}
+
+/// `WorldGen.PlaceBamboo` (`:58391-58445`): one bamboo stalk on the jungle
+/// grass / bamboo under `(x, y)` — the wall/surface guard, the water-depth
+/// window (2..5), the density gates and the write. Returns whether a stalk
+/// landed.
+fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) -> bool {
+    let min_depth = 2;
+    let max_depth = 5;
+    let num3 = rng.next_range(1, 21);
+    let Some(tile) = world.tile(x, y) else {
+        return false;
+    };
+    if tile.wall > 0 && (y as f64) <= world.world_surface {
+        return false;
+    }
+    if tile.active() && tile.kind == 314 {
+        return false;
+    }
+    let below = world.tile(x, y + 1).map(|t| (t.active(), t.kind));
+    let Some((below_active, below_kind)) = below else {
+        return false;
+    };
+    if below_active && matches!(below_kind, 571 | 60) {
+        let depth = water_depth(world, x, y);
+        if depth < min_depth || depth > max_depth {
+            return false;
+        }
+        let mut num4 = count_growing_plant_tiles(world, x, y, 5, 571);
+        let mut i = 1;
+        if below_kind == 571 {
+            loop {
+                if growth_solid(world, x, y + i) {
+                    break;
+                }
+                i += 1;
+            }
+            if i + num4 / rng.next_range(1, 21) > num3 {
+                return false;
+            }
+        } else {
+            num4 += 25;
+        }
+        if num4 + i * 2 > rng.next_range(40, 61) {
+            return false;
+        }
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 571;
+            t.set_slope(0);
+            t.flags = FLAG_ACTIVE;
+        }
+        return true;
+    }
+    false
 }
 
 /// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
@@ -751,9 +1243,41 @@ pub fn update_world_overground_tile(
         return;
     }
     if (kind == 595 || kind == 615) && rng.next(5) == 0 {
-        // `AttemptToGrowTreeFromSapling`'s 595/615 arms — the settings
-        // profiles (Sakura/Willow) land with the vanity trees.
+        // `AttemptToGrowTreeFromSapling`'s 595/615 arms (`:72435-72444`)
+        // — the Sakura/Willow settings profiles.
+        attempt_grow_tree_from_sapling(world, x, y, false, rng);
         return;
+    }
+    // The vanilla/KillTile arm (:72146-72152): the sakura/willow sapling or
+    // its grown tile standing on the evil grass is killed (the trees do not
+    // take root in the corruption/crimson).
+    if matches!(kind, 595 | 615 | 596 | 616)
+        && world
+            .tile(x, y + 1)
+            .is_some_and(|t| t.active() && matches!(t.kind, 199 | 23))
+    {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags &= !FLAG_ACTIVE;
+        }
+        return;
+    }
+    // The bamboo arm (:72154-72156): the bamboo 571 or the jungle grass 60
+    // with liquid above, at `Next(5)`, when the cell above is free and — for
+    // the jungle grass — at `Next(30)`.
+    let above_kind = world.tile(x, y - 1).map(|t| (t.active(), t.kind, t.liquid));
+    let bamboo = match above_kind {
+        Some((_, _, liquid)) if kind == 60 && liquid > 0 => true,
+        Some(_) if kind == 571 => true,
+        _ => false,
+    };
+    if bamboo && rng.next(5) == 0 {
+        let above_free = world
+            .tile(x, y - 1)
+            .is_some_and(|t| !t.active() || matches!(t.kind, 61 | 74 | 518));
+        let gate = if kind == 60 { rng.next(30) == 0 } else { true };
+        if above_free && gate {
+            place_bamboo(world, x, y - 1, rng);
+        }
     }
     // The cactus arm (:72229-72231): `Next(15)`.
     if kind == 80 && rng.next(15) == 0 {
@@ -901,6 +1425,181 @@ pub fn update_world(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The bamboo arm (`:72154-72156` + `PlaceBamboo` `:58391-58445`): a
+    /// bamboo 571 with a free cell above grows a stalk at the vanilla gates —
+    /// the wall/surface refusal, the water-depth window (2..5), the density
+    /// caps and the write.
+    #[test]
+    fn the_bamboo_arm_grows_a_stalk_over_the_water() {
+        // A pool of water over a floor: the bamboo 571 on the floor with a
+        // water column 3 deep and the free cell above it.
+        let mut w = World::new("t".into(), 60, 80);
+        w.world_surface = 40.0;
+        // The floor at y = 60.
+        for x in 0..60 {
+            let i = w.index(x, 60);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The water column y = 57..59 and the bamboo at y = 56.
+        for x in 0..60 {
+            for y in 57..=59 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+            let i = w.index(30, 56);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 571,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // Sweep seeds: the arm's Next(5)/Next(30) gates and PlaceBamboo's
+        // own rolls land across enough streams.
+        let mut grew = 0;
+        let mut runs = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 30, 56, true, false, &mut rng);
+            runs += 1;
+            grew += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 571)
+                .count();
+        }
+        assert!(grew > 0, "the bamboo arm grows a stalk ({grew} over {runs} picks)");
+    }
+
+    /// The vanity-KillTile arm (`:72146-72152`): a sakura/willow sapling or
+    /// its grown tile standing on the evil grass is killed, not left rooted.
+    #[test]
+    fn the_vanity_saplings_die_on_the_evil_grass() {
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 40.0;
+        // The evil grass at y = 30, the sapling on it at y = 29.
+        let i = w.index(10, 30);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 23,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(10, 29);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 595,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        assert!(
+            !w.tile(10, 29).is_some_and(|t| t.active()),
+            "the sapling on the evil grass is killed"
+        );
+        // The control: on plain grass it survives the arm.
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 40.0;
+        let i = w.index(10, 30);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 2,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(10, 29);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 595,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        assert!(
+            w.tile(10, 29).is_some_and(|t| t.active()),
+            "the sapling on the plain grass survives"
+        );
+    }
+
+    use super::*;
+
+    /// `SpreadGrass`'s enclosure gate (`WorldGen.cs:75186-75201`): the C#'s
+    /// `flag` starts true, any non-solid 3x3 tile clears it, and lava re-arms
+    /// it. The spread proceeds when the box is OPEN (some non-solid tile) and
+    /// refuses when it is fully solid — the earlier slice had this inverted.
+    #[test]
+    fn spread_grass_proceeds_on_an_open_box_and_refuses_when_enclosed() {
+        // An open box: the dirt cell has air above it. The surface rule
+        // (:75162) keeps dirt-0 below `worldSurface`, so the fixtures sit the
+        // cell under it.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(w.tile(10, 20).is_some_and(|t| t.kind == 2), "the open box converted");
+
+        // An enclosed box: every 3x3 neighbour solid.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        for dx in -1i32..=1 {
+            for dy in -1i32..=1 {
+                let i = w.index(10 + dx, 20 + dy);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(
+            w.tile(10, 20).is_some_and(|t| t.kind == 0),
+            "the enclosed box refused"
+        );
+
+        // The lava exception: a lava tile in the box re-arms the flag and the
+        // conversion refuses even though the box is open.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(11, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            liquid: 255,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(
+            w.tile(10, 20).is_some_and(|t| t.kind == 0),
+            "the lava box refused"
+        );
+    }
+
     use super::*;
     use crate::tile::Tile;
 
@@ -1075,6 +1774,114 @@ mod tests {
         assert!(!attempt_grow_tree_from_sapling(&mut w, 100, 199, false, &mut rng));
     }
 
+
+    #[test]
+    fn the_sakura_sapling_grows_the_vanity_tree() {
+        // `AttemptToGrowTreeFromSapling`'s 595 arm (`:72850-72861`) →
+        // `GrowTreeWithSettings` with the Sakura profile (`:4002`): the
+        // trunk grows the tree tile 596 with the profile's frame table,
+        // gated by the ground test (the Conversion.Grass set minus the
+        // 23/199 pair), the wall test, the side soil, the clear box and
+        // the height roll.
+        let mut w = world();
+        for dx in -2i32..=2 {
+            put(&mut w, 100 + dx, 210, 2, 0); // the forest grass
+        }
+        put(&mut w, 100, 209, 595, 0); // the sapling stack's top
+        let mut rng = FastRandom::new(11);
+        let grew = attempt_grow_tree_from_sapling(&mut w, 100, 209, false, &mut rng);
+        assert!(grew, "the sakura grows (the gates pass)");
+        assert!(
+            w.tile(100, 209).is_some_and(|t| t.active() && t.kind == 596),
+            "the trunk wrote the sakura tile 596"
+        );
+        // The trunk spans the 7-12 height roll upward from the ground row.
+        let trunk = (195..=210)
+            .filter(|&row| w.tile(100, row).is_some_and(|t| t.active() && t.kind == 596))
+            .count();
+        assert!((7..=12).contains(&trunk), "the trunk spans the height roll ({trunk})");
+    }
+
+    #[test]
+    fn the_sapling_gates_refuse_the_wrong_ground() {
+        // A sapling on non-soil ground never grows (the ground test).
+        let mut w = world();
+        for dx in -2i32..=2 {
+            put(&mut w, 100 + dx, 210, 1, 0); // plain dirt — not in TREE_SOILS
+        }
+        put(&mut w, 100, 209, 615, 0); // the willow sapling
+        let mut rng = FastRandom::new(11);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w, 100, 209, false, &mut rng),
+            "the non-soil ground refuses"
+        );
+        // A blocked clear box (a tile inside the height window) refuses too.
+        let mut w2 = world();
+        for dx in -2i32..=2 {
+            put(&mut w2, 100 + dx, 210, 60, 0);
+        }
+        put(&mut w2, 100, 209, 615, 0);
+        put(&mut w2, 100, 205, 1, 0); // the blocker inside the box
+        let mut rng2 = FastRandom::new(11);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w2, 100, 209, false, &mut rng2),
+            "the occupied clear box refuses"
+        );
+    }
+
+    /// The cactus arm's fork (`:56739-56783`): a standing column forks into the
+    /// side shoots (the left/right clearance checks behind `Next(3)`) or the
+    /// tip (`num6 < Next(2,8)` with the diagonals clear), and the lean arm
+    /// (`:56788-56797`) fills the free cell when the column leans.
+    #[test]
+    fn the_cactus_forks_into_the_side_shoots_and_the_tip() {
+        // A 3-tall column on sand: num6 = 2, so the tip gate's range and the
+        // side shoots are both live over a seed sweep.
+        let mut base = World::new("t".into(), 60, 80);
+        base.world_surface = 40.0;
+        for x in 0..60 {
+            for y in 30..80 {
+                let i = base.index(x, y);
+                base.tiles[i] = crate::tile::Tile {
+                    kind: 53,
+                    ..Default::default()
+                };
+                base.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for y in 28..30 {
+            let i = base.index(30, y);
+            base.tiles[i] = crate::tile::Tile {
+                kind: 80,
+                ..Default::default()
+            };
+            base.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut fork = 0;
+        let mut runs = 0;
+        for seed in 1u64..800 {
+            let mut w = base.clone();
+            let mut rng = FastRandom::new(seed);
+            // j is the column's TOP cell (the C# walks the stack downward).
+            grow_cactus(&mut w, 30, 28, &mut rng);
+            runs += 1;
+            // The side shoot or the tip adds a 80 outside the original column.
+            fork += w
+                .tiles
+                .iter()
+                .enumerate()
+                .filter(|(idx, t)| t.active() && t.kind == 80 && {
+                    let x = (*idx % 60) as i32;
+                    let y = (*idx / 60) as i32;
+                    // Outside the original column (28..=29): the tip above or
+                    // the side shoots.
+                    !(x == 30 && (28..=29).contains(&y))
+                })
+                .count();
+        }
+        assert!(fork > 0, "the column forks ({fork} over {runs} picks)");
+    }
+
     #[test]
     fn test_spread_1_cactus_plants_on_sand_with_the_box_gates() {
         // `GrowCactus` (:56575-56660): the sand arm needs the neighbours
@@ -1156,4 +1963,310 @@ mod tests {
         let picks = update_world(&mut w, 1, false, true, true, &mut rng);
         assert_eq!(picks, 0);
     }
+
+    #[test]
+    fn the_alch_harvest_matrix_runs_the_style_conditions() {
+        // `IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
+        // per-style gates, against a daytime world under the surface
+        // (world_surface = 100 in the 4200×400 fixture).
+        let mut w = world();
+        let dry = WeatherCtx::default();
+        let rainy = WeatherCtx {
+            raining: true,
+            ..WeatherCtx::default()
+        };
+        // style 0 (daybloom): day only.
+        w.day_time = true;
+        assert!(is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        w.day_time = false;
+        assert!(!is_alchemy_plant_harvestable(&w, 0, 120, &dry));
+        // style 1 (moonglow): night only.
+        assert!(is_alchemy_plant_harvestable(&w, 1, 120, &dry));
+        // style 3 (deathweed): night + (blood moon or full moon) — the
+        // fixture's moon_phase 0 is the full moon.
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.moon_phase = 4;
+        assert!(!is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = true;
+        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
+        w.blood_moon = false;
+        // style 4 (waterleaf): rain or any cloud.
+        assert!(!is_alchemy_plant_harvestable(&w, 4, 120, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &rainy));
+        let cloudy = WeatherCtx {
+            cloud_alpha: 0.1,
+            ..WeatherCtx::default()
+        };
+        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &cloudy));
+        // style 5 (fireblossom): late afternoon (the C#'s
+        // `Main.time > 40500.0` is strict) + the rain/height arm — the
+        // herb harvests when it is not raining, or when it sits BELOW the
+        // surface (`y > worldSurface`, the rows the rain does not reach).
+        w.time = 40501.0;
+        assert!(is_alchemy_plant_harvestable(&w, 5, 90, &dry));
+        assert!(is_alchemy_plant_harvestable(&w, 5, 120, &rainy));
+        assert!(!is_alchemy_plant_harvestable(&w, 5, 90, &rainy));
+        // An unknown style never harvests.
+        assert!(!is_alchemy_plant_harvestable(&w, 2, 90, &dry));
+    }
+
+    #[test]
+    fn the_seed_harvest_arm_covers_the_grown_herbs() {
+        // `IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
+        // 83/84 — 84 always, 83 through its style, 82 never.
+        let mut w = world();
+        w.day_time = true;
+        let dry = WeatherCtx::default();
+        assert!(!is_harvestable_herb_with_seed(&w, 82, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 84, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        w.day_time = false;
+        assert!(!is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
+        assert!(is_harvestable_herb_with_seed(&w, 83, 1, 90, &dry));
+        // A non-herb kind never harvests.
+        assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
+    }
+}
+
+/// `WallID.Sets.AllowsPlantsToGrow` (`WallID.cs:97`): the wall set
+/// `DefaultTreeWallTest` (`WorldGen.cs:30260-30267`) reads — the vanity and
+/// ash profiles' `WallTest`. Hand-transcribed (the generated tables carry
+/// neither set).
+const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
+    0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317, 63, 64, 65, 66, 67, 68, 69, 81, 70,
+    264, 268, 265, 74, 80,
+];
+
+/// `WorldGen.TryGrowingTreeByType` (`WorldGen.cs:30343-30387`): the
+/// tree-tile → profile dispatch. The kind-5 `GrowTree` and kind-323 palm
+/// arms ride their own ports (`grow_tree` / the worldgen palms); this is the
+/// settings arm the sapling growth needs.
+pub fn try_growing_tree_by_type(
+    world: &mut World,
+    tree_tile_type: u16,
+    x: i32,
+    y: i32,
+    rng: &mut FastRandom,
+) -> bool {
+    let profile = match tree_tile_type {
+        587 => GrowTreeSettings::GEM_TREE_RUBY,
+        588 => GrowTreeSettings::GEM_TREE_DIAMOND,
+        583 => GrowTreeSettings::GEM_TREE_TOPAZ,
+        584 => GrowTreeSettings::GEM_TREE_AMETHYST,
+        589 => GrowTreeSettings::GEM_TREE_AMBER,
+        586 => GrowTreeSettings::GEM_TREE_EMERALD,
+        585 => GrowTreeSettings::GEM_TREE_SAPPHIRE,
+        596 => GrowTreeSettings::VANITY_TREE_SAKURA,
+        616 => GrowTreeSettings::VANITY_TREE_WILLOW,
+        634 => GrowTreeSettings::TREE_ASH,
+        _ => return false,
+    };
+    grow_tree_with_settings(world, x, y, profile, rng)
+}
+
+/// `WorldGen.GrowTreeWithSettings` (`WorldGen.cs:30388-30847`): the
+/// settings-driven tree grow — the sapling-stack walk, the liquid/ground/
+/// wall gates, the height roll, the trunk frame table (the `num5` branch
+/// shapes with the `num4` column pick, the left/right branch arms), the
+/// side-ground caps and the top cap, closing with `RangeFrame`. The
+/// `TreeHeightAddon`/`ignoreWalls` args and the errorWorld height arm park
+/// (the callers pass 0/false; M5-SEED-1).
+pub fn grow_tree_with_settings(
+    world: &mut World,
+    checked_x: i32,
+    checked_y: i32,
+    settings: GrowTreeSettings,
+    rng: &mut FastRandom,
+) -> bool {
+    // The sapling stack walk (`:30390-30393`).
+    let mut num = checked_y;
+    while world.tile(checked_x, checked_y).is_some_and(|t| t.active())
+        && world
+            .tile(checked_x, num)
+            .is_some_and(|t| t.kind == settings.sapling_tile_type)
+    {
+        num += 1;
+    }
+    // The liquid gate (`:30394-30398`): the three cells above the ground.
+    for dx in [-1i32, 0, 1] {
+        if world
+            .tile(checked_x + dx, num - 1)
+            .is_some_and(|t| t.liquid != 0)
+        {
+            return false;
+        }
+    }
+    // The ground tile (`:30399-30404`): active, unsloped, no half-brick.
+    let ground = match world.tile(checked_x, num) {
+        Some(t) if t.active() && !t.half_brick() && t.slope() == 0 => t,
+        _ => return false,
+    };
+    // The wall test (`:30405-30411`) — `DefaultTreeWallTest`'s set.
+    let wall_ok = world
+        .tile(checked_x, num - 1)
+        .is_some_and(|t| ALLOWS_PLANTS_TO_GROW.contains(&t.wall));
+    if !settings.ground.test(ground.kind) || !wall_ok {
+        return false;
+    }
+    // The side grounds (`:30412-30417`): at least one must be tree soil.
+    let side_soil = |dx: i32| {
+        world
+            .tile(checked_x + dx, num)
+            .is_some_and(|t| t.active() && settings.ground.test(t.kind))
+    };
+    if !side_soil(-1) && !side_soil(1) {
+        return false;
+    }
+    // `BlockColorAndCoating` (`:30418`): the ground's paint rides onto every
+    // written tile. The tenthAnniversary colour roll (`:30419-30423`) is
+    // seed-gated (M5-SEED-1); the errorWorld height arm (`:30425`) likewise
+    // — the vanilla `getGoodWorld` callers park.
+    let paint = ground.paint();
+    // The height roll (`:30424`).
+    let num3 = rng.next_range(settings.tree_height_min, settings.tree_height_max + 1);
+    // The clear box (`:30426-30430`).
+    if !empty_tile_check(
+        world,
+        checked_x - 2,
+        checked_x + 2,
+        num - (num3 + settings.tree_top_padding_needed),
+        num - 1,
+        Some(20),
+    ) {
+        return false;
+    }
+    // The trunk loop (`:30431-30678`).
+    let mut left_branch = false;
+    let mut right_branch = false;
+    for i in num - num3..num {
+        let num4 = rng.next(3);
+        let mut num5 = rng.next(10);
+        if i == num - 1 || i == num - num3 {
+            num5 = 0;
+        }
+        // The re-roll guard (`:30454-30458`): a shape that repeats the same
+        // side re-rolls until it picks another.
+        while (num5 == 5 || num5 == 7) && left_branch || (num5 == 6 || num5 == 7) && right_branch {
+            num5 = rng.next(10);
+        }
+        left_branch = num5 == 5 || num5 == 7;
+        right_branch = num5 == 6 || num5 == 7;
+        // The trunk cell's frames (`:30459-30592`): the shape table.
+        let (fx, fy) = match num5 {
+            1 => (0, 66 + 22 * num4),
+            2 => (22, 22 * num4),
+            3 => (44, 66 + 22 * num4),
+            4 => (22, 66 + 22 * num4),
+            5 => (88, 22 * num4),
+            6 => (66, 66 + 22 * num4),
+            7 => (110, 66 + 22 * num4),
+            _ => (0, 22 * num4),
+        };
+        let idx = world.index(checked_x, i);
+        let t = &mut world.tiles[idx];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = settings.tree_tile_type;
+        t.set_paint(paint);
+        t.frame_x = fx as i16;
+        t.frame_y = fy as i16;
+        // The left branch arm (`:30596-30637`).
+        if left_branch {
+            let num4 = rng.next(3);
+            let (fx, fy) = if rng.next(3) < 2 {
+                (44, 198 + 22 * num4)
+            } else {
+                (66, 22 * num4)
+            };
+            let idx = world.index(checked_x - 1, i);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = settings.tree_tile_type;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = fy as i16;
+        }
+        // The right branch arm (`:30640-30678`).
+        if right_branch {
+            let num4 = rng.next(3);
+            let (fx, fy) = if rng.next(3) < 2 {
+                (66, 198 + 22 * num4)
+            } else {
+                (88, 66 + 22 * num4)
+            };
+            let idx = world.index(checked_x + 1, i);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = settings.tree_tile_type;
+            t.set_paint(paint);
+            t.frame_x = fx as i16;
+            t.frame_y = fy as i16;
+        }
+    }
+    // The side grounds (`:30680-30703`).
+    let side_ground = |dx: i32| {
+        world.tile(checked_x + dx, num).is_some_and(|t| {
+            !t.active() && !t.half_brick() && t.slope() == 0 && is_tile_type_fit_for_tree(t.kind)
+        })
+    };
+    let mut flag4 = side_ground(-1);
+    let mut flag5 = side_ground(1);
+    if rng.next(3) == 0 {
+        flag4 = false;
+    }
+    if rng.next(3) == 0 {
+        flag5 = false;
+    }
+    // The side caps (`:30704-30746`).
+    if flag5 {
+        let num4 = rng.next(3);
+        write_tree_frame(world, checked_x + 1, num - 1, settings.tree_tile_type, paint, 22, 132 + 22 * num4);
+    }
+    if flag4 {
+        let num4 = rng.next(3);
+        write_tree_frame(world, checked_x - 1, num - 1, settings.tree_tile_type, paint, 44, 132 + 22 * num4);
+    }
+    // The centre cap (`:30748-30783`).
+    let num4 = rng.next(3);
+    let (fx, fy) = if flag4 && flag5 {
+        (88, 132 + 22 * num4)
+    } else if flag4 {
+        (0, 132 + 22 * num4)
+    } else if flag5 {
+        (66, 132 + 22 * num4)
+    } else {
+        (0, 132 + 22 * num4) // the vanilla else-if chain leaves the cell untouched — the port writes nothing
+    };
+    if flag4 || flag5 {
+        write_tree_frame(world, checked_x, num - 1, settings.tree_tile_type, paint, fx, fy);
+    }
+    // The top cap (`:30785-30818`): the 1/13 branch keeps the 22-column.
+    let num4 = rng.next(3);
+    let (fx, fy) = if rng.next(13) != 0 {
+        (22, 198 + 22 * num4)
+    } else {
+        (0, 198 + 22 * num4)
+    };
+    write_tree_frame(world, checked_x, num - num3, settings.tree_tile_type, paint, fx, fy);
+    // `RangeFrame` (`:30820`).
+    crate::framing::reframe_area(world, checked_x, num - num3, 3);
+    true
+}
+
+/// One tree cell's write — `UseBlockColors(cache)` + the frame pair.
+fn write_tree_frame(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u16,
+    paint: u8,
+    fx: i32,
+    fy: i32,
+) {
+    let idx = world.index(x, y);
+    let t = &mut world.tiles[idx];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = kind;
+    t.set_paint(paint);
+    t.frame_x = fx as i16;
+    t.frame_y = fy as i16;
 }

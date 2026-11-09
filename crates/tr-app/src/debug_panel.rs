@@ -129,7 +129,7 @@ fn filtered_items(filter: &str) -> Vec<(u16, &'static str)> {
         .collect()
 }
 
-const NPC_LIST: [(NpcKind, &str, &str); 21] = [
+const NPC_LIST: [(NpcKind, &str, &str); 33] = [
     (NpcKind::Slime, "Blue Slime", "NPC_1"),
     (NpcKind::Zombie, "Zombie", "NPC_3"),
     (NpcKind::DemonEye, "Demon Eye", "NPC_2"),
@@ -151,6 +151,18 @@ const NPC_LIST: [(NpcKind, &str, &str); 21] = [
     (NpcKind::Deerclops, "Deerclops", "NPC_668"),
     (NpcKind::GoblinTinkerer, "Gob. Tinkerer", "NPC_107"),
     (NpcKind::BoundGoblin, "Bound Goblin", "NPC_105"),
+    (NpcKind::TravellingMerchant, "Travel Merchant", "NPC_368"),
+    (NpcKind::Angler, "Angler", "NPC_369"),
+    (NpcKind::SleepingAngler, "Sleeping Angler", "NPC_376"),
+    (NpcKind::Wizard, "Wizard", "NPC_108"),
+    (NpcKind::BoundWizard, "Bound Wizard", "NPC_106"),
+    (NpcKind::Mechanic, "Mechanic", "NPC_124"),
+    (NpcKind::BoundMechanic, "Bound Mechanic", "NPC_123"),
+    (NpcKind::Stylist, "Stylist", "NPC_353"),
+    (NpcKind::WebbedStylist, "Webbed Stylist", "NPC_354"),
+    (NpcKind::TaxCollector, "Tax Collector", "NPC_441"),
+    (NpcKind::Golfer, "Golfer", "NPC_588"),
+    (NpcKind::SleepingGolfer, "Sleeping Golfer", "NPC_589"),
 ];
 
 const BOSS_LIST: [(NpcKind, &str, &str); 12] = [

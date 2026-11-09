@@ -75,9 +75,32 @@ impl Tile {
         self.flags & FLAG_ACTIVE != 0
     }
 
+    /// `Tile.inActive` (`Tile.cs:606-608`): the framed-off flag — a placed
+    /// tile that renders and behaves as absent (`nactive` is its negation
+    /// of `active`).
+    #[inline]
+    pub fn inactive(&self) -> bool {
+        self.flags & FLAG_INACTIVE != 0
+    }
+
     #[inline]
     pub fn half_brick(&self) -> bool {
         self.flags & FLAG_HALF_BRICK != 0
+    }
+
+    /// `Tile.fullbrightBlock` (`Tile.cs:562-565`): the Glow-coating bit —
+    /// the block ignores the light map. (The wall's Glow bit rides
+    /// `World::fullbright_wall`.)
+    #[inline]
+    pub fn fullbright_block(&self) -> bool {
+        self.flags & FLAG_FULLBRIGHT != 0
+    }
+
+    /// `Tile.actuator` (`Tile.cs:691-694`): the actuator bit — an actuated
+    /// tile renders inert and stops being solid.
+    #[inline]
+    pub fn actuator(&self) -> bool {
+        self.flags & FLAG_ACTUATOR != 0
     }
 
     /// `Tile.topSlope`: slope 1 or 2.

@@ -4,8 +4,8 @@ use super::noise::{Noise, Rng};
 use super::terrain::Layers;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use super::{
-    TILE_ASH, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_HELLSTONE, TILE_LEAD, TILE_PLATINUM,
-    TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
+    TILE_ASH, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GOLD, TILE_HELLSTONE, TILE_IRON,
+    TILE_LEAD, TILE_PLATINUM, TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
 };
 use crate::ores::SavedOreTiers;
 use crate::tile::FLAG_ACTIVE;
@@ -80,22 +80,40 @@ pub(crate) fn blob_pass(
 const GEM_KINDS: [u16; 6] = [63, 64, 65, 66, 67, 68];
 
 /// The tier coin-flips in the C# order copper → iron → silver → gold
-/// (`WorldGen.cs:11274-11297`); the `dontStarveWorldGen` gate on iron/gold is
-/// dead without the seed. The C# mirrors the flips into the
-/// `GenVars.copperBar`-style bar ids — the port's recipes carry both bar
-/// families statically, so nothing to roll there.
-fn roll_tiers(rng: &mut Rng) -> SavedOreTiers {
+/// (`WorldGen.cs:11274-11297`).
+///
+/// M5-SEED-1: The Constant (`dontStarveWorldGen`) pins iron to tile 6 and gold
+/// to tile 8 — the C# gates both flips `(!dontStarveWorldGen ||
+/// drunkWorldGen)` (`:11280`, `:11292`), so no lead 167 / platinum 169 ever
+/// rolls for a Constant unless drunk is also on. The gate applies to the
+/// *assignment* only: the port always consumes its `Next(2)`, where the C#
+/// would short-circuit both draws under a non-drunk Constant. That is a
+/// documented deviation (the port's stream contract keeps the four draws per
+/// world), and it only shifts the stream of Constant worlds — a classic world
+/// draws the identical four-draw ledger either way.
+///
+/// The C# mirrors the flips into the `GenVars.copperBar`-style bar ids — the
+/// port's recipes carry both bar families statically, so nothing to roll there.
+fn roll_tiers(rng: &mut Rng, flags: crate::seeds::SeedFlags) -> SavedOreTiers {
+    // `!dontStarveWorldGen || drunkWorldGen` (`:11280`/`:11292`): the flips are
+    // live exactly when this is false.
+    let the_constant_pins = flags.contains(crate::seeds::SeedFlags::DONT_STARVE)
+        && !flags.contains(crate::seeds::SeedFlags::DRUNK);
     let mut tiers = SavedOreTiers::new();
     if rng.range(0, 2) == 0 {
         tiers.copper = TILE_TIN as i32;
     }
-    if rng.range(0, 2) == 0 {
+    // The iron flip — the draw is unconditional (see the doc comment); the pin
+    // is not.
+    let iron_flip = rng.range(0, 2) == 0;
+    if iron_flip && !the_constant_pins {
         tiers.iron = TILE_LEAD as i32;
     }
     if rng.range(0, 2) == 0 {
         tiers.silver = TILE_TUNGSTEN as i32;
     }
-    if rng.range(0, 2) == 0 {
+    let gold_flip = rng.range(0, 2) == 0;
+    if gold_flip && !the_constant_pins {
         tiers.gold = TILE_PLATINUM as i32;
     }
     tiers
@@ -105,8 +123,8 @@ fn roll_tiers(rng: &mut Rng) -> SavedOreTiers {
 /// strength lo/hi, steps lo/hi) with the GenVars quartet truncated exactly as
 /// the C# `(int)` casts truncate. Bands 10-11 sit behind `!noSurface &&
 /// !surfaceIsInSpace` (`:13543`) — no such seeds here, they always run. The
-/// drunk per-blob tier re-rolls (`:13401-13411` and friends) draw only in
-/// drunk worlds.
+/// drunk per-blob tier re-rolls that precede each band's `TileRunner`
+/// (`:13194` … `:13562`) are deferred — see `ores_and_shinies`.
 fn band_table(
     tiers: &SavedOreTiers,
     layers: &Layers,
@@ -157,6 +175,16 @@ fn band_table(
 /// their shape-model placement after the bands — vanilla runs them in the
 /// `Gems` (`WorldGen.cs:15050`) and `Underworld` (`:13805`) passes
 /// (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)").
+///
+/// M5-SEED-1: the seed flags ride in on `world.seeds` (set once by
+/// `worldgen::generate` from `GenOptions::flags`, `mod.rs:118`), so the tier
+/// flips and the walkers' own arms see the same secret-seed identity the rest
+/// of the pipeline does. The drunk-only pieces of the pass stay deferred:
+/// the 22 per-blob tier re-rolls (`if (drunkWorldGen) { Next(2) → GenVars.X }`,
+/// at `:13194` … `:13562`) and the drunk evil-band split into two
+/// half-density crimtane/demonite loops (`:13370-13378`, `:13577-13586`),
+/// which replace the single evil band (`:13589-13602`) in a drunk world. Both
+/// are owned by the drunk-world follow-up; a classic world draws neither.
 pub(crate) fn ores_and_shinies(
     world: &mut World,
     rng: &mut Rng,
@@ -165,7 +193,14 @@ pub(crate) fn ores_and_shinies(
     height: i32,
     crimson: bool,
 ) {
-    let tiers = roll_tiers(rng);
+    // The secret-seed flags of the world being generated — a copy, so the
+    // mutable `world` borrow stays free for the walkers.
+    let flags = world.seeds;
+    let tiers = roll_tiers(rng, flags);
+    // The setup roll is per-world state in vanilla (`GenerateWorld`'s once
+    // per world, `Main.cs:11266-11297`), so it rides the World for the save
+    // (M6-SAVE-1f) and the App's runtime copy reads it back.
+    world.ore_tiers = tiers;
     let bands = band_table(&tiers, layers, width, height, crimson);
     let area = (width * height) as f64;
     for &(kind, density, y0, y1, s0, s1, t0, t1) in &bands {
@@ -186,7 +221,9 @@ pub(crate) fn ores_and_shinies(
                 steps,
                 kind,
                 layers.world_surface,
-                &TileRunnerOpts::default(),
+                &TileRunnerOpts {
+                    flags: world.seeds, ..TileRunnerOpts::default()
+                },
             );
         }
     }
@@ -226,6 +263,7 @@ fn ore_blob(world: &mut World, x: i32, y: i32, kind: u16, size: i32, rng: &mut R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::seeds::SeedFlags;
     use crate::worldgen::noise::Rng;
 
     /// DW-4.2: the tier flips consume exactly one `Next(2)` per pair in the
@@ -233,7 +271,7 @@ mod tests {
     #[test]
     fn the_tier_flips_draw_in_the_csharp_order() {
         let mut runner = Rng(0x5EED);
-        let tiers = roll_tiers(&mut runner);
+        let tiers = roll_tiers(&mut runner, SeedFlags::none());
         let mut replay = Rng(0x5EED);
         for (normal, alt, rolled) in [
             (7i32, TILE_TIN, tiers.copper),
@@ -257,6 +295,48 @@ mod tests {
             (tiers.cobalt, tiers.mythril, tiers.adamantite),
             (-1, -1, -1)
         );
+    }
+
+    /// M5-SEED-1: The Constant pins iron to tile 6 and gold to tile 8 —
+    /// `(!dontStarve || drunk)` (`WorldGen.cs:11280`, `:11292`) gates both
+    /// flips, so no lead 167 / platinum 169 rolls. The sweep needs several
+    /// streams because a classic world rolls lead/platinum roughly a quarter
+    /// of the time each; with the pin on it must never roll either.
+    #[test]
+    fn the_constant_pins_iron_and_gold() {
+        let constant = SeedFlags::from(SeedFlags::DONT_STARVE);
+        for seed in 1..=64u64 {
+            let mut runner = Rng(seed);
+            let tiers = roll_tiers(&mut runner, constant);
+            assert_eq!(tiers.iron, TILE_IRON as i32, "seed {seed} iron pinned");
+            assert_eq!(tiers.gold, TILE_GOLD as i32, "seed {seed} gold pinned");
+        }
+        // A classic world rolls the alternates freely (the control half: without
+        // it the pinned assertions above would pass by never rolling anything).
+        let alternates = (1..=64u64)
+            .filter(|&seed| {
+                let tiers = roll_tiers(&mut Rng(seed), SeedFlags::none());
+                tiers.iron == TILE_LEAD as i32 || tiers.gold == TILE_PLATINUM as i32
+            })
+            .count();
+        assert!(alternates > 0, "a classic world rolls lead/platinum");
+    }
+
+    /// M5-SEED-1: drunk lifts the pin — `!dontStarve || drunk` is true, so a
+    /// drunken Constant rolls the alternates like any other world.
+    #[test]
+    fn a_drunken_constant_still_rolls_the_alternates() {
+        let flags = SeedFlags::from(SeedFlags::DONT_STARVE | SeedFlags::DRUNK);
+        let lead = (1..=512u64)
+            .map(|seed| roll_tiers(&mut Rng(seed), flags))
+            .filter(|t| t.iron == TILE_LEAD as i32)
+            .count();
+        assert!(lead > 0, "a drunken Constant rolls lead");
+        let platinum = (1..=512u64)
+            .map(|seed| roll_tiers(&mut Rng(seed), flags))
+            .filter(|t| t.gold == TILE_PLATINUM as i32)
+            .count();
+        assert!(platinum > 0, "a drunken Constant rolls platinum");
     }
 
     /// DW-4.3: the band table equals the research §1.2 table

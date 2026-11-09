@@ -1,19 +1,24 @@
 //! The App's save glue — the world/player autosave, the explored-map write
 //! and its load-side twin. (A6: extracted from `main.rs`.)
 
+//! The App's save glue — the world/player autosave, the explored-map write
+//! and its load-side twin. (A6: extracted from `main.rs`.)
+
 use crate::app::{App, is_native_trwld};
+use crate::chest;
 use crate::map;
 use crate::persist;
-use tr_core::save;
+use tr_core::save::{self, BannerKill, ChestItem, ChestRecord};
 use tr_core::wld::sections::SectionData;
 
 impl App {
     /// `WorldGen.SaveWorld` (`WorldFile.cs:825`'s entry) over the loaded file:
-    /// the port writes its native `.trwld` (`save::save`), a retail `.wld`
-    /// writes every section the port carries (`wld::save`), and nothing else
-    /// is written for either (a `.wld`'s player state and explored map have no
-    /// port format yet — the `.trplayer`/`.map` sidecars stay the `.trwld`
-    /// path's; recorded in `docs/ANALYSIS.md`).
+    /// the port writes its native `.trwld` (`save::save`, whose v7-v11 side
+    /// records carry the chests/banners/bestiary/NPCs/ore-tiers), a retail
+    /// `.wld` writes every section the port carries (`wld::save`), and nothing
+    /// else is written for either (a `.wld`'s player state and explored map
+    /// have no port format yet — the `.trplayer`/`.map` sidecars stay the
+    /// `.trwld` path's; recorded in `docs/ANALYSIS.md`).
     ///
     /// Every exit route funnels through here — the autosave tick
     /// (`frame.rs`, `Main.cs:19751-19765`'s 600 s), `F9`, the window's close
@@ -21,7 +26,108 @@ impl App {
     /// save path is decided.
     pub(crate) fn save_world(&mut self) {
         if is_native_trwld(&self.world_path) {
-            match save::save(&self.world_path, &self.world) {
+            // `SaveChests` (`WorldFile.cs:1606-1676`): the world chests ride the
+            // same stream as the world itself — a u32 count, then per chest the
+            // anchor, the name and the slots, an unwritten `itemType`/`prefix`
+            // pair standing in for an air (`stack == 0`) slot.
+            let mut chests: Vec<ChestRecord> = Vec::with_capacity(self.world_chests.len());
+            for (idx, chest) in self.world_chests.iter().enumerate() {
+                // The C# walks the whole `Main.chest` array and skips the null
+                // slots; the port's tombstones keep a coordinate nothing can
+                // match, so the `FindChest` read is the null test
+                // (`Chest.cs:513-520`).
+                if chest::find_chest(&self.world_chests, chest.tile.0, chest.tile.1) != Some(idx) {
+                    continue;
+                }
+                chests.push(ChestRecord {
+                    x: chest.tile.0,
+                    y: chest.tile.1,
+                    // The stored `Chest.name`: the rename submit's name, or the
+                    // empty string a never-renamed chest carries — the tile
+                    // default is derived, never stored (M6-SAVE-1 phase 3's
+                    // fold put the name on the entity).
+                    name: chest.name.clone(),
+                    // The store's implicit-air compression survives verbatim:
+                    // the trailing airs are already dropped and the interior
+                    // ones are explicit `stack == 0` entries (`Item.IsAir`'s
+                    // type-0/stack-0 pair, `Item.cs:385-395`).
+                    slots: chest
+                        .slots
+                        .iter()
+                        .map(|slot| {
+                            if slot.kind == 0 || slot.count == 0 {
+                                ChestItem { stack: 0, kind: 0, prefix: 0 }
+                            } else {
+                                ChestItem {
+                                    // The stack cap is `Item.maxStack`
+                                    // (9999 for stackables, `Item.cs:159`),
+                                    // far inside the widened `i32` — the port's
+                                    // `u32` counts saturate at the top.
+                                    stack: slot.count.min(i32::MAX as u32) as i32,
+                                    kind: slot.kind,
+                                    // `Item.prefix` is a `byte` in the C#
+                                    // (`Item.cs:305`); the port's widened `u16`
+                                    // is clamped back.
+                                    prefix: slot.prefix.min(u8::MAX as u16) as u8,
+                                }
+                            }
+                        })
+                        .collect(),
+                });
+            }
+            // `BannerSystem.Save` (`BannerSystem.cs:172-186`): the per-banner
+            // kill counts. The vanilla rides the world-flags block; the port's
+            // sparse map gets its own v8 section, so each record carries its
+            // banner id.
+            let banners: Vec<BannerKill> = self
+                .banners
+                .pairs()
+                .map(|(banner, kills)| BannerKill { banner, kills })
+                .collect();
+            // `NPCKillsTracker.Save` (`NPCKillsTracker.cs:59-70`): the bestiary
+            // kill counts ride the world file's section 10 in vanilla; the port
+            // had them on the `.trplayer` sidecar, whose line stays written
+            // below for builds that read it (the back-compat fallback).
+            let bestiary: Vec<save::BestiaryKill> = self
+                .bestiary
+                .kills
+                .pairs()
+                .map(|(id, kills)| save::BestiaryKill { credit_id: id.to_string(), kills })
+                .collect();
+            // `SaveNPCs`'s block B (`WorldFile.cs:1703-1750`): the live town
+            // NPCs — the kind, the given name, the pixel position, the
+            // homelessness and the home tile. The shimmered-town block A and
+            // the `SavesAndLoads` passives (block C) ride the C# arrays the
+            // port does not model.
+            let npcs: Vec<save::NpcRecord> = self
+                .npcs
+                .iter()
+                .filter(|n| n.kind.is_town_resident())
+                .map(|n| save::NpcRecord {
+                    kind: n.kind.to_u16(),
+                    given_name: n.given_name.clone(),
+                    x: n.x,
+                    y: n.y,
+                    homeless: n.home.is_none(),
+                    home_x: n.home.map_or(-1, |(hx, _)| hx),
+                    home_y: n.home.map_or(-1, |(_, hy)| hy),
+                })
+                .collect();
+            // `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven
+            // metal tiers in the field order (the C# rides them in the world
+            // flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
+            let ore = &self.ore_tiers;
+            let ore_tiers = [
+                ore.copper,
+                ore.iron,
+                ore.silver,
+                ore.gold,
+                ore.cobalt,
+                ore.mythril,
+                ore.adamantite,
+            ];
+            let side = save::WorldSide { chests, banners, bestiary, npcs, ore_tiers: Some(ore_tiers) };
+            match save::save(&self.world_path, &self.world, &side) {
                 Ok(()) => log::info!("saved {}", self.world_path.display()),
                 Err(e) => log::warn!("save failed: {e:#}"),
             }
@@ -116,6 +222,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::WorldSections;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::craft::WorldChest;
     use crate::item::ItemSlot;
@@ -187,12 +294,12 @@ mod tests {
         // two arms), both named, one carrying the shimmer payload.
         let mut merchant =
             crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 65.0 * 16.0, 130.0 * 16.0, 1, 0.0);
-        merchant.given_name = Some("Hal".into());
+        merchant.given_name = "Hal".into();
         merchant.home = Some((65, 105));
         merchant.variation_index = 3;
         let mut nurse =
             crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 70.0 * 16.0, 90.0 * 16.0, 1, 0.0);
-        nurse.given_name = Some("Nurse".into());
+        nurse.given_name = "Nurse".into();
         nurse.home = None; // homeless
         nurse.homeless_despawn = true;
         app.npcs = vec![merchant, nurse];
@@ -321,7 +428,7 @@ mod tests {
         );
         let npcs = crate::npc::from_wld(&sections.npcs);
         assert_eq!(npcs.len(), 2);
-        assert_eq!(npcs[0].given_name.as_deref(), Some("Hal"));
+        assert_eq!(npcs[0].given_name, "Hal");
         assert_eq!(npcs[0].home, Some((65, 105)), "the room still fits");
         assert_eq!(npcs[0].variation_index, 3);
         assert_eq!(npcs[1].home, None, "the homeless record stays homeless");
@@ -554,9 +661,503 @@ mod tests {
         assert_eq!(sidecar_one, sidecar_two, "the sidecar pair is byte-equal");
         // The world round-trips through the native reader, and no `.wld`-only
         // write appeared beside it.
-        let world = tr_core::save::load(&path).expect("reads back");
+        let (world, _native) = tr_core::save::load(&path).expect("reads back");
         assert_eq!(world.name, "t", "the `ground()` fixture world");
         assert!(!dir.join("native.wld").exists(), "no `.wld` beside a `.trwld`");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+mod chest_save_tests {
+    use super::*;
+    use crate::app::WorldSections;
+    use crate::assets;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use std::path::PathBuf;
+    use crate::item::{ItemSlot, EMPTY_SLOT};
+    use crate::registry;
+    use crate::settings;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::World;
+
+    /// The `chest_gen` test rig's world: a floor row at y = 200, so the anchors
+    /// on y = 197/198 sit on it and inside the surface band.
+    fn chest_rig() -> World {
+        let mut w = World::new("chests".into(), 200, 300);
+        w.world_surface = 200.0;
+        w.rock_layer = 240.0;
+        w.seed = 42;
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // `Main.tileFrameImportant[21] = true` (`Main.cs:7656`): the framer
+        // keeps the chest object's own 2x2 frames — without the bit the load's
+        // `frame_world` pass rewrites the anchor cell and the roll cannot see
+        // it.
+        w.frame_important[21] = true;
+        for x in 0..200 {
+            let i = w.index(x, 200);
+            w.tiles[i] = Tile {
+                kind: 1,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        // The NPC spawners' surface read ('s
+        // ) needs the column cache —  does not
+        // compute it and the load path computes it before .
+        w.compute_column_surface();
+        w
+    }
+
+    /// The 2x2 chest tile object (`chest_gen`'s `put_chest`): the anchor cell
+    /// carries frames 0/0, the pair `generate_world_chests` scans for.
+    fn put_chest(world: &mut World, x: i32, y: i32) {
+        for (dx, dy, fx, fy) in [
+            (0i32, 0i32, 0i16, 0i16),
+            (1, 0, 18, 0),
+            (0, 1, 0, 18),
+            (1, 1, 18, 18),
+        ] {
+            let i = world.index(x + dx, y + dy);
+            world.tiles[i] = Tile {
+                kind: 21,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+    }
+
+    /// A headless `App` over the world and its loaded records — the real
+    /// constructor, with an empty atlas and blank lookups (all the headless
+    /// path reads).
+    fn app_for(world: World, sections: WorldSections, path: PathBuf) -> App {
+        App::new(
+            settings::Settings::default(),
+            world,
+            sections,
+            path,
+            tr_render::Atlas::build(Vec::new(), 8192),
+            None,
+            assets::Lookups::default(),
+            (0, 0, 0, 0),
+        )
+    }
+
+    /// DW-2.2: the save → load round-trip through the App path — a stocked
+    /// chest, an interior air and a prefixed item plus a renamed chest survive
+    /// `save_world`/`load_world`/`App::new`, and the save's anchor wins over the
+    /// load-time loot re-roll (`merge_store`'s collision rule).
+    #[test]
+    fn dw_2_2_a_saved_chest_round_trips_through_the_app() {
+        let (ax, ay) = (55, 197); // the stocked chest
+        let (bx, by) = (120, 197); // the renamed chest
+        let mut world = chest_rig();
+        put_chest(&mut world, ax, ay);
+        put_chest(&mut world, bx, by);
+        let path = std::env::temp_dir().join("tr-dw-2-2-chest-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        // The roll claims every chest tile, so the stocked chest is the rolled
+        // entry the open path would have opened anyway, written through
+        // `set_chest_slot` — including the interior air at slot 1 (the store
+        // keeps it explicit, `SaveChests`'s unwritten-pair arm covers it).
+        let stocked = chest::find_chest(&app.world_chests, ax, ay).expect("the anchor rolled");
+        // The roll's own rows are wiped first (a chest the player emptied,
+        // `ItemSlot.SetDefaults(0)`), so the saved stock is exactly what the
+        // three writes below leave.
+        app.world_chests[stocked].slots.clear();
+        for (slot, item) in [
+            (0usize, ItemSlot { kind: 9, name: registry::name(9), count: 6, prefix: 0 }),
+            (1, EMPTY_SLOT),
+            (
+                2,
+                ItemSlot { kind: 3507, name: registry::name(3507), count: 1, prefix: 84 },
+            ),
+        ] {
+            assert!(chest::set_chest_slot(&mut app.world_chests, stocked, slot, item));
+        }
+        // The renamed chest takes the entry down and re-creates it, the
+        // `CreateChest` call the open path makes for a tile the roll missed.
+        let rolled_b = chest::find_chest(&app.world_chests, bx, by).expect("the second anchor rolled");
+        chest::remove_chest(&mut app.world_chests, rolled_b);
+        let renamed = chest::create_chest(&mut app.world_chests, bx, by);
+        assert!(
+            chest::set_chest_slot(
+                &mut app.world_chests,
+                renamed,
+                0,
+                ItemSlot { kind: 71, name: registry::name(71), count: 3, prefix: 0 },
+            )
+        );
+        // `ChestUI.RenameChestSubmit`'s write (`:853-860`) into the entity's
+        // name (M6-SAVE-1 phase 3's fold).
+        app.world_chests[renamed].name = "Gold Stash".into();
+        // Keep the scratch save clean: no player sidecar and no map sidecar.
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(sections.native.chests.len(), 2, "one record per live store entry");
+        let saved_b = sections.native.chests
+            .iter()
+            .find(|r| (r.x, r.y) == (bx, by))
+            .expect("the renamed chest's record");
+        assert_eq!(&saved_b.name, "Gold Stash", "the effective name rides the record");
+        assert_eq!(saved_b.slots[0].kind, 71);
+
+        // The control: the same world re-rolls the anchor with its band rows,
+        // so the equality below is the seeded store winning, not an empty roll.
+        let roll = crate::chest_gen::generate_world_chests(&world);
+        let rolled = roll
+            .iter()
+            .find(|c| c.tile == (ax, ay))
+            .expect("the anchor re-rolls on load");
+        assert!(
+            rolled.slots.len() >= 2 && rolled.slots.len() != 3,
+            "the roll stocks the anchor with its own band rows: {:?}",
+            rolled.slots
+        );
+
+        let back = app_for(world, sections, path);
+        let stocked = chest::find_chest(&back.world_chests, ax, ay).expect("the saved anchor survives");
+        assert_eq!(
+            back.world_chests[stocked].slots,
+            vec![
+                ItemSlot { kind: 9, name: registry::name(9), count: 6, prefix: 0 },
+                EMPTY_SLOT, // the interior air
+                ItemSlot { kind: 3507, name: registry::name(3507), count: 1, prefix: 84 },
+            ],
+            "the seeded slots replace the roll exactly — no band rows appended"
+        );
+        let renamed = chest::find_chest(&back.world_chests, bx, by).expect("the renamed chest survives");
+        assert_eq!(
+            chest::chest_slot(&back.world_chests, renamed, 0),
+            Some(ItemSlot { kind: 71, name: registry::name(71), count: 3, prefix: 0 })
+        );
+        assert_eq!(chest::chest_name(&back, renamed as i32), "Gold Stash");
+        assert_eq!(
+            back.world_chests[renamed].name, "Gold Stash",
+            "the name rides the entity (the old side map is gone)"
+        );
+    }
+
+    /// DW-2.2: the anchor cull — the vanilla `LoadChests`/`FixAgainstExploits`
+    /// validity sweep. A record whose `(x, y)` is not an active chest tile of
+    /// kind 21/341 in the loaded world is dropped, name and slots with it.
+    #[test]
+    fn dw_2_2_a_record_with_a_missing_anchor_is_dropped() {
+        let (ax, ay) = (55, 197);
+        let (bx, by) = (120, 197);
+        let mut world = chest_rig();
+        put_chest(&mut world, ax, ay);
+        put_chest(&mut world, bx, by);
+        // The stale record's anchor: the tile is gone (a broken chest's cell
+        // after an explosion, say).
+        let i = world.index(bx, by);
+        world.tiles[i] = Tile::default();
+
+        let records = vec![
+            ChestRecord {
+                x: ax,
+                y: ay,
+                name: "Vault".into(),
+                slots: vec![ChestItem { stack: 12, kind: 166, prefix: 0 }],
+            },
+            ChestRecord {
+                x: bx,
+                y: by,
+                name: "Ghost".into(),
+                slots: vec![ChestItem { stack: 5, kind: 9, prefix: 0 }],
+            },
+        ];
+        let app = app_for(
+            world,
+            WorldSections::native(save::WorldSide {
+                chests: records,
+                banners: Vec::new(),
+                bestiary: Vec::new(),
+                npcs: Vec::new(),
+                ore_tiers: None,
+            }),
+            PathBuf::new(),
+        );
+
+        let idx = chest::find_chest(&app.world_chests, ax, ay).expect("the valid record seeds the store");
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, idx, 0),
+            Some(ItemSlot { kind: 166, name: registry::name(166), count: 12, prefix: 0 })
+        );
+        assert_eq!(chest::chest_name(&app, idx as i32), "Vault");
+        // The culled record leaves no entry and no name behind.
+        assert!(
+            chest::find_chest(&app.world_chests, bx, by).is_none(),
+            "an anchor over plain air carries no chest"
+        );
+        assert!(
+            !app.world_chests.iter().any(|c| c.name == "Ghost"),
+            "the culled record's name lands nowhere"
+        );
+        assert_eq!(
+            app.world_chests.iter().filter(|c| !c.name.is_empty()).count(),
+            1,
+            "only the surviving record's name rides an entity"
+        );
+    }
+
+    /// DW-2.3: the save → load round-trip of the banner tally through the App
+    /// path — the `BannerSystem.Save` counts (`BannerSystem.cs:172-186`) the
+    /// kill pass accumulates survive `save_world`/`load_world`/`App::new`, and
+    /// an empty tally loads none.
+    #[test]
+    fn dw_2_3_a_saved_banner_tally_round_trips_through_the_app() {
+        let mut world = chest_rig();
+        let path = std::env::temp_dir().join("tr-dw-2-3-banner-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
+        // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
+        // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
+        for _ in 0..7 {
+            app.banners.add_npc_kill_by(1, "Tester");
+        }
+        for _ in 0..3 {
+            app.banners.add_npc_kill_by(-4, "Tester");
+        }
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(sections.native.banners.len(), 2, "one record per tallied banner");
+        let back = app_for(world, sections, path);
+        let pairs: Vec<(i32, i32)> = back.banners.pairs().collect();
+        assert_eq!(pairs, vec![(69, 7), (151, 3)], "the counts ride the store");
+
+        // The control: a fresh App over the same world starts empty — the
+        // records above are what carried the tally, not a re-derived one.
+        let mut world2 = chest_rig();
+        let control = app_for(world2.clone(), WorldSections::native(save::WorldSide::default()), PathBuf::new());
+        assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
+    }
+
+    /// DW-2.4: the bestiary tally's save → load round-trip through the App
+    /// path — the `NPCKillsTracker.Save` counts the kill pass accumulates ride
+    /// the world file now (the vanilla's section-10 home; the port had them on
+    /// the `.trplayer` sidecar), and the loaded side seeds the tracker.
+    #[test]
+    fn dw_2_4_a_saved_bestiary_tally_round_trips_through_the_app() {
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-dw-2-4-bestiary-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        // The kill pass's registration (`world_sim/npcs.rs`'s death hook):
+        // two credit ids, one of them past the 999999999 clamp range's floor.
+        for _ in 0..9 {
+            app.bestiary.kills.register_kill("BlueSlime");
+        }
+        app.bestiary.kills.register_kill("KingSlime");
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(sections.native.bestiary.len(), 2, "one record per tallied credit id");
+        let back = app_for(world, sections, path);
+        assert_eq!(back.bestiary.kills.get_kill_count("BlueSlime"), 9);
+        assert_eq!(back.bestiary.kills.get_kill_count("KingSlime"), 1);
+
+        // The control: a fresh App starts empty — the records carried the tally.
+        let control = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), PathBuf::new());
+        assert_eq!(control.bestiary.kills.get_kill_count("BlueSlime"), 0);
+    }
+
+    /// DW-2.4 (the back-compat fallback): a world saved before v9 (the
+    /// version field patched) carries no bestiary section, and the player
+    /// sidecar's kill line still seeds the tracker — the deviation's original
+    /// home stays the fallback for migrated builds.
+    #[test]
+    fn dw_2_4_a_v8_world_falls_back_to_the_sidecar_kills() {
+        let path = std::env::temp_dir().join("tr-dw-2-4-sidecar-fallback.trwld");
+        let _ = std::fs::remove_file(&path);
+        // A v8 payload: the current writer's stream with the version patched.
+        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+        let mut bytes = std::fs::read(&path).expect("the v9 payload on disk");
+        bytes[8..12].copy_from_slice(&8u32.to_le_bytes());
+        std::fs::write(&path, &bytes).expect("the v8 payload rewritten");
+
+        // The sidecar with the vintage kill line (`persist::save`'s kills arg).
+        let player = Player::spawn(&chest_rig());
+        let inv: [(u16, u32); 50] = std::array::from_fn(|_| (0, 0));
+        let kills = vec![("Pinky".to_string(), 4), ("BlueSlime".to_string(), 25)];
+        persist::save(&path, &player, inv, 0, [0, 0, 0], &[0; 10], &kills)
+            .expect("the sidecar writes");
+
+        let (world, sections) = crate::app::load_world(&path).expect("the v8 world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert!(sections.native.bestiary.is_empty(), "no section below v9");
+        let back = app_for(world, sections, path);
+        assert_eq!(
+            back.bestiary.kills.get_kill_count("Pinky"),
+            4,
+            "the sidecar's line seeds the tracker"
+        );
+        assert_eq!(back.bestiary.kills.get_kill_count("BlueSlime"), 25);
+    }
+
+    /// DW-2.5: the town roster's save → load round-trip through the App path —
+    /// `SaveNPCs`'s block-B records (`WorldFile.cs:1703-1750`) restore the
+    /// town NPC with its given name, its home and its position, and a fresh
+    /// world (no records) keeps the vanilla-gen Guide arrival.
+    #[test]
+    fn dw_2_5_a_town_npc_round_trips_through_the_app() {
+        let path = std::env::temp_dir().join("tr-dw-2-5-npc-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        // A housed Merchant with a given name at a solid column (the town
+        // spawner's surface scan) — the rig's floor row at y=200.
+        let x_tile = 100;
+        let mut merchant = Npc::spawn_town(&app.world, x_tile, NpcKind::Merchant)
+            .expect("the town spawner's surface scan");
+        merchant.given_name = "Bsmith".into();
+        merchant.home = Some((x_tile, 190));
+        app.npcs.push(merchant);
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            sections.native.npcs.len(),
+            2,
+            "the seeded Merchant plus the vanilla-gen Guide both ride the save"
+        );
+        let record = sections
+            .native
+            .npcs
+            .iter()
+            .find(|r| !r.given_name.is_empty())
+            .expect("the given-name record is the Merchant");
+        assert_eq!(record.given_name, "Bsmith");
+        assert!(!record.homeless);
+        assert_eq!((record.home_x, record.home_y), (x_tile, 190));
+
+        let back = app_for(world, sections, path);
+        let restored = back
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Merchant)
+            .expect("the merchant rides the load");
+        assert_eq!(restored.given_name, "Bsmith", "the given name survives");
+        assert_eq!(restored.home, Some((x_tile, 190)), "the home survives");
+        // The reload's roster starts from the saved records — the home-less
+        // Guide rides its record (the arrival pass's absence check never
+        // spawns a second one), and the other town kinds still arrive on
+        // their gates. Exactly one Guide and one Merchant exist either way.
+        let guides = back
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Guide)
+            .count();
+        assert_eq!(guides, 1, "the saved Guide blocks the second arrival");
+        let merchants = back
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Merchant)
+            .count();
+        assert_eq!(merchants, 1, "the saved Merchant blocks the second arrival");
+        let guide = back
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Guide)
+            .expect("the saved Guide rides the record");
+        assert!(guide.home.is_none(), "the Guide's recorded homelessness");
+    }
+
+    /// DW-2.5 (the back-compat arm): a world without NPC records (a fresh
+    /// world, or a pre-v10 save) still spawns the vanilla-gen homeless Guide
+    /// at the spawn point.
+    #[test]
+    fn dw_2_5_a_recordless_world_spawns_the_guide() {
+        let mut world = chest_rig();
+        world.spawn_x = 50;
+        let path = PathBuf::new();
+        let app = app_for(world, WorldSections::native(save::WorldSide::default()), path);
+        let guide = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Guide)
+            .expect("the vanilla-gen Guide arrival");
+        assert!(guide.home.is_none(), "the arrival Guide is homeless");
+    }
+
+    /// DW-2.6: the saved ore tiers' save → load round-trip through the App
+    /// path — the altar smash's hardmode tiers (`WorldGen.SavedOreTiers`,
+    /// `WorldGen.cs:3283-3297`) survive, where the static defaults would have
+    /// reset them (the recorded pre-fix loss).
+    #[test]
+    fn dw_2_6_the_ore_tiers_round_trip_through_the_app() {
+        let path = std::env::temp_dir().join("tr-dw-2-6-ore-tiers.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        // The altar smash's outcome (the App's runtime copy `smash_altar`
+        // advances): the hardmode trio flips off the -1 sentinels.
+        app.ore_tiers.cobalt = 107;
+        app.ore_tiers.mythril = 108;
+        app.ore_tiers.adamantite = 111;
+        app.ore_tiers.copper = 166; // the alternate-metal flip
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let tiers = sections.native.ore_tiers.expect("the v11 section rides the tiers");
+        assert_eq!(tiers, [166, 6, 9, 8, 107, 108, 111]);
+        assert_eq!(world.ore_tiers.cobalt, 107);
+
+        let back = app_for(world, sections, path);
+        assert_eq!(back.ore_tiers.copper, 166, "the alternate flip survives");
+        assert_eq!(back.ore_tiers.cobalt, 107, "the smashed hardmode tier survives");
+        assert_eq!(back.ore_tiers.mythril, 108);
+        assert_eq!(back.ore_tiers.adamantite, 111);
+    }
+
+    /// DW-2.6 (the back-compat arm): a world whose save carries no ore section
+    /// (pre-v11) starts the runtime copy at the static defaults — the C#'s own
+    /// reset arm (`WorldFile.cs:796-814`).
+    #[test]
+    fn dw_2_6_a_v10_world_starts_at_the_static_defaults() {
+        let mut world = chest_rig();
+        world.ore_tiers.copper = 166; // a generation-time roll the old save dropped
+        let path = std::env::temp_dir().join("tr-dw-2-6-defaults.trwld");
+        let _ = std::fs::remove_file(&path);
+        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+        let mut bytes = std::fs::read(&path).expect("the v11 payload on disk");
+        bytes[8..12].copy_from_slice(&10u32.to_le_bytes());
+        std::fs::write(&path, &bytes).expect("the v10 payload rewritten");
+
+        let (world, sections) = crate::app::load_world(&path).expect("the v10 world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert!(sections.native.ore_tiers.is_none());
+        assert_eq!(world.ore_tiers, tr_core::ores::SavedOreTiers::new());
+        let back = app_for(world, sections, PathBuf::new());
+        assert_eq!(back.ore_tiers.copper, 7, "the static default, not the dropped roll");
+    }
+}
+

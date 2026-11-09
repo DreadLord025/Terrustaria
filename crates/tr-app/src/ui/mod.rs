@@ -4,6 +4,7 @@
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod emotes;
+pub mod framework;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
@@ -16,9 +17,11 @@ pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
 pub mod panel;
+pub mod pointer;
 pub mod resources;
 pub mod save_list;
 pub mod sliders;
+pub mod select_hit;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
@@ -117,7 +120,9 @@ impl Default for UiPulse {
 /// (`Main.DrawInterface_16_MapOrMinimap`, `Main.cs:45771-45798`) — `256` while
 /// the minimap HUD is live, `0` otherwise; it pushes the equipment block down.
 /// `map_style` is `Main.mapStyle` (`Main.cs:66750`), driving the map-style icon
-/// row's active tint (`Main.cs:41083-41086`).
+/// row's active tint (`Main.cs:41083-41086`); `boss_bar_text` is
+/// `BigProgressBarSystem.ShowText` (`BigProgressBarSystem.cs:231`/`:236`), the
+/// gate on the boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
 #[allow(clippy::too_many_arguments)]
 /// The death screen's text block — `Main.DrawDeathText`'s shape
 /// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
@@ -136,7 +141,8 @@ pub(crate) fn draw_death_screen(
     let color = [1.0, 1.0, 1.0, 1.0];
     text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
     if lost_coins > 0 {
-        let line = format!("Dropped coins: {lost_coin_string}");
+        // `Game.DroppedCoins` ("dropped {0}") with the `ValueToCoins` string.
+        let line = crate::lang::text_args("Game.DroppedCoins", &[lost_coin_string.to_string()]);
         text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
     }
 }
@@ -253,6 +259,11 @@ pub fn draw_hud(
     hotbar_scales: &[f32; HOTBAR],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
+    // `BigProgressBarSystem.ShowText` — the `ShowBossBarHealthText` key
+    // (`BigProgressBarSystem.cs:231`/`:236`), i.e. the port's `boss_bar_text`:
+    // with it off the boss bar draws without its `current / max` numbers
+    // (`BigProgressBarHelper.cs:53-55`).
+    boss_bar_text: bool,
     inventory_open: bool,
     crafting_open: bool,
     mouse_item: &ItemSlot,
@@ -490,9 +501,10 @@ pub fn draw_hud(
 
     // Boss bar: `BigProgressBarHelper.DrawFancyBar` (`BigProgressBarHelper.cs:25-57`,
     // the 4-arg overload via `CommonBossBigProgressBar`) — the 456x22 bar at the
-    // bottom centre (`ui/bars.rs`).
+    // bottom centre (`ui/bars.rs`). `boss_bar_text` is the `ShowText` gate on
+    // the numbers (`:53-55`).
     if let Some((hp, max_hp)) = boss {
-        bars::draw_fancy_bar(r, lookups, screen, hp, max_hp);
+        bars::draw_fancy_bar(r, lookups, screen, hp, max_hp, boss_bar_text);
     }
 
     // `Main.DrawPendingMouseText()` → `Main.MouseText` (`Main.cs:20162`, `20322`):

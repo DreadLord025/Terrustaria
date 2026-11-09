@@ -19,6 +19,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::select_hit;
 use super::color;
 use super::hover_pair;
 use super::in_rect;
@@ -32,15 +33,25 @@ use crate::assets;
 // --- Source strings (Localization `UI.*` / `GameUI.*`, English) ---------------
 
 /// `UI.SelectPlayer` — the header text (`UICharacterSelect.cs:59`).
-pub const SELECT_PLAYER: &str = "Select Player";
+pub fn select_player() -> String {
+    crate::lang::text("UI.SelectPlayer")
+}
 /// `UI.Back` (`UICharacterSelect.cs:65`).
-pub const BACK: &str = "Back";
+pub fn back() -> String {
+    crate::lang::text("UI.Back")
+}
 /// `UI.New` (`UICharacterSelect.cs:76`).
-pub const NEW: &str = "New";
+pub fn new_button() -> String {
+    crate::lang::text("UI.New")
+}
 /// `GameUI.PlayerLifeMax` — `" HP"` (`UICharacterListItem.cs:338`).
-pub const LIFE_SUFFIX: &str = " HP";
+pub fn life_suffix() -> String {
+    crate::lang::text("GameUI.PlayerLifeMax")
+}
 /// `GameUI.PlayerManaMax` — `" MP"` (`UICharacterListItem.cs:342`).
-pub const MANA_SUFFIX: &str = " MP";
+pub fn mana_suffix() -> String {
+    crate::lang::text("GameUI.PlayerManaMax")
+}
 /// The fixed play-time string: the port tracks no play time, so `num5 = 0` and
 /// `playTime` is zero — `"0" + 0 + ":00:00"` (`:376-379`; plan disposition 2).
 pub const PLAYTIME_TEXT: &str = "00:00:00";
@@ -440,13 +451,13 @@ pub fn card_colors(hovered: bool) -> ([u8; 4], [u8; 4]) {
 /// `DrawSelf`'s difficulty switch (`UICharacterListItem.cs:353-370`): the
 /// `UI.Softcore/Mediumcore/Hardcore/Creative` label and its colour
 /// (`White` / `Main.mcColor` / `Main.hcColor` / `Main.creativeModeColor`).
-pub fn difficulty_text(difficulty: u8) -> (&'static str, [u8; 4]) {
+pub fn difficulty_text(difficulty: u8) -> (String, [u8; 4]) {
     match difficulty {
-        1 => ("Mediumcore", uistate::MC_COLOR),
-        2 => ("Hardcore", uistate::HC_COLOR),
-        3 => ("Journey", uistate::CREATIVE_MODE_COLOR),
+        1 => (crate::lang::text("UI.Mediumcore"), uistate::MC_COLOR),
+        2 => (crate::lang::text("UI.Hardcore"), uistate::HC_COLOR),
+        3 => (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR),
         // `case 0` and the unlabelled fallthrough both land on Classic/White.
-        _ => ("Classic", [255, 255, 255, 255]),
+        _ => (crate::lang::text("UI.Softcore"), [255, 255, 255, 255]),
     }
 }
 
@@ -454,22 +465,22 @@ pub fn difficulty_text(difficulty: u8) -> (&'static str, [u8; 4]) {
 /// shows. The favourite arm flips (`:147-154`) and the delete arm is the
 /// favourited gate's label (`:174-184`) — drawn on the right-hand
 /// [`CardLayout::delete_label`], not the left one.
-pub fn button_label(button: usize, is_favorite: bool) -> &'static str {
+pub fn button_label(button: usize, is_favorite: bool) -> String {
     match button {
-        BUTTON_PLAY => "Play", // `UI.Play` (`:171`)
+        BUTTON_PLAY => crate::lang::text("UI.Play"), // `UI.Play` (`:171`)
         BUTTON_FAVORITE => {
             if is_favorite {
-                "Unfavorite" // `UI.Unfavorite` (`:149`)
+                crate::lang::text("UI.Unfavorite") // `UI.Unfavorite` (`:149`)
             } else {
-                "Favorite" // `UI.Favorite` (`:153`)
+                crate::lang::text("UI.Favorite") // `UI.Favorite` (`:153`)
             }
         }
-        BUTTON_RENAME => "Rename", // `UI.Rename` (`:142`)
+        BUTTON_RENAME => crate::lang::text("UI.Rename"), // `UI.Rename` (`:142`)
         _ => {
             if is_favorite {
-                "Cannot Delete (Favorited)" // `UI.CannotDeleteFavorited` (`:178`)
+                crate::lang::text("UI.CannotDeleteFavorited") // `UI.CannotDeleteFavorited` (`:178`)
             } else {
-                "Delete" // `UI.Delete` (`:182`)
+                crate::lang::text("UI.Delete") // `UI.Delete` (`:182`)
             }
         }
     }
@@ -503,6 +514,9 @@ pub enum CardAction {
     DeleteBlocked,
     New,
     Back,
+    /// `OnLeftDoubleClick` → `PlayGame` (`UICharacterListItem.cs:68-69`): the
+    /// second press of the same card inside 500 ms.
+    DoubleClickPlay(usize),
 }
 
 /// The screen's click table. `favorites` carries one flag per card — the
@@ -510,61 +524,105 @@ pub enum CardAction {
 /// `cards: usize` (the count is `favorites.len()`). Returns `(hovered card,
 /// action)`: a card body without a button is `(Some(i), None)`; `Back`/`New`
 /// come back without a card. The caller passes a [`resolved_layout`] so the
-/// attached-scrollbar card widths agree with the draw. Double-click play
-/// (`:68-69`) is skipped — single click only (documented in the plan).
+/// attached-scrollbar card widths agree with the draw. A `double_click` press
+/// resolves to the card's `DoubleClickPlay` — `UICharacterListItem.cs:68-69`'s
+/// `OnLeftDoubleClick += PlayGame`, which fires on the second press of the same
+/// element inside 500 ms and is the only double-click user in 1.4.5.8.
 ///
-/// Back/New are checked *before* the cards: `GetElementAt` walks the root's
-/// children in reverse append order (`UIElement.cs:324-334`) — New (`:84`),
-/// Back (`:75`), then the container with the list (`:49`) — so wherever the
-/// rects overlap (the last card's rows run under the fat buttons once the
-/// list scrolls, 6+ players) the click is theirs, not the card's (Task 3b
-/// review fix 2). New and Back are disjoint, so their relative order is
-/// cosmetic.
-pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, Option<CardAction>) {
-    if in_rect(mouse, l.new) {
+/// The order is `ui::framework::get_element_at` (`UIElement.cs:324-352`): the
+/// elements are listed in the source's **append** order — the card bodies and
+/// their buttons (`UICharacterListItem.cs:71-121`), then Back (`:75`), then New
+/// (`:84`) — and the reverse walk makes the last-appended element take the
+/// click, so wherever the rects overlap (the last card's rows run under the fat
+/// buttons once the list scrolls, 6+ players) it is theirs, not the card's
+/// (Task 3b review fix 2). New and Back are disjoint, so their relative order is
+/// cosmetic; inside a card the buttons are disjoint too, and they precede the
+/// body they sit on.
+pub fn card_hit(
+    l: &Layout,
+    favorites: &[bool],
+    mouse: Vec2,
+    double_click: bool,
+) -> (Option<usize>, Option<CardAction>) {
+    let id = hit_element(l, favorites, mouse);
+    let Some(id) = id else {
+        return (None, None);
+    };
+    if id == select_hit::NEW {
         return (None, Some(CardAction::New)); // `NewCharacterClick` (`:108-114`)
     }
-    if in_rect(mouse, l.back) {
+    if id == select_hit::BACK {
         return (None, Some(CardAction::Back)); // `GoBackClick` (`:116-120`)
     }
+    let card = ((id - select_hit::CARD_BASE) / select_hit::PARTS) as usize;
+    let part = (id - select_hit::CARD_BASE) % select_hit::PARTS;
+    if part == select_hit::PART_BODY {
+        if double_click {
+            return (Some(card), Some(CardAction::DoubleClickPlay(card)));
+        }
+        return (Some(card), None);
+    }
+    let action = match part {
+        select_hit::PART_PLAY => Some(CardAction::Play(card)),
+        select_hit::PART_FAVORITE => Some(CardAction::ToggleFavorite(card)),
+        select_hit::PART_RENAME => Some(CardAction::Rename(card)),
+        // The favourite-gated delete returns `DeleteBlocked` rather than
+        // nothing (Review Focus 4).
+        _ if favorites.get(card).copied().unwrap_or(false) => Some(CardAction::DeleteBlocked),
+        _ => Some(CardAction::Delete(card)),
+    };
+    (Some(card), action)
+}
+
+/// The screen's flat element list in the C#'s append order — the `UIList`'s
+/// `OverflowHidden` clips the rows past the list bottom, so a clipped row is
+/// not an element at all (the same gate the draw's `break` uses; a row
+/// straddling the edge stays hit, like the draw that still paints it).
+fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
+    let mut out = Vec::with_capacity(favorites.len() * select_hit::PARTS as usize + 2);
     for i in 0..favorites.len() {
-        // The `UIList`'s `OverflowHidden` clips rows past the list bottom, so
-        // a click below it never reaches a card — the same gate the draw's
-        // `break` uses (Task 3/4 review fix; a row straddling the edge stays
-        // hit, like the draw that still paints it).
         let row_top = l.list[1] + i as f32 * CARD_PITCH;
         if row_top >= l.list[1] + l.list[3] {
             break;
         }
         let c = card_layout(l.list, i);
-        if !in_rect(mouse, c.card) {
-            continue;
-        }
-        // The buttons are the card's clickable children; the favourite-gated
-        // delete returns `DeleteBlocked` rather than nothing (Review Focus 4).
-        let action = if in_rect(mouse, c.play) {
-            Some(CardAction::Play(i))
-        } else if in_rect(mouse, c.favorite) {
-            Some(CardAction::ToggleFavorite(i))
-        } else if in_rect(mouse, c.rename) {
-            Some(CardAction::Rename(i))
-        } else if in_rect(mouse, c.delete) {
-            Some(if favorites[i] {
-                CardAction::DeleteBlocked
-            } else {
-                CardAction::Delete(i)
-            })
-        } else {
-            None
-        };
-        return (Some(i), action);
+        // The body first: the buttons are the card's appended children
+        // (`UICharacterListItem.cs:71-121`), so the reverse walk tests them
+        // before the panel they sit on.
+        out.push(super::framework::Element::hit(
+            c.card,
+            select_hit::card_part(i, select_hit::PART_BODY),
+        ));
+        out.push(super::framework::Element::hit(
+            c.play,
+            select_hit::card_part(i, select_hit::PART_PLAY),
+        ));
+        out.push(super::framework::Element::hit(
+            c.favorite,
+            select_hit::card_part(i, select_hit::PART_FAVORITE),
+        ));
+        out.push(super::framework::Element::hit(
+            c.rename,
+            select_hit::card_part(i, select_hit::PART_RENAME),
+        ));
+        out.push(super::framework::Element::hit(
+            c.delete,
+            select_hit::card_part(i, select_hit::PART_DELETE),
+        ));
     }
-    (None, None)
+    out.push(super::framework::Element::hit(l.back, select_hit::BACK));
+    out.push(super::framework::Element::hit(l.new, select_hit::NEW));
+    out
+}
+
+/// The element under the pointer — `UIElement.GetElementAt` (`:324-352`).
+pub fn hit_element(l: &Layout, favorites: &[bool], mouse: Vec2) -> Option<u32> {
+    super::framework::get_element_at(&elements(l, favorites), mouse)
 }
 
 /// The flat form of [`card_hit`]: just the action, if any.
 pub fn hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> Option<CardAction> {
-    card_hit(l, favorites, mouse).1
+    card_hit(l, favorites, mouse, false).1
 }
 
 // --- Draw ------------------------------------------------------------------------
@@ -623,7 +681,7 @@ fn draw_card(
         c.life_text[0],
         c.life_text[1],
         [1.0; 4],
-        &format!("{}{LIFE_SUFFIX}", entry.life_max),
+        &format!("{}{}", entry.life_max, life_suffix()),
     );
     if let Some(sheet) = lookups.ui_mana {
         push_whole(r, lookups, &sheet, c.mana_icon, [1.0; 4]);
@@ -634,7 +692,7 @@ fn draw_card(
         c.mana_text[0],
         c.mana_text[1],
         [1.0; 4],
-        &format!("{}{MANA_SUFFIX}", entry.mana_max),
+        &format!("{}{}", entry.mana_max, mana_suffix()),
     );
     // Difficulty panel (`:343-371`), text centred at `+ (num3/2 - w/2, 3)`.
     draw_inner_panel(
@@ -645,14 +703,14 @@ fn draw_card(
         c.difficulty_panel[2],
     );
     let (diff_text, diff_color) = difficulty_text(entry.difficulty);
-    let diff_w = hud_text_width(r, lookups, diff_text, 1.0);
+    let diff_w = hud_text_width(r, lookups, &diff_text, 1.0);
     border_string(
         r,
         lookups,
         c.difficulty_panel[0] + c.difficulty_panel[2] * 0.5 - diff_w * 0.5,
         c.difficulty_panel[1] + 3.0,
         color::tint(diff_color),
-        diff_text,
+        &diff_text,
     );
     // Play-time panel (`:372-379`) — the fixed `00:00:00` (no play-time
     // tracking, plan disposition 2), centred the same way.
@@ -744,17 +802,17 @@ fn draw_card(
         if button == BUTTON_DELETE {
             // `Left -30, HAlign 1` (`:128-133`): the right edge anchors, the
             // text grows leftward.
-            let w = hud_text_width(r, lookups, text, 1.0);
+            let w = hud_text_width(r, lookups, &text, 1.0);
             border_string(
                 r,
                 lookups,
                 c.delete_label[0] - w,
                 c.delete_label[1] - 2.0,
                 [1.0; 4],
-                text,
+                &text,
             );
         } else {
-            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], text);
+            border_string(r, lookups, c.label[0], c.label[1] - 2.0, [1.0; 4], &text);
         }
     }
 }
@@ -803,7 +861,7 @@ pub fn draw(
         lookups,
         l.header,
         &header_style(),
-        SELECT_PLAYER,
+        &select_player(),
         header_w,
         false,
     );
@@ -815,8 +873,8 @@ pub fn draw(
         lookups,
         l.back,
         &fat_button_style(),
-        BACK,
-        large_text_width(r, lookups, BACK),
+        &back(),
+        large_text_width(r, lookups, &back()),
         in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
@@ -824,8 +882,8 @@ pub fn draw(
         lookups,
         l.new,
         &fat_button_style(),
-        NEW,
-        large_text_width(r, lookups, NEW),
+        &new_button(),
+        large_text_width(r, lookups, &new_button()),
         in_rect(mouse, l.new),
     );
 }
@@ -833,6 +891,10 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn center(r: [f32; 4]) -> Vec2 {
+        Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5)
+    }
 
     // Expected values hand-derived from the C# (`UICharacterSelect.cs:35-157`,
     // `UICharacterListItem.cs:49-380`, `UICharacter.cs:34-130`,
@@ -905,6 +967,44 @@ mod tests {
         // `resolved_layout` applies the branch from the card count.
         assert_eq!(resolved_layout(SCREEN, 100.0, 5).list[2], 626.0);
         assert_eq!(resolved_layout(SCREEN, 100.0, 6).list[2], 601.0);
+    }
+
+    #[test]
+    fn dw_2_3_a_double_click_on_a_card_body_yields_double_click_play() {
+        // `UICharacterListItem.cs:68-69`: `OnLeftDoubleClick += PlayGame`. The
+        // single-click press of the same body stays a bare selection.
+        let (sw, _sh) = (1600.0_f32, 900.0_f32);
+        let l = resolved_layout(
+            Vec2::new(sw, 900.0),
+            100.0,
+            7,
+        );
+        let favorites = [false; 7];
+        let c0 = card_layout(l.list, 0);
+        assert_eq!(
+            card_hit(&l, &favorites, center(c0.card), false),
+            (Some(0), None)
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, center(c0.card), true),
+            (Some(0), Some(CardAction::DoubleClickPlay(0)))
+        );
+    }
+
+    #[test]
+    fn dw_2_3_the_fat_buttons_do_not_double_click_into_play() {
+        // The double-click arm is a card-body handler; a second press on `New`
+        // or `Back` stays that button's own action.
+        let l = resolved_layout(Vec2::new(1600.0, 900.0), 100.0, 7);
+        let favorites = [false; 7];
+        assert_eq!(
+            card_hit(&l, &favorites, center(l.new), true),
+            (None, Some(CardAction::New))
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, center(l.back), true),
+            (None, Some(CardAction::Back))
+        );
     }
 
     #[test]
@@ -1010,13 +1110,13 @@ mod tests {
     #[test]
     fn difficulty_texts_follow_the_switch() {
         // `:353-370` + `Main.cs:66765-66768`.
-        assert_eq!(difficulty_text(0), ("Classic", [255, 255, 255, 255]));
-        assert_eq!(difficulty_text(1), ("Mediumcore", uistate::MC_COLOR));
-        assert_eq!(difficulty_text(2), ("Hardcore", uistate::HC_COLOR));
-        assert_eq!(difficulty_text(3), ("Journey", uistate::CREATIVE_MODE_COLOR));
+        assert_eq!(difficulty_text(0), (crate::lang::text("UI.Softcore"), [255, 255, 255, 255]));
+        assert_eq!(difficulty_text(1), (crate::lang::text("UI.Mediumcore"), uistate::MC_COLOR));
+        assert_eq!(difficulty_text(2), (crate::lang::text("UI.Hardcore"), uistate::HC_COLOR));
+        assert_eq!(difficulty_text(3), (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR));
         // The C# switch has no default arm — an unknown difficulty falls through
         // with an empty label; the port lands it on Classic.
-        assert_eq!(difficulty_text(9).0, "Classic");
+        assert_eq!(difficulty_text(9).0, crate::lang::text("UI.Softcore"));
     }
 
     #[test]
@@ -1058,42 +1158,42 @@ mod tests {
         let c1 = card_layout(l.list, 1);
         let favorites = [false, true];
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.play)),
+            card_hit(&l, &favorites, center(c0.play), false),
             (Some(0), Some(CardAction::Play(0)))
         );
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.favorite)),
+            card_hit(&l, &favorites, center(c0.favorite), false),
             (Some(0), Some(CardAction::ToggleFavorite(0)))
         );
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.rename)),
+            card_hit(&l, &favorites, center(c0.rename), false),
             (Some(0), Some(CardAction::Rename(0)))
         );
         // Card 0 is not favourited -> the delete click routes to the confirm.
         assert_eq!(
-            card_hit(&l, &favorites, center(c0.delete)),
+            card_hit(&l, &favorites, center(c0.delete), false),
             (Some(0), Some(CardAction::Delete(0)))
         );
         // Card 1 IS favourited -> `DeleteBlocked`, not `Delete` (Review Focus 4:
         // `:114-117` never subscribes the handler).
         assert_eq!(
-            card_hit(&l, &favorites, center(c1.delete)),
+            card_hit(&l, &favorites, center(c1.delete), false),
             (Some(1), Some(CardAction::DeleteBlocked))
         );
         // A card body away from every button: hovered, but no action.
         let body = Vec2::new(c0.name_pos[0] + 30.0, c0.card[1] + 8.0);
-        assert_eq!(card_hit(&l, &favorites, body), (Some(0), None));
+        assert_eq!(card_hit(&l, &favorites, body, false), (Some(0), None));
         // The fat buttons.
         assert_eq!(
-            card_hit(&l, &favorites, center(l.back)),
+            card_hit(&l, &favorites, center(l.back), false),
             (None, Some(CardAction::Back))
         );
         assert_eq!(
-            card_hit(&l, &favorites, center(l.new)),
+            card_hit(&l, &favorites, center(l.new), false),
             (None, Some(CardAction::New))
         );
         // Off-screen: nothing.
-        assert_eq!(card_hit(&l, &favorites, Vec2::new(10.0, 10.0)), (None, None));
+        assert_eq!(card_hit(&l, &favorites, Vec2::new(10.0, 10.0), false), (None, None));
         // The flat form.
         assert_eq!(hit(&l, &favorites, center(c0.play)), Some(CardAction::Play(0)));
         assert_eq!(hit(&l, &favorites, Vec2::new(10.0, 10.0)), None);
@@ -1116,16 +1216,16 @@ mod tests {
         let p = Vec2::new(550.0, 815.0);
         assert!(in_rect(p, c5.rename));
         assert!(in_rect(p, l.back));
-        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::Back)));
+        assert_eq!(card_hit(&l, &favorites, p, false), (None, Some(CardAction::Back)));
         // Card 5's delete button and New share (1070, 815) — New wins.
         let p = Vec2::new(1070.0, 815.0);
         assert!(in_rect(p, c5.delete));
         assert!(in_rect(p, l.new));
-        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::New)));
+        assert_eq!(card_hit(&l, &favorites, p, false), (None, Some(CardAction::New)));
         // Just above the fat buttons the card still owns the click (a
         // hovered body, no button).
         assert_eq!(
-            card_hit(&l, &favorites, Vec2::new(550.0, 800.0)),
+            card_hit(&l, &favorites, Vec2::new(550.0, 800.0), false),
             (Some(5), None)
         );
     }
@@ -1141,12 +1241,12 @@ mod tests {
         assert_eq!(l.list[1] + l.list[3], 778.0);
         assert_eq!(card_layout(l.list, 6).card[1], 838.0, "the phantom row's top");
         assert!(!in_rect(Vec2::new(550.0, 860.0), l.back), "below Back too");
-        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0)), (None, None));
+        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0), false), (None, None));
         // Card 5 straddles the bottom (top 737 < 778) and stays hit — the
         // same rows the draw still paints.
         let favorites = [false; 6];
         assert_eq!(
-            card_hit(&l, &favorites, Vec2::new(550.0, 777.0)),
+            card_hit(&l, &favorites, Vec2::new(550.0, 777.0), false),
             (Some(5), None)
         );
     }

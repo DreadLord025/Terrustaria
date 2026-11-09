@@ -2,6 +2,7 @@
 
 
 mod ammo;
+mod angler;
 mod app;
 mod assets;
 mod achievements;
@@ -18,6 +19,7 @@ mod debug_panel;
 mod death;
 mod dye;
 mod emotes;
+mod env;
 mod inv;
 mod luck;
 mod wiring_stub;
@@ -49,12 +51,14 @@ mod regen;
 mod research;
 mod sand;
 mod ambience;
+mod ambient_sound;
 mod chest_gen;
 mod craft;
 mod registry;
 mod variants;
 mod render;
 mod spawner;
+mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
@@ -92,8 +96,8 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     // No argument loads our own generated world (`Documents/My Games/Terrustaria`).
     // Passing a path still loads a `.wld` from the original game or a saved `.trwld`.
-    let world_path = if let Some(p) = std::env::var_os("TR_WORLD") {
-        PathBuf::from(p)
+    let world_path = if let Some(p) = crate::env::world_path() {
+        p
     } else {
         match args.get(1) {
             Some(p) => PathBuf::from(p),
@@ -102,6 +106,9 @@ fn main() -> Result<()> {
     };
 
     log::info!("world: {}", world_path.display());
+    // The world plus its side sections — the `.wld`'s section payloads
+    // (M6-SAVE-1) or the native `.trwld`'s v7-v10 records (M6-SAVE-1b/c/d) —
+    // the loaded stores the `App` merges ahead of the load-time loot roll.
     let (world, sections) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
@@ -116,8 +123,7 @@ fn main() -> Result<()> {
     // first menu draws. `TR_LANG` mirrors LaunchInitializer's `-lang` flag
     // (`LaunchInitializer.cs:120` sets the culture ahead of the config read).
     let settings = settings::Settings::load();
-    let culture = std::env::var("TR_LANG")
-        .ok()
+    let culture = crate::env::lang()
         .map(|name| tr_core::localization::GameCulture::from_name(&name))
         .unwrap_or_else(|| tr_core::localization::GameCulture::from_name(&settings.language));
     lang::init(culture);
@@ -130,14 +136,18 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
+    // The one `Settings::load()` of the process: the value read for the culture
+    // above is the master copy `App` keeps and the menu clones, so every
+    // consumer sees the same config (the owner's read-once rule).
     let mut app = app::App::new(
+        settings,
         world,
+        sections,
         world_path,
         atlas,
         font_atlas,
         lookups,
         atlas_stats,
-        sections,
     );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();

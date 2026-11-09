@@ -44,7 +44,7 @@ impl App {
                 // the 50-key grid layer instead (Review Focus 6).
                 self.open_keyboard(
                     ui::keyboard::Request {
-                        label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                        label: ui::keyboard::enter_character_name(),
                         initial: String::new(),
                         allow_empty: true,
                         max_length: 20,
@@ -56,20 +56,26 @@ impl App {
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;
-                self.menu = Some(menu::Menu::open_credits());
+                self.menu = Some(menu::Menu::open_credits(self.settings.clone()));
             }
             TrUiPreset::DelPlayer => {
                 self.enter_front(FrontScreen::CharSelect);
                 let name =
                     self.players.first().map(|p| p.name.clone()).unwrap_or_default();
                 self.front = None;
-                self.menu = Some(menu::Menu::open_confirm_delete_player(name));
+                self.menu = Some(menu::Menu::open_confirm_delete_player(
+                    self.settings.clone(),
+                    name,
+                ));
             }
             TrUiPreset::DelWorld => {
                 self.enter_front(FrontScreen::WorldSelect);
                 let name = self.worlds.first().map(|w| w.name.clone()).unwrap_or_default();
                 self.front = None;
-                self.menu = Some(menu::Menu::open_confirm_delete_world(name));
+                self.menu = Some(menu::Menu::open_confirm_delete_world(
+                    self.settings.clone(),
+                    name,
+                ));
             }
             TrUiPreset::Discard => {
                 // Mode 40's screenshot: the parked state is the character
@@ -81,7 +87,10 @@ impl App {
                 state.draft.refresh_dirty();
                 self.front = None;
                 self.front_backup = Some(FrontScreen::CharCreation(state));
-                self.menu = Some(menu::Menu::open_confirm_discard(Some("Zealot".into())));
+                self.menu = Some(menu::Menu::open_confirm_discard(
+                    self.settings.clone(),
+                    Some("Zealot".into()),
+                ));
             }
         }
     }

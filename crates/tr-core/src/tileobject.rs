@@ -518,6 +518,26 @@ const TILE_TABLE: &[u16] = &[
     603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 619, 629, 632, 640, 643, 644, 645, 710,
 ];
 
+/// `Main.tileHammer` (`Main.cs:7204-7207`, 4 ids): the tiles only a
+/// hammer breaks.
+const TILE_HAMMER: &[u16] = &[26, 695, 31, 696];
+
+/// `Main.tileAxe` (`Main.cs:7208-7223`, 16 ids): the tiles only an axe
+/// breaks (the tree trunks and the vanity/gem tops).
+const TILE_AXE: &[u16] = &[
+    5, 72, 80, 488, 704, 323, 596, 616, 634, 589, 584, 588, 586, 587, 585, 583,
+];
+
+/// `TileID.Sets.IsATreeTrunk` (`TileID.cs:487`): the tree-trunk tiles (the
+/// oak 5, the cacti 72, the gem/vanity/ash tops).
+const IS_A_TREE_TRUNK: &[u16] = &[
+    5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634,
+];
+
+/// `TileID.Sets.IgnoreSmartCursorPriorityAxe` (`TileID.cs:508`): the one
+/// axe tile the smart-cursor axe step ignores (the fallen log 488).
+const IGNORE_SMART_AXE: &[u16] = &[488];
+
 /// `TileObjectData.anchorInvalidTiles` shared by the chest
 /// (`TileObjectData.cs:2112-2116`, applied at :3466).
 const CHEST_ANCHOR_INVALID: &[u16] = &[127, 138, 664, 665, 484, 711, 712, 713, 714, 715, 716];
@@ -1401,6 +1421,28 @@ pub fn breakable_when_placing(kind: u16) -> bool {
     BREAKABLE_WHEN_PLACING.contains(&kind)
 }
 
+/// Membership in [`TILE_HAMMER`] (`Main.tileHammer`, `Main.cs:7204-7207`).
+pub fn tile_hammer(kind: u16) -> bool {
+    TILE_HAMMER.contains(&kind)
+}
+
+/// Membership in [`TILE_AXE`] (`Main.tileAxe`, `Main.cs:7208-7223`).
+pub fn tile_axe(kind: u16) -> bool {
+    TILE_AXE.contains(&kind)
+}
+
+/// Membership in [`IS_A_TREE_TRUNK`] (`TileID.Sets.IsATreeTrunk`,
+/// `TileID.cs:487`).
+pub fn is_a_tree_trunk(kind: u16) -> bool {
+    IS_A_TREE_TRUNK.contains(&kind)
+}
+
+/// Membership in [`IGNORE_SMART_AXE`]
+/// (`TileID.Sets.IgnoreSmartCursorPriorityAxe`, `TileID.cs:508`).
+pub fn ignore_smart_axe(kind: u16) -> bool {
+    IGNORE_SMART_AXE.contains(&kind)
+}
+
 /// Membership in [`IS_A_DRIP_TILE`] (`Player.cs:41310`).
 pub fn is_drip_tile(kind: u16) -> bool {
     IS_A_DRIP_TILE.contains(&kind)
@@ -1411,12 +1453,48 @@ pub fn is_vine(kind: u16) -> bool {
     IS_VINE.contains(&kind)
 }
 
-fn not_really_solid(kind: u16) -> bool {
+pub(crate) fn not_really_solid(kind: u16) -> bool {
     NOT_REALLY_SOLID.contains(&kind)
+}
+
+/// `WorldGen.CanCutTile` (`WorldGen.cs:86828-86842`, the
+/// `TileCuttingContext.TilePlacement` arm — the context does not reach the
+/// body): the cell may be cut during placement when the tile below is not
+/// a pot/planter-box/seed-provider seat (78/380/579), the wall behind is
+/// not the unsafe dungeon wall 350, and a pumpkin (254) is ripe
+/// (`frameX >= 144` — the grown frame).
+pub(crate) fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
+    let (Some(here), Some(below)) = (world.tile(x, y), world.tile(x, y + 1)) else {
+        return false;
+    };
+    if here.wall != 350 && below.kind != 78 && below.kind != 380 && below.kind != 579 {
+        if here.kind == 254 {
+            return here.frame_x >= 144;
+        }
+        return true;
+    }
+    false
 }
 
 pub(crate) fn is_tile_table(kind: u16) -> bool {
     is_table(kind)
+}
+
+/// `WorldGen.IsOpenDoorAnchorFrame` (`WorldGen.cs:69171-69184`): the open
+/// door's 11 (framed off, type 11) whose frame column anchors a wall grid
+/// point — the columns 0..17 (the top frame) and 54..71 (the bottom).
+pub(crate) fn is_open_door_anchor_frame(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() || t.kind != 11 {
+        return false;
+    }
+    let num = t.frame_x % 72;
+    if num >= 18 {
+        return num >= 54;
+    }
+    true
 }
 
 pub(crate) fn is_table(kind: u16) -> bool {

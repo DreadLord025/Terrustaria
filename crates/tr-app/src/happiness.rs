@@ -85,6 +85,65 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Hallow,
             },
         ],
+        // `Register(124)` (`PersonalityDatabasePopulator.cs:52-56`):
+        // the Mechanic likes the Snow, dislikes the Underground.
+        NpcKind::Mechanic => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Snow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Underground,
+            },
+        ],
+        // `Register(353)` (`PersonalityDatabasePopulator.cs:107-111`):
+        // the Stylist likes the Ocean, dislikes the Snow.
+        NpcKind::Stylist => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Ocean,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Snow,
+            },
+        ],
+        // `Register(588)` (`PersonalityDatabasePopulator.cs:37-41`):
+        // the Golfer likes the Forest, dislikes the Underground.
+        NpcKind::Golfer => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Forest,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Underground,
+            },
+        ],
+        // `Register(441)` (`PersonalityDatabasePopulator.cs:47-51`):
+        // the Tax Collector likes the Snow, dislikes the Hallow.
+        NpcKind::TaxCollector => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Snow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Hallow,
+            },
+        ],
+        // `Register(108)` (`PersonalityDatabasePopulator.cs:127-131`):
+        NpcKind::Wizard => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Hallow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Ocean,
+            },
+        ],
         // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`):
         // the Tinkerer likes the Underground, dislikes the Jungle.
         NpcKind::GoblinTinkerer => &[
@@ -221,8 +280,17 @@ pub fn process_mood(
     let mut flags: Vec<MoodFlag> = Vec::new();
     // `:97-98`: the reset.
     let mut adjustment = 1.0f32;
-    // `:103-106`: the remix/pet exclusions — the port's town set always
-    // processes.
+    // `:103-106`: the exclusions — the remix world, the two travelling
+    // sellers and the town pets return before any mood work. The
+    // Travelling Merchant is the port's 368 (`npc.type == 368`), so his
+    // prices ride the plain `PriceAdjustment = 1f` with an empty report
+    // — no homelessness sentinel, no crowd, no biome prefs.
+    if npc.kind == crate::npc::NpcKind::TravellingMerchant {
+        return Mood {
+            multiplier: 1.0,
+            flags,
+        };
+    }
 
     // The home anchor (`:293-297`): the homeless judge from their centre.
     let (home_x, home_y, homeless) = match npc.home {
@@ -399,6 +467,40 @@ mod tests {
         g.home = Some(home);
         g.hp = g.max_hp;
         g
+    }
+
+
+    #[test]
+    fn the_travelling_merchant_ignores_the_mood() {
+        // `ShopHelper.cs:103-106`'s early return: `npc.type == 368` (and the
+        // 453/37 pair, `IsNotReallyTownNPC` at `:363-371`) drops out before
+        // the homelessness sentinel — even though `AI_007` forces him
+        // `homeless = true` every tick (`NPC.cs:53360`), his prices ride the
+        // plain `PriceAdjustment = 1f` with an empty report.
+        let w = forest_world();
+        let mut m = Npc::new(NpcKind::TravellingMerchant, 60.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        m.home = None; // homeless, like the vanilla's forced flag
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&m),
+            &m,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+        );
+        assert_eq!(mood.multiplier, 1.0, "the plain multiplier");
+        assert!(mood.flags.is_empty(), "no happiness report");
+        // The distance formula `ShopHelper.GetTravelingMerchantPrices`
+        // (`ShopHelper.cs:90-93`) is NEVER called in 1.4.5.8 (repo-wide grep:
+        // no caller) — the port keeps the math out of the price path and
+        // records it here: `(2 + (1.5 - d / (maxTilesX / 2))) / 3`.
+        let formula = |dist_tiles: f32, max_tiles_x: i32| {
+            (2.0 + (1.5 - dist_tiles / (max_tiles_x as f32 / 2.0))) / 3.0
+        };
+        assert!((formula(0.0, 400) - 1.166_666_6).abs() < 1e-5, "at the spawn");
+        assert!(
+            (formula(200.0, 400) - 0.833_333_3).abs() < 1e-5,
+            "200 tiles from the spawn on a 400-wide world"
+        );
     }
 
     #[test]

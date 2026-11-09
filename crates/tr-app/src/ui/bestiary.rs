@@ -15,6 +15,7 @@ use tr_render::SpriteRenderer;
 use tr_core::bestiary::{KillTracker, UnlockState};
 
 use super::push_whole;
+use super::uistate::{self, Style};
 use super::text;
 use crate::assets::{self, Lookups};
 use crate::npc::{NpcKind, SlimeVariant};
@@ -45,11 +46,33 @@ pub const BUTTON_RECT: [f32; 4] = [498.0, 278.0, 30.0, 30.0];
 /// shared overlay treatment of the other full-screen UI).
 const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 
-/// `BuildPage`'s outer container: width 0.875 (max 900 px), top 180,
-/// height -220 (`UIBestiaryTest.cs:71-79`).
+/// `BuildPage`'s outer container (`UIBestiaryTest.cs:71-79`), resolved through
+/// the layout pass (`UIElement.cs:306-322`) instead of by hand:
+///
+/// ```text
+/// Width  (0, 0.875)   MaxWidth 900   MinWidth 700   (`:71-73`)
+/// Top    180          Height (-220, 1)              HAlign 0.5   (`:74-77`)
+/// ```
+///
+/// `800 + Utils.ToInt(true) * 100` is the C#'s 900/700 pair (`:69`), the
+/// non-zero/zero-style modes' widths. The container's **height** is the source's
+/// `screenH − 220` — the previous hand-written rect subtracted the 180 top a
+/// second time (`screenH − 400`, 180 px short at the bottom); the layout pass is
+/// the faithful form, so the panel now ends at `screenH − 40`.
 pub fn panel_rect(screen: Vec2) -> [f32; 4] {
-    let w = ((screen.x * 0.875).min(900.0)).max(560.0);
-    [screen.x * 0.5 - w * 0.5, 180.0, w, screen.y - 220.0 - 180.0]
+    uistate::resolve(
+        [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
+        Style::px(0.0),        // `Left` unset (`StyleDimension.Empty`)
+        Style::px(180.0),      // `Top.Set(180f, 0f)` (`:74`)
+        Style::new(0.0, 0.875), // `Width.Set(0f, 0.875f)` (`:71`)
+        Style::new(-220.0, 1.0), // `Height.Set(-220f, 1f)` (`:76`)
+        0.5,                            // `HAlign = 0.5f` (`:77`)
+        0.0,                            // `VAlign` unset
+        700.0,                          // `MinWidth` (`:73`)
+        0.0,                            // `MinHeight` unset
+        900.0,                          // `MaxWidth` (`:72`)
+        [0.0; 4],                       // the container carries no padding
+    )
 }
 
 /// The `Back` panel — `MakeExitButton` (`:364-380`): 50 px tall, bottom
@@ -364,104 +387,14 @@ fn portrait_data(
     // merges had let the per-agent indexes collide (the frost trio took
     // 48-50, the boss/leech/goblin/golem/pirate rows drifted); the whole
     // table is re-derived from the vec once.
-    let sheet_i = match entry.kind {
-        NpcKind::Slime => 0,           // NPC_1
-        NpcKind::DemonEye => 1,        // NPC_2
-        NpcKind::WanderingEye => 2,    // NPC_133
-        NpcKind::Zombie => 3,          // NPC_3
-        NpcKind::KingSlime => 4,       // NPC_50
-        NpcKind::Guide => 5,           // NPC_22
-        NpcKind::Skeleton => 6,        // NPC_21
-        NpcKind::UndeadMiner => 7,     // NPC_44
-        NpcKind::CaveBat => 8,         // NPC_49
-        NpcKind::JungleBat => 9,       // NPC_51
-        NpcKind::Hellbat => 10,        // NPC_60
-        NpcKind::VoodooDemon => 11,    // NPC_66
-        NpcKind::EaterOfSouls => 12,   // NPC_6
-        NpcKind::Hornet => 13,         // NPC_42
-        NpcKind::MeteorHead => 14,     // NPC_23
-        NpcKind::GoblinSorcerer => 15, // NPC_29
-        NpcKind::Tim => 16,            // NPC_45
-        NpcKind::DarkCaster => 17,     // NPC_32
-        NpcKind::FireImp => 18,        // NPC_24
-        NpcKind::ChaosBall => 19,      // NPC_30
-        NpcKind::BurningSphere => 20,  // NPC_25
-        NpcKind::WaterSphere => 21,    // NPC_33
-        NpcKind::Goldfish => 22,       // NPC_55
-        NpcKind::Piranha => 23,        // NPC_58
-        NpcKind::Shark => 24,          // NPC_65
-        NpcKind::DevourerHead => 25,   // NPC_7
-        NpcKind::Merchant => 26,       // NPC_17
-        NpcKind::DevourerBody => 27,   // NPC_8
-        NpcKind::DevourerTail => 28,   // NPC_9
-        NpcKind::GiantWormHead => 29,  // NPC_10
-        NpcKind::GiantWormBody => 30,  // NPC_11
-        NpcKind::GiantWormTail => 31,  // NPC_12
-        NpcKind::EaterOfWorldsHead => 32, // NPC_13
-        NpcKind::EaterOfWorldsBody => 33, // NPC_14
-        NpcKind::EaterOfWorldsTail => 34, // NPC_15
-        NpcKind::Dryad => 35,          // NPC_20
-        NpcKind::Nurse => 36,          // NPC_18
-        NpcKind::ArmsDealer => 37,     // NPC_19
-        NpcKind::Demolitionist => 38,  // NPC_38
-        NpcKind::Painter => 39,        // NPC_227
-        NpcKind::WitchDoctor => 40,    // NPC_228
-        NpcKind::Clothier => 41,       // NPC_54
-        NpcKind::EyeOfCthulhu => 42,   // NPC_4
-        NpcKind::QueenBee => 43,       // NPC_222
-        NpcKind::SkeletronHead => 44,  // NPC_35
-        NpcKind::ServantOfCthulhu => 45, // NPC_5
-        NpcKind::WallOfFlesh => 46,    // NPC_113
-        NpcKind::Hungry => 47,         // NPC_115
-        NpcKind::SnowmanGangsta => 48, // NPC_143
-        NpcKind::SnowBalla => 49,      // NPC_144
-        NpcKind::MysterySnowman => 50, // NPC_145
-        NpcKind::MartianOfficer => 51, // NPC_383 (the humanoid martians
-        NpcKind::GrayGrunt => 51,      // share the Officer's strip)
-        NpcKind::MartianEngineer => 51,
-        NpcKind::GigaZapper => 51,
-        NpcKind::MartianWalker => 52,  // NPC_520
-        NpcKind::PirateDeckhand => 53, // NPC_212 (the humanoid pirates
-        NpcKind::PirateCaptainsMate => 53, // share the Deckhand's strip)
-        NpcKind::PirateArcher => 53,
-        NpcKind::PirateCorsair => 53,
-        NpcKind::PirateCaptain => 54,  // NPC_216
-        NpcKind::LeechHead => 55,      // NPC_117
-        NpcKind::LeechBody => 56,      // NPC_118
-        NpcKind::TheDestroyer => 57,   // NPC_134
-        NpcKind::SkeletronPrime => 58, // NPC_127
-        NpcKind::Retinazer => 59,      // NPC_125
-        NpcKind::Spazmatism => 60,     // NPC_126
-        NpcKind::Plantera => 61,       // NPC_262
-        NpcKind::BrainOfCthulhu => 62, // NPC_266
-        NpcKind::Creeper => 63,        // NPC_267
-        NpcKind::GoblinThief => 64,    // NPC_26
-        NpcKind::GoblinWarrior => 65,  // NPC_27
-        NpcKind::GoblinArcher => 66,   // NPC_28
-        NpcKind::GoblinPeon => 67,     // NPC_111
-        NpcKind::GoblinSummoner => 68, // NPC_471
-        NpcKind::BoundGoblin => 69,    // NPC_105
-        NpcKind::GoblinTinkerer => 70, // NPC_107
-        NpcKind::Golem => 71,          // NPC_245
-        NpcKind::GolemHead => 72,      // NPC_246
-        NpcKind::GolemFistLeft => 73,  // NPC_247 (the FistRight shares it
-        NpcKind::GolemFistRight => 73, // — NPC_248 is not loaded)
-        NpcKind::GolemHeadFree => 74,  // NPC_249
-        NpcKind::MartianProbe => 76,   // NPC_399
-        NpcKind::MartianDrone => 77,   // NPC_388
-        NpcKind::Deerclops => 75,      // NPC_668
-        NpcKind::BrainScrambler => 78, // NPC_381
-        NpcKind::RayGunner => 79,      // NPC_382
-        NpcKind::ScutlixRider => 80,   // NPC_390
-        NpcKind::Scutlix => 81,        // NPC_391
-        NpcKind::MartianSaucer => 82, // NPC_392
-        NpcKind::MartianSaucerTurret => 83, // NPC_393
-        NpcKind::MartianSaucerCannon => 84, // NPC_394
-        NpcKind::MartianSaucerCore => 85, // NPC_395
-        NpcKind::FlyingDutchman => 86,    // NPC_491
-        NpcKind::FlyingDutchmanCannon => 87, // NPC_492
-    };
-    let white = [1.0, 1.0, 1.0, 1.0];
+    // The sheet index rides `Lookups::bestiary_sheet_index` — the port's
+    // order table `BESTIARY_NPC_SHEET_IDS` paired with the vec, derived
+    // from the entry's own vanilla `net_id` (the hand-maintained table
+    // that used to stand here had drifted twice: the frost trio's, the
+    // boss rows' and finally the martian sheets' inserts shifted it).
+    let sheet_i = lookups
+        .bestiary_sheet_index(entry.net_id as u16)
+        .unwrap_or(0);;    let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
         (NpcKind::Golem, _) => (sheet_i, 140.0, 140.0, 140.0, white),
         (NpcKind::GolemHead, _) => (sheet_i, 70.0, 70.0, 70.0, white),
@@ -469,6 +402,12 @@ fn portrait_data(
         (NpcKind::GolemFistRight, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
         (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
+        (NpcKind::SkeletronHand, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::WallOfFleshEye, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        (NpcKind::PrimeCannon, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeSaw, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeVice, _) => (sheet_i, 52.0, 52.0, 52.0, white),
+        (NpcKind::PrimeLaser, _) => (sheet_i, 52.0, 52.0, 52.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
@@ -551,6 +490,18 @@ fn portrait_data(
         (NpcKind::Painter, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::TravellingMerchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Angler, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::SleepingAngler, _) => (sheet_i, 8.0, 34.0, 8.0, white),
+        (NpcKind::Wizard, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Mechanic, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::BoundWizard, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::BoundMechanic, _) => (sheet_i, 40.0, 38.0, 40.0, white),
+        (NpcKind::Stylist, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::TaxCollector, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Golfer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::SleepingGolfer, _) => (sheet_i, 40.0, 38.0, 40.0, white),
+        (NpcKind::WebbedStylist, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
@@ -679,7 +630,276 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
         }
+        // The DD2 goblins: the 14-frame NPC_552-554 strips over the 18x40
+        // frames.
+        (NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[88]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The support family: the bombers'/skeletons' 18x40 and the
+        // javelin throwers' 26x52 strips.
+        (
+            NpcKind::DD2GoblinBomberT1
+            | NpcKind::DD2GoblinBomberT2
+            | NpcKind::DD2GoblinBomberT3
+            | NpcKind::DD2SkeletonT1
+            | NpcKind::DD2SkeletonT3,
+            _,
+        ) => {
+            let h = lookups.bestiary_npc_sheets[91]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[94]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
+        (NpcKind::DD2DarkMage, _) => {
+            let h = lookups.bestiary_npc_sheets[99]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        // Betsy: the 11-frame NPC_551 strip over the 190x90 frames.
+        (NpcKind::DD2Betsy, _) => {
+            let h = lookups.bestiary_npc_sheets[100]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(90.0);
+            (sheet_i, h, 190.0, h, white)
+        }
+        // The WitherBeast: the 14-frame NPC_568 strip over the 18x40 frames.
+        (NpcKind::DD2WitherBeast, _) => {
+            let h = lookups.bestiary_npc_sheets[101]
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
+        (NpcKind::DD2Bartender, _) => {
+            let h = lookups.bestiary_npc_sheets[102]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The crystal: the NPC_548 strip over the 40x40 frames.
+        (NpcKind::DD2EterniaCrystal, _) => {
+            let h = lookups.bestiary_npc_sheets[103]
+                .map(|s| s.height as f32)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // The cultist: the 1-frame NPC_422 strip over the 130x270 frames.
+        (NpcKind::AncientCultist, _) => {
+            let h = lookups.bestiary_npc_sheets[104]
+                .map(|s| s.height as f32)
+                .unwrap_or(270.0);
+            (sheet_i, h, 130.0, h, white)
+        }
+        // The towers: the 1-frame NPC_493/507/517 strips.
+        // The four pillars: the single 174x364 frames (the sheet's own
+        // height — the hand-held 270 read of `bestiary_npc_sheets[111]`
+        // was the Stardust row for every kind).
+        (
+            NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower,
+            _,
+        ) => {
+            let h = lookups
+                .bestiary_npc_sheets
+                .get(sheet_i)
+                .and_then(|s| *s)                .map(|s| s.height as f32)
+                .unwrap_or(364.0);
+            (sheet_i, h, 174.0, h, white)
+        }
+        // The shards' portraits.
+        (NpcKind::StardustCellBig, _) => {
+            let h = lookups.bestiary_npc_sheets[119]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::StardustCellSmall, _) => {
+            let h = lookups.bestiary_npc_sheets[114]
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::StardustJellyfishBig, _) => {
+            let h = lookups.bestiary_npc_sheets[115]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(60.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::NebulaBeast, _) => {
+            let h = lookups.bestiary_npc_sheets[116]
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::VortexRifleman | NpcKind::VortexSoldier, _) => {
+            let h = lookups.bestiary_npc_sheets[117]
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 30.0, h, white)
+        }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
+        // The Moon Lord family's portraits over the 396 sheet's rows.
+        // The vortex trio's portraits over the 426 sheet's 15 rows.
+        // The nebula trio's portraits over the 420 sheet's rows.
+        // The tower mobs' portraits over the 409 sheet's rows.
+        (NpcKind::StardustSpiderBig, _) => {
+            let h = lookups.bestiary_npc_sheets[132]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::StardustSpiderSmall, _) => {
+            let h = lookups.bestiary_npc_sheets[138]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::StardustSoldier, _) => {
+            let h = lookups.bestiary_npc_sheets[144]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SolarDrakomire, _) => {
+            let h = lookups.bestiary_npc_sheets[150]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::SolarDrakomireRider, _) => {
+            let h = lookups.bestiary_npc_sheets[156]
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::SolarSroller, _) => {
+            let h = lookups.bestiary_npc_sheets[162]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(52.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::SolarCorite, _) => {
+            let h = lookups.bestiary_npc_sheets[168]
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        // The pillar worms' portraits over the 412 sheet's rows.
+        (NpcKind::SolarCrawltipedeHead, _) => {
+            let h = lookups.bestiary_npc_sheets[139]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::SolarCrawltipedeBody, _) => {
+            let h = lookups.bestiary_npc_sheets[140]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::SolarCrawltipedeTail, _) => {
+            let h = lookups.bestiary_npc_sheets[141]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::StardustWormHead, _) => {
+            let h = lookups.bestiary_npc_sheets[142]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::SolarSpearman, _) => {
+            let h = lookups.bestiary_npc_sheets[143]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SolarSelenian, _) => {
+            let h = lookups.bestiary_npc_sheets[174]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::NebulaFloater, _) => {
+            let h = lookups.bestiary_npc_sheets[128]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::BrainSuckler, _) => {
+            let h = lookups.bestiary_npc_sheets[129]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::Predictor, _) => {
+            let h = lookups.bestiary_npc_sheets[130]
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::VortexHunter, _) => {
+            let h = lookups.bestiary_npc_sheets[125]
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::VortexAlien, _) => {
+            let h = lookups.bestiary_npc_sheets[126]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::VortexHeadcrab, _) => {
+            let h = lookups.bestiary_npc_sheets[127]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::MoonLordHead, _) => {
+            let h = lookups.bestiary_npc_sheets[120]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::MoonLordHand, _) => {
+            let h = lookups.bestiary_npc_sheets[121]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordCore, _) => {
+            let h = lookups.bestiary_npc_sheets[122]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordFreeEye, _) => {
+            let h = lookups.bestiary_npc_sheets[123]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(60.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::MoonLordLeechBlob, _) => {
+            let h = lookups.bestiary_npc_sheets[124]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
         (NpcKind::PirateDeckhand, _)
         | (NpcKind::PirateCaptainsMate, _)
         | (NpcKind::PirateArcher, _)
@@ -909,6 +1129,25 @@ fn draw_sheet_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dw_3_1_panel_rect_is_the_c_sharp_container() {
+        // `UIBestiaryTest.cs:71-79` at the 1600x900 reference: width 0.875*1600
+        // capped to 900, centred; Top 180; Height = screenH - 220 = 680, so the
+        // panel ends at 860 (screenH - 40).
+        let p = panel_rect(Vec2::new(1600.0, 900.0));
+        assert_eq!(p, [350.0, 180.0, 900.0, 680.0]);
+        // 1280x720: the same cap, height 720 - 220 = 500.
+        let p = panel_rect(Vec2::new(1280.0, 720.0));
+        assert_eq!(p, [190.0, 180.0, 900.0, 500.0]);
+        // A narrow screen clamps to `MinWidth` 700 (`:73`, 600 + 100) — not the
+        // old hand-written 560 floor.
+        let p = panel_rect(Vec2::new(640.0, 480.0));
+        assert_eq!(p[2], 700.0);
+        // The Back panel still sits inside the container.
+        let back = back_rect(&p);
+        assert!(back[1] + back[3] <= p[1] + p[3]);
+    }
 
     #[test]
     fn the_grid_indexes_match_the_layout() {

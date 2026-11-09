@@ -13,8 +13,6 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use tr_core::binio::Reader;
-
 use crate::persist;
 
 /// `PlayerFileData` as the cards need it (`UICharacterListItem` reads: Name,
@@ -71,11 +69,9 @@ pub struct WorldEntry {
     pub path: Option<PathBuf>,
 }
 
-/// `tr_core::save::MAGIC` (`save.rs:16`) — the port's own container format, not
-/// a decompiled constant.
-const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// The header prefix the listing reads (magic, version, seed, name, size)
 /// before the plausibility guard; names are short, so a small slice suffices.
+/// The magic itself is `tr_core::binio::TRWLD_MAGIC` (`save.rs:16`'s constant).
 const HEADER_READ_CAP: u64 = 8192;
 /// `Main.maxLoadPlayer`/`maxLoadWorld` (`Main.cs:67065-67066`), the
 /// `Directory.GetFiles` cap (`Main.cs:3969`, `:4006`).
@@ -141,7 +137,7 @@ pub fn list_worlds(worlds_dir: &Path, fake_count: usize) -> Vec<WorldEntry> {
 /// One directory entry: the header reader decides `valid`; the sidecars decide
 /// the played/favourite flags.
 fn world_entry(path: &Path) -> WorldEntry {
-    let (name, width, valid) = read_header(path);
+    let header = read_header(path);
     let stem = path
         .file_stem()
         .map(OsStr::to_string_lossy)
@@ -150,15 +146,15 @@ fn world_entry(path: &Path) -> WorldEntry {
     WorldEntry {
         // A parsed name wins; otherwise the stem, like `FromInvalidWorld`'s
         // `GetFileName(path, includeExtension: false)` (`WorldFileData.cs:360`).
-        name: name.unwrap_or(stem),
+        name: header.name.unwrap_or(stem),
         // The port's writer stores no GameMode -> 0 (Classic); invalid entries
         // are 0 too, like `FromInvalidWorld` (`WorldFileData.cs:352`).
         difficulty: 0,
         // `FromInvalidWorld` reports the size of a 1x1 world
         // (`WorldFileData.cs:357`), which buckets to 0.
-        size_id: if valid { size_bucket(width) } else { 0 },
+        size_id: if header.valid { size_bucket(header.width) } else { 0 },
         is_favorite: path.with_extension("trfav").exists(),
-        valid,
+        valid: header.valid,
         // `HasWorldBeenPlayedByActivePlayer` -> `WorldMap.TryGetMapPath`
         // (`UIWorldSelect.cs:182-186`); the port's map sidecar sits beside the
         // world (`persist.rs:23-28`).
@@ -167,56 +163,21 @@ fn world_entry(path: &Path) -> WorldEntry {
     }
 }
 
-/// Reads the `tr_core::save` header prefix: `(name, width, valid)`. The whole
-/// tile body is never read — only the first [`HEADER_READ_CAP`] bytes.
-/// `valid` mirrors `IsValid => LoadStatus == Ok` (`WorldFileData.cs:75`)
-/// against the same guards `tr_core::save::parse` applies (`save.rs:126-142`).
-fn read_header(path: &Path) -> (Option<String>, i32, bool) {
+/// Reads the `tr_core::save` header prefix. The whole tile body is never read —
+/// only the first [`HEADER_READ_CAP`] bytes — and the parse itself is the shared
+/// `binio::read_trwld_header` reader (one implementation of the guards, next to
+/// the [`Reader`] it uses; the version ceiling is the current writer's
+/// `save::VERSION` — BG-21's v4 cooldown tail included).
+fn read_header(path: &Path) -> tr_core::binio::TrwldHeader {
     use std::io::Read;
     let mut raw = Vec::new();
     let read =
         std::fs::File::open(path).and_then(|f| f.take(HEADER_READ_CAP).read_to_end(&mut raw));
     if read.is_err() {
-        return (None, 1, false);
+        // An unreadable file is `FromInvalidWorld` (`WorldFileData.cs:352-360`).
+        return tr_core::binio::TrwldHeader { name: None, width: 1, valid: false };
     }
-    let mut r = Reader::new(&raw);
-    // magic (`save.rs:128-130`)
-    if r.take(8) != Some(MAGIC.as_slice()) {
-        return (None, 1, false);
-    }
-    // version: 0 or beyond the writer's is unsupported (`save.rs:131-134`,
-    // the current writer's `save::VERSION` — BG-21's v4 cooldown tail included);
-    // vanilla refuses later versions the same way (`WorldFile.cs:190-194`,
-    // `StatusID.LaterVersion`).
-    let Some(version) = r.u32() else {
-        return (None, 1, false);
-    };
-    if version == 0 || version > tr_core::save::VERSION {
-        return (None, 1, false);
-    }
-    // seed (`save.rs:135`) — not needed for the listing.
-    if r.take(8).is_none() {
-        return (None, 1, false);
-    }
-    let Some(name_len) = r.u32() else {
-        return (None, 1, false);
-    };
-    let name = r
-        .take(name_len as usize)
-        .map(String::from_utf8_lossy)
-        .map(|s| s.into_owned());
-    let Some(width) = r.i32() else {
-        return (name, 1, false);
-    };
-    let Some(height) = r.i32() else {
-        return (name, 1, false);
-    };
-    // The plausibility guard `save.rs:140-142` — a world the port cannot load
-    // stays listed but not valid.
-    if width <= 0 || height <= 0 || width > 20_000 || height > 20_000 {
-        return (name, 1, false);
-    }
-    (name, width, true)
+    tr_core::binio::read_trwld_header(&raw, tr_core::save::VERSION)
 }
 
 /// `Main.LoadPlayers` (`Main.cs:4001-4030`): the `*.plr` scan, each file
@@ -436,7 +397,7 @@ mod tests {
 
     /// Writes a real `.trwld` through the port's own saver.
     fn write_world(path: &Path, name: &str, width: i32, height: i32) {
-        tr_core::save::save(path, &World::new(name.into(), width, height)).unwrap();
+        tr_core::save::save(path, &World::new(name.into(), width, height), &tr_core::save::WorldSide::default()).unwrap();
     }
 
     /// Hand-writes a `tr_core::save` header (magic, version, seed, name,
@@ -444,7 +405,7 @@ mod tests {
     /// exactly what the listing reads.
     fn write_header_only(path: &Path, name: &str, width: i32, height: i32) {
         let mut buf = Vec::new();
-        buf.extend_from_slice(MAGIC);
+        buf.extend_from_slice(tr_core::binio::TRWLD_MAGIC);
         buf.extend_from_slice(&2u32.to_le_bytes());
         buf.extend_from_slice(&0u64.to_le_bytes());
         buf.extend_from_slice(&(name.len() as u32).to_le_bytes());

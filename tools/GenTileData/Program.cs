@@ -475,6 +475,10 @@ string[] wantedSets =
     // (Conversion.* TileID.cs:92ff, IceSkateSlippery :481, Clouds :505) — the
     // committed symbol names are kept via the dot-to-underscore emission below.
     "Conversion.Sand", "Conversion.HardenedSand", "Conversion.Sandstone",
+    // The gem/vanity tree ground tests (`WorldGen.cs:30304-30341`): the
+    // Stone ({1, 25, 117, 203}) and Moss (the 11 moss tiles) conversion
+    // sets `GemTreeGroundTest` reads (TileID.cs:90/:96).
+    "Conversion.Stone", "Conversion.Moss",
     "IceSkateSlippery", "Clouds",
     // `TileRunner`'s override check (`WorldGen.cs:76927`) — everything is clearable
     // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),

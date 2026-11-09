@@ -31,7 +31,7 @@ pub fn implemented() -> bool {
 /// `_temp*` writes exist because its loader fills the statics from them, while
 /// the port writes the live [`World`] fields directly.
 pub fn write(w: &mut Writer, world: &World) {
-    write_world_flavour(w);
+    write_world_flavour(w, world);
     write_times(w);
     // WorldFile.cs:1252-1269: the moon type, tree/cave backgrounds, the
     // ice/jungle/hell back styles. Only `hellBackStyle` is owned; the tree and
@@ -242,11 +242,26 @@ pub fn write(w: &mut Writer, world: &World) {
 
 /// WorldFile.cs:1240-1249: the game mode and the nine world-flavour bools
 /// (drunk / get-good / tenth anniversary / don't starve / not the bees / remix /
-/// no traps / zenith / skyblock) — all unowned, so classic + false.
-fn write_world_flavour(w: &mut Writer) {
+/// no traps / zenith / skyblock) — `World.seeds` owns them (M5-SEED), each at its
+/// introduction version (`SaveWorldFlags:1238-1250` / `LoadWorldFlags:1981-2041`);
+/// the pre-267 zenith back-compat inference is the reader's job (`:2020`).
+fn write_world_flavour(w: &mut Writer, world: &World) {
     w.i32(0); // Main.GameMode — no port concept
-    for _ in 0..9 {
-        w.boolean(false);
+    for (min_version, flag) in [
+        (222, crate::seeds::SeedFlags::DRUNK),
+        (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        (238, crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        (239, crate::seeds::SeedFlags::DONT_STARVE),
+        (241, crate::seeds::SeedFlags::NOT_THE_BEES),
+        (249, crate::seeds::SeedFlags::REMIX),
+        (266, crate::seeds::SeedFlags::NO_TRAPS),
+        (267, crate::seeds::SeedFlags::ZENITH),
+        (302, crate::seeds::SeedFlags::SKYBLOCK),
+    ] {
+        // The writer always emits all nine (the modern file is v326); the flag's
+        // own version gate is the reader's business.
+        let _ = min_version;
+        w.boolean(world.seeds.contains(flag));
     }
 }
 
@@ -292,10 +307,33 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     // WorldFile.cs:1982-2012 — game mode and the nine flavour bools.
     if version >= 209 {
         r.skip(4)?; // GameMode
-        for min in [222, 227, 238, 239, 241, 249, 266, 267, 302] {
-            if version >= min {
-                r.skip(1)?;
+        for (min_version, flag) in [
+            (222, crate::seeds::SeedFlags::DRUNK),
+            (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
+            (238, crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            (239, crate::seeds::SeedFlags::DONT_STARVE),
+            (241, crate::seeds::SeedFlags::NOT_THE_BEES),
+            (249, crate::seeds::SeedFlags::REMIX),
+            (266, crate::seeds::SeedFlags::NO_TRAPS),
+            (267, crate::seeds::SeedFlags::ZENITH),
+            (302, crate::seeds::SeedFlags::SKYBLOCK),
+        ] {
+            // `LoadWorldFlags:1981-2041` reads the nine `Main.*` seed booleans in
+            // `SaveWorldFlags` order, each gated on its introduction version — the
+            // M5-SEED flags ride here (main's ANALYSIS "Persistence" entry).
+            if version >= min_version && r.u8()? != 0 {
+                world.seeds.insert(flag);
             }
+        }
+        // The pre-267 back-compat inference (`WorldFile.cs:2020`): a world that
+        // carries remix && drunk but has no zenith byte is a get-fixed-boi world.
+        if version < 267
+            && world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+            && world.seeds.contains(crate::seeds::SeedFlags::DRUNK)
+        {
+            world.seeds.insert(
+                crate::seeds::SeedFlags::ZENITH | crate::seeds::SeedFlags::EVERYTHING_DEPS,
+            );
         }
     } else {
         if version >= 112 {

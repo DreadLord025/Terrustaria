@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{App, deterministic_pointer_park, mouse_pin};
+use crate::app::App;
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -87,18 +87,13 @@ impl ApplicationHandler for App {
             self.world.width as f32 * TILE_PX * 0.5,
             self.world.spawn_y as f32 * TILE_PX,
         );
-        if let Ok(cam) = std::env::var("TR_CAM") {
-            let mut it = cam.split(',').map(|v| v.trim().parse::<f32>());
-            if let (Some(Ok(x)), Some(Ok(y))) = (it.next(), it.next()) {
-                self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
-            }
+        if let Some((x, y)) = crate::env::camera_pin() {
+            self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
         }
         self.zoom = self.settings.zoom;
-        if let Ok(z) = std::env::var("TR_ZOOM") {
-            if let Ok(z) = z.parse::<f32>() {
-                self.zoom = z.clamp(0.25, 8.0);
-                self.zoom_pinned = true;
-            }
+        if let Some(z) = crate::env::zoom_pin() {
+            self.zoom = z.clamp(0.25, 8.0);
+            self.zoom_pinned = true;
         }
         if self.follow_player {
             if let Some(p) = &self.player {
@@ -113,7 +108,7 @@ impl ApplicationHandler for App {
         // M1.4-BG-18 phase 2 harness: `TR_POST=1` routes frames through the post
         // pipeline (passthrough until phase 3 ports filter passes). The noise
         // image rides along so filter bindings hold the real content texture.
-        if std::env::var_os("TR_POST").is_some() {
+        if crate::env::post_capture() {
             let gpu = self.gpu.as_ref().expect("gpu");
             let mut post = tr_render::PostPipeline::new(gpu);
             post.resize(gpu, gpu.config.width, gpu.config.height);
@@ -151,15 +146,64 @@ impl ApplicationHandler for App {
                         if self.chat.open {
                             match code {
                                 KeyCode::Enter | KeyCode::NumpadEnter => {
-                                    let name = self.player_name.clone();
-                                    let mut rng = self.item_rng;
-                                    self.chat.send(
-                                        &self.chat.text.clone(),
-                                        &name,
-                                        &mut rng,
-                                        &mut self.emotes,
-                                    );
-                                    self.item_rng = rng;
+                                    // `ChatHelper.SendChatMessageFromClient`
+                                    // (`ChatHelper.cs:72-79`): a joining client
+                                    // sends the line to the host, which runs
+                                    // the command processor and relays the
+                                    // result back as `82` text modules.
+                                    let text = self.chat.text.clone();
+                                    let is_client = self.is_client();
+                                    let before = self.chat.messages.len();
+                                    if is_client {
+                                        self.send_chat_message("", &text);
+                                    } else {
+                                        let name = self.player_name.clone();
+                                        let mut rng = self.item_rng;
+                                        // The chat commands read the player
+                                        // state (`DeathCommand`'s counters).
+                                        self.chat.send_with(
+                                            &text,
+                                            &name,
+                                            &mut rng,
+                                            &mut self.emotes,
+                                            self.player.as_ref(),
+                                        );
+                                        self.item_rng = rng;
+                                    }
+                                    // The host relays the lines its own submit
+                                    // produced (slot 0 is the host's author).
+                                    // The borrow dance: the server handle
+                                    // borrows `self.net`, so the lines are
+                                    // collected first.
+                                    if !is_client {
+                                        let produced = self
+                                            .chat
+                                            .messages
+                                            .iter()
+                                            .take(self.chat.messages.len().saturating_sub(before))
+                                            .map(|l| (l.text.clone(), l.color))
+                                            .collect::<Vec<_>>();
+                                        if !produced.is_empty() {
+                                            if let crate::app::NetRole::Host(server) = &self.net {
+                                                use crate::app::netmodules::{
+                                                    module_id, ModuleBody, ServerMessage,
+                                                };
+                                                for (text, color) in produced {
+                                                    let sm = ServerMessage {
+                                                        author: 0,
+                                                        text,
+                                                        color: crate::net::Rgb(
+                                                            color[0], color[1], color[2],
+                                                        ),
+                                                    };
+                                                    server.broadcast(&crate::net::S2c::NetModule {
+                                                        module: module_id::TEXT,
+                                                        body: sm.encode(),
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
                                     self.chat.text.clear();
                                     self.chat.open = false;
                                 }
@@ -227,7 +271,7 @@ impl ApplicationHandler for App {
                                     self.bestiary_open = false;
                                     self.bestiary_selected = None;
                                 } else if self.emotes.menu_open {
-                                    self.emotes.menu_open = false;
+                                    self.emotes.close();
                                 } else {
                                     self.inventory_open = !self.inventory_open;
                                 }
@@ -297,11 +341,28 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     let step = d.round() as i32;
+                    // `UIList.ScrollWheel` (`UIList.cs:107-114`): the emotes
+                    // wheel scrolls while it is open, clamped at the roster's
+                    // end (`UIScrollbar.cs:37-47`). The chest arm below needs
+                    // the inventory, so the wheel takes precedence here.
+                    if step != 0
+                        && self.menu.is_none()
+                        && self.front.is_none()
+                        && self.emotes.menu_open
+                    {
+                        let (sw, sh) = self.screen_size();
+                        let grid = crate::ui::emotes::grid_rect(Vec2::new(sw, sh));
+                        self.emotes
+                            .scroll_by(step, crate::ui::emotes::visible_rows(&grid));
+                    }
                     // `Main.DoScrollingInInventory`'s chest arm
                     // (`Main.cs:17435-17452`): the wheel scrolls the chest
                     // slot window while the inventory is open and the pointer
                     // is inside the grid (the plan-amendment insertion #10).
-                    if step != 0 && self.menu.is_none() && self.front.is_none() && self.inventory_open
+                    if step != 0
+                        && self.menu.is_none()
+                        && self.front.is_none()
+                        && self.inventory_open
                     {
                         crate::ui::chest::scroll(self, step, self.mouse_pos);
                     }
@@ -346,8 +407,30 @@ impl ApplicationHandler for App {
                             // held flag rides along for the creation screen's
                             // HSL drags (`Main.mouseLeft`, `Main.cs:51101`).
                             self.front_mouse_down = pressed;
+                            // `UserInterface.HandleClick` (`:230-255`)'s front
+                            // path: the machine owns the press/release →
+                            // click/`DoubleClick` edges. The existing single-click
+                            // dispatch keeps firing on the press, exactly as
+                            // before; Phase 2 feeds it the framework's hit id so
+                            // the double-click a card produces is real.
+                            let now = self.anim_time as f64 * 1000.0;
+                            // The element under the pointer — the framework's
+                            // `GetElementAt` (`UIElement.cs:324-352`), the id
+                            // the machine's `LastClicked` compares.
+                            let hit = self.front_hit();
                             if pressed {
+                                if !self.pointer.clicks_disabled() {
+                                    self.pointer_event = self.pointer.press(
+                                        now,
+                                        crate::ui::pointer::PointerButton::Left,
+                                        hit,
+                                    );
+                                }
                                 self.handle_front_click();
+                            } else {
+                                self.pointer_event = self
+                                    .pointer
+                                    .release(now, crate::ui::pointer::PointerButton::Left, hit);
                             }
                             return;
                         }
@@ -381,7 +464,9 @@ impl ApplicationHandler for App {
                 }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
-                if mouse_pin().is_none() && !deterministic_pointer_park() {
+                if crate::env::mouse_pin().is_none()
+                    && !crate::env::deterministic_pointer_park()
+                {
                     self.mouse_pos = p;
                 }
                 // The menu reads the pinned pointer when `TR_MOUSE` is set, so

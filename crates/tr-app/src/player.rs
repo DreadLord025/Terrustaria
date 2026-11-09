@@ -204,11 +204,32 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
+    /// counter `/death` reads (`DeathCommand`).
+    pub deaths_pve: u32,
+    /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
+    /// counter `/pvpdeath` reads (`PVPDeathCommand`).
+    pub deaths_pvp: u32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
+    /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
+    /// milestone switch, `Player.cs:56323`).
+    pub angler_quests_finished: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`): the golf score
+    /// the Golfer's shop and chatter tier (`Chest.cs:3158`, `NPC.cs:94792`).
+    pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
+    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
+    /// prefer while it stands. The consumers are the minion AIs
+    /// (M4-PROJ-8); the whip pass only writes it.
+    pub minion_attack_target_npc: i16,
+    /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
+    /// player applied (`tag_effects.rs`, M4-PROJ-7).
+    pub tag_effects: crate::tag_effects::TagEffectStack,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -610,6 +631,46 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    // ------------------------------- the ammo mastery layer (M3-ITEM-6)
+    // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
+    // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
+    // the ×1.1 speed fuse (`:53543`). Cleared and re-derived per tick by the
+    // grant seam in `world_sim/player.rs` (`ResetEffects` `:18605`).
+    pub magic_quiver: bool,
+    /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
+    /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
+    /// damage (`:53537-53541`).
+    pub has_molten_quiver: bool,
+    /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
+    /// +1 ammo damage on arrows (`:53548`).
+    pub acc_sharp_barb: bool,
+    /// `Player.ammoBox` (`Player.cs:1982`): buff 93, the Ammo Box (`:10080`) —
+    /// the 1/5 roll arm on ANY ammo (`:53599`).
+    pub ammo_box: bool,
+    /// `Player.ammoPotion` (`Player.cs:1984`): buff 112, the Ammo Reservation
+    /// (`:10195`) — the 1/5 roll arm on ANY ammo (`:53603`).
+    pub ammo_potion: bool,
+    /// `Player.huntressAmmoCost90` (`Player.cs:1960`): 3804/4983 (`:13179`,
+    /// `:13634`) — the 1/10 roll arm (`:53643`).
+    pub huntress_ammo_cost90: bool,
+    /// `Player.chloroAmmoCost80` (`Player.cs:1958`): 1002 (`:13649`) — the 1/5
+    /// roll arm (`:53647`).
+    pub chloro_ammo_cost80: bool,
+    /// `Player.ammoCost80` (`Player.cs:1962`): 1549/3878 (`:13715`, `:13222`) —
+    /// the 1/5 roll arm (`:53651`).
+    pub ammo_cost80: bool,
+    /// `Player.ammoCost75` (`Player.cs:1964`): 2758 (`:13908`) — the 1/4 roll
+    /// arm (`:53655`).
+    pub ammo_cost75: bool,
+    /// `Player.archery` (`Player.cs:2286`): buff 16, the Archery Potion
+    /// (`:10018`) — the ×1.2 speed fuse capped at 20 (`:53560`).
+    pub archery: bool,
+    /// `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    /// (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
+    /// granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
+    /// the offset/cooldown are written inside a successful pick (`:53569-53577`)
+    /// and ticked down every tick (`Update_AmmoCycler` `:28419-28426`).
+    pub ammo_cycling: crate::ammo::AmmoCycling,
 }
 
 impl Player {
@@ -621,9 +682,7 @@ impl Player {
         // failure chat needs the monitor, which the join path has not built
         // yet); the revive prints like the C#.
         let (sx, sy) = match world.bed_spawn {
-            Some((bx, by))
-                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
-            {
+            Some((bx, by)) if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() => {
                 // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
                 // the spawn cell's top.
                 (
@@ -638,8 +697,14 @@ impl Player {
         };
         Self {
             dead: false,
+            deaths_pve: 0,
+            angler_quests_finished: 0,
+            golfer_score: 0,
+            deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
+            tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -803,6 +868,42 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            // The ammo-mastery flags start false and the cycler None/0/0 — the
+            // per-tick grant seam in `world_sim/player.rs` re-derives them from
+            // the equipment and the buffs, exactly like the C#'s
+            // `ResetEffects` clear (`Player.cs:18390-18664`).
+            magic_quiver: false,
+            has_molten_quiver: false,
+            acc_sharp_barb: false,
+            ammo_box: false,
+            ammo_potion: false,
+            huntress_ammo_cost90: false,
+            chloro_ammo_cost80: false,
+            ammo_cost80: false,
+            ammo_cost75: false,
+            archery: false,
+            ammo_cycling: crate::ammo::AmmoCycling::default(),
+        }
+    }
+
+    /// The ten ammo flags this phase re-derives per tick, as the pure data
+    /// `ammo::resolve_projectile` / `ammo::not_consume` read (`Player.cs:53537`,
+    /// `:53543`, `:53548`, `:53560`, `:53595`, `:53599`, `:53603`, `:53643`,
+    /// `:53647`, `:53651`, `:53655`). The struct lives in `ammo.rs` so the ammo
+    /// module stays the single owner of the flag SHAPE; this is the Player-side
+    /// projection the shooter wire (Phase 4) feeds it.
+    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
+        crate::ammo::AmmoFlags {
+            has_molten_quiver: self.has_molten_quiver,
+            magic_quiver: self.magic_quiver,
+            acc_sharp_barb: self.acc_sharp_barb,
+            archery: self.archery,
+            ammo_box: self.ammo_box,
+            ammo_potion: self.ammo_potion,
+            huntress_ammo_cost90: self.huntress_ammo_cost90,
+            chloro_ammo_cost80: self.chloro_ammo_cost80,
+            ammo_cost80: self.ammo_cost80,
+            ammo_cost75: self.ammo_cost75,
         }
     }
 
@@ -1048,11 +1149,11 @@ impl Player {
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
         self.cart_mounted = true;
-        // `:6226` — the minecart buff for 3600 ticks.
-        self.buffs.add_buff(CART_MOUNT_BUFF, 3600);
-        // The bottom-center resize 42 -> 52 (`:6266-6272` — the generic
-        // `heightBoost` branch; carts have no `PlayerSize` delegate).
-        self.y -= CART_MOUNT_HEIGHT - HEIGHT;
+        // M2-MOUNT-3: through the mount framework — `SetMount(6)` grants the
+        // row's buff 118 for 3600 (`:6226`) and applies the heightBoost 10
+        // bottom-center growth 42 -> 52 (`:6266-6272`). The same-id guard
+        // (`:6198`) keeps a re-mount a no-op, so the ride state stays.
+        self.set_mount(crate::mount::MOUNT_MINECART, self.wet);
     }
 
     /// `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the cart is not in
@@ -1081,13 +1182,22 @@ impl Player {
             return; // `:6146-6149` — the `!_active` guard
         }
         self.cart_mounted = false;
-        self.buffs.clear_buff(CART_MOUNT_BUFF); // `:6151`
+        // M2-MOUNT-3: the framework's `Dismount` clears the mount buff
+        // (`:6151`); the caller has already passed `CanDismountWithResult`,
+        // so the space probe inside would also succeed.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
         self.cart_flip = false; // `:6157-6160`
         self.last_boost = (0, 0);
         self.full_rotation = 0.0; // `:6161-6162`
         self.full_rotation_origin = (0.0, 0.0);
         self.on_track = false;
+        // The box restore: `mount_cart` now grows through the framework's
+        // `grow_hitbox` (`self.height = 52`), so the drop returns it to 42
+        // bottom-anchored (`:6182-6185`).
         self.y += CART_MOUNT_HEIGHT - HEIGHT;
+        self.height = HEIGHT;
     }
 
     /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
@@ -1229,6 +1339,14 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.buffs.clear_buff(CART_MOUNT_BUFF);
+        // M2-MOUNT-3: the cart row lives in `MountState` now, so the revive
+        // strip clears it like every other mount (`Player.cs:38908`) — the
+        // framework's dismount returns the box with it, and the spawn
+        // position is rebuilt below anyway.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
+        self.height = HEIGHT;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
         // revive clears the sit/sleep state.
         self.sit_up();
@@ -1238,6 +1356,10 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
+        // flag splits the two counters; the port has no PVP, so every
+        // death is PVE.
+        self.deaths_pve = self.deaths_pve.saturating_add(1);
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
@@ -1455,6 +1577,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:24591`: the tag stack's update right after the buff head —
+        // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
+        self.tag_effects.update_tick();
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
@@ -3268,6 +3393,10 @@ impl Player {
             self.wing_time = self.wing_time_max as f32;
             self.mount.reset_flight_time(self.vx);
         }
+        // `Player.cs:24761`: every resting tick recovers 2 hover fatigue.
+        if self.vy == 0.0 {
+            self.mount.fatigue_recovery();
+        }
         // `:26859-26862`: the rocket fuel refills on any rest tick (or an
         // auto-jump mount's re-jump).
         if self.vy == 0.0 || (self.auto_jump && self.just_jumped) {
@@ -3340,10 +3469,21 @@ impl Player {
             return true;
         }
         if !flag19 {
-            // `:26962-26964`: the hover mounts (`Mount.Hover`) — no table row
-            // sets `usesHover` yet, so the branch cannot fire (M2-MOUNT-2).
+            // `:26962-26964`: the hover mounts (`Mount.Hover`, `Mount.cs:3340`)
+            // — the branch carries the vertical move itself, so it is
+            // consumed like the vanilla `else if` chain.
             if self.mount.can_hover() {
-                return false;
+                self.vy = self.mount.hover_integrate(
+                    self.vy,
+                    false, // no `controlUp` key ported (M2-MOUNT-4)
+                    self.control_jump,
+                    self.control_down,
+                    gravity,
+                );
+                // `:3459`: the fall origin refreshes every hover tick (no
+                // fall damage accrues while hovering).
+                self.fall_start = (self.y / TILE_PX) as i32;
+                return true;
             }
             // `:26965-27015`: the mount flight thrust — the flying mounts'
             // replacement for the wing ascent while the budget lasts.
@@ -3364,6 +3504,11 @@ impl Player {
                         let mut num41 = self.jump_speed;
                         if self.mount.kind() == 50 {
                             num41 *= 0.5;
+                        }
+                        // `:26981`: the Bat/Pixie rise cap is 2/3 of the
+                        // others.
+                        if matches!(self.mount.kind(), 56 | 61) {
+                            num41 /= 1.5;
                         }
                         if self.vy > 0.0 {
                             self.vy -= num40 * 5.0;
@@ -5206,6 +5351,37 @@ mod tests {
         assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
         assert_eq!(p.rocket_boots, 3);
         assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+    }
+
+    /// DW-3.3's field half — the ten ammo-mastery flags a fresh `Player` carries
+    /// (`player.rs`'s ammo block) plus the cycling struct: every one defaults
+    /// false/None/0/0 like the C#'s `ResetEffects`-cleared fields
+    /// (`Player.cs:18390-18664`, `:18479`), so the rolls stay inert until the
+    /// per-tick grant seam in `world_sim/player.rs` derives them from the
+    /// equipment and the buffs. The `ammo_flags()` projection is the single seam
+    /// `ammo::not_consume` / `ammo::resolve_projectile` read.
+    #[test]
+    fn the_ammo_fields_default_to_false_and_none() {
+        let w = crate::test_world_helpers::ground();
+        let p = Player::spawn(&w);
+        // The four fuse flags (Phase 1's fields).
+        assert!(!p.has_molten_quiver && !p.magic_quiver);
+        assert!(!p.acc_sharp_barb && !p.archery);
+        // The six roll flags Phase 3 appends.
+        assert!(!p.ammo_box && !p.ammo_potion && !p.huntress_ammo_cost90);
+        assert!(!p.chloro_ammo_cost80 && !p.ammo_cost80 && !p.ammo_cost75);
+        // The cycling state: None/0/0.
+        assert_eq!(p.ammo_cycling.mode, crate::ammo::AmmoCyclingMode::None);
+        assert_eq!((p.ammo_cycling.offset, p.ammo_cycling.cooldown), (0, 0));
+        // The projection round-trips: an all-false Player gives an all-false
+        // AmmoFlags, so the chain is the plain vanilla one.
+        let flags = p.ammo_flags();
+        assert_eq!(flags, crate::ammo::AmmoFlags::default());
+        // A granted flag reaches the struct the rolls read.
+        let mut granted = Player::spawn(&w);
+        granted.ammo_box = true;
+        granted.magic_quiver = true;
+        assert!(granted.ammo_flags().ammo_box && granted.ammo_flags().magic_quiver);
     }
 
     #[test]

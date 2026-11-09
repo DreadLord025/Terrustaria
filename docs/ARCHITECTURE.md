@@ -41,12 +41,12 @@ an agent needs before touching code.
 | World generation | `tr-core/src/worldgen/` |
 | Saves: `.trwld`, `.wld` (all 11 sections), `.map`, binary primitives | `tr-core/src/{save,wld}.rs` (the `.wld` codecs in `wld/sections/`), `map/file.rs`, `binio.rs`; sidecars in `persist.rs` + `app/saveglue.rs` (the load/save dispatch) |
 | Multiplayer | `net.rs`, `app/netglue.rs` |
-| Settings / `config.json` | `settings.rs`, `app/settings_ui.rs` |
+| Settings / `config.json` | `settings.rs` (keys/defaults/parse/save, read once in `main.rs` and threaded into `App`/`Menu`), `app/settings_ui.rs` (the `TR_UI` presets + `apply_settings`) |
 | Rain and storms | `rain.rs` (field + draw), `world_sim/weather.rs` (the 60 Hz tick) |
 | Audio | `audio.rs`, `sound.rs` |
 | Fullscreen map / minimap | `map.rs` (app), `tr-core/src/map/`, `ui/minimap.rs` |
 | HUD drawing (hotbar, hearts, inventory, tooltips, crafting, boss bar) | `ui/` — see `docs/UI.md` |
-| `TR_*` env flags | spread across the modules that consume them (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs` `TR_UI`, …); the planned `env.rs` consolidation is deferred |
+| `TR_*` env flags | `env.rs` (2026-11-09, REFACTOR-env) — one named accessor per pin, `OnceLock`-resolved; `TR_SUNDIAL`/`TR_MOONDIAL` stay live reads (the env-mutating tests) |
 
 ## Crates
 
@@ -247,6 +247,12 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   (the `UIElement`/`UITextPanel`/spliced-panel kit), `cards.rs`, `char_select.rs`,
   `world_select.rs`, `char_creation.rs`, `world_creation.rs`, `keyboard.rs`,
   `save_list.rs`. Shared: `text.rs`, `panel.rs`, `color.rs`, `sliders.rs`, `resources.rs`.
+  Framework halves of `UIElement`/`UserInterface` (2026-11-08, M7-UI-1):
+  `uistate.rs` (the layout pass + the element draw kit), `pointer.rs` (the
+  `UserInterface` pointer machine — press/release → click/`DoubleClick`, the 500 ms
+  window, the 200 ms state-change disable), `framework.rs` (the `GetElementAt`
+  back-to-front hit order over a flat element list), `select_hit.rs` (the element
+  ids the two select screens' hit order needs).
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
   wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the
@@ -254,7 +260,7 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
-  `audio.rs`, `sound.rs`, `inv.rs`.
+  `audio.rs`, `sound.rs`, `inv.rs`, `env.rs` (the `TR_*` pin accessors).
 
 Player simulation details (20×42 AABB, fixed 60 Hz, gravity/step/collision, survival
 mechanics), NPC AI, projectiles, editing and weather behaviour are described in

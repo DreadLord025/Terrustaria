@@ -90,6 +90,13 @@ pub struct World {
     pub chunk_has: Vec<bool>,
     /// Generation seed (`0` for worlds loaded from the original `.wld` format).
     pub seed: u64,
+    /// The classic secret-seed flags (`Main.drunkWorld` & friends — the
+    /// `WorldGen.Reset()` set, `WorldGen.cs:11115-11123`): the world's
+    /// special-world identity. Runtime readers (loot/fish/variant/wind
+    /// conditions) and the save layers read them; the worldgen passes get
+    /// them through [`crate::worldgen::GenOptions`]. Persisted in TRWLD v6
+    /// and read from the `.wld` header flags block.
+    pub seeds: crate::seeds::SeedFlags,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -143,6 +150,15 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// The Skeletron Prime head's centre + the present flag (the limbs'
+    /// tether reads — the WoF write-through shape).
+    pub prime_present: bool,
+    pub prime_x: f32,
+    pub prime_y: f32,
+    /// The Skeletron head's centre (`NPC.cs:21930`'s spawn point + the
+    /// hands' tether reads) — the skeletron_x/y pair.
+    pub skeletron_x: f32,
+    pub skeletron_y: f32,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -194,6 +210,54 @@ pub struct World {
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
+    /// raises it, the win/loss clears it.
+    pub dd2_event_ongoing: bool,
+    /// `NPC.waveNumber` — the Old One's Army's wave (1-3 tiers).
+    pub dd2_wave: i32,
+    /// `NPC.waveKills` — the current wave's kill count.
+    pub dd2_wave_kills: f32,
+    /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
+    /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
+    pub dd2_spawn_hold: i32,
+    /// `NPC.ShieldStrengthTower*` (`NPC.cs:6399-6405`): the four Lunar
+    /// towers' shield strengths — raised at the spawn (`WorldGen.cs:86688`),
+    /// spent by damage, zeroed at the reset (`NPC.cs:95247`).
+    pub tower_shield_solar: i32,
+    pub tower_shield_vortex: i32,
+    pub tower_shield_nebula: i32,
+    pub tower_shield_stardust: i32,
+    /// `NPC.LunarShieldPowerNormal` (`NPC.cs:6407`) — the shields' max
+    /// (100; `ShieldStrengthTowerMax` halves it post-Moon-Lord).
+    pub lunar_shield_power_normal: i32,
+    /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
+    pub downed_moon_lord: bool,
+    /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
+
+    pub downed_ancient_cultist: bool,
+
+    /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
+    /// phase (`WorldGen.cs:86687`'s write, `:86752`'s clear).
+    pub lunar_apocalypse_is_up: bool,
+    /// `NPC.MoonLordCountdown` / `NPC.MaxMoonLordCountdown`
+    /// (`NPC.cs:6031-6033`) — the countdown to the Moon Lord's spawn
+    /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
+    pub moon_lord_countdown: i32,
+    pub max_moon_lord_countdown: i32,
+        /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
+    pub tower_active_solar: bool,
+    pub tower_active_vortex: bool,
+    pub tower_active_nebula: bool,
+    pub tower_active_stardust: bool,
+    /// `NPC.downedTower*` — the towers defeated.
+    pub downed_tower_solar: bool,
+    pub downed_tower_vortex: bool,
+    pub downed_tower_nebula: bool,
+    pub downed_tower_stardust: bool,
+    /// `DD2Event.LostThisRun` — the crystal's death (`NPC.cs`'s case-548
+    /// death-flag) sets it (`:79346`'s event-flag family); the weapon
+    /// rosters clear with the event's stop.
+    pub dd2_lost: bool,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -220,12 +284,65 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
+    /// talked into the Angler — the 376 spawn arms stop looking.
+    pub saved_angler: bool,
+    /// `NPC.savedWizard` (`NPC.cs:6289`) / `NPC.savedMech` (`NPC.cs:6291`):
+    /// the bound Wizard/Mechanic rescue flags (`:52948`/`:52951`).
+    pub saved_wizard: bool,
+    /// `NPC.savedStylist` (`NPC.cs:6295`).
+    pub saved_stylist: bool,
+    /// `NPC.savedTaxCollector` (`NPC.cs:6285`).
+    pub saved_tax_collector: bool,
+    /// `NPC.savedGolfer` (`NPC.cs:6299`): the sleeping Golfer has been
+    /// talked into the Golfer — the 589 spawn arm stops looking.
+    pub saved_golfer: bool,
+    /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
+    /// Collector's purse + its `Player.taxRate` (3600) clock.
+    pub tax_money: i32,
+    pub tax_timer: i32,
+    /// `NPC.taxCollector` (`NPC.cs:6083`): a live Tax Collector exists — the
+    /// `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
+    /// the sim sets it each pass.
+    pub tax_payers: i32,
+    /// tax pump runs while true (`Main.cs:64995`).
+    pub tax_collector: bool,
+    pub saved_mech: bool,
+    /// `Main.anglerQuest` (`Main.cs:1785`): the INDEX into the 41-entry
+    /// quest-fish pool (`Main.cs:67032`'s `anglerQuestItemNetIDs`).
+    pub angler_quest: u8,
+    /// `Main.anglerQuestFinished` (`Main.cs:1783`): today's quest is
+    /// handed in (`NPCChatText_DoAnglerQuest`, `Main.cs:40251`); the
+    /// day reset clears it (`AnglerQuestSwap`, `Main.cs:3761`).
+    pub angler_quest_finished: bool,
+    /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the C#'s player
+    /// name list — the port's single player collapses to a bool.
+    pub angler_quest_turned_in: bool,
+    /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
+    /// (`Main.cs:65373`): the clock arms it (the clock has no RNG), the
+    /// world pass resolves it on `Main.rand`'s app stream (the
+    /// `invasion_arm_pending` shape).
+    pub angler_swap_pending: bool,
+    /// `Main.travelShop` (`Main.cs:1779`; the 40 slots of
+    /// `Main.TravelShopMaxSlots`, allocated at `Main.cs:67030`): the
+    /// Travelling Merchant's per-visit stock — `Chest.SetupTravelShop`
+    /// (`Chest.cs:1275-1358`) regenerates it for every visit, the shop
+    /// index 19 (`Chest.cs:2791-2810`) reads it back. A `0` slot is
+    /// an empty one.
+    pub travel_shop: [u16; 40],
 
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
     /// and lands with M4 spawns, so the port keeps the reset value.
     pub butterfly_chance: i32,
+    /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven metal
+    /// tiers — the four pre-hardmode metals rolled once at the world setup
+    /// (`Main.cs:11266-11297`) and the hardmode trio `-1` until an altar is
+    /// smashed. The port's `ores.rs` owns the value; it rides the World so
+    /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
+    /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
+    pub ore_tiers: crate::ores::SavedOreTiers,
 }
 
 impl World {
@@ -240,6 +357,7 @@ impl World {
             signs: Vec::new(),
             pressure_plates: Vec::new(),
             frame_important: Vec::new(),
+            ore_tiers: crate::ores::SavedOreTiers::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
@@ -271,6 +389,11 @@ impl World {
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
             golem_x: 0.0,
+            skeletron_x: 0.0,
+            prime_present: false,
+            prime_x: 0.0,
+            prime_y: 0.0,
+            skeletron_y: 0.0,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
@@ -287,6 +410,7 @@ impl World {
             chunks_y: 0,
             chunk_has: Vec::new(),
             seed: 0,
+            seeds: crate::seeds::SeedFlags::default(),
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,
@@ -303,6 +427,29 @@ impl World {
             downed_frost: false,
             downed_pirates: false,
             downed_martians: false,
+            dd2_event_ongoing: false,
+            dd2_wave: 1,
+            dd2_wave_kills: 0.0,
+            dd2_spawn_hold: 300,
+            dd2_lost: false,
+            tower_shield_solar: 0,
+            tower_shield_vortex: 0,
+            tower_shield_nebula: 0,
+            tower_shield_stardust: 0,
+            lunar_shield_power_normal: 100,
+            downed_moon_lord: false,
+            downed_ancient_cultist: false,
+            lunar_apocalypse_is_up: false,
+            moon_lord_countdown: 0,
+            max_moon_lord_countdown: 3600,
+            tower_active_solar: false,
+            tower_active_vortex: false,
+            tower_active_nebula: false,
+            tower_active_stardust: false,
+            downed_tower_solar: false,
+            downed_tower_vortex: false,
+            downed_tower_nebula: false,
+            downed_tower_stardust: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
@@ -314,6 +461,21 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            saved_angler: false,
+            saved_wizard: false,
+            saved_stylist: false,
+            saved_tax_collector: false,
+            saved_golfer: false,
+            tax_money: 0,
+            tax_timer: 0,
+            tax_collector: false,
+            tax_payers: 0,
+            saved_mech: false,
+            angler_quest: 0,
+            angler_quest_finished: false,
+            angler_quest_turned_in: false,
+            angler_swap_pending: false,
+            travel_shop: [0; 40],
             butterfly_chance: 0,
         }
     }
@@ -367,6 +529,65 @@ impl World {
             self.invasion_delay = 0;
             self.invasion_arm_pending = true;
         }
+    }
+
+    /// `UpdateTime_StartNight`'s blood-moon roll
+    /// (`Main.cs:65333-65352`): 1-in-9 (1-in-6 on the tenth-anniversary
+    /// world) at every dusk, gated on no eye spawn and a moon phase other
+    /// than the new moon, and only when a player with more than 120 max
+    /// life exists. On a hit the flag raises and both dial cooldowns
+    /// force-reset (`:65344-65346`).
+    pub fn roll_blood_moon(
+        &mut self,
+        rng01: f64,
+        tenth_anniversary: bool,
+        any_player_life_over_120: bool,
+        spawn_eye: bool,
+    ) -> bool {
+        // `:65335-65341` — the roll gate.
+        if spawn_eye || self.moon_phase == 4 {
+            return false;
+        }
+        if rng01 >= 1.0 / f64::from(if tenth_anniversary { 6 } else { 9 }) {
+            return false;
+        }
+        // `:65342-65349` — the 120-HP player gate.
+        if !any_player_life_over_120 {
+            return false;
+        }
+        self.blood_moon = true;
+        // `:65344-65346` — "instantly reusable after certain celestial
+        // events".
+        self.sundial_cooldown = 0;
+        self.moondial_cooldown = 0;
+        true
+    }
+
+    /// `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`):
+    /// 1-in-20 at every dawn, hardmode with any mech boss down, then the
+    /// same dial-cooldown force-reset (`:65423-65426`).
+    pub fn roll_eclipse(
+        &mut self,
+        rng01: f64,
+        hard_mode: bool,
+        downed_mech_boss_any: bool,
+    ) -> bool {
+        // `:65421-65422` — the roll gate.
+        if !(hard_mode && downed_mech_boss_any) {
+            return false;
+        }
+        if rng01 >= 1.0 / 20.0 {
+            return false;
+        }
+        self.eclipse = true;
+        self.sundial_cooldown = 0;
+        self.moondial_cooldown = 0;
+        true
+    }
+
+    /// `NPC.downedMechBossAny` — any of the three mech bosses down.
+    pub fn downed_mech_boss_any(&self) -> bool {
+        self.downed_mech_boss1 || self.downed_mech_boss2 || self.downed_mech_boss3
     }
 
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the
@@ -650,6 +871,58 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_blood_moon_roll_matches_the_dusk_gate() {
+        // `Main.cs:65333-65352`: 1-in-9 (1-in-6 on the tenth-anniversary
+        // world), the new moon and the eye spawn skip it, the 120-HP player
+        // gate, both dial cooldowns force-reset.
+        let mut w = World::new("t".into(), 40, 40);
+        w.sundial_cooldown = 3;
+        w.moondial_cooldown = 5;
+        assert!(w.roll_blood_moon(1.0 / 18.0, false, true, false));
+        assert!(w.blood_moon);
+        assert_eq!((w.sundial_cooldown, w.moondial_cooldown), (0, 0));
+        // Outside the window nothing happens.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.5, false, true, false));
+        assert!(!w.blood_moon);
+        // The phase-4 moon and the eye spawn gate it off.
+        let mut w = World::new("t".into(), 40, 40);
+        w.moon_phase = 4;
+        assert!(!w.roll_blood_moon(0.0, false, true, false));
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.0, false, true, true));
+        // Without a 120+ HP player it never raises.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.roll_blood_moon(0.0, false, false, false));
+        // The anniversary world's 1-in-6 window is wider than the normal
+        // 1-in-9, so 1/9 fits it and 1/12 fits too.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(w.roll_blood_moon(1.0 / 9.0, true, true, false));
+        assert!(w.roll_blood_moon(1.0 / 12.0, true, true, false));
+        // And the same 1/9 rolls in the normal window.
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(w.roll_blood_moon(0.11, false, true, false));
+    }
+
+    #[test]
+    fn the_eclipse_roll_needs_hardmode_and_a_mech_boss() {
+        // `Main.cs:65421-65430`: 1-in-20, hardmode with a mech down, the same
+        // dial-cooldown force-reset.
+        let mut w = World::new("t".into(), 40, 40);
+        w.sundial_cooldown = 8;
+        w.hard_mode = true;
+        w.downed_mech_boss2 = true;
+        assert!(w.roll_eclipse(1.0 / 40.0, true, w.downed_mech_boss_any()));
+        assert!(w.eclipse);
+        assert_eq!((w.sundial_cooldown, w.moondial_cooldown), (0, 0));
+        // Early mode, or no mechs: never.
+        let mut w = World::new("t".into(), 40, 40);
+        w.hard_mode = true;
+        assert!(!w.roll_eclipse(0.0, true, false));
+        assert!(!w.roll_eclipse(0.0, false, true));
+    }
+
     use super::*;
 
     #[test]

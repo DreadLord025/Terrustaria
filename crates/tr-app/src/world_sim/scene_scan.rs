@@ -221,7 +221,7 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
 /// entirely (the pin holds `severity == intended_severity`, but the periodic
 /// intention roll would still fight it); `forced_severity` marks that.
 pub(crate) fn apply_scene_forces_from_env(state: &mut SceneState, sandstorm: &mut Sandstorm) {
-    apply_scene_forces(state, sandstorm, |var| std::env::var(var).ok());
+    apply_scene_forces(state, sandstorm, crate::env::lookup());
 }
 
 /// The injectable body of [`apply_scene_forces_from_env`]: `lookup` stands in
@@ -320,6 +320,27 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // after `ApplyVisuals` inside `Update`.
     let skip = scene_state.skip_transitions;
     scene_state.update(&metrics);
+    // M6-AUDIO-1: the SceneState blizzard loops' sound half
+    // (`SceneState.cs:189-253`, inside `ApplyVisuals` — hence inside the
+    // port's `SceneState::update` call). The gate is the raw
+    // `metrics.ZoneRain && metrics.ZoneSnow` (`:80`); the cloud-alpha /
+    // outside-weather split and the ±0.01 ramp are
+    // `ambient_sound::blizzard_loop_volumes`. The whole call chain runs only
+    // in game (the C# `SceneState.Update` is under `!gameMenu`, `:17802`), so
+    // the loops freeze at their last volume in menus.
+    let blizzard_on = metrics.zone_rain && metrics.zone_snow;
+    let (strong_volume, inside_volume, blizzard_volume) =
+        crate::ambient_sound::blizzard_loop_volumes(
+            blizzard_on,
+            rain.visual_alpha(),
+            scene_state.outside_weather_effect_intensity,
+            scene_state.blizzard_sound_volume,
+        );
+    scene_state.blizzard_sound_volume = blizzard_volume;
+    app.audio
+        .set_ambient_loop(crate::ambient_sound::BLIZZARD_STRONG_LOOP, strong_volume);
+    app.audio
+        .set_ambient_loop(crate::ambient_sound::BLIZZARD_INSIDE_LOOP, inside_volume);
     // `Main.tileColor` = the sky tint applied to tiles
     // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
     // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
@@ -740,6 +761,35 @@ mod tests {
     }
 
     #[test]
+    fn update_scene_ramps_the_blizzard_loop_emitter() {
+        // M6-AUDIO-1: `SceneState.cs:189-253`'s sound half — a snowy, raining
+        // surface scene ramps `_blizzardSoundVolume` toward 1 and splits it by
+        // `min(1, cloudAlpha*2) * outsideWeatherEffectIntensity`; an ordinary
+        // forest scene leaves the pair muted.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture_world();
+        // 169x124 window of snow (tile 147) around the camera, well over the
+        // 1500-tile threshold (`SceneMetrics.cs:917-919`), on the surface.
+        // The y span keeps clear of the world's top edge (the fixture's
+        // `world_surface` is 100, the camera at 50).
+        let (cx, cy) = (300, 50);
+        fill(&mut app.world, cx - 90, cy - 40, cx + 90, cy + 40, 147);
+        app.camera = Vec2::new(cx as f32 * 16.0, cy as f32 * 16.0);
+        app.rain.set_raining_for_test(true);
+        let mut blizzard = 0.0f32;
+        for _ in 0..5 {
+            update_scene(&mut app, 1.0 / 60.0, SCREEN);
+            blizzard = app.scene_state.blizzard_sound_volume;
+        }
+        assert!(blizzard > 0.04 && blizzard < 0.06, "ramped {blizzard}");
+        // And the pair mutes when the zone passes.
+        app.rain.set_raining_for_test(false);
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        let off = app.scene_state.blizzard_sound_volume;
+        assert!(off < blizzard, "the fade reverses: {off} < {blizzard}");
+    }
+
+    #[test]
     fn update_scene_without_conditions_runs_no_tint_filter() {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = fixture_world();
@@ -757,13 +807,13 @@ mod tests {
         app.settings.wave_quality = 0;
         update_scene(&mut app, 1.0 / 60.0, SCREEN);
         // (A TR_* pin set in the test environment would override; unset here.)
-        if std::env::var_os("TR_STORM").is_none() {
+        if !crate::env::present_raw("TR_STORM") {
             assert!(!app.filter_driver.use_storm_effects);
         }
-        if std::env::var_os("TR_HEAT").is_none() {
+        if !crate::env::present_raw("TR_HEAT") {
             assert!(!app.filter_driver.use_heat_distortion);
         }
-        if std::env::var_os("TR_WAVES").is_none() {
+        if !crate::env::present_raw("TR_WAVES") {
             assert_eq!(app.filter_driver.wave_quality, 0);
         }
     }

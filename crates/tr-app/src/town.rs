@@ -275,7 +275,7 @@ mod tests {
     fn town_npc(kind: crate::npc::NpcKind, x: f32, y: f32, home: Option<(i32, i32)>) -> Npc {
         let mut npc = Npc::new(kind, x, y, 1, 0.0);
         npc.home = home;
-        npc.given_name = Some("Test".into());
+        npc.given_name = "Test".into();
         npc
     }
 
