@@ -395,12 +395,40 @@ pub fn load_world_images(
         "NPC_520",
         "NPC_491",
         "NPC_492",
+        // The four Lunar pillars (`Main.cs:24159-24263`'s dedicated tower
+        // arm) — one sheet PER kind, and they were never packed: every
+        // tower drew nothing at all until this row (and the shared-field
+        // art meant the Nebula/Solar pillars showed the Stardust sheet).
+        "NPC_493",
+        "NPC_507",
+        "NPC_517",
+        "NPC_422",
         // The Prime family's glow masks (`Main.cs:25585-25642`):
         // `Bone_Eyes` over the head, `Bone_Laser` over the laser limb —
         // both ride the body's own frame rect, so they must be packed
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        // The towers' per-pillar glow masks (`Main.cs:24177-24233`): each
+        // pillar's arm draws four ghost copies of its own sheet at the
+        // velocity-rotated offsets.
+        "Glow_132",
+        "Glow_143",
+        "Glow_149",
+        "Glow_162",
+        "NPC_369",
+        "NPC_376",
+        "NPC_108",
+        "NPC_106",
+        "NPC_124",
+        "NPC_123",
+        "NPC_353",
+        "NPC_354",
+        "NPC_441",
+        "NPC_588",
+        "NPC_589",
+        "NPC_633",
+        "NPC_663",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1115,6 +1143,30 @@ pub struct AmbienceTex {
     pub frames: u32,
 }
 
+/// The bestiary NPC sheet slots in `bestiary_npc_sheets`'s exact order
+/// (the vanilla net ids). The ui derives a portrait's sheet index from
+/// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
+/// of a hand-maintained table — that table had drifted twice (the
+/// martian sheets' insert shifted the tower/shards rows again).
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 156] = [
+        1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+        60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+        25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+        11, 12, 13, 14, 15, 20, 18, 19, 38, 227,
+        228, 54, 4, 222, 35, 5, 113, 115, 143, 144,
+        145, 383, 520, 212, 216, 117, 118, 134, 127, 125,
+        126, 262, 266, 267, 26, 27, 28, 111, 471, 105,
+        107, 245, 246, 247, 249, 668, 36, 114, 128, 129,
+        130, 131, 399, 388, 381, 382, 390, 391, 392, 393,
+        394, 395, 491, 492, 552, 553, 554, 555, 556, 557,
+        561, 562, 563, 566, 567, 564, 551, 568, 550, 548,
+        422, 493, 507, 517, 406, 407, 423, 425, 429, 426,
+        427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
+        412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
+        397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
+        353, 354, 441, 588, 589,
+    ];
+
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
 pub struct Lookups {
@@ -1400,6 +1452,15 @@ pub struct Lookups {
 }
 
 impl Lookups {
+    /// The bestiary NPC sheet's slot in `bestiary_npc_sheets` for a vanilla
+    /// net id — `BESTIARY_NPC_SHEET_IDS` is the parallel order table (the
+    /// ui's portraits derive their sheet from the entry's `net_id` this
+    /// way instead of a hand-maintained index table).
+    pub fn bestiary_sheet_index(&self, net_id: u16) -> Option<usize> {
+        let slot = BESTIARY_NPC_SHEET_IDS.iter().position(|&id| id == net_id)?;
+        self.bestiary_npc_sheets.get(slot).and_then(|s| s.as_ref().map(|_| slot))
+    }
+
     pub fn build(
         atlas: &tr_render::Atlas,
         tile_names: impl Iterator<Item = (u16, String)>,
@@ -1648,6 +1709,19 @@ impl Lookups {
                 atlas.sheet("NPC_400").copied(),
                 atlas.sheet("NPC_401").copied(),
                 atlas.sheet("NPC_368").copied(),
+                atlas.sheet("NPC_369").copied(),
+                atlas.sheet("NPC_376").copied(),
+                atlas.sheet("NPC_108").copied(),
+                atlas.sheet("NPC_106").copied(),
+                atlas.sheet("NPC_124").copied(),
+                atlas.sheet("NPC_123").copied(),
+                atlas.sheet("NPC_353").copied(),
+                atlas.sheet("NPC_354").copied(),
+                atlas.sheet("NPC_441").copied(),
+                atlas.sheet("NPC_588").copied(),
+                atlas.sheet("NPC_589").copied(),
+                atlas.sheet("NPC_633").copied(),
+                atlas.sheet("NPC_663").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -12,7 +12,7 @@ use tr_core::World;
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
 /// these; the party/custom-seed gates sit constants-off).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
     pub night: bool,
@@ -21,6 +21,40 @@ pub struct ShopFlags {
     pub zone_jungle: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
+    /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
+    /// and mana maxima, the copper purse, the Party Girl's presence, the
+    /// mech bosses and the martian invasion.
+    pub life_max_400: bool,
+    pub mana_max_200: bool,
+    pub coins_over_gold: bool,
+    pub party_girl_present: bool,
+    pub downed_mech_any: bool,
+    pub downed_mech_1: bool,
+    pub downed_mech_2: bool,
+    pub downed_mech_3: bool,
+    pub downed_martians: bool,
+    /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
+    /// Golfer shop's score gates — the port has no golf system yet, so it
+    /// reads 0 until one lands (the gated rows stay hidden).
+    pub golfer_score: i32,
+    /// The Zoologist's shop gates (`Chest.cs:3265`): the bestiary unlock
+    /// report's completion percent.
+    pub bestiary_completion: f32,
+    /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
+    /// that opens the Princess's arrival without the full roster.
+    pub unlocked_princess: bool,
+    /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
+    /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
+    /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
+    pub vampirism: bool,
+    /// `Main.infectedSeed` (`WorldGen.cs:560-562`, the `worldIsInfected`
+    /// micro seed) — the Dryad arm's second conjunct (`Chest.cs:1733`).
+    pub infected_seed: bool,
+    /// `WorldGen.crimson` — the world's evil type; the Dryad's vampirism row
+    /// picks the Crimson Torch (4386) over the Corrupt one (4385)
+    /// (`Chest.cs:1735-1740`). The port persists no world-evil type (see
+    /// [`ShopFlags::from_world`]), so the caller fills it like the zones.
+    pub crimson_world: bool,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -37,7 +71,46 @@ impl Default for ShopFlags {
             zone_jungle: false,
             downed_boss2: false,
             downed_boss3: false,
+            life_max_400: false,
+            mana_max_200: false,
+            coins_over_gold: false,
+            party_girl_present: false,
+            downed_mech_any: false,
+            downed_mech_1: false,
+            downed_mech_2: false,
+            downed_mech_3: false,
+            downed_martians: false,
+            golfer_score: 0,
+            bestiary_completion: 0.0,
+            unlocked_princess: false,
+            vampirism: false,
+            infected_seed: false,
+            crimson_world: false,
             travel_stock: [0; 40],
+        }
+    }
+}
+
+impl ShopFlags {
+    /// M5-SEED-2: the world-side feed of the custom-seed half — the two
+    /// statics `Chest.SetupShop`'s vampirism gates read live
+    /// (`Main.vampireSeed`/`Main.infectedSeed`, set by
+    /// `InitializeSecretSeeds` `WorldGen.cs:555-562`). The shop-open seam
+    /// (the port has no shop UI call yet) starts from this and fills the
+    /// scene flags; a classic world is exactly [`ShopFlags::default`].
+    ///
+    /// `crimson_world` stays false: the port persists no world-evil type
+    /// (the same gap `loot.rs`'s `LootFlags.crimson_world` documents), so the
+    /// Dryad's 4385/4386 split rides the caller's own field.
+    pub fn from_world(world: &World) -> Self {
+        Self {
+            vampirism: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
+            infected_seed: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+            ..Self::default()
         }
     }
 }
@@ -66,6 +139,16 @@ pub enum StockWhen {
     /// The blood-moon corruption rows (`Chest.cs:1570-1593`'s else branch —
     /// the crimson variants ride the world's crimson flag, constants-off).
     BloodMoonCorruption,
+    /// M5-SEED-2: `Chest.cs:3403-3406`'s Bestiary Girl tail — `Main.vampireSeed
+    /// && !Main.infectedSeed` adds one Torch (8) after the moon-phase rows.
+    VampirismNotInfected,
+    /// M5-SEED-2: `Chest.cs:1733-1742`'s Dryad tail — `!Main.hardMode &&
+    /// Main.vampireSeed && Main.infectedSeed` adds the Torch (8).
+    VampirismInfected,
+    /// The Dryad tail's `WorldGen.crimson` split — the Crimson Torch (4386).
+    VampirismInfectedCrimson,
+    /// The Dryad tail's other half — the Corrupt Torch (4385).
+    VampirismInfectedCorrupt,
     /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
     /// metrics' underworld flag reaches the shop call.
     ZoneUnderworld,
@@ -74,6 +157,43 @@ pub enum StockWhen {
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
     MoonPhasePair(u8),
+    /// The ODD moon phases only (`Chest.cs:2085`'s
+    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
+    MoonPhaseOdd,
+    /// `statLifeMax >= 400` (`:2704`) — the Life Hair Dye row.
+    LifeMax400,
+    /// `statManaMax >= 200` (`:2709`) — the Mana Hair Dye row.
+    ManaMax200,
+    /// The purse's copper total ≥ 1,000,000 (`:2743`) — the Money Hair
+    /// Dye row.
+    CoinsOverGold,
+    /// The moon-phase/day parity pair (`:2747`): even phase + day OR odd
+    /// phase + night — the Time Hair Dye row.
+    MoonPhaseDayParity,
+    /// `NPC.AnyNPCs(208)` (`:2762`) — the Party Hair Dye row.
+    PartyGirlPresent,
+    /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
+    DownedMechAll,
+    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
+    DownedMechAny,
+    /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
+    DownedMartians,
+    /// `Main.moonPhase == 0 && !Main.dayTime` (`Chest.cs:3271`).
+    MoonPhaseNight0,
+    /// The Zoologist's shop gates (`Chest.cs:3275-3310`): the bestiary
+    /// completion tiers (the C# compares floats directly).
+    BestiaryCompletion(f32),
+    /// `Main.hardMode && NPC.downedMoonlord` (`Chest.cs:3432`).
+    HardModeMoonlord,
+    /// `NPC.downedSlimeKing && NPC.downedQueenSlime` (`:3428`).
+    DownedBothSlimes,
+    /// The Golfer shop's painting pair (`Chest.cs:3238-3260`): the score
+    /// `>= 2000` gate AND the moon-phase pair, exactly one of four.
+    GolfPainting(u8),
+    /// The Golfer shop's score tier — the vanilla mixes `>=` and `>` per
+    /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
+    /// `:3233`), so each row names its own threshold + operator.
+    GolfScore(i32, bool),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -237,6 +357,186 @@ pub fn setup_shop(
             row(4437, StockWhen::MoonPhasePair(2)),
             row(4439, StockWhen::MoonPhasePair(3)),
             row(4440, StockWhen::MoonPhasePair(3)),
+            // M5-SEED-2: `:1733-1742`'s vampirism tail — the case's LAST rows,
+            // after the `moonPhase / 2` flower-seed pairs: `!Main.hardMode &&
+            // Main.vampireSeed && Main.infectedSeed` adds the Torch (8) and
+            // then the world-evil torch (`WorldGen.crimson` → 4386, else 4385).
+            row(8, StockWhen::VampirismInfected),
+            row(4386, StockWhen::VampirismInfectedCrimson),
+            row(4385, StockWhen::VampirismInfectedCorrupt),
+        ],
+        // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
+        // hair-dye family — the two always-on rows, the life/mana/money
+        // gates, the moon-phase parity, the hardmode + Party Girl +
+        // mech/martian rows; the multiplayer team dye (1982) and the
+        // graveyard mirror (5577) sit constants-off.
+        18 => vec![
+            row(1990, StockWhen::Always),
+            row(1979, StockWhen::Always),
+            row(1977, StockWhen::LifeMax400),
+            row(1978, StockWhen::ManaMax200),
+            row(1980, StockWhen::CoinsOverGold),
+            row(1981, StockWhen::MoonPhaseDayParity),
+            row(1983, StockWhen::HardMode),
+            row(1984, StockWhen::PartyGirlPresent),
+            row(1985, StockWhen::DownedMechAll),
+            row(1986, StockWhen::DownedMechAny),
+            row(2863, StockWhen::DownedMartians),
+            row(3259, StockWhen::DownedMartians),
+            row(5104, StockWhen::Always),
+        ],
+        // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
+        // magic rows always, the hardmode blood-moon deck (5461) and the
+        // halloween hat (1739) constants-off (the port has neither
+        // season).
+        7 => vec![
+            row(487, StockWhen::Always),
+            row(496, StockWhen::Always),
+            row(500, StockWhen::Always),
+            row(507, StockWhen::Always),
+            row(508, StockWhen::Always),
+            row(531, StockWhen::Always),
+            row(149, StockWhen::Always),
+            row(576, StockWhen::Always),
+            row(3186, StockWhen::Always),
+        ],
+        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
+        // family's rows; the graveyard goggles (4409) constants-off and
+        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
+        // pair (1/3/5/7).
+        8 => vec![
+            row(509, StockWhen::Always),
+            row(850, StockWhen::Always),
+            row(851, StockWhen::Always),
+            row(3612, StockWhen::Always),
+            row(510, StockWhen::Always),
+            row(530, StockWhen::Always),
+            row(513, StockWhen::Always),
+            row(538, StockWhen::Always),
+            row(529, StockWhen::Always),
+            row(541, StockWhen::Always),
+            row(542, StockWhen::Always),
+            row(543, StockWhen::Always),
+            row(852, StockWhen::Always),
+            row(853, StockWhen::Always),
+            row(4261, StockWhen::Always),
+            row(3707, StockWhen::Always),
+            row(2739, StockWhen::Always),
+            row(849, StockWhen::Always),
+            row(1263, StockWhen::Always),
+            row(3616, StockWhen::Always),
+            row(3725, StockWhen::Always),
+            row(2799, StockWhen::Always),
+            row(3619, StockWhen::Always),
+            row(3627, StockWhen::Always),
+            row(3629, StockWhen::Always),
+            row(585, StockWhen::Always),
+            row(584, StockWhen::Always),
+            row(583, StockWhen::Always),
+            row(4484, StockWhen::Always),
+            row(4485, StockWhen::Always),
+            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
+            // port's town count reads the Angler's presence.
+            row(2295, StockWhen::MoonPhaseOdd),
+        ],
+        // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
+        // bestiary tools — the progress-gated rows ride
+        /// `BestiaryUnlockProgressReport.CompletionPercent`
+        /// (`:3265`), the lumen/solar rows the flags they name. The case's
+        // vampirism tail (`Main.vampireSeed && !Main.infectedSeed` → one
+        /// Torch 8, `Chest.cs:3403-3406`) closes the list — the M5-SEED-2
+        /// arm, folded into this one arm so the match keeps one entry.
+        23 => vec![
+            row(4767, StockWhen::Always),
+            row(5253, StockWhen::MoonPhaseNight0),
+            row(5635, StockWhen::BestiaryCompletion(0.45)),
+            row(4759, StockWhen::BestiaryCompletion(0.10)),
+            row(4672, StockWhen::BestiaryCompletion(0.03)),
+            row(4829, StockWhen::Always),
+            row(4830, StockWhen::BestiaryCompletion(0.25)),
+            row(4910, StockWhen::BestiaryCompletion(0.45)),
+            row(4871, StockWhen::BestiaryCompletion(0.30)),
+            row(4907, StockWhen::BestiaryCompletion(0.30)),
+            row(4676, StockWhen::BestiaryCompletion(0.10)),
+            // The vampirism tail (`Chest.cs:3403-3406`).
+            row(8, StockWhen::VampirismNotInfected),
+        ],
+        // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
+        /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
+        /// hat (the tenth-anniversary rows sit constants-off).
+        24 => vec![
+            row(5071, StockWhen::Always),
+            row(5072, StockWhen::Always),
+            row(5073, StockWhen::Always),
+            row(5076, StockWhen::Always),
+            row(5077, StockWhen::Always),
+            row(5078, StockWhen::Always),
+            row(5079, StockWhen::Always),
+            row(5080, StockWhen::Always),
+            row(5081, StockWhen::Always),
+            row(5082, StockWhen::Always),
+            row(5083, StockWhen::Always),
+            row(5084, StockWhen::Always),
+            row(5085, StockWhen::Always),
+            row(5086, StockWhen::Always),
+            row(5087, StockWhen::Always),
+            row(5310, StockWhen::Always),
+            row(5222, StockWhen::Always),
+            row(5228, StockWhen::Always),
+            row(5266, StockWhen::DownedBothSlimes),
+            row(5044, StockWhen::HardModeMoonlord),
+            row(5088, StockWhen::Always),
+        ],
+        // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
+        // gear — the clubs, the cup flags, the tees/balls, the signs, the
+        // clothes and the mower are always on; every better club, the
+        // chest, the trophies, the cart and the paintings ride
+        /// `golferScoreAccumulated`'s tiers (and the cart's Skeletron
+        /// gate) — the port carries the score on the ShopFlags so the
+        /// rows stay faithful once the golf system lands.
+        22 => vec![
+            row(4587, StockWhen::Always),
+            row(4590, StockWhen::Always),
+            row(4589, StockWhen::Always),
+            row(4588, StockWhen::Always),
+            row(4083, StockWhen::Always),
+            row(4084, StockWhen::Always),
+            row(4085, StockWhen::Always),
+            row(4086, StockWhen::Always),
+            row(4087, StockWhen::Always),
+            row(4088, StockWhen::Always),
+            row(4039, StockWhen::GolfScore(500, true)),
+            row(4094, StockWhen::GolfScore(500, true)),
+            row(4093, StockWhen::GolfScore(500, true)),
+            row(4092, StockWhen::GolfScore(500, true)),
+            row(4089, StockWhen::Always),
+            row(3989, StockWhen::Always),
+            row(4095, StockWhen::Always),
+            row(4040, StockWhen::Always),
+            row(4319, StockWhen::Always),
+            row(4320, StockWhen::Always),
+            row(4591, StockWhen::GolfScore(1000, false)),
+            row(4594, StockWhen::GolfScore(1000, false)),
+            row(4593, StockWhen::GolfScore(1000, false)),
+            row(4592, StockWhen::GolfScore(1000, false)),
+            row(4135, StockWhen::Always),
+            row(4138, StockWhen::Always),
+            row(4136, StockWhen::Always),
+            row(4137, StockWhen::Always),
+            row(4049, StockWhen::Always),
+            row(4265, StockWhen::GolfScore(500, false)),
+            row(4595, StockWhen::GolfScore(2000, false)),
+            row(4598, StockWhen::GolfScore(2000, false)),
+            row(4597, StockWhen::GolfScore(2000, false)),
+            row(4596, StockWhen::GolfScore(2000, false)),
+            row(4264, StockWhen::DownedBoss3),
+            row(4599, StockWhen::GolfScore(500, false)),
+            row(4600, StockWhen::GolfScore(1000, true)),
+            row(4601, StockWhen::GolfScore(2000, true)),
+            row(4658, StockWhen::GolfPainting(0)),
+            row(4659, StockWhen::GolfPainting(1)),
+            row(4660, StockWhen::GolfPainting(2)),
+            row(4661, StockWhen::GolfPainting(3)),
         ],
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
@@ -860,8 +1160,49 @@ pub fn resolve_stock_moon(
             StockWhen::ZoneJungle => flags.zone_jungle,
             StockWhen::PlayerHasItem(id) => inventory_ids.contains(&id),
             StockWhen::BloodMoonCorruption => flags.blood_moon,
+            StockWhen::VampirismNotInfected => flags.vampirism && !flags.infected_seed,
+            StockWhen::VampirismInfected => {
+                !flags.hard_mode && flags.vampirism && flags.infected_seed
+            }
+            StockWhen::VampirismInfectedCrimson => {
+                !flags.hard_mode
+                    && flags.vampirism
+                    && flags.infected_seed
+                    && flags.crimson_world
+            }
+            StockWhen::VampirismInfectedCorrupt => {
+                !flags.hard_mode
+                    && flags.vampirism
+                    && flags.infected_seed
+                    && !flags.crimson_world
+            }
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
+            StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
+            StockWhen::LifeMax400 => flags.life_max_400,
+            StockWhen::ManaMax200 => flags.mana_max_200,
+            StockWhen::CoinsOverGold => flags.coins_over_gold,
+            StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
+            StockWhen::PartyGirlPresent => flags.party_girl_present,
+            StockWhen::DownedMechAll => {
+                flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
+            }
+            StockWhen::DownedMechAny => flags.hard_mode && flags.downed_mech_any,
+            StockWhen::DownedMartians => flags.hard_mode && flags.downed_martians,
+            StockWhen::GolfPainting(pair) => {
+                flags.golfer_score >= 2000 && moon_phase / 2 == pair as u32
+            }
+            StockWhen::MoonPhaseNight0 => moon_phase == 0 && flags.night,
+            StockWhen::BestiaryCompletion(min) => flags.bestiary_completion >= min,
+            StockWhen::HardModeMoonlord => false, // `downedMoonlord` is not ported yet
+            StockWhen::DownedBothSlimes => false, // `downedQueenSlime` is not ported yet
+            StockWhen::GolfScore(min, inclusive) => {
+                if inclusive {
+                    flags.golfer_score >= min
+                } else {
+                    flags.golfer_score > min
+                }
+            }
         })
         .map(|e| e.item)
         .collect()
@@ -972,9 +1313,10 @@ mod tests {
 
     #[test]
     fn the_unknown_shop_index_is_empty() {
-        // The port carries the Merchant's shop only; the other indexes
-        // land with their NPCs.
-        assert!(resolve_stock(22, &ShopFlags::default(), &[]).is_empty());
+        // The unclaimed indexes carry nothing (the ported ones land with
+        // their NPCs — 1..8, 15..19, 22).
+        assert!(resolve_stock(0, &ShopFlags::default(), &[]).is_empty());
+        assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
     }
 
 
@@ -1063,6 +1405,66 @@ mod tests {
         assert_eq!(sell_price(88, 0.75), 10667);
         // The Guide-in-the-forest multiplier from the happiness tests.
         assert_eq!(buy_price(88, 0.89), 35600);
+    }
+
+    // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
+    // (`WorldGen.cs:555-562`) arm two shops — the Dryad's
+    // `!hardMode && vampireSeed && infectedSeed` tail (`Chest.cs:1733-1742`)
+    // and the Bestiary Girl's `vampireSeed && !infectedSeed` torch
+    // (`Chest.cs:3403-3406`). Both gates read the world, so a classic world
+    // resolves neither shop's extra rows.
+    #[test]
+    fn the_vampirism_arms_add_the_torch_rows_under_the_flag() {
+        let classic = ShopFlags::default();
+        let vamp = ShopFlags {
+            vampirism: true,
+            ..ShopFlags::default()
+        };
+        let both = ShopFlags {
+            vampirism: true,
+            infected_seed: true,
+            ..ShopFlags::default()
+        };
+        // The Dryad (shop 3): the torch rows are the case's LAST rows, after
+        // the flower-seed pairs, and only while the world is not in hardmode.
+        let base = resolve_stock_moon(3, &classic, &[], 0);
+        assert!(!base.contains(&8), "the Dryad sells no torch by default");
+        assert!(!base.contains(&4385) && !base.contains(&4386));
+        let seeded = resolve_stock_moon(3, &both, &[], 0);
+        let tail = seeded.len() - base.len();
+        assert_eq!(tail, 2, "the torch plus the world-evil torch");
+        assert!(seeded.contains(&8), "the Torch 8");
+        assert!(seeded.contains(&4385), "the Corrupt Torch (no crimson flag)");
+        assert!(!seeded.contains(&4386), "the Crimson Torch stays out");
+        // `WorldGen.crimson` flips the split.
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..both
+        };
+        let rows = resolve_stock_moon(3, &crimson, &[], 0);
+        assert!(rows.contains(&4386) && !rows.contains(&4385), "the crimson split");
+        // Hardmode closes the arm entirely (`:1733`'s `!Main.hardMode`).
+        let hard = ShopFlags {
+            hard_mode: true,
+            ..both
+        };
+        let hard_rows = resolve_stock_moon(3, &hard, &[], 0);
+        assert!(!hard_rows.contains(&8) && !hard_rows.contains(&4385));
+        // A vampirism-only world (no `infectedSeed`): the Dryad arm stays off
+        // and the Bestiary Girl's opens instead.
+        let girl = resolve_stock(23, &vamp, &[]);
+        assert!(girl.contains(&8), "the Bestiary Girl's vampirism torch: {girl:?}");
+        assert!(
+            !resolve_stock(23, &classic, &[]).contains(&8),
+            "a classic world gets no vampirism torch"
+        );
+        assert!(
+            !resolve_stock(23, &both, &[]).contains(&8),
+            "`!infectedSeed` is required"
+        );
+        // The world-side feed: a classic world is the default.
+        let w = World::new("t".into(), 200, 200);
+        assert_eq!(ShopFlags::from_world(&w), ShopFlags::default());
     }
 }
 

@@ -87,6 +87,13 @@ pub struct World {
     /// them through [`crate::worldgen::GenOptions`]. Persisted in TRWLD v6
     /// and read from the `.wld` header flags block.
     pub seeds: crate::seeds::SeedFlags,
+    /// M5-SEED-2: the 37 modular micro-seed flags (`WorldGen.SecretSeed`,
+    /// `WorldGen.cs:341-413`) — the `activeSecretSeedCount` population and
+    /// the per-seed gates the worldgen arms and the runtime readers read.
+    /// Persisted in TRWLD v7; `.wld` worlds re-derive them from the seed
+    /// text (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), because
+    /// the C# stores no micro-seed bytes in the file.
+    pub micro_seeds: crate::seeds::MicroSeedFlags,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -222,6 +229,18 @@ pub struct World {
     pub lunar_shield_power_normal: i32,
     /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
     pub downed_moon_lord: bool,
+    /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
+
+    pub downed_ancient_cultist: bool,
+
+    /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
+    /// phase (`WorldGen.cs:86687`'s write, `:86752`'s clear).
+    pub lunar_apocalypse_is_up: bool,
+    /// `NPC.MoonLordCountdown` / `NPC.MaxMoonLordCountdown`
+    /// (`NPC.cs:6031-6033`) — the countdown to the Moon Lord's spawn
+    /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
+    pub moon_lord_countdown: i32,
+    pub max_moon_lord_countdown: i32,
         /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
     pub tower_active_solar: bool,
     pub tower_active_vortex: bool,
@@ -262,6 +281,48 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
+    /// talked into the Angler — the 376 spawn arms stop looking.
+    pub saved_angler: bool,
+    /// `NPC.savedWizard` (`NPC.cs:6289`) / `NPC.savedMech` (`NPC.cs:6291`):
+    /// the bound Wizard/Mechanic rescue flags (`:52948`/`:52951`).
+    pub saved_wizard: bool,
+    /// `NPC.savedStylist` (`NPC.cs:6295`).
+    pub saved_stylist: bool,
+    /// `NPC.savedTaxCollector` (`NPC.cs:6285`).
+    pub saved_tax_collector: bool,
+    /// `NPC.savedGolfer` (`NPC.cs:6299`): the sleeping Golfer has been
+    /// talked into the Golfer — the 589 spawn arm stops looking.
+    pub saved_golfer: bool,
+    /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
+    /// that opens the Princess's arrival without the full roster.
+    pub unlocked_princess: bool,
+    /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
+    /// Collector's purse + its `Player.taxRate` (3600) clock.
+    pub tax_money: i32,
+    pub tax_timer: i32,
+    /// `NPC.taxCollector` (`NPC.cs:6083`): a live Tax Collector exists — the
+    /// `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
+    /// the sim sets it each pass.
+    pub tax_payers: i32,
+    /// tax pump runs while true (`Main.cs:64995`).
+    pub tax_collector: bool,
+    pub saved_mech: bool,
+    /// `Main.anglerQuest` (`Main.cs:1785`): the INDEX into the 41-entry
+    /// quest-fish pool (`Main.cs:67032`'s `anglerQuestItemNetIDs`).
+    pub angler_quest: u8,
+    /// `Main.anglerQuestFinished` (`Main.cs:1783`): today's quest is
+    /// handed in (`NPCChatText_DoAnglerQuest`, `Main.cs:40251`); the
+    /// day reset clears it (`AnglerQuestSwap`, `Main.cs:3761`).
+    pub angler_quest_finished: bool,
+    /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the C#'s player
+    /// name list — the port's single player collapses to a bool.
+    pub angler_quest_turned_in: bool,
+    /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
+    /// (`Main.cs:65373`): the clock arms it (the clock has no RNG), the
+    /// world pass resolves it on `Main.rand`'s app stream (the
+    /// `invasion_arm_pending` shape).
+    pub angler_swap_pending: bool,
     /// `Main.travelShop` (`Main.cs:1779`; the 40 slots of
     /// `Main.TravelShopMaxSlots`, allocated at `Main.cs:67030`): the
     /// Travelling Merchant's per-visit stock — `Chest.SetupTravelShop`
@@ -275,6 +336,13 @@ pub struct World {
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
     /// and lands with M4 spawns, so the port keeps the reset value.
     pub butterfly_chance: i32,
+    /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven metal
+    /// tiers — the four pre-hardmode metals rolled once at the world setup
+    /// (`Main.cs:11266-11297`) and the hardmode trio `-1` until an altar is
+    /// smashed. The port's `ores.rs` owns the value; it rides the World so
+    /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
+    /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
+    pub ore_tiers: crate::ores::SavedOreTiers,
 }
 
 impl World {
@@ -287,6 +355,7 @@ impl World {
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             frame_important: Vec::new(),
+            ore_tiers: crate::ores::SavedOreTiers::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
@@ -340,6 +409,7 @@ impl World {
             chunk_has: Vec::new(),
             seed: 0,
             seeds: crate::seeds::SeedFlags::default(),
+            micro_seeds: crate::seeds::MicroSeedFlags::default(),
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,
@@ -367,6 +437,10 @@ impl World {
             tower_shield_stardust: 0,
             lunar_shield_power_normal: 100,
             downed_moon_lord: false,
+            downed_ancient_cultist: false,
+            lunar_apocalypse_is_up: false,
+            moon_lord_countdown: 0,
+            max_moon_lord_countdown: 3600,
             tower_active_solar: false,
             tower_active_vortex: false,
             tower_active_nebula: false,
@@ -386,6 +460,21 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            saved_angler: false,
+            saved_wizard: false,
+            saved_stylist: false,
+            saved_tax_collector: false,
+            saved_golfer: false,
+            unlocked_princess: false,
+            tax_money: 0,
+            tax_timer: 0,
+            tax_collector: false,
+            tax_payers: 0,
+            saved_mech: false,
+            angler_quest: 0,
+            angler_quest_finished: false,
+            angler_quest_turned_in: false,
+            angler_swap_pending: false,
             travel_shop: [0; 40],
             butterfly_chance: 0,
         }

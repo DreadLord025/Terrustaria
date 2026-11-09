@@ -213,8 +213,23 @@ pub struct Player {
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
+    /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
+    /// milestone switch, `Player.cs:56323`).
+    pub angler_quests_finished: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`): the golf score
+    /// the Golfer's shop and chatter tier (`Chest.cs:3158`, `NPC.cs:94792`).
+    pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
+    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
+    /// prefer while it stands. The consumers are the minion AIs
+    /// (M4-PROJ-8); the whip pass only writes it.
+    pub minion_attack_target_npc: i16,
+    /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
+    /// player applied (`tag_effects.rs`, M4-PROJ-7).
+    pub tag_effects: crate::tag_effects::TagEffectStack,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -355,6 +370,13 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
+    /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
+    /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
+    /// `drippingSlime` double is 100 instead of 8). Captured from the world at
+    /// spawn (`Player::spawn`) — the flag is immutable post-generation, exactly
+    /// like the C#'s world-level static.
+    vampirism: bool,
     /// `Player.itemRotation`'s source for useStyle 5 — the aim angle the App
     /// updates per tick (`swing_aim`), mirrored onto the player for the draw.
     pub swing_aim: f32,
@@ -667,9 +689,7 @@ impl Player {
         // failure chat needs the monitor, which the join path has not built
         // yet); the revive prints like the C#.
         let (sx, sy) = match world.bed_spawn {
-            Some((bx, by))
-                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
-            {
+            Some((bx, by)) if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() => {
                 // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
                 // the spawn cell's top.
                 (
@@ -685,9 +705,13 @@ impl Player {
         Self {
             dead: false,
             deaths_pve: 0,
+            angler_quests_finished: 0,
+            golfer_score: 0,
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
+            tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -733,6 +757,11 @@ impl Player {
             seat_pos_offset: (0.0, 0.0),
             seat_y_offset: 0,
             no_knockback: false,
+            // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
+            // OnFire regen row's source (`Player.cs:18983-18992`).
+            vampirism: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
@@ -1560,6 +1589,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:24591`: the tag stack's update right after the buff head —
+        // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
+        self.tag_effects.update_tick();
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
@@ -2722,6 +2754,7 @@ impl Player {
     /// regen ← 0; resets_time ← false
     /// poisoned(20): −4 | venom(70): −30 | chlorophyteSpore(397): −30
     /// onFire(24): −8, ×2 while drippingSlime(137)
+    ///             (−100/×−100 while `Main.vampireSeed`, the `vampirism` micro seed)
     /// onFire3(323): −8 ×2 | frostburn(44): −16 ×2 | frostburn2(324): −16 ×2
     /// cursedInferno(39): −24 ×2 | burned(67): −60 ×2
     /// suffocating(68): −40
@@ -2758,12 +2791,21 @@ impl Player {
         }
         let drip = self.holding(137); // drippingSlime doubles the fire family
         if self.holding(24) {
-            // OnFire — `:18976-18998` (the vampireSeed −100 variant has no
-            // source and stays out per plan).
+            // OnFire — `:18976-18998`. M5-SEED-2: the `vampirism` world trades
+            // the drain for its own (`Main.vampireSeed` → −100, and the
+            // `drippingSlime` double is −100 instead of −8, `:18983-18992`) —
+            // the flag comes from the world's micro seeds (`WorldGen.cs:555-558`).
             resets_time = true;
-            regen -= 8;
-            if drip {
+            if self.vampirism {
+                regen -= 100;
+                if drip {
+                    regen -= 100;
+                }
+            } else {
                 regen -= 8;
+                if drip {
+                    regen -= 8;
+                }
             }
         }
         if self.holding(323) {
@@ -6175,7 +6217,13 @@ mod tests {
     /// A player with a large life pool for 300-tick drain runs; `update_survival`
     /// only (the buff timers are not decremented there, so the buff holds).
     fn drain_rig() -> Player {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        drain_rig_in(&World::new("t".into(), 64, 800))
+    }
+
+    /// The world-parameterized twin (M5-SEED-2's vampirism rigs pass a world
+    /// whose micro seeds carry `Main.vampireSeed`'s bit).
+    fn drain_rig_in(world: &World) -> Player {
+        let mut p = Player::spawn(world);
         p.max_hp = 1000;
         p.hp = 1000;
         p
@@ -6552,6 +6600,39 @@ mod tests {
         p.buffs.add_buff(137, 600);
         p.update_survival();
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
+    }
+
+    // M5-SEED-2: the `vampirism` world's OnFire row (`Player.cs:18983-18992`)
+    // drains −100 instead of −8, with the drippingSlime double at −100.
+    #[test]
+    fn the_vampirism_world_trades_the_on_fire_drain_for_its_own() {
+        // The classic row first — the flag is off on a classic world.
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -8);
+        // The seeded world: the flag rides the world's micro seeds, captured
+        // at `Player::spawn` (`WorldGen.cs:555-558`).
+        let mut w = World::new("t".into(), 64, 800);
+        w.micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        let mut p = drain_rig_in(&w);
+        assert!(p.vampirism, "the flag reaches the player");
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
+        // The drip double is 100 too, and only the fire family is affected.
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
+        p.buffs.add_buff(24, 600); // OnFire −100
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
     #[test]

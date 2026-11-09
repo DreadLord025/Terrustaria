@@ -238,7 +238,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42822`), so the press/release edges stay current even on
-    // frames where the cursor is over the HUD or a panel.
+    // frames where the cursor is over the HUD or a panel. The *previous*
+    // frame's edges are captured before the overwrite: the use gates below
+    // must compare this frame's press against last frame's state (the C#
+    // `controlUseItem && releaseUseItem` pair), not against the same frame's.
+    let prev_mine_down = app.mine_prev_down;
+    let prev_mine_released = app.mine_released;
+    let prev_place_down = app.place_prev_down;
+    let prev_place_released = app.place_released;
     app.place_prev_down = app.place_down;
     app.mine_prev_down = app.mine_down;
     app.place_released = !app.place_down;
@@ -321,6 +328,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
+        // 44028-44034`): the 3601 use gates on `downedGolemBoss && hardMode
+        // && !AnyDanger && !AnyoneNearCultists` and calls
+        // `WorldGen.StartImpendingDoom(720)` — the countdown's item value
+        // (`NPC.cs:6037`).
+        if held.kind == 3601 && held.count > 0 && use_celestial_sigil(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
         // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
         // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
@@ -370,6 +385,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     app.edit_target = Some((tx, ty));
+    // `Player.cs:25446` — the smart cursor re-points the tile target
+    // (`SmartCursorHelper.SmartCursorLookup`) before the mining/placement
+    // arms below run; the vanilla writeback sets `Player.tileTargetX/Y`
+    // alongside `Main.SmartCursorX/Y` (`:157-162`).
+    let (tx, ty) = match super::smart_cursor::repoint(app, tx, ty, (world_pos.x, world_pos.y)) {
+        Some((sx, sy)) => {
+            app.edit_target = Some((sx, sy));
+            (sx, sy)
+        }
+        None => (tx, ty),
+    };
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");
@@ -459,6 +485,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
+        let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            || (prev_mine_released && !prev_mine_down);
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
         // fires at `ItemTimeIsZero` mid-swing, not on the press.
@@ -535,9 +563,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
-                    let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                    let crit =
-                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
+                    // The whips are the exception: `DefaultToWhip` sets no
+                    // melee/ranged/magic flag, so the C# crit block
+                    // (`Projectile.cs:12892-12899`) never fires for them —
+                    // the vanilla whip crits only through the tag's
+                    // `CritChance` (deviation in ANALYSIS).
+                    let crit = if tr_core::whip::is_whip(proj) {
+                        false
+                    } else {
+                        let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit)
+                    };
                     let slot = app.projectiles.spawn_with_data_owned(
                         proj,
                         app.local_id as u8,
@@ -552,6 +588,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
+                        // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
+                        // the whip's tag row off the firing item + the
+                        // prefix's `bonusTagDamage`, plus
+                        // `AI_165_Whip`'s `timeToFlyOut` inputs (the prefixed
+                        // `itemAnimationMax` — 27/28/30/35 per whip).
+                        let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+                            held.kind
+                        } else {
+                            0
+                        };
+                        let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+                        let animation_max =
+                            held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+                        app.projectiles
+                            .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                     }
                     if def.consumable {
                         app.inventory[app.selected].count =
@@ -883,7 +934,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.attack_cd = app.attack_cd.max(0.2);
     }
     let swing_over = app.swing <= 0.0;
-    let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
+    let reuse_ready = auto_reuse || (prev_place_released && !prev_place_down);
     let starting = swing_over && reuse_ready;
     let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
     // Tile interactions (`Player.Update` order: LookForTileInteractions
@@ -893,20 +944,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // the press edge. A handled interaction consumes the click; anything else
     // falls through to the place path unchanged.
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;
     }
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::chest::try_open_chest_at_cursor(app, world_pos)
     {
         return;
     }
-    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+    if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
     // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
@@ -1403,6 +1454,12 @@ pub(crate) struct DropCtx {
     /// them; ANALYSIS entry, phase 5).
     pub expert_mode: bool,
     pub dont_starve: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — `InitializeSecretSeeds` sets it for the
+    /// `vampirism` micro seed (`WorldGen.cs:555-558`), and
+    /// `SpawnThingsFromPot`'s four arms read it (`:57477`/`:57494`/`:57518`/
+    /// `:57539`). A classic world keeps it false, so the pot rolls are
+    /// unchanged.
+    pub vampirism: bool,
     /// The closest player (`Player.FindClosest` — the local one): the hearts
     /// gate `statLife < statLifeMax2` (:57512) and the torch-stack scan
     /// (:57482-57497, capped at the 20/30 threshold the C# loop breaks at).
@@ -1451,7 +1508,17 @@ fn drop_ctx(app: &App) -> DropCtx {
         // M5-SEED-1: `Main.dontStarveWorld` (`editing.rs`'s fruit/pot
         // branches, `:1437-1474`) — the world's own flag replaces the
         // hard-coded false.
-        dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        dont_starve: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
+        // `SecretSeed.vampirism.Enabled` write) — `SpawnThingsFromPot`'s
+        // `:57477`/`:57494`/`:57518`/`:57539` arms.
+        vampirism: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,
@@ -1845,7 +1912,19 @@ fn spawn_things_from_pot(
     if ctx.expert_mode {
         num11 -= 1;
     }
-    let flag5 = ctx.torches < 20;
+    // :57475-57492 — the 50-slot torch-stack scan: `num13 = 20` (30 under
+    // `Main.vampireSeed`, `:57477-57481`) is the loop's break threshold, so
+    // the vampirism world needs 50 % more torches in the inventory before
+    // `flag5` clears.
+    let torch_threshold = if ctx.vampirism { 30 } else { 20 };
+    let flag5 = ctx.torches < torch_threshold;
+    // :57494-57496 — `if (flag5 && Main.vampireSeed) num11 = 1;`: a torchless
+    // player in a vampirism world is FORCED into the torch arm below, past
+    // the hearts. The roll has already been drawn, so the classic stream is
+    // untouched (the C#'s guard short-circuits on a classic world).
+    if flag5 && ctx.vampirism {
+        num11 = 1;
+    }
     // :57498-57516 — the hearts (only while hurt).
     if num11 == 0 && ctx.player_hurt {
         let mut drops = vec![(58, 1)];
@@ -1862,7 +1941,24 @@ fn spawn_things_from_pot(
         }
         return (drops, false);
     }
-    // :57518-57523 — the vampire-seed wood: skipped (no port state).
+    // M5-SEED-2: `:57518-57523` — the vampire-seed wood. `if
+    // (Main.vampireSeed && (flag2 | flag) && WorldGen.genRand.Next(6) == 0)`
+    // → the pot's style wood (9 plain, 2503 for the 4-6 pots, 620 for the
+    // 7-9 ones) × `Main.rand.Next(10, 31)`. `flag` is "below the rock layer"
+    // and `flag2` "above the underworld layer" (`:57090-57095`), so the arm
+    // fires for any cave-or-shallow cell and SKIPS (without its `genRand`
+    // draw) in the deep-underworld band. The `genRand.Next(6)` sits after
+    // the hearts arm, exactly as the C#.
+    if ctx.vampirism && (flag2 || flag) && gen_rand.next_range(0, 6) == 0 {
+        let wood = if (4..=6).contains(&style) {
+            2503
+        } else if (7..=9).contains(&style) {
+            620
+        } else {
+            9
+        };
+        return (vec![(wood, main_rng.next_range(10, 31))], false);
+    }
     // :57531-57591 — the torches (num11 == 1, or 0 while the player is below
     // the torch threshold).
     if num11 == 1 || (num11 == 0 && flag5) {
@@ -2054,6 +2150,12 @@ fn torch_drop(
     let mut num14 = main_rng.next_range(2, 7);
     if ctx.expert_mode {
         num14 += main_rng.next_range(1, 7);
+    }
+    // M5-SEED-2: `:57539-57542` — `if (Main.vampireSeed) num14 +=
+    // Main.rand.Next(2, 7);`, the fourth stack adder in the C# order (after
+    // the base and the expert one, before the per-style adds).
+    if ctx.vampirism {
+        num14 += main_rng.next_range(2, 7);
     }
     let mut torch = 8;
     let mut glowstick = 282;
@@ -4168,6 +4270,91 @@ mod tests {
         }
     }
 
+    /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
+    /// the tag row, the whip never self-crits, and the swing lasts the item's
+    /// `useAnimation`.
+    fn whip_app(kind: u16) -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: "whip",
+            count: 1,
+            prefix: 0,
+        };
+        // The press edge is the test's: `mine_down` flips to true on the
+        // frame under test (`Player.cs:42733`'s release-then-press gate).
+        app.mine_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn the_whip_press_swings_once_and_spawns_the_tagged_slot() {
+        // The BlandWhip (4672 → 841): `autoReuse = false`, `useAnimation` 30,
+        // `DefaultToWhip`'s slice, `crit` never rolled for the whip itself.
+        let mut app = whip_app(4672);
+        // One idle frame sets the edge state (`mine_prev_down` = false,
+        // `mine_released` = true); the press on the next frame fires.
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let spawned: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(spawned.len(), 1, "one whip projectile");
+        let p = spawned[0];
+        assert_eq!(p.kind, 841);
+        assert_eq!(p.tag_effect_type, 4672, "the tag row rides the slot");
+        assert!(!p.crit, "the whip never self-crits");
+        assert_eq!(p.local_hit_cooldown, -1, "the one-hit-per-NPC sentinel");
+        // `timeToFlyOut = itemAnimationMax(30) * MaxUpdates(2)`.
+        assert_eq!(
+            p.whip_settings.map(|s| s.time_fly_out),
+            Some(60.0),
+            "the swing lives the useAnimation × MaxUpdates"
+        );
+        // The swing timer matches the item's `useAnimation` (30 ticks = 0.5 s).
+        assert!((app.swing_max - 0.5).abs() < 1e-6, "the 30-tick swing");
+        // The reuse lock: a held press does not throw a second whip.
+        app.mine_released = false;
+        mine_frames(&mut app, 60);
+        let still = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert!(still <= 1, "one swing per press edge (the past whip ended)");
+    }
+
+    #[test]
+    fn the_prefixed_minion_tag_damage_reaches_the_slot() {
+        // The minion prefixes 69-72 add `Item.bonusTagDamage`
+        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
+        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        let mut app = whip_app(4678);
+        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the SwordWhip");
+        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        assert_eq!(p.bonus_tag_damage, want);
+    }
+
     fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
@@ -5002,6 +5189,112 @@ mod tests {
             num17 as i64,
             "coin total == replayed num17"
         );
+    }
+
+    // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) arms
+    // `SpawnThingsFromPot` four times — the torch threshold 20 → 30
+    // (`:57477-57481`), the `flag5` forced-torch reassignment (`:57494-57497`),
+    // the extra wood drop (`:57518-57523`) and the extra `Next(2, 7)` stack
+    // (`:57539-57542`). Every arm is behind the flag, so a classic world's
+    // pot rolls are byte-identical.
+    #[test]
+    fn test_M5_SEED_2_the_vampirism_arms_change_the_pot_drops() {
+        let classic = pot_ctx();
+        let mut vamp = pot_ctx();
+        vamp.vampirism = true;
+        let surface_y = 100; // above world_surface 200 → `flag` (below rock)
+        // A gen stream that misses the dungeon key (`Next(35)`), the potion
+        // arm (`Next(45)`) AND the vampirism wood arm's `Next(6)`, so the
+        // tests below reach the torch/coin arms.
+        let gen_seed = {
+            let mut found = None;
+            for seed in 0u64..100_000 {
+                let mut g = tr_core::tile_light::FastRandom::new(seed);
+                if g.next_range(0, 35) != 0
+                    && g.next_range(0, 45) != 0
+                    && g.next_range(0, 6) != 0
+                {
+                    found = Some(seed);
+                    break;
+                }
+            }
+            found.expect("a clean gen seed")
+        };
+
+        // (1) The forced-torch arm (`:57494-57497`): a torchless hurt player
+        // whose `num11` rolled 0 (the hearts branch) is reassigned to 1 and
+        // walks into the torch arm instead — the hearts never drop.
+        let mut hurt = pot_ctx();
+        hurt.player_hurt = true;
+        let mut hurt_vamp = pot_ctx();
+        hurt_vamp.player_hurt = true;
+        hurt_vamp.vampirism = true;
+        let heart_seed = main_seed_for_num11(0, 500, false);
+        let (loot, _) = run_pot(&hurt, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| *id == 58), "classic: hearts");
+        let (loot, _) = run_pot(&hurt_vamp, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "vampirism: the single torch row");
+        assert_eq!(loot[0].0, 8, "the forced torch branch");
+        // The stack is the base `Next(2, 7)` PLUS the vampirism adder — it
+        // replayed out of the same stream.
+        let mut state = heart_seed;
+        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let _ = main.next_range(0, 500);
+        let _ = main.next_range(0, 45);
+        let _ = main.next_range(0, 7);
+        assert_eq!(loot[0].1, main.next_range(2, 7) + main.next_range(2, 7));
+
+        // (2) The 20 → 30 threshold (`:57477-57481`): 25 torches clears the
+        // classic scan (flag5 = false → `num11 == 0` falls through to the
+        // coins) but not the vampirism one (flag5 = true → the torch arm).
+        let mut stocked = pot_ctx();
+        stocked.torches = 25;
+        let mut stocked_vamp = pot_ctx();
+        stocked_vamp.torches = 25;
+        stocked_vamp.vampirism = true;
+        let (loot, _) = run_pot(&stocked, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| (71..=74).contains(id)), "coins");
+        let (loot, _) = run_pot(&stocked_vamp, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot[0].0, 8, "25 torches is below the vampirism 30");
+
+        // (3) The extra wood arm (`:57518-57523`): `genRand.Next(6) == 0`
+        // (after the 35/45 draws) with `flag2 | flag` → wood × `Next(10, 31)`.
+        // The deep-underworld band (y > underworld_layer) has neither flag,
+        // so the arm skips and its `genRand` draw is never spent.
+        let mut wood_gen = 0u64;
+        for seed in 1u64..100_000 {
+            let mut g = tr_core::tile_light::FastRandom::new(seed);
+            if g.next_range(0, 35) != 0 && g.next_range(0, 45) != 0 && g.next_range(0, 6) == 0 {
+                wood_gen = seed;
+                break;
+            }
+        }
+        let (loot, _) = run_pot(&vamp, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "the single wood row");
+        assert_eq!(loot[0].0, 9, "the plain pot's wood");
+        assert!(
+            (10..=30).contains(&loot[0].1),
+            "wood 10-30, got {}",
+            loot[0].1
+        );
+        // The deep band: no flag, no wood — with the torch scan satisfied the
+        // `num11 == 0` cell falls through to the coins instead. (A stocked
+        // player must clear the vampirism 30, else the forced-torch arm
+        // above fires first.)
+        let mut deep_vamp = pot_ctx();
+        deep_vamp.vampirism = true;
+        deep_vamp.torches = 30;
+        let (loot, _) = run_pot(&deep_vamp, 0, 900, wood_gen, heart_seed, 0, 0);
+        assert!(
+            loot.iter().all(|(id, _)| (71..=74).contains(id)),
+            "no wood below the underworld layer"
+        );
+        // And the same seed in a classic world: the wood arm never runs, so
+        // the `num11 == 0` cell with a torchless player walks into the
+        // ordinary torch arm instead (`(num11 == 0) & flag5`, `:57590`).
+        let (loot, _) = run_pot(&classic, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1);
+        assert_eq!(loot[0].0, 8, "classic: the ordinary torch row");
     }
 
     // DW-3.3: the style multiplier drives the luck range and the coin scale.
@@ -5937,6 +6230,44 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
 /// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
 /// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(2)` —
 /// the march state rides the World (the morning-roll resolve's shape).
+/// The Celestial Sigil (`Player.cs:44028-44034`'s `ItemCheck_UseBossSpawners`
+/// arm): the item 3601 gates on `downedGolemBoss && hardMode && !AnyDanger()
+/// && !AnyoneNearCultists()` and calls `WorldGen.StartImpendingDoom(720)` —
+/// the countdown's item value (`NPC.cs:6037`).
+pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
+    if app.world.moon_lord_countdown > 0 || app.world.lunar_apocalypse_is_up {
+        return false;
+    }
+    if !app.world.downed_golem || !app.world.hard_mode {
+        return false;
+    }
+    // `!AnyDanger()`: no invasion and no active event (`Main.cs:80246`).
+    if app.world.invasion_type != 0 || app.world.dd2_event_ongoing {
+        return false;
+    }
+    // `!AnyoneNearCultists()` (`NPC.cs:80290-80313`).
+    if crate::world_sim::lunar::anyone_near_cultists(app) {
+        return false;
+    }
+    app.world.moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    app.world.max_moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "The air is growing colder...",
+        crate::chat::COLOR_COMMAND,
+    );
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    true
+}
+
 pub fn use_snow_globe(app: &mut App) -> bool {
     if app.world.invasion_type != 0 {
         return false;
