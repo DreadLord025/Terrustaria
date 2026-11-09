@@ -639,7 +639,11 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             }
         }
     }
-    if num3 / 255 > 25 {
+    // `:56598` — the remix world skips the gate above the surface
+    // (`!remixWorld || !(j > worldSurface)`); the classic worlds always
+    // take the `cactusWaterLimit` 25 check.
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
+    if (!remix || !(j as f64 > world.world_surface)) && num3 / 255 > 25 {
         return;
     }
     if is_sand {
@@ -713,7 +717,14 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             }
         }
     }
-    if num9 >= 11 + rng.next(2) {
+    // `:56690-56698` — the drunk world's cactus reaches the 19-count cap
+    // (`Next(11, 20)`), the classic worlds 11-12 (`Next(11, 13)`).
+    let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+    if drunk {
+        if num9 >= 11 + rng.next(9) {
+            return;
+        }
+    } else if num9 >= 11 + rng.next(2) {
         return;
     }
     if world.tile(i, j - 1).is_none_or(|t| !t.active()) {
@@ -1397,6 +1408,102 @@ mod tests {
         let mut rng = FastRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_none_or(|t| !t.active() || t.kind != 80), "the crowd gate");
+    }
+
+
+
+    #[test]
+    fn test_spread_1_cactus_seed_arms_gate_the_counts() {
+        // The `GrowCactus` seed arms (`:56598`, `:56690-56698`): the remix
+        // world skips the water box above the surface
+        // (`!remixWorld || !(j > worldSurface)`), the classic worlds always
+        // take the `cactusWaterLimit` 25 check. `World.seeds` carries the
+        // flags (the M5-SEED-1 framework) so no plumbing is needed.
+        use crate::seeds::SeedFlags;
+        // The water box: 10 water tiles = 10 columns of liquid > 25/255? No
+        // — the limit counts liquid/255, so 26 liquid tiles trip it.
+        let rig_water = |w: &mut World| {
+            for dx in -40..=40 {
+                put(w, 100 + dx, 200, 53, 0);
+            }
+            // The water sits off to the side: the growth cell (100, 199)
+            // must stay dry (the top gate's `tile2.liquid > 0` return) while
+            // the box still counts 30 liquid columns past the 25 limit.
+            for dx in [-40i32, -35, -30, -25, -20, -15, 15, 20, 25, 30, 35, 40] {
+                for dy in 1..=3 {
+                    let i = w.index(100 + dx, 200 - dy);
+                    w.tiles[i] = crate::tile::Tile {
+                        kind: 0,
+                        liquid: 255,
+                        flags: 0,
+                        ..Default::default()
+                    };
+                }
+            }
+            w.world_surface = 150.0; // the growth cell (j=200) sits BELOW the surface (y grows downward)
+        };
+        let mut classic = world();
+        rig_water(&mut classic);
+        let mut rng = FastRandom::new(3);
+        grow_cactus(&mut classic, 100, 200, &mut rng);
+        assert!(
+            !classic.tile(100, 199).is_some_and(|t| t.active() && t.kind == 80),
+            "the flooded box refuses the classic cactus"
+        );
+        let mut remix = world();
+        rig_water(&mut remix);
+        remix.seeds.insert(SeedFlags::REMIX);
+        let mut rng = FastRandom::new(3);
+        grow_cactus(&mut remix, 100, 200, &mut rng);
+        assert!(
+            remix.tile(100, 199).is_some_and(|t| t.active() && t.kind == 80),
+            "the remix world skips the water box above the surface"
+        );
+
+        // The drunk density cap (`:56690-56698`): the count box
+        // (`num2 - num8 ..= j + num6`, the port's 5-column window around the
+        // pick) holds 13 cacti — past the classic cap (11-12) so the
+        // classic arm refuses it on every stream, within the drunk arm's
+        // `Next(11, 20)` cap on most streams.
+        let pick_y = 200i32;
+        let rig = |w: &mut World| {
+            for dx in -12..=12 {
+                put(w, 100 + dx, 204, 53, 0); // the sand floor
+            }
+            // The pick's own column: a short stump at the pick row and the
+            // rows below (the body the window sees).
+            for row in pick_y..204 {
+                put(w, 100, row, 80, 0);
+            }
+            // The 12 neighbours in the box (cols ±1/±2, rows -2..pick_y),
+            // leaving the growth cell (100, pick_y - 1) empty.
+            for dx in [-2i32, -1, 1, 2] {
+                for row in (pick_y - 2)..=pick_y {
+                    put(w, 100 + dx, row, 80, 0);
+                }
+            }
+        };
+        let grew = |w: &mut World, seeds: u16| {
+            w.seeds.insert(seeds);
+            (1..80u64).any(|seed| {
+                let mut rng = FastRandom::new(seed);
+                grow_cactus(w, 100, pick_y, &mut rng);
+                w.tile(100, pick_y - 1)
+                    .is_some_and(|t| t.active() && t.kind == 80)
+            })
+        };
+        let mut classic = world();
+        rig(&mut classic);
+        assert!(
+            !grew(&mut classic, 0),
+            "the classic cap refuses the 13-count box"
+        );
+        let mut drunk = world();
+        rig(&mut drunk);
+        assert!(
+            grew(&mut drunk, SeedFlags::DRUNK),
+            "the drunk cap's wider roll grows the column"
+        );
     }
 
     #[test]
