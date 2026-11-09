@@ -19,7 +19,8 @@ use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
 /// legs, pants, shoes, hair. Frames are 40x56 on the 40-px-wide strips.
-#[derive(Default)]
+/// `Default` is hand-written: the two 50-entry mount arrays exceed the
+/// `[T; N]: Default` bound for N > 32.
 pub(crate) struct PlayerAssets {
     pub(crate) head: Option<BgTex>,
     pub(crate) eye_whites: Option<BgTex>,
@@ -47,9 +48,33 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_legs: [Option<BgTex>; 5],
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
-    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
-    pub(crate) mount_back: [Option<BgTex>; 23],
-    pub(crate) mount_front: [Option<BgTex>; 23],
+    /// (`frontTexture`) of the ground + hover/flyer + cart sets.
+    pub(crate) mount_back: [Option<BgTex>; 50],
+    pub(crate) mount_front: [Option<BgTex>; 50],
+}
+
+impl Default for PlayerAssets {
+    fn default() -> Self {
+        Self {
+            head: None,
+            eye_whites: None,
+            eyes: None,
+            torso: None,
+            shirt: None,
+            arm: None,
+            undershirt: None,
+            arm_shirt: None,
+            legs: None,
+            pants: None,
+            shoes: None,
+            hair: None,
+            armor_head: [None; 5],
+            armor_body: [None; 5],
+            armor_legs: [None; 5],
+            mount_back: [None; 50],
+            mount_front: [None; 50],
+        }
+    }
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
