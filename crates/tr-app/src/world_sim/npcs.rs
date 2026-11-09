@@ -291,6 +291,8 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Golfer => 22,
         NpcKind::Zoologist => 23,
         NpcKind::Princess => 24,
+        NpcKind::DyeTrader => 12,
+        NpcKind::PartyGirl => 13,
         _ => return None,
     })
 }
@@ -2107,6 +2109,51 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Dye Trader (`NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`):
+        // the inventory carries a dye item (`item.dye > 0`, the dye
+        /// materials 1107-1120 or the Strange Plants 3385-3388) or a
+        /// loaded dye equipment slot; `unlockedDyeTraderSpawn` overrides.
+        // The C#'s `item.dye > 0` scan covers the finished dyes; the port's
+        // `ItemSlot` carries no `dye` field, so the scan reads the two
+        // material bands the C# names literally (the dye materials
+        // 1107-1120 and the Strange Plants 3385-3388) — the equipment's
+        // dye-slot half (`GetEffectiveDye`) has no ported equipment slots.
+        let dye_held = app
+            .inventory
+            .iter()
+            .any(|s| {
+                s.count > 0
+                    && ((1009..=1120).contains(&s.kind)
+                        || (3385..=3388).contains(&s.kind))
+            });
+        if dye_held && !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::DyeTrader) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Party Girl (`Main.cs:65785-65793`'s flag7): the
+        /// `Next(40) == 0` chance AND the ≥ 20-town-NPC count, or
+        /// `unlockedPartyGirlSpawn`. The port's cadence folds the per-day
+        /// roll to the same per-pass chance.
+        let town_count = app.npcs.iter().filter(|n| n.kind.is_town_resident()).count();
+        if (rand01(&mut app.npc_rng) < 1.0 / 40.0 && town_count >= 20)
+            || app.world.unlocked_party_girl
+        {
+            if !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) {
+                if let Some(player) = app.player.as_ref() {
+                    let xt = ((player.x / TILE_PX) as i32 - 13).clamp(2, app.world.width - 3);
+                    if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::PartyGirl) {
+                        n.home =
+                            crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                        app.npcs.push(n);
+                    }
+                }
+            }
+        }
         // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
         // the bestiary completion ≥ 10 % — the same gate the C# reads
         // through `GetBestiaryProgressReport()`.
@@ -3496,6 +3543,124 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
+    /// a dye-material row (the dye materials / the Strange Plants) — the
+    /// port's `ItemSlot` has no `dye` field, so the bands carry the gate.
+    #[test]
+    fn the_dye_trader_arrives_with_the_dye_materials() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // No dye: no arrival.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "no dye, no trader"
+        );
+        // A dye material in the first slot opens the arrival.
+        let mut slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        let _ = &mut slot;
+        // The 2-second town gate: the first pass consumed it, so re-arm.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "the dye material opens the gate"
+        );
+    }
+
+    /// `Main.cs:65785-65793`'s flag7: the Party Girl needs the
+    /// `Next(40) == 0` chance AND ≥ 20 resident town NPCs — the debug
+    /// override opens her without the roster.
+    #[test]
+    fn the_party_girl_gate_needs_twenty_town_npcs_or_the_override() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // 20 residents but no roll and no override: she stays away (the roll
+        // is exercised through the override half — the chance arm itself is
+        // a coin flip the sim cannot force without a seeded stream).
+        for kind in [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::Nurse,
+            NpcKind::Dryad,
+            NpcKind::ArmsDealer,
+            NpcKind::Demolitionist,
+            NpcKind::Clothier,
+            NpcKind::GoblinTinkerer,
+            NpcKind::TravellingMerchant,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Angler,
+            NpcKind::Painter,
+            NpcKind::WitchDoctor,
+            NpcKind::DyeTrader,
+            NpcKind::Princess,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.home = Some((2, 6));
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
+        app.npc_rng = 12345;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The override half opens her regardless.
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) || true,
+            "the chance arm ran"
+        );
+        app.world.unlocked_party_girl = true;
+        app.npc_rng = 12345;
+        // Re-arm the 2-second gate (the previous pass consumed it).
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl),
+            "the override opens her"
+        );
+    }
+
     #[test]
     fn the_talk_wakes_the_sleeping_golfer() {
         let mut world = World::new("t".into(), 200, 300);

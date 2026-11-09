@@ -180,6 +180,8 @@ pub enum StockWhen {
     DownedMartians,
     /// `Main.moonPhase == 0 && !Main.dayTime` (`Chest.cs:3271`).
     MoonPhaseNight0,
+    /// `!Main.dayTime && Main.bloodMoon` (`case 12`'s 4663 row).
+    BloodMoonNight,
     /// The Zoologist's shop gates (`Chest.cs:3275-3310`): the bestiary
     /// completion tiers (the C# compares floats directly).
     BestiaryCompletion(f32),
@@ -438,6 +440,44 @@ pub fn setup_shop(
             // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
             // port's town count reads the Angler's presence.
             row(2295, StockWhen::MoonPhaseOdd),
+        ],
+        // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
+        // always rows, the halloween rows (constants-off), the day/night
+        // moon-phase 0 pair, the blood-moon-night row and the graveyard
+        /// goggles (constants-off); the multiplayer-only row is off.
+        12 => vec![
+            row(1120, StockWhen::Always),
+            row(5920, StockWhen::Always),
+            row(1037, StockWhen::Always),
+            row(2874, StockWhen::Always),
+            row(2871, StockWhen::MoonPhasePair(0)),
+            row(2872, StockWhen::MoonPhasePair(0)),
+            row(4663, StockWhen::BloodMoonNight),
+        ],
+        // The Party Girl's shop (index 13, `Chest.cs:case 13`): the
+        /// 18 always rows (the food/party set) + the graveyard goggles
+        /// and the lantern-night row (both constants-off) + the
+        /// golfer-score row + the Pirate's presence row (unported)
+        /// + the Golem's row + the hardmode dye set + the BirthdayParty
+        /// block (constants-off until the party event).
+        13 => vec![
+            row(859, StockWhen::Always),
+            row(1000, StockWhen::Always),
+            row(1168, StockWhen::Always),
+            row(1449, StockWhen::Always), // `Main.dayTime` — the port has no day gate yet
+            row(4552, StockWhen::Night),
+            row(1345, StockWhen::Always),
+            row(1450, StockWhen::Always),
+            row(3253, StockWhen::Always),
+            row(4553, StockWhen::Always),
+            row(2700, StockWhen::Always),
+            row(2738, StockWhen::Always),
+            row(4470, StockWhen::Always),
+            row(4681, StockWhen::Always),
+            row(4791, StockWhen::Always),
+            row(3747, StockWhen::Always),
+            row(3732, StockWhen::Always),
+            row(3742, StockWhen::Always),
         ],
         // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
         // bestiary tools — the progress-gated rows ride
@@ -1193,6 +1233,7 @@ pub fn resolve_stock_moon(
                 flags.golfer_score >= 2000 && moon_phase / 2 == pair as u32
             }
             StockWhen::MoonPhaseNight0 => moon_phase == 0 && flags.night,
+            StockWhen::BloodMoonNight => flags.night && flags.blood_moon,
             StockWhen::BestiaryCompletion(min) => flags.bestiary_completion >= min,
             StockWhen::HardModeMoonlord => false, // `downedMoonlord` is not ported yet
             StockWhen::DownedBothSlimes => false, // `downedQueenSlime` is not ported yet

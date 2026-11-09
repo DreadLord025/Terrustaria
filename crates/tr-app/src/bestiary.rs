@@ -477,6 +477,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Princess",
     },
     BestiaryEntryDef {
+        credit_id: "DyeTrader",
+        net_id: 207,
+        kind: NpcKind::DyeTrader,
+        variant: None,
+        quick_unlock: false,
+        name: "Dye Trader",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyGirl",
+        net_id: 208,
+        kind: NpcKind::PartyGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Party Girl",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,

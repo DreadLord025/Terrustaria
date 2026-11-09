@@ -429,6 +429,8 @@ pub fn load_world_images(
         "NPC_589",
         "NPC_633",
         "NPC_663",
+        "NPC_207",
+        "NPC_208",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1148,7 +1150,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 156] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 160] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1164,7 +1166,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 156] = [
         427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
         412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
         397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
-        353, 354, 441, 588, 589,
+        353, 354, 441, 588, 589, 633, 663, 207, 208,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -1722,6 +1724,8 @@ impl Lookups {
                 atlas.sheet("NPC_589").copied(),
                 atlas.sheet("NPC_633").copied(),
                 atlas.sheet("NPC_663").copied(),
+                atlas.sheet("NPC_207").copied(),
+                atlas.sheet("NPC_208").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -502,6 +502,8 @@ fn portrait_data(
         (NpcKind::Golfer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Zoologist, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Princess, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::DyeTrader, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::PartyGirl, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::SleepingGolfer, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::WebbedStylist, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),

@@ -297,6 +297,9 @@ pub struct World {
     /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
     /// that opens the Princess's arrival without the full roster.
     pub unlocked_princess: bool,
+    /// `NPC.unlockedPartyGirlSpawn` (`Main.cs:65792`): the debug
+    /// override that opens the Party Girl's arrival without the roster.
+    pub unlocked_party_girl: bool,
     /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
     /// Collector's purse + its `Player.taxRate` (3600) clock.
     pub tax_money: i32,
@@ -466,6 +469,7 @@ impl World {
             saved_tax_collector: false,
             saved_golfer: false,
             unlocked_princess: false,
+            unlocked_party_girl: false,
             tax_money: 0,
             tax_timer: 0,
             tax_collector: false,
