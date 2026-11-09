@@ -185,6 +185,15 @@ pub(crate) struct NpcAssets {
     pub(crate) prime_saw: Option<BgTex>,
     pub(crate) prime_vice: Option<BgTex>,
     pub(crate) prime_laser: Option<BgTex>,
+    /// `Images/Bone_Eyes` — the Prime head's glow mask (`Main.cs:25634`,
+    /// 140x470: its rows ride the head's 156-px grid) and
+    /// `Images/Bone_Laser` — the laser limb's glow (`Main.cs:25641`,
+    /// 40x62). The vanilla draws both over the body at the body's own
+    /// frame/rotation/anchor with the (200,200,200,0) mask tint — the
+    /// port's premultiplied pipeline renders the overlays with the
+    /// sheets' own alpha instead (an alpha-0 tint draws nothing there).
+    pub(crate) prime_eyes: Option<BgTex>,
+    pub(crate) bone_laser: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -340,6 +349,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
+        bone_laser: sky_tex(atlas, "Bone_Laser", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -513,6 +524,29 @@ fn saucer_draw<'a>(
         fh,
         [fw, fh],
         [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5 + lift],
+    )
+}
+
+/// The Skeletron Prime family's draw: the sheet's real row
+/// (`Main.npcFrameCount`'s per-kind count — the head's 156-px rows over 6,
+/// the saw/vice's 78/70 over 2, the cannon's 76 and the laser's 62 over 1)
+/// at the generic anchor (`Main.cs:25511-25516`) — the v1 read `t.h` as
+/// the frame height (the whole strip as one frame) and pinned the box's
+/// corner.
+fn prime_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(52.0, |t| t.h / count as f32);
+    let fw = tex.map_or(52.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
     )
 }
 
@@ -1280,13 +1314,11 @@ pub(crate) fn draw_npcs(
                 [48.0, 48.0],
                 [n.x, n.y],
             ),
-            // The Prime: the single-frame 80x102 sheet.
-            NpcKind::SkeletronPrime => (
-                assets.prime.as_ref(),
-                assets.prime.as_ref().map_or(102.0, |t| t.h),
-                [80.0, 102.0],
-                [n.x, n.y],
-            ),
+            // The Prime: the head's 6-row strip (NPC_127 is 140x940 —
+            // 156-px rows, `Main.npcFrameCount[127]` = 6, `Main.cs:67082`;
+            // the v1 read `t.h` and sampled the whole strip as one frame
+            // at the box's 80x102).
+            NpcKind::SkeletronPrime => prime_draw(assets.prime.as_ref(), 6, n, w, h),
             // The Twins: the 2-frame 100x110 sheets.
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 let tex = if n.kind == NpcKind::Retinazer {
@@ -1411,31 +1443,15 @@ pub(crate) fn draw_npcs(
                 [100.0, 100.0],
                 [n.x, n.y],
             ),
-            // The Prime's limbs: the 52x52 single-frame sheets.
-            NpcKind::PrimeCannon => (
-                assets.prime_cannon.as_ref(),
-                assets.prime_cannon.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),
-            NpcKind::PrimeSaw => (
-                assets.prime_saw.as_ref(),
-                assets.prime_saw.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),
-            NpcKind::PrimeVice => (
-                assets.prime_vice.as_ref(),
-                assets.prime_vice.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),
-            NpcKind::PrimeLaser => (
-                assets.prime_laser.as_ref(),
-                assets.prime_laser.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),            // The goblins: the 3-frame humanoid sheets (the vanilla
+            // The Prime's limbs (`Main.npcFrameCount` 128/129/130/131 =
+            // 1/2/2/1, `Main.cs:67082`): the cannon 38x76, the saw's 2
+            // rows of 78, the vice's 2 rows of 70, the laser 40x62 — each
+            // at the generic anchor (the v1 read `t.h` as the frame height
+            // and pinned every kind to row 0).
+            NpcKind::PrimeCannon => prime_draw(assets.prime_cannon.as_ref(), 1, n, w, h),
+            NpcKind::PrimeSaw => prime_draw(assets.prime_saw.as_ref(), 2, n, w, h),
+            NpcKind::PrimeVice => prime_draw(assets.prime_vice.as_ref(), 2, n, w, h),
+            NpcKind::PrimeLaser => prime_draw(assets.prime_laser.as_ref(), 1, n, w, h),            // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon
             | NpcKind::GoblinThief
@@ -1729,6 +1745,16 @@ pub(crate) fn draw_npcs(
                     | NpcKind::MartianSaucerCannon
                     | NpcKind::MartianSaucerCore
                     | NpcKind::MartianDrone
+                    // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
+                    // and its limbs' dock/aim rotations, `NPC.cs:27689`/
+                    // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
+                    // with its drift and the limbs aim their "up" along the
+                    // dock or the player.
+                    | NpcKind::SkeletronPrime
+                    | NpcKind::PrimeCannon
+                    | NpcKind::PrimeSaw
+                    | NpcKind::PrimeVice
+                    | NpcKind::PrimeLaser
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -1753,6 +1779,40 @@ pub(crate) fn draw_npcs(
             r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
         } else {
             r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
+        // The Prime family's glow masks (`Main.cs:25585-25642`): the head's
+        // `Bone_Eyes` and the laser limb's `Bone_Laser` ride the body's
+        // OWN frame/rotation/anchor, so the same transform draws them a
+        // second time off the overlay sheets (the Mech-Queen's chain block
+        // and the trail after-images stay the documented deviations).
+        let glow = match n.kind {
+            NpcKind::SkeletronPrime => assets.prime_eyes.as_ref(),
+            NpcKind::PrimeLaser => assets.bone_laser.as_ref(),
+            _ => None,
+        };
+        if let Some(gtex) = glow {
+            let guv = npc_frame_uv(gtex, frame_h, n.frame());
+            if n.rotation != 0.0 {
+                let center = snap_to_screen(
+                    if n.kind.is_martian() {
+                        [n.x + w * 0.5, n.y + h * 0.5]
+                    } else {
+                        [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5]
+                    },
+                    camera,
+                    zoom,
+                    screen,
+                );
+                let (hw, hh) = (size[0] * 0.5, size[1] * 0.5);
+                let (s, co) = n.rotation.sin_cos();
+                let top_left = [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
+                r.push_sprite_rot(top_left, size, guv, [1.0, 1.0, 1.0, 1.0], n.rotation);
+            } else {
+                r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, guv, [
+                    1.0, 1.0, 1.0, 1.0
+                ]);
+            }
+            quads += 1;
         }
         quads += 1;
         if n.hp < n.max_hp {

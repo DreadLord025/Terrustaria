@@ -11,8 +11,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::tile::Tile;
-use crate::tile_entities::TileEntities;
-use crate::wiring::WireState;
 use crate::world::World;
 
 const MAGIC: &[u8; 8] = b"TRWLD01\0";
@@ -20,10 +18,8 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// the sparse paint/coating extras; v4 appended the two dial cooldown bytes;
 /// v5 appended the bed spawn (the vanilla keeps it in the *player* file's
 /// `spX/spY` arrays, `Player.cs:54877-54888` — the port's single-player world
-/// save carries it world-side, `World::bed_spawn`); v6 appended the world
-/// flags block (the C# `SaveWorldFlags` progression subset, `WorldFile.cs:1238-1430`),
-/// the wire side table and the tile entities (`SaveTileEntities`, `WorldFile.cs:3302-3313`).
-pub const VERSION: u32 = 6;
+/// save carries it world-side, `World::bed_spawn`).
+pub const VERSION: u32 = 5;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -165,162 +161,6 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
         }
         None => w.write_all(&[0u8])?,
     }
-    // v6: the world flags block, then the wires and the tile entities — the
-    // three port-native sections whose C# counterparts ride `SaveWorldFlags`
-    // / the per-tile header bits / `SaveTileEntities`.
-    write_flags_v6(w, world)?;
-    let mut sec = crate::binio::Writer::new();
-    world.wires.write(&mut sec);
-    w.write_all(&sec.into_inner())?;
-    let mut sec = crate::binio::Writer::new();
-    world.tile_entities.write_all(&mut sec);
-    w.write_all(&sec.into_inner())?;
-    Ok(())
-}
-
-/// The fixed size of the v6 flags block (16 + 16 bools, 14 i32s, 2 f64s, 1 f32) —
-/// a back-compat test truncates exactly this many bytes.
-const V6_FLAGS_LEN: usize = 16 + 16 + 14 * 4 + 2 * 8 + 4;
-
-/// v6: the flags block — the port's `World` fields that the C#
-/// `SaveWorldFlags` persists (`WorldFile.cs:1238-1430`), grouped with the C#
-/// line citations. The port's extra state that the C# does not save (the
-/// slime-rain flag/kill counter, the DD2 wave counter, the tower shields as
-/// live values) rides its group with the deviation noted; the runtime-only
-/// fields (the WoF/Golem/boss write-through anchors, `travel_shop`, the
-/// App-side weather block) stay out.
-fn write_flags_v6(w: &mut impl Write, world: &World) -> Result<()> {
-    // `_tempBloodMoon`/`_tempEclipse` (`:1277-1278`), the downed-boss ladder
-    // (`:1282-1294`: Boss1/2/3, QueenBee, MechBoss1/2/3, PlantBoss, GolemBoss,
-    // SlimeKing, savedGoblin — the port has no MechBossAny/savedWizard/savedMech
-    // state), the invasion downed flags (`:1296-1299`) and
-    // `unlockedSlimeBlueSpawn` (`:1398`).
-    w.write_all(&[
-        u8::from(world.blood_moon),
-        u8::from(world.eclipse),
-        u8::from(world.downed_eoc),
-        u8::from(world.downed_eow),
-        u8::from(world.downed_skeletron),
-        u8::from(world.downed_queen_bee),
-        u8::from(world.downed_mech_boss1),
-        u8::from(world.downed_mech_boss2),
-        u8::from(world.downed_mech_boss3),
-        u8::from(world.downed_plant_boss),
-        u8::from(world.downed_golem),
-        u8::from(world.downed_slime_king),
-        u8::from(world.saved_goblin),
-        u8::from(world.downed_goblins),
-        u8::from(world.downed_frost),
-        u8::from(world.downed_pirates),
-    ])?;
-    // `shadowOrbSmashed`/`spawnMeteor`/`hardMode` (`:1300-1304`), the DD2
-    // event flag (`DD2Event.Save`, `DD2Event.cs:151-156` — the port carries the
-    // live event state instead of only the tier flags), `downedMoonlord`
-    // (`:1346`), `slimeRainTime`'s companion flag and kill counter (port-only),
-    // `TowerActive*` (`:1357-1360`) and `downedTower*` (`:1352-1355`).
-    w.write_all(&[
-        u8::from(world.shadow_orb_smashed),
-        u8::from(world.spawn_meteor),
-        u8::from(world.hard_mode),
-        u8::from(world.dd2_event_ongoing),
-        u8::from(world.dd2_lost),
-        u8::from(world.downed_moon_lord),
-        u8::from(world.slime_rain),
-        u8::from(world.tower_active_solar),
-        u8::from(world.tower_active_vortex),
-        u8::from(world.tower_active_nebula),
-        u8::from(world.tower_active_stardust),
-        u8::from(world.downed_tower_solar),
-        u8::from(world.downed_tower_vortex),
-        u8::from(world.downed_tower_nebula),
-        u8::from(world.downed_tower_stardust),
-        0, // reserved — keeps the two bool groups 16 bytes each
-    ])?;
-    // `shadowOrbCount`/`altarCount` (`:1302-1303`), the invasion block
-    // (`:1306-1309` + `invasionSizeStart` `:1339`), the slime-rain counter
-    // (port-only), the DD2 wave counters (port-only) and the tower shields —
-    // the C# load restores them from `ShieldStrengthTowerMax` while
-    // `LunarApocalypseIsUp` (`:2237-2249`); the port persists the live values.
-    for v in [
-        world.shadow_orb_count,
-        world.altars_smashed,
-        world.invasion_delay,
-        world.invasion_size,
-        world.invasion_type,
-        world.invasion_size_start,
-        world.slime_rain_kills,
-        world.dd2_wave,
-        world.dd2_spawn_hold,
-        world.tower_shield_solar,
-        world.tower_shield_vortex,
-        world.tower_shield_nebula,
-        world.tower_shield_stardust,
-        world.lunar_shield_power_normal,
-    ] {
-        w.write_all(&v.to_le_bytes())?;
-    }
-    w.write_all(&world.invasion_x.to_le_bytes())?;
-    w.write_all(&world.slime_rain_time.to_le_bytes())?;
-    w.write_all(&world.dd2_wave_kills.to_le_bytes())?;
-    Ok(())
-}
-
-/// The v6 flags block reader — the exact inverse of `write_flags_v6`.
-fn read_flags_v6(r: &mut Reader<'_>, world: &mut World) -> Result<()> {
-    let a = r.take(16)?;
-    world.blood_moon = a[0] != 0;
-    world.eclipse = a[1] != 0;
-    world.downed_eoc = a[2] != 0;
-    world.downed_eow = a[3] != 0;
-    world.downed_skeletron = a[4] != 0;
-    world.downed_queen_bee = a[5] != 0;
-    world.downed_mech_boss1 = a[6] != 0;
-    world.downed_mech_boss2 = a[7] != 0;
-    world.downed_mech_boss3 = a[8] != 0;
-    world.downed_plant_boss = a[9] != 0;
-    world.downed_golem = a[10] != 0;
-    world.downed_slime_king = a[11] != 0;
-    world.saved_goblin = a[12] != 0;
-    world.downed_goblins = a[13] != 0;
-    world.downed_frost = a[14] != 0;
-    world.downed_pirates = a[15] != 0;
-    let b = r.take(16)?;
-    world.shadow_orb_smashed = b[0] != 0;
-    world.spawn_meteor = b[1] != 0;
-    world.hard_mode = b[2] != 0;
-    world.dd2_event_ongoing = b[3] != 0;
-    world.dd2_lost = b[4] != 0;
-    world.downed_moon_lord = b[5] != 0;
-    world.slime_rain = b[6] != 0;
-    world.tower_active_solar = b[7] != 0;
-    world.tower_active_vortex = b[8] != 0;
-    world.tower_active_nebula = b[9] != 0;
-    world.tower_active_stardust = b[10] != 0;
-    world.downed_tower_solar = b[11] != 0;
-    world.downed_tower_vortex = b[12] != 0;
-    world.downed_tower_nebula = b[13] != 0;
-    world.downed_tower_stardust = b[14] != 0;
-    for field in [
-        &mut world.shadow_orb_count,
-        &mut world.altars_smashed,
-        &mut world.invasion_delay,
-        &mut world.invasion_size,
-        &mut world.invasion_type,
-        &mut world.invasion_size_start,
-        &mut world.slime_rain_kills,
-        &mut world.dd2_wave,
-        &mut world.dd2_spawn_hold,
-        &mut world.tower_shield_solar,
-        &mut world.tower_shield_vortex,
-        &mut world.tower_shield_nebula,
-        &mut world.tower_shield_stardust,
-        &mut world.lunar_shield_power_normal,
-    ] {
-        *field = r.i32()?;
-    }
-    world.invasion_x = r.f64()?;
-    world.slime_rain_time = r.f64()?;
-    world.dd2_wave_kills = r.f32()?;
     Ok(())
 }
 
@@ -426,16 +266,6 @@ pub fn parse(data: &[u8]) -> Result<World> {
             world.bed_spawn = Some((x, y));
         }
     }
-    // v6: the flags block, the wires and the tile entities. A v5 file (and
-    // older) keeps the `World::new` defaults — the same contract as the v4/v5
-    // tails. The wire and TE sections are self-delimiting (count + records),
-    // so a truncated one bails like every other structural failure.
-    if version >= 6 {
-        read_flags_v6(&mut r, &mut world)?;
-        world.wires = WireState::read(&mut r.0).ok_or_else(|| eof(r.0.pos()))?;
-        let tes = TileEntities::read_all(&mut r.0, &world).ok_or_else(|| eof(r.0.pos()))?;
-        world.tile_entities = tes;
-    }
     world.revision = 0;
     Ok(world)
 }
@@ -505,18 +335,12 @@ impl<'a> Reader<'a> {
     fn f64(&mut self) -> Result<f64> {
         self.0.f64().ok_or_else(|| eof(self.0.pos()))
     }
-
-    fn f32(&mut self) -> Result<f32> {
-        self.0.f32().ok_or_else(|| eof(self.0.pos()))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
-    use crate::tile_entities::{TeData, TeItem, TeKind};
-    use crate::wiring::WireColor;
 
     #[test]
     fn round_trips_tiles_and_header() {
@@ -590,7 +414,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        assert_eq!(&buf[8..12], &[6, 0, 0, 0], "the writer emits the current v6");
+        assert_eq!(&buf[8..12], &[5, 0, 0, 0], "the writer emits the current v5");
         let back = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -616,13 +440,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v6 (the flags/wires/TE tail)
-        // is now the current format, so the gate pins 7.
+        // current one (`save.rs` version gate). v5 (the bed spawn) is now the
+        // current format, so the gate pins 6.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        buf[8..12].copy_from_slice(&7u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 7 is unsupported");
+        buf[8..12].copy_from_slice(&6u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 6 is unsupported");
     }
 
     #[test]
@@ -667,180 +491,10 @@ mod tests {
         w.bed_spawn = Some((30, 20));
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        // The v5 tail is the last 9 bytes AHEAD of the v6 sections: the
-        // fixed flags block + four empty colour counts + one empty entity
-        // count sit after it — [presence][x: i32][y: i32] — poison the x.
-        let tail = buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4) - 9;
+        // The v5 tail is the last 9 bytes: [presence][x: i32][y: i32] —
+        // poison the x.
+        let tail = buf.len() - 9;
         buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
         assert_eq!(parse(&buf).unwrap().bed_spawn, None);
-    }
-
-    #[test]
-    fn dw_2_1_the_v6_flags_wires_and_tes_round_trip() {
-        // DW-2.1: the v6 tail carries the `SaveWorldFlags` progression subset
-        // (`WorldFile.cs:1238-1430`), the wire side table and the tile-entity
-        // books (`SaveTileEntities`, `WorldFile.cs:3302-3313`) across a
-        // save/load.
-        let mut w = World::new("Test".into(), 64, 48);
-        // One flag from every group.
-        w.blood_moon = true;
-        w.downed_eoc = true;
-        w.downed_golem = true;
-        w.saved_goblin = true;
-        w.downed_pirates = true;
-        w.shadow_orb_smashed = true;
-        w.spawn_meteor = true;
-        w.hard_mode = true;
-        w.dd2_event_ongoing = true;
-        w.downed_moon_lord = true;
-        w.slime_rain = true;
-        w.tower_active_nebula = true;
-        w.downed_tower_stardust = true;
-        // The counter block.
-        w.shadow_orb_count = 7;
-        w.altars_smashed = 12;
-        w.invasion_delay = 3;
-        w.invasion_size = 80;
-        w.invasion_type = 2;
-        w.invasion_size_start = 120;
-        w.slime_rain_kills = 41;
-        w.dd2_wave = 3;
-        w.dd2_spawn_hold = 90;
-        w.tower_shield_nebula = 4_000;
-        w.lunar_shield_power_normal = 100;
-        w.invasion_x = 1234.5;
-        w.slime_rain_time = 9876.25;
-        w.dd2_wave_kills = 12.5;
-        // The wires — all four colours, the origin and negative coords.
-        w.wires.set(3, 4, WireColor::Red, true);
-        w.wires.set(0, 0, WireColor::Blue, true);
-        w.wires.set(-5, 7, WireColor::Green, true);
-        w.wires.set(9, 9, WireColor::Yellow, true);
-        w.wires.set(9, 9, WireColor::Yellow, false); // the clear round-trips too
-        // The tile entities — a dummy with its npc, an item frame, a logic
-        // sensor and a pylon. The load-side re-validation (`LoadTileEntities`
-        // `WorldFile.cs:3315+`) reads the anchor tiles, so the entities sit on
-        // their real kinds/frames.
-        for &(x, y, kind, frame_y) in &[
-            (5, 5, 378, 0i16),  // TrainingDummy
-            (6, 6, 395, 0),     // ItemFrame
-            (7, 7, 423, 36),    // LogicSensor (check 2 rides frameY/18)
-            (8, 8, 597, 0),     // TeleportationPylon
-        ] {
-            let i = w.index(x, y);
-            w.tiles[i].kind = kind;
-            w.tiles[i].frame_x = 0;
-            w.tiles[i].frame_y = frame_y;
-            w.tiles[i].flags |= FLAG_ACTIVE;
-        }
-        let dummy = w.tile_entities.place_unchecked(TeKind::TrainingDummy, 5, 5);
-        w.tile_entities.by_id_mut(dummy).unwrap().data = TeData::Dummy(7);
-        let frame = w.tile_entities.place_unchecked(TeKind::ItemFrame, 6, 6);
-        w.tile_entities.by_id_mut(frame).unwrap().data =
-            TeData::Item(Some(TeItem { kind: 75, prefix: 3, stack: 12 }));
-        let sensor = w.tile_entities.place_unchecked(TeKind::LogicSensor, 7, 7);
-        w.tile_entities.by_id_mut(sensor).unwrap().data =
-            TeData::Logic { check: 2, on: true, counted: 15 };
-        let pylon = w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 8, 8);
-
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        let back = parse(&buf).unwrap();
-        // The set flags round-trip and the unset ones stay default.
-        assert!(back.blood_moon && back.downed_eoc && back.downed_golem && back.saved_goblin);
-        assert!(back.downed_pirates && back.shadow_orb_smashed && back.spawn_meteor && back.hard_mode);
-        assert!(back.dd2_event_ongoing && back.downed_moon_lord && back.slime_rain);
-        assert!(back.tower_active_nebula && back.downed_tower_stardust);
-        assert!(!back.downed_eow && !back.downed_frost && !back.eclipse && !back.downed_goblins);
-        // The counters and the float fields.
-        assert_eq!(back.shadow_orb_count, 7);
-        assert_eq!(back.altars_smashed, 12);
-        assert_eq!(back.invasion_delay, 3);
-        assert_eq!(back.invasion_size, 80);
-        assert_eq!(back.invasion_type, 2);
-        assert_eq!(back.invasion_size_start, 120);
-        assert_eq!(back.slime_rain_kills, 41);
-        assert_eq!(back.dd2_wave, 3);
-        assert_eq!(back.dd2_spawn_hold, 90);
-        assert_eq!(back.tower_shield_nebula, 4_000);
-        assert_eq!(back.lunar_shield_power_normal, 100);
-        assert_eq!(back.invasion_x, 1234.5);
-        assert_eq!(back.slime_rain_time, 9876.25);
-        assert_eq!(back.dd2_wave_kills, 12.5);
-        // The wires.
-        assert!(back.wires.get(3, 4, WireColor::Red));
-        assert!(back.wires.get(0, 0, WireColor::Blue));
-        assert!(back.wires.get(-5, 7, WireColor::Green));
-        assert!(!back.wires.get(9, 9, WireColor::Yellow), "the clear round-trips");
-        assert!(!back.wires.get(3, 4, WireColor::Blue), "no cross-colour bleed");
-        // The tile entities — the stored ids and payloads.
-        assert_eq!(back.tile_entities.get_by_id(dummy).unwrap().data, TeData::Dummy(7));
-        assert_eq!(
-            back.tile_entities.get_by_id(frame).unwrap().data,
-            TeData::Item(Some(TeItem { kind: 75, prefix: 3, stack: 12 }))
-        );
-        assert_eq!(
-            back.tile_entities.get_by_id(sensor).unwrap().data,
-            TeData::Logic { check: 2, on: true, counted: 15 }
-        );
-        assert_eq!(back.tile_entities.get_at(8, 8).map(|e| e.id), Some(pylon));
-        assert_eq!(back.tile_entities.get_at(5, 5).map(|e| e.id), Some(dummy));
-    }
-
-    #[test]
-    fn dw_2_1_a_v5_payload_loads_defaults() {
-        // DW-2.1: the v6 payload truncated to the v5 length (the version
-        // field patched) parses with the `World::new` defaults — the flags
-        // false, the counters 0, no wires, no entities.
-        let mut w = World::new("Test".into(), 32, 32);
-        w.hard_mode = true;
-        w.wires.set(1, 1, WireColor::Red, true);
-        w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        // The v6 tail of an empty-wire/entity world: the fixed flags block +
-        // four empty colour counts + one empty entity count.
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4));
-        buf[8..12].copy_from_slice(&5u32.to_le_bytes());
-        let back = parse(&buf).unwrap();
-        assert!(!back.hard_mode);
-        assert!(!back.downed_eoc);
-        assert_eq!(back.invasion_size, 0);
-        assert!(!back.wires.get(1, 1, WireColor::Red));
-        assert!(back.tile_entities.get_at(2, 2).is_none());
-    }
-
-    #[test]
-    fn dw_2_1_a_truncated_v6_tail_bails() {
-        // DW-2.1 (dirty): the wire/TE sections are self-delimiting; a payload
-        // cut mid-record is a structural error, not a silent default.
-        let mut w = World::new("Test".into(), 32, 32);
-        w.hard_mode = true;
-        w.wires.set(1, 1, WireColor::Red, true);
-        w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
-        let mut buf = Vec::new();
-        write_world(&mut buf, &w).unwrap();
-        buf.truncate(buf.len() - 2); // inside the TE record
-        assert!(parse(&buf).is_err());
-    }
-
-    #[test]
-    fn dw_2_1_the_wire_and_te_sections_are_deterministic() {
-        // DW-2.1: the same world written twice is byte-equal — the HashSet
-        // iteration order must not leak into the stream.
-        let mut w = World::new("Test".into(), 32, 32);
-        for (x, y) in [(4, 1), (1, 4), (2, 2), (9, 0)] {
-            w.wires.set(x, y, WireColor::Green, true);
-        }
-        for (x, y) in [(3, 3), (5, 1)] {
-            w.wires.set(x, y, WireColor::Yellow, true);
-        }
-        w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
-        w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 7, 3);
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        write_world(&mut a, &w).unwrap();
-        write_world(&mut b, &w).unwrap();
-        assert_eq!(a, b);
     }
 }

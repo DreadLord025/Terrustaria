@@ -395,6 +395,12 @@ pub fn load_world_images(
         "NPC_520",
         "NPC_491",
         "NPC_492",
+        // The Prime family's glow masks (`Main.cs:25585-25642`):
+        // `Bone_Eyes` over the head, `Bone_Laser` over the laser limb —
+        // both ride the body's own frame rect, so they must be packed
+        // alongside NPC_127/131.
+        "Bone_Eyes",
+        "Bone_Laser",
         "Rain",
         "Dust",
         "Projectile_3",
