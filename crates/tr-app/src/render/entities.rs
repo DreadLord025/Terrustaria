@@ -230,6 +230,11 @@ pub(crate) struct NpcAssets {
     /// walkers but each keeps its own sheet.
     pub(crate) brain_scrambler: Option<BgTex>,
     pub(crate) ray_gunner: Option<BgTex>,
+    /// `NPC_396` — the Moon Lord's eye (8 rows of 38x56), `NPC_397` —
+    /// the hand (4 rows of 46x66), `NPC_398` — the core (5 rows),
+    /// `NPC_400` — the True Eye (4 rows of 60x60), `NPC_401` — the leech
+    /// clot (1 frame of 30x30).
+    pub(crate) moon_lord_parts: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
     pub(crate) scutlix_rider: Option<BgTex>,
@@ -349,6 +354,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
+        moon_lord_parts: sky_tex(atlas, "NPC_396", None),
         prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
         bone_laser: sky_tex(atlas, "Bone_Laser", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
@@ -1273,6 +1279,39 @@ pub(crate) fn draw_npcs(
                 [30.0, 56.0],
                 [n.x, n.y],
             ),
+            // The Moon Lord family: the per-part rows (38x56 / 46x66 /
+            // 60x60 / 30x30) over the 396 sheet's strips — the core and
+            // the leech ride their own 1-row strips.
+            NpcKind::MoonLordHead => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(56.0, |t| t.h / 8.0),
+                [38.0, 56.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordHand => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordCore => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
+                [46.0, 66.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordFreeEye => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(60.0, |t| t.h / 8.0),
+                [60.0, 60.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MoonLordLeechBlob => (
+                assets.moon_lord_parts.as_ref(),
+                assets.moon_lord_parts.as_ref().map_or(30.0, |t| t.h / 8.0),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
                 assets.dd2_support.as_ref(),
                 assets.dd2_support.as_ref().map_or(52.0, |t| t.h / 14.0),
@@ -1319,19 +1358,19 @@ pub(crate) fn draw_npcs(
             // the v1 read `t.h` and sampled the whole strip as one frame
             // at the box's 80x102).
             NpcKind::SkeletronPrime => prime_draw(assets.prime.as_ref(), 6, n, w, h),
-            // The Twins: the 2-frame 100x110 sheets.
+            // The Twins: `Main.npcFrameCount[125/126]` = 6 — NPC_125/126
+            // are 110x1200 (200-px rows), and `FindFrame`'s case 125/126
+            // (`NPC.cs:76906-76924`) walks the spawn rows 0-2 and the live
+            // rows 3-5 (the `ai[0]` hover anchor's +3 offset) over a
+            // 20-tick beat. The v1 ran an 8-tick 2-row strip over a
+            // 600-px slice of the sheet at the box's corner.
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 let tex = if n.kind == NpcKind::Retinazer {
                     assets.retinazer.as_ref()
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                (
-                    tex,
-                    tex.map_or(110.0, |t| t.h / 2.0),
-                    [100.0, 110.0],
-                    [n.x, n.y],
-                )
+                prime_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
@@ -1702,7 +1741,7 @@ pub(crate) fn draw_npcs(
         // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
         // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
         // `facing` cannot stand in for them.
-        let flip_dir = if n.kind.is_martian() {
+        let flip_dir = if n.kind.flips_on_sprite_dir() {
             n.sprite_dir
         } else {
             n.facing

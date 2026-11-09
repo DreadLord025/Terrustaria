@@ -515,6 +515,11 @@ fn portrait_data(
         NpcKind::NebulaBeast => 116,      // NPC_423
         NpcKind::VortexRifleman => 117,   // NPC_425
         NpcKind::VortexSoldier => 118,    // NPC_429
+        NpcKind::MoonLordHead => 120,    // NPC_396
+        NpcKind::MoonLordHand => 121,    // NPC_397
+        NpcKind::MoonLordCore => 122,    // NPC_398
+        NpcKind::MoonLordFreeEye => 123, // NPC_400
+        NpcKind::MoonLordLeechBlob => 124, // NPC_401
         NpcKind::StardustCellBig => 119,  // NPC_405
     };
     let white = [1.0, 1.0, 1.0, 1.0];
@@ -852,6 +857,37 @@ fn portrait_data(
             (sheet_i, h, 30.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
+        // The Moon Lord family's portraits over the 396 sheet's rows.
+        (NpcKind::MoonLordHead, _) => {
+            let h = lookups.bestiary_npc_sheets[120]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::MoonLordHand, _) => {
+            let h = lookups.bestiary_npc_sheets[121]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordCore, _) => {
+            let h = lookups.bestiary_npc_sheets[122]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(66.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::MoonLordFreeEye, _) => {
+            let h = lookups.bestiary_npc_sheets[123]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(60.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::MoonLordLeechBlob, _) => {
+            let h = lookups.bestiary_npc_sheets[124]
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
         (NpcKind::PirateDeckhand, _)
         | (NpcKind::PirateCaptainsMate, _)
         | (NpcKind::PirateArcher, _)
