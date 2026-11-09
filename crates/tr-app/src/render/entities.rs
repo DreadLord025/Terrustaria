@@ -163,6 +163,14 @@ pub(crate) struct NpcAssets {
     pub(crate) travelling_merchant: Option<BgTex>,
     /// `NPC_369.xnb` — the Angler's town sheet (23 rows, `Main.cs:67120`).
     pub(crate) angler: Option<BgTex>,
+    /// `NPC_108.xnb` — the Wizard's town sheet (23 rows, `Main.cs:67094`).
+    pub(crate) wizard: Option<BgTex>,
+    /// `NPC_106.xnb` — the bound Wizard's single-row sheet (`:67094`).
+    pub(crate) bound_wizard: Option<BgTex>,
+    /// `NPC_124.xnb` — the Mechanic's town sheet (23 rows, `Main.cs:67096`).
+    pub(crate) mechanic: Option<BgTex>,
+    /// `NPC_123.xnb` — the bound Mechanic's single-row sheet (`:67096`).
+    pub(crate) bound_mechanic: Option<BgTex>,
     /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
     pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
@@ -350,6 +358,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         clothier: sky_tex(atlas, "NPC_54", None),
         travelling_merchant: sky_tex(atlas, "NPC_368", None),
         angler: sky_tex(atlas, "NPC_369", None),
+        wizard: sky_tex(atlas, "NPC_108", None),
+        bound_wizard: sky_tex(atlas, "NPC_106", None),
+        mechanic: sky_tex(atlas, "NPC_124", None),
+        bound_mechanic: sky_tex(atlas, "NPC_123", None),
         sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
@@ -1095,6 +1107,23 @@ pub(crate) fn draw_npcs(
             // The Angler: the same humanoid shape over NPC_369 — 23 rows
             // (`Main.npcFrameCount[369]`, `Main.cs:67120`).
             NpcKind::Angler => humanoid_draw(assets.angler.as_ref(), 23, n, w, h),
+            // The Wizard/Mechanic: the same humanoid shape over
+            // NPC_108/124 — 23 rows each (`Main.cs:67094`/`:67096`).
+            NpcKind::Wizard => humanoid_draw(assets.wizard.as_ref(), 23, n, w, h),
+            NpcKind::Mechanic => humanoid_draw(assets.mechanic.as_ref(), 23, n, w, h),
+            // The bound forms: single-row sheets over their own boxes.
+            NpcKind::BoundWizard => (
+                assets.bound_wizard.as_ref(),
+                assets.bound_wizard.as_ref().map_or(40.0, |t| t.h),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::BoundMechanic => (
+                assets.bound_mechanic.as_ref(),
+                assets.bound_mechanic.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
             // The Sleeping Angler: NPC_376's two rows over the flat 34x8
             // body — the sheet is 40 wide, drawn centred on the box.
             NpcKind::SleepingAngler => (

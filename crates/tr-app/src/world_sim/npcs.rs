@@ -75,6 +75,29 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) {
         rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
     }
+    // The bound Wizard/Mechanic talks (`NPC.cs:19841-19848`'s talk arms):
+    // the talk transforms 106 → 108 and 123 → 124 in place and raises
+    // the saved flags (`:52948`/`:52951`), which opens the town arrival.
+    for (bound, freed, flag) in [
+        (NpcKind::BoundWizard, NpcKind::Wizard, "wizard"),
+        (NpcKind::BoundMechanic, NpcKind::Mechanic, "mech"),
+    ] {
+        if let Some(i) = app.npcs.iter().position(|n| {
+            n.hp > 0 && n.kind == bound && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+        }) {
+            match flag {
+                "wizard" => rescue_bound_wizard(&mut app.npcs[i], &mut app.world),
+                _ => rescue_bound_mechanic(&mut app.npcs[i], &mut app.world),
+            }
+            let _ = freed;
+        }
+    }
     // The Sleeping Angler's talk (`NPC.cs:19853-19856`'s `talkNPC`
     // trigger + `AI_000_TransformBoundNPC` `:44884-44896`): the talk
     // transforms 376 → 369 in place, `UpdateSavedStates` (`:52956-52958`)
@@ -175,6 +198,8 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Painter => 15,
         NpcKind::WitchDoctor => 16,
         NpcKind::TravellingMerchant => 19,
+        NpcKind::Wizard => 7,
+        NpcKind::Mechanic => 8,
         _ => return None,
     })
 }
@@ -194,6 +219,32 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
 /// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
 /// raised, the Angler homeless (the C# `Transform` `case 369`,
 /// `NPC.cs:81121-81129`).
+/// The bound Wizard's rescue (`AI_000_TransformBoundNPC`'s 106 → 108 arm,
+/// `NPC.cs:19841-19844`/`:44884-44894`): the transform in place, the freed
+/// stats restore and `savedWizard` raises (`:52948`).
+pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Wizard;
+    n.max_hp = NpcKind::Wizard.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_wizard = true;
+}
+
+/// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
+/// `NPC.cs:19845-19848`): the transform in place and `savedMech` raises
+/// (`:52951`).
+pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Mechanic;
+    n.max_hp = NpcKind::Mechanic.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_mech = true;
+}
+
+/// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
+/// `NPC.cs:19853-19856`/`:44884-44894`): the transform in place, `savedAngler`
+/// raised, the Angler homeless (the C# `Transform` `case 369`,
+/// `:81121-81129`).
 pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
     n.kind = NpcKind::Angler;
     n.max_hp = NpcKind::Angler.max_hp();
@@ -1795,8 +1846,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
-        // downedBoss1 — the port's downed_eoc).
+        // The Wizard: `NPC.savedWizard` (`NPC.cs:6289`), raised by the
+        // bound-Wizard talk (`UpdateSavedStates`, `:52948`).
+        if app.world.saved_wizard && !app.npcs.iter().any(|n| n.kind == NpcKind::Wizard) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 8).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Wizard) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Mechanic: `NPC.savedMech` (`NPC.cs:6291`).
+        if app.world.saved_mech && !app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 7).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Mechanic) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s        // downedBoss1 — the port's downed_eoc).
         if app.world.downed_eoc && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
@@ -2739,6 +2810,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && !app.npcs.iter().any(|n| {
                         n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
                     }),
+                // `NPC.cs:2088`'s Wizard guards: hardmode, unsaved, and
+                // nobody bound/freed.
+                bound_wizard_ok: app.world.hard_mode
+                    && !app.world.saved_wizard
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
+                    }),
+                // `NPC.cs:2653`'s Mechanic guards: Skeletron downed,
+                // unsaved, and nobody bound/freed.
+                bound_mech_ok: app.world.downed_skeletron
+                    && !app.world.saved_mech
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
+                    }),
+                // `(worldSurface * 4 + rockLayer) / 5` — the Mechanic's deep
+                // dungeon band, read against the player's spawn tile.
+                below_deep_dungeon: {
+                    let ty = app
+                        .player
+                        .as_ref()
+                        .map_or(0, |p| (p.y / TILE_PX) as i32);
+                    (ty as f64) > (app.world.world_surface * 4.0 + app.world.rock_layer) / 5.0
+                },
                 // The skyMob/probe gates (`SetSpawnFlags`' `invaders`, the
                 // `downedGolemBoss`/`downedMartians` rolls, the skyMob
                 // dispatch's type-4 read, and `AnyDanger`'s boss loop —
@@ -2995,6 +3089,146 @@ mod tests {
     /// talk transforms the Sleeping Angler into the Angler in place and
     /// raises `savedAngler` (`:52956-52958`) — the world's spawn arms then
     /// stop looking for the fish on the beach.
+
+    /// `AI_000_TransformBoundNPC`'s 106 → 108 and 123 → 124 arms
+    /// (`NPC.cs:19841-19848`/`:44884-44894`): the talks free the Wizard and
+    /// the Mechanic in place and raise `savedWizard`/`savedMech`
+    /// (`:52948`/`:52951`), which opens the town arrival.
+    #[test]
+    fn the_talks_free_the_wizard_and_mechanic() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        app.world.hard_mode = true;
+        let mut w = Npc::new(NpcKind::BoundWizard, 32.0, 100.0, 1, 0.0);
+        w.home = Some((2, 6));
+        app.npcs.push(w);
+        let mut m = Npc::new(NpcKind::BoundMechanic, 64.0, 100.0, 1, 0.0);
+        app.npcs.push(m);
+        try_open_shop_at_cursor(&mut app, Vec2::new(34.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard is freed"
+        );
+        assert!(app.world.saved_wizard, "savedWizard raises");
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::BoundWizard));
+        try_open_shop_at_cursor(&mut app, Vec2::new(66.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic is freed"
+        );
+        assert!(app.world.saved_mech, "savedMech raises");
+    }
+
+    /// The town arrival behind the flags (`Main.cs:65844-65851`'s
+    /// `townNPCCanSpawn` arms collapsed to the 2-second town pass): the saved
+    /// flag spawns the town NPC once and never again.
+    #[test]
+    fn the_saved_flags_open_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_wizard = true;
+        app.world.saved_mech = true;
+        // One town pass.
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
+            "the Wizard arrives"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic arrives"
+        );
+        // A second pass adds nothing.
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
+    /// `NPC.cs:2088`'s hardmode guard: the bound Wizard's ladder arm needs
+    /// hardmode, so without it the tied Wizard never appears however many
+    /// spawn attempts run.
+    #[test]
+    fn the_bound_wizard_arm_needs_hardmode() {
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 400..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        for hard in [false, true] {
+            let mut found_any = false;
+            let mut found_wizard = false;
+            for seed in 0..240u64 {
+                let ctx = crate::spawner::SpawnContext {
+                    world: &world,
+                    player_center: (32.0 * 16.0, 500.0 * 16.0),
+                    player_pos: (32.0 * 16.0, 500.0 * 16.0),
+                    nearby_active_npcs: 0.0,
+                    town_npcs: 0,
+                    day_time: true,
+                    player_life_max: 100,
+                    underworld_for_bats: false,
+                    flags: crate::spawner::SpawnFlags {
+                        hard_mode: hard,
+                        ..Default::default()
+                    },
+                    bound_goblin_ok: false,
+                    bound_wizard_ok: true,
+                    bound_mech_ok: false,
+                    below_deep_dungeon: true,
+                    invaders: false,
+                    downed_golem: false,
+                    downed_martians: false,
+                    invasion_type: 0,
+                    any_danger: false,
+                    probe_exists: false,
+                    sky_behind_player: false,
+                };
+                let mut rng = crate::spawner::FastRandom::new(seed + 1);
+                if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
+                    found_any = true;
+                    if n.kind == NpcKind::BoundWizard {
+                        found_wizard = true;
+                    }
+                }
+            }
+            // The arm's own gate is the assertion: without hardmode the tied
+            // Wizard never comes out of the ladder, whatever else spawns (the
+            // other ladders' world gates decide that, not this arm).
+            if !hard {
+                assert!(
+                    !found_wizard,
+                    "no hardmode, no bound Wizard (any spawn: {found_any})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_talk_wakes_the_sleeping_angler() {
         let mut world = World::new("t".into(), 64, 800);

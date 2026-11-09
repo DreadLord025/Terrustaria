@@ -175,6 +175,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // debuff (31).
         NpcKind::Angler => &[31],
         NpcKind::SleepingAngler => &[31],
+        // `NPCID.cs:8254-8308` has no `DebuffImmunitySets` row for 106/
+        // 108/123/124 — the same empty row as the rest of the town set.
+        NpcKind::Wizard => &[],
+        NpcKind::BoundWizard => &[],
+        NpcKind::Mechanic => &[],
+        NpcKind::BoundMechanic => &[],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
