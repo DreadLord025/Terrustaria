@@ -14,19 +14,19 @@
 //! `Step_PaintRoller` (:772-812), `Step_PaintBrush` (:727-770),
 //! `Step_PaintScrapper` (:678-725), `Step_Acorns` (:2032-2157),
 //! `Step_AlchemySeeds` (:492-580), `Step_PlanterBox` (:437-490),
-//! `Step_ClayPots` (:381-435) and `Step_StaffOfRegrowth` (:224-264) — the
-//! seed/herb/planting family plus the paint family, gated on item id /
-//! `createTile` and shared with the closest-to-mouse vote. The paint steps
+//! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264) and
+//! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles)
+//! — the seed/herb/planting family plus the paint family, gated on item id
+//! / `createTile` and shared with the closest-to-mouse vote. The paint steps
 //! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
 //! platform/wall/wrench families, `UsingSmartCursorWithContinuity`'s
-//! lock state, the grapple target arms, `Step_GemCorns` (the
-//! `GrowTreeSettings.Profiles` table, `WorldGen.cs:3825-4048`), the
-//! inventory-driven paint lookup (`Player.FindPaintOrCoating`,
-//! `Player.cs:41927-41944`), and the app-side wiring (the reachable rect,
-//! the `App.smart_cursor` field, the settings gate).
+//! lock state, the grapple target arms, the inventory-driven paint lookup
+//! (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`), and the
+//! app-side wiring (the reachable rect, the `App.smart_cursor` field, the
+//! settings gate).
 //!
 //! Edge convention: the C# `Main.tile` array is exactly world-sized
 //! (`Main.cs:66984`) and the reachable rect never touches the border, so
@@ -956,16 +956,97 @@ pub fn step_acorns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i3
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+/// `SmartCursorHelper.Step_GemCorns` (`:2159-2227`): the held gem/vanity
+/// seed re-points at the closest plantable spot for its
+/// `GrowTreeSettings` profile — the profile's ground test, the dry clear
+/// box of the profile's height and no sapling within the ±3 columns.
+pub fn step_gem_corns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2161` — the profile lookup (the C#'s `TryGetFromItemId`), the focus
+    // sentinel and the height gate.
+    let Some(profile) = crate::growth::grow_tree_profile_from_item(l.item.kind) else {
+        return None;
+    };
+    if fx != -1 || fy != -1 || l.start_y <= 20 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            // `:2171-2178` — the nine reads (an out-of-world cell skips,
+            // the port's edge convention).
+            let (Some(t), Some(t2), Some(t3), Some(t4), Some(t5)) = (
+                w.tile(i, j),
+                w.tile(i, j - 1),
+                w.tile(i, j + 1),
+                w.tile(i - 1, j),
+                w.tile(i + 1, j),
+            ) else {
+                continue;
+            };
+            // `:2179` — the one long predicate: the ground passes the
+            // profile's test, the spot and the cell above are empty (a cut/
+            // replaceable cell passes), no sapling within ±3 columns, the
+            // ground is solid (`SolidTile2`), the three cells dry and the
+            // profile-height box is clear (the profile's own sapling is the
+            // `EmptyTileCheck`'s ignore id).
+            let sapling_at = |x: i32, y: i32| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && crate::growth::is_common_sapling(t.kind))
+            };
+            if profile.ground.test(t3.kind)
+                && (!t.active()
+                    || crate::tileobject::tile_cut(t.kind)
+                    || crate::tileobject::breakable_when_placing(t.kind))
+                && (!t2.active()
+                    || crate::tileobject::tile_cut(t2.kind)
+                    || crate::tileobject::breakable_when_placing(t2.kind))
+                && (!t4.active() || !crate::growth::is_common_sapling(t4.kind))
+                && (!t5.active() || !crate::growth::is_common_sapling(t5.kind))
+                && !(sapling_at(i - 2, j)
+                    || sapling_at(i + 2, j)
+                    || sapling_at(i - 3, j)
+                    || sapling_at(i + 3, j))
+                && t3.active()
+                && crate::edit::solid_tile2(w, i, j + 1)
+                && t4.liquid == 0
+                && t.liquid == 0
+                && t5.liquid == 0
+                && crate::growth::empty_tile_check(
+                    w,
+                    i - 2,
+                    i + 2,
+                    j - profile.tree_height_max,
+                    j,
+                    Some(profile.sapling_tile_type),
+                )
+            {
+                cands.push((i, j));
+            }
+        }
+    }
+    // `:2189-2206` — the removal pass: the spot survives when a cell beside
+    // its ground row passes the profile's ground test (the C# runs the
+    // profile's delegate here, not the acorn's 15-tile list).
+    cands.retain(|&(x, y)| {
+        [-1, 1].iter().any(|&dx| {
+            w.tile(x + dx, y + 1)
+                .is_some_and(|t| t.active() && profile.ground.test(t.kind))
+        })
+    });
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
 /// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
 /// Torch :142 → LawnMower :143 → PaintRoller :146 → PaintBrush :147 →
-/// PaintScrapper :148 → Acorns :149 → AlchemySeeds :153 → PlanterBox :154
-/// → ClayPots :155 → StaffOfRegrowth :156. Each step's gate refuses a
-/// taken focus, so the first step that finds a spot wins — the C#
-/// straight-line chain.
+/// PaintScrapper :148 → Acorns :149 → GemCorns :150 → AlchemySeeds :153 →
+/// PlanterBox :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's
+/// gate refuses a taken focus, so the first step that finds a spot wins —
+/// the C# straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -975,7 +1056,7 @@ pub fn step_acorns(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i3
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
 pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 14] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 15] = [
         step_pumpkin_seeds,
         step_grass_seeds,
         step_moss,
@@ -986,6 +1067,7 @@ pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Op
         step_paint_brush,
         step_paint_scrapper,
         step_acorns,
+        step_gem_corns,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
@@ -1763,6 +1845,117 @@ mod tests {
             smart_cursor_lookup(&pumpkins, &l, -1, -1),
             Some((25, 19)),
             "the pumpkin-seed step is dispatched before the grass seeds"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_finds_the_stone_ground() {
+        // `Step_GemCorns` :2179 — the Ruby seed (4855) plants on the gem
+        // trees' ground (Conversion.Stone {1,25,117,203}); the 12-row clear
+        // box ignores the profile's own sapling (590).
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 1); // stone ground
+        let l = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the gem seed re-points above the stone ground"
+        );
+        // The gem profile's ground test refuses dirt (2 — a Conversion.Grass
+        // tile, not Conversion.Stone/Moss): the vanilla's GemTreeGroundTest
+        // reads only those two sets (WorldGen.cs:30304-30315).
+        let mut dirt = bare();
+        put_row(&mut dirt, 20, 40, 22, 2);
+        let l2 = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&dirt, &l2, -1, -1),
+            None,
+            "dirt is not a gem-tree ground"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_sakura_seed_finds_grass_but_not_corrupt_grass() {
+        // `VanityTreeGroundTest` (WorldGen.cs:30317-30328): the grass
+        // conversion minus the corruption/crimson pair — the sakura seed
+        // (4871) plants on grass but refuses corrupt grass (23).
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2); // grass ground
+        let l = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            Some((25, 21)),
+            "the sakura seed re-points above the grass"
+        );
+        let mut corrupt = bare();
+        put_row(&mut corrupt, 20, 40, 22, 23); // corrupt grass ground
+        let l2 = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&corrupt, &l2, -1, -1),
+            None,
+            "corrupt grass is excluded from the vanity ground test"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_only_the_profile_seed_items_pass_the_gate() {
+        // The `TryGetFromItemId` gate (:2161): nine item ids carry a
+        // profile; a plain block or the acorn does not.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 1);
+        assert_eq!(
+            step_gem_corns(&world, &acorn_lookup(27, mouse_at(25, 21)), -1, -1),
+            None,
+            "the acorn is not a gem-corn seed"
+        );
+        assert_eq!(
+            step_gem_corns(&world, &acorn_lookup(1, mouse_at(25, 21)), -1, -1),
+            None,
+            "a plain item carries no profile"
+        );
+        // The ash profile (634) has no seed item — the C#'s
+        // `TryGetFromItemId` does not list it (:3853-3884).
+        assert_eq!(
+            crate::growth::grow_tree_profile_from_item(634),
+            None,
+            "the ash tree has no seed item"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_removal_pass_needs_a_ground_neighbour() {
+        // `Step_GemCorns` :2189-2206 — the removal pass runs the profile's
+        // ground test on the cells beside the ground row: a lone stone cell
+        // is dropped, a stone row survives.
+        let mut world = bare();
+        put(&mut world, 25, 22, 1); // a lone stone cell under the spot
+        let l = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&world, &l, -1, -1),
+            None,
+            "the lone ground is dropped by the gem-corn removal pass"
+        );
+        let mut row = bare();
+        put_row(&mut row, 24, 26, 22, 1);
+        let l2 = acorn_lookup(4855, mouse_at(25, 21));
+        assert_eq!(
+            step_gem_corns(&row, &l2, -1, -1),
+            Some((25, 21)),
+            "the stone row beside the spot keeps it"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_gem_corn_runs_after_the_acorn_in_the_chain() {
+        // The dispatch order (:150): the gem-corn step sits between the
+        // acorn and the alch seeds.
+        let mut world = bare();
+        put_row(&mut world, 20, 40, 22, 2);
+        let sakura = acorn_lookup(4871, mouse_at(25, 21));
+        assert_eq!(
+            smart_cursor_lookup(&world, &sakura, -1, -1),
+            Some((25, 21)),
+            "the gem-corn step runs inside the lookup chain"
         );
     }
 }

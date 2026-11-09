@@ -6696,6 +6696,57 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Desert passes (M5-DESERT-structures)
+
+The `Dunes` carver and the `Full Desert` underground desert landed
+2026-11-09 (branch `M5-DESERT-structures`): the dune Bézier hills
+(`desert_dunes.rs`), the underground desert family — `SurfaceLine`,
+`DesertGeom`, `SandMound`, `ClusterGroup`, the hive density ladder and
+`AddTileVariance` (`desert.rs`) — and the four entrances with the
+`PlotLine`/`Tail`/`Circle`/`Rect` shape primitives ported inline
+(`desert_entrances.rs`). Both passes run as their own pipeline steps at
+their vanilla slots (`Dunes` after the spans planner, `Full Desert` after
+Mud Caves To Grass). Final world-hash pins: `SEED42_512 = 139436343`,
+`DEFAULT_WORLD = 3348406208` — both re-pinned because the passes change
+the generated worlds. Suites green.
+
+Deviations and accepted changes:
+
+- **Special seeds skipped.** The C# arms for `remixWorldGen`,
+  `tenthAnniversaryWorld`, `SecretSeed.surfaceIsDesert`,
+  `notTheBees`, `dualDungeons`, `extraLiquid` and `skyblock` have no port
+  model (no `GenOptions` field), so their branches and their extra draws
+  never run: `DesertDescription`'s remix height, the anniversary hive gap,
+  `RowHasInvalidTiles`'s mud/jungle gate condition, the drunk pyramid
+  chance, the `Full Desert` remix sandification sweep and every DesertHive
+  remix wall/liquid flip. The vanilla-chain rows for `M5-SEED-1/2` carry
+  them.
+- **`Blotches` and `Smooth` skipped.** `Modifiers.Blotches` is a `genRand`
+  noise pass over the shape and `Actions.Smooth` is the port's missing
+  slope smoother; both are noted at their call sites
+  (`desert_entrances.rs`), so the anthill/larva chambers and the pit keep
+  their hard geometry where the vanilla jitters and smooths it.
+- **The pyramid-slot anchors are recorded, not consumed.**
+  `step_dunes` appends the `GenVars.PyrX/PyrY/numPyr` anchors (the C#'
+  `:11570-11572`), but `structures::pass_pyramids` still rolls its own
+  anchor inside the compact desert band — the rewrite that consumes the
+  recorded slots (and moves them out of the band, as vanilla does) is a
+  follow-up.
+- **The per-pass RNG stream.** The C# drives the desert off the single
+  global `genRand` (`GenBase._random` IS `genRand`); the port gives each
+  pass its own `pass_rng` stream (the documented `WorldGenerator.cs:497`
+  re-seed model), so the port's worlds are deterministic but not
+  byte-identical to vanilla's.
+- **The hive's FastRandom is exact.** `FastRandom::with_modifier_u64`
+  + `next_double` were added to `tile_light/palette.rs` (the existing
+  verbatim LCG port) so the hive's per-tile sand kind and its `> 0.25`
+  probabilistic shell replay the C# bit-for-bit.
+- **The band test widened.** `desert_band_has_sand_dunes_and_no_trees`
+  now accepts the desert tile family (53/397/396) at the band surface:
+  the underground desert legitimately places itself under the compact band
+  (the vanilla retry loop lands opposite the dungeon, which is this band),
+  and `AddTileVariance` hardens the exposed sand there.
+
 ## Entity sync (M6-NET-2)
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
@@ -7014,6 +7065,31 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   `!flag` reads the inner ±1 only). The tests pin the vote falling outside the
   window (a ±2 sapling at 27 makes the spot 25 drop and the vote take 23; an
   immediate sapling at 26 widens the block to 23..=29 and the vote takes 22).
+- **The tree-seed profiles are the C#'s struct, minus the wall arm.**
+  `GrowTreeSettings` (`WorldGen.cs:3825-4048`) carries two delegates per
+  profile; no smart-cursor step reads the wall one (the C#'s worldgen callers
+  do), so the port keeps `GroundTest` (as the `GroundTestKind` enum over the
+  three ported functions, `WorldGen.cs:30304-30341`) and documents `WallTest`
+  out pending the `WallID.Sets.AllowsPlantsToGrow` table. The gem trees are
+  one shared profile shape (12/7/4/590) differing only in `TreeTileType`;
+  the ash profile (634/20) has no item entry — `TryGetFromItemId`
+  (`:3853-3884`) lists the nine gem/vanity seeds only, and the ash tree's only
+  door is `TryGetFromTreeId`'s tree tile.
+- **The two `Conversion` tile sets landed through the generator, not by hand.**
+  The ground tests read `TileID.Sets.Conversion.Stone` (`TileID.cs:90` =
+  {1, 25, 117, 203}) and `Conversion.Moss` (`:96` = the 11 moss tiles);
+  `Conversion.Grass` was already generated as `SET_GRASS`. Per the house rule
+  (`AGENTS.md`: never hand-edit `tiledata/`), the sets went through
+  `tools/GenTileData`'s `wantedSets` with a baseline regen first — the
+  baseline is a byte-empty diff and the new run adds exactly the two bitsets
+  (the `mod.rs` re-exports stay hand-written, as the generator documents).
+- **The generator defaults to the primary checkout's path.**
+  `tools/GenTileData/Program.cs`'s root is the hardcoded
+  `C:\Users\DreadLord\Desktop\Terraria-Rust` unless args[0] overrides it, so a
+  task worktree must pass its own root (`dotnet run --project tools/GenTileData
+  -- <worktree-root>`) or the regeneration lands in the shared primary. The
+  baseline run used by this pass confirmed the primary stayed clean (the
+  rewrite is content-identical), but a task should always pass the override.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
