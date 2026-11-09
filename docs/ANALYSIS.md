@@ -5270,6 +5270,19 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
   anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
 
+- **The smart-cursor grapple targets** (`SmartCursorHelper.cs:106-116`'s
+  `_grappleTargets` fill, threaded into `Step_Pickaxe_MineSolids`' walk
+  `:2475-2483`): the reach-rect off-screen gate rebuilds the hook cells from
+  the player's grappling projectiles (the centers over 16), and the walk's
+  solid re-add skips them - a hook latched on a stone drops that stone from
+  the beam's targets. The engine carries the list on the `Lookup` (the
+  uniform step-dispatch array's only shared input) and the app fills it from
+  the port's single `App.grapple` (`grapple_target_cells` - the C#'s
+  `(int)cx / 16` truncation, verified on the negative side). The C#'s
+  `player.grappling` array (per-hook-projectile) has no port equivalent; the
+  port's one-hook model yields 0 or 1 cell, which is the vanilla behaviour
+  for the single-hook items (`Player.QuickGrapple`'s `num7 = 1` recycle).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
