@@ -2608,7 +2608,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // constants-on — every death the port produces today is a player
         // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-        app.kill_tracker.register_kill(entry.credit_id);
+        app.bestiary.kills.register_kill(entry.credit_id);
         // `AchievementsHelper.NotifyNPCKilled` (`GameContent/Achievements/`):
         // the kill feeds the NPCKilledCondition rows (the M6-ACH-1 hook —
         // the original wire pass lost it to a mid-script assert).
