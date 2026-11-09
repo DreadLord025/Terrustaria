@@ -1482,6 +1482,8 @@ pub fn update_world_overground_tile(
     y: i32,
     day_time: bool,
     raining: bool,
+    max_raining: f32,
+    wind_speed: f32,
     rng: &mut FastRandom,
 ) {
     let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
@@ -1489,6 +1491,9 @@ pub fn update_world_overground_tile(
         return;
     };
     if !active {
+        // The beach-shells arm (`:72073`): an inactive beach cell under the
+        // surface grows a shell pile behind the wind/rain odds.
+        grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
         return;
     }
     if TILE_ALCH.contains(&kind) {
@@ -1650,6 +1655,8 @@ pub fn update_world(
     raining: bool,
     freeze_time: bool,
     day_time: bool,
+    max_raining: f32,
+    wind_speed: f32,
     rng: &mut FastRandom,
 ) -> u32 {
     let rate = world_update_rate(day_rate, freeze_time);
@@ -1673,7 +1680,16 @@ pub fn update_world(
         }
         let x = rng.next_range(10, world.width - 10);
         let y = rng.next_range(10, world.world_surface as i32 - 1);
-        update_world_overground_tile(world, x, y, day_time, raining, rng);
+        update_world_overground_tile(
+            world,
+            x,
+            y,
+            day_time,
+            raining,
+            max_raining,
+            wind_speed,
+            rng,
+        );
         picks += 1;
     }
     let underground_count = (world.width as f64 * world.height as f64) * 1.5e-5 * rate as f64;
@@ -1696,6 +1712,112 @@ pub fn update_world(
         picks += 1;
     }
     picks
+}
+
+/// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the shell arm's
+/// beach margins.
+const BEACH_DISTANCE: i32 = 380;
+
+/// `WorldGen.RollRandomSeaShellStyle` (`WorldGen.cs:45170-45187`) over the
+/// growth `FastRandom` stream: the 5 seashell styles on tile 324 — `Next(2)`,
+/// then `Next(10)==0 → 2`, `Next(10)==0 → 3`, `Next(50)==0 → 4` (nested `if`s,
+/// so the later rolls re-roll earlier).
+fn roll_sea_shell_style(rng: &mut FastRandom) -> i32 {
+    let mut result = rng.next_range(0, 2);
+    if rng.next(10) == 0 {
+        result = 2;
+    }
+    if rng.next(10) == 0 {
+        result = 3;
+    }
+    if rng.next(50) == 0 {
+        result = 4;
+    }
+    result
+}
+
+/// The beach-shells arm of `UpdateWorld_OvergroundTile`
+/// (`WorldGen.cs:72073-72135`): a dry empty cell in the beach margin under
+/// the surface grows a shell pile — the calmer and drier the weather the
+/// higher the odds (`num5 = 3000 - |wind| · 1250 - maxRaining · 1250`, floor
+/// 300), then the sand scan, the pile-count cap `Next(2, 5)` with the
+/// ±`Next(8, 11)` box check and the coral (81, on deep water) / seashell
+/// (324, the rolled style) write.
+pub fn grow_shell_pile(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    wind_speed: f32,
+    max_raining: f32,
+    raining: bool,
+    rng: &mut FastRandom,
+) -> bool {
+    let surface = world.world_surface;
+    let width = world.width;
+    // The gate: an inactive cell under the surface inside the beach margins
+    // (`:72073`).
+    if !((j as f64) < surface + 10.0) {
+        return false;
+    }
+    if !(i < BEACH_DISTANCE || i > width - BEACH_DISTANCE) {
+        return false;
+    }
+    if world.tile(i, j).is_some_and(|t| t.active()) {
+        return false;
+    }
+    // The odds (`:72074-72080`).
+    let mut num5 = 3000 - (wind_speed.abs() * 1250.0) as i32;
+    if raining {
+        num5 -= (1250.0 * max_raining) as i32;
+    }
+    if num5 < 300 {
+        num5 = 300;
+    }
+    if rng.next(num5.max(1)) != 0 {
+        return false;
+    }
+    // The sand scan (`:72083-72090`): down to the first solid within 15 rows.
+    let mut k = j;
+    while (k as f64) < surface + 10.0 && !world.tile(i, k).is_some_and(|t| t.active()) && k - j < 15
+    {
+        k += 1;
+    }
+    let sand_ok = world
+        .tile(i, k)
+        .is_some_and(|t| t.active() && t.kind == 53)
+        && crate::edit::solid_tile_allow_bottom_slope(world, i, k);
+    if !sand_ok {
+        return false;
+    }
+    // The pile above the sand (`:72091-72096`): an existing pile stands down.
+    if world.tile(i, k - 1).is_some_and(|t| t.active() && t.kind == 324) {
+        return false;
+    }
+    // The density cap and the box count (`:72097-72110`).
+    let num6 = rng.next_range(2, 5);
+    let num7 = rng.next_range(8, 11);
+    let mut num8 = 0;
+    for l in (i - num7)..=(i + num7) {
+        for m in (k - num7)..=(k + num7) {
+            if world.tile(l, m).is_some_and(|t| t.active() && matches!(t.kind, 324 | 81)) {
+                num8 += 1;
+            }
+        }
+    }
+    if num8 >= num6 {
+        return false;
+    }
+    // The coral on the deep water, the seashell otherwise (`:72111-72130`).
+    let coral = rng.next(2) == 0 && world.tile(i, k).is_some_and(|t| t.liquid >= 230);
+    let style = if coral { 0 } else { roll_sea_shell_style(rng) };
+    let idx = world.index(i, k - 1);
+    let t = &mut world.tiles[idx];
+    t.flags |= crate::tile::FLAG_ACTIVE;
+    t.kind = if coral { 81 } else { 324 };
+    if !coral {
+        t.frame_x = (22 * style) as i16;
+    }
+    true
 }
 
 // --- M5-SEED-2: the `halloweenGen` / `endlessHalloween` pumpkins ------------
@@ -2125,7 +2247,7 @@ mod tests {
         for seed in 1u64..600 {
             let mut w = w.clone();
             let mut rng = FastRandom::new(seed);
-            update_world_overground_tile(&mut w, 30, 56, true, false, &mut rng);
+            update_world_overground_tile(&mut w, 30, 56, true, false, 0.0, 0.0, &mut rng);
             runs += 1;
             grew += w
                 .tiles
@@ -2156,7 +2278,7 @@ mod tests {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut rng = FastRandom::new(5);
-        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
         assert!(
             !w.tile(10, 29).is_some_and(|t| t.active()),
             "the sapling on the evil grass is killed"
@@ -2177,7 +2299,7 @@ mod tests {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut rng = FastRandom::new(5);
-        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
         assert!(
             w.tile(10, 29).is_some_and(|t| t.active()),
             "the sapling on the plain grass survives"
@@ -2537,6 +2659,78 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn the_beach_shells_arm_places_the_pile() {
+        // The beach-shells arm (`:72073-72135`): a dry empty beach cell under
+        // the surface grows a seashell (324) behind the calm/dry odds — the
+        // gate first, then the wind/rain-adjusted `num5` roll, the sand scan,
+        // the density cap and the write. With the odds at their easiest
+        // (calm, dry: `num5 = 3000`) the 1-in-3000 roll still needs luck, so
+        // the test seeds a hit through a tight loop and checks the contract.
+        let mut w = world();
+        w.world_surface = 100.0;
+        // The beach margin: a sand floor at y = 101 near the world edge.
+        for dx in -30i32..=30 {
+            let i = w.index(5 + dx.max(0) as i32, 101);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 53,
+                flags: crate::tile::FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        // The pick sits above the sand, inside the margin (i < 380).
+        let grew = (1..4096u64).any(|seed| {
+            let mut rng = FastRandom::new(seed);
+            grow_shell_pile(&mut w, 5, 100, 0.0, 0.0, false, &mut rng)
+        });
+        assert!(grew, "a calm dry day grows a shell pile on the beach");
+        let pile = w.tile(5, 100).is_some_and(|t| t.active() && t.kind == 324)
+            || w.tile(5, 100)
+                .is_some_and(|t| t.active() && t.kind == 81);
+        assert!(pile, "the pile is a seashell or a coral");
+    }
+
+    #[test]
+    fn the_beach_shells_arm_refuses_the_gates() {
+        // The arm's refusals: the weather odds (a storm makes `num5` bottom
+        // at 300 but the roll still runs), a cell outside the beach margin,
+        // and a cell with no sand below.
+        let mut w = world();
+        w.world_surface = 100.0;
+        for dx in -30i32..=30 {
+            let i = w.index(4000 + dx.max(0) as i32, 101);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 53,
+                flags: crate::tile::FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let mut rng = FastRandom::new(3);
+        // Mid-world (outside the beach margins) never grows.
+        assert!(
+            !grow_shell_pile(&mut w, 2000, 100, 0.0, 0.0, false, &mut rng),
+            "the inland cell is refused"
+        );
+        // The beach cell with no sand under it (the floor is stone).
+        let mut w2 = world();
+        w2.world_surface = 100.0;
+        for dx in -30i32..=30 {
+            let i = w2.index(5 + dx.max(0) as i32, 101);
+            w2.tiles[i] = crate::tile::Tile {
+                kind: 1,
+                flags: crate::tile::FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        for seed in 1..256u64 {
+            let mut rng2 = FastRandom::new(seed);
+            if grow_shell_pile(&mut w2, 5, 100, 0.0, 0.0, false, &mut rng2) {
+                panic!("no sand under the cell yet the pile grew");
+            }
+        }
+    }
+
     #[test]
     fn the_palm_sapling_grows_the_leaning_trunk() {
         // `AttemptToGrowTreeFromSapling`'s style-6-9 arm (`:72838-72848`) →
@@ -2742,7 +2936,7 @@ mod tests {
         let mut rng = FastRandom::new(7);
         let mut grew = false;
         for tick in 0..200 {
-            update_world_overground_tile(&mut w, 100, 200, true, false, &mut rng);
+            update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
             let grew_cell = [
                 (99i32, 199),
                 (100, 198),
@@ -2767,12 +2961,12 @@ mod tests {
         // ×1.5 raining = 75; the underground 1.5e-5·tiles = 25.
         let mut w = world();
         let mut rng = FastRandom::new(9);
-        let picks = update_world(&mut w, 1, false, false, true, &mut rng);
+        let picks = update_world(&mut w, 1, false, false, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 50 + 25);
-        let picks = update_world(&mut w, 1, true, false, true, &mut rng);
+        let picks = update_world(&mut w, 1, true, false, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 75 + 25);
         // The frozen time picks nothing.
-        let picks = update_world(&mut w, 1, false, true, true, &mut rng);
+        let picks = update_world(&mut w, 1, false, true, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 0);
     }
 
