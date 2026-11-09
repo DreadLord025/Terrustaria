@@ -1742,7 +1742,7 @@ fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
 
 /// `WorldGen.oceanDepths` (`WorldGen.cs:10963-10973`) — no RNG; the ocean
 /// level and the ±`beachDistance` margins.
-pub(crate) fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
     if y as f64 > ocean_level {
         return false;
     }
@@ -1768,7 +1768,7 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
 
 /// `WorldGen.SolidTile2` (`WorldGen.cs:70134-70150`) — no RNG; an
 /// out-of-bounds tile reads as solid. No `tileSolidTop` exclusion.
-pub(crate) fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
+fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };

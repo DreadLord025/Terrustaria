@@ -4907,33 +4907,6 @@ Deviations: the chest inventories ride the storage task (the C#
 `Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
 piles and the graveyards are the follow-ups; the layouts are shape-level.
 
-- **The statues** (`Statues`, `WorldGen.cs:16853-16970` — the M5-STRUCT-1
-  statues slice): the `SetupStatueList` table (`WorldGen.cs:4449-4488`, 73
-  entries) is a `STATUE_LIST` const in `structures.rs` (the C#'s
-  pass-static list — `Reset` `:11228` and the cave-house re-build write
-  the same idempotent data). The pass lands at its vanilla slot
-  immediately before `Buried Chests` (`:16971`) on its own
-  `pass_rng("Statues")` stream, so no other pass's draws shift. The
-  placement is the faithful `Place2xX` (`:39663-39722`) frame math — the
-  `(105, 34) → (349, 0)` remap, the `style / 55` row offset — plus the
-  unconditional `SquareTileFrame`, and the `StatuesWithTraps` indices
-  {4, 7, 10, 18} (`GenVars.cs:474-475`) arm a dart trap 135 with the
-  L-shaped `WorldUtils.WireLine` red-wire run back to the statue.
-  Deliberate deviations, all recorded here: (1) the seat's
-  `tileFrameImportant && !tileCut` gate (`:16846`) needs the
-  `Main.tileFrameImportant`/`Main.tileCut` tables, which the port does
-  not carry yet — `Place2xX`'s clear-cell check already refuses an
-  occupied seat, so the gate would only suppress a redundant
-  `SquareTileFrame` on a busy cell; (2) the secret-seed arms
-  (`noTrapsWorldGen`'s ×15, `skyblockWorldGen`, `starGame`) park with
-  M5-SEED-1; (3) `WorldGen.Statue`'s paint sweep (`:10563-10573`) and its
-  `MarblePileWithStatues` caller (`:10538`) ride the M5-BIOME-2 marble
-  piles — the pass itself never paints. The cave-house statue furniture
-  (`HouseBuilder.cs:471-490`) and the rest of the STRUCT-1 row
-  (the `CaveHouseBiome`/`HouseBuilder` room crawl, the `Traps` pass and
-  the boulder piles) are the follow-up branches. `DEFAULT_WORLD`'s
-  pinned hash moved by design (world_hash.rs's pin note).
-
 ## Biome detail passes (M1.4-WGEN-3)
 
 The decorator passes over the finished biomes — the ocean caves, the
@@ -6933,7 +6906,34 @@ aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
 26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
 "shard hover" machine belongs to the Star Cell alone.
 
-- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+
+## Micro-biome passes (M5-BIOME-2)
+
+The three micro-biome passes are 1:1 ports; the deviations:
+
+- **`tile_is_ore` is a hardcoded kind list**, not the generated
+  `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
+  Ore set, so the slab map's ore preservation uses the vanilla's ore ids
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
+  tile yet — the pots land with M5-STRUCT's pots step.
+- **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
+  cave-house voters read the tiles directly, so the registration has no
+  consumer yet.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — the port
+  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
+  slabs' corner states flatten to the active pattern).
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
+  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
+  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
+  decor family.
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
+  The pass's own isolated stream keeps the move RNG-neutral for the other
+  steps; the world contract's per-step pins hold.
+- The three passes draw from their own `pass_rng` streams; the shared
+  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
   300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
@@ -6988,3 +6988,4 @@ Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
 metamorphoses, the VortexHunter's shared shooter block and the tower
 spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
 tables themselves stay open.
+

@@ -925,14 +925,6 @@ mod tests {
         assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);
         assert!(count(480) > 300, "the pyramid brick ({})", count(480));
         assert!(count(28) > 50, "the pots ({})", count(28));
-        // The statues (`Statues` `WorldGen.cs:16853-16970`): the table's
-        // single 349 entry (index 34) lands once per cursor cycle — two
-        // cycles over the 146-statue count, 12 tiles of king statue; the
-        // 105 family carries the rest (the temple's statues share the id).
-        assert_eq!(count(349), 12, "the king statues ({})", count(349));
-        assert!(count(105) > 800, "the statue tiles ({})", count(105));
-        // The `StatuesWithTraps` arms ride dart traps 135 on red wires.
-        assert!(count(135) >= 8, "the statue traps ({})", count(135));
         // The chest tiles come in intact 2x2 quads — every chest anchor
         // (frame 0,0) has its three siblings.
         let mut anchors = 0;
