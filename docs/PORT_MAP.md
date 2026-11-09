@@ -240,6 +240,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Social/*` (Steam, Discord, etc.) | platform integrations; not needed for the core port |
 | `BCrypt*` | third-party password hashing |
 | `Achievements/`, `Initializers/` platform hooks | platform-specific |
+| `Achievements/Achievement.cs` + `AchievementManager.cs` + `GameContent/Achievements/*Condition.cs` + `Initializers/AchievementInitializer.cs` + `GameContent/UI/States/UIAchievementsMenu.cs` + `GameContent/UI/Elements/UIAchievementListItem.cs` | `crates/tr-app/src/achievements.rs` (the `Achievement`/`Condition`/`CondKind` runtime) + `achievements_data.rs` (the 137 `Row` table) + `ui/achievements.rs` (the menu + the list rows) + `assets.rs` (`ach_icons`/`ach_borders`/`ach_inner_top`/`ach_inner_bottom(_Large)`/`ach_categories`) | done (M6-ACH-2) |
 | `WorldGen.cs` starfall loop (`:71832-71856`, the `RollLuck(15)` target scan) + `Star.cs`'s dayRate drift (`:175-209`) | documented out of M1.4-BG-22 — no star system to scale; the BG-11/16 star field renders statically without the fall/starfall rolls |
 | `Main.cs` invasion delay walk (`:64366-64396`, the `invasionX`/`invasionWarn` dayRate scaling) | M4-EVENT-1 territory — documented out of M1.4-BG-22 |
 

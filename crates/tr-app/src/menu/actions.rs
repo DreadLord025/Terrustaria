@@ -23,6 +23,10 @@ pub enum Action {
     /// ORs into the No branch, `Main.cs:49435-49438`, `:49687-49690`,
     /// `:49464-49467`).
     ConfirmNo,
+    /// `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888` +
+    /// `Main.MenuUI.SetState(Main.AchievementsMenu)` — the port opens the
+    /// `UIAchievementsMenu` overlay over the live menu (M6-ACH-2).
+    Achievements,
 }
 
 /// One settings row. Every variant is a `Main`/`ItemSlot` field the screens toggle.
@@ -169,6 +173,9 @@ impl Menu {
                 // :49431-49439`, `:49681-49692`, `:49454-49467`).
                 Action::ConfirmYes => Action::ConfirmYes,
                 Action::ConfirmNo => Action::ConfirmNo,
+                // `Lang.menu[131]`'s row: the App opens the
+                // `UIAchievementsMenu` overlay (M6-ACH-2).
+                Action::Achievements => Action::Achievements,
             },
             Act::Toggle(toggle) => {
                 self.toggle(*toggle);

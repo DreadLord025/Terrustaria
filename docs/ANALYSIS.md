@@ -8456,6 +8456,54 @@ v5; moving them into the world file), the banner counts, `SavedOreTiers`
 the TownManager rooms, the weighted pressure plates (no port store) and the creative
 powers/research — each needs its own scope.
 
+## The achievements menu + the 137-row registry (M6-ACH-2)
+
+- **The registry is one initializer, three passes.** `AchievementInitializer.Load`
+  (`:13-441`) constructs 137 `Achievement` objects (`Achievement.Id` is the
+  construction counter), then `RegisterIconIndex` (`:445-582`) assigns the icon
+  frame each row draws from `Images/UI/Achievements` and
+  `RegisterAchievementCategory` (`:584-736`) the filter category. The port keeps
+  all three as one `Row` table (`achievements_data.rs`) so the icon order and the
+  `Id` order can never drift (they differ: `BENCHED` is constructed 2nd but
+  carries icon 88).
+- **One condition can list many ids.** `NPCKilledCondition.Create(13, 14, 15)`
+  is a *single* condition named `NPC_KILLED_13` that completes on **any** of the
+  three (`NPCKilledCondition.cs:20-30`, the `_listeners` fan-out). The port's
+  `CondKind` therefore splits into the single-id event variants and the `…Any`
+  multi-id stored variants, with `matches_kind` doing the membership test. The
+  pre-M6-ACH-2 registry modelled these as one condition per id (all-of), which
+  is not the vanilla behaviour.
+- **`ItemCraftCondition` reuses the `ITEM_PICKUP_` name prefix**
+  (`ItemCraftCondition.cs:8`), so a craft condition and a pickup condition in the
+  same achievement would collide on `Achievement._conditions`' dictionary key.
+  No shipped row does (each row's first ids differ), which the
+  `every_row_carries_a_distinct_condition_key` test pins.
+- **`STAR_DESTROYER` has no conditions at all** — vanilla's
+  `IsCompleted => _completedCount == _conditions.Count` is `0 == 0`, so the row
+  is always complete (it always sorts to the top of the list). The port keeps
+  that quirk.
+- **The category filter cannot name the `None` row.** Vanilla's `FilterList`
+  indexes `_categoryButtons[(int)achievement.Category]`, and
+  `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
+  touches (`AchievementCategory.None = -1`) — the C# would throw an
+  `ArgumentOutOfRangeException` on a filter click. The port keeps the secret row
+  visible in every filtered view instead of crashing (documented deviation).
+- **The vanilla save is not written.** `AchievementManager.Save` is
+  Rijndael-CBC+BSON under the "RELOGIC-TERRARIA" key (`:40-79`); the port keeps
+  its own `achievements.trdat` text format (the M6-ACH-1 deviation) — writing
+  the vanilla format would touch a real install's `achievements.dat`.
+- **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
+  `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
+  and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
+  else) drops the container to `Top 120 / Height -120`; the menu arm keeps
+  `220/-220`. The port picks the arm from whether the legacy menu is live.
+- **Deviations:** no word wrap (`CreateWrappedText`) — the row's description
+  shrinks to fit the text width instead of growing to a second line; the
+  progress bar is two flat quads rather than the `ColorBar` 9-slice + the
+  `MagicPixel` fill/blip splices; the scroll rides the mouse wheel instead of the
+  `UIScrollbar`; the gamepad link points (`SetupGamepadPoints`, ids 3000+) are
+  out of scope; there are no UI click sounds.
+
 ## The pillar worms (M4-EVENT-14)
 
 The Crawltipede (412/413/414) is the Solar tower's worm: the head

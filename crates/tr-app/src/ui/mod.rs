@@ -1,6 +1,7 @@
 //! In-game HUD: hotbar / open inventory, selected-item name, the item carried on the
 //! cursor, hearts and breath, and the boss bar.
 
+pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod emotes;
