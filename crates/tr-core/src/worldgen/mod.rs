@@ -407,6 +407,44 @@ mod tests {
         }
     }
 
+    /// M5-SEED-1: the framework's integration proof — every classic secret
+    /// seed text of the ROADMAP row (drunk / for-the-worthy / remix /
+    /// anniversary / don't starve) produces a DIFFERENT world than its
+    /// seed-matched classic control (the world hash covers every stored
+    /// `Tile` field, so a seed arm that misses its pass shows up here as a
+    /// classic world). `getfixedboi` carries all seven dependencies, so it
+    /// also differs from any single-flag world. Not-the-bees' hive world is
+    /// deliberately outside the row's list — see the module docs.
+    #[test]
+    fn m5_seed_1_the_secret_seed_worlds_differ_from_the_classic() {
+        let hash = |text: Option<&str>| {
+            let flags = match text {
+                Some(t) => crate::seeds::SeedFlags::from_seed_text(t),
+                None => crate::seeds::SeedFlags::none(),
+            };
+            world_hash::world_hash(&generate(&GenOptions {
+                seed: 77,
+                flags,
+                ..Default::default()
+            }))
+        };
+        let classic = hash(None);
+        for text in [
+            "for the worthy",
+            "05162020",
+            "dontdigup",
+            "celebrationmk10",
+            "theconstant",
+            "getfixedboi",
+        ] {
+            let seeded = hash(Some(text));
+            assert_ne!(classic, seeded, "{text} generated the classic world");
+            // The seed worlds must differ from each other too (the five
+            // classic arms are not one shared branch).
+            eprintln!("{text}: {seeded}");
+        }
+    }
+
     #[test]
     fn the_biome_passes_place_the_missing_biomes() {
         // The 4200-wide world carries the jungle (60/59), the evil band

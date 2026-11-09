@@ -1433,7 +1433,7 @@ fn step_plan_biome_spans(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -1442,10 +1442,20 @@ fn step_plan_biome_spans(
     // dungeon-side sign is fixed Right because the port's dungeon sits on
     // the right (`plan_spans`' `dungeon_x`), so the C# `Next(2)` side draw
     // (`:11348`) is not portable. The pass consumes `jungle_origin_x`
-    // without redrawing.
+    // without redrawing. M5-SEED-1: the two seed range arms — remix widens
+    // the band to `Next(20, 35)` (`WorldGen.cs:11247`) and the anniversary
+    // world to `Next(25, 35)` (`:11360-11370`, remix-disabled) — replace the
+    // range only, so a classic world's draw is unchanged.
     let jungle_origin_x = {
         let mut origin_rng = streams.pass_rng("Jungle");
-        let percent = origin_rng.range(15, 30);
+        let (lo, hi) = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+            (20, 35)
+        } else if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+            (25, 35)
+        } else {
+            (15, 30)
+        };
+        let percent = origin_rng.range(lo, hi);
         (world.width as f64 * (percent as f64 * 0.01)) as i32
     };
     gv.jungle_origin_x = jungle_origin_x;
@@ -2311,7 +2321,7 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2322,8 +2332,28 @@ fn step_world_tail(
     let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    world.spawn_x = map.spawn_center;
-    world.spawn_y = (map.heights[map.spawn_center as usize] - 6).max(1);
+    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
+    // centre of the map instead of the surface anchor — the first air cell
+    // scanning up from `maxTilesY - 10` at the centre column.
+    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        let x = world.width / 2;
+        let mut y = world.height - 10;
+        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
+            y -= 1;
+        }
+        Some((x, (y + 1).max(1)))
+    } else {
+        None
+    };
+    let (spawn_x, spawn_y) = match remix_spawn {
+        Some((x, y)) => (x, y),
+        None => (
+            map.spawn_center,
+            (map.heights[map.spawn_center as usize] - 6).max(1),
+        ),
+    };
+    world.spawn_x = spawn_x;
+    world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -2449,7 +2479,7 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_56_named_steps() {
+    fn the_executed_pipeline_is_59_named_steps() {
         let names = executed_pass_names();
         // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
@@ -2560,6 +2590,9 @@ mod tests {
     /// (vanilla `:12466` → `:12468`) and `dirt to mud` between
     /// `dirt-in-stone blobs` and `ash blobs` (the vanilla DirtToMud <
     /// Shinies and DirtToMud < Underworld relative pairs, research §5.3).
+    /// M5-SEED-1 inserts the Constant's `wavy caves` between them (the
+    /// vanilla Wavy Caves slot, `:12271`), so the dirt-to-mud adjacency is
+    /// +2 now — the relative pairs themselves still hold.
     #[test]
     fn test_DW_3_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
