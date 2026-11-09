@@ -13,7 +13,8 @@
 //! Scope (M2-MOUNT-1, framework + ground mounts): the 12 ground-mount rows
 //! (Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk, the three horses,
 //! PogoStick, WoFGoat, QueenSlime) and the state/equip core. Out of scope:
-//! the hover/flyer fatigue pool (M2-MOUNT-2), everything minecart
+//! the hover/flyer fatigue pool (M2-MOUNT-2) and the minecart rows
+//! (M2-MOUNT-3), everything minecart
 //! (`SetAsMinecart` `Mount.cs:2747-2799`, SuperCart — M2-MOUNT-3), the
 //! per-type abilities (`UpdateDrill`/`UseAbility` — M2-MOUNT-4), the net sync
 //! (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
@@ -1082,6 +1083,225 @@ const PIXIE: MountData = MountData {
     player_head_offset: -24,
     ..BASE
 };
+// -- Minecart rows (M2-MOUNT-3, `Mount.cs:912-1110` `SetAsMinecart`) -----------
+
+/// `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared cart body —
+/// `Minecart`/Sparks dust 213, heightBoost 10, flightTimeMax 0, fallDamage 1,
+/// run/dash 13, accel 0.04, jump 15/5.15, blockExtraJumps, 3 frames, the
+/// standing 1/12/0 + running 3/12/0 bands, only the front texture.
+const fn cart(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
+    MountData {
+        id,
+        buff,
+        minecart: true,
+        spawn_dust: 213,
+        height_boost: 10,
+        flight_time_max: 0,
+        fall_damage: 1.0,
+        run_speed: 13.0,
+        dash_speed: 13.0,
+        acceleration: 0.04,
+        jump_height: 15,
+        jump_speed: 5.15,
+        block_extra_jumps: true,
+        total_frames: 3,
+        standing: FrameSet {
+            start: 0,
+            count: 1,
+            delay: 12,
+            loops: false,
+        },
+        running: FrameSet {
+            start: 0,
+            count: 3,
+            delay: 12,
+            loops: false,
+        },
+        flying: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        in_air: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        idle: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        swim: FrameSet {
+            start: 0,
+            count: 0,
+            delay: 0,
+            loops: false,
+        },
+        front_sheet,
+        x_offset: 1,
+        y_offset: 13,
+        player_y_offsets: &[8; 3],
+        body_frame: 3,
+        player_head_offset: 14,
+        ..BASE
+    }
+}
+
+/// `SetAsMinecart` with the vertical offsets (`Mount.cs:1097` Fart, `:1105`
+/// Terra-Fart): `yOffset = 13 + verticalOffset` (= 3), the y-offsets
+/// `8 - verticalOffset + playerVerticalOffset` (= 0). The shared offsets are
+/// STATIC so the row stays a promoted `const` (`'static` borrow).
+const CART_VO_Y_OFFSETS: [i32; 3] = [0, 0, 0];
+
+const fn cart_vo(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
+    MountData {
+        y_offset: 13 - 10,
+        player_y_offsets: &CART_VO_Y_OFFSETS,
+        ..cart(id, buff, front_sheet)
+    }
+}
+
+/// `MountID.Minecart` — the base cart's row id (`MountID.cs`: `Minecart = 6`).
+pub(crate) const MOUNT_MINECART: i32 = 6;
+
+/// 6 Minecart (`Mount.cs:912-963`, hand-written; identical to the
+/// `SetAsMinecart` body): the base cart, buff 118, `Mount_Minecart`.
+const MINECART: MountData = MountData {
+    id: 6,
+    buff: 118,
+    ..cart(6, 118, "Mount_Minecart")
+};
+
+/// 11 MinecartMech (`Mount.cs:1483-1535`, hand-written): heightBoost 12,
+/// playerYOffsets 9, xOffset -1, yOffset 11, the mech body + glow textures.
+const MINECART_MECH: MountData = MountData {
+    id: 11,
+    buff: 166,
+    minecart: true,
+    spawn_dust: 0,
+    height_boost: 12,
+    flight_time_max: 0,
+    fall_damage: 1.0,
+    run_speed: 13.0,
+    dash_speed: 13.0,
+    acceleration: 0.04,
+    jump_height: 15,
+    jump_speed: 5.15,
+    block_extra_jumps: true,
+    total_frames: 3,
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 3,
+        delay: 12,
+        loops: false,
+    },
+    front_sheet: "MinecartMechMount",
+    front_extra_sheet: "MinecartMechMountGlow",
+    x_offset: -1,
+    y_offset: 11,
+    player_y_offsets: &[9; 3],
+    body_frame: 3,
+    player_head_offset: 14,
+    ..BASE
+};
+
+/// 13 MinecartWood (`Mount.cs:1591-1641`, hand-written): run/dash 10, accel
+/// 0.03, jump 12, buff 184, `MinecartWoodMount`.
+const MINECART_WOOD: MountData = MountData {
+    id: 13,
+    buff: 184,
+    minecart: true,
+    spawn_dust: 213,
+    height_boost: 10,
+    flight_time_max: 0,
+    fall_damage: 1.0,
+    run_speed: 10.0,
+    dash_speed: 10.0,
+    acceleration: 0.03,
+    jump_height: 12,
+    jump_speed: 5.15,
+    block_extra_jumps: true,
+    total_frames: 3,
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 3,
+        delay: 12,
+        loops: false,
+    },
+    front_sheet: "MinecartWoodMount",
+    x_offset: 1,
+    y_offset: 13,
+    player_y_offsets: &[8; 3],
+    body_frame: 3,
+    player_head_offset: 14,
+    ..BASE
+};
+
+/// 16 FishMinecart (`Mount.cs:1044-1086`, hand-written; identical to the
+/// `SetAsMinecart` body), buff 210, `FishMinecartMount`.
+const FISH_MINECART: MountData = MountData {
+    id: 16,
+    buff: 210,
+    ..cart(16, 210, "Mount_FishMinecart")
+};
+
+/// 39 DiggingMoleMinecart (`Mount.cs:1027-1042`): `SetAsMinecart` +
+/// yOffset −2, front-extra `Extra_165`, run/dash 6, accel 0.02.
+const MOLE_MINECART: MountData = MountData {
+    id: 39,
+    buff: 272,
+    ..MountData {
+        y_offset: 13 - 2,
+        front_extra_sheet: "Extra_165",
+        run_speed: 6.0,
+        dash_speed: 6.0,
+        acceleration: 0.02,
+        ..cart(39, 272, "Extra_155")
+    }
+};
+
+// The plain `SetAsMinecart` cosmetic rows (`Mount.cs:966-1024`).
+const DESERT_MINECART: MountData = cart(15, 208, "Mount_DesertMinecart");
+const BEE_MINECART: MountData = cart(18, 220, "Extra_108");
+const LADYBUG_MINECART: MountData = cart(19, 222, "Extra_109");
+const PIGRON_MINECART: MountData = cart(20, 224, "Extra_110");
+const SUNFLOWER_MINECART: MountData = cart(21, 226, "Extra_111");
+const HELL_MINECART: MountData = cart(22, 228, "Extra_112");
+const SHROOM_MINECART: MountData = MountData {
+    front_extra_sheet: "Extra_116",
+    ..cart(24, 231, "Extra_115")
+};
+const AMETHYST_MINECART: MountData = cart(25, 233, "Extra_117");
+const TOPAZ_MINECART: MountData = cart(26, 235, "Extra_118");
+const SAPPHIRE_MINECART: MountData = cart(27, 237, "Extra_119");
+const EMERALD_MINECART: MountData = cart(28, 239, "Extra_120");
+const RUBY_MINECART: MountData = cart(29, 241, "Extra_121");
+const DIAMOND_MINECART: MountData = cart(30, 243, "Extra_122");
+const AMBER_MINECART: MountData = cart(31, 245, "Extra_123");
+const BEETLE_MINECART: MountData = cart(32, 247, "Extra_124");
+const MEOWMERE_MINECART: MountData = cart(33, 249, "Extra_125");
+const PARTY_MINECART: MountData = cart(34, 251, "Extra_126");
+const PIRATE_MINECART: MountData = cart(35, 253, "Extra_127");
+const STEAMPUNK_MINECART: MountData = cart(36, 255, "Extra_128");
+const HELLWIZARD_MINECART: MountData = cart(38, 269, "Extra_150");
+const FART_MINECART: MountData = cart_vo(51, 338, "Extra_246");
+const TERRA_FART_MINECART: MountData = cart_vo(53, 346, "Extra_251");
 pub(crate) static MOUNTS: &[MountData] = &[
     RUDOLPH,        // 0
     BUNNY,          // 1
@@ -1106,6 +1326,33 @@ pub(crate) static MOUNTS: &[MountData] = &[
     LAVA_SHARK,     // 49
     BAT,            // 56
     PIXIE,          // 61
+    MINECART,          // 6
+    MINECART_MECH,     // 11
+    MINECART_WOOD,     // 13
+    FISH_MINECART,     // 16
+    DESERT_MINECART,   // 15
+    BEE_MINECART,      // 18
+    LADYBUG_MINECART,  // 19
+    PIGRON_MINECART,   // 20
+    SUNFLOWER_MINECART,// 21
+    HELL_MINECART,     // 22
+    SHROOM_MINECART,   // 24
+    AMETHYST_MINECART, // 25
+    TOPAZ_MINECART,    // 26
+    SAPPHIRE_MINECART, // 27
+    EMERALD_MINECART,  // 28
+    RUBY_MINECART,     // 29
+    DIAMOND_MINECART,  // 30
+    AMBER_MINECART,    // 31
+    BEETLE_MINECART,   // 32
+    MEOWMERE_MINECART, // 33
+    PARTY_MINECART,    // 34
+    PIRATE_MINECART,   // 35
+    STEAMPUNK_MINECART,// 36
+    HELLWIZARD_MINECART,// 38
+    MOLE_MINECART,     // 39
+    FART_MINECART,     // 51
+    TERRA_FART_MINECART,// 53
 ];
 
 /// The saddle items — `Item.SetDefaults`' `Item.mountType` assignments:
@@ -1116,7 +1363,7 @@ pub(crate) static MOUNTS: &[MountData] = &[
 /// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
 /// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
 /// Slime Mount Saddle 4981 -> 50.
-const MOUNT_ITEMS: [(u16, i32); 23] = [
+const MOUNT_ITEMS: [(u16, i32); 49] = [
     (1914, 0),
     (2428, 1),
     (2430, 3),
@@ -1146,6 +1393,39 @@ const MOUNT_ITEMS: [(u16, i32); 23] = [
     (4828, 49),
     (5597, 56),
     (5662, 61),
+    // The cart items (`Item.DefaultToMinecart`, `Item.cs:48395-48400` +
+    // the per-item call sites): 2343 -> 6, 3353 -> 11, 4066 -> 15,
+    // 4067 -> 16, 4426 -> 18, 4427 -> 19, 4428 -> 20, 4429 -> 21,
+    // 4443 -> 22, 4450 -> 24, 4451 -> 25, 4452 -> 26, 4453 -> 27,
+    // 4454 -> 28, 4455 -> 29, 4456 -> 30, 4467 -> 31, 4468 -> 32,
+    // 4469 -> 33, 4470 -> 34, 4471 -> 35, 4472 -> 36, 4745 -> 38,
+    // 4763 -> 39, 5125 -> 51, 5288 -> 53.
+    (2343, 6),
+    (3353, 11),
+    (4066, 15),
+    (4067, 16),
+    (4426, 18),
+    (4427, 19),
+    (4428, 20),
+    (4429, 21),
+    (4443, 22),
+    (4450, 24),
+    (4451, 25),
+    (4452, 26),
+    (4453, 27),
+    (4454, 28),
+    (4455, 29),
+    (4456, 30),
+    (4467, 31),
+    (4468, 32),
+    (4469, 33),
+    (4470, 34),
+    (4471, 35),
+    (4472, 36),
+    (4745, 38),
+    (4763, 39),
+    (5125, 51),
+    (5288, 53),
 ];
 
 /// `Item.mountType` for the ported rows.
@@ -1979,6 +2259,76 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_cart_rows_carry_the_setas_minecart_body() {
+        // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus
+        // the base cart's own fields.
+        let m = mount_data(6).expect("the base minecart row");
+        assert!(m.minecart);
+        assert_eq!(m.buff, 118);
+        assert_eq!(m.height_boost, 10);
+        assert_eq!(m.flight_time_max, 0);
+        assert_eq!(m.fall_damage, 1.0);
+        assert_eq!(m.run_speed, 13.0);
+        assert_eq!(m.acceleration, 0.04);
+        assert_eq!(m.jump_height, 15);
+        assert_eq!(m.jump_speed, 5.15);
+        assert!(m.block_extra_jumps);
+        assert_eq!(m.total_frames, 3);
+        assert_eq!(m.player_y_offsets.len(), m.total_frames as usize);
+        assert_eq!(m.standing.count, 1);
+        assert_eq!(m.running.count, 3);
+        assert_eq!(m.flying.count, 0);
+        assert_eq!(m.front_sheet, "Mount_Minecart");
+        // The cosmetic variants (`Mount.cs:966-1110`): all 27 cart rows.
+        for id in [6, 11, 13, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 38, 39, 51, 53] {
+            let row = mount_data(id).unwrap_or_else(|| panic!("cart row {id}"));
+            assert!(row.minecart, "row {id} is a cart");
+            assert_eq!(row.flight_time_max, 0, "row {id} cannot fly");
+            assert!(!row.can_use_wings, "row {id} suppresses wings");
+        }
+        // The mech/wood/mole overrides.
+        let mech = mount_data(11).unwrap();
+        assert_eq!(mech.height_boost, 12);
+        assert_eq!(mech.x_offset, -1);
+        assert_eq!((mech.y_offset, mech.player_head_offset), (11, 14));
+        let wood = mount_data(13).unwrap();
+        assert_eq!((wood.run_speed, wood.acceleration), (10.0, 0.03));
+        let mole = mount_data(39).unwrap();
+        assert_eq!((mole.run_speed, mole.acceleration), (6.0, 0.02));
+        assert_eq!(mole.y_offset, 13 - 2);
+        // The fart carts' vertical offsets (`Mount.cs:1097`, `:1105`).
+        let fart = mount_data(51).unwrap();
+        assert_eq!(fart.y_offset, 13 - 10);
+        assert_eq!(fart.player_y_offsets[0], 0);
+    }
+
+    #[test]
+    fn the_cart_items_summon_their_rows() {
+        // `Item.DefaultToMinecart` (`Item.cs:48395-48400` + the per-item sites).
+        let pairs = [
+            (2343, 6),
+            (3353, 11),
+            (4066, 15),
+            (4067, 16),
+            (4426, 18),
+            (4443, 22),
+            (4450, 24),
+            (4469, 33),
+            (4472, 36),
+            (4745, 38),
+            (4763, 39),
+            (5125, 51),
+            (5288, 53),
+        ];
+        for (item, id) in pairs {
+            assert_eq!(mount_type_of_item(item), Some(id), "item {item}");
+        }
+        // A saddle still routes to its own row (the shared table grew).
+        assert_eq!(mount_type_of_item(1914), Some(0));
+        assert_eq!(mount_type_of_buff(118), Some(6), "the cart buff maps back to its row");
+    }
+
     #[test]
     fn the_flyer_rows_answer_the_flight_gates() {
         // `Mount.CanFly` (`:2860-2879`): `flightTimeMax > 0`, the Dark Mage

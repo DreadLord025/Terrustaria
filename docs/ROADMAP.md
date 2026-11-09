@@ -917,7 +917,7 @@ falling blocks, M7-INTERACT-1 doors/beds/sitting, M5-SPREAD-1/2 (worldgen side).
   mount 44/45 charge thresholds differ from the others; `extraFall` per mount (3: +10,
   40: +20).
 
-**Tasks:** ✅ M2-MOUNT-1 mount framework + ground mounts, ✅ M2-MOUNT-2 hover/flyer mounts — done 2026-11-08 (`M2-MOUNT-2-hover-flyers`): the 11 flight rows (Pigron/Bee/UFO/Drill/CuteFishron/WitchBroom/PirateShip/DarkMageBook/LavaShark/Bat/Pixie) + their summon items + `Mount.Hover` (fuel/fatigue pool, the rise/fall caps, the fatigue-free set),
+**Tasks:** ✅ M2-MOUNT-1 mount framework + ground mounts, ✅ M2-MOUNT-2 hover/flyer mounts — done 2026-11-08, ✅ M2-MOUNT-3 minecart system — done 2026-11-09 (`M2-MOUNT-3-minecart`): the 27 `SetAsMinecart` rows + the hand-written cart specials (6/11/13/16/39), the 27 `DefaultToMinecart` items, the 23→50 render arrays + the cart sheet list, and the PHYS-7 bridge (`mount_cart`/`cart_dismount`/`respawn` through `MountState`, height restore on both ends) (`M2-MOUNT-2-hover-flyers`): the 11 flight rows (Pigron/Bee/UFO/Drill/CuteFishron/WitchBroom/PirateShip/DarkMageBook/LavaShark/Bat/Pixie) + their summon items + `Mount.Hover` (fuel/fatigue pool, the rise/fall caps, the fatigue-free set),
 M2-MOUNT-3 minecart system, M2-MOUNT-4 special-ability mounts.
 
 ## 23. UI framework, screens & HUD
