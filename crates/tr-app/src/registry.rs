@@ -32,12 +32,68 @@ pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 /// id-keyed correction precedent as `place_tile`'s 3813 arm (the M3-STORE-1
 /// Defender's Forge, `registry.rs:100-110`). A regen of `itemdata.rs` is
 /// the fix that retires this table (its own pass).
-static ITEM_CORRECTIONS: [ItemDef; 3] = [
+static ITEM_CORRECTIONS: [ItemDef; 4] = [
     // 3377 Amber Staff — `Item.cs:30858-30875`: magic, mana 9, damage 21,
     // useAnimation/useTime 28, shoot 597 (the amber gem bolt), shootSpeed 9,
     // knockBack 4.75, autoReuse, rare 1, 40x40, value 20000.
+    // 6171 Bejeweled Staff — `Item.cs:47550-47555`: a staff of the
+    // diamond bolt (`DefaultToStaff(126, 6f, 22, 15)` — shoot 126,
+    // shootSpeed 6, use 22/22, mana 15, magic, noMelee, autoReuse,
+    // 40x40, UseSound Item43), damage 27, knockBack 6, rare 5
+    // (`Pink5`), value `sellPrice(0, 1)` = 50000 (`:49422-49425`).
+    // The item the gem-staff shoot's AllGems gate reads
+    // (`Player.cs:49262`, `PackGemStaffFeatures`'s `HeldItem.type ==
+    // 6171`), so the branch is live in the game rather than a test
+    // shape.
     ItemDef {
-        id: 3377,
+        id: 6171,
+            name: "Bejeweled Staff",
+            max_stack: 1,
+            tile: None,
+            place_style: 0,
+            wall: None,
+            projectile: Some(126),
+            damage: 27,
+            rare: 5,
+            use_time: 22,
+            use_animation: 22,
+            use_style: 5,
+            hold_style: 0,
+            auto_reuse: true,
+            head_slot: -1,
+            body_slot: -1,
+            leg_slot: -1,
+            defense: 0,
+            class: DamageClass::Magic,
+            crit: 0,
+            value: 50000,
+            knock_back: 6.0,
+            mana: 15,
+            use_ammo: 0,
+            ammo: 0,
+            channel: false,
+            reuse_delay: 0,
+            consumable: false,
+            use_turn: false,
+            buff_type: 0,
+            buff_time: 0,
+            shoot_speed: 6.0,
+            width: 40,
+            height: 40,
+            material: false,
+            potion: false,
+            heal_life: 0,
+            heal_mana: 0,
+            scale: 1.0,
+            stack: 1,
+            bait: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
+            accessory: false,
+        },
+        ItemDef {
+            id: 3377,
         name: "Amber Staff",
         max_stack: 9999,
         tile: None,

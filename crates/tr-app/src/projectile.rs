@@ -2812,7 +2812,7 @@ impl Projectile {
 /// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
 /// `TileID.MagicalIceBlock` (`TileID.cs:883`) — the block the Ice Rod places
 /// from its own projectile (`Projectile.cs:25842`).
-const MAGICAL_ICE_BLOCK: u16 = 127;
+pub(crate) const MAGICAL_ICE_BLOCK: u16 = 127;
 /// `Main.windPhysicsStrength` (`Main.cs:66842`).
 const WIND_PHYSICS_STRENGTH: f32 = 0.1;
 
@@ -2933,7 +2933,7 @@ fn npc_center(n: &Npc) -> Vec2 {
 /// `:766`) — unlike [`can_hit`]'s flank test it carries no slope or halfBrick
 /// term, so this helper does not reuse [`full_solid`].
 #[allow(dead_code)] // Phase 4's later arms (aiStyle 129, the riders) call it
-fn can_hit_line(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
+pub(crate) fn can_hit_line(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
     // `:590-593`: the anchors — `(int)((X + (float)(Width / 2)) / 16f)`.
     let clx = |v: i32| v.clamp(1, world.width - 1);
     let cly = |v: i32| v.clamp(1, (world.height - 40).max(1));
