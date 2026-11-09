@@ -1004,7 +1004,7 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         herb_event: None,
         pile_event: None,
         ring: None,
-         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
+        // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
 
@@ -1512,7 +1512,7 @@ fn invalid_tile_for_piles(world: &World, x: i32, y: i32) -> bool {
 /// actuated. Unlike [`solid_tile`] solid-top tiles pass; an out-of-world cell
 /// is refused (the C# try/catch returns false) — the in-world null case does
 /// not exist in the port's dense array.
-fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };
@@ -2573,7 +2573,8 @@ pub fn interact_at(
             TileInteraction::Extractinator
         }
         crate::tileobject::Interaction::None => TileInteraction::None,
-        crate::tileobject::Interaction::Door => {            let mut drops = Vec::new();
+        crate::tileobject::Interaction::Door => {
+            let mut drops = Vec::new();
             if t.kind == 10 {
                 // The closed-door branch (`Player.cs:32835-32856`): open with
                 // the player's facing; while the tile is still a closed door,

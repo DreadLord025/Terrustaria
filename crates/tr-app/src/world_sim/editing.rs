@@ -1093,7 +1093,10 @@ fn drop_ctx(app: &App) -> DropCtx {
         max_tiles_y: app.world.height,
         hard_mode: app.world.hard_mode,
         expert_mode: false,
-        dont_starve: false,
+        // M5-SEED-1: `Main.dontStarveWorld` (`editing.rs`'s fruit/pot
+        // branches, `:1437-1474`) — the world's own flag replaces the
+        // hard-coded false.
+        dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,

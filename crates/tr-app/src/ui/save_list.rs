@@ -397,7 +397,7 @@ mod tests {
 
     /// Writes a real `.trwld` through the port's own saver.
     fn write_world(path: &Path, name: &str, width: i32, height: i32) {
-        tr_core::save::save(path, &World::new(name.into(), width, height)).unwrap();
+        tr_core::save::save(path, &World::new(name.into(), width, height), &[]).unwrap();
     }
 
     /// Hand-writes a `tr_core::save` header (magic, version, seed, name,

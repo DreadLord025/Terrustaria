@@ -17,7 +17,12 @@
 //!
 //! Deviations (ANALYSIS "Wiring engine (M7-WIRE-1)"): the wire colours live in
 //! a side table ([`WireState`]) instead of the C#'s `sTileHeader` bits — the
-//! port's packed `Tile` has no header space; device effects that spawn
+//! port's packed `Tile` has no header space, and the world save therefore
+//! carries them in a dedicated `.trwld` v6 section ([`WireState::write`] /
+//! [`WireState::read`]) whose layout is this port's own: the C# spreads the
+//! four colours as per-tile header bits inside the tile stream
+//! (`Tile.cs:623-657`) and has no section of its own to round-trip — the
+//! deviation is recorded in docs/ANALYSIS.md; device effects that spawn
 //! entities (the traps, cannons, fireworks and the mine/geyser family) are
 //! passthroughs for later M7-WIRE-2 phases — the statue family (cases
 //! 105/349/531) has landed; the wire pulse animation (case 419's frameX
@@ -123,6 +128,67 @@ impl WireState {
         };
         set.iter()
             .any(|&(x, y)| x >= left && x < left + width && y >= top && y < top + height)
+    }
+
+    /// The canonical colour order — [`WireColor`]'s declaration order
+    /// (Red = 1, Blue = 2, Green = 3, Yellow = 4), which is also `TripWire`'s
+    /// four sequential pass order (`Wiring.cs:525`). Keep the save layout, the
+    /// match arms and any per-colour iteration on this order.
+    const COLORS: [WireColor; 4] = [
+        WireColor::Red,
+        WireColor::Blue,
+        WireColor::Green,
+        WireColor::Yellow,
+    ];
+
+    /// The save shape: per colour ([`Self::COLORS`]'s canonical order) a u32
+    /// cell count + the (i32 x, i32 y) pairs SORTED by (x, y) — `HashSet`
+    /// iteration order is unstable, the world save must be byte-deterministic.
+    ///
+    /// This layout is the port's native `.trwld` v6 shape: the C# has no wire
+    /// section at all, because the four colours are per-tile `sTileHeader` bits
+    /// packed into the tile stream (`Tile.cs:623-657`) — the port's side table
+    /// needs its own section. Recorded in docs/ANALYSIS.md.
+    pub fn write(&self, w: &mut crate::binio::Writer) {
+        for color in Self::COLORS {
+            let set = match color {
+                WireColor::Red => &self.red,
+                WireColor::Blue => &self.blue,
+                WireColor::Green => &self.green,
+                WireColor::Yellow => &self.yellow,
+            };
+            let mut cells: Vec<(i32, i32)> = set.iter().copied().collect();
+            // (x, y) ascending: `HashSet` order is unspecified, the file bytes
+            // must not be.
+            cells.sort_unstable();
+            w.u32(cells.len() as u32);
+            for (x, y) in cells {
+                w.i32(x);
+                w.i32(y);
+            }
+        }
+    }
+
+    /// The inverse; a truncated stream returns `None`. Duplicate cells collapse
+    /// into the set exactly as [`Self::set`] would, and a count larger than the
+    /// stream can supply is a short read, not a hang.
+    pub fn read(r: &mut crate::binio::Reader<'_>) -> Option<Self> {
+        let mut state = Self::default();
+        for color in Self::COLORS {
+            let count = r.u32()?;
+            let set = match color {
+                WireColor::Red => &mut state.red,
+                WireColor::Blue => &mut state.blue,
+                WireColor::Green => &mut state.green,
+                WireColor::Yellow => &mut state.yellow,
+            };
+            for _ in 0..count {
+                let x = r.i32()?;
+                let y = r.i32()?;
+                set.insert((x, y));
+            }
+        }
+        Some(state)
     }
 }
 
@@ -2235,6 +2301,7 @@ fn dx_y_to_dir(dx: i32, dy: i32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::binio::{Reader, Writer};
     use crate::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> World {
@@ -2588,6 +2655,134 @@ mod tests {
         let mut wiring = Wiring::new();
         wiring.hit_switch(&mut w, 10, 10);
         assert_eq!(w.tile(13, 12).unwrap().kind, 421);
+    }
+
+    /// The `.trwld` v6 wire section bytes for `state` — the save-side half the
+    /// tests below drive through [`WireState::write`]/[`WireState::read`].
+    fn wire_bytes(state: &WireState) -> Vec<u8> {
+        let mut w = Writer::new();
+        state.write(&mut w);
+        w.into_inner()
+    }
+
+    /// A test-side mirror of [`WireState::read`] that keeps the cells in
+    /// `Vec`s, so the order *inside the buffer* stays observable (a `HashSet`
+    /// would hide it).
+    fn parse_sections(buf: &[u8]) -> Option<[Vec<(i32, i32)>; 4]> {
+        let mut r = Reader::new(buf);
+        let mut out: [Vec<(i32, i32)>; 4] = std::array::from_fn(|_| Vec::new());
+        for slot in &mut out {
+            let count = r.u32()?;
+            for _ in 0..count {
+                let x = r.i32()?;
+                let y = r.i32()?;
+                slot.push((x, y));
+            }
+        }
+        Some(out)
+    }
+
+    #[test]
+    fn the_wire_section_round_trips_every_colour() {
+        // The save shape, per colour in `WireColor`'s declaration order: a u32
+        // count + the (x, y) pairs. The origin and the negatives are the cells
+        // that matter — tile coords are signed and the section must not fold
+        // them into unsigned.
+        let mut wires = WireState::default();
+        // Red: a duplicated set (idempotent), an overwrite (set then clear) and
+        // a negative cell.
+        wires.set(0, 0, WireColor::Red, true);
+        wires.set(0, 0, WireColor::Red, true);
+        wires.set(5, 7, WireColor::Red, true);
+        wires.set(5, 7, WireColor::Red, true);
+        wires.set(-3, 12, WireColor::Red, true);
+        wires.set(9, 9, WireColor::Red, true);
+        // the overwrite: set then clear, so the cell is not saved
+        wires.set(9, 9, WireColor::Red, false);
+        // Blue: the origin again — one cell in two colours stays two entries,
+        // exactly as the C#'s per-tile `sTileHeader` bits do (`Tile.cs:623-657`).
+        wires.set(0, 0, WireColor::Blue, true);
+        wires.set(-1, -1, WireColor::Blue, true);
+        // Green and Yellow carry only negatives, so no colour can borrow
+        // another's cells.
+        wires.set(-100, -5, WireColor::Green, true);
+        wires.set(7, -7, WireColor::Yellow, true);
+        let buf = wire_bytes(&wires);
+        // 4 u32 counts + 7 cells × (i32, i32) — 72 bytes.
+        assert_eq!(buf.len(), 4 * 4 + 7 * 8);
+
+        let restored = WireState::read(&mut Reader::new(&buf)).expect("the section parses");
+        assert_eq!(restored.red, wires.red);
+        assert_eq!(restored.blue, wires.blue);
+        assert_eq!(restored.green, wires.green);
+        assert_eq!(restored.yellow, wires.yellow);
+        assert!(!restored.get(9, 9, WireColor::Red), "the overwrite is gone");
+        assert!(restored.get(0, 0, WireColor::Red), "the origin survives");
+        assert!(
+            restored.get(0, 0, WireColor::Blue),
+            "so does the second colour"
+        );
+        assert!(restored.get(-100, -5, WireColor::Green));
+        assert!(restored.get(7, -7, WireColor::Yellow));
+    }
+
+    #[test]
+    fn the_wire_section_is_byte_deterministic() {
+        // `HashSet` iteration order is unspecified and salted per process, so
+        // the same cell content written twice must give the same bytes — the
+        // world save stays byte-identical across runs (the SHA256 guarantee the
+        // visual diffs rely on). Each colour is therefore sorted by (x, y).
+        let mut a = WireState::default();
+        for (x, y) in [(3, 1), (-2, 5), (0, 0), (3, -1), (-2, -5)] {
+            a.set(x, y, WireColor::Red, true);
+        }
+        a.set(4, 4, WireColor::Blue, true);
+        a.set(-4, 4, WireColor::Green, true);
+        a.set(4, -4, WireColor::Yellow, true);
+        let bytes_a = wire_bytes(&a);
+        assert_eq!(bytes_a, wire_bytes(&a), "the same state, twice");
+
+        // The same content, inserted in the opposite order.
+        let mut b = WireState::default();
+        for (x, y) in [(-2, -5), (3, -1), (0, 0), (-2, 5), (3, 1)] {
+            b.set(x, y, WireColor::Red, true);
+        }
+        b.set(4, -4, WireColor::Yellow, true);
+        b.set(-4, 4, WireColor::Green, true);
+        b.set(4, 4, WireColor::Blue, true);
+        assert_eq!(bytes_a, wire_bytes(&b), "content, not insertion order");
+
+        // The in-file order is (x, y) ascending, and the sections stay in
+        // `WireColor`'s declaration order (Red, Blue, Green, Yellow).
+        let [red, blue, green, yellow] = parse_sections(&bytes_a).expect("the section parses");
+        assert_eq!(red, vec![(-2, -5), (-2, 5), (0, 0), (3, -1), (3, 1)]);
+        assert_eq!(blue, vec![(4, 4)]);
+        assert_eq!(green, vec![(-4, 4)]);
+        assert_eq!(yellow, vec![(4, -4)]);
+    }
+
+    #[test]
+    fn a_truncated_wire_section_reads_none() {
+        let mut wires = WireState::default();
+        for (x, y) in [(1, 2), (3, 4)] {
+            wires.set(x, y, WireColor::Red, true);
+        }
+        wires.set(-5, -6, WireColor::Blue, true);
+        wires.set(7, 8, WireColor::Green, true);
+        wires.set(-9, -10, WireColor::Yellow, true);
+        let buf = wire_bytes(&wires);
+
+        // Every colour carries cells, so the whole section is needed: the full
+        // buffer parses and every shorter prefix is a short read — `Reader`
+        // holds its cursor on an under-run and `read` returns `None` instead of
+        // handing back half a wire table.
+        assert!(WireState::read(&mut Reader::new(&buf)).is_some());
+        for cut in 0..buf.len() {
+            assert!(
+                WireState::read(&mut Reader::new(&buf[..cut])).is_none(),
+                "a {cut}-byte prefix must not parse"
+            );
+        }
     }
 }
 

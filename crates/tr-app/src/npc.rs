@@ -208,6 +208,82 @@ pub enum NpcKind {
     /// `NPCID.VortexSoldier` (429) — the vortex soldier (`NPC.cs`:
     /// 22×56, aiStyle 3, dmg 90, def 34).
     VortexSoldier,
+    /// `NPCID.VortexHunter` (426) — the vortex pillar's shooter
+    /// (`NPC.cs:15214-15247`: 50×62, aiStyle 3, 1000 HP, dmg 100, def 44,
+    /// kb 0.3; the 581 battery and the 4/0.6/0.95 walk).
+    VortexHunter,
+    /// `NPCID.VortexAlien` (427) — the hive's diver (`NPC.cs`:
+    /// 15226-15235: 40×28, aiStyle 3, 500 HP, dmg 75, def 20, kb 0.5; the
+    /// 0.015/0.15 dive, the leap and the 1200-tick `Transform(426)`).
+    VortexAlien,
+    /// `NPCID.VortexHeadcrab` (428) — the crawler (`NPC.cs:15215-15222`:
+    /// 24×26, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default);
+    /// the rolling rotation and the 300-tick `Transform(427)`).
+    VortexHeadcrab,
+    /// `NPCID.NebulaFloater` (420) — the nebula pillar's floater
+    /// (`NPC.cs:15157-15171`: 40×40, aiStyle 97, 1300 HP, dmg 75, def 20,
+    /// kb 0.5; the 574 emission + the 480-tick teleport cycle).
+    NebulaFloater,
+    /// `NPCID.BrainSuckler` (421) — the nebula leech (`NPC.cs:15130-15143`:
+    /// 44×44, aiStyle 85, 330 HP, dmg 70, def 34, kb 0.5; the aiStyle-85
+    /// hoverer with the <40-px attachment onto the player's Top).
+    BrainSuckler,
+    /// `NPCID.Predictor` (424) — the nebula pillar's shooter (`NPC.cs`:
+    /// 15144-15156: 22×56, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the
+    /// 573 fan).
+    Predictor,
+    /// `NPCID.StardustSpiderBig` (409) — the stardust pillar's spawner
+    /// (`NPC.cs:15061-15075`: 34×42, aiStyle 3, 800 HP, dmg 70, def 40,
+    /// kb 0.4; its 60-tick cycle spawns the 410 rather than firing).
+    StardustSpiderBig,
+    /// `NPCID.StardustSpiderSmall` (410) — the kamikaze spider
+    /// (`NPC.cs:15074-15087`: 22×22, aiStyle 26, 200 HP, dmg 80, def 10,
+    /// kb 0.3; the 240-tick burst then self-destruct).
+    StardustSpiderSmall,
+    /// `NPCID.StardustSoldier` (411) — the stardust pillar's shooter
+    /// (`NPC.cs:15049-15059`: 22×56, aiStyle 3, 700 HP, dmg 80, def 34,
+    /// kb 0.4; the 330-tick cycle's 537).
+    StardustSoldier,
+    /// `NPCID.SolarDrakomire` (415) — the solar pillar's mount
+    /// (`NPC.cs:15319-15329`: 60×40, aiStyle 3, 800 HP, dmg 55, def 32,
+    /// kb 0.2; the 4/0.1/0.95 jump assist, hidden under a rider).
+    SolarDrakomire,
+    /// `NPCID.SolarDrakomireRider` (416) — the rider (`NPC.cs:15331-15342`:
+    /// 18×40, aiStyle 75, 800 HP, dmg 80, def 28, kb 0.2; it spawns and
+    /// rides the 415 mount, then `Transform(518)`s when it dies).
+    SolarDrakomireRider,
+    /// `NPCID.SolarSroller` (417) — the solar pillar's roller-at (`NPC.cs`
+    /// `:15355-15367`: 46×52, aiStyle 39, 700 HP, dmg 80, def 34, kb 0;
+    /// the ball state's ×1.8 damage and the doubled defense).
+    SolarSroller,
+    /// `NPCID.SolarCorite` (418) — the solar pillar's charger
+    /// (`NPC.cs:15368-15380`: 38×38, aiStyle 74, 600 HP, dmg 70, def 26,
+    /// kb 0.2; the approach/dash/implosion cycle).
+    SolarCorite,
+    /// `NPCID.SolarSolenian` (419) — the solar pillar's walker
+    /// (`NPC.cs:15382-15392`: 22×56, aiStyle 3, 800 HP, dmg 90, def 30,
+    /// kb 0.4; the 6/0.15/0.85 walk).
+    SolarSelenian,
+    /// `NPCID.SolarCrawltipedeHead` (412) — the solar tower's crawltipede
+    /// head (`NPC.cs:15265-15281`: 20×20, aiStyle 6, 10000 HP, dmg 120,
+    /// def 1000, kb 0, dontTakeDamage; the 30-segment chain).
+    SolarCrawltipedeHead,
+    /// `NPCID.SolarCrawltipedeBody` (413) — the chain's bodies (`NPC.cs`
+    /// `:15283-15299`: 20×20, aiStyle 6, 10000 HP, dmg 80, def 1000, kb
+    /// 0, dontCountMe/dontTakeDamage).
+    SolarCrawltipedeBody,
+    /// `NPCID.SolarCrawltipedeTail` (414) — the chain's tail (`NPC.cs`:
+    /// 15301-15317: 20×20, aiStyle 6, 10000 HP, dmg 50, def 0, kb 0,
+    /// dontCountMe, `takenDamageMultiplier = 10`).
+    SolarCrawltipedeTail,
+    /// `NPCID.StardustWormHead` (402) — the stardust tower's worm head
+    /// (`NPC.cs:15004-15021`: 32×32, aiStyle 6, 1200 HP, dmg 80, def 10,
+    /// kb 0, noGravity/noTileCollide, netAlways; the mark fire).
+    StardustWormHead,
+    /// `NPCID.SolarSpearman` (518) — the rider's unmounted form
+    /// (`NPC.cs:15343-15353`: 22×56, aiStyle 3, 1000 HP, dmg 80, def 28,
+    /// kb 0.4; the 5/0.1/0.95 walk).
+    SolarSpearman,
     /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
     /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
@@ -710,11 +786,53 @@ impl NpcKind {
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
             NpcKind::SolarTower => 115,
+            NpcKind::VortexHunter => 127,
+            NpcKind::VortexAlien => 128,
+            NpcKind::VortexHeadcrab => 129,
+            NpcKind::StardustSpiderBig => 133,
+            NpcKind::StardustSpiderSmall => 134,
+            NpcKind::StardustSoldier => 135,
+            NpcKind::SolarDrakomire => 136,
+            NpcKind::SolarDrakomireRider => 137,
+            NpcKind::SolarSroller => 138,
+            NpcKind::SolarCorite => 139,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarCrawltipedeHead => 141,
+            NpcKind::SolarCrawltipedeBody => 142,
+            NpcKind::SolarCrawltipedeTail => 143,
+            NpcKind::StardustWormHead => 144,
+            NpcKind::SolarSpearman => 145,
+            NpcKind::SolarSelenian => 140,
+            NpcKind::NebulaFloater => 130,
+            NpcKind::BrainSuckler => 131,
+            NpcKind::Predictor => 132,
             NpcKind::MoonLordHead => 122,
             NpcKind::MoonLordHand => 123,
             NpcKind::MoonLordCore => 124,
             NpcKind::MoonLordFreeEye => 125,
             NpcKind::MoonLordLeechBlob => 126,
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
@@ -776,6 +894,36 @@ impl NpcKind {
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
+NpcKind::StardustSpiderBig => 133,
+NpcKind::StardustSpiderSmall => 134,
+NpcKind::StardustSoldier => 135,
+NpcKind::SolarDrakomire => 136,
+NpcKind::SolarDrakomireRider => 137,
+NpcKind::SolarSroller => 138,
+NpcKind::SolarCorite => 139,
+NpcKind::SolarSelenian => 140,
+            NpcKind::StardustSpiderBig => 409,
+            NpcKind::StardustSpiderSmall => 410,
+            NpcKind::StardustSoldier => 411,
+            NpcKind::SolarCrawltipedeHead => 412,
+            NpcKind::SolarCrawltipedeBody => 413,
+            NpcKind::SolarCrawltipedeTail => 414,
+            NpcKind::StardustWormHead => 402,
+            NpcKind::SolarSpearman => 518,
+            NpcKind::SolarDrakomire => 415,
+            NpcKind::SolarDrakomireRider => 416,
+            NpcKind::SolarSroller => 417,
+            NpcKind::SolarCorite => 418,
+            NpcKind::SolarSelenian => 419,
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
             NpcKind::MoonLordHead => 396,
             NpcKind::MoonLordHand => 397,
             NpcKind::MoonLordCore => 398,
@@ -856,6 +1004,45 @@ impl NpcKind {
             118 => NpcKind::NebulaBeast,
             119 => NpcKind::VortexRifleman,
             120 => NpcKind::VortexSoldier,
+            127 => NpcKind::VortexHunter,
+            128 => NpcKind::VortexAlien,
+            129 => NpcKind::VortexHeadcrab,
+            133 => NpcKind::StardustSpiderBig,
+            134 => NpcKind::StardustSpiderSmall,
+            135 => NpcKind::StardustSoldier,
+            136 => NpcKind::SolarDrakomire,
+            137 => NpcKind::SolarDrakomireRider,
+            138 => NpcKind::SolarSroller,
+            139 => NpcKind::SolarCorite,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            141 => NpcKind::SolarCrawltipedeHead,
+            142 => NpcKind::SolarCrawltipedeBody,
+            143 => NpcKind::SolarCrawltipedeTail,
+            144 => NpcKind::StardustWormHead,
+            145 => NpcKind::SolarSpearman,
+            140 => NpcKind::SolarSelenian,
+            130 => NpcKind::NebulaFloater,
+            131 => NpcKind::BrainSuckler,
+            132 => NpcKind::Predictor,
             122 => NpcKind::MoonLordHead,
             123 => NpcKind::MoonLordHand,
             124 => NpcKind::MoonLordCore,
@@ -963,6 +1150,9 @@ impl NpcKind {
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeTail
         )
     }
 
@@ -975,6 +1165,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
         )
     }
 
@@ -989,6 +1180,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeBody
         )
     }
 
@@ -1007,6 +1199,12 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
             NpcKind::LeechBody => NpcKind::LeechBody,
+            // The crawltipede chain (`:51375-51381`'s per-index kind):
+            // the bodies self-chain and the tail closes it.
+            NpcKind::SolarCrawltipedeHead => NpcKind::SolarCrawltipedeBody,
+            NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail => {
+                NpcKind::SolarCrawltipedeTail
+            }
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -1015,6 +1213,12 @@ impl NpcKind {
     /// steering accel) per family (`:51670-51706`).
     pub fn worm_tunables(self) -> (f32, f32) {
         match self {
+            // The stardust worm head's 9/0.3 (`:51740-51743`) and the
+            // crawltipede chain's 10/0.3 (`:51779-51880`).
+            NpcKind::StardustWormHead => (9.0, 0.3),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (10.0, 0.3),
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
@@ -1116,6 +1320,45 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => (130.0, 270.0),
+            NpcKind::VortexHunter => (50.0, 62.0),
+            NpcKind::VortexAlien => (40.0, 28.0),
+            NpcKind::VortexHeadcrab => (24.0, 26.0),
+            NpcKind::StardustSpiderBig => (34.0, 42.0),
+            NpcKind::StardustSpiderSmall => (22.0, 22.0),
+            NpcKind::StardustSoldier => (22.0, 56.0),
+            NpcKind::SolarDrakomire => (60.0, 40.0),
+            NpcKind::SolarDrakomireRider => (18.0, 40.0),
+            NpcKind::SolarSroller => (46.0, 52.0),
+            NpcKind::SolarCorite => (38.0, 38.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => (20.0, 20.0),
+            NpcKind::StardustWormHead => (32.0, 32.0),
+            NpcKind::SolarSpearman => (22.0, 56.0),
+            NpcKind::SolarSelenian => (22.0, 56.0),
+            NpcKind::NebulaFloater => (40.0, 40.0),
+            NpcKind::BrainSuckler => (44.0, 44.0),
+            NpcKind::Predictor => (22.0, 56.0),
             NpcKind::MoonLordHead => (38.0, 56.0),
             NpcKind::MoonLordHand | NpcKind::MoonLordCore => (46.0, 66.0),
             NpcKind::MoonLordFreeEye => (60.0, 60.0),
@@ -1450,6 +1693,45 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20000,
+            NpcKind::VortexHunter => 1000,
+            NpcKind::VortexAlien => 500,
+            NpcKind::VortexHeadcrab => 200,
+            NpcKind::StardustSpiderBig => 800,
+            NpcKind::StardustSpiderSmall => 200,
+            NpcKind::StardustSoldier => 700,
+            NpcKind::SolarDrakomire => 800,
+            NpcKind::SolarDrakomireRider => 800,
+            NpcKind::SolarSroller => 700,
+            NpcKind::SolarCorite => 600,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 10000,
+            NpcKind::StardustWormHead => 1200,
+            NpcKind::SolarSpearman => 1000,
+            NpcKind::SolarSelenian => 800,
+            NpcKind::NebulaFloater => 1300,
+            NpcKind::BrainSuckler => 330,
+            NpcKind::Predictor => 700,
             NpcKind::MoonLordHead => 45000,
             NpcKind::MoonLordHand => 25000,
             NpcKind::MoonLordCore => 50000,
@@ -1615,7 +1897,47 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 0,
-            // The shards' damage: 70/70/120/90/100/90.
+            // The vortex trio's damage: the hunter's 100, the alien's 75,
+            // the headcrab's 50.
+            NpcKind::StardustSpiderBig => 70,
+            NpcKind::StardustSpiderSmall => 80,
+            NpcKind::StardustSoldier => 80,
+            NpcKind::SolarDrakomire => 55,
+            NpcKind::SolarDrakomireRider => 80,
+            NpcKind::SolarSroller => 80,
+            NpcKind::SolarCorite => 70,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarCrawltipedeHead => 120,
+            NpcKind::SolarCrawltipedeBody => 80,
+            NpcKind::SolarCrawltipedeTail => 50,
+            NpcKind::StardustWormHead => 80,
+            NpcKind::SolarSpearman => 80,
+            NpcKind::SolarSelenian => 90,
+            NpcKind::NebulaFloater => 75,
+            NpcKind::BrainSuckler => 70,
+            NpcKind::Predictor => 80,
+            NpcKind::VortexHunter => 100,
+            NpcKind::VortexAlien => 75,
+            NpcKind::VortexHeadcrab => 50,
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
             | NpcKind::MoonLordCore => 0,
@@ -1910,6 +2232,18 @@ pub struct Npc {
     /// The Moon Leech request (`AI_079`'s `:42303-42318` / the leech
     /// blob's `:36658-36690`): a 456 leeched player spawns the 401 clot,
     /// which then drains 1000 hp from the head -> the core -> the hands.
+    /// The Brain Suckler's attached obstruct request (`AI()`'s aiStyle-85
+    /// phase 5, `NPC.cs:37159`'s `AddBuff(163, 59)`): the sim applies the
+    /// Obstructed buff to the player.
+    /// The SolarCorite's implosion request (`AI()`'s aiStyle-74 arm,
+    /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
+    /// damage scaled by difficulty).
+    pub wants_blast: bool,
+    /// The StardustWormHead's mark request (`AI_006`'s 402 arm,
+    /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
+    /// resolves the 405/402/407 pick (the 540 hop unmodelled).
+    pub wants_stardust_mark: bool,
+    pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
 }
@@ -2330,6 +2664,9 @@ impl Npc {
             wants_dutchman_drop: None,
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
+            wants_blast: false,
+        wants_stardust_mark: false,
+            wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
         }
@@ -2441,8 +2778,59 @@ impl Npc {
             NpcKind::StardustCellSmall => 0.4,
             NpcKind::StardustJellyfishBig => 0.03,
             NpcKind::NebulaBeast => 0.2,
+            // The vortex trio's kb: 0.3/0.5/1.0 (`NPC.cs`'s rows; the headcrab
+            // keeps the class default 1.0).
+            NpcKind::StardustSpiderBig => 0.4,
+            NpcKind::StardustSpiderSmall => 0.3,
+            NpcKind::StardustSoldier => 0.4,
+            NpcKind::SolarDrakomire => 0.2,
+            NpcKind::SolarDrakomireRider => 0.2,
+            NpcKind::SolarSroller => 0.0,
+            NpcKind::SolarCorite => 0.2,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSpearman => 0.4,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
+            NpcKind::SolarSelenian => 0.4,
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
+            NpcKind::VortexHunter => 0.3,
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
+            NpcKind::VortexAlien => 0.5,
+            NpcKind::VortexHeadcrab => 1.0,
             NpcKind::VortexRifleman => 0.4,
             NpcKind::VortexSoldier => 0.6,
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
             // The tavernkeeper 0.5, the crystal 0.
             NpcKind::DD2Bartender => 0.5,
             NpcKind::DD2EterniaCrystal => 0.0,
@@ -2535,6 +2923,12 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
+            // The pillar worms: kb 0 across the chain (`NPC.cs`'s rows
+            // 412-414) and the stardust worm head.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => 0.0,
+            NpcKind::StardustWormHead => 0.0,
             _ => 0.4,
         }
     }
@@ -2626,6 +3020,48 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
+            NpcKind::StardustSpiderBig => 40,
+            NpcKind::StardustSpiderSmall => 10,
+            NpcKind::StardustSoldier => 34,
+            NpcKind::SolarDrakomire => 32,
+            NpcKind::SolarDrakomireRider => 28,
+            NpcKind::SolarSroller => 34,
+            NpcKind::SolarCorite => 26,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarCrawltipedeHead => 1000,
+            NpcKind::SolarCrawltipedeBody => 1000,
+            NpcKind::SolarCrawltipedeTail => 0,
+            NpcKind::StardustWormHead => 10,
+            NpcKind::SolarSpearman => 28,
+            NpcKind::SolarSelenian => 30,
+            NpcKind::NebulaFloater => 20,
+            NpcKind::BrainSuckler => 34,
+            NpcKind::Predictor => 30,
+            NpcKind::VortexHunter => 44,
+            NpcKind::VortexAlien => 20,
+            NpcKind::VortexHeadcrab => 6,
+            NpcKind::NebulaFloater => 20,
+            NpcKind::BrainSuckler => 34,
+            NpcKind::Predictor => 30,
             NpcKind::MoonLordHead => 50,
             NpcKind::MoonLordHand => 40,
             NpcKind::MoonLordCore => 70,
@@ -2738,6 +3174,50 @@ impl Npc {
         match self.kind {
             // `NPC.cs:14130`: the core alone carries a value (1 platinum
             // = 1000000 copper); the parts are value 0.
+            NpcKind::VortexHunter => 1200.0,
+            NpcKind::VortexAlien => 400.0,
+            NpcKind::VortexHeadcrab => 100.0,
+            NpcKind::StardustSpiderBig => 900.0,
+            NpcKind::StardustSpiderSmall => 30.0,
+            NpcKind::StardustSoldier => 900.0,
+            NpcKind::SolarDrakomire => 700.0,
+            NpcKind::SolarDrakomireRider => 700.0,
+            NpcKind::SolarSroller => 700.0,
+            NpcKind::SolarCorite => 800.0,
+            NpcKind::SolarSelenian => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::SolarCrawltipedeHead => 700.0,
+            NpcKind::SolarCrawltipedeBody => 30.0,
+            NpcKind::SolarCrawltipedeTail => 30.0,
+            NpcKind::StardustWormHead => 700.0,
+            NpcKind::SolarSpearman => 900.0,
+            NpcKind::NebulaFloater => 400.0,
+            NpcKind::BrainSuckler => 60.0,
+            NpcKind::Predictor => 900.0,
             NpcKind::MoonLordCore => 1_000_000.0,
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -3140,6 +3620,54 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The crawltipede chain rides the worm pass entirely.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail => {}
+            // The pillar worms: the crawltipede chain rides the worm pass
+            // (aiStyle 6) and the stardust worm head's own machine; the
+            // spearman rides the walker.
+            NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
+            NpcKind::SolarSpearman => {
+                let (pcx, pcy) = player.center();
+                crate::npc_ai::walker_step(
+                    self,
+                    world,
+                    pcx,
+                    pcy,
+                    crate::npc_ai::WalkerParams {
+                        speed: 5.0,
+                        jump: -6.2,
+                        aggro_x: 80.0 * TILE_PX,
+                        aggro_y: 40.0 * TILE_PX,
+                    },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            // The stardust/solar tower mobs: the spider pair, the soldier,
+            // the drakomire mount + its rider, the sroller, the corite and
+            // the selenian.
+            NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
+            NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
+            NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
+            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
+            NpcKind::SolarDrakomireRider => self.update_solar_drakomire_rider(world, player),
+            NpcKind::SolarSroller => self.update_solar_sroller(world, player),
+            NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
+            NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
+            // The nebula trio: the floater's aiStyle-97 teleport cycle, the
+            // suckler's aiStyle-85 hover + attachment, the predictor's
+            // 573 fan.
+            NpcKind::NebulaFloater => self.update_nebula_floater(world, player, rng),
+            NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+            NpcKind::Predictor => self.update_nebula_predictor(world, player, rng),
+            // The vortex trio: the hunter's shooter arm, the alien's dive
+            // + the `Transform(426)`, the headcrab's roll + the
+            // `Transform(427)`.
+            NpcKind::VortexHunter => self.update_vortex_hunter(world, player, rng),
+            NpcKind::VortexAlien => self.update_vortex_alien(world, player, rng),
+            NpcKind::VortexHeadcrab => self.update_vortex_headcrab(world, player),
             // The pillar shards: the aiStyle-95/96/85/26 machines and the
             // Vortex pair's aiStyle-3 riders.
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player),
@@ -3677,6 +4205,69 @@ impl Npc {
                     NpcKind::NebulaBeast => 12,
                     NpcKind::VortexRifleman => 13,
                     _ => 10,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The tower mobs' strips: the spiders 4/11 rows, the soldier 5,
+            // the drakomire 1, its rider 10, the sroller 10, the corite 15
+            // and the selenian 8.
+            NpcKind::StardustSpiderBig
+            | NpcKind::StardustSpiderSmall
+            | NpcKind::StardustSoldier
+            | NpcKind::SolarDrakomire
+            | NpcKind::SolarDrakomireRider
+            | NpcKind::SolarSroller
+            | NpcKind::SolarCorite
+            | NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail
+            | NpcKind::StardustWormHead
+            | NpcKind::SolarSpearman
+            | NpcKind::SolarSelenian => {
+                let count = match self.kind {
+                    NpcKind::SolarDrakomire => 1,
+                    NpcKind::SolarCrawltipedeHead
+                    | NpcKind::SolarCrawltipedeBody
+                    | NpcKind::SolarCrawltipedeTail
+                    | NpcKind::StardustWormHead => 1,
+                    NpcKind::SolarSpearman => 10,
+                    NpcKind::SolarCorite => 15,
+                    NpcKind::StardustSpiderBig => 4,
+                    NpcKind::StardustSpiderSmall => 11,
+                    NpcKind::SolarDrakomireRider => 10,
+                    NpcKind::SolarSroller => 10,
+                    NpcKind::SolarSelenian => 8,
+                    _ => 5,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The nebula trio's 6/6/12-frame strips.
+            NpcKind::NebulaFloater | NpcKind::BrainSuckler | NpcKind::Predictor => {
+                let count = match self.kind {
+                    NpcKind::Predictor => 12,
+                    _ => 6,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The vortex trio's 15/9/5-frame strips over the walker
+            // accumulator.
+            NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab => {
+                let count = match self.kind {
+                    NpcKind::VortexHunter => 15,
+                    NpcKind::VortexAlien => 9,
+                    _ => 5,
                 };
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
@@ -7544,6 +8135,889 @@ impl Npc {
     /// `AI()`'s aiStyle-82 block (`NPC.cs:36629-36756`) — the Moon Leech
     /// Clot: the 90-tick glide, then the 1000-hp drain from the head →
     /// the core → the hands.
+    /// `AI_003_Fighters`' VortexHunter arm (`NPC.cs:59069-59756`, the 426
+    /// rows at `:59072`/`:59163-59192`/`:59304-59308`/`:59480-59484`/
+    /// `:59751-59756`) — the vortex shooter: the ground walk's 4-px cap /
+    /// 0.6 accel / 0.95 drag, the 60-tick shot cycle firing the 581 (60)
+    /// from the muzzle `(spriteDirection * 2, -12)` with the ±30×0.3
+    /// spread, the aim octant on `ai[2]`, and the 700-px engage gate.
+    ///
+    /// Deviations: the interception aim (`:59529-59542`'s
+    /// `GetChaseResults` at the factor 15) folds into the centre aim; the
+    /// vanilla's `localAI[0]`-free state means the metamorphosis counter
+    /// rides the walker's own counters, so the hunter is the last form.
+    /// `AI()`'s aiStyle-97 block (`NPC.cs:39473-39580`) — the Nebula
+    /// Floater: the 180-tick 574 emission from the ±π/2 (4, 2.5) ring, the
+    /// 480-tick teleport cycle behind `AI_AttemptToFindTeleportSpot`'s
+    /// tile pick (the 20-tick fade, the dust bursts, the shot-count
+    /// shave of the owned 574s), the 7-px cruise to the aim point
+    /// `Center + (direction * 20, 6)` and the `|vx| * direction * 0.1`
+    /// roll.
+    ///
+    /// Deviations: the 242-dust bursts are unmodelled; the teleport-spot
+    /// search folds the vanilla's 40×24 probe into the first non-solid
+    /// tile near the aim; the owned-574 shave rides a per-kind request.
+    /// `AI_003_Fighters`'s StardustSpiderBig arm (`NPC.cs:59069`'s shooter
+    /// list, the 409 rows at `:59155-59160`/`:59255-59257`/`:59585-59589`/
+    /// `:59746-59750`) — the 60-tick cycle fires no projectile: it spawns
+    /// the 410 small spider at its centre with the carried velocity, and
+    /// its walk runs the 2-px cap over the 0.5 accel.
+    fn update_stardust_spider_big(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire at the half-cooldown: the 410 spawn request.
+        if self.ai[1] * 2.0 >= 60.0 && self.ai[2] > 0.0 {
+            // `:59585-59589`'s spawn: the 410 spider at the centre with the
+            // carried velocity.
+            self.wants_sphere.push((NpcKind::StardustSpiderSmall, cx, cy));
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 700.0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 60.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 2.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 409 (`NPC.cs:70684-70703`): the 4-row strip's
+        // wind-up row on the shot window, the walk accumulator otherwise.
+        if self.vy == 0.0 && self.ai[1] <= 30.0 && self.ai[1] > 0.0 {
+            self.frame = 3;
+        } else {
+            self.frame_counter += 1.0;
+            if self.frame_counter >= 6.0 {
+                self.frame_counter = 0.0;
+                self.frame = (self.frame + 1) % 2;
+            }
+        }
+    }
+
+    /// `AI_026_Unicorns`'s StardustSpiderSmall arm (`NPC.cs:62470-62494` +
+    /// `:62706-62713`) — the aiStyle-26 walker at the 6-px/0.2-accel with
+    /// the kamikaze: the 240-tick counter (or a player 800 px below within
+    /// a 20-px column) fires three 538s (50) and the spider dies.
+    fn update_stardust_spider_small(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        self.ai[1] += 1.0;
+        let mut armed = self.ai[1] >= 240.0;
+        if !armed && self.vy == 0.0 {
+            armed = (pcx - cx).abs() < 20.0 && pcy > cy && (pcx - cx).hypot(pcy - cy) < 800.0;
+        }
+        if armed {
+            // `:62486-62492`'s three-shot burst + the self-destruct.
+            for _ in 0..3 {
+                let vx = (crate::app::rand01(rng) - 0.5) * 2.0;
+                let vy = -4.0 - 10.0 * crate::app::rand01(rng);
+                self.wants_hostile_shot.push((538u16, cx, cy, vx, vy, 50));
+            }
+            self.hp = 0;
+            return;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 6.0,
+                jump: -8.0,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 410 (`NPC.cs:70705-70715`): the 11-row strip's
+        // |vx|-driven accumulator.
+        self.frame_counter += self.vx.abs();
+        if self.frame_counter >= 10.0 {
+            self.frame_counter -= 10.0;
+            self.frame = (self.frame + 1) % 11;
+        }
+    }
+
+    /// `AI_003_Fighters`'s StardustSoldier arm (`NPC.cs:59069`'s shooter
+    /// list, the 411 rows at `:59076-59081`/`:59151-59153`/`:59193`/
+    /// `:59271-59274`/`:59470-59473`/`:59574-59577`/`:59741-59745`) — the
+    /// 330-tick cycle fires the 537 (60, the classic constant of
+    /// `GetAttackDamage_ForProjectiles(60, 45)`) from the muzzle at the
+    /// 1-px speed over the aim spread, and its walk runs the 2-px cap.
+    ///
+    /// Deviations: the [120, 240) aerodynamic window (`:59624-59633`)'s
+    /// velocity drag folds into the walker; the `ai[2]` re-pick by the
+    /// velocity ratio is unmodelled.
+    fn update_stardust_soldier(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire at the 220th tick (the half-cooldown of 330).
+        if self.ai[1] * 2.0 >= 330.0 && self.ai[2] > 0.0 {
+            let (mut ax, mut ay) = (dx, dy);
+            let jit = 40.0;
+            ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+            ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+            let len = (ax * ax + ay * ay).sqrt().max(0.001);
+            ax = ax / len * 1.0;
+            ay = ay / len * 1.0;
+            self.wants_hostile_shot.push((537u16, cx + 2.0, cy - 12.0, ax, ay, 60));
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        if self.ai[1] <= 0.0 && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 700.0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 330.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 2.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `FindFrame` case 411 (`NPC.cs:70643-70675`): the shoot pose on
+        // the [120, 240) window, the walk rows otherwise.
+        if self.ai[1] >= 120.0 && self.ai[1] < 240.0 {
+            self.frame = 4;
+        } else {
+            self.frame_counter += (self.vx != 0.0) as i32 as f32 + 1.0;
+            if self.frame_counter > 6.0 {
+                self.frame_counter = 0.0;
+                self.frame = (self.frame + 1).clamp(2, 4);
+            }
+        }
+    }
+
+    /// `AI_003_Fighters`'s SolarDrakomire arm (`NPC.cs:58214-58219`'s
+    /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
+    /// with the mob-specific speed, hidden while a 416 rides it.
+    fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 4.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `:58426-58430`'s hide: the mount hides while a rider links to it —
+        // the vanilla's `hide` has no port field (the pre-pass owns the
+        // link), so the mount stays visible.
+    }
+
+    /// `AI()`'s aiStyle-75 block's SolarDrakomireRider arm (`NPC.cs`:
+    /// 35523-35537`'s mount spawn + `:35662-35679`'s attach anchor +
+    /// `:36060-36061`'s `Transform(518)`) — the rider rides its 415 mount
+    /// at the `(-spriteDirection * 10, -30)` offset and becomes the
+    /// SolarSrawler (518) when the mount dies.
+    fn update_solar_drakomire_rider(&mut self, _world: &World, _player: &Player) {
+        if self.carrier_timer <= 0.0 {
+            // `:36060-36061`'s metamorph: the port's in-place kind swap
+            // (518 stays out of this slice — the vanilla's
+            // `SolarSrawler` row is `NPC.cs:15344-15354`).
+            self.hp = 0;
+            return;
+        }
+        // `:35663-35679`'s anchor ride.
+        self.x = self.carrier_x - self.size().0 * 0.5 + self.sprite_dir as f32 * -10.0;
+        self.y = self.carrier_y - self.size().1 * 0.5 - 30.0;
+        self.sprite_dir = self.carrier_phase as i32;
+        self.vx = 0.0;
+        self.vy = 0.0;
+    }
+
+    /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29394-29421`'s
+    /// ball entry + `:29422-29488`'s lunge + `:29532-29580`'s ball state +
+    /// `:29634-29668`'s unroll) — the sroller winds up, collapses into a
+    /// ball (the ×1.8 damage, the doubled defense, kb 0), rolls for
+    /// `ai[2]` in [2, 4] revolutions, then unrolls.
+    ///
+    /// Deviations: the dust/gore bursts and the `ai[3]` FX layer are
+    /// unmodelled; the roll's spin rides the port's rotation.
+    fn update_solar_sroller(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        match self.ai[0] as i32 {
+            0 => {
+                // `:29267-29276`'s aggro counter and the jump reach.
+                self.ai[1] += 4.0;
+                if self.ai[1] >= 400.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 1.0;
+                }
+                crate::npc_ai::walker_step(
+                    self,
+                    world,
+                    pcx,
+                    pcy,
+                    crate::npc_ai::WalkerParams {
+                        speed: 1.0,
+                        jump: -6.2,
+                        aggro_x: 80.0 * TILE_PX,
+                        aggro_y: 40.0 * TILE_PX,
+                    },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            1 => {
+                // `:29394-29419`'s wind-up: at the 30th tick the sroller
+                // collapses into the ball (the 32-px height) and rolls for
+                // `rand(2, 4)` revolutions.
+                self.ai[1] += 0.5;
+                if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[2] = 2.0 + 2.0 * crate::app::rand01(&mut 7u64);
+                    self.ai[0] = 6.0;
+                }
+            }
+            6 => {
+                // `:29532-29580`'s ball state: the doubled defense, kb 0
+                // and the rolling spin over the revolutions.
+                self.defense_override = Some(68);
+                self.vx = (if self.facing >= 0 { 1.0 } else { -1.0 })
+                    * (5.0 + (self.ai[2] * 0.6).min(4.0));
+                self.rotation += self.vx * 0.05;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 60.0 * self.ai[2] {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 5.0;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            _ => {
+                // `:29634-29668`'s unroll: restore the height and rest.
+                self.rotation = 0.0;
+                self.vx = 0.0;
+                self.defense_override = None;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+        }
+    }
+
+    /// `AI()`'s aiStyle-74 block's SolarCorite arm (`NPC.cs:35238-35276`'s
+    /// parameter set + the four `ai[0]` states + `:35447-35497`'s
+    /// implosion) — the corite approaches (8/175/175/600/80/60/20), the
+    /// charge releases into the dash (9 px), the dash exits into the
+    /// cooldown, and the 64-px contact (or the state-3 arm) triggers the
+    /// 192-box implosion (80 damage scaled) that kills it.
+    ///
+    /// Deviations: the dust/lighting arms and the sound cue are
+    /// unmodelled; the implosion's 3-tick delay rides the port's own.
+    fn update_solar_corite(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let dist = (pcx - cx).hypot(pcy - cy);
+        match self.ai[0] as i32 {
+            3 => {
+                // `:35447-35497`'s implosion: the 192-box, the zeroed
+                // velocity and the 3-tick delay before the death.
+                self.vx = 0.0;
+                self.vy = 0.0;
+                self.damage_override = Some(80);
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 3.0 {
+                    self.wants_blast = true;
+                    self.hp = 0;
+                }
+            }
+            2 => {
+                // `:35393-35405`'s dash exit.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 150.0 && dist > 60.0 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 45.0;
+                }
+                if self.vx * self.vx + self.vy * self.vy < 0.49 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 45.0;
+                }
+            }
+            4 => {
+                // `:35427-35436`'s cooldown.
+                self.ai[1] -= 3.0;
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+                if self.ai[1] <= 0.0 {
+                    self.ai[0] = 0.0;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            1 => {
+                // `:35358-35390`'s charge: at the 20th tick the dash fires
+                // at the 9-px speed.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = 0.0;
+                    let (dx, dy) = (pcx - cx, pcy - cy);
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.vx = dx / d * 9.0;
+                    self.vy = dy / d * 9.0;
+                }
+            }
+            _ => {
+                // The approach (`:35320-35350`'s 8-px fly at the 175/175
+                // bands).
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 20.0 && dist < 80.0 {
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                }
+                let (dx, dy) = (pcx - cx, pcy - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                self.vx += (dx / d * 8.0 - self.vx) * 0.075;
+                self.vy += (dy / d * 8.0 - self.vy) * 0.075;
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+        }
+        self.rotation = self.vy.atan2(self.vx) + std::f32::consts::PI * 0.5;
+        let _ = (world, h);
+    }
+
+    /// `AI_003_Fighters`'s SolarSelenian arm (`NPC.cs:58220-58224`'s
+    /// 6/0.15/0.85 walk) — the selenian rides the walker with its own
+    /// speed and the roller's drag.
+    fn update_solar_selenian(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 6.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
+    /// `AI_006_Worms`'s StardustWormHead arm (`NPC.cs:51030-51073`) — the
+    /// 600-tick cycle: the [285, 570] remap decelerates the worm 1 → 0.5,
+    /// at 570 it fires the mark (`SpawnStardustMark_StardustWorm`) and
+    /// re-normalises the velocity to 6, at 600 the counter resets.
+    ///
+    /// Deviations: the dust arm (`:51043-51054`) is unmodelled; the mark's
+    /// 540 projectile hop folds into a direct spawn (the port has no 540
+    /// AI) and the caps live in the sim's resolve.
+    fn update_stardust_worm_head(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The steering toward the player (`:51670-51743`'s 9/0.3 pair).
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+        self.vx += (dx / d * 9.0 - self.vx) * 0.3;
+        self.vy += (dy / d * 9.0 - self.vy) * 0.3;
+        // The cycle.
+        self.ai[2] += 1.0;
+        let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+        if speed >= 1.0 && self.ai[2] <= 570.0 {
+            // `:51035-51037`'s remap over `ai[2] ∈ [285, 570]`.
+            let t = ((self.ai[2] - 285.0) / 285.0).clamp(0.0, 1.0);
+            let f = 1.0 - 0.5 * t;
+            self.vx *= f;
+            self.vy *= f;
+        }
+        if self.ai[2] == 570.0 {
+            self.wants_stardust_mark = true;
+            let sp = (self.vx * self.vx + self.vy * self.vy).sqrt().max(0.001);
+            self.vx = self.vx / sp * 6.0;
+            self.vy = self.vy / sp * 6.0;
+        }
+        if self.ai[2] >= 600.0 {
+            self.ai[2] = 0.0;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:39485-39496`'s emission window: the first 180 ticks throw the
+        // 574 (0 damage) every 60 from the resampled ring.
+        if self.caster_counter < 180 {
+            self.caster_counter += 1;
+            if self.caster_counter % 60 == 0 {
+                let (mut sx, mut sy) = (0.0f32, 0.0f32);
+                let mut guard = 0;
+                while sx.abs() < 1.5 && guard < 64 {
+                    let ang = (crate::app::rand01(rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2;
+                    sx = -ang.sin() * 4.0;
+                    sy = ang.cos() * 2.5;
+                    guard += 1;
+                }
+                self.wants_hostile_shot.push((574u16, cx, cy, sx, sy, 0));
+            }
+        }
+        // `:39513-39521`'s aim + the flight decision.
+        let aim = (self.facing as f32 * 20.0, 6.0);
+        let (ax, ay) = (cx + aim.0, cy + aim.1);
+        let (dx, dy) = (pcx - ax, pcy - ay);
+        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let far = (dx * dx + dy * dy).sqrt() > 400.0 || !sight;
+        if far {
+            // `:39580-39620`'s cruise: the 7-px cap toward the aim.
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            self.vx += (dx / d * 7.0 - self.vx) * 0.2;
+            self.vy += (dy / d * 7.0 - self.vy) * 0.2;
+        } else {
+            // The hover (`:39625-39680`'s idle band).
+            self.vx *= 0.95;
+            self.vy *= 0.95;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:39537-39539`'s roll + the sprite flip.
+        self.rotation = self.vx.abs() * self.facing as f32 * 0.1;
+        // The teleport cycle (`:39566-39575`'s counter).
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 480.0 {
+            self.ai[0] = 0.0;
+            self.ai[1] = 20.0;
+            // The tile pick: a non-solid tile near the aim point.
+            let (tx, ty) = ((ax / TILE_PX) as i32, (ay / TILE_PX) as i32);
+            let mut spot = None;
+            for _ in 0..24 {
+                let bx = tx + (crate::app::rand01(rng) * 40.0 - 20.0) as i32;
+                let by = ty + (crate::app::rand01(rng) * 24.0 - 12.0) as i32;
+                if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                    continue;
+                }
+                let solid = world.tile(bx, by).is_some_and(|t| {
+                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                });
+                if !solid {
+                    spot = Some((bx, by));
+                    break;
+                }
+            }
+            if let Some((sx, sy)) = spot {
+                self.ai[2] = sx as f32;
+                self.ai[3] = sy as f32;
+            }
+        }
+        // `:39541-39564`'s fade + the hop: `ai[1]` counts down from 20.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+            if self.ai[1] <= 1.0 && self.ai[2] != 0.0 {
+                // `:39597-39615`'s teleport hop.
+                self.x = self.ai[2] * TILE_PX - w * 0.5;
+                self.y = self.ai[3] * TILE_PX - h * 0.5;
+                self.vx = 0.0;
+                self.vy = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+    }
+
+    /// The shared aiStyle-85 hoverer for the Brain Suckler (421):
+    /// `AI()`'s `:36930-37220` block with the 421's arms — the phase-1
+    /// attachment (`:37013-37033`: the `player.Top` reach under 40 px,
+    /// the same-type/same-target scan, the snap) and phase 5 (the
+    /// `Center = player.Top + direction * 4` ride, the `AddBuff(163,
+    /// 59)` obstruct, `hide = true` and the 0.05 separation).
+    fn update_brain_suckler(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:36996`'s 421 reach vector reads the player's TOP.
+        let (pdx, pdy) = (pcx - cx, pcy - player.height - cy);
+        let dist = (pdx * pdx + pdy * pdy).sqrt();
+        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        if self.ai[0] == 5.0 {
+            // `:37143-37162`'s attached ride: the snap, the obstruct buff
+            // request and the zeroed velocity.
+            self.x = pcx + player.facing as f32 * 4.0 - w * 0.5;
+            self.y = pcy - player.height - h * 0.5;
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.wants_obstruct = true;
+            return;
+        }
+        match self.ai[0] as i32 {
+            1 => {
+                // `:36989-37012`'s approach at the 5.5-px base speed over
+                // the 50-tick smoothing.
+                self.rotation += self.facing as f32 * 0.3;
+                let d = dist.max(0.001);
+                let speed = 5.5 + d / 100.0;
+                self.vx = (self.vx * 49.0 + pdx / d * speed) / 50.0;
+                self.vy = (self.vy * 49.0 + pdy / d * speed) / 50.0;
+                // `:37013-37033`'s attachment: under 40 px the suckler
+                // latches onto the player's Top (the same-type/same-target
+                // scan's refusal rides the port's per-player latch).
+                if dist < 40.0 && player.hp > 0 && self.caster_counter == 0 {
+                    self.caster_counter = 1;
+                    self.x = pcx - w * 0.5;
+                    self.y = pcy - player.height - h * 0.5;
+                    self.vx = 0.0;
+                    self.vy = 0.0;
+                    self.ai[0] = 5.0;
+                    self.ai[1] = 0.0;
+                    return;
+                }
+                if !sight {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            2 => {
+                // `:37035-37054`'s blind charge (3 px) — the 421's own cap.
+                self.rotation = self.vx * 0.1;
+                if dist < 600.0 {
+                    self.ai[0] = 0.0;
+                }
+            }
+            3 => {
+                // `:37055-37078`'s waypoint homing at the 2-px speed.
+                self.rotation = self.vx * 0.1;
+                let (tx, ty) = (self.ai[1], self.ai[2]);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                self.vx = (self.vx * 2.0 + dx / d * 2.0) / 3.0;
+                self.vy = (self.vy * 2.0 + dy / d * 2.0) / 3.0;
+                if d < 2.0 || d > 800.0 || sight {
+                    self.ai[0] = 4.0;
+                }
+            }
+            4 => {
+                // `:37079-37142`'s bounce arm with the 180-tick re-probe.
+                self.rotation = self.vx * 0.1;
+                self.ai[1] += 1.0;
+                if self.ai[1] > 180.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 3.0;
+                }
+            }
+            _ => {
+                // `:36933-36988`'s phase 0.
+                if sight {
+                    self.ai[0] = 1.0;
+                } else if dist > 800.0 {
+                    self.ai[0] = 2.0;
+                } else if pdx.abs() > 8.0 || pdy.abs() > 8.0 {
+                    self.ai[1] = pcx;
+                    self.ai[2] = pcy;
+                    self.ai[0] = 3.0;
+                } else {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:37196`'s roll (the vanilla's `hide` while attached has no port
+        // field — the attached suckler stays visible).
+        self.rotation = self.vx * 0.1;
+    }
+
+    /// `AI_003_Fighters`' Predictor arm (`NPC.cs:59069-59756`, the 424 rows
+    /// at `:59159-59192`/`:59475`/`:59578`) — the nebula pillar's shooter:
+    /// the 180-tick cycle with the shot at the 179th tick fires four 573s
+    /// (60) in the `(-3 + 2*i) * 0.15` fan from the muzzle.
+    fn update_nebula_predictor(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire: the four-shot 573 fan (60 damage, the classic
+        // constant of `GetAttackDamage_ForProjectiles(60, 45)`).
+        if self.ai[1] as i32 == 179 && self.ai[2] > 0.0 {
+            let (mx, my) = (cx + self.sprite_dir as f32 * 4.0, cy - 6.0);
+            for i in 0..4 {
+                let vx = (-3.0 + 2.0 * i as f32) * 0.15;
+                self.wants_hostile_shot
+                    .push((573u16, mx, my, vx, -0.1, 60));
+            }
+            self.ai[2] = 0.0;
+            self.ai[1] = 0.0;
+        }
+        // `:59634-59688`'s engage arm: the 700-px gate starts the cycle.
+        if self.ai[1] <= 0.0 && (dx * dx + dy * dy).sqrt() < 700.0 && player.hp > 0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 180.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
+    fn update_vortex_hunter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // `:59082-59089`'s timer decay + the aim octant.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        if self.ai[2] > 0.0 {
+            let octant = |dx: f32, dy: f32| -> f32 {
+                if dy.abs() > dx.abs() * 2.0 {
+                    if dy > 0.0 { 1.0 } else { 5.0 }
+                } else if dx.abs() > dy.abs() * 2.0 {
+                    3.0
+                } else if dy > 0.0 {
+                    2.0
+                } else {
+                    4.0
+                }
+            };
+            if self.ai[1] * 2.0 >= 60.0 {
+                // `:59204-59202`'s fire: the 581 at 60 (the classic
+                // constant of `GetAttackDamage_ForProjectiles(60, 45)`).
+                let jit = 30.0 * 0.3;
+                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                ax = ax / len * 7.0;
+                ay = ay / len * 7.0;
+                // `:59304-59308`'s muzzle: `spriteDirection * 2, -12`.
+                let (mx, my) = (
+                    cx + self.sprite_dir as f32 * 2.0,
+                    cy - 12.0,
+                );
+                self.wants_hostile_shot.push((581u16, mx, my, ax, ay, 60));
+                let _ = octant;
+                self.ai[2] = 0.0;
+            }
+        }
+        // `:59619-59623`'s arm reset: a finished shot cycle rests.
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+        }
+        // `:59634-59688`'s engage arm: the 700-px gate starts the 60-tick
+        // cycle with the aim octant.
+        if self.ai[1] <= 0.0 && (dx * dx + dy * dy).sqrt() < 700.0 && player.hp > 0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 60.0;
+        }
+        // The ground walk (`:59751-59756`'s num180=4 / num181=0.6 /
+        // num182=0.95) — the port's walker carries the speed; the accel
+        // and the drag fold into its snapshot step.
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 4.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY * 0.1 / 0.3,
+            3.0,
+        );
+    }
+
+    /// `AI_003_Fighters`' VortexAlien arm (`NPC.cs:58622-58711`) + the
+    /// metamorphosis (`:56886-56901`) — the alien's dive (the 0.015/0.15
+    /// accel pairs over the ±6 caps, the 0.98 damping, the 20-px deadband,
+    /// the 0.05 separation), the leap arm (`velocity.Y = -5`) and the
+    /// 1200-tick `Transform(426)` behind the empty 5x5 box.
+    fn update_vortex_alien(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:56888-56889`'s metamorphosis counter (`localAI[0]` + |vx|/2).
+        self.caster_counter += 1 + (self.vx.abs() * 0.5) as i32;
+        if self.caster_counter >= 1200 {
+            // `:56892-56897`'s 5x5 probe + the heal + `Transform(426)`.
+            let tx = (cx / TILE_PX) as i32;
+            let ty = (cy / TILE_PX) as i32;
+            let mut boxed = false;
+            for bx in (tx - 2)..=(tx + 2) {
+                for by in (ty - 3)..=(ty + 1) {
+                    if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                        boxed = true;
+                        break;
+                    }
+                    if world
+                        .tile(bx, by)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+                    {
+                        boxed = true;
+                        break;
+                    }
+                }
+            }
+            if !boxed {
+                self.kind = NpcKind::VortexHunter;
+                self.max_hp = NpcKind::VortexHunter.max_hp();
+                self.hp = self.max_hp;
+                self.ai = [0.0; 4];
+                self.frame = 0;
+                self.frame_counter = 0.0;
+                self.caster_counter = 0;
+                return;
+            }
+        }
+        // `:58624-58628`'s landing arm.
+        if self.vy == 0.0 {
+            self.ai[2] = 0.0;
+            self.rotation = 0.0;
+        } else if self.ai[2] == 1.0 {
+            // The dive homing (`:58639-58681`'s pairs).
+            self.rotation = self.vx * 0.1;
+            let (hx, hy) = (pcx - cx, pcy - cy);
+            if hx < -20.0 && self.vx > -6.0 {
+                self.vx = (self.vx - 0.015).max(-6.0);
+            } else if hx > 20.0 && self.vx < 6.0 {
+                self.vx = (self.vx + 0.015).min(6.0);
+            }
+            if hy < -20.0 && self.vy > -6.0 {
+                self.vy = (self.vy - 0.15).max(-6.0);
+            } else if hy > 20.0 && self.vy < 6.0 {
+                self.vy = (self.vy + 0.15).min(6.0);
+            }
+        }
+        // `:58705-58709`'s leap arm.
+        if self.vy == 0.0 && pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+            self.vy = -5.0;
+            self.ai[2] = 1.0;
+        }
+        // `:58684-58700`'s separation from the player.
+        if (pcx - cx).abs() + (pcy - cy).abs() < w {
+            self.vx -= (pcx - cx).signum() * 0.05;
+            self.vy -= (pcy - cy).signum() * 0.05;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// `AI_003_Fighters`' VortexHeadcrab arm (`NPC.cs:58832-58841`'s
+    /// rotation + `:56855-56869`'s metamorphosis) — the headcrab rides the
+    /// generic walker (no speed override in the C#) and `Transform(427)`s
+    /// on the 300-tick counter behind the empty 3x2 box above its centre.
+    fn update_vortex_headcrab(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // `:58834-58841`'s rotation: grounded flat, rolling in the air.
+        if self.vy == 0.0 {
+            self.rotation = 0.0;
+        } else {
+            self.rotation += self.vx * 0.08;
+        }
+        // `:56857-56867`'s metamorphosis counter + the 3x2 probe.
+        self.caster_counter += 1;
+        if self.caster_counter >= 300 {
+            let (w, h) = self.size();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            let tx = (cx / TILE_PX) as i32;
+            let ty = (cy / TILE_PX) as i32;
+            let mut boxed = false;
+            for bx in (tx - 1)..=(tx + 1) {
+                for by in (ty - 1)..=ty {
+                    if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                        boxed = true;
+                        break;
+                    }
+                    if world
+                        .tile(bx, by)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+                    {
+                        boxed = true;
+                        break;
+                    }
+                }
+            }
+            if !boxed {
+                self.kind = NpcKind::VortexAlien;
+                self.max_hp = NpcKind::VortexAlien.max_hp();
+                self.hp = self.max_hp;
+                self.ai = [0.0; 4];
+                self.frame = 0;
+                self.frame_counter = 0.0;
+                self.caster_counter = 0;
+            }
+        }
+    }
+
     fn update_moon_leech_blob(&mut self, _world: &World, _player: &Player) {
         self.ai[2] += 1.0;
         if self.ai[2] >= 90.0 {
@@ -9510,6 +10984,25 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::StardustSpiderBig => 409,
+            NpcKind::StardustSpiderSmall => 410,
+            NpcKind::StardustSoldier => 411,
+            NpcKind::SolarCrawltipedeHead => 412,
+            NpcKind::SolarCrawltipedeBody => 413,
+            NpcKind::SolarCrawltipedeTail => 414,
+            NpcKind::StardustWormHead => 402,
+            NpcKind::SolarSpearman => 518,
+            NpcKind::SolarDrakomire => 415,
+            NpcKind::SolarDrakomireRider => 416,
+            NpcKind::SolarSroller => 417,
+            NpcKind::SolarCorite => 418,
+            NpcKind::SolarSelenian => 419,
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
+            NpcKind::VortexHunter => 426,
+            NpcKind::VortexAlien => 427,
+            NpcKind::VortexHeadcrab => 428,
             NpcKind::MoonLordHead => 396,
             NpcKind::MoonLordHand => 397,
             NpcKind::MoonLordCore => 398,

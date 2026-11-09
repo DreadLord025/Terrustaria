@@ -328,6 +328,8 @@ pub(crate) fn update_worms_in(
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
                 // the difficulty work); the Destroyer's ~80 segments
                 // (`AI_037`'s ai[2] roll).
+                // The crawltipede's 30 segments (`:51375`'s `num34 = 30`).
+                NpcKind::SolarCrawltipedeHead => 29,
                 NpcKind::TheDestroyer => 80,
                 _ => 65,
             }
@@ -2676,6 +2678,14 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
             downed_eoc: app.world.downed_eoc,
+            // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
+            // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
+            // `SkyblockIsUp` conditions) now read the world's identity —
+            // until this branch they were dead (`..Default::default()`).
+            tenth_anniversary: app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -5813,6 +5823,665 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+#[cfg(test)]
+mod worm_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_pillar_worms_round_trip_their_rows() {
+        // The crawltipede chain + the stardust worm head (`NPC.cs`'s cases
+        // 412/413/414/402/518): the port ids 141-145 and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def) in [
+            (NpcKind::SolarCrawltipedeHead, 141u16, 20.0, 20.0, 10000, 120, 1000),
+            (NpcKind::SolarCrawltipedeBody, 142, 20.0, 20.0, 10000, 80, 1000),
+            (NpcKind::SolarCrawltipedeTail, 143, 20.0, 20.0, 10000, 50, 0),
+            (NpcKind::StardustWormHead, 144, 32.0, 32.0, 1200, 80, 10),
+            (NpcKind::SolarSpearman, 145, 22.0, 56.0, 1000, 80, 28),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            // The chain + the worm head are kb 0; the spearman keeps its
+            // own 0.4 row.
+            let kb = if kind == NpcKind::SolarSpearman { 0.4 } else { 0.0 };
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_crawltipede_assembles_its_thirty_segments() {
+        // `:51369-51392`'s chain assembly: the head spawns the 30-segment
+        // chain through the port's worm pass (`num34 = 30`).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut npcs = vec![Npc::new(
+            NpcKind::SolarCrawltipedeHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        )];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some(player.center()),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        let bodies = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeBody)
+            .count();
+        let tails = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeTail)
+            .count();
+        assert_eq!(bodies, 29, "the 29 bodies");
+        assert_eq!(tails, 1, "the single tail closing the chain");
+    }
+
+    #[test]
+    fn the_stardust_worm_fires_the_mark_on_the_570th_tick() {
+        // `AI_006`'s 402 arm (`NPC.cs:51030-51073`): the 600-tick cycle
+        // decelerates over [285, 570] and fires the mark request at 570,
+        // re-normalising the velocity to 6.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustWormHead, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[2] = 569.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.wants_stardust_mark, "the mark fires at the 570th tick");
+        let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the velocity re-normalises to 6: {}", speed);
+        // The cycle resets at 600.
+        n.ai[2] = 599.0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "the counter resets");
+    }
+}
+
+#[cfg(test)]
+mod tower_mob_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_tower_mobs_round_trip_their_rows() {
+        // The stardust/solar tower mobs (`NPC.cs`'s cases 409-419): the
+        // port ids 133-140, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, def) in [
+            (NpcKind::StardustSpiderBig, 133u16, 34.0, 42.0, 800, 40),
+            (NpcKind::StardustSpiderSmall, 134, 22.0, 22.0, 200, 10),
+            (NpcKind::StardustSoldier, 135, 22.0, 56.0, 700, 34),
+            (NpcKind::SolarDrakomire, 136, 60.0, 40.0, 800, 32),
+            (NpcKind::SolarDrakomireRider, 137, 18.0, 40.0, 800, 28),
+            (NpcKind::SolarSroller, 138, 46.0, 52.0, 700, 34),
+            (NpcKind::SolarCorite, 139, 38.0, 38.0, 600, 26),
+            (NpcKind::SolarSelenian, 140, 22.0, 56.0, 800, 30),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_spider_big_spawns_the_small_on_its_cycle() {
+        // `:59585-59589`'s 409 attack: the 60-tick cycle fires the 410
+        // spawn (no projectile) at the big spider's centre.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderBig, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_sphere.is_empty() {
+                saw = n.wants_sphere.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the small spider spawns");
+        let (kind, _sx, _sy) = n.wants_sphere[0];
+        assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
+        // It fires no projectile.
+        assert!(n.wants_hostile_shot.is_empty(), "no projectile");
+    }
+
+    #[test]
+    fn the_small_spider_kamikazes_with_three_538s() {
+        // `AI_026_Unicorns`'s 410 arm (`NPC.cs:62470-62494`): the 240-tick
+        // counter fires three 538s (50) and the spider self-destructs.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // one tick under the burst
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..4 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            saw = n.wants_hostile_shot.len();
+            if saw > 0 {
+                break;
+            }
+        }
+        assert_eq!(saw, 3, "the three-shot burst");
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 538, "the stardust dart");
+            assert_eq!(shot.5, 50, "the damage constant");
+        }
+        assert!(n.hp <= 0, "the self-destruct");
+    }
+
+    #[test]
+    fn the_soldier_fires_the_537_on_its_cycle() {
+        // `:59470-59473`/`:59574-59577`'s 411 attack: the 330-tick cycle
+        // fires the 537 (60) with the 40-px aim spread.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSoldier, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the laser fires");
+        assert_eq!(s.0, 537, "the stardust soldier laser");
+        assert_eq!(s.5, 60, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_sroller_collapses_into_the_ball() {
+        // `:29394-29419`'s wind-up → the ball state: the doubled defense
+        // and the doubled damage while rolling.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarSroller, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the wind-up state
+        n.ai[1] = 29.0; // one tick under the collapse
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut balled = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[0] == 6.0 {
+                balled = true;
+                break;
+            }
+        }
+        assert!(balled, "the sroller collapses into the ball");
+        // The ball state's own body (its next tick) doubles the defense.
+        for _ in 0..2 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.defense_override, Some(68), "the doubled defense");
+    }
+
+    #[test]
+    fn the_corite_implodes_on_contact() {
+        // `:35447-35497`'s implosion: the 3-tick delay then the death (with
+        // the 80-damage blast request).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 3.0; // the implosion state
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut blasted = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_blast {
+                blasted = true;
+                break;
+            }
+        }
+        assert!(blasted, "the implosion blast");
+        assert!(n.hp <= 0, "the corite dies with it");
+        assert_eq!(n.damage_override, Some(80), "the implosion's hit");
+    }
+}
+
+#[cfg(test)]
+mod nebula_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_nebula_trio_round_trips_its_rows() {
+        // The three nebula pillar mobs (`NPC.cs`'s cases 420/421/424):
+        // the port ids 130-132, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::NebulaFloater, 130u16, 40.0, 40.0, 1300, 75, 20, 0.5),
+            (NpcKind::BrainSuckler, 131, 44.0, 44.0, 330, 70, 34, 0.5),
+            (NpcKind::Predictor, 132, 22.0, 56.0, 700, 80, 30, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_floater_emits_the_574_on_its_60_tick_cadence() {
+        // `AI()`'s aiStyle-97 block (`NPC.cs:39485-39496`): the first 180
+        // ticks throw the 574 (0 damage) every 60 from the ±π/2 (4, 2.5)
+        // ring resampled until |X| >= 1.5.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..62 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the 574 fires");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 574, "the projection");
+        assert_eq!(shot.5, 0, "the zero-damage emission");
+    }
+
+    #[test]
+    fn the_floater_teleports_on_the_480th_tick() {
+        // `:39566-39615`'s teleport cycle: the 480-tick counter arms the
+        // 20-tick fade, and the hop lands the floater at the chosen tile.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 470.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (before_x, before_y) = (n.x, n.y);
+        let mut rng = 7u64;
+        let mut hopped = false;
+        for _ in 0..40 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[1] > 0.0 {
+                hopped = true;
+                break;
+            }
+        }
+        assert!(hopped, "the teleport is armed");
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(
+            (n.x - before_x).abs() > 16.0 || (n.y - before_y).abs() > 16.0,
+            "the floater moved: {} -> {}, {} -> {}",
+            before_x,
+            n.x,
+            before_y,
+            n.y
+        );
+    }
+
+    #[test]
+    fn the_suckler_attaches_under_40px_and_obstructs() {
+        // `AI()`'s aiStyle-85 421 arm (`NPC.cs:37013-37033` + the phase-5
+        // ride): under 40 px of the player's Top the suckler snaps, arms
+        // `ai[0] = 5` and asks for the Obstructed buff (163, 59).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::BrainSuckler, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the approach phase
+        player.x = 150.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut obstructed = false;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_obstruct {
+                obstructed = true;
+                break;
+            }
+        }
+        assert_eq!(n.ai[0], 5.0, "the attached state");
+        assert!(obstructed, "the obstruct buff request");
+        assert!((n.vx).abs() < 0.01, "the attached velocity zeroes");
+    }
+
+    #[test]
+    fn the_predictor_fires_the_573_fan() {
+        // `AI_003_Fighters`'s 424 arm (`NPC.cs:59159-59192`/`:59475`/`:59578`):
+        // the 180-tick cycle fires four 573s (60) in the `(-3 + 2*i) * 0.15`
+        // fan from the muzzle `(direction * 4, -6)`.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::Predictor, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the four-shot fan");
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 573, "the nebula piercer");
+            assert_eq!(shot.5, 60, "the classic damage constant");
+            assert!(
+                (shot.1 - (cx + n.sprite_dir as f32 * 4.0)).abs() < 8.0,
+                "the muzzle X: {}",
+                shot.1
+            );
+            assert!((shot.2 - (cy - 6.0)).abs() < 8.0, "the muzzle Y: {}", shot.2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod vortex_trio_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_vortex_trio_round_trips_its_rows() {
+        // The three vortex hive mobs (`NPC.cs`'s cases 426/427/428): the
+        // port ids 127-129, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::VortexHunter, 127u16, 50.0, 62.0, 1000, 100, 44, 0.3),
+            (NpcKind::VortexAlien, 128, 40.0, 28.0, 500, 75, 20, 0.5),
+            (NpcKind::VortexHeadcrab, 129, 24.0, 26.0, 200, 50, 6, 1.0),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+        // The 581 dart (`Projectile.cs:6306-6315`): 10x10, aiStyle 1,
+        // hostile, penetrate -1.
+        let data = crate::projectile::proj_data(581).expect("the dart");
+        assert_eq!((data.w, data.h), (10.0, 10.0));
+        assert_eq!(data.penetrate, -1);
+        assert_eq!(data.ai_style, 1);
+    }
+
+    #[test]
+    fn the_hunter_fires_the_581_on_its_60_tick_cycle() {
+        // `AI_003_Fighters`' 426 arm (`NPC.cs:59069-59756`): the 700-px
+        // engage gate starts the 60-tick cycle, the fire at the 59th tick
+        // throws the 581 (60) from the muzzle `(spriteDirection * 2,
+        // -12)` at the 7-px speed.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHunter,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let (w, h) = n.size();
+        let (cx, cy) = (n.x + w * 0.5, n.y + h * 0.5);
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..130 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the dart fires");
+        assert_eq!(s.0, 581, "the vortex dart");
+        assert_eq!(s.5, 60, "the classic damage constant");
+        // The muzzle: `spriteDirection * 2` ahead of the centre and 12 px
+        // above it — the hunter walks, so the shot's own tick's centre is
+        // the reference (the walk's contribution rides inside the drift).
+        let (hw, hh) = n.size();
+        let (ncx, ncy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        assert!((s.1 - (ncx + 2.0)).abs() < 24.0, "the muzzle X: {}", s.1);
+        assert!((s.2 - (ncy - 12.0)).abs() < 24.0, "the muzzle Y: {}", s.2);
+        let _ = (cx, cy);
+    }
+
+    #[test]
+    fn the_headcrab_metamorphoses_into_the_alien() {
+        // `:56855-56869`'s 300-tick counter + the empty 3x2 probe above
+        // the centre: the headcrab heals to its new max and transforms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHeadcrab,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 10;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexAlien {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the headcrab becomes the alien");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 500, "the alien's full hp");
+    }
+
+    #[test]
+    fn the_alien_metamorphoses_into_the_hunter() {
+        // `:56886-56901`'s 1200-tick counter (plus |vx|/2) + the empty
+        // 5x5 probe: the alien becomes the hunter at full health.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexAlien,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 20;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut turned = false;
+        for _ in 0..1400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.kind == NpcKind::VortexHunter {
+                turned = true;
+                break;
+            }
+        }
+        assert!(turned, "the alien becomes the hunter");
+        assert_eq!(n.hp, n.max_hp, "the transform heals");
+        assert_eq!(n.max_hp, 1000, "the hunter's full hp");
     }
 }
 
