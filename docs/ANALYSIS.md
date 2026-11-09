@@ -8594,46 +8594,43 @@ Out: the remaining C# sections — signs (no port store), the angler quest state
 (no port fields), the TownManager rooms, the weighted pressure plates (no port
 store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
 bestiary's Sights/Chats sub-blocks — each needs its own scope.
-## Dungeon entrance halls (M5-DUNGEON, the precalculated arm)
 
-`MakeDungeon`'s main loop's precalculated entrance-hall arm is ported:
-`DungeonCrawler.MakeDungeon_GenerateNextEntranceHall_Precalculated`
-(`DungeonCrawler.cs:520-553`) over
-`LegacyEntranceDungeonHall.LegacyHall`'s precalculated path
-(`Halls/LegacyEntranceDungeonHall.cs:19-260`). The walk from the shaft's
-head toward the surface entrance runs until the pass's step budget (the C#'s
-`num2`, the port's `DungeonSetup::steps`) is spent — the budget clamp
-`Math.Max(1, (int)dist - amountPassed)`, the `Vector2D.Lerp` end point per
-remaining fraction, the brick shell rect (±4/±6 jitter), the inner wall rect,
-the interior carve at the 0.5 ratio with the ±1/2 bump, and the
-`createdDungeonEntranceOnSurface` flag on the spent budget. The
-precalculated path skips the C#'s surface-detection arm (the
-`!UsePrecalculatedEntrance` guard) exactly as the source does.
+expert duration stays classic until the difficulty modes land.
 
-- **The geometry deviation (recorded, ANALYSIS).** The vanilla finds its
-  surface entrance by the searched X offset (the entrance strengths) and
-  walks halls from the dungeon anchor up to it; the port's tower stands at
-  the anchor's own X, so the port's walk goes straight up the anchor's
-  column to the tower's top row. The visible result matches the vanilla
-  shape — the entrance tower's brick shell ±(strength+4) above the entrance
-  point — and the world hashes are re-pinned (every world with a dungeon
-  changes by design; `SEED42_512` 3541994916, `DEFAULT_WORLD` 602739768).
-- **The port's omissions (recorded):** the room-protection bookkeeping
-  (`DungeonUtils.GetHighestProtectionTypeFromPoint` — no port room records),
-  the platform data list (`dungeonData.dungeonPlatformData`), the bounds
-  tracker (`dungeonData.dungeonBounds`), the `Override*` settings arms
-  (their only caller is the wrapper, which sets `OverrideSteps`), the
-  DualDungeon `CrackedBrickChance = 0`, the wall-paint clear (the port's
-  extras never carry dungeon writes), and the UN-precalculated path's slant
-  rolls / `num3` direction pick (only the precalculated arm is walked).
-- Tests: `test_dungeon_1_the_drunk_start_row_pins_the_surface_plus_70` and
-  its classic twin re-pinned to the entrance shell's top rows,
-  `test_dungeon_2_the_precalculated_entrance_hall_walks_and_clamps`,
-  `test_dungeon_2_the_entrance_hall_falls_back_and_flags_the_surface`.
-  Suite 2742 / 0.
+## The Vortex ritual projectiles (M4-EVENT-17)
 
-Out: the `DungeonGlobal*` feature passes (banners/chests/bookshelves/doors/
-lights/paintings/platforms/spikes/drop traps/ground furniture — they ride
-the room records the port does not keep), the UN-precalculated entrance arm
-(its slant path — only the precalculated caller exists), and the biome
-styles (dual-dungeon only, M5-SEED-1/2).
+The vortex tower's ritual arms (the port's `update_ancient_cultist`'s
+`:39273-39336` machine) throw two markers, both carried by the pool's
+aiStyle-108 machine.
+
+- **579 (the portal)** and **578 (the lightning)** share a 32×32 box with
+  `tileCollide = false` and `ignoreWater`. The marker's timeline
+  (`Projectile.cs:33679-33988`) is `ai[0] <= 50` (the wind-up, dust only),
+  `<= 90` (the charge: `scale = (ai[0] - 50)/40`, `alpha = 255 -
+  255·scale`, `rotation -= π/20`), `<= 120` (the full charge: `scale = 1`,
+  `alpha = 0`, `rotation -= π/60`) and the dissolve (`scale = 1 -
+  (ai[0] - 120)/60`, `alpha = 255 - 255·scale`, `rotation -= π/30`, dying
+  at `alpha >= 255`). The 578's first tick stores the aim rotation
+  (`Player.FindClosest`'s centre → `ai[1]`, the zero fallback `UnitY`).
+- **At the 90th tick** the 578 spawns the **580 VortexLightning** — the aim
+  vector × 8 behind the centre, damage 50 (`:33841`'s call), knockback 1,
+  `ai0 = ai[1]` (the bolt's spin) and `ai1 = rand(80)` (the wand's seed);
+  the 579 spawns **two VortexAliens (427)** at its centre with
+  `-UnitY.RotatedByRandom(2π) * rand(4, 9) - UnitY * 2`.
+- **580 (aiStyle 88, 14×14, `extraUpdates = 4`, `ignoreWater`)** runs the
+  ritual bolt: the `localAI[0] == 0 && ai[0] >= 900` wrap latch
+  (`ai[0] -= 1000`, `localAI[0] = -1`), then the moving arm integrates the
+  velocity and stops it on a solid tile (`:32308`), the stopped arm dies
+  after `extraUpdates * 2` ticks (`:32156-32174`) and the moving arm's
+  wand (`:32195-32249`) draws the per-step lateral jitter with the
+  100-roll rejection (`Y <= -0.02`, `|X| <= 40`) and accumulates
+  `localAI[0]`.
+- The resolution seam: the projectile can't grow the NPC vec, so the 579's
+  aliens ride the M4-EVENT-16 intent (`wants_mark_spawn`, now carrying
+  the (kind, x, y, vx, vy) payload) out to the world_sim's
+  `drain_mark_spawns`; the 580's spawn rides `wants_ritual_bolt`.
+
+Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
+dusts), the sounds and the light are unmodelled; the wand's
+`UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
+late-stage clone spawn (`:32251-32257`) is unmodelled.
