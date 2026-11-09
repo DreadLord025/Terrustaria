@@ -1783,6 +1783,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
+    // tick sets `wants_limbs` and the sim resolves it here — the four
+    // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
+    // -1, the saw +1, the vice -1 with `ai[3] = 150`, the laser +1 with
+    // `ai[3] = 150`). The v1 set the flag but never drained it, so no
+    // limb ever existed outside the direct-call test.
+    let mut limbs = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::SkeletronPrime || !n.wants_limbs {
+            continue;
+        }
+        n.wants_limbs = false;
+        let (hw, hh) = n.size();
+        let (ccx, ccy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        let seats: [(NpcKind, i32, bool); 4] = [
+            (NpcKind::PrimeCannon, -1, false),
+            (NpcKind::PrimeSaw, 1, false),
+            (NpcKind::PrimeVice, -1, true),
+            (NpcKind::PrimeLaser, 1, true),
+        ];
+        for (kind, side, timed) in seats {
+            let (w, h) = kind.size();
+            let mut limb = Npc::new(kind, ccx - w * 0.5, ccy - h * 0.5, side, 0.0);
+            limb.ai[0] = side as f32;
+            if timed {
+                limb.ai[3] = 150.0;
+            }
+            limb.hp = limb.max_hp;
+            limbs.push(limb);
+        }
+    }
+    app.npcs.append(&mut limbs);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -4578,6 +4610,79 @@ mod dutchman_tests {
                     | NpcKind::PirateDeckhand
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod prime_limb_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_prime_head_spawns_its_four_limbs_with_the_vanilla_seats() {
+        // `AI_032`'s init (`NPC.cs:27635-27661`): the head's first tick
+        // sets `wants_limbs` and the sim resolves it — the four limbs at
+        // the head's centre with the seat signs (the cannon -1, the saw
+        // +1, the vice -1 and the laser +1, the last two with
+        // `ai[3] = 150`). The v1 set the flag but never drained it.
+        let (mut app, mut player) = app_with_player();
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The head rides inside the 300x200 test world, 20 tiles above the
+        // surface (an out-of-world spawn would hit the head's own
+        // off-world clamp on the first tick).
+        let mut head = Npc::new(NpcKind::SkeletronPrime, 160.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let kinds: Vec<(NpcKind, i32, f32, i32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind.is_prime_limb())
+            .map(|n| (n.kind, n.ai[0] as i32, n.ai[3], n.hp))
+            .collect();
+        assert_eq!(kinds.len(), 4, "the four limbs spawn: {kinds:?}");
+        for (kind, seat, ai3, hp) in kinds {
+            assert!(hp > 0, "{kind:?} spawns alive");
+            match kind {
+                NpcKind::PrimeCannon => assert_eq!(seat, -1),
+                NpcKind::PrimeSaw => assert_eq!(seat, 1),
+                NpcKind::PrimeVice => assert_eq!((seat, ai3), (-1, 150.0)),
+                NpcKind::PrimeLaser => assert_eq!((seat, ai3), (1, 150.0)),
+                _ => unreachable!(),
+            }
+        }
+        // The anchor write-through feeds the tether: the limbs ride it.
+        assert!(app.world.prime_present, "the head anchors the world's Prime fields");
+        assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
     }
 }
 

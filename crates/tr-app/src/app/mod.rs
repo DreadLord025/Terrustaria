@@ -1745,6 +1745,20 @@ impl App {
                         d.ai[1] = 12.0;
                     }
                     npcs.push(d);
+                } else if boss == "prime" {
+                    // Skeletron Prime (`TR_BOSS=prime`, M4-NPC-3j): the head
+                    // above the player; its machine's one-shot
+                    // `wants_limbs` init spawns the four limbs on the next
+                    // tick, so the shot hook captures the whole boss.
+                    let mut b = Npc::new(
+                        NpcKind::SkeletronPrime,
+                        p.x + 12.0 * TILE_PX,
+                        p.y - 14.0 * TILE_PX,
+                        1,
+                        0.0,
+                    );
+                    b.hp = b.max_hp;
+                    npcs.push(b);
                 } else if let Some(n) =
                     Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
                 {
@@ -1805,6 +1819,15 @@ impl App {
                         "turret" => NpcKind::MartianSaucerTurret,
                         "cannon" => NpcKind::MartianSaucerCannon,
                         "saucercore" => NpcKind::MartianSaucerCore,
+                        // The Prime family (M4-NPC-3j): the head plus its
+                        // four limbs (the martian "cannon" already holds
+                        // the saucer mount, so the Prime's takes the
+                        // `primecannon` spelling).
+                        "prime" => NpcKind::SkeletronPrime,
+                        "primecannon" => NpcKind::PrimeCannon,
+                        "primesaw" => NpcKind::PrimeSaw,
+                        "primevice" => NpcKind::PrimeVice,
+                        "primelaser" => NpcKind::PrimeLaser,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
