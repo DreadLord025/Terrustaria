@@ -767,7 +767,21 @@ pub(crate) fn ocean_caves(
         } else {
             true // dungeonSide > Left always holds (fixed Right)
         };
-        if !side_ok || !rng.chance(3) {
+        if !side_ok {
+            continue;
+        }
+        // `WorldGen.cs:15178`: the chance gate is
+        // `genRand.Next(maxValue) == 0 || drunkWorldGen || tenthAnniversaryWorldGen`.
+        // `Next(maxValue)` is the LEFT operand of `||`, so C# spends the roll
+        // whatever the seed flags say — the drunk (and the anniversary, the
+        // other agent's arm) world only ever *passes* the gate, it never skips
+        // the draw. Ported the same way: burn the roll first, then OR the flag
+        // in. A drunk world therefore always generates its ocean cave on the
+        // right side while the draw order — and every classic world — stays
+        // byte-identical.
+        let roll = rng.chance(3);
+        let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+        if !(roll || drunk) {
             continue;
         }
         let num = if i == 1 {
@@ -2209,6 +2223,60 @@ mod tests {
             assert_eq!(gva.ocean_cave_treasure, gvb.ocean_cave_treasure);
             assert_eq!(gva.num_ocean_cave_treasure, gvb.num_ocean_cave_treasure);
         }
+    }
+
+    /// DW-3.1b: the `WorldGen.cs:15178` chance gate's drunk arm —
+    /// `genRand.Next(maxValue) == 0 || WorldGen.drunkWorldGen`. `Next` is the
+    /// left `||` operand, so the roll is burned either way; a drunk world
+    /// simply never fails the gate. Pinned with a seed whose first `Next(3)`
+    /// fails: the classic run leaves the world untouched, the drunk run
+    /// carves.
+    #[test]
+    fn ocean_caves_drunk_passes_the_chance_gate() {
+        let seed = (0..64u64)
+            .find(|s| !Rng(*s).chance(3))
+            .expect("a failing Next(3) in 64 seeds");
+        // Classic: the failed roll skips both the anchor scan and the
+        // walker — the world is byte-for-byte the untouched baseline.
+        let mut classic = cave_world(600, 300, 60);
+        let mut gv = GenVars::default();
+        ocean_caves(&mut classic, &mut gv, &cave_layers(), &mut Rng(seed));
+        let untouched = cave_world(600, 300, 60);
+        for (n, (a, b)) in classic.tiles.iter().zip(untouched.tiles.iter()).enumerate() {
+            assert_eq!(
+                (a.kind, a.flags, a.wall, a.liquid),
+                (b.kind, b.flags, b.wall, b.liquid),
+                "tile {n} diverges at seed {seed}"
+            );
+        }
+        // Drunk: the same burned roll cannot fail the gate — the cave lands.
+        let mut drunk = cave_world(600, 300, 60);
+        drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        let mut gvd = GenVars::default();
+        ocean_caves(&mut drunk, &mut gvd, &cave_layers(), &mut Rng(seed));
+        let carved = drunk
+            .tiles
+            .iter()
+            .filter(|t| t.kind == OCEAN_CAVE_CARVED)
+            .count();
+        assert!(carved > 0, "the drunk ocean cave carved ({carved})");
+        // And the classic world still carves on a passing roll — the arm
+        // adds no draw of its own, it only widens the gate.
+        let pass = (0..64u64)
+            .find(|s| Rng(*s).chance(3))
+            .expect("a passing Next(3) in 64 seeds");
+        let mut classic2 = cave_world(600, 300, 60);
+        let mut gv2 = GenVars::default();
+        ocean_caves(&mut classic2, &mut gv2, &cave_layers(), &mut Rng(pass));
+        let carved2 = classic2
+            .tiles
+            .iter()
+            .filter(|t| t.kind == OCEAN_CAVE_CARVED)
+            .count();
+        assert!(
+            carved2 > 0,
+            "the classic ocean cave carved on a pass ({carved2})"
+        );
     }
 
     /// DW-3.2: the walker's invariants — the sentinel-264 carve marker, the

@@ -1835,6 +1835,11 @@ impl App {
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
         wind.world_surface = world.world_surface;
         wind.sway_enabled = !crate::env::no_wind();
+        // M5-SEED-1: `Wind.remix_world` is the wind module's stand-in for
+        // `Main.remixWorld` (`WorldGen.cs:11221`) — the rain/wind gates read
+        // it (`rain.rs:524-592`, `wind.rs:294-329`). The world's own flag set
+        // is the source, so a remix world's rain starts like vanilla.
+        wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
         let ambient_waterfall = (0.0, 0.0, 0.0);

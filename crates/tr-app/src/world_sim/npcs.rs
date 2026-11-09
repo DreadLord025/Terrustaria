@@ -2676,6 +2676,14 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
             downed_eoc: app.world.downed_eoc,
+            // M5-SEED-1: the classic secret-seed flags (`loot.rs`'s
+            // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
+            // `SkyblockIsUp` conditions) now read the world's identity —
+            // until this branch they were dead (`..Default::default()`).
+            tenth_anniversary: app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -5813,6 +5821,205 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+#[cfg(test)]
+mod tower_mob_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_tower_mobs_round_trip_their_rows() {
+        // The stardust/solar tower mobs (`NPC.cs`'s cases 409-419): the
+        // port ids 133-140, the sizes, the hp and the vanilla rows.
+        for (kind, id, w, h, hp, def) in [
+            (NpcKind::StardustSpiderBig, 133u16, 34.0, 42.0, 800, 40),
+            (NpcKind::StardustSpiderSmall, 134, 22.0, 22.0, 200, 10),
+            (NpcKind::StardustSoldier, 135, 22.0, 56.0, 700, 34),
+            (NpcKind::SolarDrakomire, 136, 60.0, 40.0, 800, 32),
+            (NpcKind::SolarDrakomireRider, 137, 18.0, 40.0, 800, 28),
+            (NpcKind::SolarSroller, 138, 46.0, 52.0, 700, 34),
+            (NpcKind::SolarCorite, 139, 38.0, 38.0, 600, 26),
+            (NpcKind::SolarSelenian, 140, 22.0, 56.0, 800, 30),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_spider_big_spawns_the_small_on_its_cycle() {
+        // `:59585-59589`'s 409 attack: the 60-tick cycle fires the 410
+        // spawn (no projectile) at the big spider's centre.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderBig, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_sphere.is_empty() {
+                saw = n.wants_sphere.len();
+                break;
+            }
+        }
+        assert!(saw > 0, "the small spider spawns");
+        let (kind, _sx, _sy) = n.wants_sphere[0];
+        assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
+        // It fires no projectile.
+        assert!(n.wants_hostile_shot.is_empty(), "no projectile");
+    }
+
+    #[test]
+    fn the_small_spider_kamikazes_with_three_538s() {
+        // `AI_026_Unicorns`'s 410 arm (`NPC.cs:62470-62494`): the 240-tick
+        // counter fires three 538s (50) and the spider self-destructs.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // one tick under the burst
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = 0usize;
+        for _ in 0..4 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            saw = n.wants_hostile_shot.len();
+            if saw > 0 {
+                break;
+            }
+        }
+        assert_eq!(saw, 3, "the three-shot burst");
+        for shot in &n.wants_hostile_shot {
+            assert_eq!(shot.0, 538, "the stardust dart");
+            assert_eq!(shot.5, 50, "the damage constant");
+        }
+        assert!(n.hp <= 0, "the self-destruct");
+    }
+
+    #[test]
+    fn the_soldier_fires_the_537_on_its_cycle() {
+        // `:59470-59473`/`:59574-59577`'s 411 attack: the 330-tick cycle
+        // fires the 537 (60) with the 40-px aim spread.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustSoldier, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the laser fires");
+        assert_eq!(s.0, 537, "the stardust soldier laser");
+        assert_eq!(s.5, 60, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_sroller_collapses_into_the_ball() {
+        // `:29394-29419`'s wind-up → the ball state: the doubled defense
+        // and the doubled damage while rolling.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarSroller, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the wind-up state
+        n.ai[1] = 29.0; // one tick under the collapse
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut balled = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[0] == 6.0 {
+                balled = true;
+                break;
+            }
+        }
+        assert!(balled, "the sroller collapses into the ball");
+        // The ball state's own body (its next tick) doubles the defense.
+        for _ in 0..2 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.defense_override, Some(68), "the doubled defense");
+    }
+
+    #[test]
+    fn the_corite_implodes_on_contact() {
+        // `:35447-35497`'s implosion: the 3-tick delay then the death (with
+        // the 80-damage blast request).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 3.0; // the implosion state
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut blasted = false;
+        for _ in 0..8 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_blast {
+                blasted = true;
+                break;
+            }
+        }
+        assert!(blasted, "the implosion blast");
+        assert!(n.hp <= 0, "the corite dies with it");
+        assert_eq!(n.damage_override, Some(80), "the implosion's hit");
     }
 }
 

@@ -7122,6 +7122,72 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   -- <worktree-root>`) or the regeneration lands in the shared primary. The
   baseline run used by this pass confirmed the primary stayed clean (the
   rewrite is content-identical), but a task should always pass the override.
+- **The smart-blocks setting is a seam, like the paint lookup.**
+  `Step_BlocksLines`' gate reads `Player.SmartCursorSettings.SmartBlocksEnabled`
+  (`Player.cs:331`); the app owns the toggle (`settings_ui`/`menu` persist it),
+  so the port's `Lookup::smart_blocks_enabled` is caller-passed. The steps'
+  callers do not exist yet, so the seam's default (`false`) keeps the step
+  inert until the wiring lands.
+- **`collision_empty_tile` implements the tile arm it previously stubbed.**
+  The clay-pot filter ran with `ignoreTiles: true`, so the early port's
+  always-true body was exact there; `Step_BlocksLines`' commit filter runs
+  with the default `ignoreTiles: false` (`Collision.cs:1372-1374`), where an
+  occupied tile must fail — the port now checks it and leaves the player/NPC
+  hitbox arms (the two loops over `Main.player`/`Main.npc`) to the app-side
+  wiring, which is why `Step_BlocksLines`' vote can still accept a cell an
+  entity stands in until that lands.
+- **`Step_EmptyBuckets`' liquid box counts the same kind only.** The sum
+  (`:644`) adds `Main.tile[k, l].liquid` only when the neighbour's
+  `liquidType()` matches the centre cell's, so a lava pocket inside a water
+  pool does not lift the water total (and vice versa) — the port compares
+  `liquid_kind()` and sums `liquid`; an out-of-world cell reads as liquid 0
+  of kind `Water`, which only ever contributes a zero.
+- **The wall step's line walk keeps the C#'s sequential-if clamps.**
+  `Collision.CanHitWithCheck` (`Collision.cs:493-518`) clamps its two centre
+  tiles with four sequential `if`s (`if (num <= 1) num = 1; if (num >= maxTilesX) num = maxTilesX - 1;` …), which on a world shorter than 40 rows pushes a row to 0 — past the lower bound the first `if` set. The port reproduces the sequence verbatim; a Rust `clamp(1, maxTilesY - 40)` would PANIC on the port's small test worlds (min > max) and, worse, hide the vanilla's row-0 behaviour.
+- **`can_hit_with_check` lives in-module until the app-side collision lands.**
+  The C#'s `Collision.cs` maps to the app's `collision.rs`, which `tr-core`
+  cannot reach; the smart-cursor slice needs the walk from the Rust core, so
+  the overload is ported inside `smart_cursor.rs` (with the
+  `DelegateMethods.NotDoorStand` check as a closure and the C#'s inline
+  "solid full block" test as `solid_full`). When the app-side Collision port
+  arrives, the walk moves next to its LOS siblings and this entry flips to
+  done.
+- **The player hitbox is a caller-passed seam, like the settings.** The wall
+  step reads `providedInfo.position` + `player.width/height` as its line
+  walk's origin (`Step_Walls` :1100-1102); the player entity is app-side, so
+  `Lookup::player_position`/`player_width`/`player_height` arrive from the
+  caller. The default fixture parks the player at the tile (30, 22) — the
+  walk's own `maxTilesY - 40` clamp needs a real world height, which is why
+  the wall tests run on a 100-row world (the 40-row fixture clamps every row
+  to 0 and the walk fails on its first out-of-world read, exactly as the C#
+  would).
+- **The continuity locks are the module's first mutable state.** The C#'s
+  `SmartCursorHelper._lockedDesiredDirection`/`_lockedContinuityCoords`
+  (`:55`/`:57`) are static fields; the port models them as a
+  `ContinuityState` the caller holds across lookups, and
+  `smart_cursor_lookup` takes `&mut ContinuityState` — it runs the reset
+  (`:66-67`: the use button held, the smart cursor on, the held item a
+  platform) and lets `Step_Platforms` write both locks mid-chain
+  (`:1383-1384`). `tile_target_desired` is the public read the C#'s
+  `Player.PlaceThing_Tiles` gate (`Player.cs:39721`) consults; the
+  `LockedDesiredDirection` arrow (`Main.cs:46643`) stays an app-side render
+  concern.
+- **The platform step works FROM the platform cells, not from empty ones.**
+  `Step_Platforms`' `flag` (`:1337-1343`) is `!IsPlatform(i, j)` and the cell
+  is skipped while the flag stands — so a plain empty cell is only a
+  candidate through the horizontal-join exception (an active, non-solid cell
+  beside a platform row, with the mouse bearing horizontal). The candidate
+  written to `_targets` is one step beyond the platform cell in the desired
+  direction, and the vote's second key (`num5 > num3`) picks the direction
+  most along the mouse's bearing on distance ties.
+- **`GetDesiredDirectionFrom` keeps the C#'s two truncations.** The bearing
+  is `ToRotation`'s atan2 (`Utils.cs:1655-1658`), shifted to [0, 2π), bucketed
+  into eighths with the half-bucket offset, then `(int)`-truncated, scaled
+  back to an angle, converted through `ToRotationVector2` × 1.5 and
+  truncated once more by `ToPoint` (`:1817-1820`) — so the diagonal buckets
+  land on ±1/±1 (the ±1.41 vectors truncate inward) and the flat ones on
+  ±1/0 and 0/±1. A standing lock replaces the whole computation (`:1434`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -7404,3 +7470,170 @@ Deviations: the 242-dust bursts, the on-hit early teleport
 attached suckler stays visible and the port's Player takes the obstruct
 through the `wants_obstruct` intent. The tower spawn tables themselves
 (`:1301-1318`) stay open with the M4-EVENT-7 shield work.
+
+## Secret seeds (M5-SEED-1)
+
+The framework layer, the runtime feeds and the worldgen arms that landed on
+`M5-SEED-1-classic-seeds` (merge `b460db76`-class follow-ups noted at the end).
+
+### The registry
+
+`tr-core/src/seeds.rs` ports the 1.4.5 option table, not the 1.4.4 flag
+switches: the classic secret seeds are `AWorldGenerationOption`s
+(`WorldBuilding/WorldGenerationOptions.cs:30-41`), each with a
+`SpecialSeedNames` list and `SpecialSeedValues` aliases; a seed *text*
+resolves through `GetOptionFromSeedText` (`:66-83`) — `WorldFileData.
+TranslateSeed` (`:386-397`: numeric → `Math.Abs(int)`, else `Crc32`) for the
+value match, `Regex.Replace(text, "[^a-z0-9]+", "")` for the name match, in
+registration order. The port mirrors that with `OPTION_TABLE` +
+`option_for_seed_text` + `SeedFlags::from_seed_text`, the flags carried as
+the `serializedSeedsSum` bitmask (`WorldFileData.cs:157-197`: drunk 1,
+bees 2, FTW 4, anniversary 8, DST 16, remix 32, no-traps 64, zenith 128,
+skyblock 256).
+
+Two structural notes:
+
+- `getfixedboi` is the *Everything/Zenith* option (`WorldSeedOption_Everything.
+  cs:15-58`), which force-enables its seven dependencies (remix, drunk,
+  bees, no-traps, the Constant, anniversary, FTW — skyblock is NOT one).
+  `SeedFlags::from_seed_text` reproduces the cascade, so a
+  "get fixed boi" world's flags are the full mix.
+- The 38 modular 1.4.5 micro seeds use a different registry entirely —
+  `WorldGen.SecretSeed` with BCrypt codes (`WorldGen.cs:3022-3058`,
+  `Utilities/Secrets.cs:7-27`). They stay with M5-SEED-2; the port's
+  `SeedFlags` has no room for them and the worldgen reads them as off.
+
+The UI half (`OnFinishedSettingSeed`'s option ring, the Advanced seed tab,
+the plate icons) stays a documented deviation — the resolution itself is
+pure, so `create_world_in` now feeds the flags into `GenOptions` and the
+created (and saved) world carries them.
+
+### Persistence
+
+- TRWLD gains v6: the nine booleans as the port's own bitmask u16
+  (`WorldFile.SaveWorldFlags`'s order, `WorldFile.cs:1238-1250`). A v5 file
+  loads as the classic world it was.
+- `.wld`: `load_header_flags` used to `skip(1)` nine times; it now reads
+  them into `World.seeds` at their introduction versions (222/227/238/239/
+  241/249/266/267/302 — the same gates `WorldFile.LoadWorldFlags`
+  `:1981-2041` uses), plus the pre-267 `zenithWorld = remix && drunk`
+  inference (`:2020`). The port still stores the seed as text only and
+  re-derives the int on load, exactly like the C#.
+
+### The worldgen arms
+
+Every arm is flag-gated; the classic pipeline is byte-identical (both
+pinned world hashes pass unchanged, and no world_hash re-pin was needed —
+the M5-BIOME-2-style ledger note does not apply). Three new steps join the
+executed chain (56 → 59): `wavy caves` (the Constant's own pass, vanilla
+`:12271`), `constant lava layer` (the Dungeon-tail `LavaLayerCaverer`
+call, `:14867`) and `seed finish` (the `GenerateWorld` tail, `:22431-22444`);
+all three draw nothing for a classic world.
+
+| Seed | Arm | C# anchor |
+|---|---|---|
+| drunk | `TileRunner` entry pair — `strength`/`steps` ×(1 ± 0.8) with two `Next(-80,81)` draws | `:76772-76788` |
+| drunk | the 1-in-30 step teleport (both axes), the ladder `Next(3)` gate, the per-step X-velocity nudge | `:76823-76827`, `:77003`, `:77088-77091` |
+| drunk | the ash-candidate skip and the ash-column runner floor | `:76866-76868` |
+| drunk | both evil biomes at half the count, both passes forced, the half-restricted anchors (`crimsonLeft`), `num19 = 100` | `:13938-14304` |
+| drunk | the dungeon start row pinned to `worldSurface + 70` | `:14804`/`:14854` |
+| drunk | the living-trees count `+2×`, the side-patch count `+Next(2,5)` | `:15504`/`:15628` |
+| drunk | the ocean-cave chance gate OR'd open | `:15178` |
+| drunk | `FinishDrunkGen` — the `Next(13,25)` dungeon palette, the per-brick bands, wall 25/87, the jungle→mud smoothing, the temple band at 16 | `:26226-26315` |
+| drunk+FTW | `flipInfections` — ebonstone 25/3 ↔ crimstone 203/83 ids through the evil pass | `:11298-11304` |
+| FTW | `TileRunner` `strength` ×(1 ± 0.015) + `steps += Next(3)` for every non-ash runner | `:76772-76788` |
+| FTW | spider caves ×3, neon-moss radius/length ×1.5, the moss 0.42-0.48 band | `:17378`, `:9802`, `:17503` |
+| FTW | `ShroomPatch` scale ×1.5 (the `World.seeds` stand-in for `!remix`) | `:79866-79870` |
+| FTW | `FinishGetGoodWorld` — the palette re-roll, tile 226/137 paint 17, wall 87 → 25, the 1-in-15 ash-lava pockets, the surface-grass conversion to 199/23 with the plant kills | `:25799-25983` |
+| anniversary | `FinishTenthAnniversaryWorld` — `PaintTheDungeon/LivingTrees/Temple/Clouds/Sand/Pyramids` and the 1-in-4 boulder 138→665 | `:24237-24282` |
+| anniversary | the jungle-origin band widened to `Next(25,35)` | `:11360-11370` |
+| remix | the jungle-origin band widened to `Next(20,35)` | `:11247` |
+| remix | the spawn point moved to the bottom centre (the first air scanning up from `maxTilesY - 10`) | `:19574-19584` |
+| constant | iron/gold pinned (no lead/platinum) unless drunk | `:11280`/`:11292` |
+| constant | `WavyCaves` — the DST-only pass, 100-try band rejection then `WavyCaverer` | `:12271-12311` |
+| constant | `LavaLayerCaverer` — the Dungeon-tail two-row lava caver | `:14867`, `:73950-74060` |
+| bees+constant | the runner's honey wall-spread variant | `:76806` |
+
+`GenVars.crimsonLeft` is drawn in the pipeline's Reset stand-in from its own
+`pass_rng("Reset")` stream (vanilla's `genRand.Next(2)` at `:11216`); the
+evil pass re-derives it from the same stream contract rather than taking it
+through the step signature — the derivation is exact today and is flagged
+in its doc comment.
+
+### Deviations + deferred
+
+- The remix inverted-terrain family (~211 `remixWorldGen` sites: the
+  inverted bands of `TerrainPass`, the doubled cave counts, the NPC swaps,
+  `FinishRemixWorld`'s cloud/wall conversions) is deferred — it is a
+  shape-level rewrite of the compact terrain model, not a branch add. The
+  row's remix coverage is the flags + the two `Reset`-range arms + the
+  spawn override.
+- The not-the-bees hive world (`NotTheBees`/`FinishNotTheBees`'s ~20 sites)
+  is deferred the same way; its flags resolve and its runtime conditions
+  read them.
+- The drunk per-blob ore re-rolls (the 22 `if (drunkWorldGen) { Next(2) }`
+  tier sites `:13194-13577`) and the drunk double evil-ore bands
+  (`:13370-13378`, `:13577-13586`) stay deferred: the port's ore band table
+  carries one tier per pair and the re-rolls would need a per-blob tier
+  pair, i.e. a table rewrite.
+- `ImproveAllChestContents` (`:24716-24765`, the celebration prefix pools)
+  is loot-side; the port places chests as tiles without inventories, so
+  the chest arms of the three Finish passes (5001/678 drops) draw and write
+  nothing.
+- `ConvertSkyIslands` (`:24243`) needs the C# `Convert` Hallow helper the
+  port does not have; the `PaintThe*` sweeps and the 138→665 conversion
+  run without it.
+- The drunk `getGoodWorld`/`notTheBees` combo first branches (spider caves
+  `:17369-17375`, moss `:17510-17516`'s re-roll) stay out: the port's
+  classic arm draws once, so porting the C#'s extra re-roll would break
+  the classic byte-identity the whole branch is built on.
+- Runtime follow-ups for the flags now that they are live: the FTW AI/damage
+  family (`Main.getGoodWorld`'s ~100 `NPC.cs` sites), the anniversary
+  party, the Constant's starving/darkness 
+
+## The tower mobs (M4-EVENT-13)
+
+The Stardust tower rolls `SelectRandom(411, 411, 411, 409, 409, 407, 402,
+405)` (`NPC.cs:1349`, no alive caps — the cell/worm caps live in
+`SpawnStardustMark_StardustTower`); the Solar tower rolls
+`SelectRandom(518, 419, 418, 412, 417, 416, 415)` with the 518 and 412
+rerolls (`:1355-1384`). 410 and 402 never come from the table: 410 only
+from 409's attack.
+
+- **The big spider (409)** is in the shared shooter list but fires no
+  projectile: its 60-tick cycle (`:59155-59160`) spawns the 410 at its
+  centre with the carried velocity (`:59585-59589`), and its walk runs
+  the 2-px cap / 0.5 accel (`:59746-59750`).
+- **The small spider (410)** is an aiStyle-26 unicorn walker (`:62470`)
+  with the 6-px / 0.2-accel tail (`:62706-62713`): the 240-tick counter
+  (or a player 800 px below inside a 20-px column) fires three 538s (50,
+  `X ∈ [-1, 1]`, `Y ∈ [-14, -4]`) and then self-destructs.
+- **The soldier (411)** runs the 330-tick cycle (`:59151-59153`) firing
+  the 537 at 60 damage from the muzzle (`:59271-59274`, `:59470-59473`,
+  `:59574-59577`); its [120, 240) window (`:59076-59081`'s
+  `flag16`/`num160`/`num161`) is the aerodynamic phase and its walk runs
+  the 2-px cap (`:59741-59745`).
+- **The drakomire (415)** rides the walker with the 4/0.1/0.95 jump
+  assist (`:58214-58219`) and hides while a 416 links to it
+  (`:58422-58431`).
+- **The rider (416, aiStyle 75)** spawns its own 415 mount at spawn
+  (`:35523-35537`), rides it at the `(-spriteDirection * 10, -30)`
+  offset with the mirrored direction/sprite (`:35662-35679`), and
+  `Transform(518)`s when the mount dies (`:36060-36061`).
+- **The sroller (417, aiStyle 39)** aggro-counts to 400 → the wind-up
+  (`:29394-29419`'s 30 ticks) collapses it into the ball (the 32-px
+  height, `ai[2] = rand(2, 4)` revolutions), the ball doubles the defense
+  and scales the damage ×1.8 (`:29532-29580`), and the unroll restores
+  the 52-px height (`:29634-29668`).
+- **The corite (418, aiStyle 74)** approaches at the 8-px cap
+  (`:35238-35276`'s own parameter set), charges to the 9-px dash and
+  then cools down; its state-3 arm (or the 64-px contact) triggers the
+  implosion: the 192-box, the zeroed velocity, 80 damage
+  (`GetAttackDamage_ScaledByDifficulty`) and the 3-tick death
+  (`:35447-35497`).
+- **The selenian (419)** walks with the 6/0.15/0.85 set (`:58220-58224`).
+
+Deviations: the dust/gore `HitEffect` rows, the corite's lighting/sound
+arms, the sroller's `ai[3]` FX layer and the tower spawn tables are
+unmodelled; the sroller's height collapse (46×52 → the ball) rides the
+defense/damage overrides rather than a box change.

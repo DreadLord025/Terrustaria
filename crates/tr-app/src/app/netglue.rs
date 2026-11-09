@@ -1964,6 +1964,14 @@ fn npc_seed(
         | crate::npc::NpcKind::NebulaFloater
         | crate::npc::NpcKind::BrainSuckler
         | crate::npc::NpcKind::Predictor
+        | crate::npc::NpcKind::StardustSpiderBig
+        | crate::npc::NpcKind::StardustSpiderSmall
+        | crate::npc::NpcKind::StardustSoldier
+        | crate::npc::NpcKind::SolarDrakomire
+        | crate::npc::NpcKind::SolarDrakomireRider
+        | crate::npc::NpcKind::SolarSroller
+        | crate::npc::NpcKind::SolarCorite
+        | crate::npc::NpcKind::SolarSelenian
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
