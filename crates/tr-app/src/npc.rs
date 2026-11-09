@@ -503,6 +503,15 @@ pub enum NpcKind {
     /// needs EVERY other town NPC present (`Main.cs:65944-65955`); the
     /// shop index 24 (`Chest.cs:3409`) — M4-TOWN-19.
     Princess,
+    /// `NPCID.DyeTrader` (207) — the dye seller (`NPC.cs:11654-11667`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[207]` = 25, `Main.cs:67120`) — the shop index 12
+    /// (`Chest.cs:1120`) — M4-TOWN-20.
+    DyeTrader,
+    /// `NPCID.PartyGirl` (208) — the party starter (`NPC.cs:11668-11681`:
+    /// the town twin; `npcFrameCount[208]` = 23) — the shop index 13
+    /// (`Chest.cs:case 13`) — M4-TOWN-20.
+    PartyGirl,
     /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
     /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
@@ -1020,6 +1029,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => 164,
             NpcKind::Zoologist => 165,
             NpcKind::Princess => 166,
+            NpcKind::DyeTrader => 167,
+            NpcKind::PartyGirl => 168,
         }
     }
 
@@ -1210,6 +1221,8 @@ NpcKind::SolarSelenian => 140,
             164 => NpcKind::SleepingGolfer,
             165 => NpcKind::Zoologist,
             166 => NpcKind::Princess,
+            167 => NpcKind::DyeTrader,
+            168 => NpcKind::PartyGirl,
             _ => return None,
         })
     }
@@ -1242,6 +1255,8 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::Golfer
                 | NpcKind::Zoologist
                 | NpcKind::Princess
+                | NpcKind::DyeTrader
+                | NpcKind::PartyGirl
         )
     }
 
@@ -1370,6 +1385,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => (18.0, 34.0),
             NpcKind::Zoologist => (18.0, 40.0),
             NpcKind::Princess => (18.0, 40.0),
+            NpcKind::DyeTrader => (18.0, 40.0),
+            NpcKind::PartyGirl => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1611,6 +1628,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => 589,
             NpcKind::Zoologist => 633,
             NpcKind::Princess => 663,
+            NpcKind::DyeTrader => 207,
+            NpcKind::PartyGirl => 208,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1743,6 +1762,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WebbedStylist => 250,
             NpcKind::Golfer => 250,
             NpcKind::Zoologist => 250,
+            NpcKind::DyeTrader => 250,
+            NpcKind::PartyGirl => 250,
             NpcKind::Princess => 250,
             NpcKind::SleepingGolfer => 250,
             NpcKind::TaxCollector => 250,
@@ -1974,6 +1995,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WebbedStylist => 10,
             NpcKind::Golfer => 10,
             NpcKind::Zoologist => 10,
+            NpcKind::DyeTrader => 10,
+            NpcKind::PartyGirl => 10,
             NpcKind::Princess => 10,
             NpcKind::SleepingGolfer => 10,
             NpcKind::TaxCollector => 10,
@@ -3085,6 +3108,8 @@ impl Npc {
             NpcKind::WebbedStylist => 0.5,
             NpcKind::Golfer => 0.5,
             NpcKind::Zoologist => 0.5,
+            NpcKind::DyeTrader => 0.5,
+            NpcKind::PartyGirl => 0.5,
             NpcKind::Princess => 0.5,
             NpcKind::SleepingGolfer => 0.5,
             NpcKind::TaxCollector => 0.5,
@@ -3332,6 +3357,8 @@ impl Npc {
             NpcKind::WebbedStylist => 15,
             NpcKind::Golfer => 15,
             NpcKind::Zoologist => 15,
+            NpcKind::DyeTrader => 15,
+            NpcKind::PartyGirl => 15,
             NpcKind::Princess => 15,
             NpcKind::SleepingGolfer => 15,
             NpcKind::TaxCollector => 15,
@@ -3579,6 +3606,8 @@ impl Npc {
             NpcKind::WebbedStylist => 0.0,
             NpcKind::Golfer => 0.0,
             NpcKind::Zoologist => 0.0,
+            NpcKind::DyeTrader => 0.0,
+            NpcKind::PartyGirl => 0.0,
             NpcKind::Princess => 0.0,
             NpcKind::SleepingGolfer => 0.0,
             NpcKind::TaxCollector => 0.0,
@@ -3744,6 +3773,8 @@ impl Npc {
             | NpcKind::Golfer
             | NpcKind::Zoologist
             | NpcKind::Princess
+            | NpcKind::DyeTrader
+            | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -4107,6 +4138,7 @@ impl Npc {
             NpcKind::Stylist | NpcKind::TaxCollector => {}
             NpcKind::Golfer => {}
             NpcKind::Zoologist | NpcKind::Princess => {}
+            NpcKind::DyeTrader | NpcKind::PartyGirl => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -11327,6 +11359,8 @@ impl Npc {
                     | NpcKind::TaxCollector
                     | NpcKind::Zoologist
                     | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11400,6 +11434,8 @@ impl Npc {
             NpcKind::SleepingGolfer => 164,
             NpcKind::Zoologist => 165,
             NpcKind::Princess => 166,
+            NpcKind::DyeTrader => 167,
+            NpcKind::PartyGirl => 168,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13826,6 +13862,102 @@ mod tests {
     /// screenshot pair (the port's draw rides the same rows).
 
 
+
+
+    #[test]
+    fn the_dye_trader_and_party_girl_kinds_stats_roundtrip_and_shops() {
+        // `SetDefaults` 207 (`NPC.cs:11654`) and 208 (`:11668`): the town
+        // twin's numbers, the kind<->u16 round-trips, the shop indexes
+        // (`NPCInteractions.cs:499-500`'s `Shop(207, 12)`/`Shop(208, 13)`) and
+        // the bestiary rows.
+        for (kind, id) in [
+            (NpcKind::DyeTrader, 207u16),
+            (NpcKind::PartyGirl, 208),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+            assert_eq!(kind.size(), (18.0, 40.0), "{kind:?}");
+            assert!(kind.is_town_resident(), "{kind:?}");
+        }
+        assert_eq!(NpcKind::DyeTrader.to_u16(), 167);
+        assert_eq!(NpcKind::from_u16(167), Some(NpcKind::DyeTrader));
+        assert_eq!(NpcKind::PartyGirl.to_u16(), 168);
+        assert_eq!(NpcKind::from_u16(168), Some(NpcKind::PartyGirl));
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::DyeTrader),
+            Some(12)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::PartyGirl),
+            Some(13)
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::DyeTrader, SlimeVariant::Blue).net_id,
+            207
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::PartyGirl, SlimeVariant::Blue).net_id,
+            208
+        );
+    }
+
+    /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
+    /// 0 pair and the blood-moon-night row.
+    #[test]
+    fn the_dye_trader_shop_carries_the_dye_rows() {
+        let stock = crate::shop::resolve_stock(12, &crate::shop::ShopFlags::default(), &[]);
+        for id in [1120, 5920, 1037, 2874] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        // `resolve_stock` reads moon-phase 0, where the C#'s pair sits.
+        assert!(stock.contains(&2871), "the moon-phase row at phase 0");
+        assert!(stock.contains(&2872), "its pair");
+        let phase2 = crate::shop::resolve_stock_moon(
+            12,
+            &crate::shop::ShopFlags::default(),
+            &[],
+            4,
+        );
+        assert!(!phase2.contains(&2871), "no moon-phase row at phase 4");
+        // The blood-moon-night row.
+        let night = crate::shop::ShopFlags {
+            night: true,
+            blood_moon: true,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(12, &night, &[]);
+        assert!(rows.contains(&4663), "the blood-moon row");
+        // The halloween and graveyard rows stay constants-off.
+        assert!(!rows.contains(&3248), "no halloween hat");
+        assert!(!rows.contains(&4662), "no graveyard goggles");
+    }
+
+    /// The Party Girl's shop (`case 13`): the eighteen always rows.
+    #[test]
+    fn the_party_girl_shop_carries_the_party_rows() {
+        let stock = crate::shop::resolve_stock(13, &crate::shop::ShopFlags::default(), &[]);
+        for id in [859, 1000, 1168, 1345, 1450, 3253, 4553, 2700, 2738, 4470, 4681, 4791, 3747, 3732, 3742] {
+            assert!(stock.contains(&id), "the {id} party row");
+        }
+        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
+        // the night half.
+        assert!(stock.contains(&1449));
+        assert!(!stock.contains(&4552), "the night row is off by day");
+        let night = crate::shop::ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(13, &night, &[]);
+        assert!(rows.contains(&4552), "the night row by night");
+        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
+        // flags the port has not modelled.
+        assert!(!rows.contains(&4682), "no graveyard goggles");
+        assert!(!rows.contains(&4743), "no football at score 0");
+        assert!(!rows.contains(&3369), "no pirate row");
+        assert!(!rows.contains(&3546), "no golem row");
+        assert!(!rows.contains(&3749), "no party block");
+    }
 
     #[test]
     fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {

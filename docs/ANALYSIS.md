@@ -3762,6 +3762,19 @@ Deviations:
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
 ## Zoologist/Princess (M4-TOWN-19)
+## Dye Trader/Party Girl (M4-TOWN-20)
+
+Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
+has no ported field (the `ItemSlot` carries only kind/count/prefix), so the
+arrival reads the two id bands the C# names literally (the dye materials
+1107-1120 and the Strange Plants 3385-3388); the equipment's dye slots
+(`GetEffectiveDye`, `NPC.cs:7138-7145`) are not ported, so that half of the
+gate is off. The Party Girl's shop rows gated on the golfer score, the
+Pirate, the Golem, hardmode and the BirthdayParty ride systems the port
+lacks — the BirthdayParty block (12 rows) lands with the party event. Her
+arrival's `num40 >= 20` town-NPC count is counted live in the town pass (the
+C# counts all 24 per-type counters in `UpdateTime_SpawnTownNPCs`).
+
 
 Both are late-roster town NPCs. Deviations: the Zoologist's shop has the
 fairy-torch row (`Chest.BestiaryGirl_IsFairyTorchAvailable`, `:3544`), the
