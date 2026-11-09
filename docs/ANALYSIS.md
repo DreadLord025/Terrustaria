@@ -2031,7 +2031,35 @@ selection state and its play path closes the front flow rather than loading the
 entry (spec §9.4), so a double-click resolves to the same flow a Play button
 click does.
 
-Corrected deviations (both were geometry the layout pass would have got right):
+Corrected deviations (both were geometry the layout pass would have got right,
+and a third was the click gate the geometry feeds):
+
+* **The state-change click lockout never expired (fix-world-select-clicks).**
+  `App::enter_front` arms `UserInterface`'s 200 ms post-`SetState` disable
+  (`ResetState`, `:178`, ported at `ui/pointer.rs:141`), but the *only* countdown
+  site sat inside `frame()`'s `if self.menu.is_none() && self.front.is_none()`
+  branch — the in-game regime — so `PointerState::tick` never ran while a front
+  screen (`Main.menuMode == 888`) was live. `click_disabled_ms` therefore stayed
+  at 200.0 and `clicks_disabled()` was permanently true, which dropped every
+  press twice: once at `app/loop.rs:422` (no `PointerEvent` produced) and again
+  at `handle_front_click` (`UserInterface.cs:214-218`, the gate the click tables
+  run behind). **Every** row of **every** front screen — world select's cards,
+  New/Back/Favorite/Rename/Delete, and the character-select twins — was dead
+  until the app was restarted. The C# decrements unconditionally:
+  `Main.UpdateUIStates` (`Main.cs:17039`/`:17487-17492`) reaches
+  `MenuUI.Update` on every frame, and `UserInterface.cs:203-204` clears the
+  countdown before reading the gate. The port now calls
+  `App::tick_pointer_clock` from `frame()` on every frame, outside the
+  in-game branch, with a citation naming the C# reach. This replaces the older
+  note here that the 200 ms disable "is armed on the enter direction only
+  (`enter_front`), not on the leave direction the C#'s `SetState(null)` also
+  resets" — neither direction decayed.
+  The existing double-click test had masked it by hand-ticking the lockout away
+  (`app.pointer.tick(300.0)`); it now advances the real `frame()` seam.
+  The screen geometry itself was never implicated: `world_select::card_hit`
+  (`ui/world_select.rs:506`), the layout shared with char_select (`:42`, `:185`)
+  and the framework's `get_element_at` (`ui/framework.rs:64`) are all 1:1 with
+  `UIWorldListItem.cs:94-158` and `UIElement.cs:324-352`.
 
 * **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
   `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
@@ -2073,9 +2101,12 @@ Open gaps (deliberately out, each with its reason):
   `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
   `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
   `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
-  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
-  enter direction only (`enter_front`), not on the leave direction the C#'s
-  `SetState(null)` also resets.
+  exit sites have no `leave_front` seam, so the 200 ms disable is never re-armed
+  on the leave direction the C#'s `SetState(null)` also resets
+  (`open_keyboard_with_tail` at `app/mod.rs:1159` and the mode-40 `No` restore at
+  `app/clicks.rs:990` set `front` without going through `enter_front`) — the
+  inverse of the latch fixed in the corrected-deviations list above, and
+  harmless because the countdown now always expires.
 * **Snap points / gamepad** (already recorded as out of scope) and
   `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
 
@@ -2972,6 +3003,20 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
+
+## The King Slime (M4-NPC-3q)
+
+The King Slime's draw carried the right numbers as v1 magic: `[n.x - 38.0,
+n.y - 25.0]` over a hard-coded `120.0` frame height, which is the generic
+anchor (`[x + 49 - 87, y + 92 + 4 - 60]`) plus a 1-px fudge. Replaced with
+`boss_draw`'s derived 174x120 rows (NPC_50 measured 174x720, six 120-px
+rows over the 98x92 box), so the sheet's real geometry drives the draw.
+`case 50`'s machine (`NPC.cs:73380-73414`) verified 1:1: the air snaps to
+row 4 and holds 5, the landing falls back to 4, the grounded walk rides
+0..3 with the `num2` boosts.
+
+Screenshot: `king_slime.png` (the slime at its real 174x120 frame standing
+on the grass), SHA256-stable across three runs.
 
 ## The Plantera and the Brain (M4-NPC-3o)
 
