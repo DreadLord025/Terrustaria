@@ -5215,6 +5215,21 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   (no `GrowPalmTree` port); the paint cache copies the ground's paint (the
   C#'s `UseBlockColors` coating bits ride the port's paint field alone).
 
+- **The palm sapling arm** (`GrowPalmTree`, `WorldGen.cs:27116-27202`, wired
+  through `AttemptToGrowTreeFromSapling`'s kind-20 styles 6-9 arm
+  `:72838-72848` → `TryGrowingTreeByType(323)`): the palm trunk grows on the
+  sand ground (53/234/116/112) behind the 2×1 ground box + the 3-wide
+  `num - num2..num - 3` box, the 10-20 height roll, the base 66-column, the
+  top 22·Next(4,7) column and the middle 22·Next(0,3) columns with the lean
+  walk's frameY offsets. The twin port `worldgen::ocean::grow_palm_tree`
+  rides the worldgen `Rng` stream; the growth pass keeps its `FastRandom`
+  per-consumer stream, so the arm is ported locally here (the
+  `growth::spread_grass`/`evil::spread_grass` precedent). The decompiled lean
+  guard is an always-true chain (`… || true`) — the advance fires at
+  `j / num3 >= 0.25` while the `Next(13)`/`Next(9)`/`Next(5)` draws stay in
+  their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
+  anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
