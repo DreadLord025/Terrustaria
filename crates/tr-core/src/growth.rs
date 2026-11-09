@@ -1138,6 +1138,160 @@ fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) -> bool
     false
 }
 
+/// `TileID.Sets.IsVine` (`TileID.cs:531`) — the vine kinds the density count
+/// reads.
+const IS_VINE: &[u16] = &[52, 382, 62, 115, 205, 528, 636, 638];
+
+/// `Collision.CanHitLine`'s LOS over the two tile centres: the port's own
+/// Bresenham walk (the shared `smart_cursor` helper is module-private; the C#
+/// call passes 1x1 boxes, so the walk runs centre-to-centre).
+fn can_hit_line(world: &World, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
+    let steep = (y2 - y1).abs() > (x2 - x1).abs();
+    let (mut ax, mut ay, mut bx, mut by) = (x1, y1, x2, y2);
+    if steep {
+        std::mem::swap(&mut ax, &mut ay);
+        std::mem::swap(&mut bx, &mut by);
+    }
+    let dx = (bx - ax).abs();
+    let dy = (by - ay).abs();
+    let sx = if ax < bx { 1 } else { -1 };
+    let sy = if ay < by { 1 } else { -1 };
+    let mut err = dx / 2;
+    let mut i = ax;
+    loop {
+        let (px, py) = if steep { (ay, i) } else { (i, ay) };
+        if world
+            .tile(px, py)
+            .is_some_and(|t| t.active() && growth_solid_kind(t.kind))
+        {
+            return false;
+        }
+        if i == bx {
+            break;
+        }
+        err -= dy;
+        if err < 0 {
+            ay += sy;
+            err += dx;
+        }
+        i += sx;
+    }
+    true
+}
+
+fn growth_solid_kind(kind: u16) -> bool {
+    (kind as usize) < crate::tiledata::TILE_COUNT
+        && crate::tiledata::TILE_SOLID.has(kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(kind)
+}
+
+/// `WorldGen.GrowMoreVines` (`:45586-45621`): the vine-density cap around
+/// `(x, y)` — the ±4/±6/±10 box's vine count, the LOS-weighted accumulation
+/// below the source and the 60 budget (÷5 on the mushroom vine 528).
+fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
+    if x < 30 || y < 30 || x >= world.width - 30 || y >= world.height - 30 {
+        return false;
+    }
+    let (lo_x, lo_y, hi_y, mut num4) = (4, 6, 10, 60);
+    if world.tile(x, y).is_some_and(|t| t.kind == 528) {
+        num4 /= 5;
+    }
+    let mut num5 = 0;
+    for i in (x - lo_x)..=(x + lo_x) {
+        for j in (y - lo_y)..=(y + hi_y) {
+            if world.tile(i, j).is_some_and(|t| t.active() && IS_VINE.contains(&t.kind)) {
+                num5 += 1;
+                if j > y && can_hit_line(world, x, y, i, j) {
+                    let weight = if world.tile(i, j).is_some_and(|t| t.kind == 528) {
+                        20
+                    } else {
+                        2
+                    };
+                    num5 += (j - y) * weight;
+                }
+                if num5 > num4 {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `UpdateWorld_UndergroundTile`'s vine arms (`:73310-73470`): the jungle,
+/// mushroom, corrupt, crimson and ash families grow their vine one row below
+/// at the vanilla odds (the 1/5 jungle arm, the 70/7 odds for the rest,
+/// 7 when the tile is already the vine kind), behind the free-below gate, the
+/// 10-row look-up through the family grass and `GrowMoreVines`' density.
+pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+    let kind = world.tile(i, j).map(|t| (t.active(), t.kind, t.bottom_slope()));
+    let Some((active, kind, bottom_slope)) = kind else {
+        return;
+    };
+    if !active || bottom_slope {
+        return;
+    }
+    // The free-below gate: the cell below the source must be inactive and dry
+    // (the C#'s `!active() && !anyLava()` `:73313`).
+    let below_clear = world
+        .tile(i, j + 1)
+        .is_some_and(|t| !t.active() && t.liquid == 0);
+    if !below_clear {
+        return;
+    }
+    // `(grass, vine, odds, gate)` per family (`:73311-73499`).
+    let (grass, vine, odds, gated) = match kind {
+        60 | 62 => (60, 62, 5, true),
+        633 | 638 => (633, 638, 70, false),
+        70 | 528 => (70, 528, 70, false),
+        661 | 636 => (661, 636, 70, false),
+        662 | 205 => (662, 205, 70, false),
+        _ => return,
+    };
+    let odds = if kind == vine {
+        if gated {
+            odds
+        } else {
+            7
+        }
+    } else {
+        odds
+    };
+    if rng.next(odds) != 0 {
+        return;
+    }
+    if !grow_more_vines(world, i, j) {
+        return;
+    }
+    // The 10-row look-up: the family grass below (a bottom slope aborts).
+    let mut flag = false;
+    let mut n = j;
+    while n > j - 10 {
+        let t = world.tile(i, n);
+        if t.is_some_and(|t| t.bottom_slope()) {
+            flag = false;
+            break;
+        }
+        if t.is_some_and(|t| t.active() && t.kind == grass && !t.bottom_slope()) {
+            flag = true;
+            break;
+        }
+        n -= 1;
+    }
+    if !flag {
+        return;
+    }
+    if let Some(t) = world.tile_mut(i, j + 1) {
+        t.kind = vine;
+        t.flags = FLAG_ACTIVE;
+        t.liquid = 0;
+    }
+    if world.frame_important.len() <= vine as usize {
+        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[vine as usize] = true;
+}
+
 /// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
 /// grass. The 4-neighbour density gate, the Next(4) directional walk, the
 /// landing cell empty with <=2 spike neighbours and a spike within the
@@ -1426,6 +1580,64 @@ pub fn update_world(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The underground vine arms (`:73310-73470`): the jungle grass with the
+    /// vine below it grows the vine one row down at the 1/5 arm, behind the
+    /// free-below gate, the 10-row look-up and `GrowMoreVines`' density.
+    #[test]
+    fn the_vine_arms_grow_below_their_grass() {
+        // A jungle-grass column 30..32 with the free cell below (33), far
+        // enough from the world edges for GrowMoreVines' InWorld(30).
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 100.0;
+        for y in 30..=32 {
+            let i = w.index(100, y);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 60,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut grew = 0;
+        let mut runs = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            grow_vine_arm(&mut w, 100, 32, &mut rng);
+            runs += 1;
+            grew += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 62)
+                .count();
+        }
+        assert!(grew > 0, "the jungle arm grows the vine 62 ({grew} over {runs})");
+
+        // The control: the same column with the vine already one below takes
+        // the 70-odds arm of the family (the vine kind's own odds).
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 100.0;
+        for (y, kind) in [(30, 60), (31, 60), (32, 62), (33, 60)] {
+            let i = w.index(100, y);
+            w.tiles[i] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut grew2 = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            grow_vine_arm(&mut w, 100, 33, &mut rng);
+            grew2 += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 62)
+                .count();
+        }
+        assert!(grew2 > 0, "the vine's own arm extends it ({grew2})");
+    }
 
     /// The bamboo arm (`:72154-72156` + `PlaceBamboo` `:58391-58445`): a
     /// bamboo 571 with a free cell above grows a stalk at the vanilla gates —
