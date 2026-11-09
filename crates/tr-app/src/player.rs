@@ -625,11 +625,11 @@ pub struct Player {
     /// (Phase 4); default off.
     pub channel: bool,
     /// The shooting item's kind while `channel` — the C# block only holds the
-    /// aim while `HeldItem.shoot == type` (`Player.cs:52958-52968`'s
-    /// `ChannelCancelKey.ProjectileTypeExpected`); 0 = no item.
+    /// aim while `HeldItem.shoot == type` (`AI_009_MagicMissiles`'s owner
+    /// block, `Projectile.cs:43239-43249`); 0 = no item.
     pub channel_item: u16,
     /// The aim target the channel feeds the spell: `MouseWorld` clamped by
-    /// `LimitPointToPlayerReachableArea` (`Player.cs:52958-52968`'s
+    /// `LimitPointToPlayerReachableArea` (`Projectile.cs:43241-43249`'s
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
     /// pixels. `Vec2::ZERO` while not channelling.
     pub channel_target: Vec2,
