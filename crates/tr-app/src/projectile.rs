@@ -304,6 +304,11 @@ pub const VALOR_YOYO: u16 = 564;
 /// 604 (`Projectile.cs:6071-6083`, aiStyle 115).
 pub const TERRARIAN_YOYO: u16 = 603;
 pub const TERRARIAN_BEAM: u16 = 604;
+/// The yoyo on-hit shots (M4-PROJ-4b, `Projectile.cs:10528`-`:10667`).
+pub const CASCADE_EXPLOSION: u16 = 1125;
+pub const CRYSTAL_SHARD_MELEE: u16 = 1134;
+pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
+pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// The whole aiStyle-99 weapon set — the kinds `DefaultToYoyo` covers.
@@ -594,6 +599,14 @@ fn set_defaults_scale(kind: u16) -> f32 {
 /// vanishes (Phase 1's deviation, fixed by this block). Their aiStyles
 /// 16 dispatch to `ai_bomb`; 147/75/10/181 stay unported stand-ins (the rows
 /// carry the vanilla value for the later AI port — M4-PROJ).
+
+/// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
+/// angle in radians.
+fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    let (s, c) = angle.sin_cos();
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
 pub fn proj_data(kind: u16) -> Option<ProjData> {
     let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap) =
         match kind {
@@ -734,6 +747,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | VALOR_YOYO
             | TERRARIAN_YOYO
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The yoyo shots (M4-PROJ-4b): the four children the yoyo
+            // on-hit arms spawn — `SetDefaults` verbatim.
+            // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
+            // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
+            // `localNPCHitCooldown = -1`.
+            CASCADE_EXPLOSION => (32.0, 32.0, 189, 4, TIME_LEFT_DEFAULT, 0, false, false, false),
+            // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
+            // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
+            EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false),
+            // `CrystalShardMelee` (`:10636-10650`): 6×6, aiStyle 24,
+            // `penetrate = 1`, `timeLeft = 600`, idStatic-20.
+            CRYSTAL_SHARD_MELEE => (6.0, 6.0, 24, 1, 600, 0, false, false, false),
+            // `KrakenWave` (`:10656-10667`): 100×100, aiStyle 210,
+            // `timeLeft = 600`, `penetrate = -1`, idStatic-10.
+            KRAKEN_WAVE => (100.0, 100.0, 210, -1, 600, 0, false, false, false),
             // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
             // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
             TERRARIAN_BEAM => (
@@ -1114,9 +1142,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         scale: set_defaults_scale(kind),
         // `DefaultToYoyo` sets no immunity slice (`:10764-10771`) — only the
         // Terrarian pair carries the idStatic-10 (`:6068-6069`, `:6081-6082`).
-        uses_id_static: matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM),
-        id_static_hit_cooldown: if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM) {
+        // The M4-PROJ-4b yoyo shots carry their own: the Cascade/EoC-Dash
+        // pair the local slice at −1 (`:10538-10539`, `:10605-10606`), the
+        // shard idStatic-20 (`:10648-10649`) and the Kraken wave
+        // idStatic-10 (`:10665-10666`).
+        uses_id_static: matches!(
+            kind,
+            TERRARIAN_YOYO | TERRARIAN_BEAM | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
+        ),
+        id_static_hit_cooldown: if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM | KRAKEN_WAVE) {
             10
+        } else if kind == CRYSTAL_SHARD_MELEE {
+            20
         } else {
             -1
         },
@@ -1686,6 +1723,44 @@ impl Projectile {
     /// 0.985 damp, the velocity-driven rotation ±0.08, and the 30-tick alpha
     /// fade that kills it. The `Lighting.AddLight` (`:34416`) is the render
     /// row's — a documented skip.
+    /// `AI_210_YoyoShots` (`Projectile.cs:36809-36900`) — the two yoyo
+    /// shots' fade-out lifecycles (no steering): the Eye-of-Cthulhu dash
+    /// (1130) and the Kraken wave (1135). M4-PROJ-4b.
+    fn ai_yoyo_shot(&mut self, _world: &World) {
+        if self.kind == EYE_OF_CTHULHU_DASH {
+            self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
+            // The one-shot sound (`:36814-36828`) and the frame cycle
+            // (`:36834-36838`) are the render row's — the port's cue table
+            // does not carry `Item20`, so the AI models neither.
+            self.vel *= 0.92;
+            let num = 20.0;
+            self.local_ai[0] += 1.0;
+            // `MathHelper.Lerp(255, 0, Clamp(MultiLerp(t/20, 0,1, 1,1, 0.5,0), 0, 1))`
+            // (`:36839-36841`).
+            let t = (self.local_ai[0] / num).clamp(0.0, 1.0);
+            let ramp = if t <= 0.5 { t * 2.0 } else { 1.0 - (t - 0.5) * 2.0 };
+            self.alpha = (255.0 * (1.0 - ramp)) as i32;
+            if self.local_ai[0] >= num && self.owner != 255 {
+                self.active = false;
+            }
+        }
+        if self.kind != KRAKEN_WAVE {
+            return;
+        }
+        self.rot = self.vel.y.atan2(self.vel.x);
+        self.vel *= 0.92;
+        let num2 = 20.0;
+        self.local_ai[0] += 1.0;
+        let t = (self.local_ai[0] / num2).clamp(0.0, 1.0);
+        let ramp = if t <= 0.5 { t * 2.0 } else { 1.0 - (t - 0.5) * 2.0 };
+        self.alpha = (255.0 * (1.0 - ramp)) as i32;
+        if self.local_ai[0] >= num2 && self.owner != 255 {
+            self.active = false;
+        }
+        // The dust burst over the first `num2 / 3` ticks (`:36869-36898`) is
+        // the render row's — documented deviation.
+    }
+
     fn ai_yoyo_beam(&mut self, world: &World) {
         self.vel *= 0.985;
         self.rot += self.vel.x * 0.2;
@@ -3168,6 +3243,7 @@ impl ProjectilePool {
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
                         115 => self.slots[i].ai_yoyo_beam(world),
+                        210 => self.slots[i].ai_yoyo_shot(world),
                         82 => {
                             // `AI_082`'s homing target: the owner's centre
                             // (`Player.FindClosest`'s single-player stand-in).
@@ -3528,8 +3604,21 @@ impl ProjectilePool {
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
             // set the slot flag directly.
-            let (dmg, hit_crit) =
+            let (mut dmg, hit_crit) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
+            // the strike against the player's `yoyoHitCounter` with the peek
+            // (`countUp: false`) form, so the spawn arms below see the same
+            // counter value on this hit. The counter starts at -1, so the
+            // effects land on hit #2 (M4-PROJ-4b).
+            if let Some(pl) = player.as_deref_mut() {
+                let kind = self.slots[slot].kind;
+                let doubled = (kind == THE_EYE_OF_CTHULHU_YOYO && pl.every_some_yoyo_hits(7, false))
+                    || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
+                if doubled {
+                    dmg = ((dmg as f32) * 2.0) as i32;
+                }
+            }
             let landed = n.hurt_from_projectile(dmg, hit.x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
@@ -3567,6 +3656,11 @@ impl ProjectilePool {
                 // (and the Constellation's immediate proc enable, its
                 // `OnTaggedHit`).
                 self.tag_on_hit(slot, idx as u16, player.as_deref_mut());
+                // `:13707-13809`: the yoyo on-hit spawns (M4-PROJ-4b) — the
+                // shared player counter's increment form, exactly the C#
+                // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
+                // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
+                self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -3618,6 +3712,141 @@ impl ProjectilePool {
     /// the proc-window consume. The proc bodies' spawns are the deferred
     /// follow-ups; the consume decision and the Constellation's immediate
     /// `TryEnableProcOnNPC` (`WhipTagEffect_Constellation.cs:10-14`) land here.
+    /// `:13707-13809` — the yoyo on-hit spawns (M4-PROJ-4b). All four arms
+    /// share the owner's `yoyoHitCounter` in the increment form (the same
+    /// counter the doublings peeked before the strike), and all are
+    /// owner-local in the C# (`this.owner == Main.myPlayer`) — the pool's
+    /// `damage_pve` only runs for locally-simulated slots, which is the
+    /// port's equivalent gate.
+    fn yoyo_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        hit: Vec2,
+        mut player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let kind = self.slots[slot].kind;
+        let (owner, damage, kb, center) = {
+            let p = &self.slots[slot];
+            (p.owner, p.damage, p.knock_back, p.pos + Vec2::splat(SIZE * 0.5))
+        };
+        let dropped = self.slots[slot].ai[0] == -2.0;
+        match kind {
+            CASCADE_YOYO if !dropped => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(2, true) {
+                    return;
+                }
+                let f = rng.next_float() * std::f32::consts::TAU;
+                // The `num29` floor/clamp (`:13734-13737`): the C# seeds the
+                // target distance at 208 when the scan finds none, which
+                // floors the shot's ai1 at dist/200.
+                let floor = 208.0 / 200.0;
+                let jitter = 0.22 + 0.22 * rng.next_float();
+                let ai1 = jitter.max(floor).min(1.5);
+                let spawned = self.spawn_with_data_ai_owned(
+                    CASCADE_EXPLOSION,
+                    owner,
+                    center.x,
+                    center.y,
+                    f.cos() * ai1,
+                    f.sin() * ai1,
+                    (damage as f32 * 2.0) as i32,
+                    kb,
+                    0.0,
+                    ai1,
+                );
+                // `localNPCImmunity[victimIndex] = -1` (`:13746`): the -1
+                // sentinel blocks that NPC for the shot's whole life.
+                if let Some(s) = spawned {
+                    self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                }
+            }
+            KRAKEN_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(4, true) {
+                    return;
+                }
+                let dir = hit - center;
+                let len = dir.length();
+                let dir = if len <= 1.0e-6 {
+                    Vec2::new(1.0, 0.0)
+                } else {
+                    dir / len
+                };
+                for l in [-2i32, 0, 2] {
+                    let v = rotate(dir, (l as f32) * std::f32::consts::TAU * 0.05)
+                        * (18.0 + 8.0 * rng.next_float());
+                    let _ = self.spawn_with_data_ai_owned(
+                        KRAKEN_WAVE,
+                        owner,
+                        center.x,
+                        center.y,
+                        v.x,
+                        v.y,
+                        ((damage as f32) * 0.5) as i32,
+                        kb,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
+            CHIK_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(3, true) {
+                    return;
+                }
+                for m in 0..5 {
+                    let angle = rng.next_float() * std::f32::consts::TAU;
+                    let mag = 8.0;
+                    let spawned = self.spawn_with_data_ai_owned(
+                        CRYSTAL_SHARD_MELEE,
+                        owner,
+                        center.x,
+                        center.y,
+                        angle.cos() * mag,
+                        angle.sin() * mag,
+                        damage,
+                        kb,
+                        if m != 0 { 1.0 } else { 0.0 },
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        let k = self.slots[s].kind;
+                        self.id_static.insert((k, npc_idx), self.update_count + 20);
+                    }
+                }
+            }
+            THE_EYE_OF_CTHULHU_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(7, true) {
+                    return;
+                }
+                let f = rng.next_float() * std::f32::consts::TAU;
+                let floor = 80.0 / 200.0;
+                let jitter = 0.22 + 0.22 * rng.next_float();
+                let ai1 = jitter.max(floor).min(1.5);
+                let spawned = self.spawn_with_data_ai_owned(
+                    EYE_OF_CTHULHU_DASH,
+                    owner,
+                    center.x,
+                    center.y,
+                    f.cos() * 14.0,
+                    f.sin() * 14.0,
+                    (damage as f32 * 2.0) as i32,
+                    kb,
+                    0.0,
+                    ai1,
+                );
+                if let Some(s) = spawned {
+                    self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn tag_on_hit(
         &mut self,
         slot: usize,
@@ -5000,6 +5229,342 @@ mod bomb_tests {
 
 #[cfg(test)]
 mod yoyo_tests {
+    // --- M4-PROJ-4b: the on-hit effects -------------------------------------
+
+    /// The NPC fixture at a fixed cell + the pool spawn of one yoyo on it.
+
+    fn on_hit_setup(kind: u16) -> (tr_core::World, ProjectilePool, Npc, crate::player::Player) {
+        let mut world = tr_core::World::new("t".into(), 200, 200);
+        // A solid floor for the NPC's spawn scan (`spawn_slime` reads
+        // `surface_of`, which reads `column_surface`) — the tests' `ground()`
+        // pattern: `compute_column_surface` + `compute_chunks` on a slab.
+        for x in 0..200 {
+            for y in 60..200 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: 1,
+                    ..Tile::default()
+                };
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        world.compute_chunks();
+        let mut npc = Npc::spawn_slime(&world, 40).unwrap();
+        let mut pool = ProjectilePool::new();
+        // The projectile sits ON the NPC's centre so `damage_pve`'s touch
+        // test lands every tick.
+        let (nw, nh) = npc.size();
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        // `spawn_with_data_ai_owned` so the slot carries its own
+        // `SetDefaults` (the yoyo's `penetrate = -1` — a yoyo never dies on
+        // a hit; the raw `spawn` leaves the default and the generic
+        // post-hit kill would fire).
+        pool.spawn_with_data_ai_owned(
+            kind,
+            0,
+            ncx,
+            ncy,
+            0.0,
+            0.0,
+            20,
+            4.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+        let player = crate::player::Player::spawn(&world);
+        let player = crate::player::Player::spawn(&world);
+        (world, pool, npc, player)
+    }
+
+    /// One tick with the NPC on the projectile's centre (the damage pass
+    /// runs), the player in the fifth slot like the pool's callers.
+    fn tick(
+        world: &mut tr_core::World,
+        pool: &mut ProjectilePool,
+        npc: &mut Npc,
+        player: &mut Option<crate::player::Player>,
+    ) {
+        let (nw, nh) = npc.size();
+        let aim = Vec2::new(npc.x + nw * 0.5 + 8.0, npc.y + nh * 0.5);
+        pool.update(
+            world,
+            std::slice::from_mut(npc),
+            Some((aim.x, aim.y)),
+            Some(aim),
+            player.as_mut(),
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    /// The slot/NPC local-immunity entry — the tests read the -1 sentinel
+    /// the yoyo spawns stamp.
+    fn local_immunity(pool: &ProjectilePool, slot: usize, npc: usize) -> i32 {
+        pool.local_immunity[slot * 256 + npc]
+    }
+
+    /// The same fixture for a plain (non-yoyo) shot: the raw spawn (no yoyo
+    /// data row) so the generic post-hit kill fires and no yoyo arm runs.
+    fn on_hit_setup_plain(kind: u16) -> (tr_core::World, ProjectilePool, Npc, crate::player::Player) {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(CHIK_YOYO);
+        // Re-spawn the slot as the plain kind over the yoyo fixture.
+        let (nw, nh) = npc.size();
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        let slot = &mut pool.slots_mut()[0];
+        slot.kind = kind;
+        slot.pos = Vec2::new(ncx, ncy);
+        (world, pool, npc, player)
+    }
+
+    /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the -1 start
+    /// skips the first hit, the modulo period holds, the peek form never
+    /// bumps.
+    #[test]
+    fn the_hit_counter_peeks_and_bumps_like_the_csharp() {
+        let world = tr_core::World::new("t".into(), 32, 32);
+        let mut p = crate::player::Player::spawn(&world);
+        assert_eq!(p.yoyo_hit_counter, -1, "the vanilla -1 start");
+        assert!(!p.every_some_yoyo_hits(7, false), "the peek never bumps");
+        assert_eq!(p.yoyo_hit_counter, -1);
+        assert!(!p.every_some_yoyo_hits(7, true), "the first hit: -1 % 7");
+        assert_eq!(p.yoyo_hit_counter, 0);
+        // The counter's 0 makes the SECOND hit fire (the -1 start shifts the
+        // whole schedule), then every 7th.
+        assert!(p.every_some_yoyo_hits(7, true), "the second hit fires");
+        assert_eq!(p.yoyo_hit_counter, 1);
+        for _ in 0..6 {
+            assert!(!p.every_some_yoyo_hits(7, true));
+        }
+        assert!(p.every_some_yoyo_hits(7, true), "the ninth hit fires");
+    }
+
+    /// The doublings: the Eye of Cthulhu doubles on the 2nd, 9th, … hit
+    /// (`Projectile.cs:13389-13396`) — with the -1 counter the first effect
+    /// lands on hit #2, not #7.
+    #[test]
+    fn the_eye_of_cthulhu_doubles_on_every_seventh_hit() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(THE_EYE_OF_CTHULHU_YOYO);
+        let mut held: Option<crate::player::Player> = Some(player);
+        let mut doubled = 0;
+        for _ in 0..12 {
+            let before = npc.max_hp - npc.hp;
+            let damage = pool.slots()[0].damage;
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+            if (npc.max_hp - npc.hp) - before > damage {
+                doubled += 1;
+            }
+            if !pool.slots()[0].active {
+                break;
+            }
+        }
+        assert!(doubled > 0, "the doubling fired at least once: {doubled}");
+    }
+
+    /// The Chik doubles every 3rd (`:13393`).
+    #[test]
+    fn the_chik_doubles_on_every_third_hit() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(CHIK_YOYO);
+        let mut held = Some(player);
+        let mut doubled = 0;
+        for _ in 0..10 {
+            let before = npc.max_hp - npc.hp;
+            let damage = pool.slots()[0].damage;
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+            if (npc.max_hp - npc.hp) - before > damage {
+                doubled += 1;
+            }
+            if !pool.slots()[0].active {
+                break;
+            }
+        }
+        assert!(doubled > 0, "the Chik's doubling fired: {doubled}");
+    }
+
+    /// The Cascade's 1125 spawn on every 2nd hit (`:13707-13747`): the shot,
+    /// the `ai1` floor at `208/200`, the damage x2, and the local immunity's
+    /// -1 sentinel on the hit NPC.
+    #[test]
+    fn the_cascade_spawns_its_explosion_on_every_second_hit() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(CASCADE_YOYO);
+        let mut held = Some(player);
+        for _ in 0..6 {
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+        }
+        let idx = pool
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == CASCADE_EXPLOSION);
+        assert!(idx.is_some(), "the 1125 shot spawned");
+        let idx = idx.unwrap();
+        let shot = &pool.slots()[idx];
+        assert_eq!(shot.damage, 40, "the parent damage x2");
+        assert!(
+            shot.ai[1] >= (208.0 / 200.0) - 1.0e-3,
+            "the ai1 floor: {}",
+            shot.ai[1]
+        );
+        assert!(shot.ai[1] <= 1.5 + 1.0e-3, "the ai1 clamp");
+        assert_eq!(local_immunity(&pool, idx, 0), -1, "the -1 sentinel");
+    }
+
+    /// The Kraken's 3x 1135 (`:13748-13756`) at half damage.
+    #[test]
+    fn the_kraken_spawns_three_waves() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(KRAKEN_YOYO);
+        let mut held = Some(player);
+        for _ in 0..8 {
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+        }
+        let waves = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == KRAKEN_WAVE)
+            .count();
+        assert_eq!(waves, 3, "the three Kraken waves: {waves}");
+        assert_eq!(
+            pool.slots()
+                .iter()
+                .find(|p| p.active && p.kind == KRAKEN_WAVE)
+                .unwrap()
+                .damage,
+            10
+        );
+    }
+
+    /// The Chik's 5x 1134 (`:13757-13766`) with the idStatic stamp and the
+    /// `ai0 = 1` followers.
+    #[test]
+    fn the_chik_spawns_five_shards() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(CHIK_YOYO);
+        let mut held = Some(player);
+        for _ in 0..8 {
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+        }
+        let shards = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == CRYSTAL_SHARD_MELEE)
+            .count();
+        assert_eq!(shards, 5, "the five shards: {shards}");
+        let followers = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == CRYSTAL_SHARD_MELEE && p.ai[0] == 1.0)
+            .count();
+        assert_eq!(followers, 4);
+    }
+
+    /// The Eye of Cthulhu's homing 1130 (`:13767-13809`): the 14-tile
+    /// initial speed, the damage x2 and the -1 sentinel again.
+    #[test]
+    fn the_eye_of_cthulhu_spawns_its_dash() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup(THE_EYE_OF_CTHULHU_YOYO);
+        let mut held = Some(player);
+        for _ in 0..12 {
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+        }
+        let idx = pool
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == EYE_OF_CTHULHU_DASH);
+        assert!(idx.is_some(), "the 1130 dash spawned");
+        let idx = idx.unwrap();
+        let dash = &pool.slots()[idx];
+        assert_eq!(dash.damage, 40);
+        // The 14-tile initial speed has decayed by the fade by the time the
+        // test observes it (`AI_210`'s 0.92 per tick), so the bound is the
+        // decayed floor.
+        assert!(
+            dash.vel.length() > 3.0,
+            "the 14-tile initial speed: {}",
+            dash.vel.length()
+        );
+        assert_eq!(local_immunity(&pool, idx, 0), -1);
+    }
+
+    /// `AI_210_YoyoShots` (`Projectile.cs:36809-36900`): the fade-out
+    /// lifecycle — the 0.92 decay and the 20-tick kill.
+    #[test]
+    fn the_yoyo_shot_fades_out_and_dies_at_twenty() {
+        let mut world = tr_core::World::new("t".into(), 200, 200);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                EYE_OF_CTHULHU_DASH,
+                0,
+                Vec2::new(64.0, 64.0),
+                Vec2::new(14.0, 0.0),
+                20,
+                4.0,
+                false,
+            )
+            .unwrap();
+        let first_speed = pool.slots()[slot].vel.x;
+        for _ in 0..5 {
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert!(pool.slots()[slot].active, "the fade runs 20 ticks");
+        assert!(pool.slots()[slot].vel.x < first_speed, "the 0.92 decay");
+        for _ in 0..20 {
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert!(!pool.slots()[slot].active, "the 20-tick kill");
+    }
+
+    /// A plain (non-yoyo) shot spawns no yoyo shot on its hit.
+    #[test]
+    fn a_plain_projectile_spawns_no_yoyo_shot() {
+        let (mut world, mut pool, mut npc, player) = on_hit_setup_plain(SHURIKEN);
+        let mut held = Some(player);
+        for _ in 0..6 {
+            npc.immune[0] = 0;
+            tick(&mut world, &mut pool, &mut npc, &mut held);
+        }
+        let spawned = pool
+            .slots()
+            .iter()
+            .filter(|p| {
+                p.active
+                    && p.owner == 0
+                    && matches!(
+                        p.kind,
+                        CASCADE_EXPLOSION | CRYSTAL_SHARD_MELEE | EYE_OF_CTHULHU_DASH | KRAKEN_WAVE
+                    )
+            })
+            .count();
+        assert_eq!(spawned, 0, "no yoyo shot from a shuriken: {spawned}");
+    }
+
     use super::*;
     use crate::npc::{Npc, NpcKind};
     use tr_core::tile::{FLAG_ACTIVE, Tile};

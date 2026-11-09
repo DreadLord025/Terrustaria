@@ -444,6 +444,13 @@ pub struct Player {
     /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
     /// `RecalculateLuck` (`Player.cs:29137-29164`).
     pub luck_state: LuckState,
+    /// `Player.yoyoHitCounter` (`Player.cs:1220`: `= -1`): the lifetime
+    /// yoyo-hit counter behind `EverySomeYoyoHits` (`Player.cs:4308-4316`)
+    /// — the M4-PROJ-4b on-hit effects (the damage doublings and the
+    /// Cascade/Chik/Kraken/Eye-of-Cthulhu spawns). Vanilla never resets it
+    /// (no `ResetEffects` arm, no death/throw reset), so the port doesn't
+    /// either — the -1 start makes the first hit skip every effect.
+    pub yoyo_hit_counter: i32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -681,6 +688,20 @@ pub struct Player {
 }
 
 impl Player {
+    /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the counter's
+    /// modulo against `amount` (C#'s truncated remainder, so the -1 start
+    /// skips the very first hit) plus the optional bump. The one caller
+    /// pair is `Projectile`'s on-hit arms: the damage doublings peek
+    /// (`countUp = false`) before the strike, the spawns increment after
+    /// it — both on the same hit, in that order.
+    pub fn every_some_yoyo_hits(&mut self, amount: i32, count_up: bool) -> bool {
+        let hit = self.yoyo_hit_counter % amount == 0;
+        if count_up {
+            self.yoyo_hit_counter += 1;
+        }
+        hit
+    }
+
     pub fn spawn(world: &World) -> Self {
         // `FindSpawn` (`Player.cs:54592-54609`): the bed spawn — the port's
         // `World::bed_spawn` — overrides the world spawn when it validates
@@ -895,8 +916,9 @@ impl Player {
             ammo_cost75: false,
             archery: false,
             ammo_cycling: crate::ammo::AmmoCycling::default(),
+            yoyo_hit_counter: -1,
         }
-    }
+}
 
     /// The ten ammo flags this phase re-derives per tick, as the pure data
     /// `ammo::resolve_projectile` / `ammo::not_consume` read (`Player.cs:53537`,
