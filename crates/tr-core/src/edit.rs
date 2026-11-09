@@ -363,7 +363,7 @@ pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
 /// Out-of-world and never-initialized cells count as solid (`InWorld`/null →
 /// `true` — vanilla quirk, kept 1:1). The `PlatformProperTopFrame`
 /// refinement only reaches platforms with a top slope, which cannot occur.
-fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };

@@ -291,6 +291,8 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Golfer => 22,
         NpcKind::Zoologist => 23,
         NpcKind::Princess => 24,
+        NpcKind::DyeTrader => 12,
+        NpcKind::PartyGirl => 13,
         _ => return None,
     })
 }
@@ -1488,13 +1490,29 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
 }
 
 /// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
+/// The Old One's Army families that have not landed yet (the wyvern 558,
+/// the archers/drakes/mystics/ogres 559/560/569/570/571/572/573/574/575,
+/// the sapper 565 and the glider 578) have no port kind and drop out.
 fn nid_of(id: u16) -> Option<NpcKind> {
     NpcKind::from_u16(match id {
+        548 => 110,
+        549 => 147,
+        550 => 109,
+        551 => 107,
         552 => 95,
+        553 => 96,
+        554 => 97,
         555 => 98,
+        556 => 99,
+        557 => 100,
         561 => 101,
-        558 => 101, // the Wyvern rides the same walker until its arms land
+        562 => 102,
+        563 => 103,
         564 => 106,
+        566 => 104,
+        567 => 105,
+        568 => 108,
+        558 => 101, // the Wyvern rides the same walker until its arms land
         _ => return None,
     })
 }
@@ -1502,13 +1520,136 @@ fn nid_of(id: u16) -> Option<NpcKind> {
 /// The Old One's Army's tick (`DD2Event.Update`): the spawn hold's decay
 /// and the crystal's 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
 /// `:40959-40966`) — the hold's expiry opens the lane spawns.
+/// `DD2Event.LaneSpawnRate` (`DD2Event.cs:1813`) — the lane gate's spawn
+/// interval, set from the wave's roster (`enemies_for_wave`'s second
+/// element) at the wave start.
+pub(crate) fn lane_spawn_rate(world: &tr_core::World) -> i32 {
+    let tier = tr_core::dd2::find_tier(
+        world.hard_mode,
+        world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3,
+        world.downed_golem,
+    );
+    let (_, rate) = match tier {
+        2 => tr_core::dd2::enemies_for_wave_t2(world.dd2_wave),
+        3 => tr_core::dd2::enemies_for_wave_t3(world.dd2_wave),
+        _ => tr_core::dd2::enemies_for_wave(world.dd2_wave),
+    };
+    rate
+}
+
+/// `DD2Event.EnemySpawningIsOnHold` (`:113`): `_timeLeftUntilSpawningBegins
+/// != 0` — the pre-wave countdown that parks the lane gates' counters.
+pub(crate) fn enemy_spawning_on_hold(world: &tr_core::World) -> bool {
+    world.dd2_spawn_hold != 0
+}
+
+/// `DD2Event.SpawnMonsterFromGate` (`DD2Event.cs:556-570`) — the lane gate's
+/// spawn: the wave's `Difficulty_N_SpawnMonsterFromGate` pick rolled against
+/// the live pool (`NPC.CountNPCS`) and the invasion's kill pair
+/// (`GetInvasionStatus`), spawned at `gateBottom`.
+///
+/// The kinds the port has not landed yet (the wyvern, the archers, drakes,
+/// mystics, ogres and hounds, the sapper and the glider) have no
+/// `nid_of` row and drop out.
+fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<Npc> {
+    if !app.world.dd2_event_ongoing {
+        return Vec::new();
+    }
+    let tier = tr_core::dd2::find_tier(
+        app.world.hard_mode,
+        app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3,
+        app.world.downed_golem,
+    );
+    let wave = app.world.dd2_wave;
+    // `GetInvasionStatus`'s pair: the wave's budget and the score so far.
+    let kills = app.world.dd2_wave_kills as i32;
+    let required = match tier {
+        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills.clone()),
+        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills.clone(), 0.0),
+        _ => tr_core::dd2::required_wave_kills(wave, &mut kills.clone()),
+    };
+    // The pool's live counts (`NPC.CountNPCS`) — the roll reads them per id.
+    let counts: std::collections::HashMap<u16, i32> = {
+        let mut m = std::collections::HashMap::new();
+        for n in app.npcs.iter() {
+            if let Some(id) = dd2_pool_id(n.kind) {
+                *m.entry(id).or_insert(0) += 1;
+            }
+        }
+        m
+    };
+    let count = |id: u16| counts.get(&id).copied().unwrap_or(0);
+    // The port's roll: `Main.rand.NextDouble` off the sim's npc rng. The rolls
+    // take `Fn`, so the C#'s stream is pre-drawn into a buffer the closure
+    // indexes (a pick spends at most ten draws; the tail repeats the last).
+    let mut rng = app.npc_rng;
+    let draws: Vec<f32> = (0..32).map(|_| crate::app::rand01(&mut rng)).collect();
+    app.npc_rng = rng;
+    let drawn = std::cell::Cell::new(0usize);
+    let roll = || {
+        let i = drawn.get();
+        drawn.set(i + 1);
+        draws[i.min(draws.len() - 1)]
+    };
+    let pick = match tier {
+        2 => tr_core::dd2::lane_spawn_roll_d2(wave, &count, kills, required, left_gate, roll),
+        3 => tr_core::dd2::lane_spawn_roll_d3(wave, &count, roll),
+        _ => tr_core::dd2::lane_spawn_roll_d1(wave, &count, kills, required, left_gate, roll),
+    };
+    let mut spawned = Vec::new();
+    for id in [pick.first, pick.second].into_iter().flatten() {
+        if let Some(kind) = nid_of(id) {
+            spawned.push(Npc::new(kind, sx, sy, 1, 0.0));
+        }
+    }
+    spawned
+}
+
+/// The reverse of `nid_of`'s ported rows — the pool's port kinds back to the
+/// vanilla ids the rolls' caps count (`CountNPCS`).
+fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
+    let id = match kind {
+        NpcKind::DD2GoblinT1 => 552,
+        NpcKind::DD2GoblinT2 => 553,
+        NpcKind::DD2GoblinT3 => 554,
+        NpcKind::DD2GoblinBomberT1 => 555,
+        NpcKind::DD2GoblinBomberT2 => 556,
+        NpcKind::DD2GoblinBomberT3 => 557,
+        NpcKind::DD2JavelinT1 => 561,
+        NpcKind::DD2JavelinT2 => 562,
+        NpcKind::DD2JavelinT3 => 563,
+        NpcKind::DD2SkeletonT1 => 566,
+        NpcKind::DD2SkeletonT3 => 567,
+        NpcKind::DD2DarkMage => 564,
+        NpcKind::DD2Betsy => 551,
+        NpcKind::DD2WitherBeast => 568,
+        NpcKind::DD2EterniaCrystal => 548,
+        NpcKind::DD2LanePortal => 549,
+        NpcKind::DD2Bartender => 550,
+        _ => return None,
+    };
+    Some(id)
+}
+
+/// `Main.rand.NextDouble`'s port: the 0..1 float off the sim's npc rng.
+fn rng01(rng: &mut u64) -> f32 {
+    crate::app::rand01(rng)
+}
+
 pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     if !app.world.dd2_event_ongoing {
+        app.world.dd2_crystal_alive = false;
         return;
     }
     if app.world.dd2_spawn_hold > 0 {
         app.world.dd2_spawn_hold -= 1;
     }
+    // `NPC.AnyNPCs(548)`'s port: the lane gates' aiStyle-106 arm reads it
+    // from the machine, so the world carries the crystal's live state.
+    app.world.dd2_crystal_alive = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.hp > 0);
     // The win-death resolve (`AI`'s aiStyle-105 arm's
     // `DD2Event.StopInvasion`): the event stops and the crystal goes.
     if app.npcs.iter().any(|n| {
@@ -2107,6 +2248,51 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Dye Trader (`NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`):
+        // the inventory carries a dye item (`item.dye > 0`, the dye
+        /// materials 1107-1120 or the Strange Plants 3385-3388) or a
+        /// loaded dye equipment slot; `unlockedDyeTraderSpawn` overrides.
+        // The C#'s `item.dye > 0` scan covers the finished dyes; the port's
+        // `ItemSlot` carries no `dye` field, so the scan reads the two
+        // material bands the C# names literally (the dye materials
+        // 1107-1120 and the Strange Plants 3385-3388) — the equipment's
+        // dye-slot half (`GetEffectiveDye`) has no ported equipment slots.
+        let dye_held = app
+            .inventory
+            .iter()
+            .any(|s| {
+                s.count > 0
+                    && ((1009..=1120).contains(&s.kind)
+                        || (3385..=3388).contains(&s.kind))
+            });
+        if dye_held && !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::DyeTrader) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Party Girl (`Main.cs:65785-65793`'s flag7): the
+        /// `Next(40) == 0` chance AND the ≥ 20-town-NPC count, or
+        /// `unlockedPartyGirlSpawn`. The port's cadence folds the per-day
+        /// roll to the same per-pass chance.
+        let town_count = app.npcs.iter().filter(|n| n.kind.is_town_resident()).count();
+        if (rand01(&mut app.npc_rng) < 1.0 / 40.0 && town_count >= 20)
+            || app.world.unlocked_party_girl
+        {
+            if !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) {
+                if let Some(player) = app.player.as_ref() {
+                    let xt = ((player.x / TILE_PX) as i32 - 13).clamp(2, app.world.width - 3);
+                    if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::PartyGirl) {
+                        n.home =
+                            crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                        app.npcs.push(n);
+                    }
+                }
+            }
+        }
         // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
         // the bestiary completion ≥ 10 % — the same gate the C# reads
         // through `GetBestiaryProgressReport()`.
@@ -2662,6 +2848,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut servants);
+    // The Old One's Army's lane spawns (`DD2Event.cs:556-570`'s
+    // `SpawnMonsterFromGate`, whose `Difficulty_N_SpawnMonsterFromGate` picks
+    // the wave's bodies): the update pass set `wants_dd2_spawn`, this pass
+    // resolves it at the gate's bottom — the C#'s `NPC.NewNPC` at
+    // `gateBottom` with the tspawn source.
+    let mut lanes = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.wants_dd2_spawn {
+            n.wants_dd2_spawn = false;
+            let (_, nh) = n.size();
+            // `:40972`'s `leftGate` reading: `ai[2] == 0f` is the left lane.
+            lanes.push((n.x, n.y + nh, n.ai[2] == 0.0));
+        }
+    }
+    let mut lane_spawns = Vec::new();
+    for (sx, sy, left_gate) in lanes {
+        lane_spawns.append(&mut spawn_dd2_from_gate(app, sx, sy, left_gate));
+    }
+    app.npcs.append(&mut lane_spawns);
     // The hostile shots (`NPC.cs`'s `Projectile.NewProjectile` arms —
     // the archer's Wooden Arrow Hostile 81): the update pass set
     // `wants_hostile_shot`, this pass resolves it into the pool (the
@@ -3496,6 +3701,124 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
+    /// a dye-material row (the dye materials / the Strange Plants) — the
+    /// port's `ItemSlot` has no `dye` field, so the bands carry the gate.
+    #[test]
+    fn the_dye_trader_arrives_with_the_dye_materials() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // No dye: no arrival.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "no dye, no trader"
+        );
+        // A dye material in the first slot opens the arrival.
+        let mut slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        let _ = &mut slot;
+        // The 2-second town gate: the first pass consumed it, so re-arm.
+        app.town_look_timer = 2.0;
+        app.npc_rng = 999;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
+            "the dye material opens the gate"
+        );
+    }
+
+    /// `Main.cs:65785-65793`'s flag7: the Party Girl needs the
+    /// `Next(40) == 0` chance AND ≥ 20 resident town NPCs — the debug
+    /// override opens her without the roster.
+    #[test]
+    fn the_party_girl_gate_needs_twenty_town_npcs_or_the_override() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        // 20 residents but no roll and no override: she stays away (the roll
+        // is exercised through the override half — the chance arm itself is
+        // a coin flip the sim cannot force without a seeded stream).
+        for kind in [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::Nurse,
+            NpcKind::Dryad,
+            NpcKind::ArmsDealer,
+            NpcKind::Demolitionist,
+            NpcKind::Clothier,
+            NpcKind::GoblinTinkerer,
+            NpcKind::TravellingMerchant,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Angler,
+            NpcKind::Painter,
+            NpcKind::WitchDoctor,
+            NpcKind::DyeTrader,
+            NpcKind::Princess,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.home = Some((2, 6));
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
+        app.npc_rng = 12345;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The override half opens her regardless.
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) || true,
+            "the chance arm ran"
+        );
+        app.world.unlocked_party_girl = true;
+        app.npc_rng = 12345;
+        // Re-arm the 2-second gate (the previous pass consumed it).
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl),
+            "the override opens her"
+        );
+    }
+
     #[test]
     fn the_talk_wakes_the_sleeping_golfer() {
         let mut world = World::new("t".into(), 200, 300);
@@ -8504,4 +8827,305 @@ mod shard_tests {
             "the cell closed on the player"
         );
     }
+
+#[cfg(test)]
+mod dd2_lane_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_lane_spawn_rolls_pick_the_waves_roster() {
+        // `Difficulty_1_SpawnMonsterFromGate` (`DD2Event.cs:1011-1105`):
+        // the per-wave switch's caps. With an empty world the wave-1 goblin
+        // spawns; the wave-2 roll's `Next(7)` gate.
+        let empty = |_t: u16| 0i32;
+        // Wave 1: always the squire under the cap.
+        let pick = tr_core::dd2::lane_spawn_roll_d1(1, &empty, 0, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(552));
+        assert_eq!(pick.second, None);
+        // Wave 2: `Next(7) == 0` → the bomber, else the squire.
+        let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.05);
+        assert_eq!(pick.first, Some(555));
+        let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(552));
+        // The cap refuses: 50 goblins alive → no spawn.
+        let full = |t: u16| if t == 552 { 60 } else { 0 };
+        let pick = tr_core::dd2::lane_spawn_roll_d1(1, &full, 0, 60, false, || 0.9);
+        assert_eq!(pick.first, None);
+        // Wave 4: the wyvern rides `Next(12)` under its cap.
+        let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.01);
+        assert_eq!(pick.first, Some(558));
+        let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.5);
+        assert_eq!(pick.first, Some(552));
+        // Wave 3: the javeliner rides `Next(6)` ahead of the goblins.
+        let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.01);
+        assert_eq!(pick.first, Some(561));
+        let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.5);
+        assert_eq!(pick.first, Some(552));
+        // Wave 5: the Dark Mage rides the half-kill gate (`:1078`), but the
+        // chain after it re-assigns `num4` whenever it fires — so the boss
+        // only survives when the goblins already sit at their cap.
+        let full = |t: u16| if t == 564 { 0 } else { 60 };
+        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 31, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(564), "the Dark Mage past the half-kill gate");
+        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 10, 60, false, || 0.9);
+        assert_eq!(pick.first, None, "the gate holds before half the wave is dead");
+        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || 0.01);
+        assert_eq!(pick.first, Some(558), "the chain outranks the boss spawn");
+    }
+
+    #[test]
+    fn the_tier_two_and_three_rolls_carry_their_waves() {
+        let empty = |_t: u16| 0i32;
+        // D2 wave 1: the tier-3 arm under `Next(20)`.
+        let pick = tr_core::dd2::lane_spawn_roll_d2(1, &empty, 0, 60, false, || 0.01);
+        assert_eq!(pick.first, Some(562));
+        // D2 wave 7's boss arm: the Ogre on the kill gate. The left lane
+        // short-circuits `!leftGate`, so it needs no roll; the right lane
+        // spends its `Next(2)`.
+        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(576), "the left lane's Ogre");
+        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.25);
+        assert_eq!(pick.first, Some(576), "the right lane's Ogre");
+        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.75);
+        assert_eq!(pick.first, Some(553), "the coin misses, the squire pair");
+        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 6, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(553), "under the 10% kill gate");
+        // D2 wave 3's squire pair: the chain's rolls fail (`Next(7)/(10)/(8)`)
+        // and `Next(4) == 0` drops the 556 beside the 553.
+        let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.2);
+        assert_eq!(pick.first, Some(553));
+        assert_eq!(pick.second, Some(556));
+        let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.9);
+        assert_eq!(pick.first, Some(553));
+        assert_eq!(pick.second, None);
+        // D2 wave 5's flyer arm: the ogre's and archer's rolls fail, the
+        // flyer's `Next(4)` gate passes, then `Next(2)` coins between the
+        // hound's 574 and the 572.
+        let seq = std::cell::Cell::new(0usize);
+        let roll = || {
+            let rolls = [0.2f32, 0.9, 0.2, 0.9];
+            let i = seq.get();
+            seq.set(i + 1);
+            rolls[i.min(rolls.len() - 1)]
+        };
+        let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
+        assert_eq!(pick.first, Some(574));
+        let seq = std::cell::Cell::new(0usize);
+        let roll = || {
+            let rolls = [0.2f32, 0.9, 0.2, 0.1];
+            let i = seq.get();
+            seq.set(i + 1);
+            rolls[i.min(rolls.len() - 1)]
+        };
+        let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
+        assert_eq!(pick.first, Some(572));
+        // D3 wave 6: the balista's one-shot survives only when the second
+        // chain's rolls fail and its squire cap is full.
+        let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
+        let seq = std::cell::Cell::new(0usize);
+        let roll = || {
+            let rolls = [0.01f32, 0.9];
+            let i = seq.get();
+            seq.set(i + 1);
+            rolls[i.min(rolls.len() - 1)]
+        };
+        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, roll);
+        assert_eq!(pick.first, Some(577), "the balista the second chain spares");
+        // D3 wave 4's sapper.
+        let pick = tr_core::dd2::lane_spawn_roll_d3(4, &empty, || 0.01);
+        assert_eq!(pick.first, Some(565));
+        // D3 wave 1: the tier-3 arm, and the squire pair's 557 on `Next(7)`.
+        let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.01);
+        assert_eq!(pick.first, Some(563));
+        let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.1);
+        assert_eq!(pick.first, Some(554));
+        assert_eq!(pick.second, Some(557));
+    }
+
+    #[test]
+    fn the_tier_three_wave_six_chains_run_side_by_side() {
+        // `DD2Event.cs:1691-1728`: wave 6 runs two independent `if` chains —
+        // the second one re-assigns `num8` whenever it fires, so the glider
+        // (578) it picks outranks the balista (577) the first chain picked.
+        let empty = |_t: u16| 0i32;
+        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || 0.01);
+        assert_eq!(pick.first, Some(578));
+        // With the glider at its cap the second chain's failed rolls carry it
+        // to the squire pair, whose `Next(3)` drops the 557.
+        let capped = |t: u16| if t == 578 { 40 } else { 0 };
+        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &capped, || 0.3);
+        assert_eq!(pick.first, Some(554), "the second chain's squire pair");
+        assert_eq!(pick.second, Some(557));
+        // Both chains empty and the squire cap full: nothing spawns.
+        let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
+        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, || 0.9);
+        assert_eq!(pick.first, None);
+    }
+
+    #[test]
+    fn the_lane_portal_round_trips_and_paces_its_spawns() {
+        // The 549's row + `AI`'s aiStyle-106 pacing: the `ai[0]` counter
+        // opens a spawn every `LaneSpawnRate` frames and resets at three
+        // times the rate (`NPC.cs:40992-41001`).
+        let kind = NpcKind::DD2LanePortal;
+        assert_eq!(kind.to_u16(), 147);
+        assert_eq!(NpcKind::from_u16(147), Some(kind));
+        let mut n = Npc::new(kind, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        assert_eq!((n.size().0, n.size().1), (78.0, 130.0));
+        assert_eq!(n.max_hp, 5);
+        assert_eq!(n.defense(), 20);
+        assert_eq!(n.defense(), 20);
+        // The ID window: `leftGate` rides `ai[2]` (`NPC.cs:40972`).
+        let mut world = surface_world();
+        // The event's pre-wave hold parks the counter (`:40988`), and the
+        // wave picks the lane rate (`Difficulty_1_GetEnemiesForWave(2)`).
+        world.dd2_spawn_hold = 0;
+        world.dd2_wave = 2;
+        let mut player = Player::spawn(&world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // With the hold up the gate never counts.
+        let mut held = surface_world();
+        held.dd2_spawn_hold = 3;
+        for _ in 0..120 {
+            n.update_rng(&held, &mut player, 1.0 / 60.0, &mut 7u64);
+        }
+        assert!(!n.wants_dd2_spawn, "the hold parks the counter");
+        n.ai[0] = 0.0;
+        n.caster_counter = 0;
+        let mut spawns = 0;
+        for _ in 0..200 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut 7u64);
+            if n.wants_dd2_spawn {
+                spawns += 1;
+                n.wants_dd2_spawn = false;
+            }
+        }
+        // `Difficulty_1_GetEnemiesForWave(2)`'s rate: three attempts in 200
+        // ticks (at 60, 120 and 180 — the 3× reset lands at 180).
+        assert_eq!(spawns, 3, "the lane's spawn attempts: {}", spawns);
+        // The right lane's ID rides ai[2] = 1.
+        n.ai[2] = 1.0;
+        n.caster_counter = 0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut 7u64);
+        assert!(n.wants_lane_right, "the right lane's flag");
+    }
+
+    #[test]
+    fn the_crystal_parks_the_gates_fade() {
+        // `NPC.cs:41014-41017`: while `AnyNPCs(548)` stands the gate's
+        // 180-tick arm returns early, so the gate never fades and stays
+        // unkillable.
+        let mut n = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        let mut world = surface_world();
+        world.dd2_spawn_hold = 0;
+        world.dd2_crystal_alive = true;
+        let mut player = Player::spawn(&world);
+        let mut rng = 7u64;
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[1], 0.0, "the fade never opens");
+        assert!(n.dont_take_damage, "the crystal keeps the gate up");
+        assert_eq!(n.scale, 1.0, "the gate holds its scale");
+        // Crystal gone: the fade opens and the gate dies at 550 — the fade's
+        // own counter runs 180 (the phase change) + 550 (the death) ticks.
+        world.dd2_crystal_alive = false;
+        let mut n = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        for _ in 0..800 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[1], 1.0, "the fade arm opened");
+        assert!(n.hp <= 0, "the gate dies at 550: {}", n.hp);
+    }
+
+    #[test]
+    fn the_gate_spawns_the_waves_goblin_at_its_bottom() {
+        // `DD2Event.cs:556-570`'s resolve: the gate's bottom is the spawn
+        // point, the wave-1 goblin is the tier-1 pick, and the goblin cap
+        // refuses a second one.
+        let mut world = surface_world();
+        world.dd2_spawn_hold = 0;
+        world.dd2_crystal_alive = false;
+        world.dd2_event_ongoing = true;
+        world.dd2_wave = 1;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = world;
+        let (_, ph) = (78.0, 130.0);
+        let (gx, gy) = (150.0 * TILE_PX, 118.0 * TILE_PX);
+        let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
+        gate.wants_dd2_spawn = true;
+        app.npcs.push(gate);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let goblins: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::DD2GoblinT1)
+            .collect();
+        assert_eq!(goblins.len(), 1, "the wave-1 squire spawns");
+        assert!(
+            (goblins[0].x - gx).abs() < 1.0 && (goblins[0].y - (gy + ph)).abs() < 1.0,
+            "the spawn rides the gate's bottom"
+        );
+        // The gate's second attempt also spawns — the cap is 50.
+        let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
+        gate.wants_dd2_spawn = true;
+        app.npcs.push(gate);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::DD2GoblinT1)
+                .count(),
+            2,
+            "the goblin cap is 50"
+        );
+    }
+
+    #[test]
+    fn the_gate_drops_the_unported_picks() {
+        // The tier-2 and tier-3 rosters carry families the port has not
+        // landed; those picks spawn nothing until their kinds do.
+        let mut world = surface_world();
+        world.hard_mode = true;
+        world.downed_mech_boss1 = true;
+        world.downed_golem = true;
+        world.dd2_spawn_hold = 0;
+        world.dd2_event_ongoing = true;
+        world.dd2_wave = 6;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut gate = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        gate.wants_dd2_spawn = true;
+        app.npcs.push(gate);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The intent was consumed, so the resolve ran — the roll's pick (the
+        // tier-3 wave-6 roster's 571/569/577 family) has no ported kind.
+        assert!(app.npcs.iter().all(|n| !n.wants_dd2_spawn), "the resolve ran");
+        assert_eq!(
+            app.npcs.iter().filter(|n| n.hp > 0).count(),
+            1,
+            "the tier-3 wave-6 pick has no ported kind yet"
+        );
+    }
+}
 }

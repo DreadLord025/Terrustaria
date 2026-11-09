@@ -197,6 +197,11 @@ pub enum NpcKind {
     /// Stardust sheet and the vortex had neither kind nor art. Its
     /// internal slot is 146 (112-145 are taken).
     VortexTower,
+        /// `NPCID.DD2LanePortal` (549) — the Old One's Army's lane gate
+        /// (`NPC.cs:16033-16053`: 78×130, aiStyle 106, 5 HP, def 20, damage
+        /// 0, noGravity/noTileCollide/dontTakeDamage, netAlways; `ai[2]`
+        /// picks the lane side).
+        DD2LanePortal,
     /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
     /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
     /// kb 0.3; the aiStyle-85 hover machine).
@@ -503,6 +508,15 @@ pub enum NpcKind {
     /// needs EVERY other town NPC present (`Main.cs:65944-65955`); the
     /// shop index 24 (`Chest.cs:3409`) — M4-TOWN-19.
     Princess,
+    /// `NPCID.DyeTrader` (207) — the dye seller (`NPC.cs:11654-11667`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[207]` = 25, `Main.cs:67120`) — the shop index 12
+    /// (`Chest.cs:1120`) — M4-TOWN-20.
+    DyeTrader,
+    /// `NPCID.PartyGirl` (208) — the party starter (`NPC.cs:11668-11681`:
+    /// the town twin; `npcFrameCount[208]` = 23) — the shop index 13
+    /// (`Chest.cs:case 13`) — M4-TOWN-20.
+    PartyGirl,
     /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
     /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
@@ -860,9 +874,11 @@ impl NpcKind {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
-            NpcKind::VortexTower => 146,
             NpcKind::SolarTower => 115,
             NpcKind::VortexTower => 146,
+            NpcKind::DD2LanePortal => 147,
+            NpcKind::StardustCellBig => 121,
+            NpcKind::StardustCellSmall => 116,
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
             NpcKind::VortexHeadcrab => 129,
@@ -910,7 +926,7 @@ impl NpcKind {
             NpcKind::VortexHunter => 426,
             NpcKind::VortexAlien => 427,
             NpcKind::VortexHeadcrab => 428,
-            NpcKind::StardustCellBig => 121,
+            NpcKind::DD2LanePortal => 549,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
             NpcKind::NebulaBeast => 118,
@@ -1020,6 +1036,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => 164,
             NpcKind::Zoologist => 165,
             NpcKind::Princess => 166,
+            NpcKind::DyeTrader => 167,
+            NpcKind::PartyGirl => 168,
         }
     }
 
@@ -1088,9 +1106,9 @@ NpcKind::SolarSelenian => 140,
             112 => NpcKind::AncientCultist,
             113 => NpcKind::StardustTower,
             114 => NpcKind::NebulaTower,
-            146 => NpcKind::VortexTower,
             115 => NpcKind::SolarTower,
             146 => NpcKind::VortexTower,
+            147 => NpcKind::DD2LanePortal,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
             118 => NpcKind::NebulaBeast,
@@ -1210,6 +1228,8 @@ NpcKind::SolarSelenian => 140,
             164 => NpcKind::SleepingGolfer,
             165 => NpcKind::Zoologist,
             166 => NpcKind::Princess,
+            167 => NpcKind::DyeTrader,
+            168 => NpcKind::PartyGirl,
             _ => return None,
         })
     }
@@ -1242,6 +1262,8 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::Golfer
                 | NpcKind::Zoologist
                 | NpcKind::Princess
+                | NpcKind::DyeTrader
+                | NpcKind::PartyGirl
         )
     }
 
@@ -1370,6 +1392,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => (18.0, 34.0),
             NpcKind::Zoologist => (18.0, 40.0),
             NpcKind::Princess => (18.0, 40.0),
+            NpcKind::DyeTrader => (18.0, 40.0),
+            NpcKind::PartyGirl => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1447,6 +1471,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => (130.0, 270.0),
+            // The lane gate: 78x130 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => (78.0, 130.0),
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
             NpcKind::VortexHeadcrab => (24.0, 26.0),
@@ -1611,6 +1637,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::SleepingGolfer => 589,
             NpcKind::Zoologist => 633,
             NpcKind::Princess => 663,
+            NpcKind::DyeTrader => 207,
+            NpcKind::PartyGirl => 208,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1743,6 +1771,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WebbedStylist => 250,
             NpcKind::Golfer => 250,
             NpcKind::Zoologist => 250,
+            NpcKind::DyeTrader => 250,
+            NpcKind::PartyGirl => 250,
             NpcKind::Princess => 250,
             NpcKind::SleepingGolfer => 250,
             NpcKind::TaxCollector => 250,
@@ -1853,6 +1883,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20000,
+            // The lane gate: 5 HP (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 5,
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
             NpcKind::VortexHeadcrab => 200,
@@ -1974,6 +2006,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WebbedStylist => 10,
             NpcKind::Golfer => 10,
             NpcKind::Zoologist => 10,
+            NpcKind::DyeTrader => 10,
+            NpcKind::PartyGirl => 10,
             NpcKind::Princess => 10,
             NpcKind::SleepingGolfer => 10,
             NpcKind::TaxCollector => 10,
@@ -2071,6 +2105,8 @@ NpcKind::SolarSelenian => 140,
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 0,
+            // The lane gate: damage 0 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
             NpcKind::StardustSpiderBig => 70,
@@ -2419,6 +2455,13 @@ pub struct Npc {
     /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
     /// damage scaled by difficulty).
     pub wants_blast: bool,
+    /// `AI`'s aiStyle-106 arm (`NPC.cs:40999`'s `SpawnMonsterFromGate`)
+    /// request: the lane gate asks for its wave's pick — the sim
+    /// resolves it through the dd2 tables.
+    pub wants_dd2_spawn: bool,
+    /// `NPC.cs:40972`'s `leftGate` reading: `ai[2] == 0f` is the left
+    /// lane, `1f` the right — the resolved pick rides this flag.
+    pub wants_lane_right: bool,
     /// The StardustWormHead's mark request (`AI_006`'s 402 arm,
     /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
     /// resolves the 405/402/407 pick (the 540 hop unmodelled).
@@ -2846,6 +2889,8 @@ impl Npc {
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
             wants_blast: false,
+            wants_dd2_spawn: false,
+            wants_lane_right: false,
         wants_stardust_mark: false,
             wants_obstruct: false,
             wants_moon_leech: false,
@@ -2950,7 +2995,6 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
-            | NpcKind::VortexTower => 0.0,
             | NpcKind::VortexTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
@@ -3085,6 +3129,8 @@ impl Npc {
             NpcKind::WebbedStylist => 0.5,
             NpcKind::Golfer => 0.5,
             NpcKind::Zoologist => 0.5,
+            NpcKind::DyeTrader => 0.5,
+            NpcKind::PartyGirl => 0.5,
             NpcKind::Princess => 0.5,
             NpcKind::SleepingGolfer => 0.5,
             NpcKind::TaxCollector => 0.5,
@@ -3217,6 +3263,8 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20,
+            // The lane gate: def 20 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 20,
             // The shards' defense: 50/0/38/46/40/34.
             NpcKind::StardustSpiderBig => 40,
             NpcKind::StardustSpiderSmall => 10,
@@ -3332,6 +3380,8 @@ impl Npc {
             NpcKind::WebbedStylist => 15,
             NpcKind::Golfer => 15,
             NpcKind::Zoologist => 15,
+            NpcKind::DyeTrader => 15,
+            NpcKind::PartyGirl => 15,
             NpcKind::Princess => 15,
             NpcKind::SleepingGolfer => 15,
             NpcKind::TaxCollector => 15,
@@ -3386,6 +3436,8 @@ impl Npc {
             // `NPC.cs:14130`: the core alone carries a value (1 platinum
             // = 1000000 copper); the parts are value 0.
             NpcKind::VortexHunter => 1200.0,
+            NpcKind::NebulaFloater => 400.0,
+            NpcKind::DD2LanePortal => 0.0,
             NpcKind::VortexAlien => 400.0,
             NpcKind::VortexHeadcrab => 100.0,
             NpcKind::StardustSpiderBig => 900.0,
@@ -3427,7 +3479,8 @@ impl Npc {
             NpcKind::StardustWormHead => 700.0,
             NpcKind::SolarSpearman => 900.0,
             NpcKind::VortexTower => 0.0,
-            NpcKind::NebulaFloater => 400.0,
+            // The lane gate: value 0 (`NPC.cs`'s case 549).
+            NpcKind::DD2LanePortal => 0.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
             NpcKind::MoonLordCore => 1_000_000.0,
@@ -3513,6 +3566,7 @@ impl Npc {
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             NpcKind::VortexTower => 0.0, // the C# value = 0 for the pillars
+            NpcKind::DD2LanePortal => 0.0,
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -3579,6 +3633,8 @@ impl Npc {
             NpcKind::WebbedStylist => 0.0,
             NpcKind::Golfer => 0.0,
             NpcKind::Zoologist => 0.0,
+            NpcKind::DyeTrader => 0.0,
+            NpcKind::PartyGirl => 0.0,
             NpcKind::Princess => 0.0,
             NpcKind::SleepingGolfer => 0.0,
             NpcKind::TaxCollector => 0.0,
@@ -3744,6 +3800,8 @@ impl Npc {
             | NpcKind::Golfer
             | NpcKind::Zoologist
             | NpcKind::Princess
+            | NpcKind::DyeTrader
+            | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3861,6 +3919,10 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The Old One's Army's lane gate: aiStyle 106 — the sim's
+            // gate pass owns its spawn timer (it needs the pool + the
+            // dd2 state), the machine here is the idle body.
+            NpcKind::DD2LanePortal => self.update_dd2_lane(world, player),
             // The crawltipede chain rides the worm pass entirely.
             NpcKind::SolarCrawltipedeHead
             | NpcKind::SolarCrawltipedeBody
@@ -4107,6 +4169,7 @@ impl Npc {
             NpcKind::Stylist | NpcKind::TaxCollector => {}
             NpcKind::Golfer => {}
             NpcKind::Zoologist | NpcKind::Princess => {}
+            NpcKind::DyeTrader | NpcKind::PartyGirl => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -4464,6 +4527,11 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => {
+                self.frame = 0;
+            }
+            // The Old One's Army's lane gate: `ai[1]` drives its scale
+            // fade in the sim's gate pass; the machine here is 1-frame.
+            NpcKind::DD2LanePortal => {
                 self.frame = 0;
             }
             // The shards: the walker accumulator over their strips — the
@@ -8010,6 +8078,64 @@ impl Npc {
         );
     }
 
+    /// `AI`'s aiStyle-106 block (`NPC.cs:40970-41047`) — the Old One's
+    /// Army's lane gate: the `ai[0]` counter opens a spawn attempt every
+    /// `LaneSpawnRate` frames and resets at three times the rate, the
+    /// lane's side rides `ai[2]` (`leftGate`), and after 180 frames of
+    /// `localAI[0]` the gate fades (`scale = Lerp(1, 0.05, 500→600)`) and
+    /// dies at 550 — unless the crystal (`AnyNPCs(548)`) still stands, which
+    /// parks the arm.
+    ///
+    /// Deviations: the dust/light/sound arms and the netUpdate are
+    /// unmodelled; the spawn itself rides `wants_dd2_spawn` (the pool and
+    /// the dd2 tables live outside the machine).
+    fn update_dd2_lane(&mut self, world: &World, _player: &Player) {
+        // `:40972`'s lane side.
+        self.wants_lane_right = self.ai[2] == 1.0;
+        if self.ai[1] == 0.0 {
+            // `:40988-40991`'s counter, parked by `EnemySpawningIsOnHold`.
+            if !crate::world_sim::npcs::enemy_spawning_on_hold(world) {
+                self.ai[0] += 1.0;
+            }
+            let rate = crate::world_sim::npcs::lane_spawn_rate(world) as f32;
+            if self.ai[0] >= rate {
+                // `:40994-40997`'s reset runs first, so the reset frame's
+                // `0 % rate == 0` still opens an attempt.
+                if self.ai[0] >= rate * 3.0 {
+                    self.ai[0] = 0.0;
+                }
+                if (self.ai[0] as i32) % (rate as i32) == 0 {
+                    self.wants_dd2_spawn = true;
+                }
+            }
+            // `:41008-41016`'s idle timer, clamped at 180.
+            self.caster_counter += 1;
+            if self.caster_counter > 180 {
+                self.caster_counter = 180;
+            }
+            if self.caster_counter >= 180 {
+                // `:41014-41017`'s crystal guard: the AI returns with the
+                // gate unkillable while the crystal stands.
+                if world.dd2_crystal_alive {
+                    self.dont_take_damage = true;
+                    return;
+                }
+                self.ai[1] = 1.0;
+                self.ai[0] = 0.0;
+                self.dont_take_damage = true;
+            }
+        } else if self.ai[1] == 1.0 {
+            // `:41020-41042`'s fade, then the death at 550.
+            self.ai[0] += 1.0;
+            let t = ((self.ai[0] - 500.0) / 100.0).clamp(0.0, 1.0);
+            self.scale = 1.0 + (0.05 - 1.0) * t;
+            if self.ai[0] >= 550.0 {
+                self.dont_take_damage = false;
+                self.hp = 0;
+            }
+        }
+    }
+
     /// `AI_077_MoonLordCore` (`NPC.cs:41157-41575`) — the Moon Lord's
     /// heart: the spawn-in (`ai[0] == -1`), the cruise (`ai[0] == 0/1`),
     /// the 600-tick crash drama (`ai[0] == 2`), the despawn
@@ -11327,6 +11453,8 @@ impl Npc {
                     | NpcKind::TaxCollector
                     | NpcKind::Zoologist
                     | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11355,6 +11483,7 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::DD2LanePortal => 549,
             NpcKind::StardustSpiderBig => 409,
             NpcKind::StardustSpiderSmall => 410,
             NpcKind::StardustSoldier => 411,
@@ -11400,6 +11529,8 @@ impl Npc {
             NpcKind::SleepingGolfer => 164,
             NpcKind::Zoologist => 165,
             NpcKind::Princess => 166,
+            NpcKind::DyeTrader => 167,
+            NpcKind::PartyGirl => 168,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13826,6 +13957,102 @@ mod tests {
     /// screenshot pair (the port's draw rides the same rows).
 
 
+
+
+    #[test]
+    fn the_dye_trader_and_party_girl_kinds_stats_roundtrip_and_shops() {
+        // `SetDefaults` 207 (`NPC.cs:11654`) and 208 (`:11668`): the town
+        // twin's numbers, the kind<->u16 round-trips, the shop indexes
+        // (`NPCInteractions.cs:499-500`'s `Shop(207, 12)`/`Shop(208, 13)`) and
+        // the bestiary rows.
+        for (kind, id) in [
+            (NpcKind::DyeTrader, 207u16),
+            (NpcKind::PartyGirl, 208),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+            assert_eq!(kind.size(), (18.0, 40.0), "{kind:?}");
+            assert!(kind.is_town_resident(), "{kind:?}");
+        }
+        assert_eq!(NpcKind::DyeTrader.to_u16(), 167);
+        assert_eq!(NpcKind::from_u16(167), Some(NpcKind::DyeTrader));
+        assert_eq!(NpcKind::PartyGirl.to_u16(), 168);
+        assert_eq!(NpcKind::from_u16(168), Some(NpcKind::PartyGirl));
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::DyeTrader),
+            Some(12)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::PartyGirl),
+            Some(13)
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::DyeTrader, SlimeVariant::Blue).net_id,
+            207
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::PartyGirl, SlimeVariant::Blue).net_id,
+            208
+        );
+    }
+
+    /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
+    /// 0 pair and the blood-moon-night row.
+    #[test]
+    fn the_dye_trader_shop_carries_the_dye_rows() {
+        let stock = crate::shop::resolve_stock(12, &crate::shop::ShopFlags::default(), &[]);
+        for id in [1120, 5920, 1037, 2874] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        // `resolve_stock` reads moon-phase 0, where the C#'s pair sits.
+        assert!(stock.contains(&2871), "the moon-phase row at phase 0");
+        assert!(stock.contains(&2872), "its pair");
+        let phase2 = crate::shop::resolve_stock_moon(
+            12,
+            &crate::shop::ShopFlags::default(),
+            &[],
+            4,
+        );
+        assert!(!phase2.contains(&2871), "no moon-phase row at phase 4");
+        // The blood-moon-night row.
+        let night = crate::shop::ShopFlags {
+            night: true,
+            blood_moon: true,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(12, &night, &[]);
+        assert!(rows.contains(&4663), "the blood-moon row");
+        // The halloween and graveyard rows stay constants-off.
+        assert!(!rows.contains(&3248), "no halloween hat");
+        assert!(!rows.contains(&4662), "no graveyard goggles");
+    }
+
+    /// The Party Girl's shop (`case 13`): the eighteen always rows.
+    #[test]
+    fn the_party_girl_shop_carries_the_party_rows() {
+        let stock = crate::shop::resolve_stock(13, &crate::shop::ShopFlags::default(), &[]);
+        for id in [859, 1000, 1168, 1345, 1450, 3253, 4553, 2700, 2738, 4470, 4681, 4791, 3747, 3732, 3742] {
+            assert!(stock.contains(&id), "the {id} party row");
+        }
+        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
+        // the night half.
+        assert!(stock.contains(&1449));
+        assert!(!stock.contains(&4552), "the night row is off by day");
+        let night = crate::shop::ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(13, &night, &[]);
+        assert!(rows.contains(&4552), "the night row by night");
+        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
+        // flags the port has not modelled.
+        assert!(!rows.contains(&4682), "no graveyard goggles");
+        assert!(!rows.contains(&4743), "no football at score 0");
+        assert!(!rows.contains(&3369), "no pirate row");
+        assert!(!rows.contains(&3546), "no golem row");
+        assert!(!rows.contains(&3749), "no party block");
+    }
 
     #[test]
     fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {

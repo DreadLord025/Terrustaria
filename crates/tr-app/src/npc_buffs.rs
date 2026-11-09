@@ -194,6 +194,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `NPCID.cs`'s DebuffImmunitySets has no row for 633/663.
         NpcKind::Zoologist => &[],
         NpcKind::Princess => &[],
+        // `NPCID.cs`'s DebuffImmunitySets has no row for 207/208.
+        NpcKind::DyeTrader => &[],
+        NpcKind::PartyGirl => &[],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
@@ -311,6 +314,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
         | NpcKind::VortexTower
+        | NpcKind::DD2LanePortal
         | NpcKind::StardustCellBig
         | NpcKind::VortexTower
         | NpcKind::StardustCellSmall

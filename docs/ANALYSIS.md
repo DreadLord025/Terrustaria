@@ -3802,6 +3802,19 @@ Deviations:
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
 ## Zoologist/Princess (M4-TOWN-19)
+## Dye Trader/Party Girl (M4-TOWN-20)
+
+Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
+has no ported field (the `ItemSlot` carries only kind/count/prefix), so the
+arrival reads the two id bands the C# names literally (the dye materials
+1107-1120 and the Strange Plants 3385-3388); the equipment's dye slots
+(`GetEffectiveDye`, `NPC.cs:7138-7145`) are not ported, so that half of the
+gate is off. The Party Girl's shop rows gated on the golfer score, the
+Pirate, the Golem, hardmode and the BirthdayParty ride systems the port
+lacks — the BirthdayParty block (12 rows) lands with the party event. Her
+arrival's `num40 >= 20` town-NPC count is counted live in the town pass (the
+C# counts all 24 per-type counters in `UpdateTime_SpawnTownNPCs`).
+
 
 Both are late-roster town NPCs. Deviations: the Zoologist's shop has the
 fairy-torch row (`Chest.BestiaryGirl_IsFairyTorchAvailable`, `:3544`), the
@@ -5332,6 +5345,40 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   `j / num3 >= 0.25` while the `Next(13)`/`Next(9)`/`Next(5)` draws stay in
   their short-circuit order. `treeHeightAddon`/`ignoreWalls`, the
   anniversary colour roll and `RangeFrame`/`NetMessage` park (documented).
+
+- **The underground growth dispatcher** (`UpdateWorld_UndergroundTile`,
+  `WorldGen.cs:73214-73614` — the M5-SPREAD-1/GROWTH-2 slice): the driver's
+  underground picks run the dispatcher (the overground parity call retires):
+  the clamped box, the alch/hard-mode heads, the `SpreadUnderground` grass
+  growth (`TileID.cs:622`) with the 32/352 spikes, the lily→74 conversion
+  (`:73296`), the five vine families (through `grow_vine_arm`), and behind
+  `allowed_to_spread` the wall arms. `SpreadGrassWalls`/`SpreadDesertWalls`
+  (`:74884`/`:74984`) carry the three flavour branches each — the
+  `SpreadsCorruption`/`Crimson`/`Hallow` wall sets (`WallID.cs:93-95`), the
+  neighbour-family gates (63-68, the corruption arm's 63/65/66/68), the
+  `wallDist`-3 source scan and `Convert`'s wall chain (`:55261`/`:55176`/
+  `:55100` — the Grass/Stone/HardenedSand/Sandstone/NewWall1..4 sets
+  `WallID.cs:37-48` per conversion type). Parked arms: the 655 life-fruit
+  kill (the NPC store), `plantDye`, the 519 cattail / 549+53 seaweed, the
+  444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
+  `CountNearBlocksTypes` have no ports), `GrowWeb`, `TrySpawningTownNPC`, the
+  net sides, the creative-power override on `AllowedToSpreadInfections`, and
+  the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
+  carries every draw).
+
+- **The beach-shells arm** (`UpdateWorld_OvergroundTile`'s
+  `WorldGen.cs:72073-72135`): the last M5-SPREAD-1 row item. The weather
+  plumbing it needs landed with it — `growth::update_world` /
+  `update_world_overground_tile` now carry the real rain intensity and wind
+  speed (the app passes `rain.max_raining()` and `wind.speed_current`; the
+  drivers before used rain as a bool only). The arm: an inactive beach cell
+  under the surface (`j < worldSurface + 10`, inside the `beachDistance` 380
+  margins) rolls `3000 − |wind| · 1250 − maxRaining · 1250` (floor 300), scans
+  down ≤15 rows for sand on a `SolidTileAllowBottomSlope` seat, stands down on
+  an existing pile, counts the 324/81 tiles in the ±`Next(8, 11)` box against
+  the `Next(2, 5)` cap and writes the coral (81, on ≥230 water at 1/2) or the
+  seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
+  keeps the worldgen stream).
 
 ## Structures (M1.4-WGEN-2)
 
@@ -8973,3 +9020,106 @@ body, and the `SpawnStormLightning` gates).
 - `DoRainbowStuff`'s frame re-writes and the thunder-bolt projectile arms
   of `moreLightning`/`noLightning` (`Projectile.cs:12776/14823/39871`).
  2397c90 (M5-SEED-2: the docs — the ROADMAP row, the ANALYSIS section and the PORT_MAP rows)
+
+## Yoyo on-hit effects (M4-PROJ-4b)
+
+The yoyo family's hit-damage and hit-spawn arms, ported into the pool's
+`damage_pve`.
+
+### The shared counter
+
+`Player.yoyoHitCounter` (`Player.cs:1220`'s `-1` start) lives on the port's
+`Player` with `every_some_yoyo_hits(amount, countUp)` — the C#'s
+`Player.EverySomeYoyoHits` (`Player.cs:4308-4316`). Three properties that
+shaped the whole task:
+
+1. **It is never reset.** No `ResetEffects` arm, no death/throw reset, no
+   per-projectile reset — the counter is monotonic for the life of the
+   `Player` object (the port therefore writes no reset code either).
+2. **It is per-player, not per-projectile.** Every yoyo the player owns
+   shares it.
+3. **The -1 start shifts the schedule.** `-1 % 7 == -1` (C#'s truncated
+   remainder, and Rust's `i32 %` matches it), so the first hit never fires
+   — and the counter's *0* makes the **second** hit fire for every period.
+   The doubling and the spawn therefore land on hits 2, 9, 16, … (555) and
+   2, 5, 8, … (546), not 7/3.
+
+### The hook order
+
+The C# evaluates the doublings **before** `StrikeNPC`
+(`Projectile.cs:13389-13396`) and the spawns **after** it
+(`:13707-13809`) — and both read the same counter value on one hit. The
+port folds that into `damage_pve`'s per-NPC loop: the doubling peeks
+(`countUp: false`) into the `dmg` local just before
+`hurt_from_projectile`, and `yoyo_on_hit` increments inside the `landed`
+block. Getting these in one place is what keeps the periods aligned.
+
+### The arms
+
+| yoyo | effect | detail |
+|---|---|---|
+| 555 (TheEyeOfCthulhu) | `dmg * 2` every 7th hit | pre-strike peek |
+| 546 (Chik) | `dmg * 2` every 3rd hit | pre-strike peek |
+| 545 (Cascade) | spawns 1125 every 2nd hit | `damage * 2`, the `ai1` floor `dist/200` with the C#'s 208-seeded scan degenerate, the `localNPCImmunity` **-1** sentinel, the `ai[0] != -2` dropped-yoyo guard |
+| 554 (Kraken) | spawns 3× 1135 every 4th | `damage * 0.5`, `l ∈ {-2, 0, 2}` at ±0.05 turns |
+| 546 (Chik) | spawns 5× 1134 every 3rd | `ai0 = 1` for the four followers, the idStatic-20 stamp |
+| 555 (TheEyeOfCthulhu) | spawns 1130 every 7th | `damage * 2`, 14-tile initial speed, `ai1` floor 80/200, the -1 sentinel |
+
+The four shots carry their `SetDefaults` rows verbatim (1125:
+32×32/aiStyle-189/`penetrate = 4`/local-immunity −1; 1130:
+100×100/aiStyle-210/`timeLeft = 600`/local −1; 1134:
+6×6/aiStyle-24/`penetrate = 1`/idStatic-20; 1135:
+100×100/aiStyle-210/idStatic-10), and `AI_210_YoyoShots` ports the shared
+fade lifecycle of 1130/1135: the 0.92 velocity decay, the
+`MultiLerp`-driven alpha ramp (255→0 over 20 ticks) and the 20-tick
+owner-local `Kill`.
+
+Deviations: the counterweight on-hit spawn path (`Player.Counterweight`,
+`Player.cs:12356-12415` — the yoyo-glove/counterweight scan) is a separate
+accessory arm and stays deferred; `AI_210`'s one-shot sound and frame cycle
+are the render row's (the port's cue table has no `Item20`); the spawned
+shots' own aiStyle-189 (1125) and aiStyle-24 (1134) families are their own
+tasks — the shots exist with their data, their children-AIs do not run.
+## The Old One's Army's lane spawn (M4-EVENT-18)
+
+The etherian portal (549) is the gate every lane's monster climbs out of,
+and its pick is the whole wave's spawn table — three difficulties, each a
+per-wave `switch` with its own caps and rolls.
+
+- **The gate's machine** (`AI()`'s aiStyle-106 block, `NPC.cs:40970-41047`)
+  is a counter plus an idle timer. `ai[0]++` runs only while
+  `!EnemySpawningIsOnHold` (the event's `_timeLeftUntilSpawningBegins`), and
+  at `ai[0] >= LaneSpawnRate` the gate asks for a spawn; the 3x reset is
+  written _before_ the modulo test, so the reset frame's `0 % rate == 0`
+  opens an attempt too. `localAI[0]` caps at 180, and at 180 the arm either
+  returns (with `dontTakeDamage = true`) while `NPC.AnyNPCs(548)` — the
+  etherian crystal — stands, or flips `ai[1]`, zeroes `ai[0]` and enters the
+  fade: `scale = Lerp(1, 0.05, GetLerpValue(500, 600, ai[0]))`, dying at
+  `ai[0] >= 550`. The lane side rides `ai[2]` (`leftGate = ai[2] == 0`), and
+  `LaneSpawnRate` is the wave's own rate — the tier-1 table's
+  90/60/55/50/40, the tier-2's 90/70/60/55/50/45/42 and the tier-3's
+  85/75/60/60/55/60/90.
+- **The picks are three separate functions**
+  (`Difficulty_1/2/3_SpawnMonsterFromGate`). Two traps mattered when porting
+  them. First, the C#'s short-circuit: a branch whose _first_ condition is a
+  cap check does not draw its `Main.rand.Next` at all when the cap is full,
+  so the port's roll order has to match condition for condition — several
+  arms had the roll hoisted ahead of the cap. Second, the `num`/`num8`/
+  `num9` pair: the squire branch always spawns the squire and _also_ the
+  second body on a roll (the 556 beside the 553, the 557 beside the 554),
+  which `LaneSpawn` carries as `first`/`second`.
+- **The bosses each have their own shape.** The Dark Mage (564, tier-1 wave
+  5) rides a separate `if ((!leftGate || Next(2) == 0) && kills > required ·
+  0.5 && !AnyNPCs(564))` — but the `if/else if` chain that follows it
+  re-assigns `num4` whenever it fires, so the boss only survives when the
+  goblins already sit at their cap. The Ogre (576, tier-2 wave 7) heads the
+  chain instead. Tier-3 wave 6 runs _two independent chains_: the second
+  (`:1708`) always executes and overwrites the first's pick.
+- **The resolve** lives in the sim, which owns the NPC vec and therefore the
+  live pool the caps count (`NPC.CountNPCS`). `FindProperDifficulty` picks
+  the tier from `hardMode` / `downedMechBossAny` / `downedGolem`,
+  `GetInvasionStatus` supplies the kill pair, and the pick's kinds spawn at
+  the gate's bottom. The port's DD2 roster is partial — the wyvern, the
+  archers, the drakes, the mystics, the ogres, the hounds, the sapper and
+  the glider have no kind yet, so those picks drop out until they land
+  (`nid_of`/`dd2_pool_id`).

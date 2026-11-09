@@ -72,7 +72,20 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
         player.height as i32,
         tile_boost(app),
     );
+    // `SmartCursorHelper.cs:106-116` — the `_grappleTargets` fill: the
+    // player's grappling projectiles' centers over 16. The port runs a
+    // single hook (`App.grapple`), so the list holds 0 or 1 cell; the
+    // hook's `pos` is its center (`grapple::GrappleHook::fire` starts it at
+    // the player's center).
+    let grapple_targets = smart_cursor::grapple_target_cells(
+        &app.grapple
+            .as_ref()
+            .map(|h| (h.pos.x, h.pos.y))
+            .into_iter()
+            .collect::<Vec<_>>(),
+    );
     let lookup = Lookup {
+        grapple_targets,
         item: item_port(app),
         mouse,
         screen_target: (tx, ty),
@@ -155,6 +168,24 @@ mod tests {
             prefix: 0,
         };
         app
+    }
+
+    #[test]
+    fn the_lookup_carries_the_grapple_hook_cell() {
+        // `SmartCursorHelper.cs:106-116` — the reach rect's off-screen gate
+        // fills `_grappleTargets` from the player's grappling projectiles.
+        // The port's single `App.grapple` hook contributes its position
+        // cell; the torch step still re-points (the targets only gate the
+        // pickaxe-solids walk).
+        let mut app = wiring_app();
+        app.grapple = Some(crate::grapple::GrappleHook::fire(
+            0,
+            glam::Vec2::new(40.0 * 16.0, 42.0 * 16.0),
+            glam::Vec2::new(41.0 * 16.0, 42.0 * 16.0),
+            16.0,
+        ));
+        let found = repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0));
+        assert_eq!(found, Some((35, 39)), "the torch step still re-points");
     }
 
     #[test]

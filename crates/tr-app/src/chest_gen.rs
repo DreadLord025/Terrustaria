@@ -955,6 +955,12 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
     if world.width <= 4 || world.height <= 4 {
         return Vec::new();
     }
+    // The tenth-anniversary chest sweep (`FinishTenthAnniversaryWorld`'s
+    // `ImproveAllChestContents`, `!getGoodWorldGen` — `:24278-24280`): the
+    // anniversary seed's stocked chests take the good prefixes instead. The
+    // port stocks at load time, so the sweep rides this seam.
+    let improve_prefixes = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
     let seed = world
         .seed
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
@@ -1023,9 +1029,12 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
             });
             dungeon.advance(true);
             if out.len() >= 8000 {
-                return out;
+                break;
             }
         }
+    }
+    if improve_prefixes {
+        improve_all_chest_contents(&mut out, &mut rng);
     }
     out
 }
@@ -1090,6 +1099,83 @@ pub(crate) fn store_from_records(
     out
 }
 
+/// `TenthAnniversaryWorldInfo`'s good-prefix tables
+/// (`WorldGen.cs:3803-3820`) — the static cctor's five arrays.
+const GOOD_PREFIX_ACCESSORY: &[u16] = &[65, 68, 72, 76];
+const GOOD_PREFIX_MELEE: &[u16] = &[81, 59, 57];
+const GOOD_PREFIX_RANGED: &[u16] = &[82, 57, 60];
+const GOOD_PREFIX_MAGIC: &[u16] = &[83, 57, 60];
+const GOOD_PREFIX_SUMMONER: &[u16] = &[85, 59, 95, 96, 97];
+
+/// `WorldGen.ImproveAllChestContents` (`:24716-24731`) with
+/// `GiveItemGoodPrefixes` (`:24733-24754`) and `PrefixItemFromOptions`
+/// (`:24760-24778`): the tenth-anniversary world's chest sweep — every stocked
+/// item takes one of its class's "good" prefixes when the roll allows it.
+///
+/// The C# walks `Main.chest[0..8000]` during worldgen
+/// (`FinishTenthAnniversaryWorld`, `!getGoodWorldGen`); the port stocks its
+/// chests at load time, so the sweep rides the same load-time seam — the
+/// documented `chest_gen` deviation.
+pub(crate) fn improve_all_chest_contents(chests: &mut [WorldChest], rng: &mut u64) {
+    for chest in chests.iter_mut() {
+        for slot in chest.slots.iter_mut() {
+            if slot.kind == 0 {
+                continue;
+            }
+            give_item_good_prefixes(slot, rng);
+        }
+    }
+}
+
+/// `GiveItemGoodPrefixes` (`:24733-24754`): the accessory / melee / ranged /
+/// magic / summon arms in the C# order.
+fn give_item_good_prefixes(slot: &mut ItemSlot, rng: &mut u64) {
+    let def = match crate::itemdata::ITEMS.get(slot.kind as usize) {
+        Some(d) => d,
+        None => return,
+    };
+    if def.accessory {
+        prefix_item_from_options(slot, GOOD_PREFIX_ACCESSORY, rng);
+    }
+    if def.class == crate::registry::DamageClass::Melee {
+        prefix_item_from_options(slot, GOOD_PREFIX_MELEE, rng);
+    }
+    if prefix::in_set(prefix::GUNS_BOWS, slot.kind) {
+        prefix_item_from_options(slot, GOOD_PREFIX_RANGED, rng);
+    }
+    if prefix::in_set(prefix::MAGIC, slot.kind) {
+        prefix_item_from_options(slot, GOOD_PREFIX_MAGIC, rng);
+    }
+    if prefix::in_set(prefix::SUMMON, slot.kind) {
+        prefix_item_from_options(slot, GOOD_PREFIX_SUMMONER, rng);
+    }
+}
+
+/// `PrefixItemFromOptions` (`:24760-24778`): try the option list in the
+/// `Next(count)` order — the first prefix the item actually takes wins, and
+/// the original prefix is restored when none does.
+fn prefix_item_from_options(slot: &mut ItemSlot, options: &[u16], rng: &mut u64) {
+    let prefix = slot.prefix;
+    // `item.Prefix(-3)` is the `CanHavePrefixes` gate (the port's roll returns
+    // 0 for both a rejection and the no-op mode, so the gate reads the
+    // itemdata directly).
+    if prefix::rollable_prefixes(slot.kind).is_none() {
+        return;
+    }
+    let mut list: Vec<u16> = options.to_vec();
+    while !list.is_empty() {
+        let index = (next(rng, list.len() as u64)) as usize;
+        let num = list[index];
+        let rolled = prefix::roll_prefix(slot.kind, num as i32, rng);
+        slot.prefix = rolled;
+        if rolled == num {
+            return;
+        }
+        list.remove(index);
+    }
+    slot.prefix = prefix;
+}
+
 /// Merges the load-time roll with a pre-seeded store (the `TR_CHEST`
 /// fixture, or M6-SAVE-1b's loaded records): the seeded chests keep their
 /// slots, the roll's own anchors append after them.
@@ -1138,6 +1224,50 @@ mod tests {
                 ..Default::default()
             };
         }
+    }
+
+    /// `ImproveAllChestContents` (`:24716-24731`): the anniversary world's
+    /// chest sweep takes the class "good" prefixes — the accessory/melee/
+    /// ranged/magic/summon tables — through `PrefixItemFromOptions`'s ordered
+    /// try loop. A plain world's prefixes are untouched.
+    #[test]
+    fn the_anniversary_sweep_takes_the_good_prefixes() {
+        // A sword (melee 24 = Wooden Sword) with no prefix: the good table
+        // {81, 59, 57} should land one of them (or keep 0 when every try
+        // rejects).
+        let mut chests = vec![WorldChest {
+            tile: (10, 10),
+            slots: vec![ItemSlot {
+                kind: 24,
+                name: "",
+                count: 1,
+                prefix: 0,
+            }],
+        }];
+        let mut rng = 0x5EED_u64 | 1;
+        improve_all_chest_contents(&mut chests, &mut rng);
+        let good = [81u16, 59, 57];
+        assert!(
+            chests[0].slots[0].prefix == 0 || good.contains(&chests[0].slots[0].prefix),
+            "the melee sweep took a good prefix: {}",
+            chests[0].slots[0].prefix
+        );
+        // Determinism: the same stream replays.
+        let mut again = vec![WorldChest {
+            tile: (10, 10),
+            slots: vec![ItemSlot {
+                kind: 24,
+                name: "",
+                count: 1,
+                prefix: 0,
+            }],
+        }];
+        let mut rng2 = 0x5EED_u64 | 1;
+        improve_all_chest_contents(&mut again, &mut rng2);
+        assert_eq!(
+            chests[0].slots[0].prefix, again[0].slots[0].prefix,
+            "the sweep is deterministic"
+        );
     }
 
     #[test]

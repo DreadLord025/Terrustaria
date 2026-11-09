@@ -1851,6 +1851,8 @@ fn npc_seed(
         | crate::npc::NpcKind::Golfer
         | crate::npc::NpcKind::Zoologist
         | crate::npc::NpcKind::Princess
+        | crate::npc::NpcKind::DyeTrader
+        | crate::npc::NpcKind::PartyGirl
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
@@ -1994,6 +1996,7 @@ fn npc_seed(
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
         | crate::npc::NpcKind::VortexTower
+        | crate::npc::NpcKind::DD2LanePortal
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall

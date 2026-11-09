@@ -185,6 +185,10 @@ pub(crate) struct NpcAssets {
     pub(crate) zoologist: Option<BgTex>,
     /// `NPC_663.xnb` — the Princess's town sheet (`:67152`).
     pub(crate) princess: Option<BgTex>,
+    /// `NPC_207.xnb` — the Dye Trader's town sheet (25 rows, `Main.cs:67120`).
+    pub(crate) dye_trader: Option<BgTex>,
+    /// `NPC_208.xnb` — the Party Girl's town sheet (23 rows, `:67120`).
+    pub(crate) party_girl: Option<BgTex>,
     /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
     pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
@@ -398,6 +402,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         sleeping_golfer: sky_tex(atlas, "NPC_589", None),
         zoologist: sky_tex(atlas, "NPC_633", None),
         princess: sky_tex(atlas, "NPC_663", None),
+        dye_trader: sky_tex(atlas, "NPC_207", None),
+        party_girl: sky_tex(atlas, "NPC_208", None),
         sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
@@ -1266,6 +1272,9 @@ pub(crate) fn draw_npcs(
             // NPC_633/663 — 23 rows each (`Main.cs:67147`/`:67152`).
             NpcKind::Zoologist => humanoid_draw(assets.zoologist.as_ref(), 23, n, w, h),
             NpcKind::Princess => humanoid_draw(assets.princess.as_ref(), 23, n, w, h),
+            // The Dye Trader (25 rows) and the Party Girl (23 rows).
+            NpcKind::DyeTrader => humanoid_draw(assets.dye_trader.as_ref(), 25, n, w, h),
+            NpcKind::PartyGirl => humanoid_draw(assets.party_girl.as_ref(), 23, n, w, h),
             // The sleeping Golfer: NPC_589's sheet over the flat 18x34
             // body.
             NpcKind::SleepingGolfer => (
@@ -1468,11 +1477,13 @@ pub(crate) fn draw_npcs(
             // the overhanging art 47 px into the ground) — `tower_draw`
             // computes it (the other agent's merge had all four kinds ride
             // the shared `towers` sheet — NPC_493 — at the box's corner).
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower => {
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower
+            | NpcKind::DD2LanePortal => {
                 let tex = match n.kind {
                     NpcKind::StardustTower => assets.tower_stardust.as_ref(),
                     NpcKind::NebulaTower => assets.tower_nebula.as_ref(),
                     NpcKind::SolarTower => assets.tower_solar.as_ref(),
+                    NpcKind::VortexTower => assets.tower_vortex.as_ref(),
                     _ => assets.tower_vortex.as_ref(),
                 };
                 tower_draw(tex, n, w, h)
