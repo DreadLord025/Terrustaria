@@ -3584,6 +3584,23 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Angler quest (M4-TOWN-15)
+
+The quest state lives on the statics in the C# (`Main.anglerQuest`,
+`anglerQuestFinished`, `anglerWhoFinishedToday`, `Player.anglerQuestsFinished`); the port
+carries the first three on the World (the name list collapses to the single-player
+`angler_quest_turned_in`) and the counter on the Player. Deliberate gaps, all documented in the
+row: the quest **chat text** (`Main.NPCChatText_DoAnglerQuest`'s `Lang.AnglerQuestChat` result and
+`NPC.GetChat`'s 369 dialog tree at `NPC.cs:94758-94760`) is not ported — the port has no NPC
+dialog UI; the reward's accessory filter scans the inventory only (the C# also walks the armor,
+the four banks and the three loadouts — the port has none); the price adjustment is pinned at
+1.0 (the vanilla reads `currentShoppingSettings.PriceAdjustment`, which the town roster's mood
+rows never change); the `crimson` gate reads `false` (the World carries no evil-kind field, so
+the corruption-side quest rows always re-roll exactly like a corruption world); the world-file
+save fields (`IO/WorldFile.cs:1329-1335`/`:2152-2166`) and the 74/75/76 messages land with
+M6-SAVE-1/M6-NET; the Sleeping Angler's world spawn rides the port's 2-second town cadence
+instead of the vanilla's `SpawnAnNPC` ladder position (same gates, same `Next(20)`).
+
 ## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
 
 The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks
@@ -4985,6 +5002,21 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   remaining family rows the probes approximate (2198/669, 2197/751,
   2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
   chest cycle note).
+
+- **The chest 21-block remaining rows** (`AddBuriedChest`'s
+  `itemIndex > 0 && chestTileType == 21` block, `WorldGen.cs:37384-47500` —
+  the M5-CHEST-gen flag4/flag13 slice): the flag4 pair (the 1/4 and 1/50
+  rows — both chest-tile blocks carry the same pair, so they apply to
+  either anchor kind), the flag13 globe (unconditional), the style-13
+  pottery row (5234, its own 1/2 roll — the vanilla keeps it separate from
+  the style-23-27 row), plus the re-landed style-23-27 row and flag13 water
+  pair. **The re-landing is the notable part**: those two rows merged once
+  (`600dafdb`) and a later merge's resolution dropped them silently — the
+  determinism suite passed because the roll is only observed in chests the
+  affected families stock, and no test counted the rows. The rows now carry
+  their citations; the parked items stay parked (the mahogany-tile 467
+  counterparts need the chest kind plumbed, the seed-flavour rows wait for
+  M5-SEED-1).
 
 ## Structures (M1.4-WGEN-2)
 

@@ -262,6 +262,24 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
+    /// talked into the Angler — the 376 spawn arms stop looking.
+    pub saved_angler: bool,
+    /// `Main.anglerQuest` (`Main.cs:1785`): the INDEX into the 41-entry
+    /// quest-fish pool (`Main.cs:67032`'s `anglerQuestItemNetIDs`).
+    pub angler_quest: u8,
+    /// `Main.anglerQuestFinished` (`Main.cs:1783`): today's quest is
+    /// handed in (`NPCChatText_DoAnglerQuest`, `Main.cs:40251`); the
+    /// day reset clears it (`AnglerQuestSwap`, `Main.cs:3761`).
+    pub angler_quest_finished: bool,
+    /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the C#'s player
+    /// name list — the port's single player collapses to a bool.
+    pub angler_quest_turned_in: bool,
+    /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
+    /// (`Main.cs:65373`): the clock arms it (the clock has no RNG), the
+    /// world pass resolves it on `Main.rand`'s app stream (the
+    /// `invasion_arm_pending` shape).
+    pub angler_swap_pending: bool,
     /// `Main.travelShop` (`Main.cs:1779`; the 40 slots of
     /// `Main.TravelShopMaxSlots`, allocated at `Main.cs:67030`): the
     /// Travelling Merchant's per-visit stock — `Chest.SetupTravelShop`
@@ -386,6 +404,11 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            saved_angler: false,
+            angler_quest: 0,
+            angler_quest_finished: false,
+            angler_quest_turned_in: false,
+            angler_swap_pending: false,
             travel_shop: [0; 40],
             butterfly_chance: 0,
         }
