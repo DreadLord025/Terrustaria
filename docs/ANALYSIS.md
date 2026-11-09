@@ -4986,6 +4986,15 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
   chest cycle note).
 
+- **The chest style/water tails** (`AddBuriedChest`'s
+  `itemIndex > 0 && chestTileType == 21` block, `WorldGen.cs:37453-47469` —
+  the M5-CHEST-gen water/style slice): the `num9` 23-27 style row (5234 at
+  1/2, reading the sweep's `chest_style`) and the flag13 water pair (1/5 the
+  raincoat 2767, else 3-7 potions 2766), in the vanilla order after the
+  flag12 tail another agent landed in `stock_band`. Parked: the
+  mahogany-tile 467 counterparts of the whole block (`:37466-47500`) —
+  `stock_chest` does not carry the chest kind yet.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
