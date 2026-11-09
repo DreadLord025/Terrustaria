@@ -7392,3 +7392,50 @@ Deviations: the 242-dust bursts, the on-hit early teleport
 attached suckler stays visible and the port's Player takes the obstruct
 through the `wants_obstruct` intent. The tower spawn tables themselves
 (`:1301-1318`) stay open with the M4-EVENT-7 shield work.
+
+## The tower mobs (M4-EVENT-13)
+
+The Stardust tower rolls `SelectRandom(411, 411, 411, 409, 409, 407, 402,
+405)` (`NPC.cs:1349`, no alive caps — the cell/worm caps live in
+`SpawnStardustMark_StardustTower`); the Solar tower rolls
+`SelectRandom(518, 419, 418, 412, 417, 416, 415)` with the 518 and 412
+rerolls (`:1355-1384`). 410 and 402 never come from the table: 410 only
+from 409's attack.
+
+- **The big spider (409)** is in the shared shooter list but fires no
+  projectile: its 60-tick cycle (`:59155-59160`) spawns the 410 at its
+  centre with the carried velocity (`:59585-59589`), and its walk runs
+  the 2-px cap / 0.5 accel (`:59746-59750`).
+- **The small spider (410)** is an aiStyle-26 unicorn walker (`:62470`)
+  with the 6-px / 0.2-accel tail (`:62706-62713`): the 240-tick counter
+  (or a player 800 px below inside a 20-px column) fires three 538s (50,
+  `X ∈ [-1, 1]`, `Y ∈ [-14, -4]`) and then self-destructs.
+- **The soldier (411)** runs the 330-tick cycle (`:59151-59153`) firing
+  the 537 at 60 damage from the muzzle (`:59271-59274`, `:59470-59473`,
+  `:59574-59577`); its [120, 240) window (`:59076-59081`'s
+  `flag16`/`num160`/`num161`) is the aerodynamic phase and its walk runs
+  the 2-px cap (`:59741-59745`).
+- **The drakomire (415)** rides the walker with the 4/0.1/0.95 jump
+  assist (`:58214-58219`) and hides while a 416 links to it
+  (`:58422-58431`).
+- **The rider (416, aiStyle 75)** spawns its own 415 mount at spawn
+  (`:35523-35537`), rides it at the `(-spriteDirection * 10, -30)`
+  offset with the mirrored direction/sprite (`:35662-35679`), and
+  `Transform(518)`s when the mount dies (`:36060-36061`).
+- **The sroller (417, aiStyle 39)** aggro-counts to 400 → the wind-up
+  (`:29394-29419`'s 30 ticks) collapses it into the ball (the 32-px
+  height, `ai[2] = rand(2, 4)` revolutions), the ball doubles the defense
+  and scales the damage ×1.8 (`:29532-29580`), and the unroll restores
+  the 52-px height (`:29634-29668`).
+- **The corite (418, aiStyle 74)** approaches at the 8-px cap
+  (`:35238-35276`'s own parameter set), charges to the 9-px dash and
+  then cools down; its state-3 arm (or the 64-px contact) triggers the
+  implosion: the 192-box, the zeroed velocity, 80 damage
+  (`GetAttackDamage_ScaledByDifficulty`) and the 3-tick death
+  (`:35447-35497`).
+- **The selenian (419)** walks with the 6/0.15/0.85 set (`:58220-58224`).
+
+Deviations: the dust/gore `HitEffect` rows, the corite's lighting/sound
+arms, the sroller's `ai[3]` FX layer and the tower spawn tables are
+unmodelled; the sroller's height collapse (46×52 → the ball) rides the
+defense/damage overrides rather than a box change.
