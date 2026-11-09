@@ -2908,6 +2908,55 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Lunar pillars' display (M4-NPC-3l)
+
+The four celestial pillars had the third instance of the atlas bug and a
+shared-sheet bug: none of NPC_493/507/517 was in the load list (so every
+pillar drew nothing — the bestiary portraits were blank too), and all
+three kinds resolved through one `towers` field bound to NPC_493, so the
+Nebula and Solar pillars rendered the Stardust artwork at a guessed
+130x270 in the box's corner. Against `Main.cs:24159-24269`:
+
+- **The dedicated arm**: the pillars draw their single 174x364 frame
+  (`Main.npcFrameCount` 422/493/507/517 = 1) centred on the NPC's Centre
+  with `origin = halfSize` — not the generic bottom anchor, which would
+  sink the frame's 47-px vertical overhang into the ground. The new
+  `tower_draw` computes it; the frame overhangs the 130x270 box by ~22 px
+  horizontally and ~47 px vertically.
+- **One sheet per kind**: Stardust 493, Nebula 507, Solar 517 — and the
+  **missing Vortex pillar** (422, the fourth id in
+  `WorldGen.TriggerLunarApocalypse`'s shuffle) now exists end-to-end: the
+  kind, its stats (the same 20000/20/0/130x270 row as its siblings), the
+  shared aiStyle-94 machine, its `downed_tower_vortex`/`tower_active_vortex`
+  pair (the World fields already carried them, unset by any death until
+  now), the bestiary entry, the netglue spawn and the debuff immunity.
+- **The glow ghosts**: each pillar's arm draws four masked copies of its
+  own sheet at `velocity.RotatedBy(i·π/2) · offset` — the offset
+  `4 + |light − 0.5|·4` (the Solar's `2 + ·9` plus an extra +X 2). The
+  port renders them with the glow sheets' own alpha; the vanilla's
+  (64,64,64,0)·Opacity mask tint is a no-op in a premultiplied pipeline
+  (the same trade the Prime masks made).
+- **The pillars never flip** (no `spriteDirection` write in aiStyle 94),
+  so they join the `flips_on_sprite_dir` predicate like the martians and
+  the Prime family.
+- **Two identity bugs fixed on the way**: the Cultist's bestiary entry
+  carried the Vortex pillar's id 422 (the C#'s `CultistBoss` is 439) —
+  corrected, with the draw keeping the NPC_422 stand-in art since the port
+  ships no NPC_439 sheet; and the ui portraits' hand-maintained sheet
+  indices had drifted twice (the towers read slots 104-107 instead of the
+  true 110-113, the shards 19 rows off) — the index is now derived from
+  the entry's `net_id` through `BESTIARY_NPC_SHEET_IDS` +
+  `Lookups::bestiary_sheet_index`, which removes the drift class for
+  good.
+- Deviations: the Perlin force-field shield bubble
+  (`Main.cs:24239-24269`, a shader pass the port has no seam for) and the
+  towers' 180-tick death-fade dust (`NPC.cs:38970-39068`) stay
+  unmodelled, as does `WorldGen.TriggerLunarApocalypse` itself (the
+  pillars' spawn).
+
+Screenshots: `towers_solar.png` and `towers_vortex.png` (distinct per-kind
+art at the real 174x364 frames), both SHA256-stable across runs.
+
 ## The Twins' display (M4-NPC-3k)
 
 Retinazer and Spazmatism had the same v1 shape as the martians did: a
@@ -6740,6 +6789,18 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Crystal-shard wiring (M5-SPREAD-1, part 2)
+
+`growth::grow_crystal_shards` (the `hardUpdateWorld` `:69604-69644` arm — the
+shard-capable stones 117/116/164/402/403 below the rock layer, the `Next(5)`
+gate, the 4-dir pick that never grows upward, the leaf-quiet neighbour, the
+radius-6 tile-129 density under 2, the `Next(18)` style with the 1/50 big
+shard 18+Next(6)) was ported and unit-tested but unreferenced: the app driver
+runs `spread::hard_update_world`, which carried only the chlorophyte arms.
+The shard arm now runs at that function's head — the C#'s own position — so
+the app's growth tick grows shards. Runtime-only, so the worldgen hashes are
+untouched.
+
 ## Dungeon crawler wiring (M5-DUNGEON)
 
 The pipeline's `Dungeon` step moved from the shape-level approximation
@@ -8158,6 +8219,65 @@ Deviations: the dust arms, the ground-avoidance tile scan
 (`:51784-51798`) and the same-type repulsion of the crawltipede are
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
+
+## Whips & tag damage (M4-PROJ-7)
+
+The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
+the pure geometry (`tr-core/src/whip.rs`: `GetWhipSettings` `:48337-48419`,
+`FillWhipControlPoints` `:48278-48335` and the `Colliding` whip arm `:15716-15737`)
+and the state (`crates/tr-app/src/projectile.rs`'s `ai_whip`, the 18 `proj_data`
+rows off `DefaultToWhip()` `:10704-10718`). The tag-damage system is
+`crates/tr-app/src/tag_effects.rs` (`TagEffectStack.cs` + `TagEffectState.cs`),
+the tag table's `TagDamage` column is the `WhipTagEffect` initializer
+(`ItemID.cs:1473-1580`) — NOT the item damage — and the tagged-hit math is the
+`Projectile.cs:12924` line, gated by `WhipTagEffect.CanRunHitEffects`'s
+minion/sentry shot test.
+
+Deviations recorded here:
+
+1. **The arm anchor.** C# anchors the curve on `Player.GetArmPosition()` =
+   `OffsetsPlayerOnhand[bodyFrame.Y / 56] * 2` (a 20-row table,
+   `Main.cs:66615`); the port's player has no body frame, so the anchor is the
+   player center (`Player::center()`). The whip's hitbox shifts by the on-hand
+   offset's order (≤12 px); the render pass can adopt the frame row. The sweep
+   itself (the curve's shape, the reach formula, the union test) is 1:1.
+2. **The whip never self-crits.** `DefaultToWhip` sets no melee/ranged/magic
+   flag, so `Projectile.Damage`'s crit block (`:12892-12899`) never fires for a
+   whip — the vanilla whip crits only through a tag's `CritChance` (4679: 10,
+   5478: 5, 5479: 15, 4914: 10, 5480: 10). The generic throw path rolls crit at
+   spawn for every other shot; the whip branch passes `crit = false` so a
+   proc-less tag cannot force the variance.
+3. **The local-immunity decay.** C#'s `DecrementLocalImmuneTimeCounters` decays
+   only **positive** counters (`:17274-17277`), so the whip's
+   `localNPCHitCooldown = -1` sentinel never expires: each whip projectile hits
+   each NPC once. The pool's Rust decay was `(v - 1).max(0)`, which turned the
+   sentinel into 0 on the next tick (every whip re-hitting each NPC per tick);
+   it now decays positives only, and `the_whip_hits_each_npc_once_across_the_swing`
+   pins the behaviour.
+4. **The press edge.** The use path compared `mine_released`/`mine_prev_down`
+   against the *same* frame's input (the assignments run at the top of
+   `update_editing`), so the non-`autoReuse` gate
+   (`Player.cs:42733`'s `controlUseItem && releaseUseItem`) was dead. The
+   previous frame's edges are captured before the overwrite and the gates read
+   them — the whip's one-swing-per-press behaviour (and the shuriken's) depend
+   on it.
+5. **Deferred (documented follow-ups).** The tag effects' projectile spawns —
+   916 (DarkHarvest), 917 (CoolWhip snowflake), 918 (Firecracker explosion),
+   1036 (CobWhip spark), 1037 (Starcrash meteor), 1038 (FlowerWhip petals),
+   1039 (Constellation star fan), 1045 + `SpawnMoonLordWhipProc`'s `Next(1,4)`
+   eye beams and the ElectricEel's chain damage (`TryHittingNPC`) — wait for
+   their projectile kinds; the whip's tile-cutting arm
+   (`Projectile.cs:15210-15220`), the melee-enchant `StatusNPC` arms, the
+   half-flight and proc sounds, the dust/particle orchestras, the draw ribbon
+   (`Main.cs:36547`'s `GetWhipAnimationPercent`), `heldProj`/`drawLayer`,
+   `MinionAttackTargetNPC`'s consumers (M4-PROJ-8), the player-side melee tag
+   hook (`Player.cs:44448-44451`) and the accessory modifiers
+   (`whipRangeMultiplier`, `maxTagEffects`, `tagEffectDuration` — the defaults
+   1/1/1.0 port, the M3-EQUIP arms wait) stay out until their own rows.
+6. **The tag gate.** No ported shot is a minion/sentry shot, so
+   `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
+   `is_summon_shot` slot flag carries the gate and the tests set it directly,
+   so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death →
@@ -8233,8 +8353,7 @@ Out: the remaining C# sections — signs (no port store), the NPC block
 the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 (worldgen-local — needs a `World` field), the angler quest state (no port
 fields), the TownManager rooms, the weighted pressure plates (no port store),
-the creative powers/research — each needs its own scope.
-## .trwld v9 — the bestiary kill counts (M6-SAVE-1d)
+the creative powers/research — each needs its own scope.surface branch of the tower-place retry is constants-off.## .trwld v9 — the bestiary kill counts (M6-SAVE-1d)
 
 The bestiary tally moved into the world file — the vanilla's `NPCKillsTracker`
 home (world section 10, `NPCKillsTracker.cs:59-70`, saved through `SaveBestiary`

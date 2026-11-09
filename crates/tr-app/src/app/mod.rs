@@ -1369,13 +1369,11 @@ impl App {
     /// the read-once rule); the menu receives a clone so its edits park here on
     /// close (`close_menu`/`park_menu`).
     ///
-    /// `side` is the world save's side sections (`load_world` →
-    /// `save::load`), M6-SAVE-1b/1c's load-side twin of [`App::save_world`]:
-    /// each chest record re-stocks a store entry at its anchor, winning over
-    /// the load-time loot re-roll (the vanilla stocks the `Chest` objects
-    /// inline with the placement, so the re-roll only fills the tiles a save
-    /// never came from), and the banner records restore `BannerSystem.Load`'s
-    /// kill counts (the v8 section).
+    /// `chests` is the world save's v7 chest record list (`load_world` →
+    /// `save::load`), M6-SAVE-1b's load-side twin of [`App::save_world`]: each
+    /// record re-stocks a store entry at its anchor, winning over the load-time
+    /// loot re-roll (the vanilla stocks the `Chest` objects inline with the
+    /// placement, so the re-roll only fills the tiles a save never came from).
     pub(crate) fn new(
         settings: settings::Settings,
         world: World,
@@ -1730,6 +1728,14 @@ impl App {
                         // hover machines up beside the player once spawned.
                         "retinazer" => NpcKind::Retinazer,
                         "spazmatism" => NpcKind::Spazmatism,
+                        // The Lunar pillars (M4-NPC-3l): the four towers
+                        // spawn on the ground beneath the player (their
+                        // machines hover them up over the first ticks).
+                        "stardust" => NpcKind::StardustTower,
+                        "nebula" => NpcKind::NebulaTower,
+                        "solar" => NpcKind::SolarTower,
+                        "vortex" => NpcKind::VortexTower,
+                        "cultist" => NpcKind::AncientCultist,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
@@ -2373,10 +2379,9 @@ impl App {
 /// retail `.wld`), applies the `TR_DAY` clock override and frames the loaded
 /// tiles and walls — the load half of the startup, verbatim from `main`.
 ///
-/// Returns the world with its side sections (the v7 chest records — `SaveChests`'s
-/// save-side twin, `WorldFile.cs:1606-1676` — and the v8 banner counts);
-/// a `.wld` has none in the port, so its store re-rolls from the chest tiles
-/// alone (`App::new`'s `chest_gen` pass) and its banner tally starts empty.
+/// Returns the world with its v7 chest records (`SaveChests`'s save-side twin,
+/// `WorldFile.cs:1606-1676`); a `.wld` has none in the port, so its store
+/// re-rolls from the chest tiles alone (`App::new`'s `chest_gen` pass).
 pub(crate) fn load_world(world_path: &Path) -> Result<(World, save::WorldSide)> {
     let t0 = Instant::now();
     let (mut world, side) = if world_path.extension().is_some_and(|e| e == "trwld") {

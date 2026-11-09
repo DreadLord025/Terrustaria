@@ -58,6 +58,7 @@ mod registry;
 mod variants;
 mod render;
 mod spawner;
+mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
@@ -105,9 +106,9 @@ fn main() -> Result<()> {
     };
 
     log::info!("world: {}", world_path.display());
-    // The world plus its side sections (the v7 chest records, M6-SAVE-1b, and
-    // the v8 banner counts, M6-SAVE-1c) — the seed store the `App` merges
-    // ahead of the load-time loot roll.
+    // The world plus its side sections (the v7 chest records, M6-SAVE-1b, the
+    // v8 banner counts, M6-SAVE-1c, and the v9 bestiary counts, M6-SAVE-1d) —
+    // the seed stores the `App` merges ahead of the load-time loot roll.
     let (world, side) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(

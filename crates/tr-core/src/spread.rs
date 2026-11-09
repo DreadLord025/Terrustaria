@@ -240,6 +240,9 @@ pub fn hard_update_world(
         return;
     }
     let kind = t.kind;
+    // `:69604-69644`: the crystal-shard arm runs FIRST in `hardUpdateWorld`
+    // (the shard stones below the rock layer, their own gates inside).
+    crate::growth::grow_crystal_shards(world, x, y, rng);
     // `:69646-69685`: the chlorophyte arms (the 211 chlorophyte + the 346
     // chlorophyte jungle-grass source).
     if matches!(kind, 211 | 346) {
@@ -572,6 +575,49 @@ mod runner_tests {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// `hardUpdateWorld`'s first arm is the crystal shards (`:69604-69644`):
+    /// a shard-capable stone below the rock layer grows tile 129 through
+    /// `hard_update_world`, at the vanilla gates (the `Next(5)` roll, the
+    /// radius-6 density).
+    #[test]
+    fn hard_update_world_grows_the_crystal_shards_first() {
+        // 117 = Pearlstone (`CAN_GROW_CRYSTAL_SHARDS`), below the rock layer.
+        let mut w = World::new("t".into(), 60, 120);
+        w.rock_layer = 40.0;
+        for x in 0..60 {
+            for y in 20..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 117,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        // Air around the source so the 4-dir pick has somewhere to plant.
+        for (dx, dy) in [(-1, 0), (1, 0), (0, 1)] {
+            let i = w.index(30 + dx, 80 + dy);
+            w.tiles[i] = crate::tile::Tile::default();
+        }
+        // Sweep seeds: over enough picks the 1/5 gate and the 4-dir roll land.
+        let mut grew = 0;
+        let mut runs = 0;
+        for seed in 1u64..400 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            hard_update_world(&mut w, 30, 80, false, true, &mut rng);
+            runs += 1;
+            grew += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 129)
+                .count();
+        }
+        assert!(grew > 0, "the shard arm plants 129 ({grew} over {runs} picks)");
+    }
+
     use super::*;
     use crate::tile::{FLAG_ACTIVE, Tile};
 
