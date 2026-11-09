@@ -703,6 +703,11 @@ pub struct Projectile {
     pub local_ai: [f32; 2],
     /// `Projectile.spriteDirection` (`:47679`).
     pub sprite_direction: i32,
+    /// `WhipTagEffect.CanRunHitEffects`'s minion/sentry gate
+    /// (`GameContent/Items/WhipTagEffect.cs:81-85`): `minion || MinionShot ||
+    /// sentry || SentryShot`. Set by the minion/sentry spawns (M4-PROJ-8);
+    /// false until then — the tag damage math only fires for those shots.
+    pub is_summon_shot: bool,
     /// `ApplyStatsFromSource`'s `tagEffectType` (`:11125`) — the whip's item
     /// id when the firing item carries a `UniqueTagEffects` row (M4-PROJ-7).
     pub tag_effect_type: u16,
@@ -759,6 +764,7 @@ impl Default for Projectile {
             ai: [0.0; 4],
             local_ai: [0.0; 2],
             sprite_direction: 1,
+            is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
             whip_settings: None,
@@ -1893,7 +1899,13 @@ impl ProjectilePool {
                 continue;
             }
             let hit = center;
-            let landed = n.hurt_from_projectile(damage, hit.x, kb, crit);
+            // `:12919-12933`: the tag-damage math runs on the hit's damage —
+            // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
+            // rejects every ported shot until M4-PROJ-8, the synthetic tests
+            // set the slot flag directly.
+            let (dmg, hit_crit) =
+                self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), item_rng);
+            let landed = n.hurt_from_projectile(dmg, hit.x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner_idx] = 0;
@@ -1907,8 +1919,29 @@ impl ProjectilePool {
             } else if max_penetrate != 1 {
                 n.immune[owner_idx] = OWNER_IMMUNE_TICKS;
             }
-            if landed && is_whip {
-                self.whip_on_hit(slot, idx as u16, n, player.as_deref_mut(), item_rng);
+            if landed {
+                // `:13579-13581`: the whip debuffs (`StatusNPC`'s
+                // `ApplyWhipDebuffs`).
+                if is_whip {
+                    self.whip_debuffs(slot, n, item_rng);
+                }
+                // `:13581-13584`: any tag-carrying item's projectile applies
+                // its tag to the hit NPC (the whip's, in the port today).
+                let tag_type = self.slots[slot].tag_effect_type;
+                if tag_type > 0 {
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.try_apply_tag_to_npc(tag_type, idx, n.kind);
+                    }
+                }
+                // `:14258`-onwards + `:13882-13956`: the aiStyle-165 on-hit
+                // arms (the minion target, the per-type switch).
+                if is_whip {
+                    self.whip_on_hit(slot, idx as u16, player.as_deref_mut());
+                }
+                // `:13658`: the tag stack's on-hit pass — the proc consume
+                // (and the Constellation's immediate proc enable, its
+                // `OnTaggedHit`).
+                self.tag_on_hit(slot, idx as u16, player.as_deref_mut());
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -1920,26 +1953,76 @@ impl ProjectilePool {
         }
     }
 
-    /// The whip on-hit arms of `Damage_PVE_Inner` (`Projectile.cs:13579-13956`):
-    /// `StatusNPC`'s `ApplyWhipDebuffs` (`:11727-11750`, called from `StatusNPC`
-    /// at `:13580`), the `MinionAttackTargetNPC` override (`:14258-14263`) and
-    /// the per-type switch arms that do not need the tag module — the 912/1028
-    /// unconditional player buffs (`:13923`, `:13934`) and the `local_ai[0]`
-    /// latches (`:13907`). The tag stack's arms (`TryApplyTagToNPC`
-    /// `:13583`, the `TryEnableProcOnNPC`/`CanProcOnNPC`/`RemoveAllProcs`
-    /// seams `:13912-13956`) are `tag_effects.rs`'s — see the seams marked
-    /// below.
-    #[allow(clippy::too_many_arguments)]
-    fn whip_on_hit(
+    /// The tag-damage math of `Damage_PVE_Inner`'s `12919-12933` block: the
+    /// player's stack `ModifyHit`es every active tag that marks this NPC, the
+    /// damage goes through `SummonTagDamageMultiplier[type]` and the total
+    /// multiplier, and the tag's forced crit wins over the slot's.
+    /// `WhipTagEffect.CanRunHitEffects` (`:75-86`) gates on the summon/sentry
+    /// shot kinds — the port has none yet, so `is_summon_shot` (set by
+    /// M4-PROJ-8's minion/sentry spawns) rejects everything until then.
+    fn tag_damage_for(
+        &self,
+        slot: usize,
+        npc_idx: u16,
+        base: i32,
+        crit: bool,
+        player: Option<&crate::player::Player>,
+        item_rng: &mut u64,
+    ) -> (i32, bool) {
+        let p = &self.slots[slot];
+        if !p.is_summon_shot || p.owner == 255 {
+            return (base, crit);
+        }
+        let Some(player) = player else {
+            return (base, crit);
+        };
+        let mut changes = tr_core::whip::TagDamageChanges::none();
+        let mut rng = crate::world_sim::npcs::LootRng(item_rng);
+        for tag_type in player.tag_effects.active_types() {
+            player
+                .tag_effects
+                .modify_hit(npc_idx as usize, tag_type, &mut changes, &mut rng);
+        }
+        let crit = changes.crit.unwrap_or(crit);
+        (
+            crate::tag_effects::apply_tag_damage(base, &changes, p.bonus_tag_damage, p.kind),
+            crit,
+        )
+    }
+
+    /// `TagEffectStack.OnHit` (`Projectile.cs:13658` → `TagEffectStack.cs:115-121`):
+    /// the proc-window consume. The proc bodies' spawns are the deferred
+    /// follow-ups; the consume decision and the Constellation's immediate
+    /// `TryEnableProcOnNPC` (`WhipTagEffect_Constellation.cs:10-14`) land here.
+    fn tag_on_hit(
         &mut self,
         slot: usize,
         npc_idx: u16,
-        npc: &mut Npc,
         mut player: Option<&mut crate::player::Player>,
-        item_rng: &mut u64,
     ) {
+        let (tag_type, proj_kind) = {
+            let p = &self.slots[slot];
+            (p.tag_effect_type, p.kind)
+        };
+        if tag_type == 0 {
+            return;
+        }
+        if let Some(p) = player.as_deref_mut() {
+            p.tag_effects.on_hit(npc_idx as usize, tag_type, proj_kind);
+            if tr_core::whip::tag_effect(tag_type)
+                .is_some_and(|e| tr_core::whip::constellation_enables_proc_on_tag(e))
+            {
+                // `WhipTagEffect_Constellation.OnTaggedHit` — the proc arms
+                // on the very hit that tagged it.
+                p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+            }
+        }
+    }
+
+    /// `ApplyWhipDebuffs` (`Projectile.cs:11727-11750`, called from `StatusNPC`
+    /// at `:13580`).
+    fn whip_debuffs(&mut self, slot: usize, npc: &mut Npc, item_rng: &mut u64) {
         let kind = self.slots[slot].kind;
-        // `ApplyWhipDebuffs` (`:11727-11750`).
         match kind {
             FIRE_WHIP => npc.buffs.add_buff(323, 240), // Hellfire
             COOL_WHIP => npc.buffs.add_buff(324, 240), // Frostburn
@@ -1953,6 +2036,30 @@ impl ProjectilePool {
             SCYTHE_WHIP => npc.buffs.add_buff(310, 240), // Oiled
             _ => {}
         }
+    }
+
+    /// The whip on-hit arms of `Damage_PVE_Inner` (`Projectile.cs:13579-13956`):
+    /// `StatusNPC`'s `ApplyWhipDebuffs` (`:11727-11750`, called from `StatusNPC`
+    /// at `:13580`), the `MinionAttackTargetNPC` override (`:14258-14263`) and
+    /// the per-type switch arms that do not need the tag module — the 912/1028
+    /// unconditional player buffs (`:13923`, `:13934`) and the `local_ai[0]`
+    /// latches (`:13907`). The tag stack's arms (`TryApplyTagToNPC`
+    /// `:13583`, the `TryEnableProcOnNPC`/`CanProcOnNPC`/`RemoveAllProcs`
+    /// seams `:13912-13956`) are `tag_effects.rs`'s — see the seams marked
+    /// below.
+    #[allow(clippy::too_many_arguments)]
+    /// The aiStyle-165 on-hit arms after the tag application
+    /// (`Projectile.cs:14258-13956`'s `TryDoingOnHitEffects` positions): the
+    /// `MinionAttackTargetNPC` override (`:14258-14263`) and the per-type
+    /// switch (`:13882-13956`) with the tag stack's seams filled.
+    fn whip_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        let kind = self.slots[slot].kind;
+        let tag_type = self.slots[slot].tag_effect_type;
         // `:14258-14263`: every aiStyle-165 hit retargets the minions.
         if let Some(p) = player.as_deref_mut() {
             p.minion_attack_target_npc = npc_idx as i16;
@@ -1960,10 +2067,14 @@ impl ProjectilePool {
         // `:13882-13956`: the per-type switch.
         match kind {
             FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
-                // `:13907-13911`: the first hit of this slot latches the proc
-                // window — the arm itself lives in `tag_effects.rs` (P3 seam:
-                // `TryEnableProcOnNPC`).
-                self.slots[slot].local_ai[0] = 1.0;
+                // `:13907-13911`: the first hit of this slot arms the proc
+                // window in the player's stack.
+                if self.slots[slot].local_ai[0] == 0.0 {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                    }
+                }
             }
             COOL_WHIP => {
                 // `:13923` — the unconditional player buff grant (the deferred
@@ -1979,11 +2090,24 @@ impl ProjectilePool {
                     p.buffs.add_buff(365, 180);
                 }
             }
+            SWORD_WHIP | EEL_WHIP | MOON_LORD_WHIP => {
+                // `:13947-13951`: the proc arms on every hit.
+                if let Some(p) = player.as_deref_mut() {
+                    p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                }
+            }
             CONSTELLATION_WHIP => {
                 // `:13938`: the first hit with the proc window armed spawns
-                // the star fan and clears the procs (P3 seam + the deferred
-                // 1039 stars); the latch is this slot's bookkeeping.
-                self.slots[slot].local_ai[0] = 1.0;
+                // the star fan (deferred) and clears every proc window.
+                let armed = player
+                    .as_deref()
+                    .is_some_and(|p| p.tag_effects.can_proc(tag_type, npc_idx as usize));
+                if self.slots[slot].local_ai[0] == 0.0 && armed {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.remove_all_procs(tag_type);
+                    }
+                }
             }
             _ => {}
         }
@@ -3160,6 +3284,141 @@ mod whip_tests {
             assert_eq!(settings.time_fly_out, 60.0, "the arm lives 30*MaxUpdates");
             assert_eq!(p.tag_effect_type, 0);
         }
+    }
+
+    #[test]
+    fn the_whip_hit_tags_the_npc_for_the_summon_bonus() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let npc_idx = 0usize;
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        // `ApplyStatsFromSource` — the firing item's tag row (4911 = CoolWhip).
+        pool.slots[0].tag_effect_type = 4911;
+        let mut rng = 3u64;
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                &mut rng,
+            );
+            if !pool.slots[0].active {
+                break;
+            }
+        }
+        // `:13581-13584`: the hit applied the tag to the player's stack.
+        assert!(
+            player.tag_effects.is_npc_tagged(4911, npc_idx),
+            "the whip tags the NPC for the summoners"
+        );
+    }
+
+    #[test]
+    fn a_tagged_summon_shot_takes_the_damage_bonus() {
+        let mut w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        // The tag is applied out-of-band (another whip already tagged it).
+        player
+            .tag_effects
+            .try_apply_tag_to_npc(4672, 0, npcs[0].kind);
+        let start = npcs[0].hp;
+        // A friendly arrow-style shot over the NPC with the summon-shot flag
+        // the tag math gates on (`WhipTagEffect.CanRunHitEffects`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                WOODEN_ARROW,
+                npcs[0].x + 5.0,
+                npcs[0].y + 5.0,
+                0.0,
+                0.0,
+                10,
+                0.0,
+            )
+            .unwrap();
+        pool.slots[slot].is_summon_shot = true;
+        let mut rng = 3u64;
+        pool.update(&mut w, &mut npcs, None, None, Some(&mut player), &mut rng);
+        // The BlandWhip's TagDamage 4 at the 1f multiplier: 10 + 4 = 14.
+        assert_eq!(start - npcs[0].hp, 14, "the tagged summon shot takes +4");
+        // Without the gate the shot is a plain hit.
+        let start2 = npcs[0].hp;
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data(
+                WOODEN_ARROW,
+                npcs[0].x + 5.0,
+                npcs[0].y + 5.0,
+                0.0,
+                0.0,
+                10,
+                0.0,
+            )
+            .unwrap();
+        pool2.slots[s2].is_summon_shot = false;
+        pool2.update(&mut w, &mut npcs, None, None, Some(&mut player), &mut rng);
+        assert_eq!(start2 - npcs[0].hp, 10, "the ungated shot is plain");
+    }
+
+    #[test]
+    fn the_constellation_first_hit_arms_and_clears_the_proc_window() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        // Two swings must land on the same NPC — park it above its death.
+        npcs[0].hp = 4000;
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let mut pool = whip_at(center, CONSTELLATION_WHIP, 130);
+        pool.slots[0].tag_effect_type = 5479;
+        let mut rng = 3u64;
+        // The swing until the hit lands.
+        let mut ticks = 0;
+        while !player.tag_effects.is_npc_tagged(5479, 0) {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                &mut rng,
+            );
+            ticks += 1;
+            assert!(ticks < 60, "the whip must hit");
+        }
+        // `WhipTagEffect_Constellation.OnTaggedHit` arms the window on the
+        // tagging hit (the mark stands 480 ticks — the second swing's first
+        // hit consumes it and clears every proc window).
+        assert!(
+            player.tag_effects.can_proc(5479, 0),
+            "the tagging hit arms the proc window"
+        );
+        // The second swing: its first hit latches (the `OnTaggedHit` re-arm
+        // keeps the window standing, so the latch is the observable).
+        let mut pool2 = whip_at(center, CONSTELLATION_WHIP, 130);
+        pool2.slots[0].tag_effect_type = 5479;
+        let mut ticks2 = 0;
+        while pool2.slots[0].local_ai[0] == 0.0 {
+            pool2.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                &mut rng,
+            );
+            ticks2 += 1;
+            assert!(ticks2 < 60, "the second whip must hit");
+        }
+        assert_eq!(pool2.slots[0].local_ai[0], 1.0, "the latch");
     }
 
     #[test]
