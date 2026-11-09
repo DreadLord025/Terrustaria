@@ -7188,6 +7188,33 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   truncated once more by `ToPoint` (`:1817-1820`) — so the diagonal buckets
   land on ±1/±1 (the ±1.41 vectors truncate inward) and the flat ones on
   ±1/0 and 0/±1. A standing lock replaces the whole computation (`:1434`).
+- **The wire channels ride the port's sparse `WireState`, not `Tile`
+  headers.** The C#'s `Tile.wire()`/`wire2()`/`wire3()`/`wire4()` are
+  `sTileHeader` bits (`Tile.cs:623/640/657/437`); the port's packed
+  12-byte `Tile` carries no header, so the set bits live in
+  `wiring::WireState` (`wiring.rs`) and the steps read them through
+  `WireState::get` per `WireColor` (Red = wire, Blue = wire2, Green =
+  wire3, Yellow = wire4 — the mapping the C#'s `Step_MulticolorWrench`
+  :1733-1746 pins). The wire steps' anchors need no tile at all: only the
+  channel bits decide.
+- **The wrench settings are caller-passed seams.** `Step_ColoredWrenches`
+  maps the item id to a channel (509 → Red, 850 → Blue, 851 → Green, 3612
+  → Yellow, `:1886-1902`) and `Step_MulticolorWrench` reads
+  `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`, an app-side static) — the
+  port carries the raw bitfield on `Lookup::tool_mode` (`multi_tool_mode`
+  holds the flag values, `WiresUI.cs:13-21`), and the rod's
+  `ActuationRodLock`/`ActuationRodLockSetting` (`Player.cs:2616/:2618`)
+  likewise. The C#'s `&`/`|` bool operators in the multi-wrench's
+  predicates (`:1766`, `:1773` — the non-short-circuit bool AND) read as
+  `&&` over pure operands; the enum math keeps its `!Cutter` mask and
+  `!= 0` channel tests.
+- **The wrench scans anchor on any cell carrying the channel.** The C#'
+  `Step_ColoredWrenches`/`Step_MulticolorWrench` never read the anchor
+  cell's tile state — only its wire bits — so an empty air cell with a wire
+  still extends the line, and the candidates are the four neighbours
+  lacking the channel (the C#'s border reads never happen; the port's
+  out-of-world reads return false, which only ever adds a candidate the
+  `InTileBounds` gate then drops).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
