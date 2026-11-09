@@ -6722,3 +6722,25 @@ The envelope and the ported bodies are 1:1; the deviations:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
+
+## Cave decorations (M5-STRUCT-5)
+
+Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
+
+Deliberate deviations, all in the module header:
+
+- **The wall-0 gates read the port's pre-laid walls as the C#'s 0.** The port's `fill_terrain` writes a wall under every solid row (dirt 2 / stone 1 / sandstone 187 — `terrain.rs:284-289`); the C# leaves them 0 until `Cave Walls` runs (`WorldGen.cs:17711`, after these passes). Every `wall != 0` test in `nextCount`, `Spread.Spider`, `Spread.Gem` and `Spread.Moss` is therefore evaluated against the baseline set via `BASELINE_WALLS`; only a wall the port actually painted (jungle/mud/hive/gem/moss) counts as "walled". Without this the passes abort on the first cell and place nothing.
+- **The RNG is the port's per-pass xorshift stream**, not the shared `UnifiedRandom`: `Streams::pass_rng("Spider Caves")`, `("Gem Caves")`, `("Moss")`, `("Webs And Honey")`. The draw ORDER is faithful, the byte stream is not (the port's worldgen contract is already xorshift).
+- **`Spread.Spider`'s chest arm uses the port's `place_chest`** — the buried chest's stocked loot is M5-CHEST-gen territory, so the C#'s `chestStyle 15` / `mainItemInChest 939` book is out of this task's scope.
+- **`PlaceTile`-shaped writes use the port's single-tile idiom** (`frame_x = style * 18`, `frame_y = 0`) instead of the C#'s 2x2/3x2 `TileObjectData` frames; the port's framer recomputes object frames at the pipeline end.
+- **`neonMossBiome`/`SpreadGrass` ride the port's one-shot `growth::spread_grass`** (`WorldGen.cs:75146-75270`): the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled, so the sweeps call it per neighbour (arm F) / per qualifying tile (`neonMossBiome`).
+- **Arm D's unbounded loop is capped.** The C#'s `num13` loop (`:17612-17623`) decrements only on a hit and relies on the vanilla cave field always offering another exposed stone cell; the port caps the attempts at `6 * maxTilesX` so a degenerate world cannot spin.
+- **No seed framework**: the port carries no remix / not-the-bees / tenth-anniversary / drunk / for-the-worthy flags, so those arms take the vanilla normal path; the secret-seed `noSpiderCaves` pair (`:269-291`, `:2618`) and `DoNoSpiderCavesILiedMoreSpiderCaves` are out of scope.
+- **No `GenVars.shimmerPosition`/`shimmerSafetyDistance`** in the port (shimmer is not a worldgen liquid yet) — the moss pass's shimmer-exclusion arms (`:17585`, `:17604`, `:17614`) are skipped.
+- **The hive arm of `Webs And Honey` is inert**: it keys on wall 86 (`WallID.HiveUnsafe`), which the port's beehive pass does not paint (`structures.rs:404` uses its own walls). Left as a documented no-op until the beehive wall lands.
+- **The stalactite frame table keeps the arms the port's world can produce** (spiders, the ice family, stone/moss, hive, the sandstone pair, granite, marble) with `CopyPaintAndCoating` folded into the port's frame write; `Main.tileSolid[379] = false` (`:17360`) rides inside the pass's own `solid_tile`.
+- **`Plain` counts**: `count_tiles` is an explicit-stack rewrite of the recursive `nextCount` (the fill carries no RNG, so the traversal order is free), and `Spread.*` walks the frontier lists rather than the C#'s per-level `List`/`HashSet` pair — the visited-set semantics and the `SolidTile`/wall gate are the C#'s.
+
+Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
+
+
