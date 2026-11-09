@@ -699,14 +699,34 @@ fn boss_draw<'a>(
 ) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
     let fh = tex.map_or(166.0, |t| t.h / count as f32);
     let fw = tex.map_or(110.0, |t| t.w);
-    // The C#'s anchor lands the frame's centre at `box_bottom + 4` and the
-    // `halfSize` override shifts it by `override − frame_h / 2`.
-    let shift = boss_half_size(n.kind, fh) - fh * 0.5;
+    // The C#'s anchor lands the frame's centre at `box_bottom + 4`; the
+    // `halfSize` override and the `num47` nudge are applied once for every
+    // generic-anchored kind after the match (see `draw_npcs`).
     (
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5 + shift],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
+}
+
+/// The kinds whose draw rides the generic anchor (`Main.cs:25505-25512`)
+/// and therefore takes the `halfSize`/`num47` overrides. The towers'
+/// dedicated arm (`Main.cs:24159`), the saucer family's Centre-anchored
+/// block (`:24586`), the Deerclops' Bottom-anchored one (`:26338`) and the
+/// Prime masks' overlays compute their own positions and are excluded.
+fn uses_generic_anchor(kind: NpcKind) -> bool {
+    !matches!(
+        kind,
+        NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower
+            | NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon
+            | NpcKind::MartianSaucerCore
+            | NpcKind::Deerclops
     )
 }
 
@@ -1698,24 +1718,26 @@ pub(crate) fn draw_npcs(
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
-                assets.plantera.as_ref(),
-                assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
-                [86.0, 86.0],
-                [n.x, n.y],
+                // NPC_262 is 116x1232 — eight 154-px rows
+                // (`Main.npcFrameCount[262]` = 8, `Main.cs:67082`; the v1
+                // divided by 5 and drew an 86x86 box-sized quad at the
+                // box's corner).
+                boss_draw(assets.plantera.as_ref(), 8, n, w, h)
             ),
             // The Brain: the single-frame 160x110 sheet.
             NpcKind::BrainOfCthulhu => (
-                assets.brain.as_ref(),
-                assets.brain.as_ref().map_or(110.0, |t| t.h),
-                [160.0, 110.0],
-                [n.x, n.y],
+                // NPC_266 is 200x1456 — eight 182-px rows
+                // (`Main.npcFrameCount[266]` = 8; the v1 read `t.h` as the
+                // frame height, sampling the whole 8-row strip as one
+                // 160x110 quad).
+                boss_draw(assets.brain.as_ref(), 8, n, w, h)
             ),
             // The Creeper: the single-frame 30x30 sheet.
             NpcKind::Creeper => (
-                assets.creeper.as_ref(),
-                assets.creeper.as_ref().map_or(30.0, |t| t.h),
-                [30.0, 30.0],
-                [n.x, n.y],
+                // NPC_267 is 34x34 — one frame (`Main.npcFrameCount[267]`
+                // = 1; the v1's 30x30 was the Creeper's box, not the
+                // sheet's frame).
+                boss_draw(assets.creeper.as_ref(), 1, n, w, h)
             ),
             // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
             NpcKind::GoblinTinkerer => humanoid_draw(assets.goblin_tinkerer.as_ref(), 25, n, w, h),
@@ -2031,7 +2053,19 @@ pub(crate) fn draw_npcs(
         // `Main.cs:23048`'s per-kind anchor nudge (`num47` + `num46`): a
         // flat Y shift the C#'s generic draw (and the towers' dedicated
         // arm) add to the anchor. Applied once, here, for every kind.
-        let pos = [pos[0], pos[1] + npc_anchor_nudge(n)];
+        // `Main.cs:23048`'s per-kind anchor overrides, applied once here
+        // for every generic-anchored kind: the `halfSize` override shifts
+        // the frame by `override − frame_h / 2` and the `num47`/`num46`
+        // nudge adds its flat pixels. The kinds with dedicated
+        // `DrawNPCDirect` arms (the towers' Centre anchor, the saucers'
+        // block, the Deerclops' Bottom anchor) compute their own
+        // positions and skip both terms, as in the C#.
+        let anchor_shift = if uses_generic_anchor(n.kind) {
+            boss_half_size(n.kind, frame_h) - frame_h * 0.5 + npc_anchor_nudge(n)
+        } else {
+            0.0
+        };
+        let pos = [pos[0], pos[1] + anchor_shift];
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).

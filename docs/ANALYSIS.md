@@ -2973,6 +2973,32 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
 
+## The Plantera and the Brain (M4-NPC-3o)
+
+`case 262` (Plantera) and `case 266` (the Brain of Cthulhu) are the same
+machine in the decompile — a 6-tick advance over the 8-row strip with the
+first phase wrapping at row 3 and the second clamping into 4..7 — and both
+npcFrameCount entries the port's comments quoted were wrong ([262] = [266]
+= 8, not 5 and 1). The v1 pinned the Brain to row 0 with `frame_h = t.h`
+(a whole-strip "frame") and cycled Plantera over rows 0..4 with `t.h / 5`.
+
+- The shared `phase_frame` helper takes the gate per kind: the Plantera's
+  `life > lifeMax / 2` and the Brain's `ai[0] >= 0 && localAI[2] == 0`.
+  The port's brain machine does not model the creeper-shield count, so the
+  Brain rides the shield-down rows 0..3 and the shielded 4..7 rows are the
+  documented follow-up (same honesty as the EoC's mech-queen rows).
+- Measured sheets: NPC_262 116x1232 (154-px rows), NPC_266 200x1456
+  (182-px rows), NPC_267 34x34. All three draw at the generic anchor
+  through `boss_draw`.
+- The anchor overrides from M4-NPC-3n are now applied in ONE place after
+  the draw match, gated by `uses_generic_anchor` — the Plantera's
+  (halfSize 77, +26) and the Brain's (+50·scale) shift their real frames,
+  while the towers, the saucer family and the Deerclops keep their own
+  dedicated `DrawNPCDirect` formulas.
+
+Screenshots: `plantera_flower.png` (the flower at its 116x154 frame) and
+`brain_creepers.png` (the 200x182 brain), both SHA256-stable across runs.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -8582,3 +8608,43 @@ Out: the remaining C# sections — signs (no port store), the angler quest state
 (no port fields), the TownManager rooms, the weighted pressure plates (no port
 store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
 bestiary's Sights/Chats sub-blocks — each needs its own scope.
+
+expert duration stays classic until the difficulty modes land.
+
+## The Vortex ritual projectiles (M4-EVENT-17)
+
+The vortex tower's ritual arms (the port's `update_ancient_cultist`'s
+`:39273-39336` machine) throw two markers, both carried by the pool's
+aiStyle-108 machine.
+
+- **579 (the portal)** and **578 (the lightning)** share a 32×32 box with
+  `tileCollide = false` and `ignoreWater`. The marker's timeline
+  (`Projectile.cs:33679-33988`) is `ai[0] <= 50` (the wind-up, dust only),
+  `<= 90` (the charge: `scale = (ai[0] - 50)/40`, `alpha = 255 -
+  255·scale`, `rotation -= π/20`), `<= 120` (the full charge: `scale = 1`,
+  `alpha = 0`, `rotation -= π/60`) and the dissolve (`scale = 1 -
+  (ai[0] - 120)/60`, `alpha = 255 - 255·scale`, `rotation -= π/30`, dying
+  at `alpha >= 255`). The 578's first tick stores the aim rotation
+  (`Player.FindClosest`'s centre → `ai[1]`, the zero fallback `UnitY`).
+- **At the 90th tick** the 578 spawns the **580 VortexLightning** — the aim
+  vector × 8 behind the centre, damage 50 (`:33841`'s call), knockback 1,
+  `ai0 = ai[1]` (the bolt's spin) and `ai1 = rand(80)` (the wand's seed);
+  the 579 spawns **two VortexAliens (427)** at its centre with
+  `-UnitY.RotatedByRandom(2π) * rand(4, 9) - UnitY * 2`.
+- **580 (aiStyle 88, 14×14, `extraUpdates = 4`, `ignoreWater`)** runs the
+  ritual bolt: the `localAI[0] == 0 && ai[0] >= 900` wrap latch
+  (`ai[0] -= 1000`, `localAI[0] = -1`), then the moving arm integrates the
+  velocity and stops it on a solid tile (`:32308`), the stopped arm dies
+  after `extraUpdates * 2` ticks (`:32156-32174`) and the moving arm's
+  wand (`:32195-32249`) draws the per-step lateral jitter with the
+  100-roll rejection (`Y <= -0.02`, `|X| <= 40`) and accumulates
+  `localAI[0]`.
+- The resolution seam: the projectile can't grow the NPC vec, so the 579's
+  aliens ride the M4-EVENT-16 intent (`wants_mark_spawn`, now carrying
+  the (kind, x, y, vx, vy) payload) out to the world_sim's
+  `drain_mark_spawns`; the 580's spawn rides `wants_ritual_bolt`.
+
+Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
+dusts), the sounds and the light are unmodelled; the wand's
+`UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
+late-stage clone spawn (`:32251-32257`) is unmodelled.
