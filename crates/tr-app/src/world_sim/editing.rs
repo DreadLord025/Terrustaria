@@ -4087,16 +4087,17 @@ mod tests {
     #[test]
     fn test_dirty_a_resolved_kind_without_a_proj_data_row_refuses_the_shot() {
         // The `proj_data` trap `projectile.rs` documents: a kind with no row
-        // makes `spawn_with_data` decline silently. The Flamethrower's resolved
-        // projectile 85 (the Flames) has no row yet — the AI is M4-PROJ's — and
-        // the wire must refuse the shot without panicking, while the ammo it
-        // already picked still drains (the drain runs before the spawn).
-        let mut app = shooter_rig(506, "Flamethrower", &[(0, 23, 9)]);
+        // makes `spawn_with_data` decline silently. The Cobalt Repeater with
+        // the Frostburn Arrow (988) resolves to projectile 172, which has no
+        // row yet — its AI is M4-PROJ's — and the wire must refuse the shot
+        // without panicking, while the ammo it already picked still drains (the
+        // drain runs before the spawn, `Player.cs:53675` before the spawn).
+        let mut app = shooter_rig(435, "Cobalt Repeater", &[(0, 988, 9)]);
         let screen = app.screen_size().into();
         let mut log = Vec::new();
-        hold(&mut app, screen, 34, &mut log);
+        hold(&mut app, screen, 26, &mut log);
         assert_eq!(shots(&app), 0, "the spawn declined the unknown kind");
-        assert_eq!(app.equip.ammo[0].count, 8, "the picked gel still drained");
+        assert_eq!(app.equip.ammo[0].count, 8, "the picked arrow still drained");
     }
 
     #[test]
@@ -4107,8 +4108,9 @@ mod tests {
         // the box's roll would have saved. The wire's `ammo_flags` read is what
         // makes the box's roll reachable at all.
         // The Acorn Slingshot's resolved projectile 1088 (its own `Item.shoot`,
-        // the Acorn carrying none) has no `proj_data` row yet — M4-PROJ's — so
-        // the shots are refused at the spawn; the drain is the observable.
+        // the Acorn carrying none) has a row (`Projectile.cs:10145-10149`), so
+        // the ten shots fire AND the ten acorns drain — the spawn is not the
+        // observable any more, the drain past the box's saves is.
         let mut app = shooter_rig(5629, "Acorn Slingshot", &[(0, 27, 12)]);
         app.player.as_mut().unwrap().buffs.add_buff(93, 3600);
         let screen = app.screen_size().into();
@@ -4118,7 +4120,7 @@ mod tests {
             hold(&mut app, screen, 26, &mut log);
             repress(&mut app);
         }
-        assert_eq!(shots(&app), 0, "the unknown projectile kind is refused");
+        assert_eq!(shots(&app), 10, "the acorn spawns — its row exists");
         assert_eq!(
             app.equip.ammo[0].count, 2,
             "ten acorns drained — the box never saves for the Acorn Slingshot"

@@ -477,6 +477,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false),
             495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false),
             819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false),
+            // The spray/ball ammo the not-consume windows resolve — the
+            // Flamethrower's Flames (`:1660-1670`: 6x6, aiStyle 193, pen 4,
+            // extraUpdates 2, `armorPenetration = 15` dropped; its immunity
+            // pair rides the overlay), the Clentaminator's solution spray
+            // (`:2338-2347`: 6x6, aiStyle 31, pen -1, extraUpdates 2,
+            // tileCollide false, `alpha`/`ignoreWater` dropped) and the Acorn
+            // Slingshot's acorn (`:10145-10149`: 20x20, aiStyle 16 — the port's
+            // `ai_bomb`, pen -1). Without these rows the wire would drain the
+            // ammo and then decline the spawn.
+            85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false),
+            145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false),
+            1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
             // `ignoreWater` dropped — its local-immunity pair
@@ -486,11 +498,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         };
     // The `SetDefaults` inner ifs that add the local-immunity pair on top of
     // the row above: `:2222-2338`'s 133/136/139/142, `:7939-7952`'s
-    // 777/781/785/788/794/797/800 (the C# lists 800 twice — harmless) and
-    // `:8842-8856`'s 932. Every other kind — including every row that predates
-    // the two schema fields — keeps the pool defaults (`:464`: false / −2).
+    // 777/781/785/788/794/797/800 (the C# lists 800 twice — harmless),
+    // `:1660-1670`'s 85 (the Flamethrower's Flames) and `:8842-8856`'s 932.
+    // Every other kind — including every row that predates the two schema
+    // fields — keeps the pool defaults (`:464`: false / −2).
     let (uses_local_immunity, local_hit_cooldown) = match kind {
         133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
+        85 => (true, -1),
         932 => (true, 60),
         _ => (false, -2),
     };
@@ -2558,6 +2572,31 @@ mod ammo_proj_tests {
         assert_eq!(fairy.extra_updates, 0);
         assert!(fairy.uses_local_immunity);
         assert_eq!(fairy.local_hit_cooldown, 60);
+        // The spray/ball ammo the not-consume windows resolve (M3-ITEM-6): the
+        // Flamethrower's Flames 85 (`:1660-1670`: 6x6, aiStyle 193 unported,
+        // penetrate 4, extraUpdates 2, immune pair -1), the Clentaminator's
+        // solution 145 (`:2338-2347`: 6x6, aiStyle 31 unported, penetrate -1,
+        // extraUpdates 2, tileCollide false) and the acorn 1088
+        // (`:10145-10149`: 20x20, aiStyle 16, penetrate -1) — without these
+        // rows the wire would drain the ammo and then decline the spawn.
+        let flames = proj_data(85).unwrap();
+        assert_eq!((flames.w, flames.h), (6.0, 6.0));
+        assert_eq!(flames.ai_style, 193);
+        assert_eq!(flames.penetrate, 4);
+        assert_eq!(flames.extra_updates, 2);
+        assert!(flames.uses_local_immunity);
+        assert_eq!(flames.local_hit_cooldown, -1);
+        let solution = proj_data(145).unwrap();
+        assert_eq!((solution.w, solution.h), (6.0, 6.0));
+        assert_eq!(solution.ai_style, 31);
+        assert_eq!(solution.penetrate, -1);
+        assert_eq!(solution.extra_updates, 2);
+        assert!(!solution.tile_collide);
+        assert!(!solution.uses_local_immunity);
+        let acorn = proj_data(1088).unwrap();
+        assert_eq!((acorn.w, acorn.h), (20.0, 20.0));
+        assert_eq!(acorn.ai_style, 16);
+        assert_eq!(acorn.penetrate, -1);
     }
 
     /// DW-2.2: the rows reach the pool — the Rocket Launcher's RocketI (134),
