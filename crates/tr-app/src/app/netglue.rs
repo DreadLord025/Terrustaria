@@ -1842,6 +1842,10 @@ fn npc_seed(
         | crate::npc::NpcKind::WitchDoctor
         | crate::npc::NpcKind::Clothier
         | crate::npc::NpcKind::TravellingMerchant
+        | crate::npc::NpcKind::Angler
+        | crate::npc::NpcKind::SleepingAngler
+        | crate::npc::NpcKind::Wizard
+        | crate::npc::NpcKind::Mechanic
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
@@ -1878,7 +1882,11 @@ fn npc_seed(
         | crate::npc::NpcKind::GoblinThief
         | crate::npc::NpcKind::GoblinWarrior
         | crate::npc::NpcKind::GoblinArcher
-        | crate::npc::NpcKind::BoundGoblin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::BoundGoblin
+        | crate::npc::NpcKind::BoundWizard
+        | crate::npc::NpcKind::BoundMechanic => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
         crate::npc::NpcKind::EaterOfSouls
         | crate::npc::NpcKind::Hornet
         | crate::npc::NpcKind::MeteorHead => {
@@ -1977,7 +1985,9 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustWormHead
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
         | crate::npc::NpcKind::NebulaBeast

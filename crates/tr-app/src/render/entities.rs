@@ -161,6 +161,18 @@ pub(crate) struct NpcAssets {
     pub(crate) clothier: Option<BgTex>,
     /// `NPC_368.xnb` — the Travelling Merchant sheet.
     pub(crate) travelling_merchant: Option<BgTex>,
+    /// `NPC_369.xnb` — the Angler's town sheet (23 rows, `Main.cs:67120`).
+    pub(crate) angler: Option<BgTex>,
+    /// `NPC_108.xnb` — the Wizard's town sheet (23 rows, `Main.cs:67094`).
+    pub(crate) wizard: Option<BgTex>,
+    /// `NPC_106.xnb` — the bound Wizard's single-row sheet (`:67094`).
+    pub(crate) bound_wizard: Option<BgTex>,
+    /// `NPC_124.xnb` — the Mechanic's town sheet (23 rows, `Main.cs:67096`).
+    pub(crate) mechanic: Option<BgTex>,
+    /// `NPC_123.xnb` — the bound Mechanic's single-row sheet (`:67096`).
+    pub(crate) bound_mechanic: Option<BgTex>,
+    /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
+    pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
@@ -345,6 +357,12 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
         travelling_merchant: sky_tex(atlas, "NPC_368", None),
+        angler: sky_tex(atlas, "NPC_369", None),
+        wizard: sky_tex(atlas, "NPC_108", None),
+        bound_wizard: sky_tex(atlas, "NPC_106", None),
+        mechanic: sky_tex(atlas, "NPC_124", None),
+        bound_mechanic: sky_tex(atlas, "NPC_123", None),
+        sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
@@ -1086,6 +1104,34 @@ pub(crate) fn draw_npcs(
                 w,
                 h,
             ),
+            // The Angler: the same humanoid shape over NPC_369 — 23 rows
+            // (`Main.npcFrameCount[369]`, `Main.cs:67120`).
+            NpcKind::Angler => humanoid_draw(assets.angler.as_ref(), 23, n, w, h),
+            // The Wizard/Mechanic: the same humanoid shape over
+            // NPC_108/124 — 23 rows each (`Main.cs:67094`/`:67096`).
+            NpcKind::Wizard => humanoid_draw(assets.wizard.as_ref(), 23, n, w, h),
+            NpcKind::Mechanic => humanoid_draw(assets.mechanic.as_ref(), 23, n, w, h),
+            // The bound forms: single-row sheets over their own boxes.
+            NpcKind::BoundWizard => (
+                assets.bound_wizard.as_ref(),
+                assets.bound_wizard.as_ref().map_or(40.0, |t| t.h),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::BoundMechanic => (
+                assets.bound_mechanic.as_ref(),
+                assets.bound_mechanic.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
+            // The Sleeping Angler: NPC_376's two rows over the flat 34x8
+            // body — the sheet is 40 wide, drawn centred on the box.
+            NpcKind::SleepingAngler => (
+                assets.sleeping_angler.as_ref(),
+                assets.sleeping_angler.as_ref().map_or(8.0, |t| t.h / 2.0),
+                [34.0, 8.0],
+                [n.x, n.y],
+            ),
             // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
             NpcKind::EyeOfCthulhu => (
                 assets.eoc.as_ref(),
@@ -1256,8 +1302,11 @@ pub(crate) fn draw_npcs(
                 [130.0, 270.0],
                 [n.x, n.y],
             ),
-            // The towers: the 1-frame NPC_493/507/517 strips.
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
+            // The towers: the 1-frame NPC_493/507/517/422 strips.
+            NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::VortexTower
+            | NpcKind::SolarTower => (
                 assets.towers.as_ref(),
                 assets.towers.as_ref().map_or(270.0, |t| t.h),
                 [130.0, 270.0],

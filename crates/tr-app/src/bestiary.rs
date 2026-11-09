@@ -413,6 +413,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Travelling Merchant",
     },
     BestiaryEntryDef {
+        credit_id: "Angler",
+        net_id: 369,
+        kind: NpcKind::Angler,
+        variant: None,
+        quick_unlock: false,
+        name: "Angler",
+    },
+    BestiaryEntryDef {
+        credit_id: "Wizard",
+        net_id: 108,
+        kind: NpcKind::Wizard,
+        variant: None,
+        quick_unlock: false,
+        name: "Wizard",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mechanic",
+        net_id: 124,
+        kind: NpcKind::Mechanic,
+        variant: None,
+        quick_unlock: false,
+        name: "Mechanic",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -845,6 +869,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Nebula Pillar",
     },
     BestiaryEntryDef {
+        credit_id: "VortexTower",
+        net_id: 422,
+        kind: NpcKind::VortexTower,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Pillar",
+    },
+    BestiaryEntryDef {
         credit_id: "SolarTower",
         net_id: 517,
         kind: NpcKind::SolarTower,
@@ -1242,6 +1274,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::GolemFistLeft
         | NpcKind::GolemFistRight
         | NpcKind::GolemHeadFree => NpcKind::Golem,
+        // The Sleeping Angler rides the Angler's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
+        // never has an entry of its own.
+        NpcKind::SleepingAngler => NpcKind::Angler,
+        // The bound Wizard/Mechanic ride their freed rows (the C#'s
+        // bestiary ids 106/123 have no entries of their own — the bound
+        // Goblin 105 has none either).
+        NpcKind::BoundWizard => NpcKind::Wizard,
+        NpcKind::BoundMechanic => NpcKind::Mechanic,
+        NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
         other => other,
     };
     ENTRIES
