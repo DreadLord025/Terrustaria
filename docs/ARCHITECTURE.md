@@ -69,7 +69,15 @@ an agent needs before touching code.
 - `save.rs` — native `.trwld`: magic/version/seed/header, `frame_important` table, and
   per-row RLE of the 12-byte `Tile`. Default path
   `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`; saves are written to a
-  temporary file and renamed.
+  temporary file and renamed. The v6 tail (`VERSION = 6`) appends three sections
+  (a v5 file loads with the `World::new` defaults): the fixed 108-byte world-flags
+  block (`write_flags_v6`/`read_flags_v6` — two 16-byte bool groups, 14 i32s,
+  2 f64s, 1 f32 — the C# `SaveWorldFlags` progression subset,
+  `WorldFile.cs:1238-1430`), the wire side table (`World.wires`,
+  `wiring.rs::WireState::write/read`, port-native: the C# packs the four colours as
+  per-tile `sTileHeader` bits) and the tile entities (`World.tile_entities`,
+  `tile_entities.rs::TileEntities::write_all/read_all`, `WorldFile.cs:3302-3357`).
+  See `ANALYSIS.md` ".trwld v6".
 - `framing.rs` — autotiling: a port of `WorldGen.TileFrameCosmetic` (block frames) and
   `Framing.WallFrame` (wall frames). See `ANALYSIS.md#autotiling`. Both passes run in
   128-row bands on Rayon: frames depend only on kinds/flags/slopes (never on other frames),
