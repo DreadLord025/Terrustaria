@@ -6838,3 +6838,31 @@ Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WO
 
 
 
+
+## Micro-biome passes (M5-BIOME-2)
+
+The three micro-biome passes are 1:1 ports; the deviations:
+
+- **`tile_is_ore` is a hardcoded kind list**, not the generated
+  `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
+  Ore set, so the slab map's ore preservation uses the vanilla's ore ids
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
+  tile yet — the pots land with M5-STRUCT's pots step.
+- **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
+  cave-house voters read the tiles directly, so the registration has no
+  consumer yet.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — the port
+  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
+  slabs' corner states flatten to the active pattern).
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
+  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
+  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
+  decor family.
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
+  The pass's own isolated stream keeps the move RNG-neutral for the other
+  steps; the world contract's per-step pins hold.
+- The three passes draw from their own `pass_rng` streams; the shared
+  `streams.rng` is untouched by them.
