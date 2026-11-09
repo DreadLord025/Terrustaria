@@ -282,6 +282,12 @@ pub fn load_world_images(
         "Extra_165",
         "Extra_246",
         "Extra_251",
+        // M2-MOUNT-4: the Santank strip (Extra_168, its front + extra) and
+        // the Chillet sheets (Extra_301/302); the roller skates have no
+        // mount strip.
+        "Extra_168",
+        "Extra_301",
+        "Extra_302",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the

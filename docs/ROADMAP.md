@@ -385,7 +385,7 @@ Remaining (audit-verified):
 **Tasks:** M2-PHYS-1 movement constants & boots, M2-PHYS-2 fall damage & extraFall,
 M2-PHYS-3 fluid movement & breath fidelity, M2-PHYS-4 dash system, M2-PHYS-5 wings &
 rocket boots, M2-PHYS-6 grapple movement, M2-PHYS-7 minecart riding, M2-PHYS-8 extra
-jumps.
+jumps. ✅ M2-MOUNT-4 special-ability mounts — done 2026-11-09 (`M2-MOUNT-4-special-abilities`): the Santank (46, ability 40/40/0 + the extra-jump arm), the four Chillets (62-65, `SetAsChillet` + the hardmode branch + the dash 7/130/5 band), the four roller skates (57-60, additive stats/grindable), their items, the dashType-6 head + the PirateShip dash clear + the FRAME_DASHING animator; the aiming fire / drill mining / charge damages parked.
 
 ## 8. Player status: buffs, debuffs, regen, luck
 
