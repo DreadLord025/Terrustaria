@@ -1,70 +1,177 @@
-//! The smart-cursor first pass — `SmartCursorHelper.SmartCursorLookup`
-//! (`GameContent/SmartCursorHelper.cs:61-165`) with the **torch step**
-//! (`Step_Torch` :2795-2866 + `IsValidSpotForTorch` :2867-2936).
+//! The smart-cursor lookup — `SmartCursorHelper.SmartCursorLookup`
+//! (`GameContent/SmartCursorHelper.cs:61-165`) with the ported steps.
 //!
 //! The vanilla scans the reachable rect for a match and re-points
 //! `Main.SmartCursorX/Y` (a copy of `Player.tileTargetX/Y`, `:158-162`).
 //! The port models the lookup over its tile grid: the caller passes the
-//! reachable rect and the held item kind; the module re-points
+//! reachable rect and the held item; the module re-points
 //! `App.smart_cursor: Option<(i32, i32)>` when a better spot exists.
 //!
-//! The torch step's full logic is ported verbatim: the water-torch
-//! `flag` arm, the cell scan skipping liquid/occupied non-cut cells, the
-//! 17x17 no-torch-around sweep, `IsValidSpotForTorch`'s wall / side /
-//! floor anchors, and the closest-to-mouse pick among the candidates
-//! (`Collision.InTileBounds`' inclusive rect gate at the end).
+//! Ported steps, in the C# dispatch order (`:118-156`): `Step_GrassSeeds`
+//! (:266-332), `Step_Moss` (:334-379), `Step_Pigronata` (:969-1025),
+//! `Step_Torch` (:2795-2866 + `IsValidSpotForTorch` :2867-2936),
+//! `Step_LawnMower` (:2895-2939), `Step_AlchemySeeds` (:492-580),
+//! `Step_PlanterBox` (:437-490), `Step_ClayPots` (:381-435) and
+//! `Step_StaffOfRegrowth` (:224-264) — the seed/herb/planting family,
+//! gated on item id / `createTile` and shared with the
+//! closest-to-mouse vote.
 //!
-//! Out of scope (documented in the ROADMAP row): the other 30 steps (the
-//! pickaxe/axe/hammer/platform/wall/grass-seed/moss/clay-pot/actuation
-//! families), `UsingSmartCursorWithContinuity`'s lock state, the grapple
-//! target arms, and the paint-lookup arm.
+//! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
+//! platform/wall/wrench/paint families, `UsingSmartCursorWithContinuity`'s
+//! lock state, the grapple target arms, and the paint-lookup arm.
+//!
+//! Edge convention: the C# `Main.tile` array is exactly world-sized
+//! (`Main.cs:66984`) and the reachable rect never touches the border, so
+//! vanilla never reads out of world. The port is strictly more robust —
+//! `World::tile` returns `None` at the edge and every step skips such a
+//! cell, while a *neighbour* read (the flag halves) counts an out-of-world
+//! cell as the inactive tile the C#'s default `Tile` would read.
 
-use crate::tile::Tile;
+use crate::tile::{FLAG_INACTIVE, Tile};
 
 /// `Main.SmartCursorIsUsed` is a per-player setting the port reads off the
 /// `TR_SMARTCURSOR` pin (the input model lands with the UI parity pass);
 /// the engine's gate lives here so the caller has one condition.
 pub const SMART_CURSOR_IS_USED: bool = true;
 
-/// `ItemID.Sets.Torches` (`TileID.cs:615`) — the vanilla set is the single
-/// torch tile 4 (`Sets.Torches = Factory.CreateBoolSet(4)`), extended by the
-/// modded variants this decompile does not carry.
-pub const TORCH_TILE: u16 = 4;
+/// `ItemID.Sets.Torches` (`ItemID.cs:1371`): the 24 item ids whose
+/// `SetDefaults` places a torch tile — the gate `Step_Torch` :2812 reads.
+pub const TORCH_ITEMS: [u16; 24] = [
+    8, 427, 3004, 523, 433, 429, 974, 1333, 1245, 3114, 430, 3045, 428, 2274, 431, 432, 4383, 4384,
+    4385, 4386, 4387, 4388, 5293, 5353,
+];
 /// `ItemID.Sets.WaterTorches` (`ItemID.cs:1372`): the item ids that place
 /// underwater torches.
 pub const WATER_TORCH_ITEMS: [u16; 3] = [523, 1333, 4384];
-/// `TileID.Sets.BreakableWhenPlacing` (`TileID.cs:604`): the tiles an
-/// item placement may replace (the trap family 185/187, the saplings, the
-/// minecart track 165, portal 530…).
-pub const BREAKABLE_WHEN_PLACING: [u16; 11] =
-    [324, 186, 187, 185, 165, 530, 233, 227, 485, 81, 624];
+/// `TileID.Sets.Torches` (`TileID.cs:615`) — the vanilla set is the single
+/// torch tile 4 (`Sets.Torches = Factory.CreateBoolSet(4)`).
+pub const TORCH_TILE: u16 = 4;
+/// `ItemID.Sets.GrassSeeds` (`ItemID.cs:351`): the seed items whose step
+/// plants on dirt/grass (`Step_GrassSeeds` :274).
+pub const GRASS_SEED_ITEMS: [u16; 7] = [62, 59, 2171, 369, 195, 194, 5214];
+/// `ItemID.Sets.Moss` (`ItemID.cs:352`): the moss-spreading items
+/// (`Step_Moss` :344).
+pub const MOSS_ITEMS: [u16; 11] = [
+    4349, 4350, 4351, 4352, 4353, 4354, 4377, 4378, 4389, 5127, 5128,
+];
 
-fn is_torch(kind: u16) -> bool {
-    kind == TORCH_TILE
+/// The held-item fields the smart-cursor steps read (the C# reads them off
+/// `SmartCursorUsageInfo.item`).
+#[derive(Clone, Copy)]
+pub struct ItemPort {
+    /// `Item.type` — the item id (`ItemID`).
+    pub kind: u16,
+    /// `Item.createTile` (`Item.cs:169`'s `-1` default): the tile the item
+    /// places.
+    pub create_tile: i32,
+    /// `Item.placeStyle` (`Item.cs:173`'s `0` default): the sub-style the
+    /// placement takes.
+    pub place_style: i32,
 }
 
-/// `Main.tileCut[type]`'s herb/shrub row — the vanilla `tileCut` set the
-/// step's skip arm consults (`tile.active() && !BreakableWhenPlacing &&
-/// (!tileCut || type == 82 || type == 83)`). The port's set is the growing
-/// herbs 82-84 + the sapling 20 (the `TileID.Sets.CommonSapling` row) —
-/// `growth.rs`' `TILE_ALCH` already carries the ids; the sapling 20 sits
-/// in the C# set via the tree-vine family.
-fn is_cut(kind: u16) -> bool {
-    matches!(kind, 20 | 82 | 83 | 84)
+/// `SmartCursorUsageInfo` (`SmartCursorHelper.cs:14-41`): the per-call
+/// inputs every step shares.
+pub struct Lookup {
+    /// The held item.
+    pub item: ItemPort,
+    /// `SmartCursorUsageInfo.mouse` — the mouse world position.
+    pub mouse: (f32, f32),
+    /// `screenTargetX/Y` — the un-re-pointed cursor tile the steps' pre-checks
+    /// read (`Step_ClayPots` :389, `Step_PlanterBox` :445).
+    pub screen_target: (i32, i32),
+    /// `reachableStartX` — the clamped reach rect's first column.
+    pub start_x: i32,
+    /// `reachableStartY` — the clamped reach rect's first row.
+    pub start_y: i32,
+    /// `reachableEndX` — the clamped reach rect's last column.
+    pub end_x: i32,
+    /// `reachableEndY` — the clamped reach rect's last row.
+    pub end_y: i32,
+    /// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
+    /// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields.
+    pub weather: crate::growth::WeatherCtx,
 }
 
-/// `TileID.Sets.NotReallySolid`'s no-attach family — the solids a torch may
-/// not hang on. The decompile's set is the closed doors/tall gates; the
-/// port keeps the closed-door row 10/11 (its door kinds).
-fn is_not_really_solid(kind: u16) -> bool {
-    matches!(kind, 10 | 11)
-}
-
-/// `Collision.InTileBounds` (`Collision.cs:1501-1507`): the inclusive rect
-/// test the step's final gate runs (`Step_Torch` :2859).
+/// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
+/// test the steps' final gate runs (`Step_Torch` :2859).
 pub fn in_tile_bounds(x: i32, y: i32, start_x: i32, start_y: i32, end_x: i32, end_y: i32) -> bool {
     x >= start_x && x <= end_x && y >= start_y && y <= end_y
 }
+
+/// The shared vote (`Step_Torch` :2849-2854`'s `_targets` pick, the same
+/// tail in every other step): the candidate whose tile centre
+/// (`X*16+8, Y*16+8`) is closest to the mouse, the C# `num == -1f`
+/// sentinel and the strict `<` (the first candidate wins ties).
+fn pick_closest(cands: &[(i32, i32)], mouse: (f32, f32)) -> Option<(i32, i32)> {
+    pick_closest_if(cands, mouse, |_, _| true)
+}
+
+/// [`pick_closest`] with a per-candidate filter run inside the vote loop
+/// (`Step_ClayPots` :418's `Collision.EmptyTile`).
+fn pick_closest_if(
+    cands: &[(i32, i32)],
+    mouse: (f32, f32),
+    keep: impl Fn(i32, i32) -> bool,
+) -> Option<(i32, i32)> {
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for &(x, y) in cands {
+        if !keep(x, y) {
+            continue;
+        }
+        let d = dist_to_mouse(x, y, mouse);
+        if best_dist == -1.0 || d < best_dist {
+            best_dist = d;
+            best = Some((x, y));
+        }
+    }
+    best
+}
+
+/// `Vector2.Distance(new Vector2(x, y) * 16f + Vector2.One * 8f, mouse)`:
+/// the tile centre to the mouse (`:2849`).
+fn dist_to_mouse(x: i32, y: i32, mouse: (f32, f32)) -> f32 {
+    (x as f32 * 16.0 + 8.0 - mouse.0).hypot(y as f32 * 16.0 + 8.0 - mouse.1)
+}
+
+/// The seed/herb steps' shared neighbour halves (`:236-239`): `flag` =
+/// any of the four orthogonal neighbours inactive, `flag2` = any of the
+/// four diagonals. The C# reads the neighbours' raw `active()` (a present
+/// but `inActive` tile still blocks); an out-of-world cell counts
+/// inactive (see the module's edge convention).
+fn neighbours_inactive(w: &crate::World, x: i32, y: i32) -> (bool, bool) {
+    let active_at = |x: i32, y: i32| w.tile(x, y).is_some_and(Tile::active);
+    let flag = !active_at(x - 1, y)
+        || !active_at(x, y + 1)
+        || !active_at(x + 1, y)
+        || !active_at(x, y - 1);
+    let flag2 = !active_at(x - 1, y - 1)
+        || !active_at(x - 1, y + 1)
+        || !active_at(x + 1, y + 1)
+        || !active_at(x + 1, y - 1);
+    (flag, flag2)
+}
+
+/// `Tile.lava()` (`Tile.cs:345-347`): a positive liquid amount whose kind
+/// flag is lava — the alch style-4/6 clause's liquid discriminator
+/// (`Step_AlchemySeeds` :536, :547).
+fn is_lava(t: &Tile) -> bool {
+    t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava
+}
+
+/// `Collision.EmptyTile` (`Collision.cs:1359-1386`) in the
+/// `ignoreTiles: true` form the placement filter uses (`Step_ClayPots`
+/// :418): the cell must not stand inside a player's or NPC's hitbox.
+/// tr-core carries no entity store — the tile half of the check is what
+/// `ignoreTiles` skips, and the entity arms wait on the app-side wiring.
+fn collision_empty_tile(_w: &crate::World, _i: i32, _j: i32, _ignore_tiles: bool) -> bool {
+    true
+}
+
+/// `WorldGen.IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`) lives
+/// in the herb module (`growth`); the alch step consults it at :506.
+
+// ------------------------------------------------------------- torch step --
 
 /// `SmartCursorHelper.IsValidSpotForTorch` (`SmartCursorHelper.cs:2867-2936`):
 /// the tile accepts a torch — a wall behind it, a valid side anchor (left or
@@ -75,7 +182,7 @@ pub fn is_valid_spot_for_torch(w: &crate::World, x: i32, y: i32, cache: Option<&
         if t.wall > 0 {
             return true;
         }
-        if is_torch(t.kind) {
+        if t.kind == TORCH_TILE {
             return false;
         }
     } else {
@@ -85,10 +192,13 @@ pub fn is_valid_spot_for_torch(w: &crate::World, x: i32, y: i32, cache: Option<&
         if t.wall > 0 {
             return true;
         }
-        if is_torch(t.kind) {
+        if t.kind == TORCH_TILE {
             return false;
         }
     }
+    // `TileID.Sets.NotReallySolid` (`TileID.cs:592` — {387, 388, 10}) via
+    // the shared membership test.
+    let not_really_solid = crate::tileobject::not_really_solid;
     let attachable = |t: &Tile, allow_slopes: bool| -> bool {
         if !t.active() {
             return false;
@@ -99,7 +209,7 @@ pub fn is_valid_spot_for_torch(w: &crate::World, x: i32, y: i32, cache: Option<&
         }
         (crate::tiledata::TILE_SOLID.has(t.kind)
             && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
-            && !is_not_really_solid(t.kind))
+            && !not_really_solid(t.kind))
             || t.kind == 5 // the beam family tile
     };
     // The side anchors: the C#'s `slope() == 0 || slope() % 2 != X` split
@@ -123,7 +233,7 @@ pub fn is_valid_spot_for_torch(w: &crate::World, x: i32, y: i32, cache: Option<&
             && (crate::tiledata::TILE_SOLID.has(t.kind)
                 && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
                 || crate::tiledata::SET_PLATFORMS.has(t.kind))
-            && !is_not_really_solid(t.kind)
+            && !not_really_solid(t.kind)
         {
             return true;
         }
@@ -136,42 +246,31 @@ pub fn is_valid_spot_for_torch(w: &crate::World, x: i32, y: i32, cache: Option<&
 /// re-pointed `(x, y)` or `None`. `mouse` is the mouse world position (the
 /// closeness vote, `:2848`) and `(fx, fy)` the current focus (−1 when
 /// empty — an earlier step's target wins).
-pub fn step_torch(
-    w: &crate::World,
-    item_kind: u16,
-    fx: i32,
-    fy: i32,
-    mouse: (f32, f32),
-    start_x: i32,
-    start_y: i32,
-    end_x: i32,
-    end_y: i32,
-) -> Option<(i32, i32)> {
+pub fn step_torch(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
     if fx != -1 || fy != -1 {
         return None;
     }
-    // The item id gate: the port's torch item is 8 (`registry::name(8)`
-    // carries the torch; `itemdata.rs`' tile placement), the water torches
-    // are 523/1333/4384 — the vanilla reads `ItemID.Sets.Torches[type]`
-    // on the ITEM id, which is true for the item kinds whose
-    // `SetDefaults` places a torch tile.
-    let is_water = WATER_TORCH_ITEMS.contains(&item_kind);
-    if !is_water && item_kind != 8 {
+    // `:2812` — the item id gate: the vanilla reads
+    // `ItemID.Sets.Torches[type]` on the ITEM id (every member is below
+    // `ItemID.Count`, so the range check is implied).
+    let is_water = WATER_TORCH_ITEMS.contains(&l.item.kind);
+    if !TORCH_ITEMS.contains(&l.item.kind) {
         return None;
     }
     let water_flag = !is_water;
     let mut best: Option<(i32, i32)> = None;
     let mut best_dist = f32::INFINITY;
-    for i in start_x..=end_x {
-        for j in start_y..=end_y {
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
             let Some(t) = w.tile(i, j) else {
                 continue;
             };
-            // `:2832-2835`: the water-torch gate / the occupied non-cut skip.
+            // `:2832-2835`: the water-torch gate / the occupied non-cut skip
+            // (`Main.tileCut` via the shared 41-id membership).
             if (water_flag && t.liquid > 0)
                 || (t.active()
-                    && !BREAKABLE_WHEN_PLACING.contains(&t.kind)
-                    && (!is_cut(t.kind)))
+                    && !crate::tileobject::breakable_when_placing(t.kind)
+                    && !crate::tileobject::tile_cut(t.kind))
             {
                 continue;
             }
@@ -181,7 +280,7 @@ pub fn step_torch(
             for k in (i - 8)..=(i + 8) {
                 for l in (j - 8)..=(j + 8) {
                     if let Some(t2) = w.tile(k, l) {
-                        if is_torch(t2.kind) {
+                        if t2.kind == TORCH_TILE {
                             torch_near = true;
                             break;
                         }
@@ -198,8 +297,7 @@ pub fn step_torch(
                 continue;
             }
             // `:2849-2854`: the closest-to-mouse pick.
-            let dist = ((i as f32 * 16.0 + 8.0) - mouse.0)
-                .hypot((j as f32 * 16.0 + 8.0) - mouse.1);
+            let dist = dist_to_mouse(i, j, l.mouse);
             if dist < best_dist {
                 best_dist = dist;
                 best = Some((i, j));
@@ -209,33 +307,419 @@ pub fn step_torch(
     best
 }
 
-/// `SmartCursorHelper.SmartCursorLookup`'s first-pass shell
-/// (`:61-165` minus the 30 unported steps): the rect gate — an
-/// interactable blocking the cursor short-circuits to `None`
-// (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`, :193 — the
-/// port has no sign/chest hover routing yet, so the gate is a no-op that
-/// always passes) — then the torch step over the clamped reachable rect.
-/// Returns the re-pointed tile or `None`.
-pub fn smart_cursor_lookup(
+// --------------------------------------------------- seed / herb / planting --
+
+/// `SmartCursorHelper.Step_StaffOfRegrowth` (`:224-264`): the held staff /
+/// acorn axe (213/5295) re-points at the closest dirt tile with an open
+/// neighbour — the tile the staff would break to plant.
+pub fn step_staff_of_regrowth(
     w: &crate::World,
-    item_kind: u16,
+    l: &Lookup,
     fx: i32,
     fy: i32,
-    mouse: (f32, f32),
-    start_x: i32,
-    start_y: i32,
-    end_x: i32,
-    end_y: i32,
 ) -> Option<(i32, i32)> {
-    step_torch(w, item_kind, fx, fy, mouse, start_x, start_y, end_x, end_y)
+    // `:227` — the item-kind gate + the focus sentinel.
+    if (l.item.kind != 213 && l.item.kind != 5295) || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            let (flag, flag2) = neighbours_inactive(w, i, j);
+            // `:236-239` — the dirt tile with an open orthogonal or
+            // diagonal neighbour. The C#'s second arm is
+            // `(tile.type == 0) & flag2` — the non-short-circuit `&`
+            // over an already-required `type == 0` reduces to `flag2`.
+            if t.active() && !t.inactive() && t.kind == 0 && (flag || flag2) {
+                cands.push((i, j));
+            }
+        }
+    }
+    // `:244-258` — the closest pick + the InTileBounds gate.
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_GrassSeeds` (`:266-332`): the held seed
+/// (`ItemID.Sets.GrassSeeds`) re-points at the closest dirt/grass tile
+/// with an open neighbour whose type matches the seed (the vanilla plants
+/// the seed's grass on the targeted tile).
+pub fn step_grass_seeds(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:268-274` — the focus gate uses the stricter `> -1` here; the item
+    // gate reads `ItemID.Sets.GrassSeeds` (every member is below
+    // `ItemID.Count`, so the range check is implied).
+    if fx > -1 || fy > -1 || !GRASS_SEED_ITEMS.contains(&l.item.kind) {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            let (flag, flag2) = neighbours_inactive(w, i, j);
+            if t.active() && !t.inactive() && (flag || flag2) {
+                // `:290-304` — the planted-on tile per seed item kind.
+                let plants_here = match l.item.kind {
+                    59 | 2171 => t.kind == 0 || t.kind == 59, // corrupt/crimson
+                    194 | 195 => t.kind == 59,                // mushroom/jungle
+                    5214 => t.kind == 57,                     // ash
+                    _ => t.kind == 0,                         // the plain grass seeds
+                };
+                if plants_here {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_Moss` (`:334-379`): the held moss item
+/// (`ItemID.Sets.Moss`) re-points at the closest stone/pearlstone tile
+/// with an open neighbour (the moss spreads onto it).
+pub fn step_moss(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:336-344` — the focus gate's `> -1` form + the moss item set.
+    if fx > -1 || fy > -1 || !MOSS_ITEMS.contains(&l.item.kind) {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            let (flag, flag2) = neighbours_inactive(w, i, j);
+            // `:353` — stone 1 or pearlstone 38 with an open neighbour.
+            if t.active() && !t.inactive() && (flag || flag2) && (t.kind == 1 || t.kind == 38) {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_ClayPots` (`:381-435`): the held clay pot
+/// (`createTile == 78`) re-points at the closest cell that may take a pot
+/// — empty or replaceable, above a clean full solid.
+pub fn step_clay_pots(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:383` — the placement-tile gate.
+    if l.item.create_tile != 78 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:389-396` — the screen-target pre-check: an occupied or
+    // out-of-rect target disables the scan.
+    let mut skip = w
+        .tile(l.screen_target.0, l.screen_target.1)
+        .is_some_and(Tile::active);
+    if !in_tile_bounds(
+        l.screen_target.0,
+        l.screen_target.1,
+        l.start_x,
+        l.start_y,
+        l.end_x,
+        l.end_y,
+    ) {
+        skip = true;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !skip {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let (Some(t), Some(t2)) = (w.tile(i, j), w.tile(i, j + 1)) else {
+                    continue;
+                };
+                // `:405` — the cell may be replaced (`tileCut` /
+                // `BreakableWhenPlacing`) and the cell below is a clean
+                // full solid (`nactive` = active, not framed off).
+                if (!t.active()
+                    || crate::tileobject::tile_cut(t.kind)
+                    || crate::tileobject::breakable_when_placing(t.kind))
+                    && crate::tileobject::nactive(t2)
+                    && !t2.half_brick()
+                    && t2.slope() == 0
+                    && crate::tiledata::TILE_SOLID.has(t2.kind)
+                {
+                    cands.push((i, j));
+                }
+            }
+        }
+    }
+    // `:414-428` — the EmptyTile filter inside the vote, the closest pick,
+    // and the C#'s `num != -1f` + InTileBounds commit guards.
+    let p = pick_closest_if(&cands, l.mouse, |x, y| collision_empty_tile(w, x, y, true))?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PlanterBox` (`:437-490`): the held planter box
+/// (`createTile == 380`) re-points beside an existing box — the placement
+/// extends the row sideways.
+pub fn step_planter_box(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:439` — the placement-tile gate.
+    if l.item.create_tile != 380 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:445` — the screen-target pre-check: an occupied planter box
+    // disables the scan.
+    let skip = w
+        .tile(l.screen_target.0, l.screen_target.1)
+        .is_some_and(|t| t.active() && t.kind == 380);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !skip {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                let Some(t) = w.tile(i, j) else {
+                    continue;
+                };
+                if t.active() && t.kind == 380 {
+                    // `:458-465` — the box extends into an empty or
+                    // replaceable left/right neighbour.
+                    for nx in [i - 1, i + 1] {
+                        if let Some(tn) = w.tile(nx, j) {
+                            if !tn.active()
+                                || crate::tileobject::tile_cut(tn.kind)
+                                || crate::tileobject::breakable_when_placing(tn.kind)
+                            {
+                                cands.push((nx, j));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_AlchemySeeds` (`:492-580`): the held alch seed
+/// (`createTile == 82`) re-points at the closest plantable cell — the
+/// `placeStyle` selects the ground family the herb wants.
+pub fn step_alchemy_seeds(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:494` — the placement-tile gate.
+    if l.item.create_tile != 82 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let style = l.item.place_style;
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let (Some(t), Some(t2)) = (w.tile(i, j), w.tile(i, j + 1)) else {
+                continue;
+            };
+            // `:506` — the cell may host a herb: empty/replaceable, or a
+            // harvestable grown herb (`frameX / 18` = the herb style).
+            let plantable = !t.active()
+                || crate::tileobject::breakable_when_placing(t.kind)
+                || (crate::tileobject::tile_cut(t.kind) && t.kind != 82 && t.kind != 83)
+                || crate::growth::is_harvestable_herb_with_seed(
+                    w,
+                    t.kind,
+                    t.frame_x as i32 / 18,
+                    j,
+                    &l.weather,
+                );
+            // `:507` — the ground below is a clean full tile.
+            let ground_ok = crate::tileobject::nactive(t2) && !t2.half_brick() && t2.slope() == 0;
+            if !plantable || !ground_ok {
+                continue;
+            }
+            // `:509-556` — per-style ground clause: a matching reject-set
+            // grounds the candidate unless the cell's liquid overrides it
+            // (the C# `continue`s the column there).
+            let rejected = match style {
+                0 => matches!(t2.kind, 78 | 380 | 2 | 477 | 109 | 492) && t.liquid == 0,
+                1 => matches!(t2.kind, 78 | 380 | 60) && t.liquid == 0,
+                2 => matches!(t2.kind, 78 | 380 | 0 | 59) && t.liquid == 0,
+                3 => matches!(t2.kind, 78 | 380 | 203 | 199 | 23 | 25) && t.liquid == 0,
+                4 => matches!(t2.kind, 78 | 380 | 53 | 116) && !(t.liquid > 0 && is_lava(t)),
+                5 => matches!(t2.kind, 78 | 380 | 57 | 633) && !(t.liquid > 0 && !is_lava(t)),
+                6 => {
+                    matches!(t2.kind, 78 | 380 | 147 | 161 | 163 | 164 | 200)
+                        && !(t.liquid > 0 && is_lava(t))
+                }
+                _ => false,
+            };
+            if rejected {
+                continue;
+            }
+            cands.push((i, j));
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_Pigronata` (`:969-1025`): the held pigronata
+/// statue (`createTile == 454`) re-points at the closest surface-level
+/// spot whose 4x4 box sits on solid ground and is otherwise clear.
+pub fn step_pigronata(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:971` — the placement-tile gate.
+    if l.item.create_tile != 454 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:978` — the column stops at the world surface minus two rows (the
+    // C# fuses the bound into the j-loop condition).
+    let j_max = l.end_y.min((w.world_surface - 2.0).floor() as i32);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=j_max {
+            // `:980-996` — the 4x4 sweep: the row below the candidate is
+            // solid (`SolidTile`), the rows above are clear (active cells
+            // only survive as cut tiles or the statue itself).
+            let mut clear = true;
+            'box_sweep: for k in (i - 2)..=(i + 1) {
+                for m in (j - 1)..=(j + 2) {
+                    let Some(t) = w.tile(k, m) else {
+                        continue;
+                    };
+                    if m == j - 1 {
+                        if !crate::edit::solid_tile(w, k, m) {
+                            clear = false;
+                            break 'box_sweep;
+                        }
+                    } else if t.active() && (!crate::tileobject::tile_cut(t.kind) || t.kind == 454)
+                    {
+                        clear = false;
+                        break 'box_sweep;
+                    }
+                }
+            }
+            if clear {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_PumpkinSeeds` (`:1027-1098`): the held pumpkin
+/// seed (`createTile == 254`) re-points at the closest surface-level
+/// 2-wide grass spot with clear space above.
+pub fn step_pumpkin_seeds(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1029` — the placement-tile gate.
+    if l.item.create_tile != 254 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            // `:1035-1036` — the two ground cells are read before the
+            // surface guard (the C#'s order).
+            let (Some(t), Some(t2)) = (w.tile(i, j + 1), w.tile(i + 1, j + 1)) else {
+                continue;
+            };
+            // `:1040-1042` — the inner break: the rest of the column is
+            // abandoned once past the surface.
+            if j as f64 > w.world_surface - 2.0 {
+                break;
+            }
+            // `:1046-1068` — both ground cells are flat grass-family
+            // tiles, the two header cells are cuttable.
+            let mut ok = t.active()
+                && t2.active()
+                && t.slope() == 0
+                && t2.slope() == 0
+                && !t.half_brick()
+                && !t2.half_brick()
+                && matches!(t.kind, 2 | 477 | 109 | 492)
+                && matches!(t2.kind, 2 | 477 | 109 | 492);
+            if ok {
+                for k in i..=i + 1 {
+                    for m in (j - 1)..=j {
+                        if let Some(t3) = w.tile(k, m) {
+                            if t3.active()
+                                && (crate::tiledata::TILE_SOLID.has(t3.kind)
+                                    || !crate::tileobject::can_cut_tile(w, k, m))
+                            {
+                                ok = false;
+                            }
+                        }
+                    }
+                }
+            }
+            if ok {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_LawnMower` (`:2895-2939`): the held lawn mower
+/// (4049) re-points at the closest grass/moss tile (the tool cuts it).
+pub fn step_lawn_mower(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2901` — the item-kind gate (the C#'s `_ = screenTargetX/Y`
+    // discards are decompiler artifacts with no side effects).
+    if l.item.kind != 4049 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:2913` — grass 2 or the moss-free variant 109.
+            if t.active() && (t.kind == 2 || t.kind == 109) {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// ------------------------------------------------------------ the dispatch --
+
+/// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
+/// ported steps, run in the vanilla chain's order (`:118-156`):
+/// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
+/// LawnMower :143 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155 →
+/// StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
+/// first step that finds a spot wins — the C# straight-line chain.
+///
+/// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
+/// :193 — the port has no sign/chest hover routing yet) stays a no-op that
+/// always passes, and the rect clamps stay the caller's (the C# clamps in
+/// `GetTileRegion`, `TileReachCheckSettings.cs:45-52`).
+///
+/// Returns the re-pointed tile or `None` (the C# writeback
+/// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
+pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 9] = [
+        step_grass_seeds,
+        step_moss,
+        step_pigronata,
+        step_torch,
+        step_lawn_mower,
+        step_alchemy_seeds,
+        step_planter_box,
+        step_clay_pots,
+        step_staff_of_regrowth,
+    ];
+    let mut focus = (fx, fy);
+    for step in steps {
+        if let Some(p) = step(w, l, focus.0, focus.1) {
+            focus = p;
+        }
+    }
+    (focus != (fx, fy)).then_some(focus)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A small world with a floor row at y = 20 and solid walls on the
-    /// sides (the `object_world`-style fixture).
+    /// A small world with a floor row at y = 20 (the `object_world`-style
+    /// fixture).
     fn w() -> crate::World {
         let mut w = crate::World::new("t".into(), 60, 40);
         w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
@@ -259,14 +743,68 @@ mod tests {
         };
     }
 
+    /// A full solid row (the fixtures' ground).
+    fn put_row(w: &mut crate::World, x0: i32, x1: i32, y: i32, kind: u16) {
+        for x in x0..=x1 {
+            put(w, x, y, kind);
+        }
+    }
+
+    /// A bare world — no fixture floor (the steps whose box sweeps need
+    /// the rows above their seat clear start from it).
+    fn bare() -> crate::World {
+        let mut w = crate::World::new("b".into(), 60, 40);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    /// The mouse at a tile's centre (`X*16+8, Y*16+8`) — the tie-free
+    /// vote position (an off-centre mouse ties the neighbours and the
+    /// C#'s strict `<` keeps the first candidate).
+    fn mouse_at(x: i32, y: i32) -> (f32, f32) {
+        (x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 8.0)
+    }
+
+    /// The default lookup inputs: the reachable rect 20..=40 × 10..=19,
+    /// the mouse over the floor row, the screen target on the floor.
+    fn lookup(item: ItemPort, mouse: (f32, f32)) -> Lookup {
+        Lookup {
+            item,
+            mouse,
+            screen_target: (30, 19),
+            start_x: 20,
+            start_y: 10,
+            end_x: 40,
+            end_y: 19,
+            weather: crate::growth::WeatherCtx::default(),
+        }
+    }
+
+    fn item(kind: u16) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile: -1,
+            place_style: 0,
+        }
+    }
+
+    fn placeable(kind: u16, create_tile: i32) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile,
+            place_style: 0,
+        }
+    }
+
     #[test]
     fn test_smart_1_a_torch_item_finds_the_floor_spot() {
-        // `Step_Torch`: the held torch (item 8) re-points at the closest
-        // empty cell above the floor row (`tileSolid && !tileSolidTop`
-        // below).
+        // `Step_Torch`: the held torch (item 8, in `ItemID.Sets.Torches`)
+        // re-points at the closest empty cell above the floor row
+        // (`tileSolid && !tileSolidTop` below).
         let mut world = w();
         put(&mut world, 30, 19, 1); // a solid block: not a torch spot
-        let found = step_torch(&world, 8, -1, -1, (30.0 * 16.0, 19.0 * 16.0), 20, 10, 40, 19);
+        let l = lookup(item(8), (30.0 * 16.0, 19.0 * 16.0));
+        let found = step_torch(&world, &l, -1, -1);
         let (fx, fy) = found.expect("the torch finds a spot");
         assert!(in_tile_bounds(fx, fy, 20, 10, 40, 19));
         // The spot must be empty and anchored to the floor row.
@@ -278,10 +816,11 @@ mod tests {
     #[test]
     fn test_smart_1_a_non_torch_item_skips_the_step() {
         let world = w();
+        let l = lookup(item(1), (0.0, 0.0));
         assert_eq!(
-            smart_cursor_lookup(&world, 1, -1, -1, (0.0, 0.0), 20, 10, 40, 19),
+            smart_cursor_lookup(&world, &l, -1, -1),
             None,
-            "the pickaxe's lookup rides M3-ITEM's step"
+            "the pickaxe's lookup rides a later step"
         );
     }
 
@@ -291,9 +830,18 @@ mod tests {
         // box.
         let mut world = w();
         put(&mut world, 30, 19, TORCH_TILE);
-        let found = step_torch(&world, 8, -1, -1, (30.0 * 16.0, 19.0 * 16.0), 25, 15, 35, 19);
+        let l = lookup(item(8), (30.0 * 16.0, 19.0 * 16.0));
+        // The rect 25..=35 × 15..=19 keeps the torch inside the ±8 sweep.
+        let l = Lookup {
+            start_x: 25,
+            start_y: 15,
+            end_x: 35,
+            end_y: 19,
+            ..l
+        };
         assert_eq!(
-            found, None,
+            step_torch(&world, &l, -1, -1),
+            None,
             "the no-torch-around sweep covers the reachable rect"
         );
     }
@@ -308,16 +856,14 @@ mod tests {
                 put(&mut world, x, y, 1);
             }
         }
-        // The rect 20..=40 x 15..=19 is solid, but the reachable window
+        // The rect 20..=40 × 15..=19 is solid, but the reachable window
         // extends above it (y = 10..19): the empty rows 10-14 still offer
         // spots — the closest valid one is picked (the vanilla scans the
         // whole reachable rect, not just the filled pocket).
-        let found = step_torch(&world, 8, -1, -1, (30.0 * 16.0, 19.0 * 16.0), 20, 10, 40, 19);
+        let l = lookup(item(8), (30.0 * 16.0, 19.0 * 16.0));
+        let found = step_torch(&world, &l, -1, -1);
         let (fx, fy) = found.expect("the empty rows above the pocket are spots");
-        assert!(
-            fy < 15,
-            "the picked spot sits above the filled block: {fy}"
-        );
+        assert!(fy < 15, "the picked spot sits above the filled block: {fy}");
     }
 
     #[test]
@@ -330,5 +876,296 @@ mod tests {
         world.tiles[i].wall = 1; // the dirt wall
         assert!(is_valid_spot_for_torch(&world, 10, 10, None));
         assert!(!is_valid_spot_for_torch(&world, 10, 11, None));
+    }
+
+    #[test]
+    fn test_smart_1_the_regrowth_staff_finds_the_open_dirt() {
+        // `Step_StaffOfRegrowth`: the staff (213) re-points at the dirt
+        // tile with an open orthogonal neighbour.
+        let mut world = w();
+        put(&mut world, 25, 19, 0); // dirt above the floor, open on top
+        let l = lookup(item(213), mouse_at(25, 19));
+        let found = step_staff_of_regrowth(&world, &l, -1, -1);
+        assert_eq!(found, Some((25, 19)), "the staff targets the open dirt");
+
+        // A closed pocket (all eight neighbours solid) is not a target.
+        let mut closed = w();
+        put(&mut closed, 25, 19, 0);
+        for (dx, dy) in [
+            (-1, 0),
+            (1, 0),
+            (0, 1),
+            (0, -1),
+            (-1, -1),
+            (-1, 1),
+            (1, 1),
+            (1, -1),
+        ] {
+            put(&mut closed, 25 + dx, 19 + dy, 1);
+        }
+        let l2 = lookup(item(213), mouse_at(25, 19));
+        assert_eq!(
+            step_staff_of_regrowth(&closed, &l2, -1, -1),
+            None,
+            "a fully surrounded dirt is not a staff target"
+        );
+
+        // The item-kind gate: a pickaxe skips the step.
+        assert_eq!(
+            step_staff_of_regrowth(&world, &lookup(item(1), (0.0, 0.0)), -1, -1),
+            None,
+            "the staff gate is item 213/5295 only"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_grass_seeds_find_the_open_dirt() {
+        // `Step_GrassSeeds`: the plain grass seeds (62) plant on dirt (0).
+        let mut world = w();
+        put(&mut world, 25, 19, 0);
+        let l = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_grass_seeds(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the grass seed re-points at the open dirt"
+        );
+        // A stone cell is not a grass-seed target (the default arm wants 0).
+        let mut stone = w();
+        put(&mut stone, 25, 19, 1);
+        let l2 = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_grass_seeds(&stone, &l2, -1, -1),
+            None,
+            "the default arm only accepts dirt"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_mushroom_seeds_want_corrupt_grass() {
+        // `Step_GrassSeeds` :299 — the mushroom grass seeds (194) only
+        // plant on corrupt grass (59), unlike the plain seeds.
+        let mut world = w();
+        put(&mut world, 25, 19, 59); // corrupt grass, open on top
+        let l = lookup(item(194), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_grass_seeds(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the mushroom seed re-points at corrupt grass"
+        );
+        // The same world with the plain seeds finds nothing (dirt only).
+        let l2 = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_grass_seeds(&world, &l2, -1, -1),
+            None,
+            "plain seeds do not target corrupt grass"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_moss_wants_stone() {
+        // `Step_Moss` :353 — the green moss (4349) spreads onto stone (1)
+        // or pearlstone (38), never dirt.
+        let mut world = w();
+        put(&mut world, 25, 19, 1); // stone with an open top
+        let l = lookup(item(4349), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_moss(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the moss re-points at the open stone"
+        );
+        let mut dirt = w();
+        put(&mut dirt, 25, 19, 0);
+        let l2 = lookup(item(4349), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_moss(&dirt, &l2, -1, -1),
+            None,
+            "dirt is not a moss target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_clay_pots_sit_on_the_floor() {
+        // `Step_ClayPots`: the clay pot (createTile 78) re-points at the
+        // empty cell above the solid floor (`Main.tileSolid` — a platform
+        // row seats a pot too, the C# checks the full solid set).
+        let world = w();
+        let l = lookup(placeable(0, 78), mouse_at(25, 19));
+        let found = step_clay_pots(&world, &l, -1, -1);
+        assert_eq!(found, Some((25, 19)), "the pot sits right above the floor");
+        // The below-cell must be solid: a sapling row (20 — active but not
+        // `tileSolid`) refuses.
+        let mut sapling = w();
+        put_row(&mut sapling, 20, 40, 20, 20);
+        let l2 = lookup(placeable(0, 78), mouse_at(25, 19));
+        assert_eq!(
+            step_clay_pots(&sapling, &l2, -1, -1),
+            None,
+            "a non-solid seat is not a pot seat"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_clay_pots_skip_an_occupied_screen_target() {
+        // `Step_ClayPots` :389-396 — an occupied in-rect screen target
+        // disables the scan.
+        let mut world = w();
+        put(&mut world, 30, 19, 1);
+        let l = Lookup {
+            screen_target: (30, 19),
+            ..lookup(placeable(0, 78), (25.0 * 16.0, 19.0 * 16.0))
+        };
+        assert_eq!(
+            step_clay_pots(&world, &l, -1, -1),
+            None,
+            "the occupied screen target disables the pot scan"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_planter_boxes_extend_sideways() {
+        // `Step_PlanterBox`: the planter box (createTile 380) re-points
+        // beside an existing box.
+        let mut world = w();
+        put(&mut world, 25, 19, 380); // an existing planter box
+        let l = lookup(placeable(0, 380), (26.0 * 16.0, 19.0 * 16.0));
+        let found = step_planter_box(&world, &l, -1, -1);
+        assert_eq!(
+            found,
+            Some((26, 19)),
+            "the new box extends the row to the right"
+        );
+        // Without an existing box there is nothing to extend.
+        let fresh = w();
+        let l2 = lookup(placeable(0, 380), (26.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_planter_box(&fresh, &l2, -1, -1),
+            None,
+            "the box step needs an existing box to extend"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_alchemy_seeds_respect_the_style_ground() {
+        // `Step_AlchemySeeds` :509-556 — style 0 (daybloom) accepts the
+        // stone floor, style 1 (moonglow) refuses jungle grass (60).
+        let mut jungle = w();
+        put_row(&mut jungle, 20, 40, 20, 60);
+        let l0 = lookup(
+            ItemPort {
+                kind: 0,
+                create_tile: 82,
+                place_style: 0,
+            },
+            mouse_at(25, 19),
+        );
+        assert_eq!(
+            step_alchemy_seeds(&jungle, &l0, -1, -1),
+            Some((25, 19)),
+            "style 0 plants on jungle grass"
+        );
+        let l1 = lookup(
+            ItemPort {
+                kind: 0,
+                create_tile: 82,
+                place_style: 1,
+            },
+            mouse_at(25, 19),
+        );
+        assert_eq!(
+            step_alchemy_seeds(&jungle, &l1, -1, -1),
+            None,
+            "style 1 refuses jungle grass ground"
+        );
+        // The same style 1 on stone plants.
+        let stone = w();
+        assert_eq!(
+            step_alchemy_seeds(&stone, &l1, -1, -1),
+            Some((25, 19)),
+            "style 1 plants on stone"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_pigronata_sits_on_the_surface() {
+        // `Step_Pigronata`: the statue (createTile 454) needs a solid row
+        // below and clear space above, above the surface gate. A bare
+        // world — the 4x4 box sweeps the rows j-1..j+2 and the fixture
+        // floor would block the top rows.
+        let mut world = bare();
+        world.world_surface = 25.0; // the surface gate allows j <= 23
+        put_row(&mut world, 20, 40, 18, 1); // the solid row below the spot
+        let l = lookup(placeable(0, 454), mouse_at(25, 19));
+        let found = step_pigronata(&world, &l, -1, -1);
+        assert_eq!(found, Some((25, 19)), "the statue sits above the solid row");
+        // Deep below the surface the step refuses.
+        let mut deep = bare();
+        deep.world_surface = 10.0; // the gate allows j <= 8 only
+        put_row(&mut deep, 20, 40, 18, 1);
+        let l2 = lookup(placeable(0, 454), mouse_at(25, 19));
+        assert_eq!(
+            step_pigronata(&deep, &l2, -1, -1),
+            None,
+            "the surface gate stops the scan below the surface"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_pumpkin_seeds_need_grass_ground() {
+        // `Step_PumpkinSeeds`: the seed (createTile 254) re-points at the
+        // 2-wide grass-family ground with clear headers.
+        let mut world = w();
+        put_row(&mut world, 20, 40, 20, 2); // grass ground
+        world.world_surface = 25.0;
+        let l = lookup(placeable(0, 254), mouse_at(25, 19));
+        assert_eq!(
+            step_pumpkin_seeds(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the pumpkin seed re-points above the grass row"
+        );
+        // Stone ground is not a pumpkin bed.
+        let stone = w();
+        let l2 = lookup(placeable(0, 254), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_pumpkin_seeds(&stone, &l2, -1, -1),
+            None,
+            "the pumpkin seed needs grass-family ground"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_lawn_mower_targets_grass() {
+        // `Step_LawnMower`: the mower (4049) re-points at grass (2) or
+        // moss (109).
+        let mut world = w();
+        put(&mut world, 25, 19, 2); // grass with open space around
+        let l = lookup(item(4049), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_lawn_mower(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the mower re-points at the grass"
+        );
+        // Dirt is not a mow target.
+        let mut dirt = w();
+        put(&mut dirt, 25, 19, 0);
+        let l2 = lookup(item(4049), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            step_lawn_mower(&dirt, &l2, -1, -1),
+            None,
+            "dirt is not a mow target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_seed_family_chain_order() {
+        // The dispatch chain: with a held grass seed the seed step wins
+        // over the torch step that would also match a torch-free rect.
+        let mut world = w();
+        put(&mut world, 25, 19, 0); // open dirt: the seed step's target
+        let l = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the grass-seed step runs before the torch step"
+        );
     }
 }
