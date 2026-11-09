@@ -279,6 +279,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarDrakomireRider
         | NpcKind::SolarSroller
         | NpcKind::SolarCorite
+        | NpcKind::SolarCrawltipedeHead
+        | NpcKind::SolarCrawltipedeBody
+        | NpcKind::SolarCrawltipedeTail
+        | NpcKind::StardustWormHead
+        | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
         | NpcKind::StardustCellBig
         | NpcKind::StardustCellSmall

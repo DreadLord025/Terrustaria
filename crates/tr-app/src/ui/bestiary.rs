@@ -522,6 +522,11 @@ fn portrait_data(
         NpcKind::SolarDrakomireRider => 135, // NPC_416
         NpcKind::SolarSroller => 136,   // NPC_417
         NpcKind::SolarCorite => 137,    // NPC_418
+        NpcKind::SolarCrawltipedeHead => 139, // NPC_412
+        NpcKind::SolarCrawltipedeBody => 140, // NPC_413
+        NpcKind::SolarCrawltipedeTail => 141, // NPC_414
+        NpcKind::StardustWormHead => 142,   // NPC_402
+        NpcKind::SolarSpearman => 143,      // NPC_518
         NpcKind::SolarSelenian => 138,  // NPC_419
         NpcKind::NebulaFloater => 128,    // NPC_420
         NpcKind::BrainSuckler => 129,   // NPC_421
@@ -916,6 +921,37 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 15.0)
                 .unwrap_or(38.0);
             (sheet_i, h, 38.0, h, white)
+        }
+        // The pillar worms' portraits over the 412 sheet's rows.
+        (NpcKind::SolarCrawltipedeHead, _) => {
+            let h = lookups.bestiary_npc_sheets[139]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::SolarCrawltipedeBody, _) => {
+            let h = lookups.bestiary_npc_sheets[140]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::SolarCrawltipedeTail, _) => {
+            let h = lookups.bestiary_npc_sheets[141]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::StardustWormHead, _) => {
+            let h = lookups.bestiary_npc_sheets[142]
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::SolarSpearman, _) => {
+            let h = lookups.bestiary_npc_sheets[143]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
         }
         (NpcKind::SolarSelenian, _) => {
             let h = lookups.bestiary_npc_sheets[174]

@@ -23,12 +23,16 @@
 //! (:1324-1389, over the [`ContinuityState`] locks and
 //! [`tile_target_desired`]'s placement gate) and the wire family
 //! (`Step_WireCutter` :1455-1493, `Step_Actuators` :582-620,
-//! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030 and
-//! `Step_MulticolorWrench` :1725-1877, the last two over the caller-passed
-//! `Lookup::tool_mode`/`actuation_rod_lock`) — the seed/herb/planting
-//! family plus the paint family, gated on item id / `createTile` /
-//! `createWall` and shared with the closest-to-mouse vote. The paint steps
-//! read the caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
+//! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030,
+//! `Step_MulticolorWrench` :1725-1877 (the last two over the caller-passed
+//! `Lookup::tool_mode`/`actuation_rod_lock`), `Step_MinecartTracks`
+//! (:1166-1322, over the caller-passed player centre) and
+//! `Step_ForceCursorToAnyMinableThing` (:2229-2268, over the caller-passed
+//! gamepad state and the held item's pick/axe/hammer power) — the
+//! seed/herb/planting family plus the paint family, gated on item id /
+//! `createTile` / `createWall` and shared with the closest-to-mouse vote.
+//! The paint steps read the caller-passed
+//! `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
@@ -113,6 +117,13 @@ pub struct ItemPort {
     /// `Item.placeStyle` (`Item.cs:173`'s `0` default): the sub-style the
     /// placement takes.
     pub place_style: i32,
+    /// `Item.pick` (`Item.cs:161`): the pickaxe power — the force-cursor
+    /// step's tool gate.
+    pub pick: i32,
+    /// `Item.axe` (`Item.cs:163`): the axe power.
+    pub axe: i32,
+    /// `Item.hammer` (`Item.cs:165`): the hammer power.
+    pub hammer: i32,
 }
 
 /// `SmartCursorUsageInfo` (`SmartCursorHelper.cs:14-41`): the per-call
@@ -175,6 +186,10 @@ pub struct Lookup {
     /// `player.ActuationRodLockSetting` (`Player.cs:2618`) — the lock's
     /// target actuation state.
     pub actuation_rod_lock_setting: bool,
+    /// `PlayerInput.UsingGamepad` (`Player.cs` input state): the
+    /// force-cursor step refuses on a gamepad (input is app-side, so the
+    /// caller passes it).
+    pub using_gamepad: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -1825,13 +1840,260 @@ pub fn step_multicolor_wrench(
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// ------------------------------------------------------------ track step --
+
+/// `TileID.MinecartTrack` (`TileID.cs` — the C# reads the literal 314 in
+/// `Step_MinecartTracks`).
+const TRACK_TILE: u16 = 314;
+
+/// The cell is a minecart track.
+fn is_track(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y)
+        .is_some_and(|t| t.active() && t.kind == TRACK_TILE)
+}
+
+/// `Entity.Center` (`Entity.cs:50-54`): the player's box centre —
+/// `position + (width/2f, height/2f)` with the FLOAT halves.
+fn player_center(l: &Lookup) -> (f32, f32) {
+    (
+        l.player_position.0 + (l.player_width as f32) / 2.0,
+        l.player_position.1 + (l.player_height as f32) / 2.0,
+    )
+}
+
+/// `Vector2.SafeNormalize` (`Utils.cs:1837-1844`): the unit vector, or the
+/// default for a zero/NaN input.
+fn safe_normalize(v: (f32, f32), default: (f32, f32)) -> (f32, f32) {
+    let len = v.0.hypot(v.1);
+    if len == 0.0 || !v.0.is_finite() || !v.1.is_finite() {
+        return default;
+    }
+    (v.0 / len, v.1 / len)
+}
+
+/// The C#'s "replaceable cell" predicate the track arms read
+/// (`!active() || tileCut || BreakableWhenPlacing`).
+fn replaceable_cell(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y).is_some_and(|t| {
+        !t.active()
+            || crate::tileobject::tile_cut(t.kind)
+            || crate::tileobject::breakable_when_placing(t.kind)
+    })
+}
+
+/// The C#'s track pick filter (`:1250-1262`, :1301-1313`): the candidate
+/// stands freestanding — no track directly above or below it.
+fn freestanding_track(w: &crate::World, x: i32, y: i32) -> bool {
+    !is_track(w, x, y - 1) && !is_track(w, x, y + 1)
+}
+
+/// The shared track vote (`:1244-1266` and `:1299-1321`): the closest
+/// freestanding candidate to the mouse, with the `num != -1f` commit guard.
+fn pick_track(cands: &[(i32, i32)], w: &crate::World, l: &Lookup) -> Option<(i32, i32)> {
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for &(x, y) in cands {
+        if freestanding_track(w, x, y) {
+            let d = dist_to_mouse(x, y, l.mouse);
+            if best_dist == -1.0 || d < best_dist {
+                best_dist = d;
+                best = Some((x, y));
+            }
+        }
+    }
+    best
+}
+
+/// `SmartCursorHelper.Step_MinecartTracks` (`:1166-1322`): the held
+/// minecart-track item (2340/2739) re-points in the mouse's direction from
+/// the player's centre, extending the existing track; the pressure track
+/// (2492) extends the line sideways only.
+pub fn step_minecart_tracks(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1168` — the minecart-track block's gate: the item kinds + an empty
+    // focus (the C#'s `if`, not an early return — the pressure-track block
+    // below still runs).
+    if (l.item.kind == 2340 || l.item.kind == 2739) && fx == -1 && fy == -1 {
+        // `:1170-1197` — the mouse's bearing from the player's centre, the
+        // eight direction flags and the diagonal dominance clearing the
+        // axis flags (the C#'s `&` on bools is the non-short-circuit AND
+        // over pure operands).
+        let center = player_center(l);
+        let dir = safe_normalize((l.mouse.0 - center.0, l.mouse.1 - center.1), (0.0, 1.0));
+        let num = -dir.1; // `Vector2.Dot(value, -Vector2.UnitY)`
+        let (up, down) = (num >= 0.5, num <= -0.5);
+        let num2 = dir.0; // `Vector2.Dot(value, Vector2.UnitX)`
+        let (right, left) = (num2 >= 0.5, num2 <= -0.5);
+        let (up_left, up_right, down_left, down_right) =
+            (up && left, up && right, down && left, down && right);
+        let (mut left, mut right) = (left, right);
+        if up_left {
+            left = false;
+        }
+        if up_right {
+            right = false;
+        }
+        if down_left {
+            left = false;
+        }
+        if down_right {
+            right = false;
+        }
+        // `:1199-1203` — the screen target already a track → the scan
+        // stands down.
+        let mut held = false;
+        if is_track(w, l.screen_target.0, l.screen_target.1) {
+            held = true;
+        }
+        let mut cands: Vec<(i32, i32)> = Vec::new();
+        if !held {
+            for i in l.start_x..=l.end_x {
+                for j in l.start_y..=l.end_y {
+                    if !is_track(w, i, j) {
+                        continue;
+                    }
+                    // `:1210-1213` — the four diagonal track presences.
+                    let down_right_present = is_track(w, i + 1, j + 1);
+                    let up_right_present = is_track(w, i + 1, j - 1);
+                    let down_left_present = is_track(w, i - 1, j + 1);
+                    let up_left_present = is_track(w, i - 1, j - 1);
+                    // `:1215-1239` — the six directional adds. The diagonal
+                    // arms carry the De Morgan guards (`!(!a & b) && !c`);
+                    // an out-of-world neighbour reads as the C#'s default
+                    // (inactive, not a track) — the port's edge convention.
+                    if up_left
+                        && replaceable_cell(w, i - 1, j - 1)
+                        && !(!down_right_present && up_right_present)
+                        && !down_left_present
+                    {
+                        cands.push((i - 1, j - 1));
+                    }
+                    if left && replaceable_cell(w, i - 1, j) {
+                        cands.push((i - 1, j));
+                    }
+                    if down_left
+                        && replaceable_cell(w, i - 1, j + 1)
+                        && !(!up_right_present && down_right_present)
+                        && !up_left_present
+                    {
+                        cands.push((i - 1, j + 1));
+                    }
+                    if up_right
+                        && replaceable_cell(w, i + 1, j - 1)
+                        && !(!down_left_present && up_left_present)
+                        && !down_right_present
+                    {
+                        cands.push((i + 1, j - 1));
+                    }
+                    if right && replaceable_cell(w, i + 1, j) {
+                        cands.push((i + 1, j));
+                    }
+                    if down_right
+                        && replaceable_cell(w, i + 1, j + 1)
+                        && !(!up_left_present && down_left_present)
+                        && !up_right_present
+                    {
+                        cands.push((i + 1, j + 1));
+                    }
+                }
+            }
+        }
+        // `:1244-1266` — the freestanding vote + the double commit guard.
+        if let Some(p) = pick_track(&cands, w, l) {
+            if in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y) {
+                return Some(p);
+            }
+        }
+    }
+    // `:1268` — the pressure track's gate.
+    if l.item.kind != 2492 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:1274-1279` — the screen-target pre-check.
+    let mut held = false;
+    if is_track(w, l.screen_target.0, l.screen_target.1) {
+        held = true;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !held {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if !is_track(w, i, j) {
+                    continue;
+                }
+                // `:1285-1294` — the line extends left/right only.
+                if replaceable_cell(w, i - 1, j) {
+                    cands.push((i - 1, j));
+                }
+                if replaceable_cell(w, i + 1, j) {
+                    cands.push((i + 1, j));
+                }
+            }
+        }
+    }
+    // `:1296-1321` — the same freestanding vote + commit guards.
+    let p = pick_track(&cands, w, l)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// ------------------------------------------------------- force-cursor step --
+
+/// `SmartCursorHelper.Step_ForceCursorToAnyMinableThing` (`:2229-2268`):
+/// when the tile under the mouse is minable with the held item, the cursor
+/// is forced onto it — the step writes the mouse's own tile, not a scan.
+pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2236-2239` — the local aliases + the C#'s two decompiler artifacts
+    // (`_ = screenTargetX/Y`, no side effects) are dropped.
+    // `:2241` — the focus sentinel + the gamepad arm (input is app-side,
+    // caller-passed).
+    if fx != -1 || fy != -1 || l.using_gamepad {
+        return None;
+    }
+    // `:2243-2245` — the mouse's tile (`Utils.ToTileCoordinates`' `>> 4`
+    // shift — the arithmetic shift floors, matching the C#'s int shift).
+    let (x, y) = ((l.mouse.0 as i32) >> 4, (l.mouse.1 as i32) >> 4);
+    if !in_tile_bounds(x, y, l.start_x, l.start_y, l.end_x, l.end_y) {
+        return None;
+    }
+    let Some(t) = w.tile(x, y) else {
+        return None;
+    };
+    // `:2249` — the minable non-full-solid half: a tile the world lets the
+    // player kill and that is not a solid (or is a solidTop). The chest
+    // arm's store is app-side (`edit::can_kill_tile`'s closure) — the
+    // sources without one pass `false`, as the actuation slice does.
+    let mut flag = t.active()
+        && crate::edit::can_kill_tile(w, x, y, |_, _| false)
+        && (!crate::tiledata::TILE_SOLID.has(t.kind)
+            || crate::tiledata::TILE_SOLID_TOP.has(t.kind));
+    // `:2250-2261` — the three tool demotions: an axe tile needs the axe,
+    // a hammer tile the hammer, everything else the pickaxe.
+    if flag && crate::tileobject::tile_axe(t.kind) && l.item.axe < 1 {
+        flag = false;
+    }
+    if flag && crate::tileobject::tile_hammer(t.kind) && l.item.hammer < 1 {
+        flag = false;
+    }
+    if flag
+        && !crate::tileobject::tile_hammer(t.kind)
+        && !crate::tileobject::tile_axe(t.kind)
+        && l.item.pick < 1
+    {
+        flag = false;
+    }
+    if flag {
+        return Some((x, y));
+    }
+    None
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// ColoredWrenches :129 → MulticolorWrench :130 → ActuationRod :132 →
-/// WireCutter :133 → Platforms :134 → Walls :136 → PumpkinSeeds :137 →
-/// GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
+/// ForceCursorToAnyMinableThing :122 → ColoredWrenches :129 →
+/// MulticolorWrench :130 → ActuationRod :132 → WireCutter :133 →
+/// Platforms :134 → MinecartTracks :135 → Walls :136 → PumpkinSeeds :137
+/// → GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
 /// LawnMower :143 → BlocksLines :145 → PaintRoller :146 → PaintBrush :147
 /// → PaintScrapper :148 → Acorns :149 → GemCorns :150 → EmptyBuckets :151
 /// → Actuators :152 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
@@ -1871,11 +2133,13 @@ pub fn smart_cursor_lookup(
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 23] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 25] = [
+        step_force_cursor,
         step_colored_wrenches,
         step_multicolor_wrench,
         step_actuation_rod,
         step_wire_cutter,
+        step_minecart_tracks,
         step_walls,
         step_pumpkin_seeds,
         step_grass_seeds,
@@ -1993,6 +2257,7 @@ mod tests {
             tool_mode: 0,
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
+            using_gamepad: false,
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -2005,6 +2270,22 @@ mod tests {
             create_tile: -1,
             create_wall: -1,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
+        }
+    }
+
+    /// A tool item with the given pickaxe power.
+    fn pickaxe(kind: u16, pick: i32) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile: -1,
+            create_wall: -1,
+            place_style: 0,
+            pick,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2014,6 +2295,9 @@ mod tests {
             create_tile,
             create_wall: -1,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2024,6 +2308,9 @@ mod tests {
             create_tile: -1,
             create_wall,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2286,6 +2573,9 @@ mod tests {
                 kind: 0,
                 create_tile: 82,
                 create_wall: -1,
+                pick: 0,
+                axe: 0,
+                hammer: 0,
                 place_style: 0,
             },
             mouse_at(25, 19),
@@ -2300,6 +2590,9 @@ mod tests {
                 kind: 0,
                 create_tile: 82,
                 create_wall: -1,
+                pick: 0,
+                axe: 0,
+                hammer: 0,
                 place_style: 1,
             },
             mouse_at(25, 19),
@@ -3364,6 +3657,203 @@ mod tests {
             smart_cursor_lookup(&wired, &actuator, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the actuator step runs inside the lookup chain"
+        );
+    }
+
+    /// A track tile at the cell (the literal 314).
+    fn track_at(w: &mut crate::World, x: i32, y: i32) {
+        put(w, x, y, TRACK_TILE);
+    }
+
+    #[test]
+    fn test_smart_1_the_minecart_track_extends_in_the_mouse_direction() {
+        // `Step_MinecartTracks` :1170-1239 — the flat-right bearing extends
+        // the existing track to the right.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2340), (590.0, 357.0)); // right of the player's centre
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((31, 15)),
+            "the track extends to the right"
+        );
+        // The diagonal bearing (up-right): the diagonal arm extends the
+        // track up-right, and the axis arm is cleared by the dominance.
+        let diag = lookup(item(2340), (550.0, 297.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &diag, -1, -1),
+            Some((31, 14)),
+            "the track extends up-right"
+        );
+        // The gate: a non-track item skips the step.
+        let other = lookup(item(1), (0.0, 0.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &other, -1, -1),
+            None,
+            "the step's gate is the track items"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_track_candidate_must_stand_freestanding() {
+        // `Step_MinecartTracks` :1250-1256 — the candidate under a track is
+        // filtered, but the line continues from the last track's own end:
+        // the track at (31,16) still extends rightward, so the vote falls
+        // on its free neighbour (32,16) — the C#'s scan anchors on every
+        // track cell in the rect, not just the first.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        track_at(&mut world, 31, 16); // the track below the right candidate
+        let l = lookup(item(2340), (590.0, 357.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((32, 16)),
+            "the filtered candidate drops, the line's tail extends"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_pressure_track_extends_the_line_sideways() {
+        // `Step_MinecartTracks` :1285-1294 — the pressure track (2492)
+        // extends the line left/right only, ignoring the mouse's bearing.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2492), (590.0, 357.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((31, 15)),
+            "the pressure track extends to the right"
+        );
+        // The screen target already a track → the scan stands down
+        // (:1274-1279).
+        let mut held = bare();
+        track_at(&mut held, 30, 15);
+        track_at(&mut held, 30, 19); // the fixture's screen target
+        assert_eq!(
+            step_minecart_tracks(&held, &l, -1, -1),
+            None,
+            "the hovered track disables the pressure scan"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_track_step_runs_in_the_chain() {
+        // The dispatch order (:135): the track step runs between the
+        // platform and the wall steps — the chain dispatches it.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2340), (590.0, 357.0));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((31, 15)),
+            "the track step runs inside the lookup chain"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_locks_the_minable_tile() {
+        // `Step_ForceCursorToAnyMinableThing` :2243-2268 — the step writes
+        // the mouse's own tile when it is minable with the held tool.
+        let mut world = bare();
+        put(&mut world, 25, 19, 4); // a torch: minable, non-solid
+        let pick = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&world, &pick, -1, -1),
+            Some((25, 19)),
+            "the cursor locks onto the minable torch"
+        );
+        // A full solid tile is not forced (the `!tileSolid || tileSolidTop`
+        // half).
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_force_cursor(&stone, &pick, -1, -1),
+            None,
+            "the solid tile is not a force target"
+        );
+        // A taken focus keeps the earlier step's target.
+        assert_eq!(
+            step_force_cursor(&world, &pick, 12, 12),
+            None,
+            "the focus sentinel gate holds"
+        );
+        // The gamepad arm (input state, caller-passed).
+        let pad = Lookup {
+            using_gamepad: true,
+            ..lookup(pickaxe(1, 1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_force_cursor(&world, &pad, -1, -1),
+            None,
+            "the gamepad skips the force cursor"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_demotes_the_tool_families() {
+        // `Step_ForceCursorToAnyMinableThing` :2250-2261 — the axe tiles
+        // need the axe, the hammer tiles the hammer, the rest the pickaxe.
+        let tree = {
+            let mut w = bare();
+            put(&mut w, 25, 19, 5); // a tree trunk: tileAxe
+            w
+        };
+        let no_axe = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&tree, &no_axe, -1, -1),
+            None,
+            "the tree trunk needs an axe"
+        );
+        let with_axe = lookup(ItemPort { axe: 1, ..item(1) }, mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&tree, &with_axe, -1, -1),
+            Some((25, 19)),
+            "the axe-equipped item forces the cursor onto the trunk"
+        );
+        let altar = {
+            let mut w = bare();
+            put(&mut w, 25, 19, 26); // the demon altar: tileHammer
+            w
+        };
+        let no_hammer = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&altar, &no_hammer, -1, -1),
+            None,
+            "the altar needs a hammer"
+        );
+        let with_hammer = lookup(
+            ItemPort {
+                hammer: 1,
+                ..item(1)
+            },
+            mouse_at(25, 19),
+        );
+        assert_eq!(
+            step_force_cursor(&altar, &with_hammer, -1, -1),
+            Some((25, 19)),
+            "the hammer-equipped item forces the cursor onto the altar"
+        );
+        // And the demoted families do not accept the wrong tool: an axe
+        // does not break the altar, a pickaxe does not break the trunk.
+        let axe_only = lookup(ItemPort { axe: 1, ..item(1) }, mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&altar, &axe_only, -1, -1),
+            None,
+            "the axe does not break the hammer tile"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_runs_first_in_the_chain() {
+        // The dispatch order (:122): the force-cursor step runs at the head
+        // of the chain — the chain dispatches it.
+        let mut world = bare();
+        put(&mut world, 25, 19, 4);
+        let pick = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &pick, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the force-cursor step runs inside the lookup chain"
         );
     }
 }

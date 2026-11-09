@@ -328,6 +328,8 @@ pub(crate) fn update_worms_in(
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
                 // the difficulty work); the Destroyer's ~80 segments
                 // (`AI_037`'s ai[2] roll).
+                // The crawltipede's 30 segments (`:51375`'s `num34 = 30`).
+                NpcKind::SolarCrawltipedeHead => 29,
                 NpcKind::TheDestroyer => 80,
                 _ => 65,
             }
@@ -5821,6 +5823,122 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+#[cfg(test)]
+mod worm_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_pillar_worms_round_trip_their_rows() {
+        // The crawltipede chain + the stardust worm head (`NPC.cs`'s cases
+        // 412/413/414/402/518): the port ids 141-145 and the vanilla rows.
+        for (kind, id, w, h, hp, dmg, def) in [
+            (NpcKind::SolarCrawltipedeHead, 141u16, 20.0, 20.0, 10000, 120, 1000),
+            (NpcKind::SolarCrawltipedeBody, 142, 20.0, 20.0, 10000, 80, 1000),
+            (NpcKind::SolarCrawltipedeTail, 143, 20.0, 20.0, 10000, 50, 0),
+            (NpcKind::StardustWormHead, 144, 32.0, 32.0, 1200, 80, 10),
+            (NpcKind::SolarSpearman, 145, 22.0, 56.0, 1000, 80, 28),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+            // The chain + the worm head are kb 0; the spearman keeps its
+            // own 0.4 row.
+            let kb = if kind == NpcKind::SolarSpearman { 0.4 } else { 0.0 };
+            assert_eq!(n.knock_back_resist(), kb);
+        }
+    }
+
+    #[test]
+    fn the_crawltipede_assembles_its_thirty_segments() {
+        // `:51369-51392`'s chain assembly: the head spawns the 30-segment
+        // chain through the port's worm pass (`num34 = 30`).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut npcs = vec![Npc::new(
+            NpcKind::SolarCrawltipedeHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        )];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some(player.center()),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        let bodies = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeBody)
+            .count();
+        let tails = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SolarCrawltipedeTail)
+            .count();
+        assert_eq!(bodies, 29, "the 29 bodies");
+        assert_eq!(tails, 1, "the single tail closing the chain");
+    }
+
+    #[test]
+    fn the_stardust_worm_fires_the_mark_on_the_570th_tick() {
+        // `AI_006`'s 402 arm (`NPC.cs:51030-51073`): the 600-tick cycle
+        // decelerates over [285, 570] and fires the mark request at 570,
+        // re-normalising the velocity to 6.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustWormHead, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[2] = 569.0;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.wants_stardust_mark, "the mark fires at the 570th tick");
+        let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the velocity re-normalises to 6: {}", speed);
+        // The cycle resets at 600.
+        n.ai[2] = 599.0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "the counter resets");
     }
 }
 

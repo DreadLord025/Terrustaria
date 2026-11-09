@@ -1456,8 +1456,12 @@ mod tests {
         // Tile 88 dressers read frameX / 54 (`:137-139`).
         assert_eq!(default_chest_name(88, 0), "Dresser");
         assert_eq!(default_chest_name(88, 54), "Ebonwood Dresser");
-        // A style with no placing item and no twin rule renders nothing.
-        assert_eq!(default_chest_name(467, 0), "");
+        // A style with no placing item and no twin rule renders nothing —
+        // style 13 of tile 467 (frame 13×36) has no chest item. (The regen in
+        // M4-PROJ-4 restored styles 0-12/14's placing items from the C#
+        // `createTile`/`placeStyle` rows, so style 0 now names the Crystal
+        // Chest.)
+        assert_eq!(default_chest_name(467, 468), "");
     }
 
     // --- Phase 2: the open/close + locking interaction -----------------------
