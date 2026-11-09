@@ -17,12 +17,20 @@
 //! `Step_ClayPots` (:381-435), `Step_StaffOfRegrowth` (:224-264),
 //! `Step_GemCorns` (:2159-2227, over growth' `GrowTreeSettings` profiles),
 //! `Step_EmptyBuckets` (:622-676), `Step_BlocksLines` (:814-888, over the
-//! caller-passed `Lookup::smart_blocks_enabled`) and `Step_Walls`
+//! caller-passed `Lookup::smart_blocks_enabled`), `Step_Walls`
 //! (:1100-1164, over the caller-passed player hitbox and the
-//! `Collision.CanHitWithCheck` line walk) — the seed/herb/planting family
-//! plus the paint family, gated on item id / `createTile` / `createWall`
-//! and shared with the closest-to-mouse vote. The paint steps read the
-//! caller-passed `Lookup::paint_lookup`/`paint_coating_lookup`
+//! `Collision.CanHitWithCheck` line walk), `Step_Platforms`
+//! (:1324-1389, over the [`ContinuityState`] locks and
+//! [`tile_target_desired`]'s placement gate) and the wire family
+//! (`Step_WireCutter` :1455-1493, `Step_Actuators` :582-620,
+//! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030,
+//! `Step_MulticolorWrench` :1725-1877 (the last two over the caller-passed
+//! `Lookup::tool_mode`/`actuation_rod_lock`) and `Step_MinecartTracks`
+//! (:1166-1322, over the caller-passed player centre) — the
+//! seed/herb/planting family plus the paint family, gated on item id /
+//! `createTile` / `createWall` and shared with the closest-to-mouse vote.
+//! The paint steps read the caller-passed
+//! `Lookup::paint_lookup`/`paint_coating_lookup`
 //! (the C#'s inventory scan is app-side, `:38-39`).
 //!
 //! Out of scope (documented in the ROADMAP row): the pickaxe/axe/hammer/
@@ -74,6 +82,23 @@ pub const PAINT_SCRAPER_ITEMS: [u16; 2] = [1100, 1545];
 /// `ItemID.Count` (`ItemID.cs:14861`): the item-id count the placement
 /// gates' range checks read.
 pub const ITEM_COUNT: u16 = 6196;
+
+/// `WiresUI.Settings.MultiToolMode` (`WiresUI.cs:13-21`): the multi-wrench's
+/// channel flags, carried as the raw bitfield the C# enum stores.
+pub mod multi_tool_mode {
+    /// `MultiToolMode.Red` — the first wire channel.
+    pub const RED: u8 = 1;
+    /// `MultiToolMode.Green` — the third wire channel.
+    pub const GREEN: u8 = 2;
+    /// `MultiToolMode.Blue` — the second wire channel.
+    pub const BLUE: u8 = 4;
+    /// `MultiToolMode.Yellow` — the fourth wire channel.
+    pub const YELLOW: u8 = 8;
+    /// `MultiToolMode.Actuator`.
+    pub const ACTUATOR: u8 = 0x10;
+    /// `MultiToolMode.Cutter`.
+    pub const CUTTER: u8 = 0x20;
+}
 
 /// The held-item fields the smart-cursor steps read (the C# reads them off
 /// `SmartCursorUsageInfo.item`).
@@ -138,6 +163,20 @@ pub struct Lookup {
     /// value the app persists (`settings_ui`/`menu` own the toggle), so the
     /// port's caller passes it.
     pub smart_blocks_enabled: bool,
+    /// `player.controlUseItem` (`SmartCursorHelper.cs:66`): the use button's
+    /// held state — the continuity-lock reset reads it. Input is app-side,
+    /// so the caller passes it.
+    pub use_item_held: bool,
+    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`): the multi-wrench's
+    /// channel flags (`MultiToolMode`, :13-21). The app's wiring UI owns
+    /// the setting, so the caller passes it.
+    pub tool_mode: u8,
+    /// `player.ActuationRodLock` (`Player.cs:2616`) — the actuation rod's
+    /// channel lock (app-side player state, caller-passed).
+    pub actuation_rod_lock: bool,
+    /// `player.ActuationRodLockSetting` (`Player.cs:2618`) — the lock's
+    /// target actuation state.
+    pub actuation_rod_lock_setting: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -1340,14 +1379,659 @@ pub fn step_walls(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// -------------------------------------------------- platform / continuity --
+
+/// The C#'s two `SmartCursorHelper` statics (`SmartCursorHelper.cs:53-57`)
+/// — the platform-continuity locks. The C#'s static fields become the
+/// port's per-session state the caller holds across lookups (a world's
+/// smart cursor is single-threaded, one player at a time).
+#[derive(Clone, Copy, Default)]
+pub struct ContinuityState {
+    /// `_lockedDesiredDirection` (`:55`) — the direction the platform line
+    /// keeps extending.
+    pub locked_desired_direction: Option<(i32, i32)>,
+    /// `_lockedContinuityCoords` (`:57`) — the focus cell the line started
+    /// from.
+    pub locked_continuity_coords: Option<(i32, i32)>,
+}
+
+/// `SmartCursorHelper.UsingSmartCursorWithContinuity` (`:167-175`): the
+/// continuity locks are armed only while the held item places a platform
+/// (`TileID.Sets.Platforms`, `TileID.cs:534`).
+fn using_smart_cursor_with_continuity(create_tile: i32) -> bool {
+    create_tile >= 0 && crate::tiledata::SET_PLATFORMS.has(create_tile as u16)
+}
+
+/// `SmartCursorHelper.IsPlatform` (`:1446-1453`): the cell carries a
+/// platform tile.
+fn is_platform(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y)
+        .is_some_and(|t| t.active() && crate::tiledata::SET_PLATFORMS.has(t.kind))
+}
+
+/// `SmartCursorHelper.AllowedForContinuity` (`:1404-1429`): the candidate
+/// continues the locked line — the lock's own cell or a
+/// `skips_allowed` walk along the locked direction.
+fn allowed_for_continuity(x: i32, y: i32, state: &ContinuityState, skips_allowed: i32) -> bool {
+    let Some(coords) = state.locked_continuity_coords else {
+        return true;
+    };
+    if coords == (x, y) {
+        return true;
+    }
+    let Some(dir) = state.locked_desired_direction else {
+        return false;
+    };
+    let mut walk = coords;
+    for _ in 0..skips_allowed {
+        walk.0 += dir.0;
+        walk.1 += dir.1;
+        if (x, y) == walk {
+            return true;
+        }
+    }
+    false
+}
+
+/// `SmartCursorHelper.GetDesiredDirectionFrom` (`:1431-1444`): the mouse's
+/// bearing from the cell, quantised to one of eight directions ×1.5 — the
+/// C#'s `ToRotation` atan2, the π/4 bucket with its half-bucket offset, the
+/// `ToRotationVector2` unit vector scaled by 1.5 and `ToPoint`'s truncation
+/// (`Utils.cs:1655-1658`, `:1817-1820`).
+fn get_desired_direction_from(offset: (f32, f32), state: &ContinuityState) -> (i32, i32) {
+    if let Some(dir) = state.locked_desired_direction {
+        return dir;
+    }
+    let mut num = offset.1.atan2(offset.0);
+    if num < 0.0 {
+        num += std::f32::consts::PI * 2.0;
+    }
+    let num2 = std::f32::consts::PI / 4.0;
+    // `:1443` — the bucket index (the `(int)` truncation), its angle, the
+    // unit vector, the ×1.5 scale and the second truncation.
+    let bucket = ((num + num2 / 2.0) % (std::f32::consts::PI * 2.0) / num2) as i32;
+    let angle = bucket as f32 * num2;
+    ((angle.cos() * 1.5) as i32, (angle.sin() * 1.5) as i32)
+}
+
+/// `SmartCursorHelper.TileTargetDesired` (`:1391-1402`): the placement gate
+/// the C# reads in `Player.PlaceThing_Tiles` (`Player.cs:39721`) — while a
+/// continuity lock stands, the player's tile target must sit on the smart
+/// cursor's own (re-pointed) cell.
+pub fn tile_target_desired(
+    state: &ContinuityState,
+    smart_cursor_showing: bool,
+    target: (i32, i32),
+    smart_cursor: (i32, i32),
+) -> bool {
+    if state.locked_continuity_coords.is_some() {
+        if smart_cursor_showing && target.0 == smart_cursor.0 {
+            return target.1 == smart_cursor.1;
+        }
+        return false;
+    }
+    true
+}
+
+/// `SmartCursorHelper.Step_Platforms` (`:1324-1389`): the held platform
+/// item re-points at the closest cell that extends the platform line —
+/// the two-key vote (distance, then the dot product along the locked
+/// direction) and, on a hit, both continuity locks are written.
+pub fn step_platforms(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+    state: &mut ContinuityState,
+) -> Option<(i32, i32)> {
+    // `:1326` — the createTile gate (a platform-placing item) + the focus
+    // sentinel + the screen-target platform pre-check.
+    if l.item.create_tile < 0
+        || !crate::tiledata::SET_PLATFORMS.has(l.item.create_tile as u16)
+        || fx != -1
+        || fy != -1
+        || is_platform(w, l.screen_target.0, l.screen_target.1)
+    {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    let mut dirs: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1338` — the desired direction from the mouse's bearing to
+            // this cell; `flag` = the cell is not itself a platform.
+            let desired = get_desired_direction_from(
+                (
+                    l.mouse.0 - (i as f32 * 16.0 + 8.0),
+                    l.mouse.1 - (j as f32 * 16.0 + 8.0),
+                ),
+                state,
+            );
+            let mut flag = !is_platform(w, i, j);
+            // `:1338-1341` — the horizontal-join exception: an active,
+            // non-solid cell beside a platform row is NOT skipped when the
+            // direction is horizontal (the row extends).
+            if flag
+                && desired.1 == 0
+                && t.active()
+                && !crate::edit::solid_tile(w, i, j)
+                && (is_platform(w, i - 1, j) || is_platform(w, i + 1, j))
+            {
+                flag = false;
+            }
+            // `:1343` — the C# skips the cell while the flag stands.
+            if flag {
+                continue;
+            }
+            // `:1346-1347` — the slope arm (2 for a diagonal, 1 for the
+            // anti-diagonal, 0 for flat): when the cell has no matching
+            // slope, the placement needs the side-neighbour clearance.
+            let num = if desired.0 == desired.1 {
+                2
+            } else if desired.0 == -desired.1 {
+                1
+            } else {
+                0
+            };
+            if (num == 0 || t.slope() as i32 != num)
+                && (desired.0 != 0
+                    || (!is_platform(w, i - 1, j + desired.1)
+                        && !is_platform(w, i + 1, j + desired.1)))
+            {
+                // `:1350-1356` — the target cell may be replaced and the
+                // walk continues the locked line.
+                let (nx, ny) = (i + desired.0, j + desired.1);
+                let Some(tile) = w.tile(nx, ny) else {
+                    continue;
+                };
+                if (!tile.active() || crate::tileobject::tile_cut(tile.kind))
+                    && allowed_for_continuity(nx, ny, state, 2)
+                {
+                    cands.push((nx, ny));
+                    dirs.push(desired);
+                }
+            }
+        }
+    }
+    // `:1364-1378` — the two-key vote: the closest centre to the mouse,
+    // then the larger dot product along the stored direction (the C#'s
+    // `num3` sentinel is `-1f`, so the first candidate always takes it).
+    let mut best: Option<((i32, i32), (i32, i32))> = None;
+    let mut best_dist = -1.0f32;
+    let mut best_dot = -1.0f32;
+    for (k, &(x, y)) in cands.iter().enumerate() {
+        let dx = l.mouse.0 - (x as f32 * 16.0 + 8.0);
+        let dy = l.mouse.1 - (y as f32 * 16.0 + 8.0);
+        let dist = dx.hypot(dy);
+        let dot = dx * dirs[k].0 as f32 + dy * dirs[k].1 as f32;
+        if best_dist == -1.0 || dist < best_dist || (dist == best_dist && dot > best_dot) {
+            best_dist = dist;
+            best_dot = dot;
+            best = Some(((x, y), dirs[k]));
+        }
+    }
+    let ((px, py), dir) = best?;
+    if !in_tile_bounds(px, py, l.start_x, l.start_y, l.end_x, l.end_y) {
+        return None;
+    }
+    // `:1383-1384` — the only writer of the locks outside the reset.
+    state.locked_desired_direction = Some(dir);
+    state.locked_continuity_coords = Some((px, py));
+    Some((px, py))
+}
+
+// ------------------------------------------------------------- wire family --
+
+/// The C#'s `Tile.wire()`/`wire2()`/`wire3()`/`wire4()` (`Tile.cs:623/640/657/
+/// 437`) — the port's sparse `WireState` per channel (`wiring.rs`).
+fn wire_at(w: &crate::World, x: i32, y: i32, color: crate::wiring::WireColor) -> bool {
+    w.wires.get(x, y, color)
+}
+
+/// The four channels (`Step_WireCutter` :1467 / `Step_Actuators` :594): any
+/// wire at the cell.
+fn has_any_wire(w: &crate::World, x: i32, y: i32) -> bool {
+    use crate::wiring::WireColor;
+    wire_at(w, x, y, WireColor::Red)
+        || wire_at(w, x, y, WireColor::Blue)
+        || wire_at(w, x, y, WireColor::Green)
+        || wire_at(w, x, y, WireColor::Yellow)
+}
+
+/// The C#'s wrench-channel number → the wire colour (the C#'s `num` 1..4
+/// maps `Step_ColoredWrenches` :1931-2006 onto wire/wire2/wire3/wire4).
+fn wrench_channel(num: i32) -> crate::wiring::WireColor {
+    use crate::wiring::WireColor;
+    match num {
+        1 => WireColor::Red,
+        2 => WireColor::Blue,
+        3 => WireColor::Green,
+        _ => WireColor::Yellow,
+    }
+}
+
+/// `SmartCursorHelper.Step_WireCutter` (`:1455-1493`): the held wire cutter
+/// (510) re-points at the closest wired or actuated cell.
+pub fn step_wire_cutter(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1457` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 510 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1467` — any wire colour or the actuator.
+            if has_any_wire(w, i, j) || t.actuator() {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_Actuators` (`:582-620`): the held actuator (849)
+/// re-points at the closest active wired cell that has no actuator yet.
+pub fn step_actuators(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:584` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 849 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:594` — wired, not actuated, active.
+            if has_any_wire(w, i, j) && !t.actuator() && t.active() {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_ActuationRod` (`:1495-1535`): the held actuation
+/// rod (3620) re-points at the closest actuated cell — the rod's channel
+/// lock (`Player.cs:2616/:2618`, caller-passed) restricts the actuation
+/// states it toggles.
+pub fn step_actuation_rod(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1497-1498` — the lock reads happen before the gate in the C# (no
+    // side effects; the port keeps the order).
+    let (rod_lock, rod_lock_setting) = (l.actuation_rod_lock, l.actuation_rod_lock_setting);
+    // `:1500` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 3620 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:1509` — actuated, and the lock accepts its state.
+            if t.active() && t.actuator() && (!rod_lock || rod_lock_setting == t.inactive()) {
+                cands.push((i, j));
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_ColoredWrenches` (`:1879-2030`): the held
+/// colour wrench (509/850/851/3612) re-points beside a cell that already
+/// carries the matching wire — the line extends from its ends.
+pub fn step_colored_wrenches(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1881` — the four item kinds + the focus sentinel.
+    if !(l.item.kind == 509 || l.item.kind == 850 || l.item.kind == 851 || l.item.kind == 3612)
+        || fx != -1
+        || fy != -1
+    {
+        return None;
+    }
+    // `:1886-1902` — the item → channel map.
+    let num = match l.item.kind {
+        509 => 1,
+        850 => 2,
+        851 => 3,
+        _ => 4,
+    };
+    let color = wrench_channel(num);
+    // `:1904-1918` — the screen target already carries the wrench's own
+    // channel → the scan stands down (the C#'s four arms each test the
+    // channel that matches `num`).
+    let held = wire_at(w, l.screen_target.0, l.screen_target.1, color);
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !held {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if w.tile(i, j).is_none() {
+                    continue;
+                }
+                // `:1924` — the cell carries the wrench's channel (the C#'s
+                // four `||` arms over `!channel || num != n`).
+                if !wire_at(w, i, j, color) {
+                    continue;
+                }
+                // `:1931-2006` — the four neighbours lacking the channel
+                // become the candidates (an out-of-world neighbour is
+                // skipped, as the C#'s border reads never happen).
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    if !wire_at(w, i + dx, j + dy, color) {
+                        cands.push((i + dx, j + dy));
+                    }
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+/// `SmartCursorHelper.Step_MulticolorWrench` (`:1725-1877`): the held
+/// multi-wrench (3625) re-points by the selected channels
+/// (`WiresUI.Settings.ToolMode`, `WiresUI.cs:23`) — the cutter arm targets
+/// the wired cells themselves, the placement arm their free neighbours.
+pub fn step_multicolor_wrench(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+) -> Option<(i32, i32)> {
+    // `:1727` — the item-kind gate + the focus sentinel.
+    if l.item.kind != 3625 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:1732-1746` — the hovered cell's channels.
+    let mut hovered: u8 = 0;
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(1)) {
+        hovered |= multi_tool_mode::RED;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(2)) {
+        hovered |= multi_tool_mode::BLUE;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(3)) {
+        hovered |= multi_tool_mode::GREEN;
+    }
+    if wire_at(w, l.screen_target.0, l.screen_target.1, wrench_channel(4)) {
+        hovered |= multi_tool_mode::YELLOW;
+    }
+    // `:1748` — the hovered cell already matches the placement channels →
+    // the scan stands down (the C#'s `toolMode & ~Cutter == multiToolMode`).
+    let tool_mode = l.tool_mode;
+    let matches = (tool_mode & !multi_tool_mode::CUTTER) == hovered;
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !matches {
+        // `:1750-1756` — the channel arms + the cutter arm.
+        let (red, blue, green, yellow) = (
+            tool_mode & multi_tool_mode::RED != 0,
+            tool_mode & multi_tool_mode::BLUE != 0,
+            tool_mode & multi_tool_mode::GREEN != 0,
+            tool_mode & multi_tool_mode::YELLOW != 0,
+        );
+        let cutter = tool_mode & multi_tool_mode::CUTTER != 0;
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if w.tile(i, j).is_none() {
+                    continue;
+                }
+                // `:1764-1770` — the cutter arm: the cell itself.
+                if cutter
+                    && ((wire_at(w, i, j, wrench_channel(1)) && red)
+                        || (wire_at(w, i, j, wrench_channel(2)) && blue)
+                        || (wire_at(w, i, j, wrench_channel(3)) && green)
+                        || (wire_at(w, i, j, wrench_channel(4)) && yellow))
+                {
+                    cands.push((i, j));
+                } else {
+                    // `:1773` — a selected channel must be present.
+                    if !((wire_at(w, i, j, wrench_channel(1)) && red)
+                        || (wire_at(w, i, j, wrench_channel(2)) && blue)
+                        || (wire_at(w, i, j, wrench_channel(3)) && green)
+                        || (wire_at(w, i, j, wrench_channel(4)) && yellow))
+                    {
+                        continue;
+                    }
+                    // `:1776-1849` — the free neighbours per selected
+                    // channel (the C#'s non-short-circuit bool `&` reads as
+                    // `&&` over pure operands).
+                    for channel in [1, 2, 3, 4] {
+                        let on = match channel {
+                            1 => red,
+                            2 => blue,
+                            3 => green,
+                            _ => yellow,
+                        };
+                        if on {
+                            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                                if !wire_at(w, i + dx, j + dy, wrench_channel(channel)) {
+                                    cands.push((i + dx, j + dy));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let p = pick_closest(&cands, l.mouse)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
+// ------------------------------------------------------------ track step --
+
+/// `TileID.MinecartTrack` (`TileID.cs` — the C# reads the literal 314 in
+/// `Step_MinecartTracks`).
+const TRACK_TILE: u16 = 314;
+
+/// The cell is a minecart track.
+fn is_track(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y)
+        .is_some_and(|t| t.active() && t.kind == TRACK_TILE)
+}
+
+/// `Entity.Center` (`Entity.cs:50-54`): the player's box centre —
+/// `position + (width/2f, height/2f)` with the FLOAT halves.
+fn player_center(l: &Lookup) -> (f32, f32) {
+    (
+        l.player_position.0 + (l.player_width as f32) / 2.0,
+        l.player_position.1 + (l.player_height as f32) / 2.0,
+    )
+}
+
+/// `Vector2.SafeNormalize` (`Utils.cs:1837-1844`): the unit vector, or the
+/// default for a zero/NaN input.
+fn safe_normalize(v: (f32, f32), default: (f32, f32)) -> (f32, f32) {
+    let len = v.0.hypot(v.1);
+    if len == 0.0 || !v.0.is_finite() || !v.1.is_finite() {
+        return default;
+    }
+    (v.0 / len, v.1 / len)
+}
+
+/// The C#'s "replaceable cell" predicate the track arms read
+/// (`!active() || tileCut || BreakableWhenPlacing`).
+fn replaceable_cell(w: &crate::World, x: i32, y: i32) -> bool {
+    w.tile(x, y).is_some_and(|t| {
+        !t.active()
+            || crate::tileobject::tile_cut(t.kind)
+            || crate::tileobject::breakable_when_placing(t.kind)
+    })
+}
+
+/// The C#'s track pick filter (`:1250-1262`, :1301-1313`): the candidate
+/// stands freestanding — no track directly above or below it.
+fn freestanding_track(w: &crate::World, x: i32, y: i32) -> bool {
+    !is_track(w, x, y - 1) && !is_track(w, x, y + 1)
+}
+
+/// The shared track vote (`:1244-1266` and `:1299-1321`): the closest
+/// freestanding candidate to the mouse, with the `num != -1f` commit guard.
+fn pick_track(cands: &[(i32, i32)], w: &crate::World, l: &Lookup) -> Option<(i32, i32)> {
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for &(x, y) in cands {
+        if freestanding_track(w, x, y) {
+            let d = dist_to_mouse(x, y, l.mouse);
+            if best_dist == -1.0 || d < best_dist {
+                best_dist = d;
+                best = Some((x, y));
+            }
+        }
+    }
+    best
+}
+
+/// `SmartCursorHelper.Step_MinecartTracks` (`:1166-1322`): the held
+/// minecart-track item (2340/2739) re-points in the mouse's direction from
+/// the player's centre, extending the existing track; the pressure track
+/// (2492) extends the line sideways only.
+pub fn step_minecart_tracks(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:1168` — the minecart-track block's gate: the item kinds + an empty
+    // focus (the C#'s `if`, not an early return — the pressure-track block
+    // below still runs).
+    if (l.item.kind == 2340 || l.item.kind == 2739) && fx == -1 && fy == -1 {
+        // `:1170-1197` — the mouse's bearing from the player's centre, the
+        // eight direction flags and the diagonal dominance clearing the
+        // axis flags (the C#'s `&` on bools is the non-short-circuit AND
+        // over pure operands).
+        let center = player_center(l);
+        let dir = safe_normalize((l.mouse.0 - center.0, l.mouse.1 - center.1), (0.0, 1.0));
+        let num = -dir.1; // `Vector2.Dot(value, -Vector2.UnitY)`
+        let (up, down) = (num >= 0.5, num <= -0.5);
+        let num2 = dir.0; // `Vector2.Dot(value, Vector2.UnitX)`
+        let (right, left) = (num2 >= 0.5, num2 <= -0.5);
+        let (up_left, up_right, down_left, down_right) =
+            (up && left, up && right, down && left, down && right);
+        let (mut left, mut right) = (left, right);
+        if up_left {
+            left = false;
+        }
+        if up_right {
+            right = false;
+        }
+        if down_left {
+            left = false;
+        }
+        if down_right {
+            right = false;
+        }
+        // `:1199-1203` — the screen target already a track → the scan
+        // stands down.
+        let mut held = false;
+        if is_track(w, l.screen_target.0, l.screen_target.1) {
+            held = true;
+        }
+        let mut cands: Vec<(i32, i32)> = Vec::new();
+        if !held {
+            for i in l.start_x..=l.end_x {
+                for j in l.start_y..=l.end_y {
+                    if !is_track(w, i, j) {
+                        continue;
+                    }
+                    // `:1210-1213` — the four diagonal track presences.
+                    let down_right_present = is_track(w, i + 1, j + 1);
+                    let up_right_present = is_track(w, i + 1, j - 1);
+                    let down_left_present = is_track(w, i - 1, j + 1);
+                    let up_left_present = is_track(w, i - 1, j - 1);
+                    // `:1215-1239` — the six directional adds. The diagonal
+                    // arms carry the De Morgan guards (`!(!a & b) && !c`);
+                    // an out-of-world neighbour reads as the C#'s default
+                    // (inactive, not a track) — the port's edge convention.
+                    if up_left
+                        && replaceable_cell(w, i - 1, j - 1)
+                        && !(!down_right_present && up_right_present)
+                        && !down_left_present
+                    {
+                        cands.push((i - 1, j - 1));
+                    }
+                    if left && replaceable_cell(w, i - 1, j) {
+                        cands.push((i - 1, j));
+                    }
+                    if down_left
+                        && replaceable_cell(w, i - 1, j + 1)
+                        && !(!up_right_present && down_right_present)
+                        && !up_left_present
+                    {
+                        cands.push((i - 1, j + 1));
+                    }
+                    if up_right
+                        && replaceable_cell(w, i + 1, j - 1)
+                        && !(!down_left_present && up_left_present)
+                        && !down_right_present
+                    {
+                        cands.push((i + 1, j - 1));
+                    }
+                    if right && replaceable_cell(w, i + 1, j) {
+                        cands.push((i + 1, j));
+                    }
+                    if down_right
+                        && replaceable_cell(w, i + 1, j + 1)
+                        && !(!up_left_present && down_left_present)
+                        && !up_right_present
+                    {
+                        cands.push((i + 1, j + 1));
+                    }
+                }
+            }
+        }
+        // `:1244-1266` — the freestanding vote + the double commit guard.
+        if let Some(p) = pick_track(&cands, w, l) {
+            if in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y) {
+                return Some(p);
+            }
+        }
+    }
+    // `:1268` — the pressure track's gate.
+    if l.item.kind != 2492 || fx != -1 || fy != -1 {
+        return None;
+    }
+    // `:1274-1279` — the screen-target pre-check.
+    let mut held = false;
+    if is_track(w, l.screen_target.0, l.screen_target.1) {
+        held = true;
+    }
+    let mut cands: Vec<(i32, i32)> = Vec::new();
+    if !held {
+        for i in l.start_x..=l.end_x {
+            for j in l.start_y..=l.end_y {
+                if !is_track(w, i, j) {
+                    continue;
+                }
+                // `:1285-1294` — the line extends left/right only.
+                if replaceable_cell(w, i - 1, j) {
+                    cands.push((i - 1, j));
+                }
+                if replaceable_cell(w, i + 1, j) {
+                    cands.push((i + 1, j));
+                }
+            }
+        }
+    }
+    // `:1296-1321` — the same freestanding vote + commit guards.
+    let p = pick_track(&cands, w, l)?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// Walls :136 → PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 →
-/// Pigronata :140 → Torch :142 → LawnMower :143 → BlocksLines :145 →
-/// PaintRoller :146 → PaintBrush :147 → PaintScrapper :148 → Acorns :149
-/// → GemCorns :150 → EmptyBuckets :151 → AlchemySeeds :153 → PlanterBox
+/// ColoredWrenches :129 → MulticolorWrench :130 → ActuationRod :132 →
+/// WireCutter :133 → Platforms :134 → MinecartTracks :135 → Walls :136 →
+/// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
+/// Torch :142 → LawnMower :143 → BlocksLines :145 → PaintRoller :146 →
+/// PaintBrush :147 → PaintScrapper :148 → Acorns :149 → GemCorns :150 →
+/// EmptyBuckets :151 → Actuators :152 → AlchemySeeds :153 → PlanterBox
 /// :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's gate refuses a
 /// taken focus, so the first step that finds a spot wins — the C#
 /// straight-line chain.
@@ -1359,8 +2043,38 @@ pub fn step_walls(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32
 ///
 /// Returns the re-pointed tile or `None` (the C# writeback
 /// `Main.SmartCursorX/Y = fX/fY`, :157-162, stands when nothing moved).
-pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 18] = [
+pub fn smart_cursor_lookup(
+    w: &crate::World,
+    l: &Lookup,
+    fx: i32,
+    fy: i32,
+    state: &mut ContinuityState,
+) -> Option<(i32, i32)> {
+    // `:66-67` — the continuity-lock reset: the locks survive only while the
+    // use button is held, the smart cursor is on and the held item places a
+    // platform (`UsingSmartCursorWithContinuity`, :167-175). The C#'s
+    // `Main.SmartCursorShowing = false` (:63) stays the caller's flag.
+    if !l.use_item_held
+        || !SMART_CURSOR_IS_USED
+        || !using_smart_cursor_with_continuity(l.item.create_tile)
+    {
+        *state = ContinuityState::default();
+    }
+    if !SMART_CURSOR_IS_USED {
+        return None;
+    }
+    let mut focus = (fx, fy);
+    // `:134` — the platform step runs first in the C#'s chain and is the
+    // only step that writes the continuity state.
+    if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
+        focus = p;
+    }
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 24] = [
+        step_colored_wrenches,
+        step_multicolor_wrench,
+        step_actuation_rod,
+        step_wire_cutter,
+        step_minecart_tracks,
         step_walls,
         step_pumpkin_seeds,
         step_grass_seeds,
@@ -1375,12 +2089,12 @@ pub fn smart_cursor_lookup(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Op
         step_acorns,
         step_gem_corns,
         step_empty_buckets,
+        step_actuators,
         step_alchemy_seeds,
         step_planter_box,
         step_clay_pots,
         step_staff_of_regrowth,
     ];
-    let mut focus = (fx, fy);
     for step in steps {
         if let Some(p) = step(w, l, focus.0, focus.1) {
             focus = p;
@@ -1474,6 +2188,10 @@ mod tests {
             paint_lookup: 0,
             paint_coating_lookup: 0,
             smart_blocks_enabled: false,
+            use_item_held: false,
+            tool_mode: 0,
+            actuation_rod_lock: false,
+            actuation_rod_lock_setting: false,
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -1530,7 +2248,7 @@ mod tests {
         let world = w();
         let l = lookup(item(1), (0.0, 0.0));
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             None,
             "the pickaxe's lookup rides a later step"
         );
@@ -1877,7 +2595,7 @@ mod tests {
         put(&mut world, 25, 19, 0); // open dirt: the seed step's target
         let l = lookup(item(62), (25.0 * 16.0, 19.0 * 16.0));
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the grass-seed step runs before the torch step"
         );
@@ -2044,7 +2762,7 @@ mod tests {
         paint_at(&mut world, 25, 19, 3);
         let l = lookup(item(1545), mouse_at(25, 19)); // the Spectre scraper
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the scraper step runs inside the lookup chain"
         );
@@ -2158,7 +2876,7 @@ mod tests {
         put_row(&mut world, 20, 40, 22, 2);
         let acorn = acorn_lookup(27, mouse_at(25, 21));
         assert_eq!(
-            smart_cursor_lookup(&world, &acorn, -1, -1),
+            smart_cursor_lookup(&world, &acorn, -1, -1, &mut ContinuityState::default()),
             Some((25, 21)),
             "the acorn step runs inside the lookup chain"
         );
@@ -2167,7 +2885,7 @@ mod tests {
         pumpkins.world_surface = 25.0;
         let l = lookup(placeable(0, 254), mouse_at(25, 19));
         assert_eq!(
-            smart_cursor_lookup(&pumpkins, &l, -1, -1),
+            smart_cursor_lookup(&pumpkins, &l, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the pumpkin-seed step is dispatched before the grass seeds"
         );
@@ -2278,7 +2996,7 @@ mod tests {
         put_row(&mut world, 20, 40, 22, 2);
         let sakura = acorn_lookup(4871, mouse_at(25, 21));
         assert_eq!(
-            smart_cursor_lookup(&world, &sakura, -1, -1),
+            smart_cursor_lookup(&world, &sakura, -1, -1, &mut ContinuityState::default()),
             Some((25, 21)),
             "the gem-corn step runs inside the lookup chain"
         );
@@ -2519,9 +3237,422 @@ mod tests {
         wall_at(&mut world, 25, 20, 1);
         let l = lookup(placeable_wall(0, 1), mouse_at(25, 19));
         assert_eq!(
-            smart_cursor_lookup(&world, &l, -1, -1),
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the wall step runs inside the lookup chain"
+        );
+    }
+
+    /// The desired-direction quantiser (`GetDesiredDirectionFrom` :1443):
+    /// the mouse bearing from a cell to one of the eight directions ×1.5.
+    fn direction_of(offset: (f32, f32)) -> (i32, i32) {
+        get_desired_direction_from(offset, &ContinuityState::default())
+    }
+
+    #[test]
+    fn test_smart_1_the_desired_direction_quantises_the_bearing() {
+        // The eight buckets: flat right, the diagonals, flat down and their
+        // mirrors (the `(int)` truncation of the ×1.5 unit vectors).
+        assert_eq!(direction_of((40.0, 0.0)), (1, 0));
+        assert_eq!(direction_of((40.0, 40.0)), (1, 1));
+        assert_eq!(direction_of((0.0, 40.0)), (0, 1));
+        assert_eq!(direction_of((-40.0, 40.0)), (-1, 1));
+        assert_eq!(direction_of((-40.0, 0.0)), (-1, 0));
+        assert_eq!(direction_of((-40.0, -40.0)), (-1, -1));
+        assert_eq!(direction_of((0.0, -40.0)), (0, -1));
+        assert_eq!(direction_of((40.0, -40.0)), (1, -1));
+        // A lock short-circuits the bearing — the line keeps its direction.
+        let locked = ContinuityState {
+            locked_desired_direction: Some((0, 1)),
+            locked_continuity_coords: Some((25, 18)),
+        };
+        assert_eq!(get_desired_direction_from((40.0, 0.0), &locked), (0, 1));
+    }
+
+    #[test]
+    fn test_smart_1_the_platform_step_extends_the_row() {
+        // `Step_Platforms` :1343-1356 — the step works from the platform
+        // cells themselves (a plain empty cell is skipped by the flag), and
+        // re-points at the first free cell beyond the row's end, in the
+        // mouse's direction.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19); // the platform row
+        let l = lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0));
+        let mut state = ContinuityState::default();
+        assert_eq!(
+            step_platforms(&world, &l, -1, -1, &mut state),
+            Some((31, 18)),
+            "the platform extends the row to the right"
+        );
+        // The hit writes both locks (:1383-1384).
+        assert_eq!(state.locked_desired_direction, Some((1, 0)));
+        assert_eq!(state.locked_continuity_coords, Some((31, 18)));
+        // The gate: a non-platform item refuses.
+        assert_eq!(
+            step_platforms(
+                &world,
+                &lookup(placeable(1, 1), (0.0, 0.0)),
+                -1,
+                -1,
+                &mut state
+            ),
+            None,
+            "the step's gate is a platform-placing item"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_continuity_lock_and_the_placement_gate() {
+        // `TileTargetDesired` (:1391-1402): without a lock the gate always
+        // passes; with one the tile target must be the smart cursor's own
+        // re-pointed cell (`Player.cs:39721`).
+        let open = ContinuityState::default();
+        assert!(tile_target_desired(&open, true, (12, 12), (25, 18)));
+        assert!(tile_target_desired(&open, false, (12, 12), (25, 18)));
+        let locked = ContinuityState {
+            locked_desired_direction: Some((1, 0)),
+            locked_continuity_coords: Some((31, 18)),
+        };
+        assert!(tile_target_desired(&locked, true, (31, 18), (31, 18)));
+        assert!(!tile_target_desired(&locked, true, (32, 18), (31, 18)));
+        // The smart cursor not showing — the gate refuses (the C#'s
+        // `Main.SmartCursorShowing` half).
+        assert!(!tile_target_desired(&locked, false, (31, 18), (31, 18)));
+    }
+
+    #[test]
+    fn test_smart_1_the_continuity_lock_resets_without_the_use_button() {
+        // `SmartCursorLookup` :66-67 — the locks survive only while the use
+        // button is held, the smart cursor is on and the item places a
+        // platform.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19);
+        let mut state = ContinuityState {
+            locked_desired_direction: Some((1, 0)),
+            locked_continuity_coords: Some((31, 18)),
+        };
+        // Not held — the reset clears the locks.
+        let l = lookup(placeable(0, 19), (0.0, 0.0));
+        smart_cursor_lookup(&world, &l, -1, -1, &mut state);
+        assert_eq!(state.locked_desired_direction, None, "the lock reset");
+        assert_eq!(state.locked_continuity_coords, None, "the coords reset");
+        // Held — the locks stand (and the step may re-write them).
+        let held = Lookup {
+            use_item_held: true,
+            ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
+        };
+        smart_cursor_lookup(&world, &held, -1, -1, &mut state);
+        assert_eq!(
+            state.locked_continuity_coords,
+            Some((31, 18)),
+            "the lock stood"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_platform_step_runs_first_in_the_chain() {
+        // The dispatch order (:134): the platform step runs before the wall
+        // step — the chain dispatches it.
+        let mut world = bare();
+        put_row(&mut world, 20, 30, 18, 19);
+        let l = Lookup {
+            use_item_held: true,
+            ..lookup(placeable(0, 19), (35.0 * 16.0 + 8.0, 18.0 * 16.0 + 8.0))
+        };
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((31, 18)),
+            "the platform step runs inside the lookup chain"
+        );
+    }
+
+    /// A red wire at the cell (the port's sparse `WireState`).
+    fn red_wire_at(w: &mut crate::World, x: i32, y: i32) {
+        w.wires.set(x, y, crate::wiring::WireColor::Red, true);
+    }
+
+    #[test]
+    fn test_smart_1_the_wire_cutter_finds_the_wired_cell() {
+        // `Step_WireCutter` :1467 — any wire colour or the actuator makes a
+        // cell a cutter target; a clean cell does not.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(510), mouse_at(25, 19));
+        assert_eq!(
+            step_wire_cutter(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the cutter re-points at the wired cell"
+        );
+        // The actuator alone is a target too (the C#'s `||` arm).
+        let mut actuated = bare();
+        let i = actuated.index(25, 19);
+        actuated.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+        assert_eq!(
+            step_wire_cutter(&actuated, &l, -1, -1),
+            Some((25, 19)),
+            "the cutter re-points at the actuated cell"
+        );
+        // Nothing wired and no actuator — the step no-ops.
+        let clean = bare();
+        assert_eq!(
+            step_wire_cutter(&clean, &l, -1, -1),
+            None,
+            "a clean cell is not a cutter target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_actuator_step_wants_the_wired_unactuated_cell() {
+        // `Step_Actuators` :594 — wired, not actuated, active.
+        let mut world = bare();
+        put(&mut world, 25, 19, 1);
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(849), mouse_at(25, 19));
+        assert_eq!(
+            step_actuators(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the actuator re-points at the wired active cell"
+        );
+        // Already actuated — not a target.
+        let mut done = bare();
+        put(&mut done, 25, 19, 1);
+        red_wire_at(&mut done, 25, 19);
+        let i = done.index(25, 19);
+        done.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+        assert_eq!(
+            step_actuators(&done, &l, -1, -1),
+            None,
+            "the actuated cell is not an actuator target"
+        );
+        // Wired but inactive — the `active()` half refuses.
+        let mut inert = bare();
+        red_wire_at(&mut inert, 25, 19);
+        assert_eq!(
+            step_actuators(&inert, &l, -1, -1),
+            None,
+            "the inactive cell is not an actuator target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_actuation_rod_respects_the_lock() {
+        // `Step_ActuationRod` :1509 — the rod's channel lock (Player.cs:2616/
+        // :2618, caller-passed) filters the actuation states it toggles.
+        let mut world = bare();
+        let i = world.index(25, 19);
+        world.tiles[i].flags |= crate::tile::FLAG_ACTIVE | crate::tile::FLAG_ACTUATOR;
+        // Lock off — every actuated cell is a target.
+        let off = lookup(item(3620), mouse_at(25, 19));
+        assert_eq!(
+            step_actuation_rod(&world, &off, -1, -1),
+            Some((25, 19)),
+            "the rod re-points at the actuated cell"
+        );
+        // Lock on, setting wants the actuated (false) state — the cell's
+        // `inActive()` is false, so it matches.
+        let locked_false = Lookup {
+            actuation_rod_lock: true,
+            actuation_rod_lock_setting: false,
+            ..lookup(item(3620), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_actuation_rod(&world, &locked_false, -1, -1),
+            Some((25, 19)),
+            "the locked rod accepts the matching state"
+        );
+        // Lock on, setting wants the inert (true) state — mismatch, no target.
+        let locked_true = Lookup {
+            actuation_rod_lock: true,
+            actuation_rod_lock_setting: true,
+            ..lookup(item(3620), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_actuation_rod(&world, &locked_true, -1, -1),
+            None,
+            "the locked rod refuses the mismatched state"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_colored_wrench_extends_the_line() {
+        // `Step_ColoredWrenches` :1924-2006 — the wrench re-points beside a
+        // cell that carries its channel, into a neighbour lacking it.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let l = lookup(item(509), mouse_at(25, 19)); // the red wrench
+        assert_eq!(
+            step_colored_wrenches(&world, &l, -1, -1),
+            Some((24, 19)),
+            "the red wrench re-points at the free neighbour"
+        );
+        // The screen target already carries the channel — the scan stands
+        // down (:1904-1918).
+        let mut hovered = bare();
+        red_wire_at(&mut hovered, 25, 19);
+        red_wire_at(&mut hovered, 30, 19); // the fixture's screen target
+        let l2 = lookup(item(509), mouse_at(25, 19));
+        assert_eq!(
+            step_colored_wrenches(&hovered, &l2, -1, -1),
+            None,
+            "the hovered channel disables the wrench scan"
+        );
+        // A different channel's wrench ignores the red wire.
+        let l3 = lookup(item(850), mouse_at(25, 19)); // the blue wrench
+        assert_eq!(
+            step_colored_wrenches(&world, &l3, -1, -1),
+            None,
+            "the blue wrench wants blue wire"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_multicolor_wrench_cutter_and_placement_arms() {
+        // `Step_MulticolorWrench` :1764-1849 — the cutter arm targets the
+        // wired cells themselves, the placement arm their free neighbours.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        // Cutter + red: the wired cell itself.
+        let cutter = Lookup {
+            tool_mode: multi_tool_mode::RED | multi_tool_mode::CUTTER,
+            ..lookup(item(3625), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_multicolor_wrench(&world, &cutter, -1, -1),
+            Some((25, 19)),
+            "the cutter arm re-points at the wired cell"
+        );
+        // Red only (placement): the free neighbour.
+        let place = Lookup {
+            tool_mode: multi_tool_mode::RED,
+            ..lookup(item(3625), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_multicolor_wrench(&world, &place, -1, -1),
+            Some((24, 19)),
+            "the placement arm re-points at the free neighbour"
+        );
+        // The hovered cell matches the placement channels — the scan stands
+        // down (:1748).
+        let mut hovered = bare();
+        red_wire_at(&mut hovered, 25, 19);
+        red_wire_at(&mut hovered, 30, 19); // the fixture's screen target
+        assert_eq!(
+            step_multicolor_wrench(&hovered, &place, -1, -1),
+            None,
+            "the matching hover disables the multi-wrench scan"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_wire_family_runs_in_the_chain() {
+        // The dispatch order (:129-133, :152): the wire tools run at their
+        // C# places — the chain dispatches them.
+        let mut world = bare();
+        red_wire_at(&mut world, 25, 19);
+        let cutter = lookup(item(510), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &cutter, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the wire cutter runs inside the lookup chain"
+        );
+        let mut wired = bare();
+        put(&mut wired, 25, 19, 1);
+        red_wire_at(&mut wired, 25, 19);
+        let actuator = lookup(item(849), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&wired, &actuator, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the actuator step runs inside the lookup chain"
+        );
+    }
+
+    /// A track tile at the cell (the literal 314).
+    fn track_at(w: &mut crate::World, x: i32, y: i32) {
+        put(w, x, y, TRACK_TILE);
+    }
+
+    #[test]
+    fn test_smart_1_the_minecart_track_extends_in_the_mouse_direction() {
+        // `Step_MinecartTracks` :1170-1239 — the flat-right bearing extends
+        // the existing track to the right.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2340), (590.0, 357.0)); // right of the player's centre
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((31, 15)),
+            "the track extends to the right"
+        );
+        // The diagonal bearing (up-right): the diagonal arm extends the
+        // track up-right, and the axis arm is cleared by the dominance.
+        let diag = lookup(item(2340), (550.0, 297.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &diag, -1, -1),
+            Some((31, 14)),
+            "the track extends up-right"
+        );
+        // The gate: a non-track item skips the step.
+        let other = lookup(item(1), (0.0, 0.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &other, -1, -1),
+            None,
+            "the step's gate is the track items"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_track_candidate_must_stand_freestanding() {
+        // `Step_MinecartTracks` :1250-1256 — the candidate under a track is
+        // filtered, but the line continues from the last track's own end:
+        // the track at (31,16) still extends rightward, so the vote falls
+        // on its free neighbour (32,16) — the C#'s scan anchors on every
+        // track cell in the rect, not just the first.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        track_at(&mut world, 31, 16); // the track below the right candidate
+        let l = lookup(item(2340), (590.0, 357.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((32, 16)),
+            "the filtered candidate drops, the line's tail extends"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_pressure_track_extends_the_line_sideways() {
+        // `Step_MinecartTracks` :1285-1294 — the pressure track (2492)
+        // extends the line left/right only, ignoring the mouse's bearing.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2492), (590.0, 357.0));
+        assert_eq!(
+            step_minecart_tracks(&world, &l, -1, -1),
+            Some((31, 15)),
+            "the pressure track extends to the right"
+        );
+        // The screen target already a track → the scan stands down
+        // (:1274-1279).
+        let mut held = bare();
+        track_at(&mut held, 30, 15);
+        track_at(&mut held, 30, 19); // the fixture's screen target
+        assert_eq!(
+            step_minecart_tracks(&held, &l, -1, -1),
+            None,
+            "the hovered track disables the pressure scan"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_track_step_runs_in_the_chain() {
+        // The dispatch order (:135): the track step runs between the
+        // platform and the wall steps — the chain dispatches it.
+        let mut world = bare();
+        track_at(&mut world, 30, 15);
+        let l = lookup(item(2340), (590.0, 357.0));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((31, 15)),
+            "the track step runs inside the lookup chain"
         );
     }
 }

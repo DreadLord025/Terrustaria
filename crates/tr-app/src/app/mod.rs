@@ -1368,9 +1368,16 @@ impl App {
     /// `settings` is the master copy, read once by `main` (`Settings::load`,
     /// the read-once rule); the menu receives a clone so its edits park here on
     /// close (`close_menu`/`park_menu`).
+    ///
+    /// `chests` is the world save's v7 chest record list (`load_world` →
+    /// `save::load`), M6-SAVE-1b's load-side twin of [`App::save_world`]: each
+    /// record re-stocks a store entry at its anchor, winning over the load-time
+    /// loot re-roll (the vanilla stocks the `Chest` objects inline with the
+    /// placement, so the re-roll only fills the tiles a save never came from).
     pub(crate) fn new(
         settings: settings::Settings,
         world: World,
+        chests: Vec<save::ChestRecord>,
         world_path: PathBuf,
         atlas: Atlas,
         font_atlas: Option<tr_render::FontAtlas>,
@@ -1907,6 +1914,28 @@ impl App {
         // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
         // chest merges in (its anchor is already stocked — the roll skips).
         let world_chests = crate::chest_gen::generate_world_chests(&world);
+        // M6-SAVE-1b: the save's own chests seed the store ahead of the roll —
+        // `LoadChests` (`WorldFile.cs:2723-2805`)'s records as the seed half of
+        // `merge_store`, whose collision rule drops a rolled anchor a saved
+        // chest already claims (so the saved slots win, exactly the anchor this
+        // branch exists for).
+        let seeded_chests = crate::chest_gen::store_from_records(&world, &chests);
+        let world_chests = crate::chest_gen::merge_store(
+            crate::chest_gen::merge_store(world_chests, seeded_chests),
+            tr_chest_store,
+        );
+        // `Chest.name` rides the port's side map until M6-SAVE-2 widens the
+        // `WorldChest` entity; it is keyed by the POST-merge store index, so
+        // each named record resolves through the same `FindChest` read the open
+        // path takes. A record whose anchor did not survive (the cull, or a
+        // merge collision) simply lands nowhere.
+        let chest_names: HashMap<usize, String> = chests
+            .iter()
+            .filter(|r| !r.name.is_empty())
+            .filter_map(|r| {
+                crate::chest::find_chest(&world_chests, r.x, r.y).map(|i| (i, r.name.clone()))
+            })
+            .collect();
         // `Main.mouseColor`'s stored colour seeds the cursor tint
         // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
         // live settings, so this is only the pre-first-frame value.
@@ -2106,10 +2135,11 @@ impl App {
             // chest panel hides under it (`ChestUI.cs:86`).
             crafting_open: (!crate::env::no_craft() || crate::env::craft_open())
                 && tr_chest.is_none(),
-            // The load-time loot roll (the hoist above); the `TR_CHEST`
-            // store's own chests stay (its anchor gets double-stocked in
-            // vanilla too — the fixture stock wins the first slots).
-            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
+            // The load-time loot roll (the hoist above), the save's own chests
+            // seeded ahead of it and the `TR_CHEST` store's own chests last (an
+            // anchor double-stocked in vanilla too — the later store wins the
+            // first slots).
+            world_chests,
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2122,7 +2152,9 @@ impl App {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
-            chest_names: HashMap::new(),
+            // The loaded chest records' names, resolved against the post-merge
+            // store index (the hoist above).
+            chest_names,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
@@ -2317,12 +2349,16 @@ impl App {
 /// Loads the world (`save::load` for the port's `.trwld`, `wld::load` for the
 /// retail `.wld`), applies the `TR_DAY` clock override and frames the loaded
 /// tiles and walls — the load half of the startup, verbatim from `main`.
-pub(crate) fn load_world(world_path: &Path) -> Result<World> {
+///
+/// Returns the world with its v7 chest records (`SaveChests`'s save-side twin,
+/// `WorldFile.cs:1606-1676`); a `.wld` has none in the port, so its store
+/// re-rolls from the chest tiles alone (`App::new`'s `chest_gen` pass).
+pub(crate) fn load_world(world_path: &Path) -> Result<(World, Vec<save::ChestRecord>)> {
     let t0 = Instant::now();
-    let mut world = if world_path.extension().is_some_and(|e| e == "trwld") {
+    let (mut world, chests) = if world_path.extension().is_some_and(|e| e == "trwld") {
         save::load(&world_path)?
     } else {
-        wld::load(&world_path)?
+        (wld::load(&world_path)?, Vec::new())
     };
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
@@ -2507,7 +2543,7 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         world.time,
         if world.day_time { "day" } else { "night" }
     );
-    Ok(world)
+    Ok((world, chests))
 }
 
 // --- Deterministic load hooks for the object screenshots --------------------
@@ -3016,7 +3052,7 @@ pub(crate) fn terrstaria_world() -> Result<PathBuf> {
             seed,
             ..Default::default()
         });
-        save::save(&path, &world)?;
+        save::save(&path, &world, &[])?;
         log::info!(
             "generated '{}' (seed {seed}) in {:.0} ms -> {}",
             world.name,
@@ -3337,13 +3373,13 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+        save::save(&path, &World::new("pins".into(), 32, 32), &[]).unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
         unsafe { std::env::set_var("TR_SUNDIAL", "1") };
         unsafe { std::env::set_var("TR_MOONDIAL", "1") };
-        let world = load_world(&path).expect("scratch world loads");
+        let (world, chests) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
         let _ = std::fs::remove_file(&path);
@@ -3356,6 +3392,7 @@ mod tr_hooks {
             world.fast_forward_to_dusk,
             "TR_MOONDIAL arms the dusk fast-forward"
         );
+        assert!(chests.is_empty(), "the scratch world has no chest records");
         assert_eq!(
             (world.sundial_cooldown, world.moondial_cooldown),
             (0, 0),
@@ -3373,8 +3410,8 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
-        let world = load_world(&path).expect("scratch world loads");
+        save::save(&path, &World::new("pins".into(), 32, 32), &[]).unwrap();
+        let (world, chests) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
