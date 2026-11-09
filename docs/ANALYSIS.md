@@ -8353,5 +8353,30 @@ Out: the remaining C# sections — signs (no port store), the NPC block
 the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 (worldgen-local — needs a `World` field), the angler quest state (no port
 fields), the TownManager rooms, the weighted pressure plates (no port store),
-the creative powers/research — each needs its own scope.
-surface branch of the tower-place retry is constants-off.
+the creative powers/research — each needs its own scope.surface branch of the tower-place retry is constants-off.## .trwld v9 — the bestiary kill counts (M6-SAVE-1d)
+
+The bestiary tally moved into the world file — the vanilla's `NPCKillsTracker`
+home (world section 10, `NPCKillsTracker.cs:59-70`, saved through `SaveBestiary`
+at `WorldFile.cs:3396-3400`). The port had the counts on the `.trplayer` sidecar
+(the recorded M4-BEST-1 deviation); that line stays written and stays the load
+fallback, so a migrated build keeps its tally.
+
+- **The shape.** A `u32` count, then per entry the credit-id string (the file's
+  u32 length + UTF-8) and the `int32` count — both stores key by the credit id
+  (`NPCID.Search.GetName`), so each record carries its string.
+- **The load rule.** `App::new` prefers the world file's section; a world saved
+  before v9 carries none and the sidecar's kill line seeds the tracker instead.
+- Tests: `dw_2_4_the_bestiary_counts_round_trip_in_v9`,
+  `dw_2_4_a_v8_payload_loads_no_bestiary`, `dw_2_4_a_truncated_bestiary_section_bails`,
+  `dw_2_4_the_bestiary_section_is_deterministic`, and the app pair
+  `dw_2_4_a_saved_bestiary_tally_round_trips_through_the_app` /
+  `dw_2_4_a_v8_world_falls_back_to_the_sidecar_kills` (the back-compat arm).
+  Suite 2660 / 0.
+
+Out: the remaining C# sections — signs (no port store), the NPC block
+(names/homes/homeless, App-side `App.npcs`), `SavedOreTiers` (worldgen-local —
+needs a `World` field), the angler quest state (no port fields), the TownManager
+rooms, the weighted pressure plates (no port store), the creative powers/
+research — each needs its own scope. The bestiary's Sights/Chats sub-blocks
+(`NPCWasNearPlayerTracker`, `NPCWasChatWithTracker`) are not modelled and stay
+out with the claims/claimable-banner arms.
