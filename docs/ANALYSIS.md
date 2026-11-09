@@ -5326,6 +5326,20 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw).
 
+- **The beach-shells arm** (`UpdateWorld_OvergroundTile`'s
+  `WorldGen.cs:72073-72135`): the last M5-SPREAD-1 row item. The weather
+  plumbing it needs landed with it — `growth::update_world` /
+  `update_world_overground_tile` now carry the real rain intensity and wind
+  speed (the app passes `rain.max_raining()` and `wind.speed_current`; the
+  drivers before used rain as a bool only). The arm: an inactive beach cell
+  under the surface (`j < worldSurface + 10`, inside the `beachDistance` 380
+  margins) rolls `3000 − |wind| · 1250 − maxRaining · 1250` (floor 300), scans
+  down ≤15 rows for sand on a `SolidTileAllowBottomSlope` seat, stands down on
+  an existing pile, counts the 324/81 tiles in the ±`Next(8, 11)` box against
+  the `Next(2, 5)` cap and writes the coral (81, on ≥230 water at 1/2) or the
+  seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
+  keeps the worldgen stream).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
