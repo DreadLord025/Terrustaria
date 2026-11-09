@@ -7871,13 +7871,14 @@ kind` + `u8 prefix`. The C# shape is `SaveChests` (`WorldFile.cs:1606-1676`) / `
   player's stock survives the reload; the names ride `chest_names` by the post-merge
   index (`find_chest` on the anchor). The autosave (10 s), F9 and quit write the
   section; the MP world transfer does not carry chests (the tile sections do).
-- **Recorded gap (a follow-up, not fixed here).** `worldgen::pipeline::boot_statics`
-  never sets `frame_important[21]`/`[467]` while the vanilla does (`Main.cs:7656-7657`),
-  so a LOADED world's framing pass rewrites the chest tiles' 2x2 frames and the
-  chest-gen anchor scan (`frame_x == 0 && frame_y == 0`) then finds nothing — the roll
-  only fires in a freshly generated, unframed world. The records path is unaffected
-  (its cull only asks for an active 21/341 tile); the fix belongs to the worldgen
-  statics' owner.
+- **The recorded gap, fixed 2026-11-09 (`fix-chest-frame-important`).**
+  `boot_statics` had never set the chest family's bits while the vanilla does
+  (`Main.cs:7655-7659`: the sapling 20, the chest 21, the 467/441/468 container kinds),
+  so `frame_world` re-framed every chest tile through its object def — the 2x2 anchor
+  frames were lost and the anchor scans missed every chest in a loaded world (the roll
+  only fired in a freshly generated, unframed one). The bits now ride the boot statics
+  beside the other family groups; the test pins the survival with a control arm (the
+  same world with the bit cleared loses the anchor).
 - Tests: `dw_2_2_the_chests_round_trip_in_v7` (names, interior airs, the prefixes),
   `dw_2_2_a_v6_payload_loads_no_chests`, `dw_2_2_a_truncated_chest_section_bails`,
   `dw_2_2_the_chest_section_is_deterministic`, and the app pair

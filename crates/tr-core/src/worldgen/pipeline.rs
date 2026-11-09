@@ -2415,6 +2415,20 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[529] = true;
     world.frame_important[530] = true;
     world.frame_important[549] = true;
+    // The chest family — the sapling 20, the chest 21, the golden-chest style
+    // 467 and the two container kinds 441/468 (`Main.cs:7655-7659`; the
+    // vanilla bit is a no-op in `WorldGen.TileFrameImportant` for them, so a
+    // chest keeps its stored frames). Vanilla worlds honour them from boot,
+    // so a generated world must too: without the bit the load-time
+    // `frame_world` re-frames every chest tile through its object def, the
+    // 2x2 anchor frames (`frameX == 0 && frameY == 0` — the
+    // `generate_world_chests` and `is_locked` scans) are lost, and the
+    // chest-anchor scans miss every chest in a loaded world.
+    world.frame_important[20] = true;
+    world.frame_important[21] = true;
+    world.frame_important[467] = true;
+    world.frame_important[441] = true;
+    world.frame_important[468] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -2949,5 +2963,43 @@ mod tests {
         assert!(w.frame_important[137], "the dart trap 137");
         assert!(w.frame_important[237], "the Lihzahrd altar 237");
         assert!(!w.frame_important[226], "the Lihzahrd brick 226");
+    }
+
+    /// The chest family's boot statics (`Main.cs:7655-7659`) — and the load
+    /// behaviour they buy: a chest tile keeps its 2x2 anchor frames through
+    /// `frame_world` with the bit set, and loses them without it (the control
+    /// that made every generated world's chest anchors unscannable).
+    #[test]
+    fn the_chest_family_is_frame_important_and_survives_the_framer() {
+        let mut w = World::new("t".into(), 16, 16);
+        boot_statics(&mut w);
+        for &kind in &[20u16, 21, 441, 467, 468] {
+            assert!(w.frame_important[kind as usize], "kind {kind} is important");
+        }
+        // A chest anchor at (8, 8): active, kind 21, the 0,0 anchor frames the
+        // scans read, with solid neighbours so `frame_of` has something to
+        // frame against.
+        let i = w.index(8, 8);
+        w.tiles[i].kind = 21;
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        for &(x, y) in &[(7, 8), (9, 8), (8, 9)] {
+            let j = w.index(x, y);
+            w.tiles[j].kind = 1;
+            w.tiles[j].flags |= crate::tile::FLAG_ACTIVE;
+        }
+        crate::framing::frame_world(&mut w);
+        let t = w.tile(8, 8).unwrap();
+        assert_eq!((t.frame_x, t.frame_y), (0, 0), "the anchor frames survive");
+        // The control: the same world with the bit cleared re-frames the tile
+        // through its object def — the anchor is lost.
+        let mut control = w.clone();
+        control.frame_important[21] = false;
+        crate::framing::frame_world(&mut control);
+        let c = control.tile(8, 8).unwrap();
+        assert_ne!(
+            (c.frame_x, c.frame_y),
+            (0, 0),
+            "without the bit the framer rewrites the chest tile"
+        );
     }
 }
