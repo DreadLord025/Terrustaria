@@ -48,24 +48,6 @@ impl BannerSystem {
     pub fn kills(&self, banner: i32) -> i32 {
         self.kills.get(&banner).copied().unwrap_or(0)
     }
-
-    /// The kill pairs in ascending banner-id order (`BannerSystem.Save`'s
-    /// per-banner counts, `BannerSystem.cs:172-186`) — the world-save
-    /// section's payload; the port's sparse map where the vanilla writes a
-    /// dense array.
-    pub fn pairs(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
-        self.kills.iter().map(|(&banner, &kills)| (banner, kills))
-    }
-
-    /// `BannerSystem.Load` (`BannerSystem.cs:188-212`): the recorded counts
-    /// replace the tally. The C# keeps only the entries its count array
-    /// carries and the port's map only the recorded ones — a recorded 0
-    /// stays in the map so a zeroed banner round-trips.
-    pub fn load_pairs(&mut self, pairs: impl IntoIterator<Item = (i32, i32)>) {
-        for (banner, kills) in pairs {
-            self.kills.insert(banner, kills);
-        }
-    }
 }
 
 /// `Player.GetBannerBuffEffect` (`Player.cs:20483-20493`) + the
