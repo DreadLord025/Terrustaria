@@ -1292,11 +1292,14 @@ mod tests {
     fn save_refuses_a_section_that_has_data_but_no_writer() {
         let world = World::new("t".into(), 8, 6);
         let mut data = SectionData::default();
-        // Chests carries a real codec since phase 3, so the example moves to
-        // the next stub lane (signs, phase 5); the assertion is unchanged.
-        data.signs.push(sections::WldSign::default());
+        // Chests/signs/plates/TEs/town rooms all carry real codecs since
+        // phases 3-5, so the examples move to the two lanes Phase 6 still owns
+        // (creative powers, bestiary); the assertion is unchanged.
+        data.creative_powers
+            .records
+            .push((0, sections::WldCreativeValue::Bool(true)));
         assert!(to_bytes(&world, &data, 1).is_err());
-        data.signs.clear();
+        data.creative_powers.records.clear();
         data.bestiary.kills.push(("Slime".into(), 1));
         assert!(to_bytes(&world, &data, 1).is_err());
     }

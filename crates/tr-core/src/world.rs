@@ -26,6 +26,16 @@ pub struct World {
     /// `TileEntity.ByID`/`ByPosition` (`TileEntity.cs:15-16`) — the placed
     /// tile entities and their position book (`crate::tile_entities`).
     pub tile_entities: crate::tile_entities::TileEntities,
+    /// `Main.sign[0..31999]` (`Sign.cs:8`, `SaveSigns:1678`): the placed signs.
+    /// The store holds exactly the non-null signs in slot order, which is the
+    /// whole observable state of the C# array — `LoadSigns` defines every slot,
+    /// so the null slots carry nothing. The section's fix-up halves live in
+    /// `crate::wld::sections::signs`.
+    pub signs: Vec<crate::wld::sections::WldSign>,
+    /// `PressurePlateHelper.PressurePlatesPressed`
+    /// (`LoadWeightedPressurePlates:3373`): the pressed plates, points only —
+    /// the `bool[255]` pressure arrays are rebuilt on load and never persist.
+    pub pressure_plates: Vec<crate::wld::sections::WldPressurePlate>,
     pub width: i32,
     pub height: i32,
     /// Row-major tile storage: `tiles[y * width + x]`.
@@ -227,6 +237,8 @@ impl World {
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
+            signs: Vec::new(),
+            pressure_plates: Vec::new(),
             frame_important: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
