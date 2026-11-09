@@ -37,6 +37,27 @@ pub fn load(path: &Path) -> Result<World> {
     parse(&data).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// A loaded `.wld` with every section the file carries beside its world —
+/// `LoadWorld_Version2`'s two halves in one read.
+#[derive(Clone, Debug)]
+pub struct LoadedWorld {
+    pub world: World,
+    /// The eight sections past the tiles (`load_sections`'s output). Empty
+    /// when the file's pointer table stops before them.
+    pub sections: SectionData,
+    /// `WorldFile._versionNumber` (`LoadFileFormatHeader:1902`): the format
+    /// version the load-side fix-ups gate on (the chests' `< 115` dresser
+    /// pass, `LoadChests:2801-2804`).
+    pub version: i32,
+}
+
+/// [`load`] plus [`load_sections`] over the one read — the app's load entry
+/// for a retail `.wld` (the native `.trwld` carries these states elsewhere).
+pub fn load_with_sections(path: &Path) -> Result<LoadedWorld> {
+    let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    parse_with_sections(&data).with_context(|| format!("parsing {}", path.display()))
+}
+
 /// The 20-byte `Re-Logic` file header (`IO/FileMetadata.cs:22-27`): magic +
 /// file type, revision counter, flags (bit 0 = favorite).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -164,6 +185,23 @@ impl<'a> SectionTable<'a> {
 
 pub fn parse(data: &[u8]) -> Result<World> {
     let mut table = SectionTable::open(data)?;
+    parse_table(&mut table).map(|loaded| loaded.world)
+}
+
+/// [`parse`] plus every section the file carries
+/// (`LoadWorld_Version2:1781-1850`): the world first, then the section codecs
+/// over the same bytes — one file read, in the C#'s order.
+pub fn parse_with_sections(data: &[u8]) -> Result<LoadedWorld> {
+    let mut table = SectionTable::open(data)?;
+    parse_table(&mut table)
+}
+
+/// The shared body of [`parse`]/[`parse_with_sections`]: the world sections
+/// (header, tiles), the pointer sanity walk, then the load side of the
+/// section table. `importance` moves out of the table last, so it stays
+/// available to the pointer checks.
+fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
+    let data = table.data;
     let version = table.version;
 
     // --- header section ----------------------------------------------------
@@ -215,12 +253,20 @@ pub fn parse(data: &[u8]) -> Result<World> {
     load_tiles(&mut r, &mut world, &table.importance, version)?;
     expect_section_end(&r, &table.pointers, 2)?;
     // The sections past the tiles: pointer sanity (a pointer past EOF or going
-    // backwards is a hard reject); the codecs land phase by phase.
+    // backwards is a hard reject); `load_sections` re-checks each pointer it
+    // walks below (`LoadWorld_Version2:1781+`'s end-offset assertions).
     skip_sections(&r, &table)?;
+
+    // --- the eight sections past the tiles (`LoadWorld_Version2:1781-1850`) --
+    let sections = load_sections(table)?;
 
     world.frame_important = std::mem::take(&mut table.importance);
     world.compute_spawn_y();
-    Ok(world)
+    Ok(LoadedWorld {
+        world,
+        sections,
+        version,
+    })
 }
 
 /// C#'s `Position != positions[i]` check (`LoadWorld_Version2:1767-1780`):
@@ -276,6 +322,26 @@ pub fn save(path: &Path, world: &World, data: &SectionData) -> Result<()> {
     Ok(())
 }
 
+/// The save side of one of the eleven sections.
+/// `SaveWorld_Version2`'s caller contract: a section that claims records it
+/// has no writer for would emit a section whose pointer cannot be honoured,
+/// so it is refused rather than written corrupt. Extracted from [`to_bytes`]
+/// so the guard stays exercisable when the frozen [`sections::SAVE_DEFS`]
+/// registry has no unimplemented lane left to trip it — a future section
+/// phase (or a registry test) passes its own def list here.
+fn refuse_unwritten(defs: &[sections::SaveDef], data: &SectionData) -> Result<()> {
+    for def in defs {
+        if !(def.implemented)() && !(def.empty)(data) {
+            bail!(
+                "section {} (pointer {}) has data but no writer yet",
+                def.name,
+                def.pointer
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The in-memory half of [`save`]: assemble the prologue, walk the writer
 /// table, append the footer, backfill the pointer table.
 pub fn to_bytes(world: &World, data: &SectionData, revision: u32) -> Result<Vec<u8>> {
@@ -289,15 +355,9 @@ pub fn to_bytes(world: &World, data: &SectionData, revision: u32) -> Result<Vec<
     prologue.extend_from_slice(&[0u8; 4 * SECTION_COUNT]); // backfilled below
 
     // --- sections (`SaveWorld_Version2:1152-1165`) --------------------------
+    refuse_unwritten(sections::SAVE_DEFS, data)?;
     let mut bodies: Vec<Vec<u8>> = Vec::with_capacity(SECTION_COUNT);
     for def in sections::SAVE_DEFS {
-        if !(def.implemented)() && !(def.empty)(data) {
-            bail!(
-                "section {} (pointer {}) has data but no writer yet",
-                def.name,
-                def.pointer
-            );
-        }
         let mut w = Writer::new();
         (def.write)(&mut w, world, data, version);
         bodies.push(w.into_inner());
@@ -1294,8 +1354,7 @@ mod tests {
         // so all eleven sections now have writers and `to_bytes`'s "data but no
         // writer" bail cannot trigger through the registry any more — this test
         // is the flip's record: the bag below used to be refused, one section
-        // at a time. The bail itself stays in `to_bytes` as the guard for a
-        // section added without a codec.
+        // at a time.
         let world = World::new("t".into(), 8, 6);
         let mut data = SectionData::default();
         data.creative_powers
@@ -1309,6 +1368,53 @@ mod tests {
         assert_eq!(loaded.bestiary.kills, data.bestiary.kills);
         assert_eq!(loaded.bestiary.sights, data.bestiary.sights);
         assert_eq!(loaded.creative_powers.records, data.creative_powers.records);
+    }
+
+    /// F5 (Phase-6 review N5): the "section has data but no writer" guard,
+    /// restored as a direct test. `SAVE_DEFS` is frozen and fully implemented,
+    /// so the guard is exercised through the function `to_bytes` calls with a
+    /// synthetic def list — exactly what a future section phase (a new stub
+    /// lane, or a codec temporarily flipped off) hits.
+    #[test]
+    fn test_DW_7_5_a_section_with_data_and_no_writer_is_refused() {
+        // A lane over the chests bag: `implemented` and the message's name are
+        // the only knobs, so one builder covers both arms (the struct is not
+        // `Copy`, hence a function rather than a value).
+        fn lane(implemented: fn() -> bool) -> sections::SaveDef {
+            sections::SaveDef {
+                pointer: 3,
+                name: "future section",
+                write: |_, _, _, _| {},
+                implemented,
+                empty: |d: &SectionData| d.chests.is_empty(),
+            }
+        }
+        // Empty: the lane is allowed to stay unwritten (the empty encoding).
+        assert!(
+            refuse_unwritten(&[lane(|| false)], &SectionData::default()).is_ok(),
+            "an empty section needs no writer"
+        );
+        // One chest record: the save must refuse rather than emit a section
+        // whose pointer cannot be honoured.
+        let mut data = SectionData::default();
+        data.chests.push(sections::WldChest::default());
+        let err = refuse_unwritten(&[lane(|| false)], &data)
+            .expect_err("a data-carrying section without a writer is refused");
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("future section") && text.contains("pointer 3"),
+            "the message names the section: {text}"
+        );
+        // A written lane with the same data is fine (the implemented check is
+        // what makes the guard one-sided).
+        assert!(refuse_unwritten(&[lane(sections::chests::implemented)], &data).is_ok());
+        // And the real registry — every lane implemented — writes the same bag
+        // through `to_bytes` without the guard firing.
+        let world = World::new("t".into(), 8, 6);
+        let file = to_bytes(&world, &data, 1).expect("every real lane has a writer");
+        let table = SectionTable::open(&file).expect("opens");
+        let loaded = load_sections(&table).expect("walks its sections");
+        assert_eq!(loaded.chests.len(), 1, "the chest record rides the file");
     }
 
     // --- the Phase 1 review's carried probes ---------------------------------
@@ -1683,8 +1789,12 @@ mod tests {
     fn test_DW_2_2_the_old_version_gates_walk_the_flags_block() {
         // A v100 file (< 112: no GameMode byte, < 141: no creation time, < 95:
         // the block stops after the wind target) still parses, and the owned
-        // fields land.
-        let data = synthetic_file(100, &[2, 144], 160, 11);
+        // fields land. Six pointers, the shape that build's `SaveWorld_Version2`
+        // actually wrote: sections 0..5 (header, tiles, chests, signs, NPCs —
+        // the NPC list just its terminator, `SaveNPCs`'s shimmer block and the
+        // tower list are `>= 268`/`>= 140`) and the footer right behind, so
+        // `load_sections` walks the three gated sections it may and stops.
+        let data = synthetic_file(100, &[2, 144], 160, 6);
         let world = parse(&data).expect("v100 loads");
         assert_eq!((world.spawn_x, world.spawn_y), (4, 5));
         assert_eq!(world.moon_type, 3);

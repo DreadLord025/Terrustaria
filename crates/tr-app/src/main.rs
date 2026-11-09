@@ -102,7 +102,7 @@ fn main() -> Result<()> {
     };
 
     log::info!("world: {}", world_path.display());
-    let world = app::load_world(&world_path)?;
+    let (world, sections) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
         "assets/Content not found: copy the retail Content directory next to the executable",
@@ -130,7 +130,15 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::new(world, world_path, atlas, font_atlas, lookups, atlas_stats);
+    let mut app = app::App::new(
+        world,
+        world_path,
+        atlas,
+        font_atlas,
+        lookups,
+        atlas_stats,
+        sections,
+    );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
     event_loop.run_app(&mut app)?;

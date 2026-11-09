@@ -32,9 +32,25 @@
 //! C#'s `_powersById` walk order (ascending registration id) and never invents
 //! an id: powers the port has not ported (freeze rain/wind, the difficulty
 //! slider) are simply absent from the caller's list.
+//!
+//! ## The slider values are remapped here, not stored verbatim
+//! The two slider records' payload is `ASharedSliderPower._sliderCurrentValue
+//! Cache` — a float in **[0,1]** (`ModifyTimeRate.Save:967`,
+//! `DifficultySliderPower.Save:1162`) that the C# turns into its gameplay
+//! quantity on load through `UpdateInfoFromSliderValueCache`
+//! (`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880` =
+//! `(int)Math.Round(Utils.Remap(cache, 0, 1, 1, 24))`, so cache 0.5 is **x12**
+//! and cache 1 is **x24**; the difficulty slider's is at `:1018-1027`). The
+//! port's state owner (`tr_app::creative::PowerState::Slider`) carries that
+//! *derived* quantity — the time rate 1..24 — so the codec remaps in both
+//! directions and this module is the only place that knows the two
+//! representations differ. The difficulty record rides the file verbatim
+//! because the port has no difficulty power to remap it onto
+//! (`creative.rs::PERSISTENT_POWERS`' `port: None`).
 
 use super::{SectionData, SectionPayload};
 use crate::binio::{Reader, Writer};
+use crate::damage::round_bankers;
 
 /// One per-world persistent power value: the id is the manager's
 /// registration-order `ushort`, the payload a `bool` (a toggle) or an `f32`
@@ -73,9 +89,51 @@ const PERSISTENT_IDS: [(u16, PayloadKind); 6] = [
     (8, PayloadKind::F32),   // `ModifyTimeRate.Save:967` — `writer.Write(_sliderCurrentValueCache)`
     (9, PayloadKind::Bool),  // `FreezeRainPower.Save:1524`
     (10, PayloadKind::Bool), // `FreezeWindDirectionAndStrength.Save:1491`
-    (12, PayloadKind::F32),  // `DifficultySliderPower.Save:1162`
+    (12, PayloadKind::F32),  // `DifficultySliderPower.Save:1162` — the same [0,1] cache
     (13, PayloadKind::Bool), // `StopBiomeSpreadPower.Save:1557`
 ];
+
+/// The two halves of `Utils.Remap:345-348` for the one slider whose ported
+/// quantity differs from its wire value. Both directions clamp the lerp
+/// factor to [0,1] (`Utils.GetLerpValue:315-343`'), so a hostile or aliased
+/// cache outside [0,1] reads as the slider's end, exactly as the C#'s slider
+/// would.
+fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
+}
+
+/// `ModifyTimeRate` (id 8): the wire cache in [0,1] ↔ the ported
+/// `TargetTimeRate` 1..24 (`UpdateInfoFromSliderValueCache:877-880`).
+const TIME_RATE_MIN: f32 = 1.0;
+const TIME_RATE_MAX: f32 = 24.0;
+
+/// The wire cache → the ported value for the id's slider payload
+/// (`ModifyTimeRate.Load:970-975`'s `UpdateInfoFromSliderValueCache` call).
+/// `None` = the id's payload rides the file verbatim (a toggle, or the
+/// unported difficulty slider).
+fn slider_from_wire(id: u16, cache: f32) -> Option<f32> {
+    (id == 8).then(|| {
+        // `(int)Math.Round(Utils.Remap(cache, 0, 1, 1, 24))` — banker's
+        // rounding, the C# `Math.Round` (`damage::round_bankers`).
+        round_bankers(f64::from(remap(
+            cache,
+            0.0,
+            1.0,
+            TIME_RATE_MIN,
+            TIME_RATE_MAX,
+        ))) as f32
+    })
+}
+
+/// The ported value → the wire cache (`ModifyTimeRate.Save:967`'s inverse:
+/// the cache whose `UpdateInfoFromSliderValueCache` reads back as `rate`).
+fn slider_to_wire(id: u16, value: f32) -> f32 {
+    if id == 8 {
+        return remap(value, TIME_RATE_MIN, TIME_RATE_MAX, 0.0, 1.0);
+    }
+    value
+}
 
 /// What an id's payload is on the wire: the toggle's `bool` or the slider's
 /// `f32` (`ASharedTogglePower.Save` vs `ASharedSliderPower.Save`).
@@ -106,7 +164,10 @@ pub fn read(r: &mut Reader, _version: i32) -> Option<WldCreativePowers> {
         };
         let value = match kind {
             PayloadKind::Bool => WldCreativeValue::Bool(r.boolean()?),
-            PayloadKind::F32 => WldCreativeValue::F32(r.f32()?),
+            PayloadKind::F32 => {
+                let cache = r.f32()?;
+                WldCreativeValue::F32(slider_from_wire(id, cache).unwrap_or(cache))
+            }
         };
         records.push((id, value));
     }
@@ -128,7 +189,9 @@ pub fn write(w: &mut Writer, data: &SectionData, _version: i32) {
         w.u16(id);
         match value {
             WldCreativeValue::Bool(v) => w.boolean(v),
-            WldCreativeValue::F32(v) => w.f32(v),
+            // The slider's cache, not the ported value
+            // (`ModifyTimeRate.Save:967`'s inverse — the module header).
+            WldCreativeValue::F32(v) => w.f32(slider_to_wire(id, v)),
         }
     }
     // `writer.Write(value: false)` (`:137`) — the list terminator.
@@ -213,7 +276,8 @@ mod tests {
     #[test]
     fn test_DW_6_3_the_records_round_trip_byte_equal() {
         // The ported persistent values: a toggle on, the time-rate slider at
-        // its maximum, the biome-spread freeze off.
+        // its maximum, the biome-spread freeze off. The records hold the
+        // ported values; the wire carries id 8's [0,1] cache.
         let records = vec![
             bool_record(0, true),
             f32_record(8, 24.0),
@@ -227,17 +291,79 @@ mod tests {
     }
 
     #[test]
+    fn test_DW_7_6_a_hand_built_vanilla_slider_record_reads_as_the_rate() {
+        // F3 (Phase-6 review N1): a vanilla file carries the [0,1]
+        // `_sliderCurrentValueCache` (`ModifyTimeRate.Save:967`), which the C#
+        // derives its rate from (`UpdateInfoFromSliderValueCache:877-880` =
+        // round(Remap(cache, 0, 1, 1, 24))). A record of 0.5 is x12, not 0.5x.
+        let mut bytes = record(8, &WldCreativeValue::F32(0.5));
+        bytes.push(0); // the terminator
+        let (back, pos) = read_at(&bytes);
+        let records = back.expect("reads").records;
+        assert_eq!(pos, bytes.len(), "the cursor lands on the terminator");
+        assert_eq!(
+            records,
+            vec![(8, WldCreativeValue::F32(12.0))],
+            "cache 0.5 reads back as the rate 12"
+        );
+        // The C#'s own mapping, pinned at the endpoints and the middle text:
+        // 0 → x1, 0.5 → x12, 1 → x24 (`x1`/`x12`/`x24` are the slider's three
+        // labels, `ProvideSlider`'s `bottom/middle/topText_OnClick`).
+        for (cache, rate) in [(0.0, 1.0), (0.5, 12.0), (1.0, 24.0)] {
+            let mut wire = record(8, &WldCreativeValue::F32(cache));
+            wire.push(0);
+            let (back, _) = read_at(&wire);
+            assert_eq!(
+                back.unwrap().records,
+                vec![(8, WldCreativeValue::F32(rate))],
+                "cache {cache} → x{rate}"
+            );
+        }
+        // A hostile cache outside [0,1] clamps to the slider's end
+        // (`Utils.Remap`'s clamped lerp, `Utils.cs:345-348`), never extrapolates.
+        let mut huge = record(8, &WldCreativeValue::F32(24.0));
+        huge.push(0);
+        let (back, _) = read_at(&huge);
+        assert_eq!(back.unwrap().records, vec![(8, WldCreativeValue::F32(24.0))]);
+        let mut low = record(8, &WldCreativeValue::F32(-7.0));
+        low.push(0);
+        let (back, _) = read_at(&low);
+        assert_eq!(back.unwrap().records, vec![(8, WldCreativeValue::F32(1.0))]);
+    }
+
+    #[test]
+    fn test_DW_7_6_the_port_s_write_emits_the_vanilla_cache() {
+        // The mirror image: the port's state holds the rate, so the writer
+        // emits the cache the C# would have read that rate from.
+        let bytes = section(&[f32_record(8, 12.0)]);
+        // 12.0 → (12-1)/23 = 0.47826087f = 0x3EF50A3D.
+        assert_eq!(&bytes[3..7], &remap(12.0, 1.0, 24.0, 0.0, 1.0).to_le_bytes());
+        assert_eq!(&bytes[3..7], &0.47826087f32.to_le_bytes());
+        let (back, _) = read_at(&bytes);
+        assert_eq!(
+            back.unwrap().records,
+            vec![(8, WldCreativeValue::F32(12.0))],
+            "the remap is an involution on the integral rates"
+        );
+        // The two ends of the slider, and the byte the C# writes at x24:
+        // `SetValueKeyboardForced(1f)` → cache 1.0 = 0x3F800000.
+        assert_eq!(&section(&[f32_record(8, 24.0)])[3..7], &1.0f32.to_le_bytes());
+        assert_eq!(&section(&[f32_record(8, 1.0)])[3..7], &0.0f32.to_le_bytes());
+    }
+
+    #[test]
     fn test_DW_6_3_a_hard_coded_c_sharp_layout_parses_identically() {
         // Hand-computed `SaveToWorld:131-137` for the same three powers:
-        // `true, ushort 0, true`, `true, ushort 8, f32 24.0`,
-        // `true, ushort 13, false`, `false`. 24.0f = 0x41C00000.
+        // `true, ushort 0, true`, `true, ushort 8, f32 1.0` (the cache of
+        // x24 — `ModifyTimeRate.Save:967` writes `_sliderCurrentValueCache`,
+        // not the rate), `true, ushort 13, false`, `false`. 1.0f = 0x3F800000.
         let mut want = Vec::new();
         want.push(1);
         want.extend(u16_bytes(0));
         want.push(1); // FreezeTime enabled
         want.push(1);
         want.extend(u16_bytes(8));
-        want.extend(24.0f32.to_le_bytes()); // the raw slider value
+        want.extend(1.0f32.to_le_bytes()); // the slider cache for x24
         want.push(1);
         want.extend(u16_bytes(13));
         want.push(0); // StopBiomeSpread disabled
@@ -390,6 +516,27 @@ mod tests {
     }
 
     #[test]
+    fn test_DW_7_6_the_difficulty_slider_cache_rides_the_file_verbatim() {
+        // "difficulty likewise": `DifficultySliderPower.Save:1162` writes the
+        // same [0,1] cache (derived into `StrengthMultiplierToGiveNPCs` at
+        // `UpdateInfoFromSliderValueCache:1018-1027`), but the port carries no
+        // difficulty power, so there is no ported quantity to remap onto and
+        // the record must ride the file byte-exact — inventing a strength
+        // would corrupt the vanilla bytes on the next save.
+        let bytes = section(&[f32_record(12, 0.75)]);
+        assert_eq!(&bytes[3..7], &0.75f32.to_le_bytes(), "the raw cache");
+        let (back, pos) = read_at(&bytes);
+        assert_eq!(
+            back,
+            Some(WldCreativePowers {
+                records: vec![f32_record(12, 0.75)],
+            }),
+            "id 12 is not remapped: the cache is the value the file carries"
+        );
+        assert_eq!(pos, bytes.len());
+    }
+
+    #[test]
     fn test_DW_6_3_a_truncated_terminator_is_a_short_read() {
         // The dirty arm of DW-6.3's plan line: an empty stream is not a
         // terminator, it is EOF.
@@ -451,6 +598,14 @@ mod tests {
             "// `SaveToWorld:125-137`",
             "`IPersistentPerWorldContent.cs:5-14`",
             "`CreativePowerManager.Register`'s registration-order counter",
+            // F3's anchors: the [0,1] cache and the two directions of its
+            // derivation (`ModifyTimeRate` + `DifficultySliderPower`).
+            "`ModifyTimeRate.Save:967`",
+            "`DifficultySliderPower.Save:1162`",
+            "`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880`",
+            "`ModifyTimeRate.Load:970-975`",
+            "`:1018-1027`",
+            "`Utils.Remap:345-348`",
         ] {
             assert!(src.contains(anchor), "missing {anchor}");
         }

@@ -182,9 +182,19 @@ pub(crate) struct App {
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     pub(crate) inventory_open: bool,
-    /// `Main.BestiaryTracker.Kills` (`NPCKillsTracker.cs`): the per-world
-    /// bestiary kill counts, persisted in the sidecar's v5 kills line.
-    pub(crate) kill_tracker: tr_core::bestiary::KillTracker,
+    /// `Main.BestiaryTracker` (`BestiaryUnlocksTracker.cs`): the per-world
+    /// bestiary state — the kill counts plus the sighted/chatted credit-id
+    /// sets. For a `.wld` it rides world-file section 10 (`SaveBestiary:3396`);
+    /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
+    /// sights/chats have no equivalent for (they stay empty).
+    pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
+    /// `WorldGen.TownManager` (`TownRoomManager.cs`): one room per town NPC,
+    /// loaded from world-file section 9 (`SaveTownManager`'s list) and rebuilt
+    /// by the load fix-ups.
+    pub(crate) town_rooms: crate::town::TownRooms,
+    /// `NPC.ShimmeredTownNPCs` (`NPC.cs:6071`): the `bool[NPCID.Count]`
+    /// bitmap the NPC section's first list persists (truth indices).
+    pub(crate) shimmered_npcs: crate::town::ShimmeredTownNpcs,
     /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`'s port — the bestiary
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
@@ -1370,6 +1380,7 @@ impl App {
         font_atlas: Option<tr_render::FontAtlas>,
         lookups: assets::Lookups,
         atlas_stats: (u32, u32, usize, usize),
+        sections: WorldSections,
     ) -> App {
         let mut world = world;
         let clouds = make_clouds(&world, &lookups);
@@ -1380,6 +1391,12 @@ impl App {
         let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
         let mut player = player_enabled.then(|| Player::spawn(&world));
         let mut npcs = Vec::new();
+        // The town rooms (`WorldGen.TownManager`, world-file section 9): built
+        // from the loaded section so the home re-validation below can consult
+        // them, and carried onto the App so the save writes them back. An empty
+        // store for the generated worlds — `M4-TOWN-1`'s rooms wait for their
+        // own follow-up, the `.wld` store is this phase's.
+        let mut town_rooms = crate::town::TownRooms::from_wld_rooms(&sections.data.town_rooms);
         // `TR_POSE` keeps the capture scene empty — a contact-damage NPC
         // would knock the pinned player off the furniture.
         let spawn_npcs = std::env::var_os("TR_POSE").is_none();
@@ -1598,10 +1615,22 @@ impl App {
         }
         // The Guide's world-gen arrival: one homeless Guide at the spawn
         // point. The NPC persistence is M6-SAVE-1's (the world-file NPC
-        // sections), so every load respawns the Guide homeless — the
-        // look-for-home tick re-houses it within seconds.
+        // sections), so a generated world respawns the Guide homeless on every
+        // load — the look-for-home tick re-houses it within seconds.
         if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
             npcs.push(guide);
+        }
+        // `LoadNPCs` (`LoadWorld_Version2:1791`): a `.wld`'s town list IS the
+        // world's NPCs, so the file replaces the startup spawns outright
+        // (`Main.npc[num2++] = ...`, the C# shape — the spawn loop runs during
+        // play, not at load). The town rooms ride along because
+        // `FixAgainstExploits`' home re-validation consults them.
+        if sections.from_wld {
+            npcs = crate::npc::from_wld(&sections.data.npcs);
+            // `LoadWorld_LastMinuteFixes` → `FixAgainstExploits:1861`: the
+            // home re-validation runs after every section is read (the town
+            // rooms among them), not during `LoadNPCs`.
+            crate::town::fix_town_npc_homes(&world, &mut npcs, &mut town_rooms);
         }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
         if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
@@ -1822,7 +1851,54 @@ impl App {
         // `world` (`AddBuriedChest`'s stock inline with the placement, the
         // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
         // chest merges in (its anchor is already stocked — the roll skips).
+        //
+        // M6-SAVE-1: a `.wld` load takes the file's chests instead — they are
+        // the player's own contents, and the roll only fills the anchors the
+        // file does not carry (`chest_gen::displace_loaded_chests`, the C#'s
+        // `LoadChests` shape: `Main.chest` is the file, nothing rolls). The
+        // `TR_CHEST` fixture is a generated-world screenshot hook, so it never
+        // merges into a `.wld` store; the `.trwld` path keeps `merge_store`
+        // byte-for-byte. Both branches run here because they read `world`.
         let world_chests = crate::chest_gen::generate_world_chests(&world);
+        // Hoisted shadowing of the roll: a `.wld` load takes the file's chests
+        // instead — they are the player's own contents, and the roll only fills
+        // the anchors the file does not carry (`chest_gen::
+        // displace_loaded_chests`, the C#'s `LoadChests` shape: `Main.chest` is
+        // the file, nothing rolls). The `TR_CHEST` fixture is a generated-world
+        // screenshot hook, so it never merges into a `.wld` store; the `.trwld`
+        // path keeps `merge_store` byte-for-byte. Both branches run here because
+        // they read `world`.
+        let world_chests = if sections.from_wld {
+            let mut loaded = crate::chest::from_wld(&sections.data.chests);
+            // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
+            // file's records are in the store (`FixDresserChests:3269`), and
+            // only for a file old enough to predate the stored chest list.
+            if sections.version < 115 {
+                crate::chest::fix_dresser_chests(&mut loaded, &world);
+            }
+            crate::chest_gen::displace_loaded_chests(world_chests, loaded)
+        } else {
+            crate::chest_gen::merge_store(world_chests, tr_chest_store)
+        };
+        // `LoadBestiary:3402` + `LoadCreativePowers:3418` (the last two
+        // sections, applied to their state owners). A `.wld`'s bestiary tracker
+        // *replaces* the sidecar-built one — the world file is the `.wld`
+        // write target for the kills (owner decision 2026-11-08) and the
+        // sights/chats have no sidecar form, so an empty bag would wipe them.
+        // The creative powers apply either way: an empty bag has no records and
+        // changes nothing.
+        let mut app_bestiary = {
+            let mut tracker = tr_core::bestiary::WorldBestiary::new();
+            // The `.trwld` half: the sidecar's v5 kills line feeds the tracker
+            // (the sights/chats have no sidecar form; see the field's doc).
+            tracker.kills.load_pairs(loaded_kills.into_iter());
+            tracker
+        };
+        let mut creative_powers = crate::creative::CreativePowers::new();
+        if sections.from_wld {
+            app_bestiary = tr_core::wld::sections::bestiary::from_wld(&sections.data.bestiary);
+        }
+        crate::creative::apply_persistent(&mut creative_powers, &sections.data.creative_powers);
         let mut app = App {
             window: None,
             gpu: None,
@@ -1874,7 +1950,7 @@ impl App {
             reforge_cooldown: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
-            creative_powers: crate::creative::CreativePowers::new(),
+            creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
             invasion_spawn_timer: 0.0,
@@ -1980,11 +2056,11 @@ impl App {
             // `Player.cs:33517` — chest.rs:409), so the panel + the player
             // inventory draw together.
             inventory_open: std::env::var_os("TR_INV").is_some() || tr_chest.is_some(),
-            kill_tracker: {
-                let mut tracker = tr_core::bestiary::KillTracker::new();
-                tracker.load_pairs(loaded_kills.into_iter());
-                tracker
-            },
+            bestiary: app_bestiary,
+            town_rooms,
+            shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
+                &sections.data.npcs.shimmered,
+            ),
             bestiary_open: std::env::var_os("TR_BESTIARY").is_some(),
             // `TR_BESTIARY=<n>` also selects entry n (1-based) for the
             // info-page screenshots; `0`/absent stays on the grid.
@@ -2034,10 +2110,11 @@ impl App {
             crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
-            // The load-time loot roll (the hoist above); the `TR_CHEST`
-            // store's own chests stay (its anchor gets double-stocked in
-            // vanilla too — the fixture stock wins the first slots).
-            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
+            // The load-time loot roll (the hoist above), merged with the
+            // `TR_CHEST` fixture's own chests (they keep their slots; the roll's
+            // anchors append) — the `.trwld` path. A `.wld`'s store is built
+            // beside this one, in the hoist above.
+            world_chests,
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2230,15 +2307,70 @@ impl App {
     }
 }
 
-/// Loads the world (`save::load` for the port's `.trwld`, `wld::load` for the
-/// retail `.wld`), applies the `TR_DAY` clock override and frames the loaded
-/// tiles and walls — the load half of the startup, verbatim from `main`.
-pub(crate) fn load_world(world_path: &Path) -> Result<World> {
+/// Whether `path` is the port's own world format (`.trwld`) — the one whose
+/// player/map sidecars and `save::load` apply. A `.wld` is a retail file: its
+/// sections, and only its world file, are the state's home.
+pub(crate) fn is_native_trwld(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == "trwld")
+}
+
+/// What [`load_world`] hands [`App::new`] beside the `World`: the loaded
+/// `.wld`'s section payloads, the format version their load fix-ups gate on,
+/// and whether the sections are the file's own (they are absent for the native
+/// `.trwld`, whose state rides the sidecar).
+pub(crate) struct WorldSections {
+    pub data: wld::sections::SectionData,
+    /// `WorldFile._versionNumber`; 0 for a `.trwld` (no version gates apply).
+    pub version: i32,
+    /// Whether `data` came from a `.wld`'s section table.
+    pub from_wld: bool,
+}
+
+impl Default for WorldSections {
+    fn default() -> Self {
+        Self {
+            data: wld::sections::SectionData::default(),
+            version: 0,
+            from_wld: false,
+        }
+    }
+}
+
+/// Loads the world (`save::load` for the port's `.trwld`,
+/// `wld::load_with_sections` for the retail `.wld`), applies the `TR_DAY` clock
+/// override and frames the loaded tiles and walls — the load half of the
+/// startup, verbatim from `main`.
+///
+/// The three `.wld` sections that are world state (`World.signs`,
+/// `World.pressure_plates`, `World.tile_entities`) are applied here in the C#'s
+/// `LoadWorld_Version2` order — signs, tile entities, plates — so the loaded
+/// world is complete before the framing passes and the `TR_*` hooks run; the
+/// App-owned sections ride [`WorldSections`] to `App::new`.
+pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     let t0 = Instant::now();
-    let mut world = if world_path.extension().is_some_and(|e| e == "trwld") {
-        save::load(&world_path)?
+    let (mut world, sections) = if is_native_trwld(world_path) {
+        (save::load(&world_path)?, WorldSections::default())
     } else {
-        wld::load(&world_path)?
+        let mut loaded = wld::load_with_sections(&world_path)?;
+        // `LoadWorld_Version2:1786` (signs) → `:1808` (tile entities) → `:1825`
+        // (pressure plates): the world-state halves, in that order.
+        tr_core::wld::sections::signs::apply_loaded(&mut loaded.world, &loaded.sections.signs);
+        tr_core::wld::sections::tile_entities::apply_loaded(
+            &mut loaded.world,
+            &loaded.sections.tile_entities,
+        );
+        tr_core::wld::sections::pressure_plates::apply_loaded(
+            &mut loaded.world,
+            &loaded.sections.pressure_plates,
+        );
+        (
+            loaded.world,
+            WorldSections {
+                data: loaded.sections,
+                version: loaded.version,
+                from_wld: true,
+            },
+        )
     };
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
@@ -2439,7 +2571,20 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         world.time,
         if world.day_time { "day" } else { "night" }
     );
-    Ok(world)
+    if sections.from_wld {
+        log::info!(
+            "wld sections: {} chests, {} signs, {} npcs, {} tile entities, {} plates, {} rooms, {} bestiary kills, {} powers",
+            sections.data.chests.len(),
+            sections.data.signs.len(),
+            sections.data.npcs.town.len(),
+            sections.data.tile_entities.len(),
+            sections.data.pressure_plates.len(),
+            sections.data.town_rooms.len(),
+            sections.data.bestiary.kills.len(),
+            sections.data.creative_powers.records.len(),
+        );
+    }
+    Ok((world, sections))
 }
 
 // --- Deterministic load hooks for the object screenshots --------------------
@@ -3357,7 +3502,7 @@ mod tr_hooks {
         // observe a half-update); the ENV_LOCK above is that serialization.
         unsafe { std::env::set_var("TR_SUNDIAL", "1") };
         unsafe { std::env::set_var("TR_MOONDIAL", "1") };
-        let world = load_world(&path).expect("scratch world loads");
+        let (world, _sections) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
         let _ = std::fs::remove_file(&path);
@@ -3388,7 +3533,7 @@ mod tr_hooks {
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
         save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
-        let world = load_world(&path).expect("scratch world loads");
+        let (world, _sections) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);

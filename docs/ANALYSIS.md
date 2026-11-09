@@ -63,7 +63,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 
 | System | Original location | Size | Status | Notes |
 | --- | --- | --- | --- | --- |
-| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | `.wld` header + section table + RLE tile stream parsed; chests/signs/NPCs skipped. Native `.trwld` writer/reader for generated worlds. `Tile` is 12 bytes (slope/paint and wall cell packed); 5.04 M-tile world = 60.5 MB |
+| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | `.wld` read + written for all 11 sections (header/flags/tiles + chests/signs/NPCs/TEs/plates/TownManager/Bestiary/CreativePowers, every load fix-up ported), the app's load/save dispatch wired. Native `.trwld` writer/reader for generated worlds (no TE/chest sections — the M6-SAVE-1b follow-up). `Tile` is 12 bytes (slope/paint and wall cell packed); 5.04 M-tile world = 60.5 MB |
 | Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Generic block chain + merge families ported; slopes/half-bricks framed; per-type grass edge/moss/vines/weird branches approximated |
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
@@ -113,6 +113,98 @@ for x in 0..maxTilesX:                 column-major, RLE per column
 Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): active,
 half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
 plus the computed wall autotile cell (`wall_col`, `wall_row`).
+
+### The eleven sections (all eleven ported, both directions — M6-SAVE-1, 2026-11-09)
+
+`SaveWorld_Version2:1150-1165` / `LoadWorld_Version2:1760-1851`: a 70-byte prologue
+(`i32 326` + the 20-byte `FileMetadata` + `i16 11` + the eleven `i32` section **end**
+offsets), then the sections in this order, then the footer triple
+`(true, worldName, worldId)`. `wld/mod.rs` assembles/backfills the table;
+`wld/sections/<name>.rs` is each codec; the reader's end-offset assertions are
+reproduced (`bad section pointer N`).
+
+| # | Section | Wire shape | Rust |
+| --- | --- | --- | --- |
+| 0 | file-format header | `u16 TileID.Count` + the 95-byte importance bitmap | `sections/header.rs` |
+| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` |
+| 2 | tiles | column-major RLE (see above) | `sections/tiles.rs` |
+| 3 | chests | `i16 count` (+ the shared `i16` slot count below 294), then per chest `(i32 x, i32 y, string name, i32 maxItems, maxItems × i16/i16/i32/u8)`; the duplicate-position and tail passes, the `<115` dresser pass, `Chest.FixLoadedData`, and the save-side dead-anchor pre-pass | `sections/chests.rs` + `tr-app/chest.rs::{from_wld,to_wld,fix_dresser_chests,destroy_invalid_anchors}` |
+| 4 | signs | `i16 count`, then `(string text, i32 x, i32 y)` per sign over `Main.sign[0..31999]`; the tile check + dup + tail passes on load | `sections/signs.rs` (the store lives on `World.signs`) |
+| 5 | NPCs | the shimmer bitmap's truth indices (`>= 268`), the terminator-delimited town list (`i32 netID` or the `<190` name, `string GivenName`, `Vector2`, `bool homeless`, the home pair, a `BitsByte` gating `townNpcVariationIndex` `>= 213` and `homelessDespawn` `>= 315`), then the four-tower list (`>= 140`) | `sections/npcs.rs` + `tr-app/npc.rs::{from_wld,to_wld}` |
+| 6 | tile entities | `i32 count`, then per entity `(u8 ty, i16 x, i16 y)` + the type's `ReadExtraData`; the id reassignment, the `InWorld`/`CheckValidTile` drop pass, `OnWorldLoaded`, and the display doll's payload skip-reads | `sections/tile_entities.rs` |
+| 7 | pressure plates | `i32 count`, then `(i32 x, i32 y)` per pressed point (the `bool[255]` weights are runtime state) | `sections/pressure_plates.rs` (`World.pressure_plates`) |
+| 8 | TownManager rooms | `i32 count`, then `(i32 npcID, i32 x, i32 y)` pairs | `sections/town_rooms.rs` + `tr-app/town.rs::TownRooms` |
+| 9 | Bestiary | three sub-lists: kills (`i32 count` + `(string creditId, i32 count)`), sights and chats (`i32 count` + one credit id each) | `sections/bestiary.rs` + `tr-core/bestiary.rs::WorldBestiary` (`App.bestiary`) |
+| 10 | CreativePowers | **terminator-delimited**: `{ bool true; ushort id; payload }` repeated until `bool false`; toggles write `bool Enabled`, the two sliders write the `[0,1]` `_sliderCurrentValueCache` | `sections/creative_powers.rs` + `tr-app/creative.rs` |
+
+The C#'s own section numbering is 0-based in `positions[]` and 1-based in the prose;
+`WorldFile.SaveBestiary:3396` is the **1-based 10th** section (pointer 9), and
+`SaveCreativePowers:3412` is the 11th (pointer 10).
+
+The app glue (M6-SAVE-1 phase 7): `app/mod.rs::load_world` calls
+`wld::load_with_sections` (one read: world + sections) and applies the world-state
+halves in the C#'s order — signs, tile entities, pressure plates — before the framing
+passes; `App::new` applies the App-owned halves — chests (the file's store displaces the
+load-time re-roll, the `<115` dresser fix-up gated on the file version), the NPC list
+(replacing the startup spawns, then `FixAgainstExploits:1861`'s home re-validation with
+the town rooms), the shimmer bitmap, the bestiary tracker and the creative powers.
+`saveglue::save_world` dispatches on the extension: `.trwld` → the native writer plus the
+sidecars (unchanged), `.wld` → `wld::save` with every section built from the live state
+(the chests' dead-anchor pre-pass first, as the C# runs it). The autosave, F9, close and
+quit paths all funnel through `save_world`.
+
+### Deviations (every deliberate departure from the C#, phases 2-7)
+
+- **Unowned flag fields** are written with the C# defaults derived from
+  `LoadWorldFlags:1981`'s `< gate` branches rather than being modelled (assumption-1's
+  fallback); the reader keeps its own width.
+- **`LastPlayed` is 0** and the creation-time pair is zero-filled — the port has no
+  play-time accounting; `FileMetadata`'s revision increments per save, as vanilla
+  (`IncrementAndWrite`), and is the file's only clock-adjacent value.
+- **Wires are not written**: no section carries the wiring state.
+- **GUID and worldId are 0** — the port keeps neither (the footer's worldId likewise).
+- **Seed text**: the port's `u64` seed is persisted as its decimal text; a non-numeric
+  seed reads as 0 (`SeedText` is `WorldFileData.cs:355`'s own convention).
+- **Non-important tiles and kind 144**: a non-important kind reads back with
+  `frameX/frameY = -1` (`LoadWorldTiles:2605`) and kind 144's `frameY` is forced to 0 on
+  write (`SaveWorldTiles`) — an asymmetry preserved verbatim.
+- **Chests**: a banned item's `(type, prefix, stack)` triple is not written at all
+  (unreachable through the app — the fix-up turns it to air first); the latent
+  `> 8000`-chest count asymmetry between the writer's `i16` count and the displacement
+  pass; a non-40 `maxItems` chest is not threaded into the click hit-test.
+- **NPCs**: a `SavesAndLoads` tower record (422/507/493/517) is parsed, its bytes
+  consumed and the entity discarded (no ported kind is a tower); the `version < 251`
+  recompute of the eight `unlocked*Spawn` flags is not ported (live spawning state); a
+  homeless record's stale home coordinates are not carried into live state.
+- **Tile entities**: the dummy's and the logic sensor's payloads are carried from the
+  file even though nothing reads their runtime halves; the display doll's payload is
+  read and **dropped** (`is_storable`) because its `WriteExtraData` shape (three
+  bitsBytes, a pose byte, up to nineteen triples) has no home in `TeData` and a hollow
+  record would desynchronise a vanilla reader — so a `.wld` round-trip is not byte-exact
+  for a world with dolls; the kite/critter anchors' `IsTileValidForEntity` is the anchor
+  kind alone (`TEKiteAnchor.cs`/`TECritterAnchor.cs`), which the shared head check
+  settles.
+- **Signs and plates**: the store is the positional `Vec<WldSign>` (exactly the non-null
+  signs in slot order), not the C#'s 32 000-slot array; a duplicate plate point is
+  refused rather than overwritten (`LoadWeightedPressurePlates`' dictionary key).
+- **Collections**: the C#'s `Dictionary`/`HashSet` enumeration order is unspecified; the
+  port stores sorted maps/sets, so a save is deterministic and differs from a vanilla
+  file only in order, never in content.
+- **Bestiary**: the sightings/chats stay empty until the recording behaviour lands
+  (owner decision, state + IO only); the kill clamp is one-sided (the file keeps the raw
+  value, the in-memory tracker clamps it).
+- **Creative powers**: the id-8 slider is a `[0,1]` cache on the wire and the ported rate
+  1..24 in memory — the codec remaps both directions
+  (`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880`); the three ids the port has
+  not ported (freeze rain 9, freeze wind 10, difficulty 12) are never written.
+- **Save/load asymmetry**: the C#'s `SaveChests:1609-1642` dead-anchor pre-pass mutates
+  `Main.chest`; the port does the same to its live store (through `&mut self`), so the
+  file and the store agree.
+- **A `.wld` load carries no player or map sidecar**: the kills ride the world file
+  (owner decision), the `.trplayer`/`.map` sidecars stay the `.trwld` path's — a vanilla
+  player file has no port format yet (the follow-up row).
+- **`.trwld` TE/chest parity** is not done: the port's own format carries neither, so a
+  `.trwld` world loses its tile entities and chests on reload (M6-SAVE-1b).
 
 ## Autotiling
 
@@ -3505,8 +3597,11 @@ Deviations:
 - **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
   the UI layer maps between them; the triples are exactly what
   `WriteExtraData`/`ReadExtraData` and msg 121 carry.
-- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
-  in the world-file section 7 (`WorldFile.cs`).
+- **Persistence** for `.wld` landed with M6-SAVE-1 (world-file section 7,
+  `SaveTileEntities:3302`/`LoadTileEntities:3315`, with the id reassignment, the
+  `CheckValidTile`/`InWorld` drop pass and `OnWorldLoaded`); the port's own `.trwld`
+  still carries no TE section, so its worlds lose the entities on reload — the
+  M6-SAVE-1b follow-up.
 - **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
   per-chunk cap exists for the C#'s save-section packing; the port's books
   are unbounded maps.

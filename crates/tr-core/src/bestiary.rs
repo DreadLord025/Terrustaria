@@ -53,10 +53,10 @@ pub fn get_unlock_state_by_kill_count(
     UnlockState::NotKnownAtAll
 }
 
-/// `NPCKillsTracker.POSITIVE_KILL_COUNT_CAP` (`NPCKillsTracker.cs:12`).
+/// `NPCKillsTracker.POSITIVE_KILL_COUNT_CAP` (`NPCKillsTracker.cs:14`).
 pub const POSITIVE_KILL_COUNT_CAP: i32 = 999_999_999;
 
-/// `NPCKillsTracker` (`NPCKillsTracker.cs:16-101`): the per-world
+/// `NPCKillsTracker` (`NPCKillsTracker.cs:10-101`): the per-world
 /// kill counts keyed by the NPC's bestiary credit id (`NPCID.Search.GetName`
 /// of the net id — `ContentSamples.Initialize`, `ContentSamples.cs:862-873`).
 /// The port persists the pairs in the `.trplayer` sidecar; vanilla stores the
@@ -71,14 +71,14 @@ impl KillTracker {
         Self::default()
     }
 
-    /// `RegisterKill` (`:23-32`): increment (the count was clamped on write,
+    /// `RegisterKill` (`NPCKillsTracker.cs:23-33`): increment (the count was clamped on write,
     /// so reading before incrementing cannot overflow the cap).
     pub fn register_kill(&mut self, credit_id: &str) {
         let next = self.get_kill_count(credit_id).saturating_add(1);
         self.set_kill_count_directly(credit_id, next);
     }
 
-    /// `SetKillCountDirectly` (`:44-53`) — clamped to the positive cap
+    /// `SetKillCountDirectly` (`NPCKillsTracker.cs:40-51`) — clamped to the positive cap
     /// (`Utils.Clamp`), no achievement hook (M6-ACH-1's).
     pub fn set_kill_count_directly(&mut self, credit_id: &str, kill_count: i32) {
         let clamped = kill_count.clamp(0, POSITIVE_KILL_COUNT_CAP);
@@ -102,7 +102,7 @@ impl KillTracker {
         self.counts.iter().map(|(k, v)| (k.as_str(), *v))
     }
 
-    /// `Load` (`:87-92`): the saved pairs overwrite, the rest keep.
+    /// `Load` (`:72-81`): the saved pairs overwrite, the rest keep.
     pub fn load_pairs(&mut self, pairs: impl Iterator<Item = (String, i32)>) {
         for (id, count) in pairs {
             self.set_kill_count_directly(&id, count);
@@ -123,7 +123,7 @@ impl KillTracker {
 ///
 /// The port is **state + IO only** for the three halves (owner decision,
 /// 2026-11-08): [`KillTracker::register_kill`] is wired, but nothing records a
-/// sighting or a chat yet (`NPCWasNearPlayerTracker.ScanWorldForFinds:98-131`
+/// sighting or a chat yet (`NPCWasNearPlayerTracker.ScanWorldForFinds:102-130`
 /// and the chat hook are behaviour, not state), so a world that has never seen
 /// an NPC carries an empty sightings/chats pair and reads it back empty. That
 /// is the intended state until the recording lands — recorded for
@@ -138,11 +138,11 @@ impl KillTracker {
 pub struct WorldBestiary {
     /// `NPCKillsTracker` (`NPCKillsTracker.cs:16`).
     pub kills: KillTracker,
-    /// `NPCWasNearPlayerTracker._wasNearPlayer` (`NPCWasNearPlayerTracker.cs:13`)
+    /// `NPCWasNearPlayerTracker._wasNearPlayer` (`NPCWasNearPlayerTracker.cs:15`)
     /// — the credit ids the player has seen near an NPC.
     pub sights: std::collections::BTreeSet<String>,
     /// `NPCWasChatWithTracker._chattedWithPlayer`
-    /// (`NPCWasChatWithTracker.cs:13`) — the credit ids the player has talked to.
+    /// (`NPCWasChatWithTracker.cs:14`) — the credit ids the player has talked to.
     pub chats: std::collections::BTreeSet<String>,
 }
 
@@ -160,7 +160,7 @@ impl WorldBestiary {
     }
 
     /// `NPCWasNearPlayerTracker.SetWasSeenDirectly`
-    /// (`NPCWasNearPlayerTracker.cs:44-53`): a credit id already in the set
+    /// (`NPCWasNearPlayerTracker.cs:43-52`): a credit id already in the set
     /// stays once (the C#'s `HashSet.Add`), so the wiring phase may call this
     /// per frame without changing the state.
     pub fn set_was_seen_directly(&mut self, credit_id: &str) {
@@ -168,43 +168,43 @@ impl WorldBestiary {
     }
 
     /// `NPCWasNearPlayerTracker.GetWasNearbyBefore(string)`
-    /// (`NPCWasNearPlayerTracker.cs:63-67`).
+    /// (`NPCWasNearPlayerTracker.cs:59-62`).
     pub fn was_seen_near_player(&self, credit_id: &str) -> bool {
         self.sights.contains(credit_id)
     }
 
     /// `NPCWasChatWithTracker.SetWasChatWithDirectly`
-    /// (`NPCWasChatWithTracker.cs:44-53`).
+    /// (`NPCWasChatWithTracker.cs:32-41`).
     pub fn set_was_chat_with_directly(&mut self, credit_id: &str) {
         self.chats.insert(credit_id.to_string());
     }
 
     /// `NPCWasChatWithTracker.GetWasChatWith(string)`
-    /// (`NPCWasChatWithTracker.cs:65-69`).
+    /// (`NPCWasChatWithTracker.cs:49-52`).
     pub fn was_chat_with(&self, credit_id: &str) -> bool {
         self.chats.contains(credit_id)
     }
 
     /// The sighted credit ids in the order `NPCWasNearPlayerTracker.Save`
-    /// (`:66-73`) walks the set — the port's sorted order, not the C#'s
-    /// unspecified one.
+    /// (`:64-74`, the write loop at `:69-72`) walks the set — the port's
+    /// sorted order, not the C#'s unspecified one.
     pub fn sight_ids(&self) -> impl Iterator<Item = &str> {
         self.sights.iter().map(String::as_str)
     }
 
     /// The chatted-with credit ids in the same deterministic order
-    /// (`NPCWasChatWithTracker.Save:66-73`).
+    /// (`NPCWasChatWithTracker.Save:54-64`, the write loop at `:59-62`).
     pub fn chat_ids(&self) -> impl Iterator<Item = &str> {
         self.chats.iter().map(String::as_str)
     }
 
-    /// `NPCWasNearPlayerTracker.Load` (`:74-80`): the file's ids add, the rest
+    /// `NPCWasNearPlayerTracker.Load` (`:76-84`): the file's ids add, the rest
     /// keep (`HashSet.Add`).
     pub fn load_sights(&mut self, ids: impl Iterator<Item = String>) {
         self.sights.extend(ids);
     }
 
-    /// `NPCWasChatWithTracker.Load` (`:74-80`).
+    /// `NPCWasChatWithTracker.Load` (`:66-74`).
     pub fn load_chats(&mut self, ids: impl Iterator<Item = String>) {
         self.chats.extend(ids);
     }

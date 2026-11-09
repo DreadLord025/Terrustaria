@@ -7,7 +7,7 @@
 //!
 //! ## The wire ids (`PowerId` is not the wire)
 //! `CreativePowerManager.Register` hands each power a `ushort` from a counter
-//! (`CreativePowerManager.cs:35-55`) in `Initialize`'s order
+//! (`CreativePowerManager.cs:35-48`) in `Initialize`'s order
 //! (`CreativePowerManager.cs:86-104`), and that id is the one the world file
 //! carries (`SaveToWorld:125-137`/`LoadFromWorld:139-151`). The port's
 //! [`PowerId`] order is its own — the powers it added later — so the mapping
@@ -40,16 +40,18 @@ pub enum PowerId {
     StopBiomeSpread,
 }
 
-/// One power's state (`ASharedTogglePower`/`ASharedButtonPower`/
-/// `ASharedSliderPower`'s value halves — the per-player split lands with
-/// the multiplayer pass; single-player folds them).
+/// One power's state (`ASharedTogglePower`'s value halves — the per-player
+/// split lands with the multiplayer pass; single-player folds them).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PowerState {
     /// The toggle's boolean (`_shouldBeActive`).
     Toggle(bool),
     /// The button's momentary press (`_shouldBeActive`'s one-shot).
     Button,
-    /// The slider's f32 in [min, max] (`_sliderCurrentValue`).
+    /// The slider's *derived* value: `ModifyTimeRate.TargetTimeRate`'s
+    /// 1..24 (`CreativePowers.cs:877-880`'s remap of the `[0,1]`
+    /// `_sliderCurrentValueCache`), not the cache itself — the codec
+    /// (`tr_core::wld::sections::creative_powers`) owns that remap.
     Slider(f32),
 }
 
@@ -222,10 +224,10 @@ impl CreativePowers {
 /// C# expresses through the class's interface membership: a toggle's
 /// `Enabled` is a `bool` (`FreezeTime.Save:1458`), a slider's
 /// `_sliderCurrentValueCache` an `f32` (`ModifyTimeRate.Save:967`,
-/// `DifficultySliderPower.Save:1162`). The raw f32 is stored as-is — the C#
-/// derives its UI values by remapping the slider cache on load
-/// (`ModifyTimeRate.UpdateInfoFromSliderValueCache:873-877`), a
-/// representation difference recorded here rather than ported.
+/// `DifficultySliderPower.Save:1162`). A slider's f32 here is the **derived
+/// rate** (1..24, `ModifyTimeRate.TargetTimeRate`); the section codec remaps
+/// it to the `[0,1]` cache the file carries in both directions — this seam
+/// never sees the cache.
 pub fn persistent_powers(powers: &CreativePowers) -> tr_core::wld::sections::WldCreativePowers {
     let mut records = Vec::new();
     for power in PERSISTENT_POWERS {
@@ -408,27 +410,39 @@ mod tests {
     }
 
     #[test]
-    fn test_DW_6_3_the_slider_stores_the_raw_cached_value() {
-        // `ModifyTimeRate.Save:967` writes `_sliderCurrentValueCache` raw; the
-        // C# remaps it into `TargetTimeRate` for its own use
-        // (`UpdateInfoFromSliderValueCache:873-877`), which the port does not
-        // need. The seam therefore stores the f32 verbatim.
+    fn test_DW_6_3_the_slider_stores_the_rate_and_the_codec_remaps_it() {
+        // F3 (Phase-6 review N1): `ModifyTimeRate.Save:967` writes the
+        // `[0,1]` `_sliderCurrentValueCache`, which the C# derives the rate
+        // from (`UpdateInfoFromSliderValueCache:877-880`). The port's state
+        // (this seam's input) holds the *rate* — `TargetTimeRate`'s port — so
+        // the seam passes 0.5 through as-is and the section codec owns the
+        // cache. This test pins the seam's half; the wire half is
+        // `creative_powers::test_DW_7_6_*`.
         let mut powers = CreativePowers::new();
-        powers.set(PowerId::TimeRate, PowerState::Slider(0.5));
+        powers.set(PowerId::TimeRate, PowerState::Slider(12.0));
         let records = persistent_powers(&powers);
         let rate = records
             .records
             .iter()
             .find(|(id, _)| *id == 8)
             .expect("the time rate rides id 8");
-        assert_eq!(rate.1, WldCreativeValue::F32(0.5));
+        assert_eq!(
+            rate.1,
+            WldCreativeValue::F32(12.0),
+            "the seam carries the rate, not the cache"
+        );
         let mut restored = CreativePowers::new();
         apply_persistent(&mut restored, &records);
-        assert!((restored.slider(PowerId::TimeRate) - 0.5).abs() < 1e-6);
+        assert!((restored.slider(PowerId::TimeRate) - 12.0).abs() < 1e-6);
         assert!(
-            (restored.time_rate() - 0.5).abs() < 1e-6,
+            (restored.time_rate() - 12.0).abs() < 1e-6,
             "the freeze is off"
         );
+        // The rate is the slider's own range (`time_rate()` returns it
+        // verbatim), so a port-side 0.5 means half a x — deliberately not a
+        // vanilla-reachable state.
+        powers.set(PowerId::TimeRate, PowerState::Slider(0.5));
+        assert!((powers.time_rate() - 0.5).abs() < 1e-6);
     }
 
     #[test]
@@ -471,13 +485,13 @@ mod tests {
             "the registration order"
         );
         for anchor in [
-            "CreativePowerManager.cs:35-55",
+            "CreativePowerManager.cs:35-48",
             "`SaveToWorld:125-137`",
             "`LoadFromWorld:139-151`",
             "FreezeTime.Save:1458",
             "ModifyTimeRate.Save:967",
             "DifficultySliderPower.Save:1162",
-            "ModifyTimeRate.UpdateInfoFromSliderValueCache:873-877",
+            "ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880",
         ] {
             assert!(src.contains(anchor), "missing {anchor}");
         }

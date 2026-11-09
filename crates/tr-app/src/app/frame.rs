@@ -1242,7 +1242,7 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        &self.kill_tracker,
+                        &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
                         self.shop_npc

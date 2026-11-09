@@ -123,9 +123,10 @@ impl TeKind {
             TeKind::TeleportationPylon => 597,
             TeKind::DeadCellsDisplayJar => 698,
             TeKind::KiteAnchor => 723,
-            // The critter anchor is placed by the released critters, not by
-            // a tile (`TECritterAnchor` has no ValidTile).
-            TeKind::CritterAnchor => 0,
+            // `TECritterAnchor.IsTileValidForEntity`'s `tile.type == 724`
+            // (`TECritterAnchor.cs:24-32`, the check at `:26`) — the released
+            // critters place the anchor on a Lady Bug tile.
+            TeKind::CritterAnchor => 724,
         }
     }
 
@@ -157,13 +158,17 @@ impl TeKind {
             // `frameY != 0 || frameX % 54 != 0` (`TETeleportationPylon.cs:
             // 135-139`).
             TeKind::TeleportationPylon => t.frame_y == 0 && t.frame_x % 54 == 0,
-            // `frameY != 0 || frameX % 36 != 0` (`TEDisplayDoll.cs:302-305`).
+            // `frameY != 0 || frameX % 36 != 0` (`TEDisplayDoll.cs:851-858`,
+            // `IsTileValidForEntity`).
             TeKind::DisplayDoll => t.frame_y == 0 && t.frame_x % 36 == 0,
-            // The kite/critter anchors' `IsTileValidForEntity` is the anchor
-            // kind alone (`TEKiteAnchor.cs:26` / `TECritterAnchor.cs:26`:
-            // `tile.active() && tile.type == 723/724`), which the head check
-            // above already settles; their behaviour halves are M7-TE-2.
-            _ => true,
+            // The kite anchor's `IsTileValidForEntity` is the anchor kind
+            // alone (`TEKiteAnchor.cs:24-30`: `tile.active() && tile.type ==
+            // 723`), which the head check above already settles.
+            TeKind::KiteAnchor => true,
+            // The critter anchor's is the kind 724 alone
+            // (`TECritterAnchor.cs:24-32`), likewise settled above — the
+            // recreation-release behaviour is M7-TE-2.
+            TeKind::CritterAnchor => true,
         }
     }
 
@@ -722,6 +727,62 @@ mod tests {
         // frameY 18 → invalid.
         w.tile_mut(10, 10).unwrap().frame_y = 18;
         assert!(!TeKind::ItemFrame.is_tile_valid(&w, 10, 10));
+    }
+
+    /// A world whose anchor cell (10,10) holds `kind` at the given frames.
+    fn world_with_anchor(kind: u16, frame_x: i16, frame_y: i16) -> World {
+        let mut w = World::new("t".into(), 32, 32);
+        let i = w.index(10, 10);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    #[test]
+    fn the_critter_anchor_requires_the_lady_bug_tile() {
+        // F1 (Phase-5 review N1): `TECritterAnchor.IsTileValidForEntity`
+        // (`TECritterAnchor.cs:24-32`) returns `tile.type == 724` — an
+        // anchor on any other active tile is dropped by
+        // `LoadTileEntities`'s removal pass, so it must not survive here.
+        let on_anchor = world_with_anchor(724, 0, 0);
+        assert!(TeKind::CritterAnchor.is_tile_valid(&on_anchor, 10, 10));
+        let on_dirt = world_with_anchor(0, 0, 0);
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&on_dirt, 10, 10));
+        let on_item_frame = world_with_anchor(395, 0, 0);
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&on_item_frame, 10, 10));
+        // The kind alone decides — frames are not part of the check.
+        let off_frame = world_with_anchor(724, 18, 18);
+        assert!(TeKind::CritterAnchor.is_tile_valid(&off_frame, 10, 10));
+        // An inactive cell has no anchor (`tile.active()`'s head check).
+        let mut cleared = world_with_anchor(724, 0, 0);
+        cleared.tile_mut(10, 10).unwrap().flags &= !FLAG_ACTIVE;
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&cleared, 10, 10));
+        // The tile id the port now reports is the C# anchor tile.
+        assert_eq!(TeKind::CritterAnchor.tile(), 724);
+        // The kite anchor keeps its own kind (723) and is likewise kind-only.
+        let on_kite = world_with_anchor(723, 18, 0);
+        assert!(TeKind::KiteAnchor.is_tile_valid(&on_kite, 10, 10));
+        assert!(!TeKind::KiteAnchor.is_tile_valid(&on_kite, 11, 10));
+    }
+
+    #[test]
+    fn the_display_doll_validity_checks_the_frames() {
+        // The same check the load path runs, asserted directly: the doll
+        // needs the 470 anchor at frameY 0 / frameX % 36 == 0
+        // (`TEDisplayDoll.cs:851-858`).
+        let mut w = world_with_anchor(470, 0, 0);
+        assert!(TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_x = 18;
+        assert!(!TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_x = 36;
+        assert!(TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_y = 36;
+        assert!(!TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
     }
 
     #[test]

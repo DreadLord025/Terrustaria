@@ -1,16 +1,17 @@
 //! Section 10 (pointer 9): bestiary — `WorldFile.SaveBestiary:3396` /
 //! `WorldFile.LoadBestiary:3402`, whose bytes are
-//! `BestiaryUnlocksTracker.Save/Load` (`BestiaryUnlocksTracker.cs:13-25`):
+//! `BestiaryUnlocksTracker.Save/Load` (`BestiaryUnlocksTracker.cs:13-25`, the
+//! Save body `:14-18`, the Load body `:20-25`):
 //! three sub-lists, all keyed by bestiary **credit-id string** (never a net
 //! id — `NPC.GetBestiaryCreditId`'s `ContentSamples.NpcBestiaryCreditIdsBy-
 //! NpcNetIds` value, `ContentSamples.cs:862-873`).
 //!
-//! Wire shape, in this exact order (`BestiaryUnlocksTracker.cs:15-17`):
-//! 1. **kills** — `NPCKillsTracker.Save:59-85`: `i32 count`, then per entry
+//! Wire shape, in this exact order (`BestiaryUnlocksTracker.cs:13-18`):
+//! 1. **kills** — `NPCKillsTracker.Save:59-70`: `i32 count`, then per entry
 //!    `(string credit id, i32 kill count)`;
-//! 2. **sights** — `NPCWasNearPlayerTracker.Save:66-73`: `i32 count`, then one
+//! 2. **sights** — `NPCWasNearPlayerTracker.Save:64-74`: `i32 count`, then one
 //!    `string` per credit id;
-//! 3. **chats** — `NPCWasChatWithTracker.Save:66-73`: the same shape.
+//! 3. **chats** — `NPCWasChatWithTracker.Save:54-64`: the same shape.
 //!
 //! The section is gated `>= 210` by the loader (`LoadWorld_Version2:1832`
 //! — the registry's `gate_210`); below it the C#'s
@@ -56,7 +57,7 @@ pub fn implemented() -> bool {
     true
 }
 
-/// `NPCKillsTracker.Load:87-92`: the count, then the `(string, i32)` pairs.
+/// `NPCKillsTracker.Load:72-81`: the count, then the `(string, i32)` pairs.
 /// The pairs land in the wire list unchanged (including duplicates — the
 /// C#'s dictionary folds them at `_killCountsByNpcId[key] = value`, which is
 /// [`WorldBestiary`]'s load half, not the codec's).
@@ -74,7 +75,7 @@ fn read_kills(r: &mut Reader) -> Option<Vec<(String, i32)>> {
     Some(kills)
 }
 
-/// `NPCWasNearPlayerTracker.Load:74-80` / `NPCWasChatWithTracker.Load:74-80`:
+/// `NPCWasNearPlayerTracker.Load:76-84` / `NPCWasChatWithTracker.Load:66-74`:
 /// the count, then one credit id per entry (`HashSet.Add` deduplicates).
 fn read_credit_ids(r: &mut Reader) -> Option<Vec<String>> {
     let count = r.i32()?;
@@ -106,7 +107,7 @@ pub fn read(r: &mut Reader, _version: i32) -> Option<WldBestiary> {
 /// so the order the caller's `to_wld` produced (the sorted tracker order) is
 /// the file's.
 pub fn write(w: &mut Writer, data: &SectionData, _version: i32) {
-    // `NPCKillsTracker.Save:62-84`: `writer.Write(Count)` then per pair
+    // `NPCKillsTracker.Save:63-68`: `writer.Write(Count)` then per pair
     // `writer.Write(Key)` and `writer.Write(Value)`.
     w.i32(data.bestiary.kills.len() as i32);
     for (id, count) in &data.bestiary.kills {
@@ -118,7 +119,7 @@ pub fn write(w: &mut Writer, data: &SectionData, _version: i32) {
     for id in &data.bestiary.sights {
         w.cs_string(id);
     }
-    // `NPCWasChatWithTracker.Save:68-72` — the same shape.
+    // `NPCWasChatWithTracker.Save:58-62` — the same shape.
     w.i32(data.bestiary.chats.len() as i32);
     for id in &data.bestiary.chats {
         w.cs_string(id);
@@ -146,7 +147,7 @@ pub fn to_wld(tracker: &WorldBestiary) -> WldBestiary {
 /// The state-facing load half: `BestiaryUnlocksTracker.Load`'s output over a
 /// fresh tracker. Each half keeps its C# semantics — the kills' pairs
 /// overwrite their key and clamp (`KillTracker::set_kill_count_directly`,
-/// `NPCKillsTracker.cs:44-53`, so a hostile file's duplicate ids are
+/// `NPCKillsTracker.cs:40-51`, so a hostile file's duplicate ids are
 /// last-wins), the two sets add (`HashSet.Add`, so a duplicate id stays once).
 pub fn from_wld(records: &WldBestiary) -> WorldBestiary {
     let mut tracker = WorldBestiary::new();
@@ -426,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_DW_6_2_duplicate_credit_ids_fold_like_the_c_sharp_collections() {
-        // `NPCKillsTracker.Load:87-92` writes `dict[key] = value` — the last
+        // `NPCKillsTracker.Load:72-81` writes `dict[key] = value` — the last
         // duplicate wins; the two `HashSet.Add`s keep the first.
         let records = WldBestiary {
             kills: vec![("BlueSlime".into(), 5), ("BlueSlime".into(), 9)],
@@ -514,14 +515,17 @@ mod tests {
         assert!(src.contains("WorldFile.cs:3396"), "the writer's anchor");
         assert!(src.contains("WorldFile.cs:3402"), "the reader's anchor");
         for anchor in [
-            "// `NPCKillsTracker.Load:87-92`",
-            "// `NPCWasNearPlayerTracker.Load:74-80` / `NPCWasChatWithTracker.Load:74-80`",
+            "// `NPCKillsTracker.Load:72-81`",
+            "// `NPCWasNearPlayerTracker.Load:76-84` / `NPCWasChatWithTracker.Load:66-74`",
             "// `BestiaryUnlocksTracker.Load:22-24`",
             "// `BestiaryUnlocksTracker.Save:15-17`",
-            "// `NPCKillsTracker.Save:62-84`",
+            "// `NPCKillsTracker.Save:63-68`",
             "// `NPCWasNearPlayerTracker.Save:68-72`",
-            "// `NPCWasChatWithTracker.Save:68-72`",
-            "`BestiaryUnlocksTracker.cs:13-25`",
+            "// `NPCWasChatWithTracker.Save:58-62`",
+            "`BestiaryUnlocksTracker.cs:13-18`",
+            "`NPCKillsTracker.Save:59-70`",
+            "`NPCWasNearPlayerTracker.Save:64-74`",
+            "`NPCWasChatWithTracker.Save:54-64`",
             "`LoadWorld_Version2:1832`",
             "`LoadBestiaryForVersionsBefore210:3407`",
         ] {
