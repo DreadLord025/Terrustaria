@@ -1767,6 +1767,9 @@ impl App {
                         "plantera" => NpcKind::Plantera,
                         "brain" => NpcKind::BrainOfCthulhu,
                         "creeper" => NpcKind::Creeper,
+                        // The Queen Bee (M4-NPC-3p).
+                        "queenbee" => NpcKind::QueenBee,
+                        "kingslime" => NpcKind::KingSlime,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();

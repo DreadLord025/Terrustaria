@@ -5066,15 +5066,26 @@ impl Npc {
                 // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
             }
             NpcKind::QueenBee => {
-                // `Main.npcFrameCount[222]` = 2 (`Main.cs:67082`).
+                // `case 222` (`NPC.cs`): NPC_222's strip is TWELVE rows
+                // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082` — the
+                // v1 claimed 2 and ran an 8-tick strip over both), laid
+                // out as the charging rows 0..3 and the flight rows
+                // 4..11. The 5-tick cadence rides both halves; the
+                // `localAI[0] == 1` gate that selects the charging half is
+                // an angle slot in the C# (the queen's orbit rotation),
+                // which the port does not model — so the flight rows
+                // 4..11 always ride, exactly as they do in the vanilla
+                // where the angle is never exactly 1.
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
+                if self.frame_counter > 4.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    self.frame += 1;
+                }
+                if self.frame < 4 {
+                    self.frame = 4;
+                }
+                if self.frame >= 12 {
+                    self.frame = 4;
                 }
             }
             NpcKind::EyeOfCthulhu => {
@@ -15184,6 +15195,43 @@ mod tests {
             assert_eq!(c.frame, 0, "the Creeper's one frame");
         }
     }
+
+    #[test]
+    fn the_queen_bee_rides_its_flight_rows_over_the_twelve_row_strip() {
+        // `case 222` (`NPC.cs`): NPC_222's strip is TWELVE rows
+        // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082` — the v1
+        // claimed 2 and ran an 8-tick strip over both), laid out as the
+        // charging rows 0..3 and the flight rows 4..11, both at the 5-tick
+        // cadence with the flight half wrapping back to 4.
+        let mut q = bare(NpcKind::QueenBee);
+        q.frame = 4;
+        for _ in 0..4 {
+            q.find_frame();
+        }
+        assert_eq!(q.frame, 4, "4 ticks hold row 4");
+        q.find_frame();
+        assert_eq!(q.frame, 5, "the 5th tick advances");
+        // Walk the flight half to the wrap: 4 → 5 → … → 11 → 4 (each
+        // advance is a 5-tick step).
+        let mut steps = 0;
+        while q.frame != 11 {
+            q.find_frame();
+            assert!((4..12).contains(&q.frame), "the flight band rides 4..11: {}", q.frame);
+            steps += 1;
+            assert!(steps < 50, "the band must climb to 11");
+        }
+        // The wrap itself needs another 5-tick step: 11 → 12 → clamped 4.
+        for _ in 0..5 {
+            q.find_frame();
+        }
+        assert_eq!(q.frame, 4, "the flight band wraps back to 4");
+        // The charging rows 0..3 stay unreachable while the port does not
+        // model the `localAI[0] == 1` gate (an angle slot in the C#), so
+        // the row is always clamped into the flight half.
+        q.frame = 0;
+        q.find_frame();
+        assert!(q.frame >= 4, "the flight half always rides: {}", q.frame);
+    }
 }
 
 #[cfg(test)]
@@ -15206,6 +15254,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 

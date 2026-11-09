@@ -1283,12 +1283,11 @@ pub(crate) fn draw_npcs(
                 [n.x, n.y],
             ),
             // The Queen Bee: the 2-frame 66x66 sheet.
-            NpcKind::QueenBee => (
-                assets.queen_bee.as_ref(),
-                assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
-                [66.0, 66.0],
-                [n.x, n.y],
-            ),
+            // NPC_222 is 172x1824 — twelve 152-px rows
+            // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082`; the v1
+            // divided by 2 and drew a 66x66 quad at the box's corner,
+            // sampling a 912-px slice of the sheet as "one frame").
+            NpcKind::QueenBee => boss_draw(assets.queen_bee.as_ref(), 12, n, w, h),
             // The Skeletron head: the single-frame 80x102 sheet.
             NpcKind::SkeletronHead => (
                 assets.skeletron_head.as_ref(),
