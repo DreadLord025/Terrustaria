@@ -1941,6 +1941,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let rng = app.item_rng;
                 crate::world_sim::lunar::trigger_lunar_apocalypse(app, rng);
             }
+            // `DoDeathEvents`'s 422 row (`NPC.cs:79327-79332`): the Vortex
+            // pillar's own pair (the other agent's parallel merge added the
+            // kind + this arm with the lunar-apocalypse calls — the port had
+            // no Vortex kind at all before, so its `downedTowerVortex` /
+            // `TowerActiveVortex` never cleared).
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
                 // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
                 // meteorite — the guaranteed first (the pre-kill read of

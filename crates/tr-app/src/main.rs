@@ -58,6 +58,7 @@ mod registry;
 mod variants;
 mod render;
 mod spawner;
+mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;

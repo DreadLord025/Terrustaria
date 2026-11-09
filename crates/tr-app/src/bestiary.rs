@@ -830,7 +830,10 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     BestiaryEntryDef {
         credit_id: "AncientCultist",
-        net_id: 422,
+        net_id: 439, // `NPCID.CultistBoss` (439) — 422 is the Vortex PILLAR's
+        // id (`NPCID.LunarTowerVortex`); the entry carried the pillar's id
+        // until M4-NPC-3l. The port ships no NPC_439 sheet, so the draw
+        // stands on NPC_422's art (the documented stand-in).
         kind: NpcKind::AncientCultist,
         variant: None,
         quick_unlock: false,
@@ -853,20 +856,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Nebula Pillar",
     },
     BestiaryEntryDef {
-        credit_id: "VortexTower",
-        net_id: 422,
-        kind: NpcKind::VortexTower,
-        variant: None,
-        quick_unlock: false,
-        name: "Vortex Pillar",
-    },
-    BestiaryEntryDef {
         credit_id: "SolarTower",
         net_id: 517,
         kind: NpcKind::SolarTower,
         variant: None,
         quick_unlock: false,
         name: "Solar Pillar",
+    },
+    BestiaryEntryDef {
+        credit_id: "VortexTower",
+        net_id: 422, // `NPCID.LunarTowerVortex` (422) — the fourth pillar of
+        // `WorldGen.TriggerLunarApocalypse`'s `{517, 422, 507, 493}` shuffle
+        // (`WorldGen.cs:86628`), missing from the port until M4-NPC-3l.
+        kind: NpcKind::VortexTower,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Pillar",
     },
     BestiaryEntryDef {
         credit_id: "StardustCellBig",
