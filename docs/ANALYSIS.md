@@ -8672,3 +8672,37 @@ Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
 dusts), the sounds and the light are unmodelled; the wand's
 `UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
 late-stage clone spawn (`:32251-32257`) is unmodelled.
+
+## SpreadGrass's conversion arms (M5-SPREAD-2)
+
+`WorldGen.SpreadGrass`'s last unported arms landed (`WorldGen.cs:75207-75221`):
+the `flag2 = dirt > 0 && TileID.Sets.Conversion.Grass[dirt]` dispatch (the set
+is 2/23/199/109/477/492, `TileID.cs:86`) and `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+(`:54802-54860`).
+
+- **The dispatch.** A conversion-grass dirt spreads through the flavor's map
+  instead of the plain type write: corruption for 23/661 (`Convert(i, j, 1,
+  tiles: true, walls: false)`), crimson for 199/662 (type 4), hallow for 109
+  (type 2). The port's new `spread::convert_cell_flavor` is that single-cell
+  Convert arm over the port's three conversion tables; `walls: false` is the
+  caller's flag (the SpreadGrass calls never convert walls).
+- **The tree arm.** A forest tree (5) standing on the spread cell survives
+  only a grass/jungle/snow/mushroom ground (the C#'s `Conversion.Grass` +
+  `JungleGrass` + `Snow` + `MushroomGrass` sets — the port's `SET_GRASS` plus
+  the literal members 60/661/662/147/70), a palm (323) only sand
+  (`SET_CONVERSION_SAND`), and the profile trees (the gem 583-589 / sakura
+  596 / willow 616 / ash 634) their `GroundTest`'s kind. An invalid ground
+  kills the tree (the port clears the cell). The 596/616
+  `ConvertTreeAndGround` re-grounding arm is the port's Out — the tree-
+  conversion machinery isn't ported.
+- Tests: `spread_grass_2_the_conversion_dispatch_and_the_tree_kill`
+  (jungle keeps the tree, sand kills it, the plain write lands) and
+  `spread_grass_2_the_conversion_arm_converts_through_the_flavor` (the
+  corruption map over a conversion-grass dirt, the walls untouched).
+  Suite 2759 / 0.
+
+Out: the C#'s `NetMessage.SendTileSquare(-1, i, j, 3)` (no MP netcode on this
+pass), the `UseBlockColors(TileColorCache)` arm, the neighborhood recursion
+(`repeat` with the `grassSpread < 1000` cap — the port's world-wide growth
+loop is its equivalent, the cap recorded here), and the vines/moss arms
+(`GrowMoreVines`, `SpreadGrassWalls`, `MossConversion`) still open.

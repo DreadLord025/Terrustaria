@@ -163,6 +163,64 @@ pub fn convert_cell(world: &mut World, x: i32, y: i32, corruption: bool, chlorop
 /// `CanChlorophyteGrow` (`:69464-69500`): the density gates — the
 /// chlorophyte count in the radius-35 box ≤ 40 (the box ×1.5 and the count
 /// /2 above the rock layer) and ≤ 130 in the radius-85 box.
+/// The three conversion flavors the conversion tables key on — the C#'s
+/// `WorldGen.Convert`'s conversion types (1 = corruption, 4 = crimson,
+/// 2 = hallow).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConversionFlavor {
+    Corruption,
+    Crimson,
+    Hallow,
+}
+
+/// `WorldGen.Convert(i, j, conversionType, tiles: true, walls: false)`'s
+/// single-cell arm (`:55085-55140`): the flavor's tile/wall maps over the
+/// cell. The SpreadGrass arms call it with `walls: false`.
+pub fn convert_cell_flavor(world: &mut World, x: i32, y: i32, flavor: ConversionFlavor, walls: bool) {
+    let (kind, wall) = match world.tile(x, y) {
+        Some(t) => (t.kind, t.wall),
+        None => return,
+    };
+    if !world.tile(x, y).is_some_and(|t| t.active()) && wall == 0 {
+        return;
+    }
+    match flavor {
+        ConversionFlavor::Corruption | ConversionFlavor::Crimson => {
+            let corruption = flavor == ConversionFlavor::Corruption;
+            if let Some(new_kind) = convert_tile(kind, corruption) {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.kind = new_kind;
+                    t.frame_x = 0;
+                    t.frame_y = 0;
+                }
+            }
+            if walls {
+                if let Some(new_wall) = convert_wall(wall, corruption) {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        t.wall = new_wall;
+                    }
+                }
+            }
+        }
+        ConversionFlavor::Hallow => {
+            if let Some(new_kind) = convert_tile_hallow(kind) {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.kind = new_kind;
+                    t.frame_x = 0;
+                    t.frame_y = 0;
+                }
+            }
+            if walls {
+                if let Some(new_wall) = convert_wall_hallow(wall) {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        t.wall = new_wall;
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn can_chlorophyte_grow(world: &World, x: i32, y: i32) -> bool {
     let (mut r_small, mut cap_big) = (35i32, 130i32);
     if (y as f64) < world.rock_layer {
