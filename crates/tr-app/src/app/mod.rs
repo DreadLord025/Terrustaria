@@ -1755,12 +1755,37 @@ impl App {
                         "tim" => NpcKind::Tim,
                         "darkcaster" => NpcKind::DarkCaster,
                         "fireimp" => NpcKind::FireImp,
+                        // The martians' lineup (M4-NPC-3i): the ground
+                        // group's per-kind sheets, the probe/drone, the
+                        // Scutlix pair and the saucer family's four strips.
+                        "officer" => NpcKind::MartianOfficer,
+                        "grunt" => NpcKind::GrayGrunt,
+                        "engineer" => NpcKind::MartianEngineer,
+                        "zapper" => NpcKind::GigaZapper,
+                        "scrambler" => NpcKind::BrainScrambler,
+                        "raygunner" => NpcKind::RayGunner,
+                        "walker" => NpcKind::MartianWalker,
+                        "probe" => NpcKind::MartianProbe,
+                        "drone" => NpcKind::MartianDrone,
+                        "rider" => NpcKind::ScutlixRider,
+                        "scutlix" => NpcKind::Scutlix,
+                        "saucer" => NpcKind::MartianSaucer,
+                        "turret" => NpcKind::MartianSaucerTurret,
+                        "cannon" => NpcKind::MartianSaucerCannon,
+                        "saucercore" => NpcKind::MartianSaucerCore,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
                     let mut n =
                         Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
                     n.hp = n.max_hp;
+                    // The saucer family's `FindFrame` cases read the core's
+                    // mirrored `ai[3]` clock; give the spawn a mid-band value
+                    // so the lineup shows the attack rows rather than the
+                    // stripped idle frame.
+                    if n.kind.is_martian() {
+                        n.ai[3] = 100.0;
+                    }
                     npcs.push(n);
                 }
             }

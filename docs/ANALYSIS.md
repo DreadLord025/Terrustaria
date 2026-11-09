@@ -2732,6 +2732,70 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The martians' display (M4-NPC-3i)
+
+The Martian Madness family's 16 kinds had a `find_frame` arm each and a
+draw arm each, but both were the v1's blind `(frame + 1) % count` strip
+and a box-sized quad at the hitbox corner. Against the C#:
+
+- **The ground group's walk band** (`case 381/382/383/385/389`,
+  `NPC.cs:71623-71662`) is not a free-running strip: the row clamps up to
+  the band's floor 2, the `|vx| * 2` accumulator (the Gray Grunt's and the
+  Gigazapper's 1.2) advances every 6, the end wraps at `npcFrameCount`'s 9
+  (row 9 never shows), the idle snaps to row 0 and the air holds row 1 —
+  and `spriteDirection = direction` only while grounded.
+- **The engineer** (`case 386`) parks on rows 9/10 while `ai[2] > 0`
+  (`ai[2] / 12 % 2` — the work animation), and its walk wraps at 9, not at
+  the sheet's 11 rows.
+- **The walker** (`case 520`) wraps to row 1 (its band's floor is 1, not
+  2) and its slow walk (`|vx| < 0.2`) parks on the idle row only when an
+  advance tick fires.
+- **The Scutlix pair inverts.** Cases 391/390 write
+  `spriteDirection = -direction` (`NPC.cs:71746-71753`/`:71795`): the
+  carrier walks rows 1..5 at `|vx| * 0.5` with the AIR row 0 (not 1), and
+  the rider's row is purely `ai[2]`-driven (the aim octant 1..5, row 2
+  when it holds 0). The port folded `direction` into `facing`, so the
+  martian kinds now carry the separate `Npc.sprite_dir` field
+  (`NPC.cs:6515`'s default -1) that the draws flip on
+  (`Main.cs:23124-23128`: `spriteDirection == 1` is the flip) — without it
+  the Scutlix family drew mirrored.
+- **The saucer family's rows ride the core's `ai[3]` clock**, which the
+  mounts mirror (`:35832`/`:35860`/`:35906`): the core's
+  `frameCounter % 66 / 6` (11 rows) double-increments and pins to
+  [36, 54) during the [20, 260) attack window (rows 6-8); the shell's
+  `% 12 / 3` (4 rows) doubles in the same window; the turret's 9 aim rows
+  decode `ai[2]`'s rotation through the 5-band cascade with the +9 firing
+  rows on the [280, 420) flash ticks (`(int)ai[3] % 6 <= 2`); the
+  cannon's rows come off `ai[3] - 300` (idle 4, charge 4..7, the
+  `(n/4) % 4` firing spin, the recoil tail).
+- **The sheets were never packed.** `martian_walkers`/`martian_shooters`
+  mapped four kinds onto `NPC_383` and two onto `NPC_382`, and none of the
+  martian sheets were in the atlas load list — `sky_tex`'s `Option`
+  returned `None` and the draw skipped, so **every martian in the family
+  rendered as nothing at all** (the bestiary's icon cells were blank too).
+  Now NPC_381/382/383/385/386/389/388/390/391/392/393/394/395/399/520
+  (+ the Dutchman's 491/492, the same mount machine) are packed, one
+  sheet per kind, and the draws take the sheets' real rows (48/46/46/44/
+  46/46 … ) at the generic anchor instead of the 18x40 box.
+- **The saucer family's draw block** (`Main.cs:24586-24612`) is its own
+  path: the CENTRE-anchored `origin = halfSize` draw with the core's
+  inherited `npc.rotation` (the whole family tilts as one body) and the
+  turret's `UnitY * -8` origin lift. The pre-pass now carries the core's
+  rotation and `spriteDirection` through `carrier_rot`/`carrier_facing`;
+  the turret's `ai[2]` aim (`:35873-35880` — the player vector's
+  rotation, Y-clamped at 0) is ported, so the 18-row sheet aims at the
+  player instead of pinning row 0.
+- **Two live deviations found on the way**: the core's rotation machine
+  ran `sin` where the C#'s `Vector2.UnitY.RotatedBy(t).Y` is a `cos`
+  (`:36394-36409`), and the Dutchman's `rotation = velocity.X * 0.025`
+  (`:38951`) was never written (its cannons and drop offsets read a
+  permanent 0). Both landed.
+
+Screenshots: `martians_ground.png` (the ground group's per-kind sheets and
+walk bands) and `martians_saucer.png` (the core at its real 210x96 frame,
+the probe, the drone, the Scutlix pair and the mounts), both
+SHA256-stable across runs.
+
 ## The Flying Dutchman (M4-EVENT-5a)
 
 The pirate invasion's ship (`NPC.cs:14632-14650`): 350×120, aiStyle 93,

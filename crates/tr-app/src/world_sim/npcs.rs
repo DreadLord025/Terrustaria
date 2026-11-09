@@ -1158,6 +1158,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as i32;
             app.npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = app.npcs[i].sprite_dir;
+            let ship_rot = app.npcs[i].rotation;
+            for m in app.npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
             continue;
         }
         let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
@@ -1185,10 +1196,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_x = mcx;
                 app.npcs[i].carrier_y = mcy;
                 // The saucer family's extra payload: the core's mirrored
-                // timer + phase and the crew counts within the reach.
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
                 if link_kind == NpcKind::MartianSaucerCore {
                     app.npcs[i].carrier_timer = app.npcs[j].ai[3];
                     app.npcs[i].carrier_phase = app.npcs[j].ai[0];
+                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
+                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
                     let turrets = app
                         .npcs
                         .iter()
@@ -4097,6 +4113,90 @@ mod saucer_tests {
                 .any(|n| n.kind == NpcKind::MartianSaucerTurret)
         );
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
+    }
+
+    #[test]
+    fn the_mounts_inherit_the_cores_rotation_and_sprite_direction() {
+        // `AI`'s aiStyle-75/93 mount blocks (`NPC.cs:35625-35651` /
+        // `:35669-35676` / `:38718-38726`): every mount copies its
+        // carrier's `rotation` (the whole saucer family tilts as one body)
+        // and `spriteDirection` — the cannon takes its seat's side
+        // (`num1056`) instead. The port's pre-pass writes the pair through
+        // `carrier_rot`/`carrier_facing` and the machine lands them.
+        let (mut app, mut player) = app_with_player();
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        core.rotation = 0.31;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let _ = &mut player;
+        for n in app.npcs.iter().filter(|n| n.kind.is_martian()) {
+            if n.kind == NpcKind::MartianSaucerCore {
+                continue;
+            }
+            assert!(
+                (n.rotation - 0.31).abs() < 0.001,
+                "{:?} inherits the core's rotation: {}",
+                n.kind,
+                n.rotation
+            );
+        }
+        // The cannon flips with its seat; the shell and the turret take
+        // the core's own direction (its `spriteDirection` default -1).
+        let seat_dir = |kind: NpcKind, seat: i32| -> i32 {
+            app.npcs
+                .iter()
+                .find(|n| n.kind == kind && n.ai[1] == seat as f32)
+                .unwrap()
+                .sprite_dir
+        };
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 1), 1, "seat 1 faces right");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 0), -1, "seat 0 faces left");
+        assert_eq!(seat_dir(NpcKind::MartianSaucerTurret, 0), -1, "the turret takes the core's");
+        assert_eq!(seat_dir(NpcKind::MartianSaucer, 0), -1, "the shell takes the core's");
+    }
+
+    #[test]
+    fn the_turret_aims_at_the_player_outside_the_burst() {
+        // `AI`'s 393 arm (`NPC.cs:35873-35880`): outside the 280-420 burst
+        // the vanilla re-derives `ai[2]` from the player vector's rotation
+        // with the Y clamped at 0 — the value `FindFrame` case 393's 9 aim
+        // rows decode.
+        let (mut app, mut player) = app_with_player();
+        player.x += 40.0 * TILE_PX; // the player to the RIGHT of the saucer
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let turret = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MartianSaucerTurret)
+            .unwrap();
+        // The player is right (and likely below): the aim angle points
+        // into the +X half, never upward (the Y clamp).
+        assert!(
+            turret.ai[2].abs() <= std::f32::consts::FRAC_PI_2,
+            "the aim never points upward: {}",
+            turret.ai[2]
+        );
+        assert!(turret.ai[2].cos() > 0.0, "aiming right: {}", turret.ai[2]);
+        // `FindFrame` case 393's cascade decodes the angle into the 6/8
+        // right-side rows (a shallow aim reads 6, a near-horizontal 8) —
+        // either way the sheet now aims at the player instead of pinning
+        // row 0 (the v1 left `ai[2]` unwritten).
+        let row = if turret.ai[2].cos() > turret.ai[2].sin() * 2.0 {
+            8
+        } else {
+            6
+        };
+        assert!(row == 6 || row == 8, "the right-side aim rows are 6/8: {row}");
+        assert!(
+            (3..=8).contains(&row),
+            "the aim never lands on the upward rows 1/2/7: {row}"
+        );
     }
 }
 
