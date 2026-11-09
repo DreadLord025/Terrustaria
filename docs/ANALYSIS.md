@@ -4968,6 +4968,24 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   shrine chests' vanilla slot-0 question open for the style-dispatcher
   follow-up.
 
+- **The chest family extras** (`AddBuriedChest`'s two `num10 > 0` arms,
+  `WorldGen.cs:36236-36257` surface / `:36806-36847` deep — the M5-CHEST-gen
+  flag-extras slice): the surface arm's flag6 (living-tree) extras
+  (5629 on 1/3, 4429/4427 on 1/6 with the 1/2 pick, 5528 on the 2/3
+  complement) and the deep arm's flag2 (ice) 3199 (1/5), flag3
+  (underground desert) 4346 (1/7) + 4066 (1/15), flag4 (jungle) 3360/3361
+  (the once-per-world `gennedLivingMahoganyWands` fairness — the first
+  jungle chest grants unconditionally, later ones on 1/5), 4426 and 5525
+  (1/10 each) — all at the vanilla draw order, replacing the approximations.
+  The port's `Context.jungle` (flag4, jungle grass 60 at the anchor) and
+  `Context.living_tree` (flag6, wall 244) are the split of the merged flag
+  the approximations ran on: the pre-existing pottery/2198 rows keep the
+  combined `wood_family` gate, the exact arms use the split families. Still
+  parked: the tenth anniversary's flag11 rows (M5-SEED-1), flag5's rows, the
+  remaining family rows the probes approximate (2198/669, 2197/751,
+  2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
+  chest cycle note).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
