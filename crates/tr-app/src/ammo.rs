@@ -35,6 +35,42 @@
 //! resolved projectile is 285; and `magicQuiver`'s `KnockBack *= 1.1f` runs
 //! BEFORE `KnockBack += item.knockBack` (`:53568`), so it scales the weapon's own
 //! knockback only.
+//!
+//! ## The not-consume chain (`not_consume`)
+//!
+//! `Player.cs:53569-53682`, ported as a FLAT sequence of one-line arms in the
+//! source's order — the order IS the contract, not an accident of layout:
+//!
+//! 1. Every arm SETS `flag = true` (there is no `else`), so an earlier arm's
+//!    save is only wiped by the LAST arm, the Acorn Slingshot's
+//!    `flag = false` (`:53671`), which therefore beats the Ammo Box / Ammo
+//!    Reservation arms that sit above it.
+//! 2. Every arm is a short-circuit gate: an arm that does not apply spends NO
+//!    draw, because the C#'s `&&` never evaluates `Main.rand.Next` (`:53579`,
+//!    `:53595`, `:53643`, …). One pick therefore spends exactly the vanilla draw
+//!    count — the determinism invariant the golden-stream test pins.
+//! 3. The arms are ordered as the C# lists them, INCLUDING the interleaving of
+//!    the item-keyed and the flag-gated families. The ten item-keyed arms are
+//!    mutually exclusive (one `sItem.type` per shot), so their order among
+//!    themselves is stream-neutral; their order relative to the flag-gated arms
+//!    is NOT (a Minishark + Ammo Box shot rolls ammoBox → ammoPotion → 98), so
+//!    the chain must not be re-sorted into "all item arms first".
+//!
+//! The two arms the source carries and this port cannot reach:
+//! - `sItem.type == 3821` (the Ale Throwing Glove, `:53639-53641`): `useAmmo == 0`
+//!   on the item and `PickAmmo` only runs `if (sItem.useAmmo > 0)`
+//!   (`Player.cs:47069`), so the roll can never fire — DEAD, not ported.
+//! - `Main.remixWorld && sItem.type == 1319` (the Snowball Cannon,
+//!   `:53659-53661`): the celebration-seed flag has no port stand-in, so the
+//!   gate is UNREACHABLE rather than unconditional — PARKED, recorded here, and
+//!   the arm is omitted rather than ported ungated (which would give every world
+//!   a 1/2 save the vanilla reserves for that seed).
+//!
+//! The three window booleans arrive pre-derived ([`VolleyWindows`]) because the
+//! C# reads `ItemAnimationJustStarted` / `itemAnimation` / `itemAnimationMax` /
+//! `useTime` (`:4066`) and the port's shoot wire owns the seconds↔ticks
+//! conversion — `ammo.rs` stays tick-semantics-free (the plan's Window
+//! booleans-as-seam decision).
 
 use crate::inv::EquipSlots;
 use crate::item::{INV, ItemSlot};
@@ -235,7 +271,7 @@ pub struct AmmoFlags {
     pub has_molten_quiver: bool,
     /// `this.magicQuiver` — 4002 / 4006 / 6181 (`Player.cs:14465`, `:14483`,
     /// `:14596`): ×1.1 speed for arrow/stake ammo (the knockback half scales the
-    /// weapon's own value, see [`resolve_projectile`]).
+    /// weapon's own value, see [`resolve_projectile`]) and a 1/5 roll arm.
     pub magic_quiver: bool,
     /// `this.accSharpBarb` — 6160 Sharp Barb (`Player.cs:14501`): +1 ammo damage
     /// on arrow ammo.
@@ -243,6 +279,98 @@ pub struct AmmoFlags {
     /// `this.archery` — buff 16, the Archery Potion (`Player.cs:10018`): ×1.2
     /// speed (capped at 20) for arrow ammo.
     pub archery: bool,
+    /// `this.ammoBox` — buff 93, the Ammo Box (`Player.cs:10080`, cleared in
+    /// `ResetEffects` `:18450`): the 1/5 roll arm on ANY ammo kind.
+    pub ammo_box: bool,
+    /// `this.ammoPotion` — buff 112, the Ammo Reservation (`Player.cs:10195`,
+    /// cleared `:18451`): the 1/5 roll arm on ANY ammo kind.
+    pub ammo_potion: bool,
+    /// `this.huntressAmmoCost90` — 3804 Huntress's Jerkin / 4983 Crystal Ninja
+    /// Chestplate (`Player.cs:13179`, `:13634`, cleared `:18391`): the 1/10 roll
+    /// arm.
+    pub huntress_ammo_cost90: bool,
+    /// `this.chloroAmmoCost80` — 1002 Chlorophyte Helmet (`Player.cs:13649`,
+    /// cleared `:18390`): the 1/5 roll arm.
+    pub chloro_ammo_cost80: bool,
+    /// `this.ammoCost80` — 1549 Shroomite Breastplate / 3878 Huntress's Alt
+    /// Shirt (`Player.cs:13715`, `:13222`, cleared `:18392`): the 1/5 roll arm.
+    pub ammo_cost80: bool,
+    /// `this.ammoCost75` — 2758 Vortex Breastplate (`Player.cs:13908`, cleared
+    /// `:18393`): the 1/4 roll arm.
+    pub ammo_cost75: bool,
+}
+
+/// The volley/window states the C#'s not-consume arms read at the shot tick
+/// (`Player.cs:53553` the Clockwork, `:53626` the Fairy Queen, `:53674` the
+/// spray arms), derived by the shoot wire (Phase 4) from its per-frame item
+/// timers in INTEGER tick semantics — the C#'s comparisons are integer ones.
+///
+/// They are pure booleans so `ammo.rs` stays free of tick/seconds conversion:
+/// the derivation has exactly one owner. `just_started` is the port's
+/// stand-in for `ItemAnimationJustStarted`
+/// (`itemAnimation == itemAnimationMax - 1`, `Player.cs:4066`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VolleyWindows {
+    /// `this.ItemAnimationJustStarted` (`Player.cs:4066`) — the shot is the
+    /// swing's first (the press tick). `false` on every later shot of a volley.
+    pub just_started: bool,
+    /// `this.itemAnimation > sItem.useAnimation - 8` (`Player.cs:53626`) — the
+    /// Fairy Queen's first-eight-ticks window.
+    pub anim_gt_use_anim_minus_8: bool,
+    /// `this.itemAnimation < this.itemAnimationMax - sItem.useTime`
+    /// (`Player.cs:53674`) — the flamethrower/Clentaminator first-shot window.
+    pub anim_lt_anim_max_minus_use_time: bool,
+}
+
+/// `PlayerAmmoCyclingMode` (`GameContent/Items/PlayerAmmoCyclingMode.cs`):
+/// the accessory-granted pick cycling. `None` is the default
+/// (`Player.ResetEffects` `:18479`) and picks the first matching stack.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AmmoCyclingMode {
+    /// No cycling — the first matching slot wins.
+    #[default]
+    None,
+    /// 6168 Ammo Cycler — cycle within the ammo slots only.
+    AmmoSlots,
+    /// 6169 Ammo Cycler (Full Inventory) — cycle over every matching stack.
+    FullInventory,
+    /// 6193 Ammo Cycler (Random) — the offset is a `Main.rand` draw.
+    Random,
+}
+
+/// `Player.ammoCyclingMode` / `ammoCyclingOffset` / `ammoCyclingCooldown`
+/// (`Player.cs:1244`, `:1248`, `:1246`) — the three co-located fields the C#
+/// keeps on `Player`, carried as one struct so the pick path takes a single
+/// seam parameter (the plan's Decision Log). The mode is granted per tick by
+/// the accessory scan (`Player.cs:14528-14544`); the offset and the cooldown
+/// are written inside a successful, non-dontConsume pick
+/// (`Player.cs:53569-53577`, Phase 4) and by the per-tick
+/// [`AmmoCycling::tick`] (`Player.cs:28419-28426`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AmmoCycling {
+    /// The granted mode (`Player.ammoCyclingMode`).
+    pub mode: AmmoCyclingMode,
+    /// `Player.ammoCyclingOffset` — the pick's rotating index; `Main.rand.Next()`
+    /// in the `Random` mode.
+    pub offset: i32,
+    /// `Player.ammoCyclingCooldown` — `useAnimation + 120` ticks per successful
+    /// pick, decremented every tick.
+    pub cooldown: i32,
+}
+
+impl AmmoCycling {
+    /// `Player.Update_AmmoCycler` (`Player.cs:28419-28426`): the per-tick
+    /// decrement, and the offset reset at zero — NOT a per-shot-only hook, so an
+    /// idle player's offset returns to 0 while no weapon is held (the C# runs
+    /// the method at the head of `Player.Update`, `:24566`, before `ItemCheck`).
+    pub fn tick(&mut self) {
+        if self.cooldown > 0 {
+            self.cooldown -= 1;
+            if self.cooldown == 0 {
+                self.offset = 0;
+            }
+        }
+    }
 }
 
 /// The resolved shot: the projectile the pair fires plus the stat fuse.
@@ -405,28 +533,147 @@ pub fn resolve_projectile(
     })
 }
 
-/// The not-consume rolls (`Player.cs:53563-53660` + the tail) — the shooters
-/// whose items the registry carries, verbatim. `true` = the shot skips the
-/// drain. The accessory/buff rolls (`magicQuiver`/`ammoBox`/`ammoPotion`/
-/// `chloroAmmoCost80`/`ammoCost80/75`) wait for their systems; the volley
-/// specials (the Clockwork's `!ItemAnimationJustStarted`, the Fairy Queen's
-/// first-8-ticks) have no port volley state — every shot is the first.
-pub fn not_consume(shooter: u16, rng: &mut u64) -> bool {
-    match shooter {
-        // `Player.cs:53568-53570` — the Minishark: 1/3.
-        98 => next(rng) % 3 == 0,
-        // `:53596-53598` — the Megashark: 1/2.
-        533 => next(rng) % 2 == 0,
-        // `:53593-53595` — the Gatligator: 1/2.
-        2270 => next(rng) % 2 == 0,
-        // `:53599-53601` — the Candy Corn Rifle: 1/3.
-        1782 => next(rng) % 3 == 0,
-        // `:53602-53604` — the Chain Gun: 2/3 (the code's `Next(3) != 0`).
-        1929 => next(rng) % 3 != 0,
-        // `:53605-53607` — the SDMG: 2/3.
-        1553 => next(rng) % 3 != 0,
-        _ => false,
+/// One `Main.rand.Next(m) == 0` roll — the 1/m save family. The draw is spent
+/// only when the caller's gate already passed, exactly like the C#'s `&&`
+/// (`Player.cs:53595`, `:53599`, `:53643`, …): a gate that fails spends nothing,
+/// which is what keeps one pick's draw count equal to the vanilla's.
+#[inline]
+fn one_in(m: u32, rng: &mut u64) -> bool {
+    next(rng) % m == 0
+}
+
+/// One `Main.rand.Next(m) != 0` roll — the (m-1)/m save family
+/// (`Player.cs:53579`, `:53587`, `:53623`, `:53627`).
+#[inline]
+fn all_but_one_in(m: u32, rng: &mut u64) -> bool {
+    next(rng) % m != 0
+}
+
+/// The not-consume rolls — `Player.PickAmmo`'s whole flag chain
+/// (`Player.cs:53578-53674`). `true` = the shot skips the drain
+/// (`:53675-53682`). The chain is ported as a flat sequence of one-line arms in
+/// the source's order; the order is load-bearing (see the module doc), so a
+/// re-sort is a behaviour change, not a style change. The arms short-circuit:
+/// an arm that does not apply draws nothing.
+///
+/// `shooter` ⇒ `sItem`, `ammo_kind` ⇒ `sItem.useAmmo` (the ammo CATEGORY the
+/// `magicQuiver` arm reads), `projectile` ⇒ `projToShoot` (the spray arm's key),
+/// `windows` are the pre-derived volley states, `flags` the accessory/buff
+/// grants, `dont_consume` the C#'s `dontConsume` argument — the value `flag`
+/// starts from (`ItemID.Sets.gunProj`, `ItemID.cs:1327`: the four endgame items
+/// never drain, and their own rolls still spend the vanilla draws, so the
+/// argument seeds the result rather than skipping the chain).
+pub fn not_consume(
+    shooter: u16,
+    ammo_kind: i32,
+    projectile: u16,
+    windows: &VolleyWindows,
+    flags: &AmmoFlags,
+    dont_consume: bool,
+    rng: &mut u64,
+) -> bool {
+    // `bool flag = dontConsume` (`Player.cs:53578`).
+    let mut flag = dont_consume;
+    // `:53579` — the Vortex Beater: 2/3.
+    if shooter == 3475 && all_but_one_in(3, rng) {
+        flag = true;
     }
+    // `:53583` — the Celebration Mk2: 1/2.
+    if shooter == 3930 && one_in(2, rng) {
+        flag = true;
+    }
+    // `:53587` — the Phantasm: 2/3.
+    if shooter == 3540 && all_but_one_in(3, rng) {
+        flag = true;
+    }
+    // `:53591` — the Clentaminator 2: 1/3.
+    if shooter == 5134 && one_in(3, rng) {
+        flag = true;
+    }
+    // `:53595` — the Magic Quiver: 1/5 on arrow/stake ammo only
+    // (`IsArrow[sItem.useAmmo]`, `AmmoID.cs:115`).
+    if flags.magic_quiver && is_arrow_ammo(ammo_kind) && one_in(5, rng) {
+        flag = true;
+    }
+    // `:53599` — the Ammo Box (buff 93): 1/5 on ANY ammo.
+    if flags.ammo_box && one_in(5, rng) {
+        flag = true;
+    }
+    // `:53603` — the Ammo Reservation (buff 112): 1/5 on ANY ammo.
+    if flags.ammo_potion && one_in(5, rng) {
+        flag = true;
+    }
+    // `:53607` — the Candy Corn Rifle: 1/3.
+    if shooter == 1782 && one_in(3, rng) {
+        flag = true;
+    }
+    // `:53611` — the Minishark: 1/3.
+    if shooter == 98 && one_in(3, rng) {
+        flag = true;
+    }
+    // `:53615` — the Gatligator: 1/2.
+    if shooter == 2270 && one_in(2, rng) {
+        flag = true;
+    }
+    // `:53619` — the Megashark: 1/2.
+    if shooter == 533 && one_in(2, rng) {
+        flag = true;
+    }
+    // `:53623` — the Chain Gun: 2/3.
+    if shooter == 1929 && all_but_one_in(3, rng) {
+        flag = true;
+    }
+    // `:53627` — the SDMG: 2/3.
+    if shooter == 1553 && all_but_one_in(3, rng) {
+        flag = true;
+    }
+    // `:53631` — the Clockwork: every shot after the swing's first saves
+    // (its useTime 4 < useAnimation 12 fires 3 shots per swing, so 1 ammo per 3
+    // shots).
+    if shooter == 434 && !windows.just_started {
+        flag = true;
+    }
+    // `:53635` — the Fairy Queen's item: the first eight ticks of the animation
+    // save (anim 30 / useTime 2 → 4 of the 15 shots).
+    if shooter == 4953 && windows.anim_gt_use_anim_minus_8 {
+        flag = true;
+    }
+    // `:53639` — the Ale Throwing Glove: DEAD, not ported. Its `useAmmo == 0`
+    // means `PickAmmo` never runs for it (`Player.cs:47069`), so the roll cannot
+    // fire.
+    // `:53643` — the Huntress's Jerkin / the Crystal Ninja Chestplate: 1/10.
+    if flags.huntress_ammo_cost90 && one_in(10, rng) {
+        flag = true;
+    }
+    // `:53647` — the Chlorophyte Helmet: 1/5.
+    if flags.chloro_ammo_cost80 && one_in(5, rng) {
+        flag = true;
+    }
+    // `:53651` — the Shroomite Breastplate / the Huntress's Alt Shirt: 1/5.
+    if flags.ammo_cost80 && one_in(5, rng) {
+        flag = true;
+    }
+    // `:53655` — the Vortex Breastplate: 1/4.
+    if flags.ammo_cost75 && one_in(4, rng) {
+        flag = true;
+    }
+    // `:53659` — the Snowball Cannon's remix-world arm: PARKED, not ported (no
+    // celebration-seed stand-in, see the module doc).
+    // `:53663` — the Flames projectile: the spray's first shot consumes, the
+    // rest save (`itemAnimation < itemAnimationMax - useTime`).
+    if projectile == 85 && windows.anim_lt_anim_max_minus_use_time {
+        flag = true;
+    }
+    // `:53667` — the two Clentaminators: the same first-shot window.
+    if (shooter == 779 || shooter == 5134) && windows.anim_lt_anim_max_minus_use_time {
+        flag = true;
+    }
+    // `:53671` — the Acorn Slingshot: the ONLY arm that clears, and the LAST
+    // one, so it beats the Ammo Box / Ammo Reservation saves above it.
+    if shooter == 5629 {
+        flag = false;
+    }
+    flag
 }
 
 /// `Main.rand.Next(n)` against the stream (the splitmix mix of `rain.rs`).
@@ -534,17 +781,664 @@ mod tests {
 
     #[test]
     fn the_not_consume_rolls_are_seed_deterministic() {
-        // The shooters' rolls (`Player.cs:53568-53607`) — the same seed gives
+        // The shooters' rolls (`Player.cs:53611`, `:53619`…) — the same seed gives
         // the same save pattern.
         let mut a = 42u64;
         let mut b = 42u64;
-        let a_seq: Vec<bool> = (0..30).map(|_| not_consume(98, &mut a)).collect();
-        let b_seq: Vec<bool> = (0..30).map(|_| not_consume(98, &mut b)).collect();
+        let a_seq: Vec<bool> = (0..30).map(|_| roll(98, &mut a)).collect();
+        let b_seq: Vec<bool> = (0..30).map(|_| roll(98, &mut b)).collect();
         assert_eq!(a_seq, b_seq, "byte-equal patterns");
         assert!(a_seq.contains(&true), "the Minishark saves sometimes");
         // The shooters without rolls never save.
         let mut r = 7u64;
-        assert!((0..50).all(|_| !not_consume(39, &mut r)), "the wooden bow");
+        assert!((0..50).all(|_| !roll(39, &mut r)), "the wooden bow");
+    }
+
+    // ---- the not-consume chain (`Player.cs:53578-53674`) ----
+
+    /// The Phase-3 windows: the plain "not a volley, not the first shot of one"
+    /// baseline the chain reads.
+    fn windows() -> VolleyWindows {
+        VolleyWindows::default()
+    }
+
+    /// One roll with the baseline windows, no flags and no `dontConsume`.
+    fn roll(shooter: u16, rng: &mut u64) -> bool {
+        not_consume(
+            shooter,
+            AMMO_ARROW,
+            0,
+            &windows(),
+            &AmmoFlags::default(),
+            false,
+            rng,
+        )
+    }
+
+    /// One roll with the flag-bearing flags and the baseline windows.
+    fn roll_flags(shooter: u16, flags: &AmmoFlags, rng: &mut u64) -> bool {
+        not_consume(shooter, AMMO_ARROW, 0, &windows(), flags, false, rng)
+    }
+
+    #[test]
+    fn test_DW_3_1_the_four_endgame_shooters_save_at_their_vanilla_rates() {
+        // `Player.cs:53579`, `:53583`, `:53587`, `:53591`: 3475 2/3, 3930 1/2,
+        // 3540 2/3, 5134 1/3. Each shooter's save frequency over a long stream
+        // must land on its vanilla rate (the Minishark-style determinism test's
+        // pattern, now per-arm).
+        let cases: [(u16, usize, f64, &str); 4] = [
+            (3475, 300, 2.0 / 3.0, "the Vortex Beater's 2/3"),
+            (3930, 300, 1.0 / 2.0, "the Celebration Mk2's 1/2"),
+            (3540, 300, 2.0 / 3.0, "the Phantasm's 2/3"),
+            (5134, 300, 1.0 / 3.0, "the Clentaminator 2's 1/3"),
+        ];
+        for (shooter, shots, rate, what) in cases {
+            let mut rng = 0xC0FF_EE12u64;
+            let saves = (0..shots).filter(|_| roll(shooter, &mut rng)).count();
+            let got = saves as f64 / shots as f64;
+            assert!(
+                (got - rate).abs() < 0.05,
+                "{what}: saved {saves}/{shots} = {got:.3}, want ~{rate:.3}"
+            );
+        }
+        // The two 2/3 shooters are NOT each other's swap: 3475 saves when the
+        // draw is non-zero, 3930 when it is zero — the same stream therefore
+        // gives a different pattern for each.
+        let mut a = 99u64;
+        let mut b = 99u64;
+        let a_seq: Vec<bool> = (0..120).map(|_| roll(3475, &mut a)).collect();
+        let b_seq: Vec<bool> = (0..120).map(|_| roll(3930, &mut b)).collect();
+        assert_ne!(a_seq, b_seq, "2/3 (`!= 0`) and 1/2 (`== 0`) differ");
+    }
+
+    #[test]
+    fn test_DW_3_1_the_flag_arms_draw_nothing_while_their_flag_is_false() {
+        // `Player.cs:53595`, `:53599`, `:53603`, `:53643`, `:53647`, `:53651`,
+        // `:53655`: every flag arm's `&&` short-circuits, so with every flag
+        // false the chain spends NO draw and returns false — the C#'s `&&`
+        // never evaluates `Main.rand.Next`, and neither does the port.
+        for (shooter, ammo_kind, projectile) in
+            [(39u16, AMMO_ARROW, 0u16), (96, 97, 14), (266, 169, 42)]
+        {
+            let mut used = 12345u64;
+            let before = used;
+            for _ in 0..20 {
+                assert!(
+                    !not_consume(
+                        shooter,
+                        ammo_kind,
+                        projectile,
+                        &windows(),
+                        &AmmoFlags::default(),
+                        false,
+                        &mut used
+                    ),
+                    "shooter {shooter}: no save without a flag or an item arm"
+                );
+            }
+            assert_eq!(used, before, "shooter {shooter}: the stream is untouched");
+        }
+    }
+
+    #[test]
+    fn test_DW_3_1_the_flag_arms_save_at_their_vanilla_rates() {
+        // `Player.cs:53595`/`:53599`/`:53603`/`:53647`/`:53651` 1/5, `:53655`
+        // 1/4, `:53643` 1/10, `:53595` (the quiver) 1/5. The plain wooden arrow
+        // is `use_ammo == Arrow`, so every arm applies to all 600 shots.
+        let mut quiver = AmmoFlags::default();
+        quiver.magic_quiver = true;
+        let mut box_ = AmmoFlags::default();
+        box_.ammo_box = true;
+        let mut potion = AmmoFlags::default();
+        potion.ammo_potion = true;
+        let mut huntress = AmmoFlags::default();
+        huntress.huntress_ammo_cost90 = true;
+        let mut chloro = AmmoFlags::default();
+        chloro.chloro_ammo_cost80 = true;
+        let mut cost80 = AmmoFlags::default();
+        cost80.ammo_cost80 = true;
+        let mut cost75 = AmmoFlags::default();
+        cost75.ammo_cost75 = true;
+        let cases: [(&AmmoFlags, f64, &str); 7] = [
+            (&quiver, 0.2, "the Magic Quiver's 1/5"),
+            (&box_, 0.2, "the Ammo Box's 1/5"),
+            (&potion, 0.2, "the Ammo Reservation's 1/5"),
+            (&huntress, 0.1, "the Huntress set's 1/10"),
+            (&chloro, 0.2, "the Chlorophyte Helmet's 1/5"),
+            (&cost80, 0.2, "the Shroomite Breastplate's 1/5"),
+            (&cost75, 0.25, "the Vortex Breastplate's 1/4"),
+        ];
+        for (flags, rate, what) in cases {
+            let mut rng = 0x5EED_1234u64;
+            let saves = (0..600).filter(|_| roll_flags(39, flags, &mut rng)).count();
+            let got = saves as f64 / 600.0;
+            assert!(
+                (got - rate).abs() < 0.03,
+                "{what}: saved {saves}/600 = {got:.3}, want ~{rate:.3}"
+            );
+        }
+        // The flags are independent: two arms on the same shot spend two draws
+        // and each keeps its own rate's worth of saves (the union exceeds either
+        // single arm's 1/5 or 1/4).
+        let mut two = AmmoFlags::default();
+        two.ammo_box = true;
+        two.ammo_cost75 = true;
+        let mut rng = 77u64;
+        let saves = (0..600).filter(|_| roll_flags(39, &two, &mut rng)).count();
+        assert!(
+            saves > 600 * 4 / 25,
+            "two arms save more often than one (1/5 ∪ 1/4 ≈ 2/5): {saves}"
+        );
+        assert!(saves <= 600, "the chain never invents saves");
+    }
+
+    #[test]
+    fn test_DW_3_1_the_four_new_arms_match_the_existing_six() {
+        // Phase 3's four item-keyed arms sit BEFORE the six Phase-1 arms in the
+        // chain, but an unmatched item arm is stream-invisible: a Minishark shot
+        // with 3475-3540/3930/5134 rollers unset spends exactly ONE draw, the
+        // one its own arm takes — the arms the brief's new set added did not
+        // change the six guns' streams.
+        let mut a = 4242u64;
+        let mut b = 4242u64;
+        for _ in 0..200 {
+            assert_eq!(roll(98, &mut a), roll(98, &mut b), "the Minishark's stream");
+        }
+        // The two 1/3 additions (3930, 5134) draw from the same modulus as the
+        // Minishark but only for their own kinds: a 3930 shot and a 98 shot from
+        // one seed differ, because the arms are keyed on the kind.
+        let mut c = 4242u64;
+        let mut d = 4242u64;
+        let c_seq: Vec<bool> = (0..120).map(|_| roll(3930, &mut c)).collect();
+        let d_seq: Vec<bool> = (0..120).map(|_| roll(98, &mut d)).collect();
+        assert_ne!(c_seq, d_seq, "the kind gate, not the modulus, decides");
+    }
+
+    #[test]
+    fn test_DW_3_2_the_acorn_slingshot_clears_the_ammo_box_save() {
+        // `Player.cs:53599` (the Ammo Box's 1/5 save) is wiped by
+        // `:53671`'s `flag = false`, which runs LAST: a 5629 shot drains no
+        // matter what the ammoBox/ammoPotion arms did above it.
+        let mut box_ = AmmoFlags::default();
+        box_.ammo_box = true;
+        let mut potion = AmmoFlags::default();
+        potion.ammo_potion = true;
+        let mut rng = 31337u64;
+        // With the Acorn as the shooter the chain always drains — over a stream
+        // long enough that the ammoBox arm would have saved ~120 times.
+        let saved = (0..600)
+            .filter(|_| not_consume(5629, AMMO_ARROW, 0, &windows(), &box_, false, &mut rng))
+            .count();
+        assert_eq!(saved, 0, "the Acorn's clear beats the Ammo Box save");
+        // The same flags with a NON-5629 shooter do save — the arms above the
+        // clear are not inert, they are only overridden by it.
+        let mut rng = 31337u64;
+        let others = (0..600).filter(|_| roll_flags(39, &box_, &mut rng)).count();
+        assert!(others > 60, "the Ammo Box saves ~1/5 for a normal shooter");
+        // The potion half behaves the same, and a 5629 shot with BOTH flags
+        // still drains.
+        let mut rng = 7u64;
+        assert!(
+            !(0..200).any(|_| not_consume(
+                5629,
+                AMMO_ARROW,
+                0,
+                &windows(),
+                &potion,
+                false,
+                &mut rng,
+            )),
+            "the clear also beats the Ammo Reservation"
+        );
+    }
+
+    #[test]
+    fn test_DW_3_2_the_clockwork_saves_only_after_the_first_shot() {
+        // `Player.cs:53631`: `sItem.type == 434 && !ItemAnimationJustStarted`
+        // (`:4066` — the press tick's first shot has `itemAnimation == max - 1`),
+        // so the Clockwork's first shot drains and its later volley shots save.
+        // With no volley windows at all the arm cannot fire.
+        let off = VolleyWindows {
+            just_started: true,
+            ..VolleyWindows::default()
+        };
+        let on = VolleyWindows {
+            just_started: false,
+            ..VolleyWindows::default()
+        };
+        let mut rng = 2024u64;
+        for _ in 0..50 {
+            assert!(
+                !not_consume(
+                    434,
+                    AMMO_ARROW,
+                    0,
+                    &off,
+                    &AmmoFlags::default(),
+                    false,
+                    &mut rng
+                ),
+                "the swing's first shot consumes"
+            );
+        }
+        let mut rng = 2024u64;
+        assert!(
+            (0..50).all(|_| not_consume(
+                434,
+                AMMO_ARROW,
+                0,
+                &on,
+                &AmmoFlags::default(),
+                false,
+                &mut rng
+            )),
+            "every later shot saves — no draw is spent either way"
+        );
+        // The arm is kind-gated: another shooter with the same window saves
+        // nothing.
+        let mut rng = 5u64;
+        assert!(
+            (0..20).all(|_| !roll_bare(96, &on, &mut rng)),
+            "only the Clockwork rides the window"
+        );
+    }
+
+    /// A roll with the baseline flags (the window-only arms' isolation helper).
+    fn roll_bare(shooter: u16, windows: &VolleyWindows, rng: &mut u64) -> bool {
+        not_consume(
+            shooter,
+            AMMO_ARROW,
+            0,
+            windows,
+            &AmmoFlags::default(),
+            false,
+            rng,
+        )
+    }
+
+    #[test]
+    fn test_DW_3_2_the_fairy_queen_saves_only_inside_the_eight_tick_window() {
+        // `Player.cs:53635`: `itemAnimation > sItem.useAnimation - 8` — with the
+        // Fairy Queen's anim 30 / useTime 2 the window is anim 29/27/25/23, i.e.
+        // 4 of the 15 shots save. The wire derives the boolean; here the two
+        // edges of that derived window prove the gate.
+        let inside = VolleyWindows {
+            anim_gt_use_anim_minus_8: true,
+            ..VolleyWindows::default()
+        };
+        let outside = VolleyWindows {
+            anim_gt_use_anim_minus_8: false,
+            ..VolleyWindows::default()
+        };
+        let mut rng = 1u64;
+        for _ in 0..50 {
+            assert!(
+                not_consume(
+                    4953,
+                    AMMO_ARROW,
+                    0,
+                    &inside,
+                    &AmmoFlags::default(),
+                    false,
+                    &mut rng
+                ),
+                "anim 29 > 22 saves"
+            );
+        }
+        let mut rng = 1u64;
+        for _ in 0..50 {
+            assert!(
+                !not_consume(
+                    4953,
+                    AMMO_ARROW,
+                    0,
+                    &outside,
+                    &AmmoFlags::default(),
+                    false,
+                    &mut rng
+                ),
+                "anim 21 <= 22 drains"
+            );
+        }
+        // Kind-gated: the same window on another shooter saves nothing.
+        let mut rng = 9u64;
+        assert!(
+            (0..20).all(|_| !roll_bare(96, &inside, &mut rng)),
+            "only the Fairy Queen's item rides this window"
+        );
+    }
+
+    #[test]
+    fn test_DW_3_2_the_spray_arms_save_only_after_the_first_shot() {
+        // `Player.cs:53663` (projToShoot == 85, the Flames) and `:53667`
+        // (779/5134, the Clentaminators): `itemAnimation < itemAnimationMax -
+        // useTime` is FALSE on a spray's first shot (anim = max - 1) and true for
+        // every later one — the first solution/gel shot consumes, the rest save.
+        let first = VolleyWindows {
+            anim_lt_anim_max_minus_use_time: false,
+            just_started: true,
+            ..VolleyWindows::default()
+        };
+        let later = VolleyWindows {
+            anim_lt_anim_max_minus_use_time: true,
+            just_started: false,
+            ..VolleyWindows::default()
+        };
+        // The 85 arm keys on the RESOLVED projectile and applies to any shooter;
+        // the 779/5134 arm keys on the shooter and applies to any projectile.
+        // Both are inert outside their key, so a shot with neither never saves.
+        let cases: [(u16, u16, bool, &str); 5] = [
+            (96, 85, true, "the flamethrower's resolved projectile"),
+            (96, 0, false, "neither key"),
+            (779, 0, true, "the Clentaminator's own arm"),
+            (
+                5134,
+                42,
+                true,
+                "the Clentaminator 2, any resolved projectile",
+            ),
+            (779, 85, true, "both keys on one shot"),
+        ];
+        for (shooter, projectile, want, what) in cases {
+            let mut rng = 64u64;
+            let got = (0..30)
+                .filter(|_| {
+                    not_consume(
+                        shooter,
+                        AMMO_ARROW,
+                        projectile,
+                        &later,
+                        &AmmoFlags::default(),
+                        false,
+                        &mut rng,
+                    )
+                })
+                .count();
+            assert_eq!(
+                got > 0,
+                want,
+                "shooter {shooter} + proj {projectile}: {what}"
+            );
+        }
+        // The first shot of the spray consumes, for both window arms — checked on
+        // the two shooters that carry no item-keyed roll of their own. The
+        // Clentaminator 2 (5134) is deliberately not in this half: its own 1/3
+        // arm (`Player.cs:53591`) can save the first shot independently of the
+        // window, so its drain rate is the arm's product, not the window's.
+        for (shooter, projectile) in [(96u16, 85u16), (779, 0)] {
+            let mut rng = 64u64;
+            let saved = (0..30)
+                .filter(|_| {
+                    not_consume(
+                        shooter,
+                        AMMO_ARROW,
+                        projectile,
+                        &first,
+                        &AmmoFlags::default(),
+                        false,
+                        &mut rng,
+                    )
+                })
+                .count();
+            assert_eq!(saved, 0, "shooter {shooter}: the spray's first shot drains");
+        }
+    }
+
+    #[test]
+    fn test_the_rng_golden_stream_spends_the_vanilla_draw_count() {
+        // The determinism invariant, pinned against the stream itself: one pick
+        // from a fixed seed spends EXACTLY the vanilla's draw count for that
+        // pick, so a later refactor cannot silently shift the stream.
+        //  - `434` Clockwork: `!ItemAnimationJustStarted` draws nothing (0) — the
+        //    arm has no `Main.rand` (`Player.cs:53631`);
+        //  - each of the six guns spends 1 (their own roll);
+        //  - each of the four gunProj items spends 1 (its own roll) even when
+        //    `dontConsume` seeds the flag true — the C# evaluates the arms
+        //    regardless of the argument and only the RESULT is discarded;
+        //  - `Random` cycling spends 1 more (`Player.cs:53577`, Phase 4's pick).
+        let mut rng = 0xABCD_1234u64;
+        let stream_after = |mut rng: u64, n: usize| {
+            for _ in 0..n {
+                super::next(&mut rng);
+            }
+            rng
+        };
+        // The Clockwork spends 0 draws on a first shot AND on a later one: the
+        // arm is a pure window compare.
+        let mut a = 0xABCD_1234u64;
+        let off = VolleyWindows {
+            just_started: false,
+            ..VolleyWindows::default()
+        };
+        not_consume(
+            434,
+            AMMO_ARROW,
+            0,
+            &off,
+            &AmmoFlags::default(),
+            false,
+            &mut a,
+        );
+        assert_eq!(a, 0xABCD_1234u64, "the 434 arm draws nothing");
+        // Each of the six guns spends exactly one draw, whatever it returns.
+        for shooter in [98u16, 533, 2270, 1782, 1929, 1553] {
+            let mut b = 0xABCD_1234u64;
+            let saved = roll(shooter, &mut b);
+            assert_eq!(
+                b,
+                stream_after(0xABCD_1234u64, 1),
+                "shooter {shooter}: one draw, saved {saved}"
+            );
+        }
+        // Each gunProj item spends exactly one draw with dontConsume true.
+        for shooter in [3475u16, 3930, 3540] {
+            let mut c = 0xABCD_1234u64;
+            let _ = not_consume(
+                shooter,
+                AMMO_ARROW,
+                0,
+                &windows(),
+                &AmmoFlags::default(),
+                true,
+                &mut c,
+            );
+            assert_eq!(
+                c,
+                stream_after(0xABCD_1234u64, 1),
+                "gunProj {shooter}: its own roll, dontConsume true"
+            );
+        }
+        // An unmatched shooter with every flag false spends nothing at all.
+        let mut d = 0xABCD_1234u64;
+        assert!(!roll(39, &mut d), "the wooden bow");
+        assert_eq!(d, 0xABCD_1234u64, "no arm applies → no draw");
+        // Two flag arms on one shot spend two draws, in the chain's order:
+        // ammoBox (draw 1) then ammoCost75 (draw 2) — the second draw's value
+        // is the one the cost75 arm's save depends on.
+        let mut flags = AmmoFlags::default();
+        flags.ammo_box = true;
+        flags.ammo_cost75 = true;
+        let mut e = 0xABCD_1234u64;
+        roll_flags(39, &flags, &mut e);
+        assert_eq!(
+            e,
+            stream_after(0xABCD_1234u64, 2),
+            "two arms, two draws, in the chain's order"
+        );
+        // The interleave check: a Minishark + Ammo Box shot draws ammoBox FIRST
+        // (`:53599`) and the Minishark's own roll SECOND (`:53611`). On every
+        // seed where the two orders disagree, the chain's result must equal the
+        // ammoBox-first reading — a re-sorted chain ("all item arms first")
+        // would flip those seeds.
+        let mut box_only = AmmoFlags::default();
+        box_only.ammo_box = true;
+        let mut disagreements = 0;
+        for seed in 1u64..400 {
+            let box_first = {
+                let mut d = seed;
+                let a = one_in(5, &mut d);
+                let b = one_in(3, &mut d);
+                a || b
+            };
+            let shark_first = {
+                let mut d = seed;
+                let a = one_in(3, &mut d);
+                let b = one_in(5, &mut d);
+                a || b
+            };
+            if box_first == shark_first {
+                continue;
+            }
+            disagreements += 1;
+            let mut rng = seed;
+            let got = not_consume(98, AMMO_ARROW, 0, &windows(), &box_only, false, &mut rng);
+            assert_eq!(got, box_first, "seed {seed}: ammoBox draws first");
+        }
+        assert!(
+            disagreements > 20,
+            "the order is observable: {disagreements}"
+        );
+    }
+
+    #[test]
+    fn test_the_magic_quiver_arm_filters_on_the_ammo_kind() {
+        // `Player.cs:53595`: `magicQuiver && (IsArrow[useAmmo] || Stake)` — the
+        // arm applies to the Arrow (40) and Stake (1836) categories only, never
+        // to a bullet or a rocket weapon, no matter the quiver.
+        let mut quiver = AmmoFlags::default();
+        quiver.magic_quiver = true;
+        for ammo_kind in [AMMO_ARROW, AMMO_STAKE] {
+            let mut rng = 606u64;
+            let saves = (0..300)
+                .filter(|_| not_consume(39, ammo_kind, 0, &windows(), &quiver, false, &mut rng))
+                .count();
+            assert!(
+                saves > 30,
+                "the quiver's 1/5 applies to the ammo kind {ammo_kind}"
+            );
+        }
+        // A bullet weapon draws nothing: the gate is stream-invisible.
+        for ammo_kind in [97i32, 771, 780, 40 + 1] {
+            let mut rng = 606u64;
+            let before = rng;
+            let saves = (0..50)
+                .filter(|_| not_consume(39, ammo_kind, 0, &windows(), &quiver, false, &mut rng))
+                .count();
+            assert_eq!(
+                saves, 0,
+                "the quiver's arm ignores the ammo kind {ammo_kind}"
+            );
+            assert_eq!(rng, before, "and spends no draw for it");
+        }
+        // With the flag false the arm is inert for the arrow kinds too.
+        let mut rng = 606u64;
+        let before = rng;
+        assert!(
+            !(0..50).any(|_| roll_flags(39, &AmmoFlags::default(), &mut rng)),
+            "no quiver → no save"
+        );
+        assert_eq!(rng, before, "no quiver → no draw");
+    }
+
+    #[test]
+    fn test_the_ammo_flags_roll_fields_default_to_false_and_are_independent() {
+        // The six appended Phase-3 fields (`AmmoFlags`, the append-only contract)
+        // default false, so the chain is the plain vanilla one until
+        // M3-EQUIP-3 / M2-BUFF grant them through the Player seam.
+        let f = AmmoFlags::default();
+        assert!(!f.ammo_box && !f.ammo_potion && !f.huntress_ammo_cost90);
+        assert!(!f.chloro_ammo_cost80 && !f.ammo_cost80 && !f.ammo_cost75);
+        // The Phase-1 four are still there, still in their frozen order.
+        assert!(!f.has_molten_quiver && !f.magic_quiver && !f.acc_sharp_barb && !f.archery);
+        // A single flag set leaves the other five inert.
+        let mut one = AmmoFlags::default();
+        one.ammo_cost75 = true;
+        let mut rng = 8128u64;
+        let saves = (0..300).filter(|_| roll_flags(39, &one, &mut rng)).count();
+        assert!(saves > 40, "1/4 saves: {saves}");
+        assert_eq!(one.ammo_box, false, "the other five stay false");
+    }
+
+    #[test]
+    fn test_the_volley_windows_default_to_all_false() {
+        // The three booleans are pure data; `Default` is all-false so an
+        // unconfigured chain runs with no volley state (the Phase-3 stand-in
+        // `editing.rs` passes the today-equivalent values).
+        let w = VolleyWindows::default();
+        assert!(
+            !w.just_started && !w.anim_gt_use_anim_minus_8 && !w.anim_lt_anim_max_minus_use_time
+        );
+        // With every window false the two window-keyed arms are inert for a
+        // non-window shooter and the 434 arm saves (the "not just started" case
+        // the Phase-4 wire will derive).
+        let mut rng = 3u64;
+        assert!(
+            roll_bare(434, &w, &mut rng),
+            "default windows: the Clockwork's arm fires (no first shot)"
+        );
+        let mut rng = 3u64;
+        assert!(
+            !roll_bare(4953, &w, &mut rng),
+            "default windows: the Fairy Queen's arm does not"
+        );
+    }
+
+    #[test]
+    fn test_the_ammo_cycling_defaults_and_its_tick() {
+        // `PlayerAmmoCyclingMode` (`PlayerAmmoCyclingMode.cs`) defaults to None
+        // and the struct defaults to None/0/0 (`Player.ResetEffects` `:18479`).
+        let mut c = AmmoCycling::default();
+        assert_eq!(c.mode, AmmoCyclingMode::None);
+        assert_eq!((c.offset, c.cooldown), (0, 0));
+        // `Player.Update_AmmoCycler` (`Player.cs:28419-28426`): while the
+        // cooldown counts down the offset is untouched; the tick that zeroes the
+        // cooldown resets the offset. A cooldown of 1 or less resets at once.
+        c.cooldown = 3;
+        c.offset = 7;
+        c.tick();
+        assert_eq!((c.cooldown, c.offset), (2, 7), "still counting");
+        c.tick();
+        assert_eq!((c.cooldown, c.offset), (1, 7), "still counting");
+        c.tick();
+        assert_eq!(
+            (c.cooldown, c.offset),
+            (0, 0),
+            "the expiry resets the offset"
+        );
+        // An idle cycler (cooldown 0) is a no-op: the offset stays where it was.
+        c.cooldown = 0;
+        c.offset = 5;
+        c.tick();
+        assert_eq!((c.cooldown, c.offset), (0, 5), "no cooldown → no reset");
+        // A pending cooldown of 1 resets on the first tick.
+        c.cooldown = 1;
+        c.offset = 9;
+        c.tick();
+        assert_eq!((c.cooldown, c.offset), (0, 0));
+        // The mode is never touched by the tick.
+        c.mode = AmmoCyclingMode::Random;
+        c.cooldown = 2;
+        c.tick();
+        c.tick();
+        assert_eq!(c.mode, AmmoCyclingMode::Random, "the tick is offset-only");
+    }
+
+    #[test]
+    fn test_the_cycling_modes_are_the_four_vanilla_ones() {
+        // `GameContent/Items/PlayerAmmoCyclingMode.cs`: None, AmmoSlots,
+        // FullInventory, Random — the port's `AmmoCyclingMode` is the same set
+        // in the same order, and the grant seam maps the four accessories
+        // 6168/6169/6193/6194 onto it (`Player.cs:14528-14544`).
+        let modes = [
+            AmmoCyclingMode::None,
+            AmmoCyclingMode::AmmoSlots,
+            AmmoCyclingMode::FullInventory,
+            AmmoCyclingMode::Random,
+        ];
+        assert_eq!(modes[0], AmmoCyclingMode::default(), "None is the default");
+        assert_ne!(modes[1], modes[2]);
+        assert_ne!(modes[2], modes[3]);
+        assert_ne!(modes[3], modes[0]);
     }
 
     // ---- the projToShoot resolution chain (`Player.cs:53458-53568`) ----
@@ -558,6 +1452,7 @@ mod tests {
             magic_quiver,
             acc_sharp_barb: sharp_barb,
             archery,
+            ..AmmoFlags::default()
         }
     }
 

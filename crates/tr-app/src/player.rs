@@ -616,6 +616,46 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    // ------------------------------- the ammo mastery layer (M3-ITEM-6)
+    // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
+    // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
+    // the ×1.1 speed fuse (`:53543`). Cleared and re-derived per tick by the
+    // grant seam in `world_sim/player.rs` (`ResetEffects` `:18605`).
+    pub magic_quiver: bool,
+    /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
+    /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
+    /// damage (`:53537-53541`).
+    pub has_molten_quiver: bool,
+    /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
+    /// +1 ammo damage on arrows (`:53548`).
+    pub acc_sharp_barb: bool,
+    /// `Player.ammoBox` (`Player.cs:1982`): buff 93, the Ammo Box (`:10080`) —
+    /// the 1/5 roll arm on ANY ammo (`:53599`).
+    pub ammo_box: bool,
+    /// `Player.ammoPotion` (`Player.cs:1984`): buff 112, the Ammo Reservation
+    /// (`:10195`) — the 1/5 roll arm on ANY ammo (`:53603`).
+    pub ammo_potion: bool,
+    /// `Player.huntressAmmoCost90` (`Player.cs:1960`): 3804/4983 (`:13179`,
+    /// `:13634`) — the 1/10 roll arm (`:53643`).
+    pub huntress_ammo_cost90: bool,
+    /// `Player.chloroAmmoCost80` (`Player.cs:1958`): 1002 (`:13649`) — the 1/5
+    /// roll arm (`:53647`).
+    pub chloro_ammo_cost80: bool,
+    /// `Player.ammoCost80` (`Player.cs:1962`): 1549/3878 (`:13715`, `:13222`) —
+    /// the 1/5 roll arm (`:53651`).
+    pub ammo_cost80: bool,
+    /// `Player.ammoCost75` (`Player.cs:1964`): 2758 (`:13908`) — the 1/4 roll
+    /// arm (`:53655`).
+    pub ammo_cost75: bool,
+    /// `Player.archery` (`Player.cs:2286`): buff 16, the Archery Potion
+    /// (`:10018`) — the ×1.2 speed fuse capped at 20 (`:53560`).
+    pub archery: bool,
+    /// `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    /// (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
+    /// granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
+    /// the offset/cooldown are written inside a successful pick (`:53569-53577`)
+    /// and ticked down every tick (`Update_AmmoCycler` `:28419-28426`).
+    pub ammo_cycling: crate::ammo::AmmoCycling,
 }
 
 impl Player {
@@ -811,6 +851,42 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            // The ammo-mastery flags start false and the cycler None/0/0 — the
+            // per-tick grant seam in `world_sim/player.rs` re-derives them from
+            // the equipment and the buffs, exactly like the C#'s
+            // `ResetEffects` clear (`Player.cs:18390-18664`).
+            magic_quiver: false,
+            has_molten_quiver: false,
+            acc_sharp_barb: false,
+            ammo_box: false,
+            ammo_potion: false,
+            huntress_ammo_cost90: false,
+            chloro_ammo_cost80: false,
+            ammo_cost80: false,
+            ammo_cost75: false,
+            archery: false,
+            ammo_cycling: crate::ammo::AmmoCycling::default(),
+        }
+    }
+
+    /// The ten ammo flags this phase re-derives per tick, as the pure data
+    /// `ammo::resolve_projectile` / `ammo::not_consume` read (`Player.cs:53537`,
+    /// `:53543`, `:53548`, `:53560`, `:53595`, `:53599`, `:53603`, `:53643`,
+    /// `:53647`, `:53651`, `:53655`). The struct lives in `ammo.rs` so the ammo
+    /// module stays the single owner of the flag SHAPE; this is the Player-side
+    /// projection the shooter wire (Phase 4) feeds it.
+    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
+        crate::ammo::AmmoFlags {
+            has_molten_quiver: self.has_molten_quiver,
+            magic_quiver: self.magic_quiver,
+            acc_sharp_barb: self.acc_sharp_barb,
+            archery: self.archery,
+            ammo_box: self.ammo_box,
+            ammo_potion: self.ammo_potion,
+            huntress_ammo_cost90: self.huntress_ammo_cost90,
+            chloro_ammo_cost80: self.chloro_ammo_cost80,
+            ammo_cost80: self.ammo_cost80,
+            ammo_cost75: self.ammo_cost75,
         }
     }
 
@@ -5238,6 +5314,37 @@ mod tests {
         assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
         assert_eq!(p.rocket_boots, 3);
         assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+    }
+
+    /// DW-3.3's field half — the ten ammo-mastery flags a fresh `Player` carries
+    /// (`player.rs`'s ammo block) plus the cycling struct: every one defaults
+    /// false/None/0/0 like the C#'s `ResetEffects`-cleared fields
+    /// (`Player.cs:18390-18664`, `:18479`), so the rolls stay inert until the
+    /// per-tick grant seam in `world_sim/player.rs` derives them from the
+    /// equipment and the buffs. The `ammo_flags()` projection is the single seam
+    /// `ammo::not_consume` / `ammo::resolve_projectile` read.
+    #[test]
+    fn the_ammo_fields_default_to_false_and_none() {
+        let w = crate::test_world_helpers::ground();
+        let p = Player::spawn(&w);
+        // The four fuse flags (Phase 1's fields).
+        assert!(!p.has_molten_quiver && !p.magic_quiver);
+        assert!(!p.acc_sharp_barb && !p.archery);
+        // The six roll flags Phase 3 appends.
+        assert!(!p.ammo_box && !p.ammo_potion && !p.huntress_ammo_cost90);
+        assert!(!p.chloro_ammo_cost80 && !p.ammo_cost80 && !p.ammo_cost75);
+        // The cycling state: None/0/0.
+        assert_eq!(p.ammo_cycling.mode, crate::ammo::AmmoCyclingMode::None);
+        assert_eq!((p.ammo_cycling.offset, p.ammo_cycling.cooldown), (0, 0));
+        // The projection round-trips: an all-false Player gives an all-false
+        // AmmoFlags, so the chain is the plain vanilla one.
+        let flags = p.ammo_flags();
+        assert_eq!(flags, crate::ammo::AmmoFlags::default());
+        // A granted flag reaches the struct the rolls read.
+        let mut granted = Player::spawn(&w);
+        granted.ammo_box = true;
+        granted.magic_quiver = true;
+        assert!(granted.ammo_flags().ammo_box && granted.ammo_flags().magic_quiver);
     }
 
     #[test]

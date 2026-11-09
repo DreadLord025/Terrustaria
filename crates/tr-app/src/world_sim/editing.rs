@@ -743,7 +743,28 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         };
         // `Player.cs:53667-53672`: the drain behind the not-consume rolls.
-        if !crate::ammo::not_consume(held.kind, &mut app.item_rng) {
+        // Phase 3 added the chain's item-keyed / flag-gated / window-keyed arms
+        // (`ammo::not_consume`); the volley windows and the `AmmoFlags` the
+        // shooter derives arrive with Phase 4's wire. Until then the call passes
+        // the today-equivalent values so the observable behaviour is unchanged:
+        // the `!app.shot_fired` latch makes every shot the swing's first
+        // (`just_started: true` → the Clockwork's arm cannot fire, exactly like
+        // the old `_ => false`), no volley window exists yet, no accessory or
+        // buff flag is granted, and the four new item-keyed shooters carry
+        // `use_ammo: 0` in the scaled registry so this block never runs for
+        // them.
+        if !crate::ammo::not_consume(
+            held.kind,
+            held_use_ammo,
+            ammo_def.projectile.unwrap_or(0),
+            &crate::ammo::VolleyWindows {
+                just_started: true,
+                ..crate::ammo::VolleyWindows::default()
+            },
+            &crate::ammo::AmmoFlags::default(),
+            false,
+            &mut app.item_rng,
+        ) {
             let mut equip = std::mem::take(&mut app.equip);
             let mut inv = app.inventory;
             let drained = crate::ammo::drain(src, &mut inv, &mut equip);
