@@ -328,18 +328,6 @@ pub enum NpcKind {
     /// night (`NPC.cs:53358-53374` -> `WorldGen.UnspawnTravelNPC`,
     /// `WorldGen.cs:5000`) — M4-TOWN-14.
     TravellingMerchant,
-    /// `NPCID.Angler` (369) — the quest-giving town NPC (`NPC.cs:13687`:
-    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 —
-    /// the town walker; `npcFrameCount[369]` = 23, `Main.cs:67120`). No
-    /// shop: the quest interaction rides `NPCInteractions.cs:519` —
-    /// M4-TOWN-15.
-    Angler,
-    /// `NPCID.SleepingAngler` (376) — the bound form found on the beach /
-    /// in the ocean (`NPC.cs:13796`: 34x8, aiStyle 0 the bound stand,
-    /// scale 0.9, rarity 1, `npcFrameCount[376]` = 2 — `Main.cs:67121`).
-    /// `Sets.BoundTownNPCs` (`NPCID.cs:10441`): the talk transforms
-    /// 376 -> 369 and raises `savedAngler` (`NPC.cs:19853`).
-    SleepingAngler,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -737,8 +725,6 @@ impl NpcKind {
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
             NpcKind::TravellingMerchant => 111,
-            NpcKind::Angler => 116,
-            NpcKind::SleepingAngler => 117,
         }
     }
 
@@ -864,8 +850,6 @@ impl NpcKind {
             83 => NpcKind::PrimeVice,
             84 => NpcKind::PrimeLaser,
             111 => NpcKind::TravellingMerchant,
-            116 => NpcKind::Angler,
-            117 => NpcKind::SleepingAngler,
             _ => return None,
         })
     }
@@ -890,7 +874,6 @@ impl NpcKind {
                 | NpcKind::Clothier
                 | NpcKind::GoblinTinkerer
                 | NpcKind::TravellingMerchant
-                | NpcKind::Angler
         )
     }
 
@@ -989,8 +972,6 @@ impl NpcKind {
             NpcKind::WitchDoctor => (18.0, 40.0),
             NpcKind::Clothier => (18.0, 40.0),
             NpcKind::TravellingMerchant => (18.0, 40.0),
-            NpcKind::Angler => (18.0, 40.0),
-            NpcKind::SleepingAngler => (34.0, 8.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1169,8 +1150,6 @@ impl NpcKind {
             NpcKind::Demolitionist => 38,
             NpcKind::Clothier => 54,
             NpcKind::TravellingMerchant => 368,
-            NpcKind::Angler => 369,
-            NpcKind::SleepingAngler => 376,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1215,6 +1194,31 @@ impl NpcKind {
         }
     }
 
+    /// The Martian Madness family — the kinds whose `FindFrame` cases live
+    /// in `NPC.cs:71578-71921` and whose display rides the drawn
+    /// `spriteDirection` (the Scutlix family's inversion, the saucer
+    /// mounts' inheritance) rather than the motion `facing`.
+    pub fn is_martian(self) -> bool {
+        matches!(
+            self,
+            NpcKind::MartianOfficer
+                | NpcKind::GrayGrunt
+                | NpcKind::MartianEngineer
+                | NpcKind::GigaZapper
+                | NpcKind::MartianWalker
+                | NpcKind::MartianProbe
+                | NpcKind::MartianDrone
+                | NpcKind::BrainScrambler
+                | NpcKind::RayGunner
+                | NpcKind::ScutlixRider
+                | NpcKind::Scutlix
+                | NpcKind::MartianSaucer
+                | NpcKind::MartianSaucerTurret
+                | NpcKind::MartianSaucerCannon
+                | NpcKind::MartianSaucerCore
+        )
+    }
+
     pub(crate) fn max_hp(self) -> i32 {
         match self {
             NpcKind::Slime => 25,         // NPC.cs:8572
@@ -1239,8 +1243,6 @@ impl NpcKind {
             NpcKind::WitchDoctor => 250,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
-            NpcKind::Angler => 250,
-            NpcKind::SleepingAngler => 250,
             NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
             NpcKind::EyeOfCthulhu => 2800,
@@ -1408,8 +1410,6 @@ impl NpcKind {
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
-            NpcKind::Angler => 10,
-            NpcKind::SleepingAngler => 10,
             NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
@@ -1724,6 +1724,16 @@ pub struct Npc {
     /// swimmer cases read it for the wet flap vs the dry flop
     /// (`NPC.cs:74181`/`:74654`).
     pub wet: bool,
+    /// `NPC.spriteDirection` (`NPC.cs:6515`, the default -1) — the DISPLAY
+    /// direction the `DrawNPCDirect` flip reads (`Main.cs:23124-23128`:
+    /// `spriteDirection == 1` is exactly when the sheet flips). The C# keeps
+    /// it separate from `direction` (the motion/last-aim side); the port
+    /// folds `direction` into `facing`, so the kinds whose `FindFrame` /
+    /// AI write `spriteDirection` as its own value — the Scutlix family's
+    /// inversion (`NPC.cs:71746-71753`/`:71795`), the drone's
+    /// `-Math.Sign(velocity.X)` (`:35232`), the saucer mounts' inheritance
+    /// (`:35669-35676`) — carry it here and the martian draws flip on it.
+    pub sprite_dir: i32,
     /// The saucer family's write-through payload (the mounts read the
     /// core's live state): the core's `ai[3]` timer and `ai[0]` phase,
     /// and the crew counts within the link's reach (the turrets + the
@@ -1731,6 +1741,13 @@ pub struct Npc {
     /// model).
     pub carrier_timer: f32,
     pub carrier_phase: f32,
+    /// The core's rotation (`NPC.cs:35625-35651`: every mount inherits
+    /// `nPC.rotation`, so the whole saucer family tilts as one body) and
+    /// the core's `spriteDirection` (the mounts copy it per
+    /// `NPC.cs:35669-35676`; the core's own AI never writes it, so it
+    /// holds the `SetDefaults` default -1).
+    pub carrier_rot: f32,
+    pub carrier_facing: i32,
     pub crew_turrets: i32,
     pub crew_cannons: i32,
     /// The Dutchman's pirate-drop payload (`AI_093`'s `Next(300)` arm,
@@ -2068,6 +2085,9 @@ impl Npc {
             max_hp: kind.max_hp(),
             on_ground: false,
             facing,
+            // `NPC.spriteDirection`'s `SetDefaults` default (`NPC.cs:6515`):
+            // -1 until a `FindFrame` case or an AI writes it.
+            sprite_dir: -1,
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
@@ -2114,6 +2134,8 @@ impl Npc {
             wet: false,
             carrier_timer: -1.0,
             carrier_phase: 0.0,
+            carrier_rot: 0.0,
+            carrier_facing: -1,
             crew_turrets: 0,
             crew_cannons: 0,
             wants_dutchman_drop: None,
@@ -2279,8 +2301,6 @@ impl Npc {
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
-            NpcKind::Angler => 0.5,
-            NpcKind::SleepingAngler => 0.5,
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
@@ -2454,8 +2474,6 @@ impl Npc {
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
-            NpcKind::Angler => 15,
-            NpcKind::SleepingAngler => 15,
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
@@ -2623,8 +2641,6 @@ impl Npc {
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
-            NpcKind::Angler => 0.0,
-            NpcKind::SleepingAngler => 0.0,
             NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
@@ -2777,7 +2793,6 @@ impl Npc {
             | NpcKind::WitchDoctor
             | NpcKind::Clothier
             | NpcKind::TravellingMerchant
-            | NpcKind::Angler
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -2797,7 +2812,6 @@ impl Npc {
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
-            NpcKind::SleepingAngler => {}
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
                 self.update_goblin(world, player)
             }
@@ -2856,11 +2870,11 @@ impl Npc {
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
-            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
             // The pirate ship: aiStyle 93's crew-carrier machine + its
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
-            NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, rng),
+            NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, player, rng),
             // The DD2 goblins: aiStyle 107's improved walker.
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
                 self.update_dd2_goblin(world, player, dt)
@@ -2897,7 +2911,7 @@ impl Npc {
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
-            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, rng),
+            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -3024,11 +3038,6 @@ impl Npc {
                 // for type 36 — the strip is one frame).
                 self.frame = 0;
             }
-            // The Angler has no `FindFrame` case of his own — `case 369`
-            // is the shared town-NPC body (`NPC.cs:68608`, the
-            // `ai[0]` walk/attack/sit states the town machine ports), so
-            // the row the town machine wrote stands.
-            NpcKind::Angler => {}
             NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
                 // The limbs' single frame.
                 self.frame = 0;
@@ -3051,26 +3060,107 @@ impl Npc {
                     self.frame = (self.frame + 1) % count;
                 }
             }
-            // The martians: the 9-frame strips (the walker's 11) — the same
-            // accumulator.
+            // ═══════════════════════════════════════════════════════════
+            // The martians (`NPC.cs:71578-71921`, the 16 kinds of the
+            // Martian Madness family). `Main.npcFrameCount` reads:
+            // 381/382/383/385/389 = 9, 386 = 11, 387/388 = 2, 390 = 5,
+            // 391 = 6, 392 = 4, 393 = 18, 394 = 8, 395 = 11, 399 = 8,
+            // 520 = 8 (`Main.cs:67082`). The grounded walk groups all
+            // share the same shape: `spriteDirection = direction`, the
+            // row clamps up to the walk band's floor, the accumulator
+            // `|vx| * rate` advances the row every 6, the end wraps back
+            // to the band's floor, the idle snaps to row 0 and the air
+            // holds row 1 (or 0 for the Scutlix). The v1 ran one blind
+            // `(frame + 1) % count` strip over all of them — no idle/air
+            // split, no per-kind rate, no wrap to the walk band's floor.
             NpcKind::MartianOfficer
             | NpcKind::GrayGrunt
-            | NpcKind::MartianEngineer
+            | NpcKind::BrainScrambler
+            | NpcKind::RayGunner
             | NpcKind::GigaZapper => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+                // `case 381/382/383/385/389` (`NPC.cs:71623-71662`): the
+                // shared ground group — the 385/389 walk at the slower
+                // `|vx| * 1.2`, the rest at `* 2.0`.
+                let rate = if matches!(self.kind, NpcKind::GrayGrunt | NpcKind::GigaZapper) {
+                    1.2
+                } else {
+                    2.0
+                };
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += self.vx.abs() * rate;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 9 {
+                        self.frame = 2;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                    }
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 9;
+                    self.frame = 1;
+                }
+            }
+            NpcKind::MartianEngineer => {
+                // `case 386` (`NPC.cs:71697-71730`): `ai[2] > 0` parks the
+                // engineer on the 9/10 animation rows (`ai[2] / 12 % 2`);
+                // else the ground group with the walk wrapping at 9 (not
+                // `npcFrameCount`'s 11 — rows 9/10 belong to the
+                // animation pair).
+                if self.ai[2] > 0.0 {
+                    self.frame = 9 + ((self.ai[2] / 12.0) as i32 % 2) as u32;
+                } else if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += self.vx.abs() * 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 9 {
+                        self.frame = 2;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
                 }
             }
             NpcKind::MartianWalker => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+                // `case 520` (`NPC.cs:71889-71921`): the walk rides rows
+                // 1..7 (the wrap returns to 1, not 2 — the `num` band's
+                // floor is row 1 for this sheet) at `|vx| * 1`; the slow
+                // walk (`|vx| < 0.2`) snaps to the idle row 0.
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 6.0 {
+                        if self.vx.abs() < 0.2 {
+                            self.frame = 0;
+                        } else {
+                            self.frame += 1;
+                        }
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                    }
+                } else {
                     self.frame_counter = 0.0;
-                    // `Main.npcFrameCount[520]` = 8 (`Main.cs:67082`) — the
-                    // 11 the martian slice shipped sliced the sheet past the
-                    // vanilla count.
-                    self.frame = (self.frame + 1) % 8;
+                    self.frame = 1;
                 }
             }
             // The probe: `case 399` (`NPC.cs:71885-71887`) — the accumulator
@@ -3082,7 +3172,8 @@ impl Npc {
                 self.frame = self.frame_counter as u32;
             }
             // The drone: `case 388` (`NPC.cs:71731-71740`) — the 2-row strip
-            // advances one row every 6 ticks.
+            // advances one row every 6 ticks (unconditional: the drone is
+            // always airborne).
             NpcKind::MartianDrone => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 6.0 {
@@ -3090,58 +3181,131 @@ impl Npc {
                     self.frame = (self.frame + 1) % 2;
                 }
             }
-            // The shooters: the 381/382/383/385/389 grouped arm
-            // (`NPC.cs:71623-71640`) — the humanoid walk strip over the
-            // 9-frame sheet, the grounded rows clamp at 2.
-            NpcKind::BrainScrambler | NpcKind::RayGunner => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 9;
-                }
-            }
-            // The rider: the 5-frame mount strip.
+            // The rider: `case 390` (`NPC.cs:71779-71805`) — the row is
+            // purely `ai[2]`-driven (the aim octant 1..5 the AI writes:
+            // `NPC.cs:35727-35749`), row 2 when it holds 0; the
+            // `spriteDirection` is INVERTED against `direction`.
             NpcKind::ScutlixRider => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 5;
+                if self.facing != 0 {
+                    self.sprite_dir = -self.facing;
                 }
+                self.frame = if self.ai[2] > 0.0 {
+                    self.ai[2] as u32 - 1
+                } else {
+                    2
+                };
             }
-            // The carrier: the 6-frame strip (`npcFrameCount[391]`).
+            // The carrier: `case 391` (`NPC.cs:71743-71778`) — the walk
+            // rides rows 1..5 at `|vx| * 0.5` (the slowest rate in the
+            // family), the idle snaps to row 0, the air holds row 0 (NOT
+            // row 1), and the `spriteDirection` is INVERTED.
             NpcKind::Scutlix => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = -self.facing;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.frame_counter += self.vx.abs() * 0.5;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 6 {
+                        self.frame = 1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                    }
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 6;
+                    self.frame = 0;
                 }
             }
-            // The saucer family: the core's 11-frame boss strip, the
-            // shell's 4, the turret's 18, the cannon's 8
-            // (`Main.npcFrameCount`, `Main.cs:67082`).
+            // The saucer family: `AIMethods`' aiStyle-75/76 machines copy
+            // the core's `ai[3]` master clock onto every mount
+            // (`NPC.cs:35832`/`:35860`/`:35906`) and `FindFrame` reads it
+            // back — the v1 ran a blind strip over all four strips.
             NpcKind::MartianSaucerCore => {
-                self.frame_counter += 0.25;
-                if self.frame_counter >= 4.0 {
+                // `case 395` (`NPC.cs:71845-71865`): 11 rows off
+                // `frameCounter % 66 / 6`; the counter advances twice per
+                // tick in the attack window (`ai[3]` in [20, 260)) and is
+                // pinned to [36, 54) there, parking the animation on rows
+                // 6-8 for the whole attack.
+                let attacking = self.ai[3] >= 20.0 && self.ai[3] < 260.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 66.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 11;
                 }
+                if attacking {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 54.0 || self.frame_counter < 36.0 {
+                        self.frame_counter = 36.0;
+                    }
+                }
+                self.frame = (self.frame_counter as i32 % 66 / 6) as u32;
             }
             NpcKind::MartianSaucer => {
-                self.frame = (self.ai[3] / 40.0) as u32 % 4;
+                // `case 392` (`NPC.cs:71867-71883`): 4 rows off
+                // `frameCounter % 12 / 3`, double speed in the same
+                // [20, 260) window as the core.
+                let attacking = self.ai[3] >= 20.0 && self.ai[3] < 260.0;
+                self.frame_counter += 1.0;
+                if attacking {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 12.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter as i32 % 12 / 3) as u32;
             }
             NpcKind::MartianSaucerTurret => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 18;
+                // `case 393` (`NPC.cs:71806-71819`): 18 rows = the 9 aim
+                // rows the `ai[2]` rotation vector selects through the
+                // vanilla's 5-band cascade + the 9 firing rows, offset +9
+                // while the core's clock sits in the 140-tick burst
+                // ([280, 420)) on the flash ticks (`(int)ai[3] % 6 <= 2`).
+                let (vx, vy) = (self.ai[2].cos(), self.ai[2].sin());
+                let mut row = if vy > vx.abs() * 2.0 {
+                    4
+                } else if vy > vx.abs() * 1.5 {
+                    if vx > 0.0 { 5 } else { 3 }
+                } else if vx.abs() > vy * 2.0 {
+                    if vx > 0.0 { 8 } else { 0 }
+                } else if !(vx.abs() > vy * 1.5) {
+                    if vx > 0.0 { 6 } else { 2 }
+                } else if vx <= 0.0 {
+                    1
+                } else {
+                    7
+                };
+                if self.ai[3] >= 280.0
+                    && self.ai[3] < 420.0
+                    && (self.ai[3] as i32) % 6 <= 2
+                {
+                    row += 9;
                 }
+                self.frame = row as u32;
             }
             NpcKind::MartianSaucerCannon => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 8;
-                }
+                // `case 394` (`NPC.cs:71820-71843`): 8 rows, all off the
+                // core's clock — row 4 idles below the 120 mark, the
+                // charge ramps 4..7 over the next 20, the firing spin
+                // cycles `(n / 4) % 4`, and the tail falls back toward 4.
+                let n = (self.ai[3] as i32) - 300;
+                self.frame = if n >= 120 {
+                    let n2 = n - 120;
+                    if n2 >= 160 {
+                        7usize.saturating_sub(((n2 - 160) / 5) as usize) as u32
+                    } else if n2 >= 20 {
+                        (n2 / 4 % 4) as u32
+                    } else {
+                        (4 + n2 / 5) as u32
+                    }
+                } else {
+                    4
+                };
             }
             // The DD2 goblins: the 14-frame humanoid strip
             // (`Main.npcFrameCount` 552-554).
@@ -3702,17 +3866,6 @@ impl Npc {
                 // The humanoid-group walk (the town machine's
                 // default arm — rows 2..count-1).
                 self.humanoid_town_frame();
-            }
-            NpcKind::SleepingAngler => {
-                // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
-                // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
-                // frame counter runs past 30 and flips the row, wrapping
-                // at the second.
-                self.frame_counter += 1.0;
-                if self.frame_counter > 30.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 2;
-                }
             }
             NpcKind::TravellingMerchant => {
                 // The town wander rides the Guide's 3-frame humanoid machine
@@ -5052,6 +5205,22 @@ impl Npc {
         // `num1038` (the 418-only 4/15 × 60 homing term) is 0 for the drone.
         let home_term = 0.0;
 
+        // The head (`AI()`'s aiStyle-74 block, `NPC.cs:35220-35233`): the
+        // sheet rides the velocity's rotation, folded back into ±π/2, and
+        // `spriteDirection = -Math.Sign(velocity.X)` — the ONLY aiStyle-74
+        // kind whose art inverts against its motion (the 418 stands).
+        self.rotation = self.vy.atan2(self.vx);
+        if self.rotation < -std::f32::consts::PI / 2.0 {
+            self.rotation += std::f32::consts::PI;
+        }
+        if self.rotation > std::f32::consts::PI / 2.0 {
+            self.rotation -= std::f32::consts::PI;
+        }
+        let sign = self.vx.signum() as i32;
+        if sign != 0 {
+            self.sprite_dir = -sign;
+        }
+
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -5432,11 +5601,10 @@ impl Npc {
         if self.ai[2] > 0.0 && self.on_ground {
             self.vx *= 0.7;
         }
-        self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-        if self.frame_counter >= 8.0 {
-            self.frame_counter = 0.0;
-            self.frame = (self.frame + 1) % 6;
-        }
+        // The frames ride `find_frame`'s case 391 (`NPC.cs:71743-71778`),
+        // which the update pass calls right after this machine — the C#'s
+        // aiStyle-3 block writes no `frame.Y` itself (the v1 ran a blind
+        // 6-row strip from here, racing the FindFrame arm).
     }
 
     /// `AI`'s aiStyle-75 arms for the saucer family (`NPC.cs:35616-36060`)
@@ -5456,7 +5624,7 @@ impl Npc {
     /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
     /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
     /// expert-mode bridge arm is constants-off (no difficulty flags).
-    fn update_saucer_mount(&mut self, _world: &World, rng: &mut u64) {
+    fn update_saucer_mount(&mut self, _world: &World, player: &Player, rng: &mut u64) {
         if self.carrier_x < 0.0 {
             return;
         }
@@ -5477,22 +5645,36 @@ impl Npc {
             self.carrier_timer = self.ai[3];
         }
         self.ai[3] = self.carrier_timer;
+        // The display inheritance (`NPC.cs:35625-35651`): every mount
+        // copies the core's `rotation` so the family tilts as one body,
+        // and (`NPC.cs:35669-35676`) its `spriteDirection` — the cannon
+        // takes its seat's side instead (`num1056`).
+        self.rotation = self.carrier_rot;
+        if self.kind == NpcKind::MartianSaucerCannon {
+            self.sprite_dir = if self.ai[1] == 1.0 { 1 } else { -1 };
+        } else {
+            self.sprite_dir = self.carrier_facing;
+        }
         let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         match self.kind {
             NpcKind::MartianSaucerTurret => {
                 // The 280-420 window (`NPC.cs:35750-35894`).
                 let t = self.ai[3];
-                #[cfg(test)]
-                eprintln!(
-                    "[turret-dbg] t={} in_window={} core_open={} carrier={} side={}",
-                    t,
-                    (t >= 280.0 && t < 420.0),
-                    core_open,
-                    self.carrier_timer,
-                    side
-                );
                 let in_window = t >= 280.0 && t < 420.0;
+                if !in_window {
+                    // The aim (`NPC.cs:35873-35880`): outside the burst
+                    // the vanilla re-derives `ai[2]` from the player
+                    // vector's rotation, Y-clamped at 0 (the turret never
+                    // aims upward) — `FindFrame` case 393's 9 aim rows
+                    // read it back.
+                    let (pcx, pcy) = player.center();
+                    let (ax, ay) = (pcx - cx, pcy - cy);
+                    let vy = ay.max(0.0);
+                    let len = (ax * ax + vy * vy).sqrt();
+                    let (nx, ny) = if len > 0.0 { (ax / len, vy / len) } else { (0.0, 1.0) };
+                    self.ai[2] = ny.atan2(nx);
+                }
                 if in_window {
                     if core_open && (t - 280.0) % 6.0 == 0.0 {
                         // The 449 ray at the aim (ai[2] = the rotation).
@@ -5503,11 +5685,6 @@ impl Npc {
                             .push((449u16, cx + vx, cy + vy, vx, vy, 35));
                     }
                 }
-                // The aim rides the fire test's own update (the player
-                // vector's rotation, Y-clamped) — ported as the closest
-                // octant-equivalent: the machine's `ai[2]` counts toward
-                // the player when the window is closed.
-                let _ = core_open;
             }
             NpcKind::MartianSaucerCannon => {
                 // The 440-580 window (`NPC.cs:35820-35858`).
@@ -5633,6 +5810,10 @@ impl Npc {
             self.wants_dutchman_drop = Some((kind, cx + rx, cy + ry));
         }
         self.ai[0] = self.ai[0].max(0.0) + 1.0; // the crew-monitor tick (the port's counter)
+        // The roll (`AI_093`'s `NPC.cs:38844`): `rotation = velocity.X *
+        // 0.025` — the ship banks with its drift and the 492 cannons (and
+        // the drop offsets above) read it.
+        self.rotation = self.vx * 0.025;
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, _pcy) = player.center();
@@ -6452,11 +6633,14 @@ impl Npc {
                 self.ai[1] = 0.0;
                 self.rotation = 0.0;
             } else if self.ai[1] < 40.0 {
-                self.rotation = (self.ai[1] / 40.0 * 6.283).sin() * 0.2;
+                // `Vector2.UnitY.RotatedBy(t).Y` is the COSINE of the
+                // angle (UnitY = (0, 1) rotates to (-sin t, cos t), and
+                // the C# reads its Y) — the v1 ran sin.
+                self.rotation = (self.ai[1] / 40.0 * 6.283).cos() * 0.2;
             } else if self.ai[1] < 80.0 {
-                self.rotation = (self.ai[1] / 20.0 * 6.283).sin() * 0.3;
+                self.rotation = (self.ai[1] / 20.0 * 6.283).cos() * 0.3;
             } else if self.ai[1] < 120.0 {
-                self.rotation = (self.ai[1] / 10.0 * 6.283).sin() * 0.4;
+                self.rotation = (self.ai[1] / 10.0 * 6.283).cos() * 0.4;
             } else {
                 self.rotation = (self.ai[1] - 120.0) / 30.0 * 6.283;
             }
@@ -7993,8 +8177,6 @@ impl Npc {
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
                     | NpcKind::TravellingMerchant
-                    | NpcKind::Angler
-                    | NpcKind::SleepingAngler
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -8031,8 +8213,6 @@ impl Npc {
             NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
             NpcKind::TravellingMerchant => 111,
-            NpcKind::Angler => 116,
-            NpcKind::SleepingAngler => 117,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -10444,93 +10624,6 @@ mod tests {
     }
 
 
-
-
-    /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
-    /// two rows flip once past 30 ticks and wrap — the headless twin of the
-    /// screenshot pair (the port's draw rides the same rows).
-    #[test]
-    fn the_sleeping_angler_frame_flips_on_thirty_ticks() {
-        let w = ground();
-        let mut s = Npc::new(NpcKind::SleepingAngler, 32.0, 100.0, 1, 0.0);
-        s.hp = s.max_hp;
-        assert_eq!(s.frame, 0, "the asleep row");
-        for _ in 0..30 {
-            s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        }
-        assert_eq!(s.frame, 0, "the counter needs past 30");
-        s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        assert_eq!(s.frame, 1, "the awake row");
-        for _ in 0..30 {
-            s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        }
-        s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        assert_eq!(s.frame, 0, "the wrap back to the asleep row");
-    }
-
-    /// The Angler rides the town walker's frame machine (`AI_007`'s shared
-    /// town body, `NPC.cs:68608`): a walking Angler cycles the town rows and
-    /// a still one sits on the idle row.
-    #[test]
-    fn the_angler_rides_the_town_walker_frames() {
-        let w = ground();
-        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
-        a.hp = a.max_hp;
-        for _ in 0..10 {
-            a.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        }
-        assert_eq!(a.frame, 0, "the idle row");
-        a.vx = 2.0;
-        for _ in 0..8 {
-            a.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
-        }
-        assert!(a.frame <= 2, "the town rows: {}", a.frame);
-    }
-
-    #[test]
-    fn the_angler_kinds_stats_roundtrip_and_quest() {
-        // `SetDefaults` 369 (`NPC.cs:13687-13700`): the town twin's numbers
-        // (18x40, 250 HP, dmg 10, def 15, kb 0.5, aiStyle 7) and no shop
-        // index (`NPCInteractions.cs:488-512` has no Shop(369, n) — the
-        // quest interaction rides `:519` instead); 376 (`NPC.cs:13796-13810`)
-        // is the flat 34x8 bound form (scale 0.9, rarity 1, aiStyle 0).
-        let a = Npc::new(NpcKind::Angler, 0.0, 0.0, 1, 0.0);
-        assert_eq!(NpcKind::Angler.max_hp(), 250);
-        assert_eq!(a.defense(), 15);
-        assert_eq!(a.knock_back_resist(), 0.5);
-        assert_eq!(NpcKind::Angler.contact_damage(), 10);
-        assert_eq!(NpcKind::Angler.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::Angler.to_u16(), 116);
-        assert_eq!(NpcKind::from_u16(116), Some(NpcKind::Angler));
-        assert_eq!(NpcKind::Angler.cs_id(), 369);
-        assert!(NpcKind::Angler.is_town_resident());
-        assert_eq!(
-            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Angler),
-            None,
-            "the Angler sells nothing — the quest interaction instead"
-        );
-        let s = Npc::new(NpcKind::SleepingAngler, 0.0, 0.0, 1, 0.0);
-        assert_eq!(NpcKind::SleepingAngler.max_hp(), 250);
-        assert_eq!(s.defense(), 15);
-        assert_eq!(s.knock_back_resist(), 0.5);
-        assert_eq!(NpcKind::SleepingAngler.size(), (34.0, 8.0));
-        assert_eq!(NpcKind::SleepingAngler.to_u16(), 117);
-        assert_eq!(NpcKind::from_u16(117), Some(NpcKind::SleepingAngler));
-        assert_eq!(NpcKind::SleepingAngler.cs_id(), 376);
-        // The bound form is NOT a town NPC (`Sets.BoundTownNPCs`,
-        // `NPCID.cs:10441`).
-        assert!(!NpcKind::SleepingAngler.is_town_resident());
-        // The bestiary rows: the Angler's visible (`NPCID.cs:12433`); the
-        // Sleeping Angler's `Hide = true` (`:3721-3725`) keeps it out.
-        let e = crate::bestiary::entry_for_npc(NpcKind::Angler, SlimeVariant::Blue);
-        assert_eq!(e.net_id, 369);
-        assert_eq!(
-            crate::bestiary::entry_for_npc(NpcKind::SleepingAngler, SlimeVariant::Blue).net_id,
-            crate::bestiary::entry_for_npc(NpcKind::Angler, SlimeVariant::Blue).net_id,
-            "the hidden kind carries the visible row"
-        );
-    }
-
     #[test]
     fn the_travelling_merchant_kind_stats_roundtrip_and_shop() {
         // `SetDefaults` 368 (`NPC.cs:13673-13686`): the town twin's numbers —
@@ -11093,4 +11186,275 @@ mod tests {
         assert_eq!(a2.ai[2], 0.0, "the hit staggers");
         assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
     }
+
+    // ───────────────────────────────────────────────────────────────
+    // The martians' display (`NPC.cs:71578-71921`): M4-NPC-3i ports the
+    // ground group's walk bands, the engineer's animation rows, the
+    // Scutlix family's inverted sprite direction, the saucer family's
+    // clock-driven rows and the probe's banks — 1:1 against the C#.
+    // ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn the_martian_ground_group_walks_its_band_and_snaps_to_the_idle_row() {
+        // `case 381/382/383/385/389` (`NPC.cs:71623-71662`): grounded, the
+        // row clamps up to the walk band's floor 2, the `|vx| * 2`
+        // accumulator advances every 6 and the end wraps back to 2 (the
+        // 9th row never shows), the idle snaps to row 0 and the air holds
+        // row 1. The Grunt/Zapper walk at `|vx| * 1.2` (`:71635-71638`).
+        let mut o = bare(NpcKind::MartianOfficer);
+        o.facing = 1;
+        o.find_frame();
+        assert_eq!((o.frame, o.sprite_dir), (0, 1), "the spawn idle row (dir = 1)");
+        o.vx = 2.0;
+        o.find_frame();
+        assert_eq!(o.frame, 2, "the first grounded moving tick clamps to 2");
+        assert_eq!(o.sprite_dir, 1, "spriteDirection = direction while grounded");
+        for _ in 0..2 {
+            o.find_frame();
+        }
+        assert_eq!(o.frame, 3, "|vx| * 2 = 4/tick: the advance fires every 2 ticks");
+        for _ in 0..24 {
+            o.find_frame();
+            assert!(o.frame <= 8, "the walk wraps at npcFrameCount's 9: {}", o.frame);
+        }
+        assert_eq!(o.frame, 8, "the band rides 2..8 and never shows row 9");
+        o.vx = 0.0;
+        o.find_frame();
+        assert_eq!(o.frame, 0, "the idle snaps to row 0");
+        o.vy = 0.4;
+        o.vx = 2.0;
+        o.find_frame();
+        assert_eq!((o.frame, o.frame_counter), (1, 0.0), "the air holds row 1");
+        // The zapper's slower rate: 1.2 * 2 = 2.4/tick, so 3 ticks.
+        let mut z = bare(NpcKind::GigaZapper);
+        z.vx = 2.0;
+        z.find_frame();
+        z.find_frame();
+        assert_eq!(z.frame, 2, "no advance yet at 4.8 of the 6.0 threshold");
+        z.find_frame();
+        assert_eq!(z.frame, 3, "the 1.2 rate advances on the third tick");
+    }
+
+    #[test]
+    fn the_martian_engineer_parks_on_the_ai2_animation_rows() {
+        // `case 386` (`NPC.cs:71697-71730`): `ai[2] > 0` parks the engineer
+        // on rows 9/10 by `ai[2] / 12 % 2`; the grounded walk wraps at 9
+        // (not `npcFrameCount`'s 11 — rows 9/10 are the animation pair).
+        let mut e = bare(NpcKind::MartianEngineer);
+        e.ai[2] = 24.0;
+        e.find_frame();
+        assert_eq!(e.frame, 9, "ai[2] = 24 -> row 9");
+        e.ai[2] = 36.0;
+        e.find_frame();
+        assert_eq!(e.frame, 10, "ai[2] = 36 -> row 10");
+        e.ai[2] = 0.0;
+        e.vx = 3.0;
+        for _ in 0..30 {
+            e.find_frame();
+        }
+        assert!(
+            (2..9).contains(&e.frame),
+            "the walk rides 2..8 and wraps at 9: {}",
+            e.frame
+        );
+        e.vx = 0.0;
+        e.find_frame();
+        assert_eq!(e.frame, 0, "the idle row");
+    }
+
+    #[test]
+    fn the_martian_walker_wraps_to_row_one_and_the_slow_walk_snaps() {
+        // `case 520` (`NPC.cs:71889-71921`): the walk band's floor is row 1
+        // (the wrap returns to 1, not 2), the rate is `|vx| * 1`, and the
+        // slow walk (`|vx| < 0.2`) snaps to the idle row 0 on the advance.
+        let mut w = bare(NpcKind::MartianWalker);
+        w.vx = 4.0;
+        w.find_frame();
+        assert_eq!(w.frame, 0, "4 of the 6.0 threshold: no advance yet");
+        w.find_frame();
+        assert_eq!(w.frame, 1, "the advance lifts row 0 to the band's floor 1");
+        for _ in 0..40 {
+            w.find_frame();
+        }
+        assert!((1..8).contains(&w.frame), "the walk rides 1..7: {}", w.frame);
+        // The slow walk's snap rides an ADVANCE tick: at `|vx| * 1` the
+        // counter needs 61 ticks to pass the 6.0 threshold, and that tick
+        // parks the row on the idle 0 (`NPC.cs:71896-71900`).
+        w.vx = 0.1;
+        for _ in 0..60 {
+            w.find_frame();
+        }
+        assert!(w.frame >= 1, "the slow walk has not advanced yet: {}", w.frame);
+        w.find_frame();
+        assert_eq!(w.frame, 0, "the slow walk parks on the idle row");
+        w.vy = 0.2;
+        w.find_frame();
+        assert_eq!(w.frame, 1, "the air holds row 1");
+    }
+
+    #[test]
+    fn the_scutlix_family_inverts_its_sprite_direction() {
+        // `case 391` (`NPC.cs:71743-71778`): the carrier's walk rides rows
+        // 1..5 at the slow `|vx| * 0.5`, the air holds row 0 (NOT 1), and
+        // `spriteDirection = -direction`. `case 390` (`:71779-71805`): the
+        // rider's row is purely `ai[2]`-driven (the aim octant 1..5).
+        let mut c = bare(NpcKind::Scutlix);
+        c.facing = 1;
+        c.find_frame();
+        assert_eq!((c.frame, c.sprite_dir), (0, -1), "the inverted sprite direction");
+        c.vx = 2.0;
+        for _ in 0..14 {
+            c.find_frame();
+        }
+        assert!((1..6).contains(&c.frame), "the 0.5 rate walks 1..5: {}", c.frame);
+        c.vy = 0.3;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the Scutlix' air row is 0");
+        let mut r = bare(NpcKind::ScutlixRider);
+        r.facing = -1;
+        r.ai[2] = 0.0;
+        r.find_frame();
+        assert_eq!((r.frame, r.sprite_dir), (2, 1), "no aim -> row 2, the inverted dir");
+        r.ai[2] = 3.0;
+        r.find_frame();
+        assert_eq!(r.frame, 2, "ai[2] = 3 -> row 2");
+        r.ai[2] = 1.0;
+        r.find_frame();
+        assert_eq!(r.frame, 0, "ai[2] = 1 -> row 0");
+        r.ai[2] = 5.0;
+        r.find_frame();
+        assert_eq!(r.frame, 4, "ai[2] = 5 -> row 4");
+    }
+
+    #[test]
+    fn the_martian_drone_bobs_and_the_probe_switches_its_bank() {
+        // `case 388` (`NPC.cs:71731-71740`): the 2-row bob advances one row
+        // every 6 ticks. `case 399` (`:71885-71887`): the counter steps
+        // 0.25 (4 ticks a row) and the alerted `ai[0] != 0` rides the +4
+        // rows of NPC_399's 8-row strip.
+        let mut d = bare(NpcKind::MartianDrone);
+        for _ in 0..5 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 0);
+        d.find_frame();
+        assert_eq!(d.frame, 1, "6 ticks advance the bob");
+        for _ in 0..5 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 1, "each row holds its 6 ticks");
+        d.find_frame();
+        assert_eq!(d.frame, 0, "the bob wraps over npcFrameCount's 2");
+        let mut p = bare(NpcKind::MartianProbe);
+        for _ in 0..12 {
+            p.find_frame();
+        }
+        assert!(p.frame < 4, "the roaming bank rides rows 0..3: {}", p.frame);
+        p.ai[0] = 2.0;
+        p.frame_counter = 0.0;
+        for _ in 0..8 {
+            p.find_frame();
+        }
+        assert!((4..8).contains(&p.frame), "the alert bank rides rows 4..7: {}", p.frame);
+    }
+
+    #[test]
+    fn the_saucer_cores_clock_pins_the_attack_rows() {
+        // `case 395` (`NPC.cs:71845-71865`): the 11 rows come off
+        // `frameCounter % 66 / 6`; in the attack window (`ai[3]` in
+        // [20, 260)) the counter double-increments and is pinned into
+        // [36, 54), parking the animation on rows 6-8.
+        let mut c = bare(NpcKind::MartianSaucerCore);
+        for _ in 0..66 {
+            c.find_frame();
+        }
+        assert_eq!(c.frame, 0, "the idle clock wraps at 66");
+        for _ in 0..30 {
+            c.find_frame();
+        }
+        assert_eq!(c.frame, 5, "row = counter % 66 / 6 (30 / 6)");
+        c.ai[3] = 100.0;
+        for _ in 0..30 {
+            c.find_frame();
+        }
+        assert!(
+            (6..9).contains(&c.frame),
+            "the attack window pins rows 6..8: {}",
+            c.frame
+        );
+    }
+
+    #[test]
+    fn the_saucer_shell_doubles_its_rate_in_the_attack_window() {
+        // `case 392` (`NPC.cs:71867-71883`): 4 rows off
+        // `frameCounter % 12 / 3`, double speed in the [20, 260) window.
+        let mut s = bare(NpcKind::MartianSaucer);
+        s.find_frame();
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the first two ticks hold row 0");
+        s.find_frame();
+        assert_eq!(s.frame, 1, "3 ticks a row outside the window");
+        s.ai[3] = 100.0;
+        s.frame_counter = 0.0;
+        s.find_frame();
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the window's double speed: 2 ticks a row");
+        s.find_frame();
+        s.find_frame();
+        assert_eq!(s.frame, 2);
+    }
+
+    #[test]
+    fn the_saucer_turret_aims_by_the_ai2_angle_and_flashes_on_fire() {
+        // `case 393` (`NPC.cs:71806-71819`): the 9 aim rows come from the
+        // `ai[2]` rotation vector through the vanilla's 5-band cascade and
+        // the firing rows sit +9 while the core's clock runs the 280-420
+        // burst on the flash ticks (`(int)ai[3] % 6 <= 2`).
+        let mut t = bare(NpcKind::MartianSaucerTurret);
+        t.ai[2] = 0.0;
+        t.find_frame();
+        assert_eq!(t.frame, 8, "aiming right -> row 8");
+        t.ai[2] = std::f32::consts::PI;
+        t.find_frame();
+        assert_eq!(t.frame, 0, "aiming left -> row 0");
+        t.ai[2] = std::f32::consts::FRAC_PI_2;
+        t.find_frame();
+        assert_eq!(t.frame, 4, "straight down -> row 4");
+        t.ai[2] = std::f32::consts::FRAC_PI_4;
+        t.find_frame();
+        assert_eq!(t.frame, 6, "the shallow right-down band -> row 6");
+        t.ai[3] = 282.0;
+        t.ai[2] = 0.0;
+        t.find_frame();
+        assert_eq!(t.frame, 17, "the burst's flash tick paints the +9 row");
+        t.ai[3] = 285.0;
+        t.find_frame();
+        assert_eq!(t.frame, 8, "the non-flash tick drops back to the aim row");
+        t.ai[3] = 421.0;
+        t.find_frame();
+        assert_eq!(t.frame, 8, "outside the burst there is no flash");
+    }
+
+    #[test]
+    fn the_saucer_cannons_rows_ride_the_cores_clock() {
+        // `case 394` (`NPC.cs:71820-71843`): row 4 idles below `ai[3]` 420,
+        // the charge ramps 4..7 over the next 20, the firing spin cycles
+        // `(n / 4) % 4` and the tail falls back toward 4.
+        let mut c = bare(NpcKind::MartianSaucerCannon);
+        for t in [100.0, 350.0, 420.0] {
+            c.ai[3] = t;
+            c.find_frame();
+        }
+        assert_eq!(c.frame, 4, "idle at the window's entry");
+        c.ai[3] = 445.0;
+        c.find_frame();
+        assert_eq!(c.frame, 2, "the firing spin: (25 / 4) % 4 = 2");
+        c.ai[3] = 500.0;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the firing spin: (80 / 4) % 4 = 0");
+        c.ai[3] = 590.0;
+        c.find_frame();
+        assert_eq!(c.frame, 5, "the recoil tail: 7 - (170 - 160) / 5 = 5");
+    }
+
 }
