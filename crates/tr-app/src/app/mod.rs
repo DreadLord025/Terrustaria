@@ -1070,6 +1070,22 @@ impl App {
         world_sim::editing::update_editing(self, dt, screen);
     }
 
+    /// The per-frame advance of the pointer clock and the state-change lockout:
+    /// `UserInterface.Update`'s countdown, decremented *before* it is read
+    /// (`UserInterface.cs:203-204`). `Main.UpdateUIStates`
+    /// (`Main.cs:17039`/`:17487-17492`) calls `MenuUI.Update` on **every**
+    /// frame, which is why the 200 ms post-`SetState` disable always expires:
+    /// gating this on the live side being closed would latch it forever and
+    /// silence every button of whichever front screen was open.
+    ///
+    /// Split out of `frame()` so the front-screen regime (`Main.menuMode ==
+    /// 888`) is reachable from a headless test; `dt` is the same frame step
+    /// `frame()` uses, pinned to 1/60 under `TR_SHOT`.
+    pub(crate) fn tick_pointer_clock(&mut self, dt: f32) {
+        self.pointer_ms = self.anim_time as f64 * 1000.0;
+        self.pointer.tick(f64::from(dt) * 1000.0);
+    }
+
     pub(crate) fn is_client(&self) -> bool {
         matches!(self.net, NetRole::Client(_))
     }
