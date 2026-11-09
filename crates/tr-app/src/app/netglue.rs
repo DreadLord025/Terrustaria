@@ -1955,6 +1955,7 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustTower
         | crate::npc::NpcKind::NebulaTower
         | crate::npc::NpcKind::SolarTower
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::MoonLordHead
         | crate::npc::NpcKind::MoonLordHand
         | crate::npc::NpcKind::MoonLordCore

@@ -180,15 +180,23 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
-    /// `NPCID.TowerSolarVortex` — see the kinds below (`NPC.cs`'s cases
-    /// 493/507/517 share the cultist's row: 130×270, aiStyle 94, 20000
-    /// HP, dmg 0, def 20).
+    /// `NPCID.LunarTowerStardust` (493) — the Stardust Pillar
+    /// (`NPC.cs:14988-15003`: 130×270, aiStyle 94, 20000 HP, dmg 0,
+    /// def 20, noGravity, noTileCollide; the pillar's sheet NPC_493 is
+    /// 174x364 — the frame overhangs the box).
     StardustTower,
     /// `NPCID.TowerNebula` (507).
     NebulaTower,
-    /// `NPCID.TowerSolar` (517).
-    VortexTower,
+    /// `NPCID.TowerSolar` (517) — the Solar Pillar (the same
+    /// `SetDefaults` row as its siblings).
     SolarTower,
+    /// `NPCID.LunarTowerVortex` (422) — the Vortex Pillar: the fourth
+    /// pillar `WorldGen.TriggerLunarApocalypse` spawns
+    /// (`WorldGen.cs:86628`'s `{517, 422, 507, 493}` shuffle) and the
+    /// port was missing entirely — the three kinds below drew the
+    /// Stardust sheet and the vortex had neither kind nor art. Its
+    /// internal slot is 146 (112-145 are taken).
+    VortexTower,
     /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
     /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
     /// kb 0.3; the aiStyle-85 hover machine).
@@ -306,7 +314,10 @@ pub enum NpcKind {
     /// 14159-14175: 30×30, aiStyle 82, 400 HP, dmg 0, def 0, hide; it
     /// drains 1000 hp from the head, the core and the hands).
     MoonLordLeechBlob,
-    /// `NPCID.AncientCultist` (422) — the Lunar Events' summoner (`NPC.cs`
+    /// `NPCID.CultistBoss` (439) — the Lunar Events' summoner (the port's
+    /// bestiary entry carried the Vortex Pillar's id 422 — corrected
+    /// here and in the catalog; the port ships no NPC_439 sheet, so the
+    /// draw stands on NPC_422's art as the documented stand-in) (`NPC.cs`
     /// `:15172-15189`: 130×270, aiStyle 94, 20000 HP, dmg 0, def 20,
     /// noGravity, noTileCollide; the ritual + the portal-summon machine).
     AncientCultist,
@@ -800,6 +811,7 @@ impl NpcKind {
             NpcKind::NebulaTower => 114,
             NpcKind::VortexTower => 146,
             NpcKind::SolarTower => 115,
+            NpcKind::VortexTower => 146,
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
             NpcKind::VortexHeadcrab => 129,
@@ -1016,6 +1028,7 @@ NpcKind::SolarSelenian => 140,
             114 => NpcKind::NebulaTower,
             146 => NpcKind::VortexTower,
             115 => NpcKind::SolarTower,
+            146 => NpcKind::VortexTower,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
             118 => NpcKind::NebulaBeast,
@@ -1341,8 +1354,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
-            | NpcKind::VortexTower
-            | NpcKind::SolarTower => (130.0, 270.0),
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower => (130.0, 270.0),
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
             NpcKind::VortexHeadcrab => (24.0, 26.0),
@@ -1552,7 +1565,13 @@ NpcKind::SolarSelenian => 140,
             || self.is_prime_limb()
             || matches!(
                 self,
-                NpcKind::SkeletronPrime | NpcKind::Retinazer | NpcKind::Spazmatism
+                NpcKind::SkeletronPrime
+                    | NpcKind::Retinazer
+                    | NpcKind::Spazmatism
+                    | NpcKind::StardustTower
+                    | NpcKind::NebulaTower
+                    | NpcKind::SolarTower
+                    | NpcKind::VortexTower
             )
     }
 
@@ -1719,8 +1738,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
-            | NpcKind::VortexTower
-            | NpcKind::SolarTower => 20000,
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower => 20000,
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
             NpcKind::VortexHeadcrab => 200,
@@ -1926,8 +1945,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
-            | NpcKind::VortexTower
-            | NpcKind::SolarTower => 0,
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
             NpcKind::StardustSpiderBig => 70,
@@ -2800,6 +2819,8 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
+            | NpcKind::VortexTower => 0.0,
+            | NpcKind::VortexTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
@@ -3052,8 +3073,8 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
-            | NpcKind::VortexTower
-            | NpcKind::SolarTower => 20,
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
             NpcKind::StardustSpiderBig => 40,
             NpcKind::StardustSpiderSmall => 10,
@@ -3338,6 +3359,7 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
+            NpcKind::VortexTower => 0.0, // the C# value = 0 for the pillars
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -11150,6 +11172,7 @@ impl Npc {
             NpcKind::NebulaTower => 114,
             NpcKind::VortexTower => 422,
             NpcKind::SolarTower => 115,
+            NpcKind::VortexTower => 146,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
@@ -14649,6 +14672,43 @@ mod tests {
         tw.find_frame();
         assert_eq!(tw.frame, 3, "the anchor lands the live rows on the same tick");
     }
+
+    #[test]
+    fn the_four_pillars_round_trip_and_hold_their_single_frame() {
+        // `Main.npcFrameCount` 422/493/507/517 = 1 (`Main.cs:67082`) and no
+        // `FindFrame` case exists for any of them — the four pillars are
+        // single-frame sheets (174x364 each, the frame overhangs the
+        // 130x270 box on every side).
+        for kind in [
+            NpcKind::StardustTower,
+            NpcKind::NebulaTower,
+            NpcKind::SolarTower,
+            NpcKind::VortexTower,
+        ] {
+            let mut t = bare(kind);
+            let mut probe = bare(kind);
+            probe.hp = probe.kind.max_hp();
+            assert_eq!(
+                (t.size(), probe.kind.max_hp(), probe.defense()),
+                ((130.0, 270.0), 20000, 20)
+            );
+            assert_eq!(kind.contact_damage(), 0, "the pillars deal no contact damage");
+            t.frame = 3;
+            for _ in 0..30 {
+                t.find_frame();
+                assert_eq!(t.frame, 0, "{kind:?} holds the single frame");
+            }
+            // The round-trip through the port's own id tables.
+            let slot = kind.to_u16();
+            assert_eq!(NpcKind::from_u16(slot), Some(kind), "{kind:?} round-trips");
+            assert!(kind.flips_on_sprite_dir(), "the pillars never flip");
+        }
+        // The Vortex pillar's slot is the fresh 146 (112-145 are taken) and
+        // its vanilla id is 422 — the same id the Cultist's bestiary entry
+        // had carried until this task (the C#'s `CultistBoss` is 439).
+        assert_eq!(NpcKind::VortexTower.to_u16(), 146);
+        assert_eq!(NpcKind::SolarTower.to_u16(), 115);
+    }
 }
 
 #[cfg(test)]
@@ -14671,6 +14731,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 }

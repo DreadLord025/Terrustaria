@@ -5,7 +5,7 @@ use crate::app::App;
 use crate::chest;
 use crate::map;
 use crate::persist;
-use tr_core::save::{self, BannerKill, ChestItem, ChestRecord};
+use tr_core::save::{self, ChestItem, ChestRecord};
 
 impl App {
     pub(crate) fn save_world(&self) {
@@ -58,17 +58,7 @@ impl App {
                         .collect(),
                 });
             }
-            // `BannerSystem.Save` (`BannerSystem.cs:172-186`): the per-banner
-            // kill counts. The vanilla rides the world-flags block; the port's
-            // sparse map gets its own v8 section, so each record carries its
-            // banner id.
-            let banners: Vec<BannerKill> = self
-                .banners
-                .pairs()
-                .map(|(banner, kills)| BannerKill { banner, kills })
-                .collect();
-            let side = save::WorldSide { chests, banners };
-            match save::save(&self.world_path, &self.world, &side) {
+            match save::save(&self.world_path, &self.world, &chests) {
                 Ok(()) => log::info!("saved {}", self.world_path.display()),
                 Err(e) => log::warn!("save failed: {e:#}"),
             }
@@ -187,11 +177,11 @@ mod chest_save_tests {
     /// A headless `App` over the world and its loaded records — the real
     /// constructor, with an empty atlas and blank lookups (all the headless
     /// path reads).
-    fn app_for(world: World, side: save::WorldSide, path: PathBuf) -> App {
+    fn app_for(world: World, chests: Vec<ChestRecord>, path: PathBuf) -> App {
         App::new(
             settings::Settings::default(),
             world,
-            side,
+            chests,
             path,
             tr_render::Atlas::build(Vec::new(), 8192),
             None,
@@ -214,7 +204,7 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-2-chest-roundtrip.trwld");
         let _ = std::fs::remove_file(&path);
 
-        let mut app = app_for(world, save::WorldSide::default(), path.clone());
+        let mut app = app_for(world, Vec::new(), path.clone());
         // The roll claims every chest tile, so the stocked chest is the rolled
         // entry the open path would have opened anyway, written through
         // `set_chest_slot` — including the interior air at slot 1 (the store
@@ -254,10 +244,10 @@ mod chest_save_tests {
         app.settings.map_enabled = false;
         app.save_world();
 
-        let (world, side) = crate::app::load_world(&path).expect("the saved world reloads");
+        let (world, records) = crate::app::load_world(&path).expect("the saved world reloads");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(side.chests.len(), 2, "one record per live store entry");
-        let saved_b = side.chests
+        assert_eq!(records.len(), 2, "one record per live store entry");
+        let saved_b = records
             .iter()
             .find(|r| (r.x, r.y) == (bx, by))
             .expect("the renamed chest's record");
@@ -277,7 +267,7 @@ mod chest_save_tests {
             rolled.slots
         );
 
-        let back = app_for(world, side, path);
+        let back = app_for(world, records, path);
         let stocked = chest::find_chest(&back.world_chests, ax, ay).expect("the saved anchor survives");
         assert_eq!(
             back.world_chests[stocked].slots,
@@ -331,11 +321,7 @@ mod chest_save_tests {
                 slots: vec![ChestItem { stack: 5, kind: 9, prefix: 0 }],
             },
         ];
-        let app = app_for(
-            world,
-            save::WorldSide { chests: records, banners: Vec::new() },
-            PathBuf::new(),
-        );
+        let app = app_for(world, records, PathBuf::new());
 
         let idx = chest::find_chest(&app.world_chests, ax, ay).expect("the valid record seeds the store");
         assert_eq!(
@@ -354,43 +340,4 @@ mod chest_save_tests {
         );
         assert_eq!(app.chest_names.len(), 1);
     }
-
-    /// DW-2.3: the save → load round-trip of the banner tally through the App
-    /// path — the `BannerSystem.Save` counts (`BannerSystem.cs:172-186`) the
-    /// kill pass accumulates survive `save_world`/`load_world`/`App::new`, and
-    /// an empty tally loads none.
-    #[test]
-    fn dw_2_3_a_saved_banner_tally_round_trips_through_the_app() {
-        let mut world = chest_rig();
-        let path = std::env::temp_dir().join("tr-dw-2-3-banner-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
-
-        let mut app = app_for(world, save::WorldSide::default(), path.clone());
-        // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
-        // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
-        // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
-        for _ in 0..7 {
-            app.banners.add_npc_kill_by(1, "Tester");
-        }
-        for _ in 0..3 {
-            app.banners.add_npc_kill_by(-4, "Tester");
-        }
-        app.player = None;
-        app.settings.map_enabled = false;
-        app.save_world();
-
-        let (world, side) = crate::app::load_world(&path).expect("the saved world reloads");
-        let _ = std::fs::remove_file(&path);
-        assert_eq!(side.banners.len(), 2, "one record per tallied banner");
-        let back = app_for(world, side, path);
-        let pairs: Vec<(i32, i32)> = back.banners.pairs().collect();
-        assert_eq!(pairs, vec![(69, 7), (151, 3)], "the counts ride the store");
-
-        // The control: a fresh App over the same world starts empty — the
-        // records above are what carried the tally, not a re-derived one.
-        let mut world2 = chest_rig();
-        let control = app_for(world2.clone(), save::WorldSide::default(), PathBuf::new());
-        assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
-    }
 }
-

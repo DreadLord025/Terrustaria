@@ -2908,6 +2908,55 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Lunar pillars' display (M4-NPC-3l)
+
+The four celestial pillars had the third instance of the atlas bug and a
+shared-sheet bug: none of NPC_493/507/517 was in the load list (so every
+pillar drew nothing — the bestiary portraits were blank too), and all
+three kinds resolved through one `towers` field bound to NPC_493, so the
+Nebula and Solar pillars rendered the Stardust artwork at a guessed
+130x270 in the box's corner. Against `Main.cs:24159-24269`:
+
+- **The dedicated arm**: the pillars draw their single 174x364 frame
+  (`Main.npcFrameCount` 422/493/507/517 = 1) centred on the NPC's Centre
+  with `origin = halfSize` — not the generic bottom anchor, which would
+  sink the frame's 47-px vertical overhang into the ground. The new
+  `tower_draw` computes it; the frame overhangs the 130x270 box by ~22 px
+  horizontally and ~47 px vertically.
+- **One sheet per kind**: Stardust 493, Nebula 507, Solar 517 — and the
+  **missing Vortex pillar** (422, the fourth id in
+  `WorldGen.TriggerLunarApocalypse`'s shuffle) now exists end-to-end: the
+  kind, its stats (the same 20000/20/0/130x270 row as its siblings), the
+  shared aiStyle-94 machine, its `downed_tower_vortex`/`tower_active_vortex`
+  pair (the World fields already carried them, unset by any death until
+  now), the bestiary entry, the netglue spawn and the debuff immunity.
+- **The glow ghosts**: each pillar's arm draws four masked copies of its
+  own sheet at `velocity.RotatedBy(i·π/2) · offset` — the offset
+  `4 + |light − 0.5|·4` (the Solar's `2 + ·9` plus an extra +X 2). The
+  port renders them with the glow sheets' own alpha; the vanilla's
+  (64,64,64,0)·Opacity mask tint is a no-op in a premultiplied pipeline
+  (the same trade the Prime masks made).
+- **The pillars never flip** (no `spriteDirection` write in aiStyle 94),
+  so they join the `flips_on_sprite_dir` predicate like the martians and
+  the Prime family.
+- **Two identity bugs fixed on the way**: the Cultist's bestiary entry
+  carried the Vortex pillar's id 422 (the C#'s `CultistBoss` is 439) —
+  corrected, with the draw keeping the NPC_422 stand-in art since the port
+  ships no NPC_439 sheet; and the ui portraits' hand-maintained sheet
+  indices had drifted twice (the towers read slots 104-107 instead of the
+  true 110-113, the shards 19 rows off) — the index is now derived from
+  the entry's `net_id` through `BESTIARY_NPC_SHEET_IDS` +
+  `Lookups::bestiary_sheet_index`, which removes the drift class for
+  good.
+- Deviations: the Perlin force-field shield bubble
+  (`Main.cs:24239-24269`, a shader pass the port has no seam for) and the
+  towers' 180-tick death-fade dust (`NPC.cs:38970-39068`) stay
+  unmodelled, as does `WorldGen.TriggerLunarApocalypse` itself (the
+  pillars' spawn).
+
+Screenshots: `towers_solar.png` and `towers_vortex.png` (distinct per-kind
+art at the real 174x364 frames), both SHA256-stable across runs.
+
 ## The Twins' display (M4-NPC-3k)
 
 Retinazer and Spazmatism had the same v1 shape as the martians did: a
@@ -8170,6 +8219,7 @@ Deviations: the dust arms, the ground-avoidance tile scan
 (`:51784-51798`) and the same-type repulsion of the crawltipede are
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
+
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death →
@@ -8213,36 +8263,4 @@ tick → the Moon Lord's spawn.
 Deviations: the Moon Lord's boss bar/head textures, the `MoonLordShake`
 scene filter, the music ducking and the countdown UI are unmodelled; the
 `GetRidOfCultists` ritual-cleanup arm is constants-off; the remix/no-
-surface branch of the tower-place retry is constants-off.## .trwld v8 — the banner kill counts (M6-SAVE-1c)
-
-The banner tally now rides the world file. The entry points grew a
-`WorldSide { chests, banners }` (rather than more return tuples — new sections
-extend the struct) and the v8 tail is a `u32` count, then per banner the id and
-the kill count: the C# `BannerSystem.Save` shape (`int32` per banner id,
-`BannerSystem.cs:172-186`).
-
-- **The deviations.** The vanilla rides these counts inside the world-flags
-  block as a dense array; the port's `BannerSystem` keeps them sparse
-  (`BTreeMap` by banner id), so each record carries its id. `Load`
-  (`BannerSystem.cs:188-212`) replaces the tally wholesale — the port's
-  `load_pairs` inserts the recorded entries, and a recorded **0 stays in the
-  map** so a zeroed banner round-trips (the C# keeps only the entries its
-  count array carries). `claimableBanners` (the ushort array `:172-186`) is
-  not modelled in the port and stays out.
-- **The app wiring.** `save_world` collects `banners.pairs()` (ascending
-  banner-id order) beside the chests; `App::new` restores the tally through
-  `BannerSystem::load_pairs` at construction, so the placed banners' strength
-  (`banner_buff_for`) reads the real counts after a reload.
-- Tests: `dw_2_3_the_banner_counts_round_trip_in_v8` (zeroed and
-  999999999-range counts), `dw_2_3_a_v7_payload_loads_no_banners`,
-  `dw_2_3_a_truncated_banner_section_bails`,
-  `dw_2_3_the_banner_section_is_deterministic`, and the app pair
-  `dw_2_3_a_saved_banner_tally_round_trips_through_the_app` (two NPC
-  families' counts survive, with an empty-store control). Suite 2632 / 0.
-
-Out: the remaining C# sections — signs (no port store), the NPC block
-(names/homes/homeless, App-side `App.npcs`), the bestiary kill pairs (today
-the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
-(worldgen-local — needs a `World` field), the angler quest state (no port
-fields), the TownManager rooms, the weighted pressure plates (no port store),
-the creative powers/research — each needs its own scope.
+surface branch of the tower-place retry is constants-off.
