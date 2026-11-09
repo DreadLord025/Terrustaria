@@ -887,25 +887,6 @@ fn stock_chest(
             }
         }
     }
-    // The wooden-chest family tails (`:37440-47500`, the
-    // `itemIndex > 0 && chestTileType == 21` block — every band): the
-    // `num9` 23-27 style row and the flag13 water pair — the flag12 tail
-    // (2197/pottery/751) already lands in `stock_band`. The mahogany-tile
-    // 467 counterparts (`:37466-47500`) need the chest kind plumbed through
-    // `stock_chest` — parked (ANALYSIS).
-    // `:37453-37455` — the styles 23-27 pottery row at 1/2 (the sweep's
-    // `chest_style` off the anchor's `frame_x / 18`).
-    if (23..=27).contains(&chest_style) && next(rng, 2) == 0 {
-        rows.push(Row::plain(5234));
-    }
-    if ctx.water {
-        // `flag13` `:37457-37469` — the 1/5 raincoat, else the 3-7 potions.
-        if next(rng, 5) == 0 {
-            rows.push(Row::plain(2767));
-        } else {
-            rows.push(Row::stacked(2766, ranged(rng, 3, 8) as u32));
-        }
-    }
     rows
 }
 
@@ -1533,102 +1514,6 @@ mod tests {
         let rows2 = stock_chest(&w, 30, 49, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
         let wands2 = rows2.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
         assert_eq!(wands2, 0, "the once-per-world grant does not repeat ({wands2})");
-    }
-
-
-
-    #[test]
-    fn the_sky_and_water_tails_roll_the_family_rows() {
-        // The `itemIndex > 0 && chestTileType == 21` tails (`:37447-47469`):
-        // the flag12 skyware row (unconditional 751, the 50-100 stack) and
-        // the flag13 water pair (1/5 the raincoat 2767, else 3-7 potions
-        // 2766). The port's `Context.sky`/`Context.water` probe the walls
-        // 187/216 and the 4869 tile respectively.
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-
-        // A water-family anchor: tile 4869 beside the seat
-        // (`context_at`'s `near(4869)`).
-        let mut w = rig();
-        for dx in -2i32..=0 {
-            for dy in -1i32..=0 {
-                let i = w.index(100 + dx, 198 + dy);
-                w.tiles[i] = tr_core::tile::Tile {
-                    kind: 4869,
-                    flags: FLAG_ACTIVE,
-                    ..Default::default()
-                };
-            }
-        }
-        put_chest(&mut w, 100, 198);
-        let mut rng = 3u64 | 1;
-        let rows = stock_chest(&w, 100, 198, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
-        let water: Vec<&Row> = rows.iter().filter(|r| r.kind == 2766 || r.kind == 2767).collect();
-        let water_kinds: Vec<(u16, u32)> = water.iter().map(|r| (r.kind, r.count)).collect();
-        assert_eq!(water.len(), 1, "exactly one water row ({water_kinds:?})");
-        if water[0].kind == 2766 {
-            assert!(
-                (3..8).contains(&water[0].count),
-                "the potions stack 3-7 ({})",
-                water[0].count
-            );
-        }
-
-        // A sky-family anchor: the skyware wall 73 near the seat (the
-        // probe main carries — the `:37447` flag12 family).
-        let mut w = rig();
-        for dx in -2i32..=2 {
-            for dy in -2i32..=0 {
-                let i = w.index(60 + dx, 198 + dy);
-                w.tiles[i].wall = 73;
-            }
-        }
-        put_chest(&mut w, 60, 198);
-        let mut rng = 5u64 | 1;
-        let rows = stock_chest(&w, 60, 198, false, 0, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
-        let sky = rows.iter().find(|r| r.kind == 751);
-        assert!(sky.is_some(), "the flag12 row stocks");
-        assert!(
-            (50..=100).contains(&sky.unwrap().count),
-            "the quartz stack 50-100 ({})",
-            sky.unwrap().count
-        );
-        // The style-25 anchor takes the 1/2 pottery row (5234).
-        let mut w = rig();
-        for dx in -2i32..=2 {
-            for dy in -2i32..=0 {
-                let i = w.index(60 + dx, 199 + dy);
-                w.tiles[i].wall = 73;
-            }
-        }
-        put_chest(&mut w, 60, 198);
-        // Re-frame the anchor to style 25 (`frame_x = 18 * 25` on both
-        // columns) so the sweep's derivation reads it.
-        for dy in 0..2 {
-            for dx in 0..2 {
-                let i = w.index(60 + dx, 198 + dy);
-                w.tiles[i].frame_x = 18 * 25;
-                w.tiles[i].frame_y = 18 * dy as i16;
-            }
-        }
-        assert!((23..=27).contains(&25), "style 25 is in the row's band");
-        // The row is 1/2 — find a stream where it fires for the style-25
-        // anchor, and one where it does not.
-        let fires = (1u64..64).any(|seed| {
-            let mut rng = seed | 1;
-            stock_chest(&w, 60, 198, false, 25, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
-                .iter()
-                .any(|r| r.kind == 5234)
-        });
-        assert!(fires, "the 1/2 style row fires for style 25 on some stream");
-        let silent = (1u64..64).all(|seed| {
-            let mut rng = seed | 1;
-            !stock_chest(&w, 60, 198, false, 25, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
-                .iter()
-                .any(|r| r.kind == 5234)
-        });
-        assert!(!silent, "and misses on others — the 1/2 gate is real");
     }
 
 

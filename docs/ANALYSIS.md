@@ -4986,15 +4986,6 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
   chest cycle note).
 
-- **The chest style/water tails** (`AddBuriedChest`'s
-  `itemIndex > 0 && chestTileType == 21` block, `WorldGen.cs:37453-47469` —
-  the M5-CHEST-gen water/style slice): the `num9` 23-27 style row (5234 at
-  1/2, reading the sweep's `chest_style`) and the flag13 water pair (1/5 the
-  raincoat 2767, else 3-7 potions 2766), in the vanilla order after the
-  flag12 tail another agent landed in `stock_band`. Parked: the
-  mahogany-tile 467 counterparts of the whole block (`:37466-47500`) —
-  `stock_chest` does not carry the chest kind yet.
-
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -7394,6 +7385,23 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
+- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
+  The C# has no candidate list and no final `InTileBounds` commit gate for
+  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
+  and the vote compares the FINAL `(num2, k)` positions (the column's base).
+  The port keeps both off: a trunk column at the rect's bottom row votes its
+  base at the row below the rect. The trunk arm's right/left frame shifts are
+  also asymmetric in the C# (the right arms test `num2 + 1`, the left
+  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
+  CURRENT cell (the earlier shift may already have moved it).
+- **The axe step runs at two call sites, per the settings toggle.**
+  `SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`) moves the axe
+  step before or after the pickaxe family in the chain; the port calls it at
+  both C# sites (before the force-cursor step with the flag off, after the
+  chain with it on) and exposes the flag on `Lookup::smart_axe_after_pickaxe`
+  (app-side setting, caller-passed). The pickaxe family itself
+  (`Step_Pickaxe_MineShinies`/`MineSolids`) is unported, so the "after" site
+  follows the force-cursor step today.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:

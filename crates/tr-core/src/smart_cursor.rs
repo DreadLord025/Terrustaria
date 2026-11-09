@@ -26,7 +26,8 @@
 //! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030,
 //! `Step_MulticolorWrench` :1725-1877 (the last two over the caller-passed
 //! `Lookup::tool_mode`/`actuation_rod_lock`), `Step_MinecartTracks`
-//! (:1166-1322, over the caller-passed player centre) and
+//! (:1166-1322, over the caller-passed player centre), `Step_Axe`
+//! (:2582-2690, over the held item's axe power) and
 //! `Step_ForceCursorToAnyMinableThing` (:2229-2268, over the caller-passed
 //! gamepad state and the held item's pick/axe/hammer power) — the
 //! seed/herb/planting family plus the paint family, gated on item id /
@@ -190,6 +191,11 @@ pub struct Lookup {
     /// force-cursor step refuses on a gamepad (input is app-side, so the
     /// caller passes it).
     pub using_gamepad: bool,
+    /// `Player.SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`):
+    /// the settings toggle that places the axe step before or after the
+    /// pickaxe steps in the chain. The app persists it, so the caller
+    /// passes it.
+    pub smart_axe_after_pickaxe: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -2086,10 +2092,156 @@ pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
     None
 }
 
+// ---------------------------------------------------------------- axe step --
+
+/// `SmartCursorHelper.Step_Axe` (`:2582-2690`): the held axe re-points at
+/// the closest axe tile's BASE — the step walks a tree/cactus/vine column
+/// down to its bottom tile first, so the whole column falls with one swing.
+/// Unlike the other steps it keeps its own walk bounds and has no final
+/// rect gate: the winner may stand outside the reachable rect.
+pub fn step_axe(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2588-2590` — the C#'s two decompiler artifacts (`_ =
+    // screenTargetX/Y`) are dropped.
+    // `:2592` — the axe-power gate + the focus sentinel.
+    if l.item.axe <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for i in l.start_x..=l.end_x {
+        for j in l.start_y..=l.end_y {
+            let Some(t) = w.tile(i, j) else {
+                continue;
+            };
+            // `:2599` — the inactive cell skips.
+            if !t.active() {
+                continue;
+            }
+            // `:2603` — the axe tile, minus the step's ignore set.
+            if !crate::tileobject::tile_axe(t.kind) || crate::tileobject::ignore_smart_axe(t.kind) {
+                continue;
+            }
+            let (mut num2, mut k) = (i, j);
+            let kind = t.kind;
+            // `:2611-2635` — the tree-trunk arm: the branch-side shifts move
+            // `num2` onto the trunk before the walk-down (each guarded by the
+            // C#'s own InTileBounds asymmetry — the right arms check
+            // `num2 + 1`, the left `num2 - 1`).
+            if crate::tileobject::is_a_tree_trunk(kind) {
+                if in_tile_bounds(num2 + 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fy_ >= 198 && fx_ == 44) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 66 && fy_ <= 44) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 44 && (132..=176).contains(&fy_)) {
+                        num2 += 1;
+                    }
+                }
+            }
+            if crate::tileobject::is_a_tree_trunk(kind)
+                && in_tile_bounds(num2 - 1, k, l.start_x, l.start_y, l.end_x, l.end_y)
+            {
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fy_ >= 198 && fx_ == 66) {
+                    num2 -= 1;
+                }
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fx_ == 88 && (66..=110).contains(&fy_)) {
+                    num2 -= 1;
+                }
+                let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                if f.is_some_and(|(fx_, fy_)| fx_ == 22 && (132..=176).contains(&fy_)) {
+                    num2 -= 1;
+                }
+            }
+            // `:2637-2645` — the trunk walk-down: while the cell and the one
+            // below carry the column and the next row is in the rect, descend.
+            if crate::tileobject::is_a_tree_trunk(kind) {
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    if t.active()
+                        && t.kind == kind
+                        && below.is_some_and(|b| b.kind == kind)
+                        && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y)
+                    {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2647-2669` — the cactus (80) arm: the same shape with the
+            // cactus's own frame rows.
+            if kind == 80 {
+                if in_tile_bounds(num2 + 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, _)| fx_ == 54) {
+                        num2 += 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 108 && fy_ == 36) {
+                        num2 += 1;
+                    }
+                }
+                if in_tile_bounds(num2 - 1, k, l.start_x, l.start_y, l.end_x, l.end_y) {
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, _)| fx_ == 36) {
+                        num2 -= 1;
+                    }
+                    let f = w.tile(num2, k).map(|t| (t.frame_x, t.frame_y));
+                    if f.is_some_and(|(fx_, fy_)| fx_ == 108 && fy_ == 18) {
+                        num2 -= 1;
+                    }
+                }
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    if t.active()
+                        && t.kind == 80
+                        && below.is_some_and(|b| b.kind == 80)
+                        && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y)
+                    {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2671-2679` — the vine/mushroom arm (323/72): walk-down only.
+            if kind == 323 || kind == 72 {
+                while let Some(t) = w.tile(num2, k) {
+                    let below = w.tile(num2, k + 1);
+                    let same =
+                        (t.active() && t.kind == 323 && below.is_some_and(|b| b.kind == 323))
+                            || (t.active() && t.kind == 72 && below.is_some_and(|b| b.kind == 72));
+                    if same && in_tile_bounds(num2, k + 1, l.start_x, l.start_y, l.end_x, l.end_y) {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // `:2681-2688` — the vote on the final (num2, k) — no list, no
+            // final rect gate (the C# keeps both off).
+            let dist = dist_to_mouse(num2, k, l.mouse);
+            if best_dist == -1.0 || dist < best_dist {
+                best_dist = dist;
+                best = Some((num2, k));
+            }
+        }
+    }
+    best
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
+/// Axe :118 (or :125 with `SmartAxeAfterPickaxe`) →
 /// ForceCursorToAnyMinableThing :122 → ColoredWrenches :129 →
 /// MulticolorWrench :130 → ActuationRod :132 → WireCutter :133 →
 /// Platforms :134 → MinecartTracks :135 → Walls :136 → PumpkinSeeds :137
@@ -2098,7 +2250,9 @@ pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Opti
 /// → PaintScrapper :148 → Acorns :149 → GemCorns :150 → EmptyBuckets :151
 /// → Actuators :152 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
 /// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
-/// first step that finds a spot wins — the C# straight-line chain.
+/// first step that finds a spot wins — the C# straight-line chain. The
+/// axe step is called at BOTH C# call sites, before or after the pickaxe
+/// family per the setting (the pickaxe family itself is unported).
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -2128,6 +2282,14 @@ pub fn smart_cursor_lookup(
         return None;
     }
     let mut focus = (fx, fy);
+    // `:118-121` — the axe step's first call site: with
+    // `SmartAxeAfterPickaxe` off (the default), the axe runs before the
+    // force-cursor step.
+    if !l.smart_axe_after_pickaxe {
+        if let Some(p) = step_axe(w, l, focus.0, focus.1) {
+            focus = p;
+        }
+    }
     // `:134` — the platform step runs first in the C#'s chain and is the
     // only step that writes the continuity state.
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
@@ -2162,6 +2324,14 @@ pub fn smart_cursor_lookup(
     ];
     for step in steps {
         if let Some(p) = step(w, l, focus.0, focus.1) {
+            focus = p;
+        }
+    }
+    // `:125-128` — the axe step's second call site: with
+    // `SmartAxeAfterPickaxe` on, the axe runs after the pickaxe steps
+    // (the chain's position once the pickaxe family lands).
+    if l.smart_axe_after_pickaxe {
+        if let Some(p) = step_axe(w, l, focus.0, focus.1) {
             focus = p;
         }
     }
@@ -2258,6 +2428,7 @@ mod tests {
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
             using_gamepad: false,
+            smart_axe_after_pickaxe: false,
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -3854,6 +4025,156 @@ mod tests {
             smart_cursor_lookup(&world, &pick, -1, -1, &mut ContinuityState::default()),
             Some((25, 19)),
             "the force-cursor step runs inside the lookup chain"
+        );
+    }
+
+    /// An axe item with the given axe power.
+    fn axe_item(axe: i32) -> ItemPort {
+        ItemPort {
+            kind: 1,
+            create_tile: -1,
+            create_wall: -1,
+            place_style: 0,
+            pick: 0,
+            axe,
+            hammer: 0,
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_finds_the_tree_bottom() {
+        // `Step_Axe` :2681-2688 — the step walks a trunk column down to its
+        // bottom and votes on that base.
+        let mut world = bare();
+        for y in 10..=19 {
+            put(&mut world, 25, y, 5); // the trunk column
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the axe re-points at the trunk's base"
+        );
+        // The gate: an axe-less item skips the step, and a non-axe tile is
+        // not a target.
+        let no_axe = lookup(axe_item(0), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &no_axe, -1, -1),
+            None,
+            "the axe gate holds"
+        );
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_axe(&stone, &l, -1, -1),
+            None,
+            "stone is not an axe tile"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_trunk_arm_shifts_to_the_branch() {
+        // `Step_Axe` :2615-2619 — a trunk tile with the branch frame
+        // (frameX 44, frameY 198) shifts the base one column right before
+        // the walk.
+        let mut world = bare();
+        put(&mut world, 25, 19, 5);
+        frame_x_at(&mut world, 25, 19, 44);
+        let i = world.index(25, 19);
+        world.tiles[i].frame_y = 198;
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((26, 19)),
+            "the branch frame moves the base right"
+        );
+        // The plain trunk keeps its own column.
+        let mut plain = bare();
+        put(&mut plain, 25, 19, 5);
+        assert_eq!(
+            step_axe(&plain, &l, -1, -1),
+            Some((25, 19)),
+            "the plain trunk keeps its column"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_cactus_arm_shifts_sideways() {
+        // `Step_Axe` :2649-2665 — the cactus (80) arm: frameX 54 shifts
+        // right, frameX 36 shifts left.
+        let mut right = bare();
+        put(&mut right, 25, 19, 80);
+        frame_x_at(&mut right, 25, 19, 54);
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&right, &l, -1, -1),
+            Some((26, 19)),
+            "the cactus frame 54 shifts the base right"
+        );
+        let mut left = bare();
+        put(&mut left, 25, 19, 80);
+        frame_x_at(&mut left, 25, 19, 36);
+        assert_eq!(
+            step_axe(&left, &l, -1, -1),
+            Some((24, 19)),
+            "the cactus frame 36 shifts the base left"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_walks_the_vine_column() {
+        // `Step_Axe` :2671-2679 — the vine/mushroom tiles (323/72) walk down
+        // with no frame arms.
+        let mut world = bare();
+        for y in 14..=19 {
+            put(&mut world, 25, y, 323);
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 14));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            Some((25, 19)),
+            "the vine column walks to its base"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_ignores_the_fallen_log() {
+        // `Step_Axe` :2603 — the fallen log (488) is an axe tile the step
+        // ignores (`TileID.Sets.IgnoreSmartCursorPriorityAxe`).
+        let mut world = bare();
+        put(&mut world, 25, 19, 488);
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_axe(&world, &l, -1, -1),
+            None,
+            "the fallen log is ignored by the axe step"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_axe_runs_before_the_pickaxe_family() {
+        // The dispatch order (:118-121): with `SmartAxeAfterPickaxe` off
+        // (the default), the axe runs at the chain's head.
+        let mut world = bare();
+        for y in 10..=19 {
+            put(&mut world, 25, y, 5);
+        }
+        let l = lookup(axe_item(1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the axe step runs inside the lookup chain"
+        );
+        // With the setting on, the axe's second call site runs after the
+        // chain — the same tree still lands on its base.
+        let after = Lookup {
+            smart_axe_after_pickaxe: true,
+            ..lookup(axe_item(1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            smart_cursor_lookup(&world, &after, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the axe step runs at its second call site too"
         );
     }
 }
