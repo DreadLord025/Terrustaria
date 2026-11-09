@@ -6990,6 +6990,70 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
+## The yoyo family (M4-PROJ-4)
+
+- **The lifetime table's -1 default is verbatim, not a gap.**
+  `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`)
+  defaults to **-1f — no timeout** — and 547/550/551/554/555/603 are
+  unlisted: those yoyos return only on the channel release or the 1.3x
+  range cap (`Projectile.cs:67957`), never by age. The port keeps the
+  source's default (the C# `CreateFloatSet(-1f, …)` semantics), so the
+  Kraken flies until released.
+- **The dust rolls are skipped.** `AI_099_2_Yoyos`'s 545/553 dust
+  (`:67868-67881`) and the beam's `Lighting.AddLight` (`:34416`) are
+  render-only side effects the pool cannot emit — no roll is consumed
+  for an unrendered effect, and the RNG stream stays aligned for the
+  behaviour rolls. The yoyo sprite's string draw (the `FishingLine`
+  stretch in `Main.DrawProjDirect`, `Main.cs:28039`, the
+  `stringColor`/29 rainbow variants) is the M4-PROJ-4c render row.
+- **The pose block's `direction` write is ported; the rest is stubbed.**
+  `:67838-67847` writes `this.direction = ±1` from the ±2 px X
+  comparison — the rotation (`:68096`) and the dropped twin's nudge
+  (`:68057-68066`) consume it, so it lands. `heldProj`,
+  `SetDummyItemTime(2)` and `player.ChangeDir` are cosmetic player-pose
+  state: stubbed until M3-ITEM-2d's dummy-time gadget.
+- **`meleeSpeed = 1.0` stays in the formulas.** The range/top-speed
+  division (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the
+  lifetime divisor (`:67750`) are neutral exactly at the default; the
+  terms stay so M3-EQUIP-3 only has to supply the accessories' values
+  (yoyoString: range x1.25 + 30, lifetime x1.5; magicString: the -2
+  dropped twin). The `CCed` release arm (`:67920`) is stubbed false (no
+  CC system ported). The Terrarian beam block's `ai[0] != 3f` gate
+  (`:67776`) is verbatim from the source — only an aim exactly at
+  x = 3 is excluded.
+- **The rolls ride the app's item stream.** The jitter
+  (`rand.Next(10, 31)`, `:67748`), the beam's three rolls (`:67786-67793`)
+  and the dropped twin's `penetrate = rand.Next(3, 7)` (`:68041`) draw
+  from a `DropRng` parameter threaded through `pool.update` — the
+  `LootRng(&mut app.item_rng)` seam the throw's crit roll already uses,
+  the port's `Main.rand` analogue (the C# `FastRandom` vs `rand01`
+  difference follows the house's existing deviation record).
+- **The beam scan's `CanHit` is a segment walk.** The C#
+  `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381+`); the
+  port walks the two centers' segment against the solid non-platform
+  tiles. The Terrarian's beams can therefore target through partial
+  cover where the vanilla boxes would not.
+- **The counterweights are the other family.** 556-561/1079 ride
+  `AI_099_1_Counterweights` (`:67380`, they fire musket balls) and stay
+  with M3-EQUIP-3's accessory grants; the yoyo arm's `flag2` guard
+  (`:67819-67823`) never sees them.
+- **GenItemData's break-in-if fix (the 693-row regen).**
+  `Item.cs:30037-30041`'s guard — `default: if (type < 3315 || type >
+  3317) { break; } goto case 3262;` — was executed wrong: the
+  interpreter's `break` exited only the if-body, so the statement list
+  fell through into the goto and the yoyo case body overwrote every id
+  the yoyo switch did not list. 693 rows carried the yoyo placeholder
+  (`shoot = 541 + type - 3278`), including the Terrarian 3389
+  (StaticHook 652, damage 15) and the copper tools 3505/3506/3507/3509
+  (hand-patched over the placeholder in `50bfc51`). `exec_stmts` now
+  returns on `ctx.brk` (the C# switch semantics) and the regen restores
+  the source rows; the already-correct yoyo weapon rows are
+  byte-identical and `test_gen.py` passes. The SEARCH for other
+  `default: … goto case` switches found this the only one in `Item.cs`.
+  The rows whose generated schema has no field (`stringColor`,
+  `hasVanityEffects`, `handOffSlot`, `vanity`, `mountType`) stay
+  committed as improved-but-incomplete and are the follow-up row's
+  scope (M3-EQUIP-3 consumes the accessory flags).
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
