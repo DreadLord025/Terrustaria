@@ -413,6 +413,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Travelling Merchant",
     },
     BestiaryEntryDef {
+        credit_id: "Angler",
+        net_id: 369,
+        kind: NpcKind::Angler,
+        variant: None,
+        quick_unlock: false,
+        name: "Angler",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -845,6 +853,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Nebula Pillar",
     },
     BestiaryEntryDef {
+        credit_id: "VortexTower",
+        net_id: 422,
+        kind: NpcKind::VortexTower,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Pillar",
+    },
+    BestiaryEntryDef {
         credit_id: "SolarTower",
         net_id: 517,
         kind: NpcKind::SolarTower,
@@ -1242,6 +1258,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::GolemFistLeft
         | NpcKind::GolemFistRight
         | NpcKind::GolemHeadFree => NpcKind::Golem,
+        // The Sleeping Angler rides the Angler's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
+        // never has an entry of its own.
+        NpcKind::SleepingAngler => NpcKind::Angler,
         other => other,
     };
     ENTRIES

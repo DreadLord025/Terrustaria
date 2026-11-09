@@ -431,6 +431,8 @@ fn portrait_data(
         NpcKind::WitchDoctor => 40,       // NPC_228
         NpcKind::Clothier => 41,          // NPC_54
         NpcKind::TravellingMerchant => 110, // NPC_368
+        NpcKind::Angler => 111, // NPC_369
+        NpcKind::SleepingAngler => 112, // NPC_376
         NpcKind::EyeOfCthulhu => 42,      // NPC_4
         NpcKind::QueenBee => 43,          // NPC_222
         NpcKind::SkeletronHead => 44,     // NPC_35
@@ -510,6 +512,7 @@ fn portrait_data(
         NpcKind::StardustTower => 105,    // NPC_493
         NpcKind::NebulaTower => 106,      // NPC_507
         NpcKind::SolarTower => 107,       // NPC_517
+        NpcKind::VortexTower => 108,      // NPC_422
         NpcKind::StardustCellSmall => 114, // NPC_406
         NpcKind::StardustJellyfishBig => 115, // NPC_407
         NpcKind::NebulaBeast => 116,      // NPC_423
@@ -638,6 +641,8 @@ fn portrait_data(
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::TravellingMerchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Angler, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::SleepingAngler, _) => (sheet_i, 8.0, 34.0, 8.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
@@ -838,7 +843,10 @@ fn portrait_data(
             (sheet_i, h, 130.0, h, white)
         }
         // The towers: the 1-frame NPC_493/507/517 strips.
-        (NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower, _) => {
+        (NpcKind::StardustTower
+        | NpcKind::NebulaTower
+        | NpcKind::VortexTower
+        | NpcKind::SolarTower, _) => {
             let h = lookups.bestiary_npc_sheets[111]
                 .map(|s| s.height as f32)
                 .unwrap_or(270.0);

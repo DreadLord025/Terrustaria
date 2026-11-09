@@ -129,7 +129,7 @@ fn filtered_items(filter: &str) -> Vec<(u16, &'static str)> {
         .collect()
 }
 
-const NPC_LIST: [(NpcKind, &str, &str); 22] = [
+const NPC_LIST: [(NpcKind, &str, &str); 24] = [
     (NpcKind::Slime, "Blue Slime", "NPC_1"),
     (NpcKind::Zombie, "Zombie", "NPC_3"),
     (NpcKind::DemonEye, "Demon Eye", "NPC_2"),
@@ -152,6 +152,8 @@ const NPC_LIST: [(NpcKind, &str, &str); 22] = [
     (NpcKind::GoblinTinkerer, "Gob. Tinkerer", "NPC_107"),
     (NpcKind::BoundGoblin, "Bound Goblin", "NPC_105"),
     (NpcKind::TravellingMerchant, "Travel Merchant", "NPC_368"),
+    (NpcKind::Angler, "Angler", "NPC_369"),
+    (NpcKind::SleepingAngler, "Sleeping Angler", "NPC_376"),
 ];
 
 const BOSS_LIST: [(NpcKind, &str, &str); 12] = [

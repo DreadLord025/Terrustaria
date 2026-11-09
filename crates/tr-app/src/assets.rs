@@ -401,6 +401,8 @@ pub fn load_world_images(
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        "NPC_369",
+        "NPC_376",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1622,6 +1624,8 @@ impl Lookups {
                 atlas.sheet("NPC_400").copied(),
                 atlas.sheet("NPC_401").copied(),
                 atlas.sheet("NPC_368").copied(),
+                atlas.sheet("NPC_369").copied(),
+                atlas.sheet("NPC_376").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

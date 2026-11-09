@@ -827,23 +827,30 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     if dirt == 0 && j as f64 >= world.world_surface {
         return;
     }
-    // The +-1 solid-neighbour scan with the lava exception (:75183-75197).
-    let mut all_empty = true;
-    let mut lava = false;
-    for k in (i - 1)..=(i + 1) {
+    // The +-1 enclosure scan with the lava exception (:75186-75201): the C#'s
+    // `flag` starts true, ANY non-solid tile in the 3x3 clears it, and a lava
+    // tile re-arms it and breaks the scan. The spread proceeds only while
+    // `flag` is cleared — a fully-solid 3x3 refuses. (The earlier slice had
+    // this inverted — it refused when the box was all-empty instead of
+    // all-solid, so the growth tick refused exactly the conversions the C#
+    // allows. `worldgen/biomes.rs`'s `spread_jungle_grass` carries the C#
+    // semantics already.)
+    let mut enclosed = true;
+    'enclosure: for k in (i - 1)..=(i + 1) {
         for l in (j - 1)..=(j + 1) {
             let Some(n) = world.tile(k, l) else {
                 continue;
             };
-            if n.active() && crate::tiledata::TILE_SOLID.has(n.kind) {
-                all_empty = false;
+            if !(n.active() && crate::tiledata::TILE_SOLID.has(n.kind)) {
+                enclosed = false;
             }
             if n.liquid > 0 && n.liquid_kind() == crate::tile::LiquidKind::Lava {
-                lava = true;
+                enclosed = true;
+                break 'enclosure;
             }
         }
     }
-    if all_empty && !lava {
+    if enclosed {
         return;
     }
     // The flower-27 exclusions (:75204-75206).
@@ -1119,6 +1126,81 @@ pub fn update_world(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// `SpreadGrass`'s enclosure gate (`WorldGen.cs:75186-75201`): the C#'s
+    /// `flag` starts true, any non-solid 3x3 tile clears it, and lava re-arms
+    /// it. The spread proceeds when the box is OPEN (some non-solid tile) and
+    /// refuses when it is fully solid — the earlier slice had this inverted.
+    #[test]
+    fn spread_grass_proceeds_on_an_open_box_and_refuses_when_enclosed() {
+        // An open box: the dirt cell has air above it. The surface rule
+        // (:75162) keeps dirt-0 below `worldSurface`, so the fixtures sit the
+        // cell under it.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(w.tile(10, 20).is_some_and(|t| t.kind == 2), "the open box converted");
+
+        // An enclosed box: every 3x3 neighbour solid.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        for dx in -1i32..=1 {
+            for dy in -1i32..=1 {
+                let i = w.index(10 + dx, 20 + dy);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(
+            w.tile(10, 20).is_some_and(|t| t.kind == 0),
+            "the enclosed box refused"
+        );
+
+        // The lava exception: a lava tile in the box re-arms the flag and the
+        // conversion refuses even though the box is open.
+        let mut w = World::new("t".into(), 40, 40);
+        w.world_surface = 35.0;
+        let i = w.index(10, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(11, 20);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 0,
+            liquid: 255,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        let mut rng = FastRandom::new(5);
+        spread_grass(&mut w, 10, 20, 0, 2);
+        assert!(
+            w.tile(10, 20).is_some_and(|t| t.kind == 0),
+            "the lava box refused"
+        );
+    }
+
     use super::*;
     use crate::tile::Tile;
 
