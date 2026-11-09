@@ -685,6 +685,20 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_mech_2: app.world.downed_mech_boss2,
         downed_mech_3: app.world.downed_mech_boss3,
         downed_martians: app.world.downed_martians,
+        // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
+        // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
+        // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
+        // own bits replace the struct's `false` defaults; a classic world
+        // resolves the same stock as before.
+        vampirism: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
+        infected_seed: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+        crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
     };
     let inv_ids: Vec<u16> = app
@@ -3354,6 +3368,23 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
             skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
             remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            // M5-SEED-2: `Main.forceHalloweenForever` / `Main.forceXMasForever`
+            // (`Main.cs:13168` / `:13135`), which `InitializeSecretSeeds`
+            // sets for the `endlessHalloween` / `endlessChristmas` micro seeds
+            // (`WorldGen.cs:572-578`) — the two feed `Main.halloween` /
+            // `Main.xMas` (`checkHalloween` / `checkXMas`), the flags
+            // `loot.rs`'s `HalloweenWeapons`/`HalloweenGoodieBagDrop`/
+            // `IsChristmas`/`XmasPresentDrop` conditions read (`loot.rs:1481-
+            // 1499`). A classic world leaves them off, so a world without the
+            // micro seeds drops exactly as before.
+            halloween: app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+            xmas: app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -3994,6 +4025,74 @@ mod tests {
         spawn_coins(&mut a, &npc);
         spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
+    }
+
+    // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
+    // (`Main.forceHalloweenForever` / `Main.forceXMasForever`,
+    // `Main.cs:13168` / `:13135`, set by `InitializeSecretSeeds`
+    // `WorldGen.cs:572-578`) feed `LootFlags.halloween` / `.xmas`, which
+    // `loot.rs`'s `HalloweenGoodieBagDrop` / `XmasPresentDrop` read
+    // (`loot.rs:1495-1499`). The two rows are the global registrations
+    // (`loot_db_gen.rs:27-28`) — the vanilla's only holiday drop the port
+    // models — so the engine-level replay below is the flag's observable.
+    //
+    // The replay runs on `spawn_loot`'s own database with the same
+    // `LootNpc` shape: the executor's feed leaves `damage` at 0 (the C#'s
+    // `info.npc.damage`, not yet wired), and both holiday rows gate on
+    // `n.damage > 0` — so this test pins the FLAG's effect on the rules,
+    // and the executor path gains its end-to-end drop when that feed lands.
+    #[test]
+    fn the_endless_holiday_micro_seeds_flip_the_loot_flags() {
+        let drops_for = |halloween: bool, xmas: bool| -> Vec<i32> {
+            let mut out = Vec::new();
+            for seed in 1..400u64 {
+                let mut rng = tr_core::tile_light::FastRandom::new(seed);
+                let mut info = tr_core::loot::DropAttemptInfo {
+                    rng: &mut rng,
+                    luck: 0.0,
+                    is_expert: false,
+                    is_master: false,
+                    active_players: 1,
+                    extra_gel: false,
+                    flags: tr_core::loot::LootFlags {
+                        halloween,
+                        xmas,
+                        ..Default::default()
+                    },
+                    // The zombie (3) `spawn_loot` resolves, with the damage
+                    // the holiday rows also require.
+                    npc: tr_core::loot::LootNpc {
+                        kind: 3,
+                        value: 1.0,
+                        life_max: 100,
+                        damage: 25,
+                        defense: 5,
+                        friendly: false,
+                        ..Default::default()
+                    },
+                };
+                tr_core::loot::try_dropping(crate::loot_db::database(), 3, &mut info, &mut out);
+            }
+            let mut ids: Vec<i32> = out.iter().map(|r| r.item).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        let classic = drops_for(false, false);
+        let halloween = drops_for(true, false);
+        let xmas = drops_for(false, true);
+        assert!(
+            !classic.contains(&1774) && !classic.contains(&1869),
+            "a classic world drops neither holiday item"
+        );
+        assert!(
+            halloween.contains(&1774),
+            "endlessHalloween drops the Goodie Bag"
+        );
+        assert!(
+            xmas.contains(&1869),
+            "endlessChristmas drops the Present"
+        );
     }
 
     #[cfg(test)]

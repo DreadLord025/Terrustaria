@@ -2,6 +2,19 @@
 //! adds the shared 60 Hz world tick ([`update_world_tick`]) — the dayRate
 //! cluster vanilla runs inside one `Main.Update`, on one `FixedStepper`
 //! (`App.world_tick_step`).
+//!
+//! M5-SEED-2 seam — `rainsForAYear` (`SecretSeed.DoRainsForAYear`,
+//! `WorldGen.cs:1872-1888`, called from `WorldGen.Reset` `:11235`) is NOT
+//! wired: it writes world-size statics that the port keeps OUTSIDE the
+//! `World` — `Main.rainTime = 1892160000` and `Main.raining = true` are
+//! `Rain::rain_time`/`raining` (`rain.rs`), `Main.numClouds = 200`,
+//! `Main.ChangeRain` and `Main.cloudAlpha = 0.9f` the `Rain` target/intensity,
+//! and `Main.windSpeedTarget = ±0.8f` the `Wind` here. tr-core's worldgen
+//! therefore has no field to set (there is no `World.raining`), and the
+//! runtime owner (`App::rain`, `App::wind`) is not reachable from it. The arm
+//! lands with a `Rain::start_year_long_event`-style entry on this module once
+//! the worldgen can receive a callback (the same shape the
+//! `moreLightning`/`noLightning` `ThunderInputs` feed below uses).
 
 use glam::Vec2;
 
@@ -46,6 +59,20 @@ fn thunder_inputs(app: &App) -> crate::rain::ThunderInputs {
             app.scene_metrics.center[1],
         ],
         world_surface_px: app.world.world_surface as f32 * TILE_PX,
+        // M5-SEED-2: the lightning micro seeds (`Main.moreLightningSeed` /
+        // `Main.noLightningSeed`, set by `InitializeSecretSeeds`
+        // `WorldGen.cs:580-586`) plus `Main.IsItRaining` — the three
+        // `WorldGen.SpawnStormLightning` (`:71866-71881`) inputs `thunder_step`
+        // reads. A classic world leaves them off, so its chain is unchanged.
+        raining: app.rain.is_raining(),
+        more_lightning: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::MORE_LIGHTNING),
+        no_lightning: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::NO_LIGHTNING),
     }
 }
 
