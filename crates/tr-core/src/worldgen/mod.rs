@@ -52,6 +52,12 @@ pub struct GenOptions {
     /// `WorldGen.crimson`: the evil biome's flavour (the corruption when
     /// false).
     pub crimson: bool,
+    /// The classic secret-seed flags — [`crate::seeds::SeedFlags`]. The
+    /// `WorldGen.Reset()` set (`WorldGen.cs:11115-11123`) that every
+    /// seed-conditional worldgen branch reads; `Default` = a classic
+    /// world, so a flag-free options struct generates exactly the
+    /// pre-M5-SEED-1 world.
+    pub flags: crate::seeds::SeedFlags,
 }
 
 impl Default for GenOptions {
@@ -62,6 +68,7 @@ impl Default for GenOptions {
             height: 1200,
             crimson: false,
             seed: 1,
+            flags: crate::seeds::SeedFlags::default(),
         }
     }
 }
@@ -106,6 +113,10 @@ pub fn generate(opts: &GenOptions) -> World {
     let width = opts.width.max(512);
     let height = opts.height.max(512);
     let mut world = World::new(opts.name.clone(), width, height);
+    // The seed flags ride the generated world so the runtime readers (the
+    // loot/fishing/variant/wind conditions, the save layers) see the same
+    // special-world identity the passes generated with.
+    world.seeds = opts.flags;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three
@@ -141,6 +152,7 @@ mod tests {
                 width: 4200,
                 height: 1200,
                 seed,
+                ..Default::default()
             });
             let wood = w
                 .tiles

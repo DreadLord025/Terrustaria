@@ -233,6 +233,19 @@ pub(crate) struct GenVars {
     /// `UnderwaterChests` (`:17245-17355`, M5-CHEST-gen) — published here.
     pub(crate) num_ocean_cave_treasure: i32,
     pub(crate) ocean_cave_treasure: [(i32, i32); 2],
+    /// `GenVars.crimsonLeft` (`GenVars.cs:280`) — the `genRand.Next(2)` roll
+    /// in `Reset` (`WorldGen.cs:11216-11223`) that splits the world into a
+    /// corruption-left / crimson-left half pair. The drunk/remix passes read
+    /// it to pick per-half evil flavours and the drunk split-line anchors
+    /// (`:13962`, `:14302`, `:18392`). The port draws it from its own
+    /// `pass_rng("Reset")` stream (the vanilla pre-pass `genRand` — the
+    /// isolation keeps every existing pass's draws untouched).
+    pub(crate) crimson_left: bool,
+    /// `GenVars.flipInfections` (`GenVars.cs:286`, set at
+    /// `WorldGen.cs:11127`): drunk && for-the-worthy && !remix — the evil
+    /// tile/wall ids swap (`:11298-11304`: ebonstone 25 ↔ crimstone 203,
+    /// ebonstone wall 3 ↔ crimstone wall 83). Derived, never drawn.
+    pub(crate) flip_infections: bool,
 }
 
 impl Default for GenVars {
@@ -284,6 +297,11 @@ impl Default for GenVars {
             // The C# resets the treasure counter to 0 (`WorldGen.cs:11224`).
             num_ocean_cave_treasure: 0,
             ocean_cave_treasure: [(0, 0); 2],
+            // The C# zero-inits the seed-flag GenVars (`WorldGen.cs:11157-11160`)
+            // and derives `flipInfections` from the seed flags; the port
+            // computes both in `run`'s Reset stand-in.
+            crimson_left: false,
+            flip_infections: false,
         }
     }
 }
@@ -2313,6 +2331,14 @@ pub(crate) fn run(
     config: &WorldGenConfig,
 ) {
     let mut gv = GenVars::default();
+    // The `WorldGen.Reset()` seed-flag tail (`WorldGen.cs:11125-11127`,
+    // `:11216-11223`): the derived combo booleans plus the `crimsonLeft`
+    // half-roll. Vanilla draws it from the pre-pass `genRand`; the port
+    // gives it its own `pass_rng("Reset")` stream so every existing
+    // per-pass draw schedule is byte-identical for a classic world.
+    let mut reset_rng = streams.pass_rng("Reset");
+    gv.crimson_left = reset_rng.range(0, 2) == 1;
+    gv.flip_infections = opts.flags.flip_infections();
     for step in EXECUTED_PIPELINE {
         // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
         // per `GenPassResult`) — the executed-step log names the step, its
