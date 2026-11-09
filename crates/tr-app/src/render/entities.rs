@@ -623,49 +623,6 @@ fn tower_draw<'a>(
     )
 }
 
-/// The halfSize override for a kind (`Main.cs:23049`'s switch): the
-/// point that lands on the NPC's anchor, so a value below the frame's
-/// centre lifts the art and one above pushes it down. The C# overrides
-/// `halfSize = (55, 107)` for the Eye of Cthulhu and the Twins — the
-/// sheet-derived half-frame for their 166-px rows is 83 (and 100 for the
-/// Twins' 200-px rows), so the override shifts the frame down by the
-/// difference. `None` = the sheet-derived value.
-fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
-    match kind {
-        NpcKind::EyeOfCthulhu | NpcKind::Retinazer | NpcKind::Spazmatism => 107.0,
-        // The rest of the C#'s switch (the Plantera head's absolute 77 +
-        // `num47 += 26` at `Main.cs:23076-23077`, the Brain's
-        // `num47 += 50 * scale`, the small walkers' +4/+8 and the DD2
-        // families' negative nudges) stays the documented follow-up —
-        // the three `case 4/125/126` kinds are the only ones whose
-        // override is a plain (55, 107).
-        _ => frame_h * 0.5,
-    }
-}
-
-/// The boss draws (the Eye of Cthulhu and the Twins — the `case 4/125/126`
-/// family): the sheet's real rows at the generic anchor with the C#'s
-/// `halfSize` override applied as the delta it produces.
-fn boss_draw<'a>(
-    tex: Option<&'a BgTex>,
-    count: u32,
-    n: &Npc,
-    w: f32,
-    h: f32,
-) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
-    let fh = tex.map_or(166.0, |t| t.h / count as f32);
-    let fw = tex.map_or(110.0, |t| t.w);
-    // The C#'s anchor lands the frame's centre at `box_bottom + 4` and the
-    // `halfSize` override shifts it by `override − frame_h / 2`.
-    let shift = boss_half_size(n.kind, fh) - fh * 0.5;
-    (
-        tex,
-        fh,
-        [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5 + shift],
-    )
-}
-
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
 /// the same source texels while the camera moves (no crawling pixel grid).
 #[inline]
@@ -1611,7 +1568,7 @@ pub(crate) fn draw_npcs(
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                boss_draw(tex, 6, n, w, h)
+                prime_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
@@ -1923,14 +1880,14 @@ pub(crate) fn draw_npcs(
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
             ),
-            // The Eye of Cthulhu: NPC_4 is 110x996 — six 166-px rows
-            // (`Main.npcFrameCount[4]` = 6) whose frames are LARGER than
-            // the 100x110 box; the v1 squeezed a 166-px row into a 110-px
-            // quad at the box's corner. The boss trio (4/125/126) also
-            // overrides `halfSize` to (55, 107) (`Main.cs:23051-23056`),
-            // which lands the frame's centre 24 px lower than the
-            // sheet-derived origin would (`107 - 166/2`).
-            NpcKind::EyeOfCthulhu => boss_draw(assets.eye_of_cthulhu.as_ref(), 6, n, w, h),
+            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
+            // frame == the hitbox (the `Main.DrawNPC` anchor).
+            NpcKind::EyeOfCthulhu => (
+                assets.eye_of_cthulhu.as_ref(),
+                assets.eye_of_cthulhu.as_ref().map_or(110.0, |t| t.h / 6.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
             // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
             NpcKind::ServantOfCthulhu => (
                 assets.servant_of_cthulhu.as_ref(),

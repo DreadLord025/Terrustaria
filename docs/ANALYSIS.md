@@ -2908,38 +2908,6 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
-## The Eye of Cthulhu's display (M4-NPC-3m)
-
-The EoC's `find_frame` arm ran an 8-tick strip over all six rows of its
-sheet, and its comment described a "pupil blink" that does not exist in
-the decompile. `case 4/125/126` (`NPC.cs:76905-76926`) is ONE shared
-machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
-
-- The 20-tick counter walks the bands rows 0/1/2 (splits at 7/14/21,
-  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 onto the
-  phase-2 rows 3/4/5. The Twins ported this in M4-NPC-3k; the EoC was
-  still on the v1 strip, so the boss and its summonable twins animated
-  differently.
-- **The sheet is 110x996** (six 166-px rows, `Main.npcFrameCount[4] = 6`)
-  and the v1 squeezed each row into a 110-px quad at the box's corner —
-  a horizontally stretched, vertically cropped eye. `boss_draw` now
-  takes the real 110x166 frames at the generic anchor (the same shape
-  the Twins ride, whose 200-px rows come off the same helper).
-- **The `halfSize` override** (`Main.cs:23051-23056`): the C#'s draw sets
-  `halfSize = (55, 107)` for all three kinds — the point that lands on
-  the NPC's anchor. For a 166-px row the sheet-derived half is 83, so the
-  override pushes the frame's centre 24 px lower (the Twins' 200-px rows:
-  7 px). `boss_half_size` folds that into the anchor as
-  `override − frame_h/2`, which is the shift the C#'s formula produces.
-- The rest of the C#'s override switch (the Plantera head's absolute 77
-  with `num47 += 26`, the Brain's `+50·scale`, the small walkers' +4/+8,
-  the DD2 families' negative nudges, the 626/627 wet switch) stays the
-  documented follow-up — the `case 4/125/126` trio is the only override
-  that is a plain (55, 107).
-
-Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
-SHA256-stable across runs.
-
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -7540,6 +7508,38 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   definition data lives in the app's `itemdata.rs`, so the three powers ride
   `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
   force-cursor step then refuses every tile — the gate is `pick < 1`).
+- **`Step_Axe` is the one step whose winner can leave the reachable rect.**
+  The C# has no candidate list and no final `InTileBounds` commit gate for
+  this step — the tree/cactus/vine walk-downs carry their own bounds checks,
+  and the vote compares the FINAL `(num2, k)` positions (the column's base).
+  The port keeps both off: a trunk column at the rect's bottom row votes its
+  base at the row below the rect. The trunk arm's right/left frame shifts are
+  also asymmetric in the C# (the right arms test `num2 + 1`, the left
+  `num2 - 1` — a quirk, kept verbatim), and each frame condition re-reads the
+  CURRENT cell (the earlier shift may already have moved it). The axe step
+  runs at two call sites, per the `SmartAxeAfterPickaxe` settings toggle
+  (`Player.cs:333`, caller-passed on `Lookup`).
+- **`hit_line` is ported in-module until the app-side Collision lands.** The
+  C#'s `Collision.HitLine` (`Collision.cs:780-969`) is a Bresenham-ish walker
+  whose `ignoreX`/`ignoreY` arms turn off the perpendicular hit checks (the
+  mine step passes the walk's own direction so the side it came from never
+  blocks) and whose `ignoreTargets` (the grapple hooks) never block. The
+  port keeps the sequential-if clamps (a true `clamp` panics on the port's
+  small test worlds, where `maxY - 40 < 1`), the C#'s catch arm as a
+  `Result` error returning the START cell, and the two floating-point
+  fractional strides (`num5`/`num6`) exactly. When the app-side Collision
+  port arrives, the walker moves next to its LOS siblings.
+- **`Step_Pickaxe_MineSolids`' beam is a start-grid → end-grid walk.** The
+  step fills `_points` from the player's edge and `_endpoints` from the
+  mouse's edge (the `InWorld(num8, num9, 40)` fluff gate on the endpoints —
+  the port checks `40..=width-40`/`40..=height-40`, `WorldGen.cs:9688-9696`),
+  then pops the pair head and walks it with `HitLine`, adding every hit
+  twice (the off-endpoint hit and the full-solid re-hit — the C#'s two adds,
+  the grapple targets excluded). The unkillable targets are dropped with
+  `edit::can_kill_tile` (the same `|_, _| false` chest-store convention as
+  the force-cursor step), and the vote runs from the player's centre — on a
+  client the neighbouring miners perturb that centre by ±12 px per parity
+  (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
