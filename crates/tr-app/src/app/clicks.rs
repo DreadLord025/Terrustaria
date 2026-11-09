@@ -8,7 +8,7 @@ use winit::keyboard::KeyCode;
 
 use crate::achievements;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
-use crate::app::{App, NetRole, no_hud};
+use crate::app::{App, NetRole};
 use crate::chest;
 use crate::craft;
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
@@ -137,7 +137,7 @@ impl App {
         // `DrawTo` gate): `mapEnabled && !mapFullscreen && mapStyle == 1`,
         // plus the port's screenshot `no_hud` knob that hides the draw too.
         let live = self.settings.map_enabled
-            && !no_hud()
+            && !crate::env::no_hud()
             && self.map.as_ref().is_some_and(|m| !m.open)
             && self.map_style == 1;
         if !live {

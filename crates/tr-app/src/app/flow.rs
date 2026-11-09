@@ -263,15 +263,6 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
     })
 }
 
-/// `TR_FAKE_CHARS`/`TR_FAKE_WORLDS=<n>`: the screenshot lists' fake counts
-/// (`save_list::list_players`/`list_worlds` prepend `Player n`/`World n`).
-pub(crate) fn tr_fake_count(key: &str) -> usize {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
-}
-
 // --- the behaviour trait (the C# `UIState` shape) ---------------------------
 
 /// The frame's shared draw context for the front screens — the pieces of

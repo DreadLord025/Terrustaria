@@ -2045,10 +2045,16 @@ Deviations recorded by the refactor and this sweep:
   the fixed generator resolves it to the active `case` ids (the grass id
   itself) instead of modelling the local's data flow — the approximation the
   framer expects grass variants to merge against (`Program.cs:613-621`).
-- **`env.rs` is deferred.** The planned consolidation of the ~65 `TR_*` flags
-  into one module did not happen; the flags still live where they are
-  consumed (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs`,
-  `rain.rs`, `render/sky.rs`, …).
+- **`env.rs` landed (2026-11-09, REFACTOR-env).** The ~112 `TR_*` flags
+  consolidated into `crates/tr-app/src/env.rs` as named accessors: every pin
+  resolves once through a `OnceLock` and keeps its original read semantics
+  (`env::var` vs `env::var_os`, the presence/value/parse shape), so no
+  screenshot or test behaviour changed. `TR_SUNDIAL`/`TR_MOONDIAL` deliberately
+  stay live reads — they are the only flags a test mutates (`set_var` /
+  `remove_var` in the DW-1.6 pair, serialized by `ENV_LOCK`) and a `OnceLock`
+  would latch the first test's value into the second's. The tr-core /
+  tr-render pins (`TR_NOCACHE`, `TR_PROBE`) stay with their crates — a
+  cross-crate pins module is the follow-up.
 - **The P6 stand-ins** this sweep documented (see "Front-end screens (P6)"):
   `GameTipsDisplay` not ported, the Crc32-instead-of-`Main.rand` world-name/
   seed composition and the `assign_random_world_name` stand-in.

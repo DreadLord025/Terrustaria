@@ -1553,7 +1553,7 @@ silently dropped before this) [18] |
 
 | Task | Branch | Scope |
 | --- | --- | --- |
-| REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
+| ✅ REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) — done 2026-11-09: the full pin surface (112 flags, 124 read sites) now lives in `crates/tr-app/src/env.rs` as named `OnceLock` accessors with the original read semantics preserved per accessor; `TR_SUNDIAL`/`TR_MOONDIAL` stay live for the env-mutating DW-1.6 tests; suite green (2311 passed) |
 | REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly |
 | ✅ REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio — done 2026-11-09: the `.trwld` header-prefix reader (magic/version/seed/name/size guards, the save-list probe) moved from `ui/save_list.rs::read_header` into `binio.rs::read_trwld_header` (with `TRWLD_MAGIC`); the listing keeps the file I/O (`HEADER_READ_CAP`) and delegates the parse, `save.rs` stays the writer-mirror; 3 unit tests in binio |
 | REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
@@ -1707,7 +1707,7 @@ silently dropped before this) [18] |
 
 | Task | Branch | Scope |
 | --- | --- | --- |
-| REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
+| ✅ REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) — done 2026-11-09: the full pin surface (112 flags, 124 read sites) now lives in `crates/tr-app/src/env.rs` as named `OnceLock` accessors with the original read semantics preserved per accessor; `TR_SUNDIAL`/`TR_MOONDIAL` stay live for the env-mutating DW-1.6 tests; suite green (2311 passed) |
 | REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly |
 | ✅ REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio — done 2026-11-09: the `.trwld` header-prefix reader (magic/version/seed/name/size guards, the save-list probe) moved from `ui/save_list.rs::read_header` into `binio.rs::read_trwld_header` (with `TRWLD_MAGIC`); the listing keeps the file I/O (`HEADER_READ_CAP`) and delegates the parse, `save.rs` stays the writer-mirror; 3 unit tests in binio |
 | REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |

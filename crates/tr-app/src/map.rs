@@ -769,7 +769,7 @@ mod tests {
     #[test]
     #[ignore]
     fn loads_a_real_vanilla_map() {
-        let Ok(path) = std::env::var("TR_VANILLA_MAP") else {
+        let Some(path) = crate::env::var_raw("TR_VANILLA_MAP") else {
             return;
         };
         let bytes = std::fs::read(&path).expect("read map");

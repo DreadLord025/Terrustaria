@@ -46,7 +46,7 @@ an agent needs before touching code.
 | Audio | `audio.rs`, `sound.rs` |
 | Fullscreen map / minimap | `map.rs` (app), `tr-core/src/map/`, `ui/minimap.rs` |
 | HUD drawing (hotbar, hearts, inventory, tooltips, crafting, boss bar) | `ui/` — see `docs/UI.md` |
-| `TR_*` env flags | spread across the modules that consume them (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs` `TR_UI`, …); the planned `env.rs` consolidation is deferred |
+| `TR_*` env flags | `env.rs` (2026-11-09, REFACTOR-env) — one named accessor per pin, `OnceLock`-resolved; `TR_SUNDIAL`/`TR_MOONDIAL` stay live reads (the env-mutating tests) |
 
 ## Crates
 
@@ -254,7 +254,7 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
-  `audio.rs`, `sound.rs`, `inv.rs`.
+  `audio.rs`, `sound.rs`, `inv.rs`, `env.rs` (the `TR_*` pin accessors).
 
 Player simulation details (20×42 AABB, fixed 60 Hz, gravity/step/collision, survival
 mechanics), NPC AI, projectiles, editing and weather behaviour are described in
