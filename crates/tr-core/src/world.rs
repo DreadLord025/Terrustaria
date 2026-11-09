@@ -80,6 +80,13 @@ pub struct World {
     pub chunk_has: Vec<bool>,
     /// Generation seed (`0` for worlds loaded from the original `.wld` format).
     pub seed: u64,
+    /// The classic secret-seed flags (`Main.drunkWorld` & friends — the
+    /// `WorldGen.Reset()` set, `WorldGen.cs:11115-11123`): the world's
+    /// special-world identity. Runtime readers (loot/fish/variant/wind
+    /// conditions) and the save layers read them; the worldgen passes get
+    /// them through [`crate::worldgen::GenOptions`]. Persisted in TRWLD v6
+    /// and read from the `.wld` header flags block.
+    pub seeds: crate::seeds::SeedFlags,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -332,6 +339,7 @@ impl World {
             chunks_y: 0,
             chunk_has: Vec::new(),
             seed: 0,
+            seeds: crate::seeds::SeedFlags::default(),
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,

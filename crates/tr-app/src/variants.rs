@@ -33,9 +33,24 @@ impl SeedFlags {
         }
     }
 
-    /// The flag source available today: `Main.remixWorld` rides the wind
-    /// module's state (`tr-core/src/wind.rs:96-97`); the other three seeds
-    /// have no Rust home yet and stay false.
+    /// M5-SEED-1: the world's own flag set. `Main.remixWorld` also rides
+    /// the wind module's state (`tr-core/src/wind.rs:96-97`), which stays
+    /// the in-session source for the wind-driven rain; the item variants
+    /// now read the generated world's identity
+    /// (`World.seeds` — the `WorldGen.Reset()` set) so a seeded world gets
+    /// its variants the moment it loads.
+    pub fn from_world(world: &tr_core::world::World) -> Self {
+        Self {
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            get_good_world: world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::EVERYTHING_DEPS),
+            skyblock_world: world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+        }
+    }
+
+    /// The legacy flag source: `Main.remixWorld` rides the wind module's
+    /// state (`tr-core/src/wind.rs:96-97`); the other three seeds have no
+    /// wind-side source and stay false. Kept for the wind readers.
     pub fn from_wind(wind: &tr_core::wind::Wind) -> Self {
         Self {
             remix_world: wind.remix_world,

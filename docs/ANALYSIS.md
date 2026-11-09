@@ -7412,3 +7412,123 @@ Deviations: the 242-dust bursts, the on-hit early teleport
 attached suckler stays visible and the port's Player takes the obstruct
 through the `wants_obstruct` intent. The tower spawn tables themselves
 (`:1301-1318`) stay open with the M4-EVENT-7 shield work.
+
+## Secret seeds (M5-SEED-1)
+
+The framework layer, the runtime feeds and the worldgen arms that landed on
+`M5-SEED-1-classic-seeds` (merge `b460db76`-class follow-ups noted at the end).
+
+### The registry
+
+`tr-core/src/seeds.rs` ports the 1.4.5 option table, not the 1.4.4 flag
+switches: the classic secret seeds are `AWorldGenerationOption`s
+(`WorldBuilding/WorldGenerationOptions.cs:30-41`), each with a
+`SpecialSeedNames` list and `SpecialSeedValues` aliases; a seed *text*
+resolves through `GetOptionFromSeedText` (`:66-83`) — `WorldFileData.
+TranslateSeed` (`:386-397`: numeric → `Math.Abs(int)`, else `Crc32`) for the
+value match, `Regex.Replace(text, "[^a-z0-9]+", "")` for the name match, in
+registration order. The port mirrors that with `OPTION_TABLE` +
+`option_for_seed_text` + `SeedFlags::from_seed_text`, the flags carried as
+the `serializedSeedsSum` bitmask (`WorldFileData.cs:157-197`: drunk 1,
+bees 2, FTW 4, anniversary 8, DST 16, remix 32, no-traps 64, zenith 128,
+skyblock 256).
+
+Two structural notes:
+
+- `getfixedboi` is the *Everything/Zenith* option (`WorldSeedOption_Everything.
+  cs:15-58`), which force-enables its seven dependencies (remix, drunk,
+  bees, no-traps, the Constant, anniversary, FTW — skyblock is NOT one).
+  `SeedFlags::from_seed_text` reproduces the cascade, so a
+  "get fixed boi" world's flags are the full mix.
+- The 38 modular 1.4.5 micro seeds use a different registry entirely —
+  `WorldGen.SecretSeed` with BCrypt codes (`WorldGen.cs:3022-3058`,
+  `Utilities/Secrets.cs:7-27`). They stay with M5-SEED-2; the port's
+  `SeedFlags` has no room for them and the worldgen reads them as off.
+
+The UI half (`OnFinishedSettingSeed`'s option ring, the Advanced seed tab,
+the plate icons) stays a documented deviation — the resolution itself is
+pure, so `create_world_in` now feeds the flags into `GenOptions` and the
+created (and saved) world carries them.
+
+### Persistence
+
+- TRWLD gains v6: the nine booleans as the port's own bitmask u16
+  (`WorldFile.SaveWorldFlags`'s order, `WorldFile.cs:1238-1250`). A v5 file
+  loads as the classic world it was.
+- `.wld`: `load_header_flags` used to `skip(1)` nine times; it now reads
+  them into `World.seeds` at their introduction versions (222/227/238/239/
+  241/249/266/267/302 — the same gates `WorldFile.LoadWorldFlags`
+  `:1981-2041` uses), plus the pre-267 `zenithWorld = remix && drunk`
+  inference (`:2020`). The port still stores the seed as text only and
+  re-derives the int on load, exactly like the C#.
+
+### The worldgen arms
+
+Every arm is flag-gated; the classic pipeline is byte-identical (both
+pinned world hashes pass unchanged, and no world_hash re-pin was needed —
+the M5-BIOME-2-style ledger note does not apply). Three new steps join the
+executed chain (56 → 59): `wavy caves` (the Constant's own pass, vanilla
+`:12271`), `constant lava layer` (the Dungeon-tail `LavaLayerCaverer`
+call, `:14867`) and `seed finish` (the `GenerateWorld` tail, `:22431-22444`);
+all three draw nothing for a classic world.
+
+| Seed | Arm | C# anchor |
+|---|---|---|
+| drunk | `TileRunner` entry pair — `strength`/`steps` ×(1 ± 0.8) with two `Next(-80,81)` draws | `:76772-76788` |
+| drunk | the 1-in-30 step teleport (both axes), the ladder `Next(3)` gate, the per-step X-velocity nudge | `:76823-76827`, `:77003`, `:77088-77091` |
+| drunk | the ash-candidate skip and the ash-column runner floor | `:76866-76868` |
+| drunk | both evil biomes at half the count, both passes forced, the half-restricted anchors (`crimsonLeft`), `num19 = 100` | `:13938-14304` |
+| drunk | the dungeon start row pinned to `worldSurface + 70` | `:14804`/`:14854` |
+| drunk | the living-trees count `+2×`, the side-patch count `+Next(2,5)` | `:15504`/`:15628` |
+| drunk | the ocean-cave chance gate OR'd open | `:15178` |
+| drunk | `FinishDrunkGen` — the `Next(13,25)` dungeon palette, the per-brick bands, wall 25/87, the jungle→mud smoothing, the temple band at 16 | `:26226-26315` |
+| drunk+FTW | `flipInfections` — ebonstone 25/3 ↔ crimstone 203/83 ids through the evil pass | `:11298-11304` |
+| FTW | `TileRunner` `strength` ×(1 ± 0.015) + `steps += Next(3)` for every non-ash runner | `:76772-76788` |
+| FTW | spider caves ×3, neon-moss radius/length ×1.5, the moss 0.42-0.48 band | `:17378`, `:9802`, `:17503` |
+| FTW | `ShroomPatch` scale ×1.5 (the `World.seeds` stand-in for `!remix`) | `:79866-79870` |
+| FTW | `FinishGetGoodWorld` — the palette re-roll, tile 226/137 paint 17, wall 87 → 25, the 1-in-15 ash-lava pockets, the surface-grass conversion to 199/23 with the plant kills | `:25799-25983` |
+| anniversary | `FinishTenthAnniversaryWorld` — `PaintTheDungeon/LivingTrees/Temple/Clouds/Sand/Pyramids` and the 1-in-4 boulder 138→665 | `:24237-24282` |
+| anniversary | the jungle-origin band widened to `Next(25,35)` | `:11360-11370` |
+| remix | the jungle-origin band widened to `Next(20,35)` | `:11247` |
+| remix | the spawn point moved to the bottom centre (the first air scanning up from `maxTilesY - 10`) | `:19574-19584` |
+| constant | iron/gold pinned (no lead/platinum) unless drunk | `:11280`/`:11292` |
+| constant | `WavyCaves` — the DST-only pass, 100-try band rejection then `WavyCaverer` | `:12271-12311` |
+| constant | `LavaLayerCaverer` — the Dungeon-tail two-row lava caver | `:14867`, `:73950-74060` |
+| bees+constant | the runner's honey wall-spread variant | `:76806` |
+
+`GenVars.crimsonLeft` is drawn in the pipeline's Reset stand-in from its own
+`pass_rng("Reset")` stream (vanilla's `genRand.Next(2)` at `:11216`); the
+evil pass re-derives it from the same stream contract rather than taking it
+through the step signature — the derivation is exact today and is flagged
+in its doc comment.
+
+### Deviations + deferred
+
+- The remix inverted-terrain family (~211 `remixWorldGen` sites: the
+  inverted bands of `TerrainPass`, the doubled cave counts, the NPC swaps,
+  `FinishRemixWorld`'s cloud/wall conversions) is deferred — it is a
+  shape-level rewrite of the compact terrain model, not a branch add. The
+  row's remix coverage is the flags + the two `Reset`-range arms + the
+  spawn override.
+- The not-the-bees hive world (`NotTheBees`/`FinishNotTheBees`'s ~20 sites)
+  is deferred the same way; its flags resolve and its runtime conditions
+  read them.
+- The drunk per-blob ore re-rolls (the 22 `if (drunkWorldGen) { Next(2) }`
+  tier sites `:13194-13577`) and the drunk double evil-ore bands
+  (`:13370-13378`, `:13577-13586`) stay deferred: the port's ore band table
+  carries one tier per pair and the re-rolls would need a per-blob tier
+  pair, i.e. a table rewrite.
+- `ImproveAllChestContents` (`:24716-24765`, the celebration prefix pools)
+  is loot-side; the port places chests as tiles without inventories, so
+  the chest arms of the three Finish passes (5001/678 drops) draw and write
+  nothing.
+- `ConvertSkyIslands` (`:24243`) needs the C# `Convert` Hallow helper the
+  port does not have; the `PaintThe*` sweeps and the 138→665 conversion
+  run without it.
+- The drunk `getGoodWorld`/`notTheBees` combo first branches (spider caves
+  `:17369-17375`, moss `:17510-17516`'s re-roll) stay out: the port's
+  classic arm draws once, so porting the C#'s extra re-roll would break
+  the classic byte-identity the whole branch is built on.
+- Runtime follow-ups for the flags now that they are live: the FTW AI/damage
+  family (`Main.getGoodWorld`'s ~100 `NPC.cs` sites), the anniversary
+  party, the Constant's starving/darkness engine, skyblock.
