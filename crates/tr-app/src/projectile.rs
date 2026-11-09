@@ -16,7 +16,10 @@
 //!   stamp write `:13972`
 //! - defaults: `timeLeft = 3600` (`:787`), `penetrate = 1`,
 //!   `localNPCHitCooldown = -2` (`:464`), `idStaticNPCHitCooldown = -1`
-//!   (`:466`), `immunityIdentity = type` (`:782`)
+//!   (`:466`), `immunityIdentity = type` (`:782`), the scratch arrays
+//!   `ai`/`localAI` zeroed (`:736-740`), `alpha = 0` (`:779`), `scale = 1f`
+//!   (`:320`/`:785`) — the aiStyle dispatch's arm-signature contract sits
+//!   over the `match data.ai_style` in [`ProjectilePool::update`]
 //!
 //! NPC-side per-owner i-frames: `NPC.immune[256]` (decremented once per NPC
 //! update, `NPC.cs:90454-90459`), stored on [`crate::npc::Npc`].
@@ -214,8 +217,10 @@ fn can_explode_tile(kind: u16, frame_y_variant: i32) -> bool {
 }
 
 /// The `SetDefaults` slice of the aiStyle-1/14 families (`Projectile.cs`):
-/// the box, the AI style, the penetrate/timeLeft overrides and the flags the
-/// flight behaves on. The damage stays the spawner's input.
+/// the box, the AI style, the penetrate/timeLeft overrides, the flags the
+/// flight behaves on and the defaults the C# `SetDefaults` leaves at their
+/// reset value unless the per-type arm overrides them. The damage stays the
+/// spawner's input.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProjData {
     pub w: f32,
@@ -231,50 +236,116 @@ pub struct ProjData {
     pub arrow: bool,
     /// `Projectile.trap`.
     pub trap: bool,
+    /// `Projectile.usesLocalNPCImmunity` (default false, reset `:714`) +
+    /// `localNPCHitCooldown` (default −2, `:464`).
+    pub uses_local_immunity: bool,
+    pub local_hit_cooldown: i32,
+    /// `Projectile.usesIDStaticNPCImmunity` (default false, reset `:715`) +
+    /// `idStaticNPCHitCooldown` (default −1, `:466`).
+    pub uses_id_static_immunity: bool,
+    pub id_static_hit_cooldown: i32,
+    /// `Projectile.alpha` (`:779`) — the draw-time fade, which the AI arms
+    /// also read as a state marker (the magic families, Phase 3).
+    pub alpha: i32,
+    /// `Projectile.scale` (default `1f`, `:320`/`:785`).
+    pub scale: f32,
 }
+
+/// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
+/// id_static_hit_cooldown, alpha, scale)` group of a `proj_data` row that
+/// overrides nothing: the C# `SetDefaults` reset — the immunity flags off
+/// (`Projectile.cs:714-715`), the cooldowns −2/`-1` (`:464`, `:466`, reset
+/// `:712-713`), `alpha = 0` (`:779`) and `scale = 1f` (`:785`).
+const RESET_STATE: (bool, i32, bool, i32, i32, f32) = (false, -2, false, -1, 0, 1.0);
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
 /// families are M4-PROJ follow-ups.
 pub fn proj_data(kind: u16) -> Option<ProjData> {
-    let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap) =
+    let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap, state) =
         match kind {
             // `Projectile.cs:807-815` / `:817-827` (the flame arrow shares the
             // box; `timeLeft = 1200` on both).
-            WOODEN_ARROW | FLAME_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            WOODEN_ARROW | FLAME_ARROW => {
+                (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE)
+            }
             // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
             // flight, `timeLeft = 1200`.
-            WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:1871-1882` — the laser: 4x4, the aiStyle-1
             // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
             // (the AI_037 arm overrides to 300 post-spawn).
-            DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false),
+            DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false, RESET_STATE),
             // `Projectile.cs:3417-3426` — the Fireball: 16x16, aiStyle 8,
             // `timeLeft = 300`, `penetrate = -1`, hostile, alpha 100.
-            GOLEM_FIREBALL => (16.0, 16.0, 8, -1, 300, 0, true, false, false),
+            GOLEM_FIREBALL => (16.0, 16.0, 8, -1, 300, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:3427-3440` — the Eye Beam: 8x8, aiStyle 1,
             // `extraUpdates = 1`, `tileCollide = false`, `penetrate = -1`,
             // hostile, `timeLeft = 300` (the call sites' override).
-            GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false),
+            GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false, RESET_STATE),
             // `Projectile.cs:1632-1645` — the EyeLaser: 4x4, aiStyle 1,
             // penetrate 3, extraUpdates 2, timeLeft 600, hostile.
-            EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false),
+            EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
             // `Projectile.cs:1803-1815` — the CursedFlameHostile: 16x16,
             // aiStyle 8, penetrate -1, hostile.
-            CURSED_FLAME => (16.0, 16.0, 8, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            CURSED_FLAME => (
+                16.0,
+                16.0,
+                8,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1885-1895` — the EyeFire: 6x6, aiStyle 23,
             // penetrate -1, extraUpdates 3, hostile.
-            EYE_FIRE => (6.0, 6.0, 23, -1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            EYE_FIRE => (
+                6.0,
+                6.0,
+                23,
+                -1,
+                TIME_LEFT_DEFAULT,
+                3,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1602-1610` — the Scrambler's bolt: 10x10,
             // aiStyle 1, hostile, ignoreWater.
-            BRAIN_SCRAMBLER => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            BRAIN_SCRAMBLER => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1639-1648` — the Ray Gunner's laser: 8x8,
             // aiStyle 1, extraUpdates 3.
-            RAY_GUNNER => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
+            RAY_GUNNER => (
+                8.0,
+                8.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                3,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1804-1818` — the deathray: 30x30, aiStyle 79
             // (the port's boomerang family's homing stand-in), penetrate
             // -1, tileCollide false, timeLeft 240.
-            SAUCER_DEATHRAY => (30.0, 30.0, 79, -1, 240, 0, false, false, false),
+            SAUCER_DEATHRAY => (30.0, 30.0, 79, -1, 240, 0, false, false, false, RESET_STATE),
             // `Projectile.cs:1816-1825` — the missile: 14x14, aiStyle 80
             // (the port's boomerang return stand-in), penetrate -1.
             SAUCER_MISSILE => (
@@ -287,13 +358,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 false,
+                RESET_STATE,
             ),
             // `Projectile.cs:1826-1837` — the laser: 5x5, aiStyle 1,
             // extraUpdates 1, timeLeft 600.
-            SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false),
+            SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
-            SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false),
+            SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9270-9279` — the ice spike: 32x32, aiStyle 157
             // (the sharp-tears family), tileCollide false, ignoreWater.
             DEERCLOPS_ICE_SPIKE => (
@@ -306,82 +378,274 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 false,
+                RESET_STATE,
             ),
             // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
             // 187, penetrate -1, tileCollide false, timeLeft 300.
-            SHADOW_HAND => (40.0, 40.0, 187, -1, 300, 0, false, false, false),
+            SHADOW_HAND => (
+                40.0,
+                40.0,
+                187,
+                -1,
+                300,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1896-1903` — the bomb: 22x22, aiStyle 16,
             // penetrate -1, hostile.
-            BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false),
+            BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
-            MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
+            MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
             // the spiky ball — `penetrate = -1`, `trap = true`.
-            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY_BALL | TRAP_VENOM_DART => {
-                (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, true)
-            }
+            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY_BALL | TRAP_VENOM_DART => (
+                10.0,
+                10.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                true,
+                RESET_STATE,
+            ),
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
             // `extraUpdates = 5`, the local immunity cooldown −1.
-            POISON_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 5, false, false, false),
+            POISON_DART => (
+                10.0,
+                10.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                5,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
             // `timeLeft = 900`.
-            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true),
+            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
             // (`:2524-2535` — aiStyle 16, 128×128, `timeLeft` 2, trap-less),
             // and the cannon ammo 178/601 (`:2641-2649` — aiStyle 1, 10×10,
             // `timeLeft` 2 / `extraUpdates` 30).
-            EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true),
-            LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false),
-            CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false),
-            CANNON_EXPLOSIVE => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 30, true, false, false),
+            EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true, RESET_STATE),
+            LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false, RESET_STATE),
+            CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false, RESET_STATE),
+            CANNON_EXPLOSIVE => (
+                10.0,
+                10.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                30,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
             // 22×22, aiStyle 3, `penetrate = -1`, melee.
-            ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
-                (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
-            }
+            ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => (
+                22.0,
+                22.0,
+                3,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
             // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
             // ticks for the bombs, 300 for the dynamite. The sticky set
             // {37, 519} disables the plain tile collide — their hover scan
             // stops them.
-            BOMB | BOUNCY_BOMB => (22.0, 22.0, 16, -1, 180, 0, true, false, false),
-            STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
-            BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
-            DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
+            BOMB | BOUNCY_BOMB => (22.0, 22.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
+            STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
+            BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
+            DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false, RESET_STATE),
             // The martian family's guns + the Dutchman's cannon — the
             // `SetDefaults` rows packed into the data shape (the saucer
             // family's four consts ride the origin/main set).
-            SCRAMBLER_SHOT => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            SCRAMBLER_SHOT => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
             // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
             // and the Corsair's musket ball 82 (10x10, aiStyle 1).
-            PIRATE_ARROW => (4.0, 4.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false),
-            MUSKET_BALL => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
-            MARTIAN_RAY => (8.0, 8.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false),
-            DUTCHMAN_SHELL => (16.0, 16.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            PIRATE_ARROW => (
+                4.0,
+                4.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                true,
+                false,
+                RESET_STATE,
+            ),
+            MUSKET_BALL => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            MARTIAN_RAY => (
+                8.0,
+                8.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                3,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            DUTCHMAN_SHELL => (
+                16.0,
+                16.0,
+                2,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // The DD2 families' weapons (`Projectile.cs`'s SetDefaults): the
             // javelin throwers' spears 662/685 (16x16, aiStyle 1, penetrate
             // -1) and the bombers' bombs 681 (14x14, aiStyle 16, the bomb
             // flight, penetrate -1).
-            DD2_SPEAR => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
-            DD2_SPEAR_T3 => (16.0, 16.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
-            DD2_BOMB => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            DD2_SPEAR => (
+                16.0,
+                16.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            DD2_SPEAR_T3 => (
+                16.0,
+                16.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            DD2_BOMB => (
+                14.0,
+                14.0,
+                16,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // The Dark Mage's casts (`Projectile.cs:7208-7230`): the summon
             // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
             // 255, tileCollide false, timeLeft 900) and the shadowflame
             // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
-            DARK_MAGE_MARKER => (10.0, 10.0, 133, -1, 900, 0, false, false, false),
-            DARK_MAGE_FLAME => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            DARK_MAGE_MARKER => (
+                10.0,
+                10.0,
+                133,
+                -1,
+                900,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            DARK_MAGE_FLAME => (
+                10.0,
+                10.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
             // aiStyle-1 breath flight).
-            BETSY_BREATH => (12.0, 12.0, 1, -1, TIME_LEFT_DEFAULT, 1, true, false, false),
+            BETSY_BREATH => (
+                12.0,
+                12.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
             // ...)` — the 1500-px leaping shot).
-            BETSY_FIREBALL => (22.0, 22.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            BETSY_FIREBALL => (
+                22.0,
+                22.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             _ => return None,
         };
+    let (
+        uses_local_immunity,
+        local_hit_cooldown,
+        uses_id_static_immunity,
+        id_static_hit_cooldown,
+        alpha,
+        scale,
+    ) = state;
     Some(ProjData {
         w,
         h,
@@ -392,6 +656,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         tile_collide,
         arrow,
         trap,
+        uses_local_immunity,
+        local_hit_cooldown,
+        uses_id_static_immunity,
+        id_static_hit_cooldown,
+        alpha,
+        scale,
     })
 }
 
@@ -430,6 +700,15 @@ pub struct Projectile {
     /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
     /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
     pub ai: [f32; 3],
+    /// The C# `localAI[0..2]` (`Projectile.cs:336-338`, `maxAI = 3` `:79770`)
+    /// — the second scratch array, reset to zero with `ai` by `SetDefaults`
+    /// (`:736-740`). The magic families keep their phase counters there.
+    pub local_ai: [f32; 3],
+    /// `Projectile.alpha` (`:326`, reset `:779`) — the draw fade, which the AI
+    /// arms also read as a state marker (the magic families, Phase 3).
+    pub alpha: i32,
+    /// `Projectile.scale` (`:320`, reset `:785`).
+    pub scale: f32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -471,6 +750,9 @@ impl Default for Projectile {
             id_static_hit_cooldown: -1,
             extra_updates: 0,
             ai: [0.0; 3],
+            local_ai: [0.0; 3],
+            alpha: 0,
+            scale: 1.0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -1039,6 +1321,11 @@ impl ProjectilePool {
             id_static_hit_cooldown: -1,
             extra_updates: 0,
             ai: [1.0, 0.0, 0.0],
+            // The sand ball's `SetDefaults` arm (`:1131-1140`) touches neither
+            // `alpha` nor `scale` — the reset values (`:779`, `:785`) hold.
+            local_ai: [0.0; 3],
+            alpha: 0,
+            scale: 1.0,
             // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
             // flight is the custom falling-tile mode, not an aiStyle arm.
             w: 10.0,
@@ -1075,7 +1362,11 @@ impl ProjectilePool {
 
     /// `spawn_with_data` with the C# `NewProjectile`'s `ai0/ai1` arguments
     /// (the fireworks fountain's tile anchor, the bunny cannon's
-    /// `1, owner + 1` — M7-WIRE-2). Every other arm passes 0.
+    /// `1, owner + 1` — M7-WIRE-2). Every other arm passes 0; the C#
+    /// signature's trailing `ai2` has no ported caller yet, so this seam is
+    /// the one place a family that needs it extends. The port has a single
+    /// player, so the C#'s `Owner` parameter (`:10862`, default 255 = unset)
+    /// folds to `0` — the local player — here.
     pub fn spawn_with_data_ai(
         &mut self,
         kind: u16,
@@ -1110,12 +1401,17 @@ impl ProjectilePool {
             time_left: data.time_left,
             max_penetrate: data.penetrate,
             penetrate: data.penetrate,
-            uses_local_immunity: false,
-            local_hit_cooldown: -2,
-            uses_id_static_immunity: false,
-            id_static_hit_cooldown: -1,
+            uses_local_immunity: data.uses_local_immunity,
+            local_hit_cooldown: data.local_hit_cooldown,
+            uses_id_static_immunity: data.uses_id_static_immunity,
+            id_static_hit_cooldown: data.id_static_hit_cooldown,
             extra_updates: data.extra_updates,
             ai: [ai0, ai1, 0.0],
+            // `SetDefaults` zeroes both scratch arrays (`:736-740`) — only the
+            // C# `NewProjectile`'s `ai0/ai1` arguments ride along.
+            local_ai: [0.0; 3],
+            alpha: data.alpha,
+            scale: data.scale,
             w: data.w,
             h: data.h,
             tile_collide: data.tile_collide,
@@ -1159,10 +1455,34 @@ impl ProjectilePool {
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
                 }
-                // The aiStyle dispatch: the arrow/bullet family (aiStyle 1,
-                // `AI()`: `if (this.aiStyle == 1) this.AI_001();`) and the
+                // The aiStyle dispatch (`AI()`'s if/else chain, the port's
+                // `match data.ai_style`): the arrow/bullet family (aiStyle 1,
+                // `if (this.aiStyle == 1) this.AI_001();`) and the
                 // spear/dart family (aiStyle 14). The falling-tile mode
                 // keeps its custom flight.
+                //
+                // Arm-signature contract for the magic (caster) families
+                // (M4-PROJ-6, Phases 3-4): the owner-aware arms read
+                // `Main.player[owner]` and the targeting reads `Main.npc`, so
+                // the dispatch passes that context explicitly instead of
+                // widening `update` (the `player`'s channel state rides the
+                // `update` signature already):
+                //
+                // ```ignore
+                // fn ai_<family>(&mut self, world: &World, npcs: &[Npc],
+                //                 owner: Option<(f32, f32)>, player: Option<&Player>)
+                // ```
+                //
+                // `owner` is the slot's owner center (the C# `Main.player
+                // [this.owner]`); `spawn_with_data_ai` hardcodes
+                // `owner: 0` = the local player, so a `None` owner center
+                // means "no player resolved". The single carve-out is
+                // `ai_ice_block` (aiStyle 22), which writes tiles
+                // (`WorldGen.KillTile` `Projectile.cs:25695`,
+                // `WorldGen.PlaceTile` `:25842` through
+                // `tr_core::edit`): it takes `world: &mut World` via a
+                // per-arm mutable reborrow at its dispatch call site.
+                // The ported arms above keep their exact signatures.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
                         1 => self.slots[i].ai_arrow(world),
@@ -2296,5 +2616,281 @@ mod bomb_tests {
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the gravity tail adds 0.2"
         );
+    }
+}
+
+/// The widened slot/row defaults (M4-PROJ-6 Phase 1): the C# `SetDefaults`
+/// reset the magic families build on, and the `Player` channel state.
+#[cfg(test)]
+mod widened_state_tests {
+    use super::*;
+    use tr_core::World;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    /// Every kind the data table carries today — the Phase-1 baseline set.
+    /// The magic rows arrive in Phase 2 and carry their own state, so the
+    /// sweep lives here rather than over `0..2048`.
+    const BASELINE_ROWS: [u16; 48] = [
+        WOODEN_ARROW,
+        FLAME_ARROW,
+        WOODEN_ARROW_HOSTILE,
+        DESTROYER_LASER,
+        GOLEM_FIREBALL,
+        GOLEM_EYE_BEAM,
+        EYE_LASER,
+        CURSED_FLAME,
+        EYE_FIRE,
+        BRAIN_SCRAMBLER,
+        RAY_GUNNER,
+        SAUCER_DEATHRAY,
+        SAUCER_MISSILE,
+        SAUCER_LASER,
+        SAUCER_SCRAP,
+        DEERCLOPS_ICE_SPIKE,
+        SHADOW_HAND,
+        BOMB_SKELETRON,
+        MUSKET_BALL,
+        TRAP_DART,
+        TRAP_SUPERDART,
+        TRAP_SPIKY_BALL,
+        TRAP_VENOM_DART,
+        POISON_DART,
+        TRAP_SPEAR,
+        EXPLOSIVES_BLAST,
+        LANDMINE_BLAST,
+        CANNON_BOMB,
+        CANNON_EXPLOSIVE,
+        ENCHANTED_BOOMERANG,
+        WOODEN_BOOMERANG,
+        ICE_BOOMERANG,
+        BOMB,
+        BOUNCY_BOMB,
+        STICKY_BOMB,
+        BOMB_FISH,
+        DYNAMITE,
+        SCRAMBLER_SHOT,
+        PIRATE_ARROW,
+        MARTIAN_RAY,
+        DUTCHMAN_SHELL,
+        DD2_SPEAR,
+        DD2_SPEAR_T3,
+        DD2_BOMB,
+        DARK_MAGE_MARKER,
+        DARK_MAGE_FLAME,
+        BETSY_BREATH,
+        BETSY_FIREBALL,
+    ];
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// The C# `SetDefaults` reset (`Projectile.cs:736-740`, `:741-745`,
+    /// `:779`, `:785`, `:464`, `:466`, `:714-715`) every new field defaults to.
+    fn assert_reset_defaults(p: &Projectile) {
+        assert_eq!(
+            p.local_ai, [0.0; 3],
+            "both scratch arrays zero (`:736-740`)"
+        );
+        assert_eq!(p.alpha, 0, "`alpha = 0` (`:779`)");
+        assert!(
+            (p.scale - 1.0).abs() < f32::EPSILON,
+            "`scale = 1f` (`:785`)"
+        );
+        assert!(
+            !p.uses_local_immunity,
+            "`usesLocalNPCImmunity` off (`:714`)"
+        );
+        assert_eq!(
+            p.local_hit_cooldown, -2,
+            "`localNPCHitCooldown = -2` (`:464`)"
+        );
+        assert!(
+            !p.uses_id_static_immunity,
+            "`usesIDStaticNPCImmunity` off (`:715`)"
+        );
+        assert_eq!(
+            p.id_static_hit_cooldown, -1,
+            "`idStaticNPCHitCooldown = -1` (`:466`)"
+        );
+    }
+
+    /// The same reset on a data row.
+    fn assert_reset_row(row: ProjData) {
+        assert_eq!(row.alpha, 0, "`alpha = 0` (`:779`)");
+        assert!(
+            (row.scale - 1.0).abs() < f32::EPSILON,
+            "`scale = 1f` (`:785`)"
+        );
+        assert!(
+            !row.uses_local_immunity,
+            "`usesLocalNPCImmunity` off (`:714`)"
+        );
+        assert_eq!(
+            row.local_hit_cooldown, -2,
+            "`localNPCHitCooldown = -2` (`:464`)"
+        );
+        assert!(
+            !row.uses_id_static_immunity,
+            "`usesIDStaticNPCImmunity` off (`:715`)"
+        );
+        assert_eq!(
+            row.id_static_hit_cooldown, -1,
+            "`idStaticNPCHitCooldown = -1` (`:466`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_1_1_the_slot_carries_the_widened_ai_state() {
+        // `Projectile.cs:336-338` (`maxAI = 3` `:79770`): the slot gains the
+        // `localAI` array beside `ai`, plus `alpha`/`scale`.
+        let p = Projectile::default();
+        assert_eq!(p.local_ai, [0.0; 3]);
+        assert_eq!(p.local_ai.len(), 3, "the C# `maxAI` is 3 (`:79770`)");
+        assert_eq!(p.alpha, 0);
+        assert!((p.scale - 1.0).abs() < f32::EPSILON);
+        assert_reset_defaults(&p);
+    }
+
+    #[test]
+    fn test_dw_1_1_every_row_carries_the_set_defaults_reset() {
+        // No ported row overrides the six new fields yet (the magic rows are
+        // Phase 2), so today's table must reproduce the C# reset verbatim —
+        // the guard that the widening is behaviour-neutral.
+        for kind in BASELINE_ROWS {
+            let row = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
+            assert_reset_row(row);
+        }
+        // The magic kinds are still rowless (Phase 2 fills them) — and they
+        // must reach the spawn as `None`, never an inert slot.
+        assert!(
+            proj_data(359).is_none(),
+            "the Frost Staff bolt has no row yet"
+        );
+        assert!(
+            proj_data(187).is_none(),
+            "the flame jet stays a passthrough"
+        );
+    }
+
+    #[test]
+    fn test_dw_1_2_spawn_with_data_initialises_the_row_defaults() {
+        // DW-1.2: the spawn applies the row on top of the arguments, and the
+        // fields the row does not touch stay at the C# `SetDefaults` reset.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TRAP_SPEAR, 160.0, 200.0, 4.0, 0.0, 40, 2.0)
+            .unwrap();
+        let p = &pool.slots[slot];
+        assert_eq!((p.time_left, p.penetrate), (900, -1));
+        assert_eq!((p.w, p.h), (14.0, 14.0));
+        assert!(p.trap);
+        assert_reset_defaults(p);
+        assert_eq!(p.ai, [0.0, 0.0, 0.0], "`spawn_with_data` passes ai0/ai1 0");
+    }
+
+    #[test]
+    fn test_dw_1_2_spawn_with_data_ai_passes_the_ai_args_and_zeroes_local_ai() {
+        // The C# `NewProjectile`'s `ai0/ai1` arguments ride `ai`; `localAI` is
+        // zeroed by `SetDefaults` (`:736-740`) — the Ice Rod's tile target
+        // (Phase 5) arrives through `ai`, never `localAI`.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(EXPLOSIVES_BLAST, 1.0, 2.0, 0.0, 0.0, 500, 10.0, 7.0, -3.0)
+            .unwrap();
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai, [7.0, -3.0, 0.0]);
+        assert_eq!(p.local_ai, [0.0; 3]);
+        assert_reset_defaults(p);
+    }
+
+    #[test]
+    fn test_dw_1_2_the_plain_spawn_paths_keep_the_reset_defaults() {
+        // The `spawn` / `spawn_hostile*` constructors and a bare
+        // `..Default::default()` slot literal all land on the same baseline.
+        let mut pool = ProjectilePool::new();
+        let a = pool
+            .spawn(SHURIKEN, 0, Vec2::ZERO, Vec2::ZERO, 10, 12.0, false)
+            .unwrap();
+        assert_reset_defaults(&pool.slots[a]);
+        let b = pool
+            .spawn_hostile(EYE_LASER, Vec2::ZERO, Vec2::new(4.0, 0.0), 20, 2.0)
+            .unwrap();
+        assert_reset_defaults(&pool.slots[b]);
+        // The tile-fall spawn (its `SetDefaults` arm `:1131-1140` touches
+        // neither `alpha` nor `scale`).
+        let c = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
+        assert_reset_defaults(&pool.slots[c]);
+    }
+
+    #[test]
+    fn test_dw_1_2_set_immunity_still_overrides_the_row_default() {
+        // The `set_immunity` path keeps working on top of the widened spawn:
+        // the C# sets the cooldown in the per-type `SetDefaults`
+        // (`ApplyGemStaffStats`'s 60 ticks, `:10683-10689` — Phase 2 rides
+        // the row, this test pins the manual path still lands).
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut npc = Npc::spawn_slime(&w, 20).unwrap();
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(
+                TRAP_SPEAR,
+                20.0 * TILE_PX,
+                24.0 * TILE_PX,
+                0.0,
+                0.0,
+                10,
+                0.0,
+            )
+            .unwrap();
+        pool.set_immunity(slot, 3, true, 12, false, -1);
+        let p = &pool.slots[slot];
+        assert!(p.uses_local_immunity);
+        assert_eq!(p.local_hit_cooldown, 12);
+        assert_eq!(p.max_penetrate, 3);
+        // The gate the cooldown arms still bites: one hit, then the local
+        // entry holds the re-hits off for 12 ticks.
+        let hp0 = npc.hp;
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        assert_eq!(npc.hp, hp0 - 10);
+        assert_eq!(pool.slots[slot].penetrate, 2);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        assert_eq!(npc.hp, hp0 - 10, "the 12-tick cooldown gates the re-hit");
+    }
+
+    #[test]
+    fn test_dw_1_2_an_unported_kind_spawns_nothing() {
+        // The seam Phase 2 rides: a kind without a row returns `None` instead
+        // of an inert slot (the M4-PROJ-1 silent-None trap).
+        let mut pool = ProjectilePool::new();
+        assert!(
+            pool.spawn_with_data(121, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
+                .is_none()
+        );
+        assert_eq!(pool.active_count(), 0);
+    }
+
+    #[test]
+    fn test_dw_1_3_the_player_channel_state_defaults_off() {
+        // `Player.channel` (`Player.cs:52958-52968`) is off until a `channel`
+        // item is held; Phase 5 writes it, Phase 4's style-9 arm reads it.
+        let w = world();
+        let p = crate::player::Player::spawn(&w);
+        assert!(!p.channel);
+        assert_eq!(p.channel_item, 0, "no item is being channelled");
+        assert_eq!(p.channel_target, Vec2::ZERO);
     }
 }
