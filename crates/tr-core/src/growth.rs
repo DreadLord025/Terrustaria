@@ -985,6 +985,72 @@ pub fn update_world_grass_growth(
 /// type match, the surface rule `j >= worldSurface && dirt == 0`, the +-1
 /// solid-neighbour scan with the lava exception, the flower-27 exclusion)
 /// + the write. The infection Convert()/wall arms ride the next slice.
+/// `WorldGen.GrowTreeSettings.Profiles.TryGetFromTreeId` (`:3853-3884`): the
+/// tree tile kind to its profile (the gem trees 583-589, the sakura 596, the
+/// willow 616, the ash 634).
+fn profile_for_tree(kind: u16) -> Option<GrowTreeSettings> {
+    Some(match kind {
+        583..=589 => GrowTreeSettings::GEM_TREE_RUBY,
+        596 => GrowTreeSettings::VANITY_TREE_SAKURA,
+        616 => GrowTreeSettings::VANITY_TREE_WILLOW,
+        634 => GrowTreeSettings::TREE_ASH,
+        _ => return None,
+    })
+}
+
+/// `WorldGen.TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+/// (`:54802-54860`): the tree standing on the spread cell is killed when the
+/// new floor type fails the tree's profile ground test — a forest tree 5
+/// survives only a grass/jungle/snow/mushroom ground, a palm 323 only sand,
+/// and the profile trees their `GroundTest`'s kind.
+///
+/// The 596/616 `ConvertTreeAndGround` arm (the sakura/willow re-grounding to
+/// a vanilla tree on a grass conversion) is the port's Out — the tree-
+/// conversion machinery is not ported.
+fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_floor: u16) {
+    if new_floor as usize >= crate::tiledata::TILE_COUNT {
+        return;
+    }
+    let Some(t) = world.tile(i, j) else {
+        return;
+    };
+    if !t.active() {
+        return;
+    }
+    let Some(above) = world.tile(i, j - 1) else {
+        return;
+    };
+    if !above.active() {
+        return;
+    }
+    let tree_kind = above.kind;
+    if !crate::tree::is_tree(tree_kind) && tree_kind != 323 {
+        return;
+    }
+    let mut ground_ok = true;
+    match tree_kind {
+        // The C#'s `Conversion.Grass` (2/23/199/109/477/492) + `JungleGrass`
+        // (60/661/662) + `Snow` (147) + `MushroomGrass` (70) sets — the port's
+        // `SET_GRASS` is the first; the rest are the literal members (no port
+        // sets carry them).
+        5 => {
+            ground_ok = crate::tiledata::SET_GRASS.has(new_floor)
+                || matches!(new_floor, 60 | 661 | 662 | 147 | 70);
+        }
+        323 => {
+            ground_ok = crate::tiledata::SET_CONVERSION_SAND.has(new_floor);
+        }
+        _ => {}
+    }
+    if let Some(profile) = profile_for_tree(tree_kind) {
+        ground_ok = profile.ground.test(new_floor);
+    }
+    if !ground_ok {
+        let idx = world.index(i, j - 1);
+        world.tiles[idx] = crate::tile::Tile::default();
+    }
+}
+
 pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     let Some(t) = world.tile(i, j) else {
         return;
@@ -1028,16 +1094,50 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     {
         return;
     }
-    let idx = world.index(i, j);
-    world.tiles[idx] = crate::tile::Tile {
-        kind: grass,
-        flags: FLAG_ACTIVE,
-        ..Default::default()
-    };
-    if world.frame_important.len() <= grass as usize {
-        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    // `flag2 = dirt > 0 && TileID.Sets.Conversion.Grass[dirt]` (`:75207`) and
+    // the conversion dispatch (`:75208-75221`): spreading a conversion grass
+    // over a conversion-grass dirt converts the cell through the flavor's
+    // map instead of the plain type write — corruption for 23/661, crimson
+    // for 199/662, hallow for 109. Everything else takes the plain write,
+    // preceded by the tree-invalidity kill.
+    let conversion_dirt = matches!(dirt, 2 | 23 | 199 | 109 | 477 | 492);
+    if conversion_dirt && matches!(grass, 23 | 661) {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Corruption,
+            false,
+        );
+    } else if conversion_dirt && matches!(grass, 199 | 662) {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Crimson,
+            false,
+        );
+    } else if conversion_dirt && grass == 109 {
+        crate::spread::convert_cell_flavor(
+            world,
+            i,
+            j,
+            crate::spread::ConversionFlavor::Hallow,
+            false,
+        );
+    } else {
+        kill_invalid_tree_above(world, i, j, grass);
+        let idx = world.index(i, j);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: grass,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        if world.frame_important.len() <= grass as usize {
+            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        }
+        world.frame_important[grass as usize] = true;
     }
-    world.frame_important[grass as usize] = true;
 }
 
 /// `WorldGen.SolidTile` (`:70111-70131`) — the growth module's own copy of the
@@ -2294,6 +2394,53 @@ mod tests {
         assert!(is_harvestable_herb_with_seed(&w, 83, 1, 90, &dry));
         // A non-herb kind never harvests.
         assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
+    }
+
+    /// DW-2.8: the SpreadGrass conversion dispatch (WorldGen.cs:75207-75221):
+    /// a conversion-grass dirt (the Conversion.Grass set) spreads through the
+    /// flavor's map, a plain write otherwise, and the tree-invalidity kill
+    /// rides the plain arm.
+    #[test]
+    fn spread_grass_2_the_conversion_dispatch_and_the_tree_kill() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        let idx = w.index(10, 20);
+        w.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        let tree_idx = w.index(10, 19);
+        w.tiles[tree_idx] = Tile { kind: 5, flags: FLAG_ACTIVE, ..Default::default() };
+        // Jungle grass over the wood grass: the plain write (60 is not a
+        // conversion dirt), and the forest tree survives a jungle ground.
+        spread_grass(&mut w, 10, 20, 2, 60);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 60);
+        assert!(w.tile(10, 19).is_some_and(|t| t.active()), "jungle keeps the tree");
+        // Sand under the same tree kills it — the tree arm.
+        let mut w2 = World::new("t".into(), 64, 64);
+        w2.world_surface = 30.0;
+        let idx = w2.index(10, 20);
+        w2.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        let tree_idx = w2.index(10, 19);
+        w2.tiles[tree_idx] = Tile { kind: 5, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w2, 10, 20, 2, 112);
+        assert_eq!(w2.tile(10, 20).unwrap().kind, 112);
+        assert!(!w2.tile(10, 19).is_some_and(|t| t.active()), "sand kills the forest tree");
+    }
+
+    /// DW-2.8: the conversion arm — the corruption spread over a
+    /// conversion-grass dirt takes the flavor's Convert (whose map turns the
+    /// wood grass 2 into the corruption grass 23), and the walls are left
+    /// alone (the SpreadGrass call passes walls: false).
+    #[test]
+    fn spread_grass_2_the_conversion_arm_converts_through_the_flavor() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        let idx = w.index(10, 20);
+        w.tiles[idx] = Tile { kind: 2, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w, 10, 20, 2, 23);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 23, "the corruption map lands");
+        let wall_idx = w.index(11, 21);
+        w.tiles[wall_idx].wall = 1;
+        spread_grass(&mut w, 10, 20, 2, 23);
+        assert_eq!(w.tile(11, 21).unwrap().wall, 1, "the walls stay (walls: false)");
     }
 }
 

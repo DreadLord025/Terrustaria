@@ -1849,6 +1849,8 @@ fn npc_seed(
         | crate::npc::NpcKind::Stylist
         | crate::npc::NpcKind::TaxCollector
         | crate::npc::NpcKind::Golfer
+        | crate::npc::NpcKind::Zoologist
+        | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;

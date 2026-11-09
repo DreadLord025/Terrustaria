@@ -191,6 +191,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `SpecificallyImmuneTo` rows — the Confused debuff (31).
         NpcKind::Golfer => &[31],
         NpcKind::SleepingGolfer => &[31],
+        // `NPCID.cs`'s DebuffImmunitySets has no row for 633/663.
+        NpcKind::Zoologist => &[],
+        NpcKind::Princess => &[],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],

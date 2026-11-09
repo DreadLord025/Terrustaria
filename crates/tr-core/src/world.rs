@@ -287,6 +287,9 @@ pub struct World {
     /// `NPC.savedGolfer` (`NPC.cs:6299`): the sleeping Golfer has been
     /// talked into the Golfer — the 589 spawn arm stops looking.
     pub saved_golfer: bool,
+    /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
+    /// that opens the Princess's arrival without the full roster.
+    pub unlocked_princess: bool,
     /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
     /// Collector's purse + its `Player.taxRate` (3600) clock.
     pub tax_money: i32,
@@ -454,6 +457,7 @@ impl World {
             saved_stylist: false,
             saved_tax_collector: false,
             saved_golfer: false,
+            unlocked_princess: false,
             tax_money: 0,
             tax_timer: 0,
             tax_collector: false,

@@ -493,6 +493,16 @@ pub enum NpcKind {
     /// `npcFrameCount[589]` = 13) — `Sets.BoundTownNPCs`
     /// (`NPCID.cs:10441`); the talk transforms 589 → 588.
     SleepingGolfer,
+    /// `NPCID.BestiaryGirl` (633) — the bestiary seller (`NPC.cs:17147`:
+    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[633]` = 23, `Main.cs:67147`) — the shop index 23
+    /// (`Chest.cs:3263`) gates on the bestiary completion — M4-TOWN-19.
+    Zoologist,
+    /// `NPCID.Princess` (663) — the last town NPC (`NPC.cs:17384-17397`:
+    /// the town twin, aiStyle 7; `npcFrameCount[663]` = 23) — her arrival
+    /// needs EVERY other town NPC present (`Main.cs:65944-65955`); the
+    /// shop index 24 (`Chest.cs:3409`) — M4-TOWN-19.
+    Princess,
     /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
     /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
@@ -1008,6 +1018,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TaxCollector => 162,
             NpcKind::Golfer => 163,
             NpcKind::SleepingGolfer => 164,
+            NpcKind::Zoologist => 165,
+            NpcKind::Princess => 166,
         }
     }
 
@@ -1196,6 +1208,8 @@ NpcKind::SolarSelenian => 140,
             162 => NpcKind::TaxCollector,
             163 => NpcKind::Golfer,
             164 => NpcKind::SleepingGolfer,
+            165 => NpcKind::Zoologist,
+            166 => NpcKind::Princess,
             _ => return None,
         })
     }
@@ -1226,6 +1240,8 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::Stylist
                 | NpcKind::TaxCollector
                 | NpcKind::Golfer
+                | NpcKind::Zoologist
+                | NpcKind::Princess
         )
     }
 
@@ -1352,6 +1368,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TaxCollector => (18.0, 40.0),
             NpcKind::Golfer => (18.0, 40.0),
             NpcKind::SleepingGolfer => (18.0, 34.0),
+            NpcKind::Zoologist => (18.0, 40.0),
+            NpcKind::Princess => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1591,6 +1609,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TaxCollector => 441,
             NpcKind::Golfer => 588,
             NpcKind::SleepingGolfer => 589,
+            NpcKind::Zoologist => 633,
+            NpcKind::Princess => 663,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1722,6 +1742,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Stylist => 250,
             NpcKind::WebbedStylist => 250,
             NpcKind::Golfer => 250,
+            NpcKind::Zoologist => 250,
+            NpcKind::Princess => 250,
             NpcKind::SleepingGolfer => 250,
             NpcKind::TaxCollector => 250,
             NpcKind::BoundMechanic => 250,
@@ -1951,6 +1973,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Stylist => 10,
             NpcKind::WebbedStylist => 10,
             NpcKind::Golfer => 10,
+            NpcKind::Zoologist => 10,
+            NpcKind::Princess => 10,
             NpcKind::SleepingGolfer => 10,
             NpcKind::TaxCollector => 10,
             NpcKind::BoundMechanic => 10,
@@ -3060,6 +3084,8 @@ impl Npc {
             NpcKind::Stylist => 0.5,
             NpcKind::WebbedStylist => 0.5,
             NpcKind::Golfer => 0.5,
+            NpcKind::Zoologist => 0.5,
+            NpcKind::Princess => 0.5,
             NpcKind::SleepingGolfer => 0.5,
             NpcKind::TaxCollector => 0.5,
             NpcKind::BoundMechanic => 0.5,
@@ -3305,6 +3331,8 @@ impl Npc {
             NpcKind::Stylist => 15,
             NpcKind::WebbedStylist => 15,
             NpcKind::Golfer => 15,
+            NpcKind::Zoologist => 15,
+            NpcKind::Princess => 15,
             NpcKind::SleepingGolfer => 15,
             NpcKind::TaxCollector => 15,
             NpcKind::BoundMechanic => 15,
@@ -3550,6 +3578,8 @@ impl Npc {
             NpcKind::Stylist => 0.0,
             NpcKind::WebbedStylist => 0.0,
             NpcKind::Golfer => 0.0,
+            NpcKind::Zoologist => 0.0,
+            NpcKind::Princess => 0.0,
             NpcKind::SleepingGolfer => 0.0,
             NpcKind::TaxCollector => 0.0,
             NpcKind::BoundMechanic => 0.0,
@@ -3712,6 +3742,8 @@ impl Npc {
             | NpcKind::Stylist
             | NpcKind::TaxCollector
             | NpcKind::Golfer
+            | NpcKind::Zoologist
+            | NpcKind::Princess
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -4071,6 +4103,7 @@ impl Npc {
             NpcKind::Wizard | NpcKind::Mechanic => {}
             NpcKind::Stylist | NpcKind::TaxCollector => {}
             NpcKind::Golfer => {}
+            NpcKind::Zoologist | NpcKind::Princess => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -11269,6 +11302,8 @@ impl Npc {
                     | NpcKind::Stylist
                     | NpcKind::WebbedStylist
                     | NpcKind::TaxCollector
+                    | NpcKind::Zoologist
+                    | NpcKind::Princess
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11340,6 +11375,8 @@ impl Npc {
             NpcKind::TaxCollector => 162,
             NpcKind::Golfer => 163,
             NpcKind::SleepingGolfer => 164,
+            NpcKind::Zoologist => 165,
+            NpcKind::Princess => 166,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13767,6 +13804,140 @@ mod tests {
     /// screenshot pair (the port's draw rides the same rows).
 
 
+
+
+    #[test]
+    fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {
+        // `SetDefaults` 633 (`NPC.cs:17147`) and 663 (`:17384-17397`): the
+        // town twin's numbers, the kind<->u16 round-trips, the shop indexes
+        // (`NPCInteractions.cs:510-511`'s `Shop(633, 23)`/`Shop(663, 24)`),
+        // the town flag and the bestiary rows.
+        for (kind, id) in [
+            (NpcKind::Zoologist, 633u16),
+            (NpcKind::Princess, 663),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+            assert_eq!(kind.size(), (18.0, 40.0), "{kind:?}");
+            assert!(kind.is_town_resident(), "{kind:?}");
+        }
+        assert_eq!(NpcKind::Zoologist.to_u16(), 165);
+        assert_eq!(NpcKind::from_u16(165), Some(NpcKind::Zoologist));
+        assert_eq!(NpcKind::Princess.to_u16(), 166);
+        assert_eq!(NpcKind::from_u16(166), Some(NpcKind::Princess));
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Zoologist),
+            Some(23)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Princess),
+            Some(24)
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Zoologist, SlimeVariant::Blue).net_id, 633);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Princess, SlimeVariant::Blue).net_id, 663);
+    }
+
+    /// The Zoologist's shop (`Chest.cs:3263-3340`): the bestiary completion
+    /// gates — the rows appear as the report's `CompletionPercent` crosses
+    /// 3/10/25/30/45 %, and the moon-phase row only on the new-moon night.
+    #[test]
+    fn the_zoologist_shop_gates_on_the_bestiary_report() {
+        let empty = crate::shop::ShopFlags::default();
+        let stock = crate::shop::resolve_stock(23, &empty, &[]);
+        assert!(stock.contains(&4767), "the lantern row always");
+        assert!(!stock.contains(&5253), "no new-moon row by day");
+        assert!(!stock.contains(&4672), "no 3 % row at 0 %");
+
+        // 10 %: the two lumen rows appear.
+        let mid = crate::shop::ShopFlags {
+            bestiary_completion: 0.10,
+            ..Default::default()
+        };
+        let stock = crate::shop::resolve_stock(23, &mid, &[]);
+        assert!(stock.contains(&4759), "the 10 % row");
+        assert!(stock.contains(&4676), "the second 10 % row");
+        assert!(!stock.contains(&4830), "no 25 % row");
+        assert!(!stock.contains(&5635), "no 45 % row");
+
+        // 50 %: every tier shows.
+        let full = crate::shop::ShopFlags {
+            bestiary_completion: 0.50,
+            ..Default::default()
+        };
+        let stock = crate::shop::resolve_stock(23, &full, &[]);
+        for id in [5635, 4830, 4910, 4871, 4907] {
+            assert!(stock.contains(&id), "the {id} tier row");
+        }
+        // The new-moon night row.
+        let night = crate::shop::ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        let phase0 = crate::shop::resolve_stock_moon(23, &night, &[], 0);
+        assert!(phase0.contains(&5253), "the new-moon night row");
+        let phase1 = crate::shop::resolve_stock_moon(23, &night, &[], 1);
+        assert!(!phase1.contains(&5253), "not on the other phases");
+    }
+
+    /// The Princess's shop (`Chest.cs:3409-3471`): the 18 always dresses and
+    /// the two flags-off gated rows.
+    #[test]
+    fn the_princess_shop_carries_the_dress_rows() {
+        let stock = crate::shop::resolve_stock(24, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(stock.len(), 19, "the nineteen rows: {stock:?}");
+        for id in [5071, 5310, 5222, 5228, 5088] {
+            assert!(stock.contains(&id), "the {id} dress");
+        }
+        // The slime-kings row (`:3428`) and the Moon Lord hat (`:3432`) ride
+        // flags the port has no fields for yet — constants-off.
+        assert!(!stock.contains(&5266), "the slime-kings row is off");
+        assert!(!stock.contains(&5044), "the Moon Lord hat is off");
+    }
+
+    /// The Princess's arrival gate (`Main.cs:65944-65955`): flag9 = EVERY
+    /// other town NPC present, or the debug override.
+    #[test]
+    fn the_princess_gate_needs_the_full_roster() {
+        let empty: [crate::npc::Npc; 0] = [];
+        assert!(!crate::bestiary::all_town_kinds_present(&empty), "no one home");
+        // The full roster: one of each ported town kind.
+        let mut roster: Vec<crate::npc::Npc> = Vec::new();
+        for kind in [
+            crate::npc::NpcKind::Guide,
+            crate::npc::NpcKind::Merchant,
+            crate::npc::NpcKind::Nurse,
+            crate::npc::NpcKind::Dryad,
+            crate::npc::NpcKind::ArmsDealer,
+            crate::npc::NpcKind::Demolitionist,
+            crate::npc::NpcKind::Clothier,
+            crate::npc::NpcKind::GoblinTinkerer,
+            crate::npc::NpcKind::TravellingMerchant,
+            crate::npc::NpcKind::Wizard,
+            crate::npc::NpcKind::Mechanic,
+            crate::npc::NpcKind::Stylist,
+            crate::npc::NpcKind::TaxCollector,
+            crate::npc::NpcKind::Golfer,
+            crate::npc::NpcKind::Zoologist,
+            crate::npc::NpcKind::Angler,
+            crate::npc::NpcKind::Painter,
+            crate::npc::NpcKind::WitchDoctor,
+        ] {
+            let mut n = crate::npc::Npc::new(kind, 32.0, 32.0, 1, 0.0);
+            n.hp = n.max_hp;
+            roster.push(n);
+        }
+        assert!(
+            crate::bestiary::all_town_kinds_present(&roster),
+            "the full roster opens the gate"
+        );
+        // Missing just one kind closes it.
+        roster.pop();
+        assert!(
+            !crate::bestiary::all_town_kinds_present(&roster),
+            "one absentee closes the gate"
+        );
+    }
 
     #[test]
     fn the_golfer_kinds_stats_roundtrip_and_shop() {
