@@ -1563,7 +1563,7 @@ silently dropped before this) [18] |
 | REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
 | ✅ REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly — done 2026-11-09: the shared Xorshift64 core (crates/tr-core/src/rng.rs) carrying both draw conventions byte-exactly (noise.rs re-exports it as Rng; wind.rs, temple.rs's next_double and menu::random_name route through it); the pre-refactor streams replayed verbatim in rng.rs's tests; FastRandom/LCG cores out of scope |
 | ✅ REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio — done 2026-11-09: the `.trwld` header-prefix reader (magic/version/seed/name/size guards, the save-list probe) moved from `ui/save_list.rs::read_header` into `binio.rs::read_trwld_header` (with `TRWLD_MAGIC`); the listing keeps the file I/O (`HEADER_READ_CAP`) and delegates the parse, `save.rs` stays the writer-mirror; 3 unit tests in binio |
-| REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
+| ✅ REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs — done 2026-11-09: of the 23 attributes, 20 suppressed nothing (the items are consumed) and were deleted; the 3 genuinely parked items (`LEGENDARY_MODE_COLOR`, `text_panel_rect`, `draw_image_button`) keep the attribute with an accurate comment |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further Tile packing (12→8-10 B) stays deferred |
 
 ## Recommended order of attack (updated)
@@ -1717,7 +1717,7 @@ silently dropped before this) [18] |
 | REFACTOR-env | `refactor-app-env-flags` | centralize ~65 TR_* flags into app/env.rs (OnceLock) |
 | ✅ REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly — done 2026-11-09: the shared Xorshift64 core (crates/tr-core/src/rng.rs) carrying both draw conventions byte-exactly (noise.rs re-exports it as Rng; wind.rs, temple.rs's next_double and menu::random_name route through it); the pre-refactor streams replayed verbatim in rng.rs's tests; FastRandom/LCG cores out of scope |
 | ✅ REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio — done 2026-11-09: the `.trwld` header-prefix reader (magic/version/seed/name/size guards, the save-list probe) moved from `ui/save_list.rs::read_header` into `binio.rs::read_trwld_header` (with `TRWLD_MAGIC`); the listing keeps the file I/O (`HEADER_READ_CAP`) and delegates the parse, `save.rs` stays the writer-mirror; 3 unit tests in binio |
-| REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
+| ✅ REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs — done 2026-11-09: of the 23 attributes, 20 suppressed nothing (the items are consumed) and were deleted; the 3 genuinely parked items (`LEGENDARY_MODE_COLOR`, `text_panel_rect`, `draw_image_button`) keep the attribute with an accurate comment |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further Tile packing (12→8-10 B) stays deferred |
 
 ## Recommended order of attack (updated)
