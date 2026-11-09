@@ -8096,3 +8096,37 @@ Deviations: the dust arms, the ground-avoidance tile scan
 (`:51784-51798`) and the same-type repulsion of the crawltipede are
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
+
+## .trwld v8 — the banner kill counts (M6-SAVE-1c)
+
+The banner tally now rides the world file. The entry points grew a
+`WorldSide { chests, banners }` (rather than more return tuples — new sections
+extend the struct) and the v8 tail is a `u32` count, then per banner the id and
+the kill count: the C# `BannerSystem.Save` shape (`int32` per banner id,
+`BannerSystem.cs:172-186`).
+
+- **The deviations.** The vanilla rides these counts inside the world-flags
+  block as a dense array; the port's `BannerSystem` keeps them sparse
+  (`BTreeMap` by banner id), so each record carries its id. `Load`
+  (`BannerSystem.cs:188-212`) replaces the tally wholesale — the port's
+  `load_pairs` inserts the recorded entries, and a recorded **0 stays in the
+  map** so a zeroed banner round-trips (the C# keeps only the entries its
+  count array carries). `claimableBanners` (the ushort array `:172-186`) is
+  not modelled in the port and stays out.
+- **The app wiring.** `save_world` collects `banners.pairs()` (ascending
+  banner-id order) beside the chests; `App::new` restores the tally through
+  `BannerSystem::load_pairs` at construction, so the placed banners' strength
+  (`banner_buff_for`) reads the real counts after a reload.
+- Tests: `dw_2_3_the_banner_counts_round_trip_in_v8` (zeroed and
+  999999999-range counts), `dw_2_3_a_v7_payload_loads_no_banners`,
+  `dw_2_3_a_truncated_banner_section_bails`,
+  `dw_2_3_the_banner_section_is_deterministic`, and the app pair
+  `dw_2_3_a_saved_banner_tally_round_trips_through_the_app` (two NPC
+  families' counts survive, with an empty-store control). Suite 2632 / 0.
+
+Out: the remaining C# sections — signs (no port store), the NPC block
+(names/homes/homeless, App-side `App.npcs`), the bestiary kill pairs (today
+the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
+(worldgen-local — needs a `World` field), the angler quest state (no port
+fields), the TownManager rooms, the weighted pressure plates (no port store),
+the creative powers/research — each needs its own scope.
