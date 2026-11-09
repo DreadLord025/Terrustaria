@@ -2,6 +2,7 @@
 
 
 mod ammo;
+mod angler;
 mod app;
 mod assets;
 mod achievements;

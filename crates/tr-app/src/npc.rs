@@ -187,6 +187,7 @@ pub enum NpcKind {
     /// `NPCID.TowerNebula` (507).
     NebulaTower,
     /// `NPCID.TowerSolar` (517).
+    VortexTower,
     SolarTower,
     /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
     /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
@@ -445,6 +446,18 @@ pub enum NpcKind {
     /// night (`NPC.cs:53358-53374` -> `WorldGen.UnspawnTravelNPC`,
     /// `WorldGen.cs:5000`) — M4-TOWN-14.
     TravellingMerchant,
+    /// `NPCID.Angler` (369) — the quest-giving town NPC (`NPC.cs:13687`:
+    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 —
+    /// the town walker; `npcFrameCount[369]` = 23, `Main.cs:67120`). No
+    /// shop: the quest interaction rides `NPCInteractions.cs:519` —
+    /// M4-TOWN-15.
+    Angler,
+    /// `NPCID.SleepingAngler` (376) — the bound form found on the beach /
+    /// in the ocean (`NPC.cs:13796`: 34x8, aiStyle 0 the bound stand,
+    /// scale 0.9, rarity 1, `npcFrameCount[376]` = 2 — `Main.cs:67121`).
+    /// `Sets.BoundTownNPCs` (`NPCID.cs:10441`): the talk transforms
+    /// 376 -> 369 and raises `savedAngler` (`NPC.cs:19853`).
+    SleepingAngler,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -785,6 +798,7 @@ impl NpcKind {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
+            NpcKind::VortexTower => 146,
             NpcKind::SolarTower => 115,
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
@@ -930,6 +944,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::MoonLordFreeEye => 400,
             NpcKind::MoonLordLeechBlob => 401,
             NpcKind::TravellingMerchant => 111,
+            NpcKind::Angler => 150,
+            NpcKind::SleepingAngler => 151,
         }
     }
 
@@ -998,6 +1014,7 @@ NpcKind::SolarSelenian => 140,
             112 => NpcKind::AncientCultist,
             113 => NpcKind::StardustTower,
             114 => NpcKind::NebulaTower,
+            146 => NpcKind::VortexTower,
             115 => NpcKind::SolarTower,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
@@ -1105,6 +1122,8 @@ NpcKind::SolarSelenian => 140,
             83 => NpcKind::PrimeVice,
             84 => NpcKind::PrimeLaser,
             111 => NpcKind::TravellingMerchant,
+            150 => NpcKind::Angler,
+            151 => NpcKind::SleepingAngler,
             _ => return None,
         })
     }
@@ -1129,6 +1148,7 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::Clothier
                 | NpcKind::GoblinTinkerer
                 | NpcKind::TravellingMerchant
+                | NpcKind::Angler
         )
     }
 
@@ -1244,6 +1264,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WitchDoctor => (18.0, 40.0),
             NpcKind::Clothier => (18.0, 40.0),
             NpcKind::TravellingMerchant => (18.0, 40.0),
+            NpcKind::Angler => (18.0, 40.0),
+            NpcKind::SleepingAngler => (34.0, 8.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1319,6 +1341,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => (130.0, 270.0),
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
@@ -1471,6 +1494,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Demolitionist => 38,
             NpcKind::Clothier => 54,
             NpcKind::TravellingMerchant => 368,
+            NpcKind::Angler => 369,
+            NpcKind::SleepingAngler => 376,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1589,6 +1614,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WitchDoctor => 250,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
+            NpcKind::Angler => 250,
+            NpcKind::SleepingAngler => 250,
             NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
             NpcKind::EyeOfCthulhu => 2800,
@@ -1692,6 +1719,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 20000,
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
@@ -1806,6 +1834,8 @@ NpcKind::SolarSelenian => 140,
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
+            NpcKind::Angler => 10,
+            NpcKind::SleepingAngler => 10,
             NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
@@ -1896,6 +1926,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
@@ -2767,6 +2798,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
@@ -2893,6 +2925,8 @@ impl Npc {
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
+            NpcKind::Angler => 0.5,
+            NpcKind::SleepingAngler => 0.5,
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
@@ -3018,6 +3052,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
             NpcKind::StardustSpiderBig => 40,
@@ -3126,6 +3161,8 @@ impl Npc {
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
+            NpcKind::Angler => 15,
+            NpcKind::SleepingAngler => 15,
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
@@ -3215,6 +3252,7 @@ impl Npc {
             NpcKind::SolarCrawltipedeTail => 30.0,
             NpcKind::StardustWormHead => 700.0,
             NpcKind::SolarSpearman => 900.0,
+            NpcKind::VortexTower => 0.0,
             NpcKind::NebulaFloater => 400.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
@@ -3298,6 +3336,7 @@ impl Npc {
             | NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
@@ -3357,6 +3396,8 @@ impl Npc {
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
+            NpcKind::Angler => 0.0,
+            NpcKind::SleepingAngler => 0.0,
             NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
@@ -3509,6 +3550,7 @@ impl Npc {
             | NpcKind::WitchDoctor
             | NpcKind::Clothier
             | NpcKind::TravellingMerchant
+            | NpcKind::Angler
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3528,6 +3570,7 @@ impl Npc {
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
+            NpcKind::SleepingAngler => {}
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
                 self.update_goblin(world, player)
             }
@@ -3619,6 +3662,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
             // The crawltipede chain rides the worm pass entirely.
             NpcKind::SolarCrawltipedeHead
@@ -3843,6 +3887,11 @@ impl Npc {
                 // — `frame.Y` never leaves its `SetFrameSize` 0.
                 self.frame = 0;
             }
+            // The Angler has no `FindFrame` case of his own — `case 369`
+            // is the shared town-NPC body (`NPC.cs:68608`, the
+            // `ai[0]` walk/attack/sit states the town machine ports), so
+            // the row the town machine wrote stands.
+            NpcKind::Angler => {}
             NpcKind::PrimeSaw => {
                 // `case 129`: `spriteDirection = direction` while grounded
                 // (the AI's own `-ai[0]` write stands otherwise); the row
@@ -4186,6 +4235,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => {
                 self.frame = 0;
             }
@@ -4865,6 +4915,17 @@ impl Npc {
                 // The humanoid-group walk (the town machine's
                 // default arm — rows 2..count-1).
                 self.humanoid_town_frame();
+            }
+            NpcKind::SleepingAngler => {
+                // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
+                // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
+                // frame counter runs past 30 and flips the row, wrapping
+                // at the second.
+                self.frame_counter += 1.0;
+                if self.frame_counter > 30.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 2;
+                }
             }
             NpcKind::TravellingMerchant => {
                 // The town wander rides the Guide's 3-frame humanoid machine
@@ -10956,6 +11017,8 @@ impl Npc {
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
                     | NpcKind::TravellingMerchant
+                    | NpcKind::Angler
+                    | NpcKind::SleepingAngler
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11016,6 +11079,8 @@ impl Npc {
             NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
             NpcKind::TravellingMerchant => 111,
+            NpcKind::Angler => 150,
+            NpcKind::SleepingAngler => 151,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -11083,6 +11148,7 @@ impl Npc {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
+            NpcKind::VortexTower => 422,
             NpcKind::SolarTower => 115,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,
@@ -13433,6 +13499,93 @@ mod tests {
         );
     }
 
+
+
+
+    /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
+    /// two rows flip once past 30 ticks and wrap — the headless twin of the
+    /// screenshot pair (the port's draw rides the same rows).
+    #[test]
+    fn the_sleeping_angler_frame_flips_on_thirty_ticks() {
+        let w = ground();
+        let mut s = Npc::new(NpcKind::SleepingAngler, 32.0, 100.0, 1, 0.0);
+        s.hp = s.max_hp;
+        assert_eq!(s.frame, 0, "the asleep row");
+        for _ in 0..30 {
+            s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        }
+        assert_eq!(s.frame, 0, "the counter needs past 30");
+        s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        assert_eq!(s.frame, 1, "the awake row");
+        for _ in 0..30 {
+            s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        }
+        s.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        assert_eq!(s.frame, 0, "the wrap back to the asleep row");
+    }
+
+    /// The Angler rides the town walker's frame machine (`AI_007`'s shared
+    /// town body, `NPC.cs:68608`): a walking Angler cycles the town rows and
+    /// a still one sits on the idle row.
+    #[test]
+    fn the_angler_rides_the_town_walker_frames() {
+        let w = ground();
+        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
+        a.hp = a.max_hp;
+        for _ in 0..10 {
+            a.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        }
+        assert_eq!(a.frame, 0, "the idle row");
+        a.vx = 2.0;
+        for _ in 0..8 {
+            a.update(&w, &mut Player::spawn(&w), 1.0 / 60.0);
+        }
+        assert!(a.frame <= 2, "the town rows: {}", a.frame);
+    }
+
+    #[test]
+    fn the_angler_kinds_stats_roundtrip_and_quest() {
+        // `SetDefaults` 369 (`NPC.cs:13687-13700`): the town twin's numbers
+        // (18x40, 250 HP, dmg 10, def 15, kb 0.5, aiStyle 7) and no shop
+        // index (`NPCInteractions.cs:488-512` has no Shop(369, n) — the
+        // quest interaction rides `:519` instead); 376 (`NPC.cs:13796-13810`)
+        // is the flat 34x8 bound form (scale 0.9, rarity 1, aiStyle 0).
+        let a = Npc::new(NpcKind::Angler, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::Angler.max_hp(), 250);
+        assert_eq!(a.defense(), 15);
+        assert_eq!(a.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::Angler.contact_damage(), 10);
+        assert_eq!(NpcKind::Angler.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::Angler.to_u16(), 150);
+        assert_eq!(NpcKind::from_u16(150), Some(NpcKind::Angler));
+        assert_eq!(NpcKind::Angler.cs_id(), 369);
+        assert!(NpcKind::Angler.is_town_resident());
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Angler),
+            None,
+            "the Angler sells nothing — the quest interaction instead"
+        );
+        let s = Npc::new(NpcKind::SleepingAngler, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::SleepingAngler.max_hp(), 250);
+        assert_eq!(s.defense(), 15);
+        assert_eq!(s.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::SleepingAngler.size(), (34.0, 8.0));
+        assert_eq!(NpcKind::SleepingAngler.to_u16(), 151);
+        assert_eq!(NpcKind::from_u16(151), Some(NpcKind::SleepingAngler));
+        assert_eq!(NpcKind::SleepingAngler.cs_id(), 376);
+        // The bound form is NOT a town NPC (`Sets.BoundTownNPCs`,
+        // `NPCID.cs:10441`).
+        assert!(!NpcKind::SleepingAngler.is_town_resident());
+        // The bestiary rows: the Angler's visible (`NPCID.cs:12433`); the
+        // Sleeping Angler's `Hide = true` (`:3721-3725`) keeps it out.
+        let e = crate::bestiary::entry_for_npc(NpcKind::Angler, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 369);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::SleepingAngler, SlimeVariant::Blue).net_id,
+            crate::bestiary::entry_for_npc(NpcKind::Angler, SlimeVariant::Blue).net_id,
+            "the hidden kind carries the visible row"
+        );
+    }
 
     #[test]
     fn the_travelling_merchant_kind_stats_roundtrip_and_shop() {
