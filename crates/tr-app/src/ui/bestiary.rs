@@ -515,6 +515,9 @@ fn portrait_data(
         NpcKind::NebulaBeast => 116,      // NPC_423
         NpcKind::VortexRifleman => 117,   // NPC_425
         NpcKind::VortexSoldier => 118,    // NPC_429
+        NpcKind::NebulaFloater => 128,    // NPC_420
+        NpcKind::BrainSuckler => 129,   // NPC_421
+        NpcKind::Predictor => 130,      // NPC_424
         NpcKind::VortexHunter => 125,     // NPC_426
         NpcKind::VortexAlien => 126,     // NPC_427
         NpcKind::VortexHeadcrab => 127,  // NPC_428
@@ -862,6 +865,25 @@ fn portrait_data(
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         // The Moon Lord family's portraits over the 396 sheet's rows.
         // The vortex trio's portraits over the 426 sheet's 15 rows.
+        // The nebula trio's portraits over the 420 sheet's rows.
+        (NpcKind::NebulaFloater, _) => {
+            let h = lookups.bestiary_npc_sheets[128]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::BrainSuckler, _) => {
+            let h = lookups.bestiary_npc_sheets[129]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::Predictor, _) => {
+            let h = lookups.bestiary_npc_sheets[130]
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 22.0, h, white)
+        }
         (NpcKind::VortexHunter, _) => {
             let h = lookups.bestiary_npc_sheets[125]
                 .map(|s| s.height as f32 / 15.0)

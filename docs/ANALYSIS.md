@@ -6696,6 +6696,57 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Desert passes (M5-DESERT-structures)
+
+The `Dunes` carver and the `Full Desert` underground desert landed
+2026-11-09 (branch `M5-DESERT-structures`): the dune Bézier hills
+(`desert_dunes.rs`), the underground desert family — `SurfaceLine`,
+`DesertGeom`, `SandMound`, `ClusterGroup`, the hive density ladder and
+`AddTileVariance` (`desert.rs`) — and the four entrances with the
+`PlotLine`/`Tail`/`Circle`/`Rect` shape primitives ported inline
+(`desert_entrances.rs`). Both passes run as their own pipeline steps at
+their vanilla slots (`Dunes` after the spans planner, `Full Desert` after
+Mud Caves To Grass). Final world-hash pins: `SEED42_512 = 139436343`,
+`DEFAULT_WORLD = 3348406208` — both re-pinned because the passes change
+the generated worlds. Suites green.
+
+Deviations and accepted changes:
+
+- **Special seeds skipped.** The C# arms for `remixWorldGen`,
+  `tenthAnniversaryWorld`, `SecretSeed.surfaceIsDesert`,
+  `notTheBees`, `dualDungeons`, `extraLiquid` and `skyblock` have no port
+  model (no `GenOptions` field), so their branches and their extra draws
+  never run: `DesertDescription`'s remix height, the anniversary hive gap,
+  `RowHasInvalidTiles`'s mud/jungle gate condition, the drunk pyramid
+  chance, the `Full Desert` remix sandification sweep and every DesertHive
+  remix wall/liquid flip. The vanilla-chain rows for `M5-SEED-1/2` carry
+  them.
+- **`Blotches` and `Smooth` skipped.** `Modifiers.Blotches` is a `genRand`
+  noise pass over the shape and `Actions.Smooth` is the port's missing
+  slope smoother; both are noted at their call sites
+  (`desert_entrances.rs`), so the anthill/larva chambers and the pit keep
+  their hard geometry where the vanilla jitters and smooths it.
+- **The pyramid-slot anchors are recorded, not consumed.**
+  `step_dunes` appends the `GenVars.PyrX/PyrY/numPyr` anchors (the C#'
+  `:11570-11572`), but `structures::pass_pyramids` still rolls its own
+  anchor inside the compact desert band — the rewrite that consumes the
+  recorded slots (and moves them out of the band, as vanilla does) is a
+  follow-up.
+- **The per-pass RNG stream.** The C# drives the desert off the single
+  global `genRand` (`GenBase._random` IS `genRand`); the port gives each
+  pass its own `pass_rng` stream (the documented `WorldGenerator.cs:497`
+  re-seed model), so the port's worlds are deterministic but not
+  byte-identical to vanilla's.
+- **The hive's FastRandom is exact.** `FastRandom::with_modifier_u64`
+  + `next_double` were added to `tile_light/palette.rs` (the existing
+  verbatim LCG port) so the hive's per-tile sand kind and its `> 0.25`
+  probabilistic shell replay the C# bit-for-bit.
+- **The band test widened.** `desert_band_has_sand_dunes_and_no_trees`
+  now accepts the desert tile family (53/397/396) at the band surface:
+  the underground desert legitimately places itself under the compact band
+  (the vanilla retry loop lands opposite the dungeon, which is this band),
+  and `AddTileVariance` hardens the exposed sand there.
+
 ## Entity sync (M6-NET-2)
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
@@ -7300,3 +7351,44 @@ Deviations: the dust cadences (`:56871`'s 16/8/4/2/1 and `:56903`'s
 `ai[2]` re-pick by the velocity ratio and the `stealth`/`itemAnimation`
 gate are unmodelled; the walker's snapshot accel folds the vanilla's
 per-type 0.6 accel / 0.95 drag into its speed cap.
+
+## The Nebula pillar's mobs (M4-EVENT-12)
+
+`NPC.cs:1301`'s `ZoneTowerNebula` picks `SelectRandom(424, 424, 424,
+423, 423, 423, 421, 421, 421, 420, 420)` with the alive caps 424 ≤ 3,
+423 ≤ 3, 420 ≤ 3 (421 uncapped).
+
+- **The floater (420, aiStyle 97, `NPC.cs:39473-39615`)** is the teleport
+  mover. Its first 180 ticks (`localAI[2]`) throw the 574 (0 damage) at
+  the 60-tick cadence from the ring `UnitY.RotatedByRandom(π/2) *
+  (4, 2.5)` resampled until `|X| >= 1.5`. The aim point is `Center +
+  (direction * 20, 6)`; inside 400 px with line of sight it damps down
+  (`* 0.95`), outside it cruises at the 7-px cap. The 480-tick counter
+  (`ai[0]`) arms the 20-tick fade (`ai[1] = 20`), and the hop lands the
+  floater at `ai[2..3]`'s tile with zeroed velocity; the vanilla's
+  `AI_AttemptToFindTeleportSpot(aim, 20, 12, 1, solidTileCheckCentered:
+  true, teleportInAir: true)` folds into the port's first non-solid tile
+  near the aim. Its roll is `|velocity.X| * direction * 0.1` and its
+  sprite direction flips.
+- **The suckler (421, aiStyle 85)** is the hoverer family's third member
+  — the same five phases as the star cell but with its own constants
+  (`num1187 = 5.5`, phase 2's 3 px, phase 3's 2 px, phase 4's 2 px) and
+  the 421-only arms: the reach vector reads `player.Top - Center`, and
+  under 40 px with no same-type 421 already attached to the same target
+  it snaps `Center = player.Top`, zeroes the velocity, sets `ai[0] = 5`
+  and (phase 5) rides `player.Top + direction * 4`, applies
+  `AddBuff(163, 59)` (the Obstructed buff) every tick and hides itself.
+- **The predictor (424, aiStyle 3)** is the nebula shooter of the shared
+  block (`:59069`): its cycle is 180 ticks with the shot at the 179th,
+  the projectile the 573 at 60 damage (the classic constant of
+  `GetAttackDamage_ForProjectiles(60, 45)`), and the fire throws four
+  shots in the `(-3 + 2*i) * 0.15` fan from `Center - (spriteDirection *
+  4, -6)` with the `-rand(0..3) * 0.2 - 0.1` rise. Its walk has no speed
+  override (the generic `num180 = 1`, `num181 = 0.07`, `num182 = 0.8`).
+
+Deviations: the 242-dust bursts, the on-hit early teleport
+(`:39497-39505`'s `localAI[1]` 1-in-6 arm), the owned-574 shave
+(`:39577-39590`) and the `hide` flag while attached are unmodelled; the
+attached suckler stays visible and the port's Player takes the obstruct
+through the `wants_obstruct` intent. The tower spawn tables themselves
+(`:1301-1318`) stay open with the M4-EVENT-7 shield work.

@@ -1961,6 +1961,9 @@ fn npc_seed(
         | crate::npc::NpcKind::VortexHunter
         | crate::npc::NpcKind::VortexAlien
         | crate::npc::NpcKind::VortexHeadcrab
+        | crate::npc::NpcKind::NebulaFloater
+        | crate::npc::NpcKind::BrainSuckler
+        | crate::npc::NpcKind::Predictor
         | crate::npc::NpcKind::StardustCellBig
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
