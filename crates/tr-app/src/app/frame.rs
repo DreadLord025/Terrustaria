@@ -95,6 +95,14 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
+        // `UserInterface.Update`'s lockout countdown
+        // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+        // state-change gate decays with the frame step, deterministic under
+        // `TR_SHOT` (dt pinned to 1/60 above). `Main.UpdateUIStates`
+        // (`Main.cs:17487-17491`) runs this whichever UI side is live, so it
+        // must not sit inside the in-game branch below — see
+        // [`App::tick_pointer_clock`].
+        self.tick_pointer_clock(dt);
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -243,12 +251,6 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
-            // `UserInterface.Update`'s lockout countdown
-            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
-            // state-change gate decays with the frame step, deterministic under
-            // `TR_SHOT` (dt pinned to 1/60 above).
-            self.pointer_ms = self.anim_time as f64 * 1000.0;
-            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
