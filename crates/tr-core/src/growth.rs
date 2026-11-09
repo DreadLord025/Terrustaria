@@ -918,6 +918,110 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
     world.frame_important[grass as usize] = true;
 }
 
+/// `WorldGen.SolidTile` (`:70111-70131`) — the growth module's own copy of the
+/// tile-only solidity test (the shared `worldgen` module is crate-private).
+fn growth_solid(world: &World, x: i32, y: i32) -> bool {
+    match world.tile(x, y) {
+        Some(t) => {
+            t.active()
+                && (t.kind as usize) < crate::tiledata::TILE_COUNT
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                && !t.half_brick()
+                && t.slope() == 0
+        }
+        None => false,
+    }
+}
+
+/// `WorldGen.GetWaterDepth` (`:58355-58373`): the liquid column above the
+/// floor under `(x, y)` — the solid walk down, then the liquid count back up.
+fn water_depth(world: &World, x: i32, y: i32) -> i32 {
+    let mut num = y;
+    while !growth_solid(world, x, num) {
+        num += 1;
+        if num > world.height - 1 {
+            return 0;
+        }
+    }
+    num -= 1;
+    let mut num2 = num;
+    while world.tile(x, num2).is_some_and(|t| t.liquid > 0)
+        && !growth_solid(world, x, num2)
+    {
+        num2 -= 1;
+    }
+    num - num2
+}
+
+/// `WorldGen.CountGrowingPlantTiles` (`:58375-58390`): the tiles of `kind` in
+/// the `[x-range, x+range] × [y-range*3, y+range*3]` box.
+fn count_growing_plant_tiles(world: &World, x: i32, y: i32, range: i32, kind: u16) -> i32 {
+    let mut num = 0;
+    for i in (x - range)..=(x + range) {
+        for j in (y - range * 3)..=(y + range * 3) {
+            if world.tile(i, j).is_some_and(|t| t.active() && t.kind == kind) {
+                num += 1;
+            }
+        }
+    }
+    num
+}
+
+/// `WorldGen.PlaceBamboo` (`:58391-58445`): one bamboo stalk on the jungle
+/// grass / bamboo under `(x, y)` — the wall/surface guard, the water-depth
+/// window (2..5), the density gates and the write. Returns whether a stalk
+/// landed.
+fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) -> bool {
+    let min_depth = 2;
+    let max_depth = 5;
+    let num3 = rng.next_range(1, 21);
+    let Some(tile) = world.tile(x, y) else {
+        return false;
+    };
+    if tile.wall > 0 && (y as f64) <= world.world_surface {
+        return false;
+    }
+    if tile.active() && tile.kind == 314 {
+        return false;
+    }
+    let below = world.tile(x, y + 1).map(|t| (t.active(), t.kind));
+    let Some((below_active, below_kind)) = below else {
+        return false;
+    };
+    if below_active && matches!(below_kind, 571 | 60) {
+        let depth = water_depth(world, x, y);
+        if depth < min_depth || depth > max_depth {
+            return false;
+        }
+        let mut num4 = count_growing_plant_tiles(world, x, y, 5, 571);
+        let mut i = 1;
+        if below_kind == 571 {
+            loop {
+                if growth_solid(world, x, y + i) {
+                    break;
+                }
+                i += 1;
+            }
+            if i + num4 / rng.next_range(1, 21) > num3 {
+                return false;
+            }
+        } else {
+            num4 += 25;
+        }
+        if num4 + i * 2 > rng.next_range(40, 61) {
+            return false;
+        }
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 571;
+            t.set_slope(0);
+            t.flags = FLAG_ACTIVE;
+        }
+        return true;
+    }
+    false
+}
+
 /// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
 /// grass. The 4-neighbour density gate, the Next(4) directional walk, the
 /// landing cell empty with <=2 spike neighbours and a spike within the
@@ -1027,6 +1131,37 @@ pub fn update_world_overground_tile(
         // — the Sakura/Willow settings profiles.
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
         return;
+    }
+    // The vanilla/KillTile arm (:72146-72152): the sakura/willow sapling or
+    // its grown tile standing on the evil grass is killed (the trees do not
+    // take root in the corruption/crimson).
+    if matches!(kind, 595 | 615 | 596 | 616)
+        && world
+            .tile(x, y + 1)
+            .is_some_and(|t| t.active() && matches!(t.kind, 199 | 23))
+    {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags &= !FLAG_ACTIVE;
+        }
+        return;
+    }
+    // The bamboo arm (:72154-72156): the bamboo 571 or the jungle grass 60
+    // with liquid above, at `Next(5)`, when the cell above is free and — for
+    // the jungle grass — at `Next(30)`.
+    let above_kind = world.tile(x, y - 1).map(|t| (t.active(), t.kind, t.liquid));
+    let bamboo = match above_kind {
+        Some((_, _, liquid)) if kind == 60 && liquid > 0 => true,
+        Some(_) if kind == 571 => true,
+        _ => false,
+    };
+    if bamboo && rng.next(5) == 0 {
+        let above_free = world
+            .tile(x, y - 1)
+            .is_some_and(|t| !t.active() || matches!(t.kind, 61 | 74 | 518));
+        let gate = if kind == 60 { rng.next(30) == 0 } else { true };
+        if above_free && gate {
+            place_bamboo(world, x, y - 1, rng);
+        }
     }
     // The cactus arm (:72229-72231): `Next(15)`.
     if kind == 80 && rng.next(15) == 0 {
@@ -1174,6 +1309,106 @@ pub fn update_world(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The bamboo arm (`:72154-72156` + `PlaceBamboo` `:58391-58445`): a
+    /// bamboo 571 with a free cell above grows a stalk at the vanilla gates —
+    /// the wall/surface refusal, the water-depth window (2..5), the density
+    /// caps and the write.
+    #[test]
+    fn the_bamboo_arm_grows_a_stalk_over_the_water() {
+        // A pool of water over a floor: the bamboo 571 on the floor with a
+        // water column 3 deep and the free cell above it.
+        let mut w = World::new("t".into(), 60, 80);
+        w.world_surface = 40.0;
+        // The floor at y = 60.
+        for x in 0..60 {
+            let i = w.index(x, 60);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The water column y = 57..59 and the bamboo at y = 56.
+        for x in 0..60 {
+            for y in 57..=59 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+            let i = w.index(30, 56);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 571,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // Sweep seeds: the arm's Next(5)/Next(30) gates and PlaceBamboo's
+        // own rolls land across enough streams.
+        let mut grew = 0;
+        let mut runs = 0;
+        for seed in 1u64..600 {
+            let mut w = w.clone();
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 30, 56, true, false, &mut rng);
+            runs += 1;
+            grew += w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 571)
+                .count();
+        }
+        assert!(grew > 0, "the bamboo arm grows a stalk ({grew} over {runs} picks)");
+    }
+
+    /// The vanity-KillTile arm (`:72146-72152`): a sakura/willow sapling or
+    /// its grown tile standing on the evil grass is killed, not left rooted.
+    #[test]
+    fn the_vanity_saplings_die_on_the_evil_grass() {
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 40.0;
+        // The evil grass at y = 30, the sapling on it at y = 29.
+        let i = w.index(10, 30);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 23,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(10, 29);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 595,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        assert!(
+            !w.tile(10, 29).is_some_and(|t| t.active()),
+            "the sapling on the evil grass is killed"
+        );
+        // The control: on plain grass it survives the arm.
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 40.0;
+        let i = w.index(10, 30);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 2,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(10, 29);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 595,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(5);
+        update_world_overground_tile(&mut w, 10, 29, true, false, &mut rng);
+        assert!(
+            w.tile(10, 29).is_some_and(|t| t.active()),
+            "the sapling on the plain grass survives"
+        );
+    }
+
     use super::*;
 
     /// `SpreadGrass`'s enclosure gate (`WorldGen.cs:75186-75201`): the C#'s
