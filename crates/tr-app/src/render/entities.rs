@@ -219,6 +219,9 @@ pub(crate) struct NpcAssets {
     pub(crate) cultist: Option<BgTex>,
     /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
     pub(crate) towers: Option<BgTex>,
+    /// `NPC_406/407/423/425/429` — the pillar shards.
+    pub(crate) shards: Option<BgTex>,
+    pub(crate) shard_hovers: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -335,6 +338,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
         towers: sky_tex(atlas, "NPC_493", None),
+        shards: sky_tex(atlas, "NPC_406", None),
+        shard_hovers: sky_tex(atlas, "NPC_425", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_27", None),
@@ -1145,6 +1150,40 @@ pub(crate) fn draw_npcs(
                 assets.towers.as_ref(),
                 assets.towers.as_ref().map_or(270.0, |t| t.h),
                 [130.0, 270.0],
+                [n.x, n.y],
+            ),
+            // The shards: the cell/jellyfish/beast 2-row strips + the
+            // vortex walkers' 14-frame humanoid strips.
+            NpcKind::StardustCellBig => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(44.0, |t| t.h / 4.0),
+                [44.0 * n.scale, 44.0 * n.scale],
+                [n.x, n.y],
+            ),
+            // The cell's ramp rides `n.scale` (`AI()`'s aiStyle-95 arm,
+            // `NPC.cs:39393`) — the strip's own frame height stays put.
+            NpcKind::StardustCellSmall => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(22.0, |t| t.h / 2.0),
+                [22.0 * n.scale, 22.0 * n.scale],
+                [n.x, n.y],
+            ),
+            NpcKind::StardustJellyfishBig => (
+                assets.shards.as_ref(),
+                assets.shards.as_ref().map_or(60.0, |t| t.h / 5.0),
+                [40.0, 60.0],
+                [n.x, n.y],
+            ),
+            NpcKind::NebulaBeast => (
+                assets.shard_hovers.as_ref(),
+                assets.shard_hovers.as_ref().map_or(44.0, |t| t.h / 12.0),
+                [50.0, 44.0],
+                [n.x, n.y],
+            ),
+            NpcKind::VortexRifleman | NpcKind::VortexSoldier => (
+                assets.shard_hovers.as_ref(),
+                assets.shard_hovers.as_ref().map_or(56.0, |t| t.h / 13.0),
+                [30.0, 56.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (

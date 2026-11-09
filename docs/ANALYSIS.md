@@ -6622,3 +6622,69 @@ The envelope and the ported bodies are 1:1; the deviations:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
+
+## The pillar shards (M4-EVENT-9)
+
+The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
+`SetDefaults`: 405/406/407/423/425/429). Every row was re-read from the
+decompile before porting — the first pass' stats (the 407 at 1200 HP/def
+50, the 423 at 44×44/3000 HP, the 425 at 22×56) were wrong, as was the
+aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
+26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
+"shard hover" machine belongs to the Star Cell alone.
+
+- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
+  `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
+  300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
+  vanilla's `SetDefaultsFromNetId` keeps `life`; both are 300 HP so the
+  numbers agree) and resets the ramp. `npcFrameCount[405/406]` = 4/2.
+- **The 407's aiStyle-96 flyer** (`:39430-39472`): `TargetClosest`, the
+  aim vector is the player's centre lifted 250 px, the bands are <20
+  (hold the current velocity) / <40 (1.75) / <80 (3.25) / else 5, the
+  `moveSpeed` 0.15 smoothing, the rotation `velocity.X * 0.1`, and the
+  70-tick cycle throws the 539 at 60 damage from the ring: `UnitY`
+  rotated by a random ±π/2 and scaled by (5, 3), resampled until
+  `|X| >= 1.5` (the port's 64-iteration guard stands in for the vanilla's
+  unbounded loop). 5 frames.
+- **The 405's aiStyle-85 hover** (`:36930-37220`): five `ai[0]` phases.
+  Phase 0 probes (sighted → 1; 800 px → 2; the 8-px corner probe →
+  3 with the player centre as the waypoint; else the drift → 4). Phase 1
+  steers at `8 + dist/100` (the 405's base) over the 50-tick smoothing
+  `(velocity * 49 + desired) / 50` and drops back to 0 when the line of
+  sight breaks. Phases 2/3 charge/homing at 6 and 3 over the 3-tick
+  divisor; phase 4 bounces with the 0.8 restitution and re-probes every
+  180 ticks. The separator loop pushes 0.05 per axis off the player
+  within a width. The 421-only attachment arm and the dust arms are
+  unmodelled.
+- **The 423's `AI_026_Unicorns` arm** (`:62366-62924`): the machine is
+  the unicorn/wolf/hellhound/tumbleweed walker with per-type speed/accel
+  tails — the NebulaBeast's is the 10-px cap, the 0.2 accel and the 0.85
+  turnaround damping. Its own arms sit at `:62497-62557`: the charge
+  (`ai[2] == 1`) damps `velocity.X` by 0.7 each tick, fires the 575 at 50
+  damage (`GetAttackDamage_ForProjectiles(50, 35)` — the classic
+  constant) from 20 px behind the centre at `spriteDirection * -7` on
+  the 30th tick, and releases at 60 by setting `ai[1] = -rand(320, 600)`.
+  The idle arms the charge on the grounded 180-tick idle inside the
+  500-px reach. The ledge-jump arm's tile probes (the −8.5/−7.5/−7/−6/−8
+  ladder at `:62806-62903`) fold into the walker's single jump.
+- **The 425's `AI_003_Fighters` arm** (`:58463-58621`): `localAI[3]`'s
+  one-shot latch rearms `ai[3]` to −120 on the first tick (the port's
+  `rifleman_rearmed` field — without the latch the idling timer retriggers
+  the init forever). Grounded clears the leap state `ai[2]`; in the air
+  the homing aims 300 px to the side of the player and 20 px off its
+  bottom, with the 0.3/8 vertical and 0.3/7 horizontal accel/cap pairs.
+  The leap arm fires when the player's centre is 100 px below with line
+  of sight (`velocity.Y = -5`). The arming window advances `ai[3]` from
+  0 to 30 only inside the 800-px horizontal line of sight, the 31..40
+  windup wraps back to −150, and the 30th tick fires the four 577s at 75
+  damage from 30 px behind the centre — only the first shot is exact.
+- **The 429 rides the plain walker** with the 4-px cap (`:57681`) and
+  has no AI attack; its 578 lightning is a `HitEffect`-death spawn
+  (`:83161-83203`) the port leaves out with the dust/gore arms.
+
+Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
+`DoDeathEvents`'s 629 shield-hit projectile (`:79290`), the 427/428
+metamorphoses, the VortexHunter's shared shooter block and the tower
+spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
+tables themselves stay open.

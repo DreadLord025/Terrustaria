@@ -1751,6 +1751,12 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustTower
         | crate::npc::NpcKind::NebulaTower
         | crate::npc::NpcKind::SolarTower
+        | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::StardustCellSmall
+        | crate::npc::NpcKind::StardustJellyfishBig
+        | crate::npc::NpcKind::NebulaBeast
+        | crate::npc::NpcKind::VortexRifleman
+        | crate::npc::NpcKind::VortexSoldier
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher
