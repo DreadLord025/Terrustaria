@@ -153,6 +153,19 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             let _ = freed;
         }
     }
+    // The sleeping Golfer's talk (`NPC.cs:19833-19836`): the talk frees
+    // him and raises `savedGolfer` (`:52938`).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::SleepingGolfer && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_sleeping_golfer(&mut app.npcs[i], &mut app.world);
+    }
     // The webbed Stylist's talk (`NPC.cs:19849-19852`): the talk frees
     // him and raises `savedStylist` (`:52953`).
     if let Some(i) = app.npcs.iter().position(|n| {
@@ -275,6 +288,7 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Wizard => 7,
         NpcKind::Mechanic => 8,
         NpcKind::Stylist => 18,
+        NpcKind::Golfer => 22,
         _ => return None,
     })
 }
@@ -320,6 +334,18 @@ pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
 /// `NPC.cs:19849-19852`/`:44884-44894`): the talk frees him in place and
 /// raises `NPC.savedStylist` (`:52953-52955`), which opens the town
 /// arrival; `Transform`'s `case 353` (`:81120`) leaves him homeless.
+/// The sleeping Golfer's rescue (`AI_000_TransformBoundNPC`'s 589 → 588 arm,
+/// `NPC.cs:19833-19836`/`:44884-44894`): the talk frees him in place and
+/// raises `NPC.savedGolfer` (`:52938-52940`), which opens the town
+/// arrival; `Transform`'s `case 588` (`:81122-81128`) leaves him homeless.
+pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::Golfer;
+    n.max_hp = NpcKind::Golfer.max_hp();
+    n.hp = n.max_hp;
+    n.home = None;
+    world.saved_golfer = true;
+}
+
 pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
     n.kind = NpcKind::Stylist;
     n.max_hp = NpcKind::Stylist.max_hp();
@@ -456,6 +482,51 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// no spider-wall tile table, so the wall gate rides the world's wall id
 /// at the player's spawn tile (the same depth band as the C#'s
 /// `deeperThanRockLayer`).
+/// `NPC.cs:1680-1695`'s underground-desert arm: the sleeping Golfer waits
+/// below the rock layer — `Next(20) == 0`, no water, once per save
+/// (`!savedGolfer && !AnyNPCs(589)`). The vanilla's arm is gated on the
+/// desert wall's `AllowsUndergroundDesertEnemiesToSpawn` set, which the
+/// port has no table for; the depth band (`rockLayer * 2 + maxTilesY) / 3`
+/// and the rate ride the same cadence.
+pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
+    if app.world.saved_golfer
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SleepingGolfer)
+    {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let ty = (p.y / TILE_PX) as i32;
+    // `(rockLayer * 2 + maxTilesY) / 3` — the deep band the C# checks
+    // (`:1683`'s `num10 *= 0.5` branch).
+    let deep_band =
+        (app.world.rock_layer * 2.0 + app.world.height as f64) / 3.0;
+    if (ty as f64) <= app.world.rock_layer || (ty as f64) <= deep_band {
+        return false;
+    }
+    let water = app
+        .world
+        .tile((p.x / TILE_PX) as i32, ty)
+        .is_some_and(|t| t.has_any_liquid());
+    if water || rand01(&mut app.npc_rng) >= 0.05 {
+        return false;
+    }
+    let mut m = Npc::new(
+        NpcKind::SleepingGolfer,
+        (p.x / TILE_PX) as i32 as f32 * TILE_PX + 8.0 - 9.0,
+        ty as f32 * TILE_PX - 34.0,
+        1,
+        0.0,
+        );
+    m.hp = m.max_hp;
+    app.npcs.push(m);
+    true
+}
+
 pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
     if app.world.saved_stylist
         || app
@@ -594,6 +665,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
         // life/mana maxima, the copper purse, the Party Girl's presence and
         // the mech/martian flags.
+        golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
@@ -2013,6 +2085,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s
+        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
+        if app.world.saved_golfer && !app.npcs.iter().any(|n| n.kind == NpcKind::Golfer) {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Golfer) {
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         // The Stylist and the Tax Collector: `NPC.savedStylist`/
         // `savedTaxCollector` (`Main.cs:65824`/`:65840`'s `townNPCCanSpawn`
         // arms collapsed into the port's 2-second pass).
@@ -2115,6 +2198,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
         // the port's roll rides this cadence with the same gates.
         try_spawn_webbed_stylist(app);
+        // The sleeping Golfer's world spawn (`NPC.cs:1691`).
+        try_spawn_sleeping_golfer(app);
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -3340,6 +3425,70 @@ mod tests {
     /// The webbed Stolist's talk (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
     /// `NPC.cs:19849-19852`): the talk frees him, raises `savedStylist`
     /// (`:52953`) and the town arrival follows.
+
+    /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
+    /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+    #[test]
+    fn the_talk_wakes_the_sleeping_golfer() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut g = Npc::new(NpcKind::SleepingGolfer, 32.0 * 16.0, 100.0, 1, 0.0);
+        g.home = Some((2, 6));
+        app.npcs.push(g);
+        assert!(!app.world.saved_golfer);
+        try_open_shop_at_cursor(&mut app, Vec2::new(32.0 * 16.0 + 2.0, 100.0));
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golfer),
+            "the sleeping Golfer is freed"
+        );
+        assert!(app.world.saved_golfer, "savedGolfer raises");
+    }
+
+    /// The Golfer's flag-gated arrival (`Main.cs:65892`'s `townNPCCanSpawn`
+    /// arm collapsed into the 2-second town pass).
+    #[test]
+    fn the_saved_golfer_flag_opens_the_town_arrival() {
+        let mut world = World::new("t".into(), 200, 300);
+        for x in 0..200 {
+            for y in 40..300 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.saved_golfer = true;
+        app.town_look_timer = 2.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Golfer), "he arrives");
+        let count = app.npcs.len();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "one arrival only");
+    }
+
     #[test]
     fn the_talk_frees_the_webbed_stylist() {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);

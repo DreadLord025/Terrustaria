@@ -284,6 +284,9 @@ pub struct World {
     pub saved_stylist: bool,
     /// `NPC.savedTaxCollector` (`NPC.cs:6285`).
     pub saved_tax_collector: bool,
+    /// `NPC.savedGolfer` (`NPC.cs:6299`): the sleeping Golfer has been
+    /// talked into the Golfer — the 589 spawn arm stops looking.
+    pub saved_golfer: bool,
     /// `Player.taxMoney`/`taxTimer` (`Player.cs:828-830`): the Tax
     /// Collector's purse + its `Player.taxRate` (3600) clock.
     pub tax_money: i32,
@@ -450,6 +453,7 @@ impl World {
             saved_wizard: false,
             saved_stylist: false,
             saved_tax_collector: false,
+            saved_golfer: false,
             tax_money: 0,
             tax_timer: 0,
             tax_collector: false,
