@@ -2973,6 +2973,32 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
 
+## The Plantera and the Brain (M4-NPC-3o)
+
+`case 262` (Plantera) and `case 266` (the Brain of Cthulhu) are the same
+machine in the decompile — a 6-tick advance over the 8-row strip with the
+first phase wrapping at row 3 and the second clamping into 4..7 — and both
+npcFrameCount entries the port's comments quoted were wrong ([262] = [266]
+= 8, not 5 and 1). The v1 pinned the Brain to row 0 with `frame_h = t.h`
+(a whole-strip "frame") and cycled Plantera over rows 0..4 with `t.h / 5`.
+
+- The shared `phase_frame` helper takes the gate per kind: the Plantera's
+  `life > lifeMax / 2` and the Brain's `ai[0] >= 0 && localAI[2] == 0`.
+  The port's brain machine does not model the creeper-shield count, so the
+  Brain rides the shield-down rows 0..3 and the shielded 4..7 rows are the
+  documented follow-up (same honesty as the EoC's mech-queen rows).
+- Measured sheets: NPC_262 116x1232 (154-px rows), NPC_266 200x1456
+  (182-px rows), NPC_267 34x34. All three draw at the generic anchor
+  through `boss_draw`.
+- The anchor overrides from M4-NPC-3n are now applied in ONE place after
+  the draw match, gated by `uses_generic_anchor` — the Plantera's
+  (halfSize 77, +26) and the Brain's (+50·scale) shift their real frames,
+  while the towers, the saucer family and the Deerclops keep their own
+  dedicated `DrawNPCDirect` formulas.
+
+Screenshots: `plantera_flower.png` (the flower at its 116x154 frame) and
+`brain_creepers.png` (the 200x182 brain), both SHA256-stable across runs.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a

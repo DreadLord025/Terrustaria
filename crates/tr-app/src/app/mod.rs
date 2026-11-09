@@ -1739,6 +1739,11 @@ impl App {
                         // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
                         // and the shared case-4 machine with the Twins.
                         "eoc" => NpcKind::EyeOfCthulhu,
+                        // The Plantera + the Brain (M4-NPC-3o): the shared
+                        // case-262/266 machine.
+                        "plantera" => NpcKind::Plantera,
+                        "brain" => NpcKind::BrainOfCthulhu,
+                        "creeper" => NpcKind::Creeper,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
