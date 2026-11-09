@@ -3724,6 +3724,18 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Zoologist/Princess (M4-TOWN-19)
+
+Both are late-roster town NPCs. Deviations: the Zoologist's shop has the
+fairy-torch row (`Chest.BestiaryGirl_IsFairyTorchAvailable`, `:3544`), the
+tower/solar-gated rows and the remaining completion tiers outside the ported
+subset; the Princess's shop carries the tenth-anniversary block (a custom
+seed) and the slime-kings/Moon-Lord rows gated on `downedQueenSlime`
+(no field) and `downedMoonlord` (unported). The Princess's arrival counts the
+vanilla's 24 per-type town counters (`Main.cs:65651-65706`); the port folds
+them to its own roster through `bestiary::all_town_kinds_present`, so she
+arrives when the ported roster is complete rather than the vanilla's 24.
+
 ## Golfer (M4-TOWN-18)
 
 The pair and its shop. The whole shop's variable stock keys off
