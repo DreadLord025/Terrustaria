@@ -7605,6 +7605,30 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the force-cursor step), and the vote runs from the player's centre — on a
   client the neighbouring miners perturb that centre by ±12 px per parity
   (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
+- **The app wiring runs the lookup once per frame in the editing path.**
+  `world_sim/smart_cursor.rs`'s `repoint` is the `Player.cs:25446` call
+  site: it builds the core `Lookup` from the App (the held item via
+  `registry::get/place_tile/place_wall`, the player's position/hitbox, the
+  rain's `is_raining`/`visual_alpha`), calls `smart_cursor_lookup` with the
+  `App`-carried `ContinuityState` (the C#'s two static locks), and
+  `update_editing` re-points `(tx, ty)` right after its reach gate so the
+  mining/placement arms see the smart target. The gate is the vanilla
+  per-player setting — `settings.smart_cursor_toggle` (`Main.cs:67178`) —
+  with `TR_SMARTCURSOR=0` as the debug kill switch.
+- **The reach rect is `TileReachCheckSettings.Simple`.** `reachable_rect`
+  ports `GetTileRegion` (`TileReachCheckSettings.cs:48-56`) over
+  `GetRanges` (:22-45): the 5/3 default ranges (`Player.cs:57113-57114`)
+  capped by the 20-tile `TileReachLimit`, the near edge truncating and the
+  far edge ceiling (`Math.Ceiling`). The C#'s `TB` boost (`tileBoost` +
+  `blockRange`, `SmartCursorHelper.cs:94-101`) stays 0 — neither is ported
+  (both are potion/gizmo state, like the extract slice's note).
+- **The wiring's remaining seams are the inventory, the entities and the
+  overlay.** The paint steps stand down (their `paint_lookup` is 0 — the
+  `Player.FindPaintOrCoating` inventory scan is app-side and unported), the
+  `Collision.EmptyTile` entity arms still answer true without the
+  player/NPC store, the grapple arms are empty lists, and the gamepad /
+  MP inputs are singleplayer defaults (`grav_dir` 1.0, `direction` 1, no
+  nav directions). The `Cursor_1` highlight overlay lands with the UI pass.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
