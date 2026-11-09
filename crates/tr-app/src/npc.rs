@@ -4474,15 +4474,27 @@ impl Npc {
             // counter ticks with the motion class, the frame wraps over the
             // 6-frame (the eye) / 2-frame (the servant) strip.
             NpcKind::EyeOfCthulhu => {
-                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
-                if self.frame_counter >= 8.0 {
+                // `case 4/125/126` (`NPC.cs:76905-76926`): the EoC SHARES
+                // the Twins' machine — the 20-tick counter walks the bands
+                // rows 0/1/2 and the `ai[0] > 1` phase offset lifts them to
+                // the 3/4/5 rows (the v1 ran an 8-tick strip over all six
+                // rows and claimed a "pupil blink", which the C# has no arm
+                // for). `num2` never enters this case.
+                self.frame_counter += 1.0;
+                let mut row = if self.frame_counter < 7.0 {
+                    0
+                } else if self.frame_counter < 14.0 {
+                    1
+                } else if self.frame_counter < 21.0 {
+                    2
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 6 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    0
+                };
+                if self.ai[0] > 1.0 {
+                    row += 3;
                 }
+                self.frame = row;
             }
             NpcKind::ServantOfCthulhu => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
@@ -4837,7 +4849,8 @@ impl Npc {
                 }
             }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
-                // `case 125/126` (`NPC.cs:76906-76924`): the Twins' sheets
+                // `case 125/126` (`NPC.cs:76905-76926`, shared with the
+                // EoC's `case 4`): the Twins' sheets
                 // are 6 rows of 200 (`Main.npcFrameCount[125/126]` = 6,
                 // `Main.cs:67082` — the v1's comment claimed 2 and ran an
                 // 8-tick strip over rows 0/1), laid out as the two 3-row
@@ -14709,6 +14722,46 @@ mod tests {
         assert_eq!(NpcKind::VortexTower.to_u16(), 146);
         assert_eq!(NpcKind::SolarTower.to_u16(), 115);
     }
+
+    #[test]
+    fn the_eye_of_cthulhu_shares_the_twins_twenty_tick_beat() {
+        // `case 4/125/126` (`NPC.cs:76905-76926`): the Eye of Cthulhu rides
+        // the Twins' machine — the 20-tick counter walks the bands rows
+        // 0/1/2 and the `ai[0] > 1` phase lifts them to 3/4/5. The v1 ran
+        // an 8-tick strip over all six rows (the "pupil blink" the C# has
+        // no arm for).
+        let mut e = bare(NpcKind::EyeOfCthulhu);
+        for _ in 0..6 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 0, "the first band holds row 0");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 1, "the second band advances to row 1");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 2, "the third band advances to row 2");
+        e.find_frame();
+        assert_eq!((e.frame, e.frame_counter), (0, 0.0), "the 21st tick wraps");
+        // The phase-2 rows (`ai[0] > 1`).
+        e.ai[0] = 2.0;
+        for _ in 0..6 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 3, "the phase-2 beat rides rows 3/4/5");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 4);
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 5);
+        e.find_frame();
+        assert_eq!(e.frame, 3, "and wraps 5 -> 3");
+    }
 }
 
 #[cfg(test)]
@@ -14731,6 +14784,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 

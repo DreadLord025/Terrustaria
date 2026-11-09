@@ -528,6 +528,16 @@ const TILE_AXE: &[u16] = &[
     5, 72, 80, 488, 704, 323, 596, 616, 634, 589, 584, 588, 586, 587, 585, 583,
 ];
 
+/// `TileID.Sets.IsATreeTrunk` (`TileID.cs:487`): the tree-trunk tiles (the
+/// oak 5, the cacti 72, the gem/vanity/ash tops).
+const IS_A_TREE_TRUNK: &[u16] = &[
+    5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634,
+];
+
+/// `TileID.Sets.IgnoreSmartCursorPriorityAxe` (`TileID.cs:508`): the one
+/// axe tile the smart-cursor axe step ignores (the fallen log 488).
+const IGNORE_SMART_AXE: &[u16] = &[488];
+
 /// `TileObjectData.anchorInvalidTiles` shared by the chest
 /// (`TileObjectData.cs:2112-2116`, applied at :3466).
 const CHEST_ANCHOR_INVALID: &[u16] = &[127, 138, 664, 665, 484, 711, 712, 713, 714, 715, 716];
@@ -1419,6 +1429,18 @@ pub fn tile_hammer(kind: u16) -> bool {
 /// Membership in [`TILE_AXE`] (`Main.tileAxe`, `Main.cs:7208-7223`).
 pub fn tile_axe(kind: u16) -> bool {
     TILE_AXE.contains(&kind)
+}
+
+/// Membership in [`IS_A_TREE_TRUNK`] (`TileID.Sets.IsATreeTrunk`,
+/// `TileID.cs:487`).
+pub fn is_a_tree_trunk(kind: u16) -> bool {
+    IS_A_TREE_TRUNK.contains(&kind)
+}
+
+/// Membership in [`IGNORE_SMART_AXE`]
+/// (`TileID.Sets.IgnoreSmartCursorPriorityAxe`, `TileID.cs:508`).
+pub fn ignore_smart_axe(kind: u16) -> bool {
+    IGNORE_SMART_AXE.contains(&kind)
 }
 
 /// Membership in [`IS_A_DRIP_TILE`] (`Player.cs:41310`).

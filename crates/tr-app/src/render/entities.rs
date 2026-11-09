@@ -623,6 +623,66 @@ fn tower_draw<'a>(
     )
 }
 
+/// The halfSize override for a kind (`Main.cs:23049`'s switch): the
+/// point that lands on the NPC's anchor, so a value below the frame's
+/// centre lifts the art and one above pushes it down. The C# overrides
+/// `halfSize = (55, 107)` for the Eye of Cthulhu and the Twins — the
+/// sheet-derived half-frame for their 166-px rows is 83 (and 100 for the
+/// Twins' 200-px rows), so the override shifts the frame down by the
+/// difference. `None` = the sheet-derived value.
+fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
+    match kind {
+        NpcKind::EyeOfCthulhu | NpcKind::Retinazer | NpcKind::Spazmatism => 107.0,
+        NpcKind::Plantera => 77.0,
+        _ => frame_h * 0.5,
+    }
+}
+
+/// `Main.cs:23048`'s per-kind vertical anchor nudge (`num47`, plus the
+/// `num46` terms the same switch writes): a flat pixel shift added to the
+/// generic anchor's Y after the `halfSize` override's own shift.
+fn npc_anchor_nudge(n: &Npc) -> f32 {
+    match n.kind {
+        // `:23077` — the Plantera head's 26 (`halfSize.Y = 77` is folded
+        // by `boss_half_size`).
+        NpcKind::Plantera => 26.0,
+        // `:23078` — the Brain of Cthulhu's `num47 += 50 * scale`.
+        NpcKind::BrainOfCthulhu => 50.0 * n.scale,
+        // `:23103`'s group — the DD2 goblins' and the Wither Beasts'
+        // negative nudges (561-563: -8; 555-557: -5; 572/573: -4;
+        // 570/571: -2; 568/569: -3).
+        NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => -8.0,
+        NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => {
+            -5.0
+        }
+        NpcKind::DD2WitherBeast => -3.0,
+        _ => 0.0,
+    }
+}
+
+/// The boss draws (the Eye of Cthulhu and the Twins — the `case 4/125/126`
+/// family): the sheet's real rows at the generic anchor with the C#'s
+/// `halfSize` override applied as the delta it produces.
+fn boss_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(166.0, |t| t.h / count as f32);
+    let fw = tex.map_or(110.0, |t| t.w);
+    // The C#'s anchor lands the frame's centre at `box_bottom + 4` and the
+    // `halfSize` override shifts it by `override − frame_h / 2`.
+    let shift = boss_half_size(n.kind, fh) - fh * 0.5;
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5 + shift],
+    )
+}
+
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
 /// the same source texels while the camera moves (no crawling pixel grid).
 #[inline]
@@ -1568,7 +1628,7 @@ pub(crate) fn draw_npcs(
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                prime_draw(tex, 6, n, w, h)
+                boss_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
@@ -1880,14 +1940,14 @@ pub(crate) fn draw_npcs(
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
             ),
-            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
-            // frame == the hitbox (the `Main.DrawNPC` anchor).
-            NpcKind::EyeOfCthulhu => (
-                assets.eye_of_cthulhu.as_ref(),
-                assets.eye_of_cthulhu.as_ref().map_or(110.0, |t| t.h / 6.0),
-                [100.0, 110.0],
-                [n.x, n.y],
-            ),
+            // The Eye of Cthulhu: NPC_4 is 110x996 — six 166-px rows
+            // (`Main.npcFrameCount[4]` = 6) whose frames are LARGER than
+            // the 100x110 box; the v1 squeezed a 166-px row into a 110-px
+            // quad at the box's corner. The boss trio (4/125/126) also
+            // overrides `halfSize` to (55, 107) (`Main.cs:23051-23056`),
+            // which lands the frame's centre 24 px lower than the
+            // sheet-derived origin would (`107 - 166/2`).
+            NpcKind::EyeOfCthulhu => boss_draw(assets.eye_of_cthulhu.as_ref(), 6, n, w, h),
             // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
             NpcKind::ServantOfCthulhu => (
                 assets.servant_of_cthulhu.as_ref(),
@@ -1902,6 +1962,10 @@ pub(crate) fn draw_npcs(
         let Some(tex) = tex else {
             continue;
         };
+        // `Main.cs:23048`'s per-kind anchor nudge (`num47` + `num46`): a
+        // flat Y shift the C#'s generic draw (and the towers' dedicated
+        // arm) add to the anchor. Applied once, here, for every kind.
+        let pos = [pos[0], pos[1] + npc_anchor_nudge(n)];
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
@@ -2111,4 +2175,64 @@ pub(crate) fn draw_npcs(
         }
     }
     quads
+}
+
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    /// A bare NPC at the spawn point (the port's test helper).
+    fn bare(kind: NpcKind) -> Npc {
+        Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// `Main.cs:23048`'s per-kind anchor nudge (`num47`): the Plantera head's
+    /// 26, the Brain's `50 * scale`, and the DD2 group's negative shifts.
+    #[test]
+    fn the_anchor_nudges_follow_the_c_sharp_switch() {
+        let mut n = bare(NpcKind::Plantera);
+        n.scale = 1.0;
+        assert_eq!(npc_anchor_nudge(&n), 26.0, "the Plantera head's num47");
+        let mut b = bare(NpcKind::BrainOfCthulhu);
+        b.scale = 0.5;
+        assert_eq!(npc_anchor_nudge(&b), 25.0, "the Brain's 50 * scale");
+        for kind in [NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), -8.0, "{kind:?}");
+        }
+        for kind in [
+            NpcKind::DD2GoblinBomberT1,
+            NpcKind::DD2GoblinBomberT2,
+            NpcKind::DD2GoblinBomberT3,
+        ] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), -5.0, "{kind:?}");
+        }
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2WitherBeast)), -3.0);
+        // The unoverridden kinds stay at 0 (the towers/saucers/Deerclops
+        // compute their own anchors).
+        for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?}");
+        }
+    }
+
+    /// The `halfSize` override's effect on the anchor: the EoC's 107 over its
+    /// 166-px row's 83 pushes the frame 24 px lower; the Twins' 107 over the
+    /// 200-px row's 100 pushes it 7; the Plantera head's absolute 77 over its
+    /// 86-px row's 43 pushes it 34.
+    #[test]
+    fn the_half_size_override_shifts_the_anchor() {
+        for (kind, fh, want) in [
+            (NpcKind::EyeOfCthulhu, 166.0, 24.0),
+            (NpcKind::Retinazer, 200.0, 7.0),
+            (NpcKind::Spazmatism, 200.0, 7.0),
+            (NpcKind::Plantera, 86.0, 34.0),
+            (NpcKind::Slime, 48.0, 0.0),
+        ] {
+            assert_eq!(
+                boss_half_size(kind, fh) - fh * 0.5,
+                want,
+                "{kind:?}'s halfSize shift"
+            );
+        }
+    }
 }
