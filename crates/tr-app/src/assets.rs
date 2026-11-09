@@ -1150,7 +1150,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 160] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 161] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1167,6 +1167,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 160] = [
         412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
         397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
         353, 354, 441, 588, 589, 633, 663, 207, 208,
+        // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
+        // the earlier slots keep their indexes.
+        549,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -1726,6 +1729,8 @@ impl Lookups {
                 atlas.sheet("NPC_663").copied(),
                 atlas.sheet("NPC_207").copied(),
                 atlas.sheet("NPC_208").copied(),
+                // The Old One's Army's lane gate (M4-EVENT-18).
+                atlas.sheet("NPC_549").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
