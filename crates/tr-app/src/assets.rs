@@ -337,6 +337,31 @@ pub fn load_world_images(
         "NPC_3",
         "NPC_50",
         "NPC_368",
+        // The Martian Madness family (M4-NPC-3i) — one sheet PER kind:
+        // the ground group's 381/382/383/385/386/389, the walker 520, the
+        // probe 399, the drone 388, the Scutlix pair 390/391 and the
+        // saucer family 392/393/394/395. The bestiary and the renderers
+        // already asked for them by name; they were never packed, so
+        // `sky_tex`'s lookup returned None and every martian drew nothing
+        // (and the bestiary icon showed a blank cell). The Dutchman's
+        // 491/492 ride the same mount machine and were missing too.
+        "NPC_381",
+        "NPC_382",
+        "NPC_383",
+        "NPC_385",
+        "NPC_386",
+        "NPC_388",
+        "NPC_389",
+        "NPC_390",
+        "NPC_391",
+        "NPC_392",
+        "NPC_393",
+        "NPC_394",
+        "NPC_395",
+        "NPC_399",
+        "NPC_520",
+        "NPC_491",
+        "NPC_492",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1522,7 +1547,11 @@ impl Lookups {
                 atlas.sheet("NPC_551").copied(),
                 atlas.sheet("NPC_568").copied(),
                 atlas.sheet("NPC_550").copied(),
-                atlas.sheet("NPC_548").copied(),                atlas.sheet("NPC_422").copied(),
+                atlas.sheet("NPC_548").copied(),
+                atlas.sheet("NPC_422").copied(),
+                atlas.sheet("NPC_493").copied(),
+                atlas.sheet("NPC_507").copied(),
+                atlas.sheet("NPC_517").copied(),
                 atlas.sheet("NPC_368").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),

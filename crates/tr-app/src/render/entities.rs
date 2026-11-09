@@ -174,18 +174,30 @@ pub(crate) struct NpcAssets {
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
     pub(crate) mystery_snowman: Option<BgTex>,
-    /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
+    /// The martian ground group — one sheet PER KIND, never shared:
+    /// `NPC_383` the Officer (9 rows of 46), `NPC_385` the Gray Grunt (9
+    /// of 44), `NPC_386` the Engineer (11 of 46 — the walk wraps at 9 and
+    /// rows 9/10 are the `ai[2]` animation pair), `NPC_389` the Gigazapper
+    /// (9 of 46) (`Main.npcFrameCount`, `Main.cs:67082`). The v1 drew all
+    /// four off `NPC_383`, so the Grunt's 44-px rows read a 46-px slice
+    /// and the Engineer's rows 9/10 never existed.
+    pub(crate) martian_officer: Option<BgTex>,
+    pub(crate) gray_grunt: Option<BgTex>,
+    pub(crate) martian_engineer: Option<BgTex>,
+    pub(crate) gigazapper: Option<BgTex>,
     /// `NPC_520` — the Martian Walker (8 frames of 34x110,
     /// `Main.npcFrameCount[520]`), `NPC_399` — the Martian Probe (8 frames
     /// of 42x72), `NPC_388` — the Martian Drone (2 frames of 40x30).
-    pub(crate) martian_walkers: Option<BgTex>,
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
     pub(crate) martian_drone: Option<BgTex>,
-    /// `NPC_381/382` — the martian shooter strips (9 frames of 18x40),
+    /// `NPC_381` the Brain Scrambler / `NPC_382` the Ray Gunner (9 rows of
+    /// 48 / 46) — the two shooters ride the same FindFrame case as the
+    /// walkers but each keeps its own sheet.
+    pub(crate) brain_scrambler: Option<BgTex>,
+    pub(crate) ray_gunner: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
-    pub(crate) martian_shooters: Option<BgTex>,
     pub(crate) scutlix_rider: Option<BgTex>,
     pub(crate) scutlix: Option<BgTex>,
     /// `NPC_392/393/394/395` — the saucer family (the shell 150x80 4
@@ -217,6 +229,8 @@ pub(crate) struct NpcAssets {
     pub(crate) crystal: Option<BgTex>,
     /// `NPC_422` — the Ancient Cultist (1-frame strip of 130x270).
     pub(crate) cultist: Option<BgTex>,
+    /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
+    pub(crate) towers: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -311,11 +325,15 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         snowman_gangsta: sky_tex(atlas, "NPC_143", None),
         snow_balla: sky_tex(atlas, "NPC_144", None),
         mystery_snowman: sky_tex(atlas, "NPC_145", None),
-        martian_walkers: sky_tex(atlas, "NPC_383", None),
+        martian_officer: sky_tex(atlas, "NPC_383", None),
+        gray_grunt: sky_tex(atlas, "NPC_385", None),
+        martian_engineer: sky_tex(atlas, "NPC_386", None),
+        gigazapper: sky_tex(atlas, "NPC_389", None),
         martian_walker_big: sky_tex(atlas, "NPC_520", None),
         martian_probe: sky_tex(atlas, "NPC_399", None),
         martian_drone: sky_tex(atlas, "NPC_388", None),
-        martian_shooters: sky_tex(atlas, "NPC_382", None),
+        brain_scrambler: sky_tex(atlas, "NPC_381", None),
+        ray_gunner: sky_tex(atlas, "NPC_382", None),
         scutlix_rider: sky_tex(atlas, "NPC_390", None),
         scutlix: sky_tex(atlas, "NPC_391", None),
         saucer: sky_tex(atlas, "NPC_392", None),
@@ -332,6 +350,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         tavern: sky_tex(atlas, "NPC_550", None),
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
+        towers: sky_tex(atlas, "NPC_493", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_27", None),
@@ -414,6 +433,56 @@ fn humanoid_draw<'a>(
         fh,
         [fw, fh],
         [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
+}
+
+/// The martian walkers'/shooters' draw: the sheet's real row
+/// (`Main.npcFrameCount`'s per-kind count — the Officer's 46, the Grunt's
+/// 44, the Engineer's 46-over-11, the shooters' 48/46) at the generic
+/// anchor (`Main.cs:25511-25516`) — the v1 stretched every martian to its
+/// 18x40 box, so a 44-px Grunt row drew a 46-px slice of `NPC_383`'s art.
+fn martian_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(40.0, |t| t.h / count as f32);
+    let fw = tex.map_or(18.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
+}
+
+/// The saucer family's draw (`Main.DrawNPCDirect`'s `case 392/393/394/395`,
+/// `Main.cs:24586-24612`): unlike the generic NPCs the saucers draw at the
+/// CENTRE with `origin = halfSize` (rotated by the core's inherited
+/// `npc.rotation`, so the whole family tilts as one body) and the turret's
+/// origin rides `halfSize + UnitY * -8` (its quad sits 8 px lower). The v1
+/// drew all four as unrotated box-size quads at the hitbox corner.
+fn saucer_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(90.0, |t| t.h / count as f32);
+    let fw = tex.map_or(120.0, |t| t.w);
+    let lift = if n.kind == NpcKind::MartianSaucerTurret {
+        8.0
+    } else {
+        0.0
+    };
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5 + lift],
     )
 }
 
@@ -985,81 +1054,43 @@ pub(crate) fn draw_npcs(
                     [n.x, n.y],
                 )
             }
-            // The martians: the 9-frame strips over the 18x40 frames (the
-            // walker's 8-frame 34x110 sheet rides NPC_520 —
-            // `Main.npcFrameCount[520]` = 8).
-            NpcKind::MartianOfficer
-            | NpcKind::GrayGrunt
-            | NpcKind::MartianEngineer
-            | NpcKind::GigaZapper => (
-                assets.martian_walkers.as_ref(),
-                assets.martian_walkers.as_ref().map_or(40.0, |t| t.h / 9.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
-            // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
-            NpcKind::MartianProbe => (
-                assets.martian_probe.as_ref(),
-                assets.martian_probe.as_ref().map_or(72.0, |t| t.h / 8.0),
-                [42.0, 72.0],
-                [n.x, n.y],
-            ),
+            // The martians: one sheet per kind at the generic anchor — the
+            // Officer's 9 rows of 46, the Grunt's 9 of 44, the Engineer's
+            // 11 of 46, the Gigazapper's 9 of 46 (`Main.npcFrameCount`,
+            // `Main.cs:67082`); the v1 shared NPC_383 across all four and
+            // drew the 18x40 box.
+            NpcKind::MartianOfficer => martian_draw(assets.martian_officer.as_ref(), 9, n, w, h),
+            NpcKind::GrayGrunt => martian_draw(assets.gray_grunt.as_ref(), 9, n, w, h),
+            NpcKind::MartianEngineer => {
+                martian_draw(assets.martian_engineer.as_ref(), 11, n, w, h)
+            }
+            NpcKind::GigaZapper => martian_draw(assets.gigazapper.as_ref(), 9, n, w, h),
+            // The probe: the 8-frame NPC_399 strip over the 42x72 frames
+            // (80-px rows — the v1's box-sized quad sliced the row).
+            NpcKind::MartianProbe => martian_draw(assets.martian_probe.as_ref(), 8, n, w, h),
             // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
-            NpcKind::MartianDrone => (
-                assets.martian_drone.as_ref(),
-                assets.martian_drone.as_ref().map_or(30.0, |t| t.h / 2.0),
-                [40.0, 30.0],
-                [n.x, n.y],
-            ),
-            // The shooters: the 9-frame NPC_382 strip over the 18x40
-            // frames (the 181/382 sheets are the shared humanoid shape).
-            NpcKind::BrainScrambler | NpcKind::RayGunner => (
-                assets.martian_shooters.as_ref(),
-                assets.martian_shooters.as_ref().map_or(40.0, |t| t.h / 9.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
+            NpcKind::MartianDrone => martian_draw(assets.martian_drone.as_ref(), 2, n, w, h),
+            // The shooters: `NPC_381`'s 9 rows of 48 / `NPC_382`'s 9 of 46.
+            NpcKind::BrainScrambler => {
+                martian_draw(assets.brain_scrambler.as_ref(), 9, n, w, h)
+            }
+            NpcKind::RayGunner => martian_draw(assets.ray_gunner.as_ref(), 9, n, w, h),
             // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
-            NpcKind::ScutlixRider => (
-                assets.scutlix_rider.as_ref(),
-                assets.scutlix_rider.as_ref().map_or(40.0, |t| t.h / 5.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
+            NpcKind::ScutlixRider => martian_draw(assets.scutlix_rider.as_ref(), 5, n, w, h),
             // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
-            NpcKind::Scutlix => (
-                assets.scutlix.as_ref(),
-                assets.scutlix.as_ref().map_or(40.0, |t| t.h / 6.0),
-                [60.0, 40.0],
-                [n.x, n.y],
-            ),
-            // The saucer family: the shell 4-frame (150x80), the turret
-            // 18-frame (40x16), the cannon 8-frame (46x36), the core
-            // 11-frame (120x90) strips.
-            NpcKind::MartianSaucer => (
-                assets.saucer.as_ref(),
-                assets.saucer.as_ref().map_or(80.0, |t| t.h / 4.0),
-                [150.0, 80.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MartianSaucerTurret => (
-                assets.saucer_turret.as_ref(),
-                assets.saucer_turret.as_ref().map_or(16.0, |t| t.h / 18.0),
-                [40.0, 16.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MartianSaucerCannon => (
-                assets.saucer_cannon.as_ref(),
-                assets.saucer_cannon.as_ref().map_or(36.0, |t| t.h / 8.0),
-                [46.0, 36.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MartianSaucerCore => (
-                assets.saucer_core.as_ref(),
-                assets.saucer_core.as_ref().map_or(90.0, |t| t.h / 11.0),
-                [120.0, 90.0],
-                [n.x, n.y],
-            ),
+            NpcKind::Scutlix => martian_draw(assets.scutlix.as_ref(), 6, n, w, h),
+            // The saucer family (`Main.cs:24586-24612`): every mount draws
+            // at the CENTRE rotated by the core's inherited rotation — the
+            // shell's 4 frames of 96, the turret's 18 of 32, the cannon's
+            // 8 of 34, the core's 11 of 40.
+            NpcKind::MartianSaucer => saucer_draw(assets.saucer.as_ref(), 4, n, w, h),
+            NpcKind::MartianSaucerTurret => {
+                saucer_draw(assets.saucer_turret.as_ref(), 18, n, w, h)
+            }
+            NpcKind::MartianSaucerCannon => {
+                saucer_draw(assets.saucer_cannon.as_ref(), 8, n, w, h)
+            }
+            NpcKind::MartianSaucerCore => saucer_draw(assets.saucer_core.as_ref(), 11, n, w, h),
             // The Dutchman: the 1-frame ship strip + the cannons'
             // 9-frame strip.
             NpcKind::FlyingDutchman => (
@@ -1134,6 +1165,13 @@ pub(crate) fn draw_npcs(
             NpcKind::AncientCultist => (
                 assets.cultist.as_ref(),
                 assets.cultist.as_ref().map_or(270.0, |t| t.h),
+                [130.0, 270.0],
+                [n.x, n.y],
+            ),
+            // The towers: the 1-frame NPC_493/507/517 strips.
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
+                assets.towers.as_ref(),
+                assets.towers.as_ref().map_or(270.0, |t| t.h),
                 [130.0, 270.0],
                 [n.x, n.y],
             ),
@@ -1579,11 +1617,20 @@ pub(crate) fn draw_npcs(
         // index in `npc.frame` decodes as column `cell / 5`, row
         // `cell % 5`, and the C#'s `spriteEffects ^ FlipHorizontally`
         // (Main.cs:26386) cancels the generic flip — the sheet faces
-        // RIGHT by default, so the flip rides `facing < 0`.
-        let uv = if n.kind == NpcKind::Deerclops {
-            flip_uv(deerclops_frame_uv(tex, n.frame()), n.facing < 0)
+        // RIGHT by default, so the flip rides `facing < 0`. The martians
+        // ride their own `spriteDirection` (`NPC.cs:6515`, read by
+        // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
+        // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
+        // `facing` cannot stand in for them.
+        let flip_dir = if n.kind.is_martian() {
+            n.sprite_dir
         } else {
-            flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0)
+            n.facing
+        };
+        let uv = if n.kind == NpcKind::Deerclops {
+            flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
+        } else {
+            flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };
         if n.rotation != 0.0
             && matches!(
@@ -1608,6 +1655,16 @@ pub(crate) fn draw_npcs(
                     | NpcKind::EaterOfWorldsHead
                     | NpcKind::EaterOfWorldsBody
                     | NpcKind::EaterOfWorldsTail
+                    // The saucer family (`Main.cs:24586-24612`) rotates
+                    // about its CENTRE (the `origin = halfSize` draw point
+                    // — the quad the anchors computed sits at that centre,
+                    // the turret's 8 px lower), and the drone rides the
+                    // velocity's folded rotation (`NPC.cs:35220-35229`).
+                    | NpcKind::MartianSaucer
+                    | NpcKind::MartianSaucerTurret
+                    | NpcKind::MartianSaucerCannon
+                    | NpcKind::MartianSaucerCore
+                    | NpcKind::MartianDrone
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -1617,7 +1674,11 @@ pub(crate) fn draw_npcs(
             // symmetric about the centre, so flipping does not move them —
             // rotate the quad about its centre, exactly like XNA does.
             let center = snap_to_screen(
-                [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5],
+                if n.kind.is_martian() {
+                    [n.x + w * 0.5, n.y + h * 0.5]
+                } else {
+                    [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5]
+                },
                 camera,
                 zoom,
                 screen,
