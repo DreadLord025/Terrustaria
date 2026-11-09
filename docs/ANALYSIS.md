@@ -3257,6 +3257,23 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Angler quest (M4-TOWN-15)
+
+The quest state lives on the statics in the C# (`Main.anglerQuest`,
+`anglerQuestFinished`, `anglerWhoFinishedToday`, `Player.anglerQuestsFinished`); the port
+carries the first three on the World (the name list collapses to the single-player
+`angler_quest_turned_in`) and the counter on the Player. Deliberate gaps, all documented in the
+row: the quest **chat text** (`Main.NPCChatText_DoAnglerQuest`'s `Lang.AnglerQuestChat` result and
+`NPC.GetChat`'s 369 dialog tree at `NPC.cs:94758-94760`) is not ported — the port has no NPC
+dialog UI; the reward's accessory filter scans the inventory only (the C# also walks the armor,
+the four banks and the three loadouts — the port has none); the price adjustment is pinned at
+1.0 (the vanilla reads `currentShoppingSettings.PriceAdjustment`, which the town roster's mood
+rows never change); the `crimson` gate reads `false` (the World carries no evil-kind field, so
+the corruption-side quest rows always re-roll exactly like a corruption world); the world-file
+save fields (`IO/WorldFile.cs:1329-1335`/`:2152-2166`) and the 74/75/76 messages land with
+M6-SAVE-1/M6-NET; the Sleeping Angler's world spawn rides the port's 2-second town cadence
+instead of the vanilla's `SpawnAnNPC` ladder position (same gates, same `Next(20)`).
+
 ## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
 
 The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks

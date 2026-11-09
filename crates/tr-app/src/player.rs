@@ -213,6 +213,10 @@ pub struct Player {
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
+    /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
+    /// milestone switch, `Player.cs:56323`).
+    pub angler_quests_finished: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
     /// The jump-input edge state for the dead-skip roll.
@@ -645,6 +649,7 @@ impl Player {
         Self {
             dead: false,
             deaths_pve: 0,
+            angler_quests_finished: 0,
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,

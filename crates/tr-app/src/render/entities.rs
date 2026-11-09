@@ -136,6 +136,10 @@ pub(crate) struct NpcAssets {
     pub(crate) clothier: Option<BgTex>,
     /// `NPC_368.xnb` — the Travelling Merchant sheet.
     pub(crate) travelling_merchant: Option<BgTex>,
+    /// `NPC_369.xnb` — the Angler's town sheet (23 rows, `Main.cs:67120`).
+    pub(crate) angler: Option<BgTex>,
+    /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
+    pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
@@ -274,6 +278,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
         travelling_merchant: sky_tex(atlas, "NPC_368", None),
+        angler: sky_tex(atlas, "NPC_369", None),
+        sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
@@ -928,6 +934,17 @@ pub(crate) fn draw_npcs(
                 n,
                 w,
                 h,
+            ),
+            // The Angler: the same humanoid shape over NPC_369 — 23 rows
+            // (`Main.npcFrameCount[369]`, `Main.cs:67120`).
+            NpcKind::Angler => humanoid_draw(assets.angler.as_ref(), 23, n, w, h),
+            // The Sleeping Angler: NPC_376's two rows over the flat 34x8
+            // body — the sheet is 40 wide, drawn centred on the box.
+            NpcKind::SleepingAngler => (
+                assets.sleeping_angler.as_ref(),
+                assets.sleeping_angler.as_ref().map_or(8.0, |t| t.h / 2.0),
+                [34.0, 8.0],
+                [n.x, n.y],
             ),
             // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
             NpcKind::EyeOfCthulhu => (

@@ -66,6 +66,11 @@ pub(crate) fn advance_time(
         } else {
             world.moon_phase + 1
         };
+        // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()`
+        // (`Main.cs:65373`) — the day's quest re-roll is the FIRST call
+        // in the C#'s StartDay; the port arms the request and the app
+        // pass rolls it (the clock carries no RNG).
+        world.angler_swap_pending = true;
         // `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`):
         // the smashed orb arms the goblin rolls; the `StartInvasion`
         // request resolves in the app pass (the players' gate).
