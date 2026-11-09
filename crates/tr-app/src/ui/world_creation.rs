@@ -755,7 +755,9 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     // the header records the draft's (`save.rs:61`'s `world.seed` write).
     world.seed = seed;
     let path = worlds_dir.join(format!("{name}.trwld"));
-    tr_core::save::save(&path, &world)?;
+    // A freshly generated world carries no chest records — the store rolls at
+    // `App::new` (`SaveChests`'s write-side twin lives on the autosave).
+    tr_core::save::save(&path, &world, &[])?;
     Ok(path)
 }
 

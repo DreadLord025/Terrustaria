@@ -30,6 +30,7 @@
 use crate::chest::WorldChest;
 use crate::item::{ItemSlot, EMPTY_SLOT};
 use crate::prefix;
+use tr_core::save::ChestRecord;
 use tr_core::world::World;
 use tr_core::tile::FLAG_ACTIVE;
 
@@ -762,9 +763,62 @@ fn doubled_hell_depth(world: &World, y: i32) -> bool {
     y > world.height - 205
 }
 
+/// M6-SAVE-1b: the save's v7 chest records (`save::load`, `SaveChests`'s
+/// write-side twin `WorldFile.cs:1606-1676`) as a seed store for
+/// [`merge_store`] — the load half of `App::save_world`'s record build.
+///
+/// The anchor cull is the vanilla `LoadChests` validity sweep
+/// (`WorldFile.cs:2723-2805`, `FixAgainstExploits`): a record survives only when
+/// its `(x, y)` is an active chest tile of kind 21/341 in the loaded world, so
+/// a hand-edited or stale save cannot resurrect a chest over plain air.
+///
+/// Deviation: the vanilla writes a fixed `maxItems` (40) slots per chest; the
+/// port keeps the store's implicit-air compression (trailing airs dropped,
+/// interior airs explicit) — `save::ChestRecord`'s documented shape, which the
+/// open path materializes into the 40-slot window anyway.
+pub(crate) fn store_from_records(
+    world: &World,
+    records: &[ChestRecord],
+) -> Vec<crate::chest::WorldChest> {
+    let mut out = Vec::with_capacity(records.len());
+    for rec in records {
+        // `FixAgainstExploits`'s tile read: an out-of-bounds, inactive or
+        // non-chest-tile anchor drops the record (the C# nulls the slot).
+        let Some(tile) = world.tile(rec.x, rec.y) else {
+            continue;
+        };
+        if !tile.active() || !CHEST_KINDS.contains(&tile.kind) {
+            continue;
+        }
+        let slots = rec
+            .slots
+            .iter()
+            .map(|item| {
+                if item.stack <= 0 {
+                    EMPTY_SLOT
+                } else {
+                    ItemSlot {
+                        kind: item.kind,
+                        // `Item.SetDefaults`'s registry name — the store's
+                        // items are registry-named (`chest::set_chest_slot`).
+                        name: crate::registry::name(item.kind),
+                        count: item.stack as u32,
+                        prefix: item.prefix as u16,
+                    }
+                }
+            })
+            .collect();
+        out.push(WorldChest {
+            tile: (rec.x, rec.y),
+            slots,
+        });
+    }
+    out
+}
+
 /// Merges the load-time roll with a pre-seeded store (the `TR_CHEST`
-/// fixture): the fixture's chests keep their slots, the roll's own anchors
-/// append after them.
+/// fixture, or M6-SAVE-1b's loaded records): the seeded chests keep their
+/// slots, the roll's own anchors append after them.
 pub(crate) fn merge_store(mut rolled: Vec<crate::chest::WorldChest>, seeded: Vec<crate::chest::WorldChest>) -> Vec<crate::chest::WorldChest> {
     let taken: std::collections::HashSet<(i32, i32)> =
         seeded.iter().map(|c| c.tile).collect();
