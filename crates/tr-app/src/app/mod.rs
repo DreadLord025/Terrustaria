@@ -1759,6 +1759,9 @@ impl App {
                         "solar" => NpcKind::SolarTower,
                         "vortex" => NpcKind::VortexTower,
                         "cultist" => NpcKind::AncientCultist,
+                        // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
+                        // and the shared case-4 machine with the Twins.
+                        "eoc" => NpcKind::EyeOfCthulhu,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
