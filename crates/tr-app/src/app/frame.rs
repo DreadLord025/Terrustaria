@@ -1401,6 +1401,23 @@ impl App {
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
                 }
+                // `UIAchievementsMenu` (`Main.cs:48931`'s menuMode 888 +
+                // `MenuUI.SetState(Main.AchievementsMenu)`): the state draws
+                // over whatever the frame rendered — the menu's world
+                // backdrop here, the world itself in the fancy-UI arm. Its
+                // `OnActivate` picks the container's Top by `Main.gameMenu`.
+                if self.achievements_open {
+                    ui::achievements::draw_screen(
+                        renderer,
+                        lookups,
+                        screen,
+                        &self.achievements,
+                        self.achievements_scroll,
+                        &self.achievements_categories,
+                        self.mouse_pos,
+                        menu.is_some(),
+                    );
+                }
                 // Task 6b: upload the revealed tiles into the world-sized map texture
                 // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                 // and the minimap on the view centre (`Main.cs:55420-55421`,

@@ -1,51 +1,137 @@
 //! The achievements framework — `Achievement` = a named condition set
-//! (`Achievement.cs:11-120`), the manager registry (`AchievementManager`)
-//! and the `AchievementsHelper` reporting surface (`GameContent/Achievements/`).
+//! (`Achievement.cs:11-120`), the manager registry (`AchievementManager`) and
+//! the `AchievementsHelper` reporting surface
+//! (`GameContent/Achievements/AchievementsHelper.cs`).
 //!
-//! The port registers the subset whose conditions its systems can fire (the
-//! slime-family kills, the wood/ore pickups, the ore mining, the workbench
-//! craft and the mine counter); the vanilla save is Rijndael+BSON
-//! (`AchievementManager.cs:66-79`) — the port writes its own text format at
-//! `achievements.trdat` (documented deviation: touching a real
-//! `achievements.dat` would corrupt the vanilla install).
+//! The registry is the **full 137-row** `AchievementInitializer.Load`
+//! (`Initializers/AchievementInitializer.cs:13-441`): every
+//! `new Achievement("NAME")` block with its `AddCondition` calls, then the
+//! `RegisterIconIndex` pass (`:445-582`, the icon frame each row draws from
+//! `Images/UI/Achievements`), the `RegisterAchievementCategory` pass
+//! (`:584-736`, the filter buttons) and the `UseTracker*` flags. The table
+//! itself lives in [`crate::achievements_data`]; this module is the runtime.
+//!
+//! `ui::achievements` draws the menu (`UIAchievementsMenu` + its
+//! `UIAchievementListItem` rows) on top of this registry.
+//!
+//! The vanilla save is Rijndael-CBC+BSON with the "RELOGIC-TERRARIA" key
+//! (`AchievementManager.cs:40-79`); the port writes its own text format at
+//! `achievements.trdat` (documented deviation: writing the vanilla format
+//! would touch a real install's `achievements.dat`).
 
 use std::path::Path;
 
-/// `AchievementCategory.cs`.
+pub use crate::achievements_data::{Cond, Row, Tracker, ROWS};
+use crate::achievements_data::ROWS as REGISTRY;
+
+/// `AchievementCategory.cs` — `None = -1` is the secret row
+/// (`GAIN_TORCH_GODS_FAVOR`, which `AchievementInitializer` never passes to
+/// `RegisterAchievementCategory`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
+    None,
     Slayer,
     Collector,
     Explorer,
     Challenger,
 }
 
+impl Category {
+    /// The four toggle buttons, in `UIToggleImage` order
+    /// (`UIAchievementsMenu.cs`'s `_categoryButtons` loop, `j = 0..3`):
+    /// Slayer, Collector, Explorer, Challenger.
+    pub const FILTERS: [Category; 4] = [
+        Category::Slayer,
+        Category::Collector,
+        Category::Explorer,
+        Category::Challenger,
+    ];
+
+    /// The tooltip key of the category button
+    /// (`UIAchievementsMenu.Draw`'s switch): `Achievements.SlayerCategory` …
+    pub fn tooltip_key(self) -> &'static str {
+        match self {
+            Category::None => "Achievements.NoCategory",
+            Category::Slayer => "Achievements.SlayerCategory",
+            Category::Collector => "Achievements.CollectorCategory",
+            Category::Explorer => "Achievements.ExplorerCategory",
+            Category::Challenger => "Achievements.ChallengerCategory",
+        }
+    }
+
+    /// `(int)Category` — the icon frame column of
+    /// `Achievement_Categories.Frame(4, 2, …)` and the filter-button index.
+    pub fn index(self) -> i32 {
+        match self {
+            Category::None => -1,
+            Category::Slayer => 0,
+            Category::Collector => 1,
+            Category::Explorer => 2,
+            Category::Challenger => 3,
+        }
+    }
+
+    /// `(AchievementCategory)index` (the `FilterList` cast, clamped to the
+    /// enum's range so a stray id reads as `None`).
+    pub fn from_index(index: usize) -> Category {
+        match index {
+            0 => Category::Slayer,
+            1 => Category::Collector,
+            2 => Category::Explorer,
+            3 => Category::Challenger,
+            _ => Category::None,
+        }
+    }
+}
+
 /// What one condition listens for — the `AchievementsHelper.Notify*` family
 /// narrowed to the ported systems.
+///
+/// A single vanilla condition can list **many** ids and completes on any of
+/// them (`NPCKilledCondition.Create(13, 14, 15)` is one condition named
+/// `NPC_KILLED_13`, `NPCKilledCondition.cs:20-30`), so the single-id variants
+/// are the event shape and the `…Any` variants carry the initializer's
+/// multi-id rows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CondKind {
-    /// `NPCKilledCondition` — the NPC net id (`NPCKilledCondition.cs`).
+    /// `NPCKilledCondition` — the NPC net id.
     NpcKilled(i32),
+    /// The multi-id `NPCKilledCondition(params short[])`.
+    NpcKilledAny(&'static [i32]),
     /// `ItemPickupCondition` — the item id.
     ItemPickup(u16),
+    /// The multi-id `ItemPickupCondition(params short[])`.
+    ItemPickupAny(&'static [u16]),
     /// `TileDestroyedCondition` — the tile kind.
     TileDestroyed(u16),
-    /// `ItemCraftCondition` — the crafted-anything-at-a-station shape the
-    /// port's recipes use.
-    ItemCraft,
+    /// The multi-id `TileDestroyedCondition(params short[])`.
+    TileDestroyedAny(&'static [u16]),
+    /// `ItemCraftCondition` — the crafted id (the port's craft event shape;
+    /// vanilla's condition class reuses the `ITEM_PICKUP_` name prefix,
+    /// `ItemCraftCondition.cs:8`).
+    ItemCraft(u16),
+    /// The multi-id `ItemCraftCondition(params short[])` — e.g. the
+    /// `ItemID.Sets.Workbenches` set of `BENCHED`.
+    ItemCraftAny(&'static [u16]),
+    /// `ProgressionEventCondition` — the `Main._progressionEvent` id.
+    ProgressionEvent(u32),
     /// `CustomFlagCondition` — the named flag (`Peek`/`Use`/`Equip`/…).
     Custom(&'static str),
-    /// `CustomIntCondition` — a counted condition with its max
-    /// (`CustomIntCondition.cs`; `UseTrackerFromCondition` rides the value).
+    /// `CustomIntCondition` — a counted condition with its max.
     CustomInt(&'static str, i32),
+    /// `CustomFloatCondition` — the float tracker, stored as its whole value
+    /// (every shipped row's max is integral: 10000f, 1106688f).
+    CustomFloat(&'static str, i32),
 }
 
 /// One `AchievementCondition`: the listener kind plus the tracker state
 /// (`Completed` + the int tracker's value, `AchievementCondition.cs:9-45`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Condition {
-    /// The condition's dictionary key (`"Kill"`, `"Pick"`, `"Craft"`, …).
-    pub name: &'static str,
+    /// The condition's dictionary key (`NPC_KILLED_4`, `ITEM_PICKUP_9`,
+    /// `TILE_DESTROYED_12`, `PROGRESSION_EVENT_8`, `Pick`, `Use`, …) — the
+    /// vanilla `AchievementCondition.Name`, which the save file keys on.
+    pub name: String,
     pub kind: CondKind,
     /// The int tracker's progress (`ConditionIntTracker.Value`).
     pub value: i32,
@@ -57,9 +143,9 @@ pub struct Condition {
 }
 
 impl Condition {
-    fn new(name: &'static str, kind: CondKind) -> Self {
+    fn new(name: String, kind: CondKind) -> Self {
         let max = match kind {
-            CondKind::CustomInt(_, max) => max.max(1),
+            CondKind::CustomInt(_, max) | CondKind::CustomFloat(_, max) => max.max(1),
             _ => 1,
         };
         Self {
@@ -72,27 +158,104 @@ impl Condition {
     }
 }
 
-/// `Achievement` (`Achievement.cs:11-120`): complete when every condition is.
+/// `Achievement` (`Achievement.cs:11-120`): complete when every condition is
+/// (`IsCompleted => _completedCount == _conditions.Count` — so the zero-condition
+/// `STAR_DESTROYER` row is complete from the start, exactly as vanilla).
 #[derive(Clone, Debug)]
 pub struct Achievement {
     pub name: &'static str,
+    /// `Achievement.Id` — the construction-order index the list sorts by
+    /// (`UIAchievementListItem.CompareTo`).
+    pub id: u16,
     pub category: Category,
+    /// `RegisterIconIndex`'s value: the 64 px icon's index on the
+    /// 8-per-row `Images/UI/Achievements` sheet (the locked copy rides
+    /// +528 px, `UIAchievementListItem`'s `_iconFrameLocked`).
+    pub icon: u16,
     pub conditions: Vec<Condition>,
+    /// `Achievement._tracker` — `UseTrackerFromCondition` /
+    /// `UseConditionsCompletedTracker`.
+    pub tracker: Option<Tracker>,
     pub completed: bool,
 }
 
 impl Achievement {
-    fn new(name: &'static str, category: Category, conditions: Vec<Condition>) -> Self {
+    fn from_row(row: &Row, id: u16) -> Self {
         Self {
-            name,
-            category,
-            conditions,
+            name: row.name,
+            id,
+            category: row.category,
+            icon: row.icon,
+            conditions: row.conditions.iter().map(Condition::from).collect(),
+            tracker: row.tracker,
             completed: false,
         }
     }
 
     fn is_completed(&self) -> bool {
         self.conditions.iter().all(|c| c.completed)
+    }
+
+    /// `UIAchievementListItem.GetTrackerValues` — `(value, max)` when the row
+    /// carries a tracker, else the UI's `(0, 0)` (no progress bar).
+    pub fn tracker_values(&self) -> Option<(i32, i32)> {
+        match self.tracker {
+            Some(Tracker::ConditionsCompleted) => {
+                let done = self.conditions.iter().filter(|c| c.completed).count() as i32;
+                Some((done, self.conditions.len() as i32))
+            }
+            Some(Tracker::FromCondition(name)) => self
+                .conditions
+                .iter()
+                .find(|c| c.name == name)
+                .map(|c| (c.value, c.max)),
+            None => None,
+        }
+    }
+}
+
+impl Condition {
+    /// The initializer's `AddCondition` shape into the runtime condition,
+    /// keeping vanilla's `AchievementCondition.Name` keys.
+    fn from(cond: &Cond) -> Self {
+        let (kind, name) = match *cond {
+            Cond::Npc(id) => (CondKind::NpcKilled(id), format!("NPC_KILLED_{id}")),
+            Cond::Npcs(ids) => (
+                CondKind::NpcKilledAny(ids),
+                format!("NPC_KILLED_{}", ids[0]),
+            ),
+            Cond::Item(id) => (CondKind::ItemPickup(id), format!("ITEM_PICKUP_{id}")),
+            Cond::Items(ids) => (
+                CondKind::ItemPickupAny(ids),
+                format!("ITEM_PICKUP_{}", ids[0]),
+            ),
+            Cond::Tile(id) => (
+                CondKind::TileDestroyed(id),
+                format!("TILE_DESTROYED_{id}"),
+            ),
+            Cond::Tiles(ids) => (
+                CondKind::TileDestroyedAny(ids),
+                format!("TILE_DESTROYED_{}", ids[0]),
+            ),
+            // `ItemCraftCondition` names its conditions with the
+            // `ITEM_PICKUP_` prefix (`ItemCraftCondition.cs:8`).
+            Cond::Craft(id) => (
+                CondKind::ItemCraft(id),
+                format!("ITEM_PICKUP_{id}"),
+            ),
+            Cond::Crafts(ids) => (
+                CondKind::ItemCraftAny(ids),
+                format!("ITEM_PICKUP_{}", ids[0]),
+            ),
+            Cond::Progression(id) => (
+                CondKind::ProgressionEvent(id),
+                format!("PROGRESSION_EVENT_{id}"),
+            ),
+            Cond::Flag(flag) => (CondKind::Custom(flag), flag.to_string()),
+            Cond::Int(name, max) => (CondKind::CustomInt(name, max), name.to_string()),
+            Cond::Float(name, max) => (CondKind::CustomFloat(name, max), name.to_string()),
+        };
+        Condition::new(name, kind)
     }
 }
 
@@ -103,69 +266,17 @@ pub struct AchievementManager {
 }
 
 impl AchievementManager {
-    /// The ported subset of `AchievementInitializer.Load` (`:13-…`): the
-    /// achievements whose conditions the ported systems can fire. Each entry
-    /// cites its initializer block.
-    pub fn ported() -> Self {
-        let list = vec![
-            // `:14-18` — TIMBER: any wood pickup.
-            Achievement::new(
-                "TIMBER",
-                Category::Collector,
-                vec![Condition::new(
-                    "Pick",
-                    CondKind::ItemPickup(9),
-                )],
-            ),
-            // `:19-23` — BENCHED: craft at a workbench
-            // (`ItemCraftCondition.Create(ItemID.Sets.Workbenches)` — the
-            // port's recipes gate on the same adjacency).
-            Achievement::new(
-                "BENCHED",
-                Category::Collector,
-                vec![Condition::new("Craft", CondKind::ItemCraft)],
-            ),
-            // `:28-33` — OOO_SHINY: destroy any ore tile (the ported set:
-            // copper 7 / iron 6 / silver 9 / gold 8).
-            Achievement::new(
-                "OOO_SHINY",
-                Category::Explorer,
-                vec![Condition::new("Destroy", CondKind::TileDestroyed(7))],
-            ),
-            // `:199-204` — BULLDOZER: 10000 tiles destroyed
-            // (`CustomIntCondition.Create("Pick", 10000)` +
-            // `UseTrackerFromCondition("Pick")`).
-            Achievement::new(
-                "BULLDOZER",
-                Category::Explorer,
-                vec![Condition::new(
-                    "Pick",
-                    CondKind::CustomInt("Pick", 10000),
-                )],
-            ),
-            // `:189-193` — GELATIN_WORLD_TOUR: kill one of each slime kind
-            // (`CreateMany(-5, -6, 1, …)` + `Create(-4)` +
-            // `UseConditionsCompletedTracker()`); the port's family covers
-            // the blue/green/pinky/baby/black/purple/red/yellow ids.
-            Achievement::new(
-                "GELATIN_WORLD_TOUR",
-                Category::Slayer,
-                [
-                    (-5, "Kill0"),
-                    (-6, "Kill1"),
-                    (1, "Kill2"),
-                    (-3, "Kill3"),
-                    (-7, "Kill4"),
-                    (-8, "Kill5"),
-                    (-9, "Kill6"),
-                    (-4, "Kill7"),
-                ]
-                .into_iter()
-                .map(|(net, name)| Condition::new(name, CondKind::NpcKilled(net)))
+    /// `AchievementInitializer.Load` — the full registry in construction
+    /// order (`CreateAchievementsList`'s `_achievements.Values`, which
+    /// preserves insertion).
+    pub fn registry() -> Self {
+        Self {
+            list: REGISTRY
+                .iter()
+                .enumerate()
+                .map(|(id, row)| Achievement::from_row(row, id as u16))
                 .collect(),
-            ),
-        ];
-        Self { list }
+        }
     }
 
     /// `AchievementManager.Register`'s completion event shape — the caller
@@ -195,6 +306,34 @@ impl AchievementManager {
         done
     }
 
+    /// `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the crafted
+    /// item's id rides the event, so `BENCHED`'s workbench set matches on the
+    /// crafted item rather than on any craft.
+    pub fn notify_craft(&mut self, item: u16) -> Option<&'static str> {
+        self.notify(CondKind::ItemCraft(item))
+    }
+
+    /// `RegisterIconIndex`'s table (`:445-582`) by name.
+    pub fn icon_index(name: &str) -> Option<u16> {
+        REGISTRY
+            .iter()
+            .find(|r| r.name == name)
+            .map(|r| r.icon)
+    }
+
+    /// `CreateAchievementsList` + `UIAchievementListItem.CompareTo`: the
+    /// completed rows first (registration order), then the open ones.
+    pub fn sorted_indices(&self) -> Vec<usize> {
+        let mut idx: Vec<usize> = (0..self.list.len()).collect();
+        idx.sort_by(|&a, &b| {
+            let (x, y) = (&self.list[a], &self.list[b]);
+            y.completed
+                .cmp(&x.completed)
+                .then_with(|| x.id.cmp(&y.id))
+        });
+        idx
+    }
+
     /// `Load` (`AchievementManager.cs:86-108` shape): the saved condition
     /// states overwrite, the completed flags follow the conditions.
     pub fn load_pairs(&mut self, rows: impl Iterator<Item = (String, Vec<(String, i32, bool)>)>) {
@@ -213,7 +352,7 @@ impl AchievementManager {
     }
 
     /// The save rows — `(achievement name, [(condition name, value, completed)])`.
-    pub fn save_rows(&self) -> Vec<(&'static str, Vec<(&'static str, i32, bool)>)> {
+    pub fn save_rows(&self) -> Vec<(&'static str, Vec<(&str, i32, bool)>)> {
         self.list
             .iter()
             .map(|a| {
@@ -221,7 +360,7 @@ impl AchievementManager {
                     a.name,
                     a.conditions
                         .iter()
-                        .map(|c| (c.name, c.value, c.completed))
+                        .map(|c| (c.name.as_str(), c.value, c.completed))
                         .collect(),
                 )
             })
@@ -230,19 +369,26 @@ impl AchievementManager {
 }
 
 fn matches_kind(stored: CondKind, event: CondKind) -> bool {
+    use CondKind::*;
     match (stored, event) {
-        (CondKind::NpcKilled(a), CondKind::NpcKilled(b)) => a == b,
-        (CondKind::ItemPickup(a), CondKind::ItemPickup(b)) => a == b,
-        (CondKind::TileDestroyed(a), CondKind::TileDestroyed(b)) => a == b,
-        (CondKind::ItemCraft, CondKind::ItemCraft) => true,
-        (CondKind::Custom(a), CondKind::Custom(b)) => a == b,
-        (CondKind::CustomInt(a, _), CondKind::CustomInt(b, _)) => a == b,
+        (NpcKilled(a), NpcKilled(b)) => a == b,
+        (NpcKilledAny(ids), NpcKilled(b)) => ids.contains(&b),
+        (ItemPickup(a), ItemPickup(b)) => a == b,
+        (ItemPickupAny(ids), ItemPickup(b)) => ids.contains(&b),
+        (TileDestroyed(a), TileDestroyed(b)) => a == b,
+        (TileDestroyedAny(ids), TileDestroyed(b)) => ids.contains(&b),
+        (ItemCraft(a), ItemCraft(b)) => a == b,
+        (ItemCraftAny(ids), ItemCraft(b)) => ids.contains(&b),
+        (ProgressionEvent(a), ProgressionEvent(b)) => a == b,
+        (Custom(a), Custom(b)) => a == b,
+        (CustomInt(a, _), CustomInt(b, _)) => a == b,
+        (CustomFloat(a, _), CustomFloat(b, _)) => a == b,
         _ => false,
     }
 }
 
-/// `AchievementManager.Save`/`Load` narrowed to the port's text format —
-/// the vanilla file is Rijndael-CBC+BSON with the "RELOGIC-TERRARIA" key
+/// `AchievementManager.Save`/`Load` narrowed to the port's text format — the
+/// vanilla file is Rijndael-CBC+BSON with the "RELOGIC-TERRARIA" key
 /// (`AchievementManager.cs:40-79`); the port writes
 /// `Terrustaria/achievements.trdat` (the deviation keeps the vanilla
 /// install's real file untouched).
@@ -289,49 +435,134 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_ported_registry_completes_through_events() {
-        // GELATIN_WORLD_TOUR completes only after every slime family member
-        // dies once; TIMBER completes on the first wood pickup.
-        let mut m = AchievementManager::ported();
-        assert_eq!(m.list.len(), 5);
-        for net in [-5i32, -6, 1, -3, -7, -8, -9] {
-            assert_eq!(m.notify(CondKind::NpcKilled(net)), None);
+    fn the_registry_is_the_initializers_full_table() {
+        let m = AchievementManager::registry();
+        // 137 `new Achievement` blocks (`AchievementInitializer.cs:13-441`).
+        assert_eq!(m.list.len(), 137);
+        // `RegisterIconIndex` covers 0..136, one per row.
+        let mut icons: Vec<u16> = m.list.iter().map(|a| a.icon).collect();
+        icons.sort_unstable();
+        assert_eq!(icons, (0..137).collect::<Vec<u16>>());
+        // The category pass leaves exactly one row uncategorised.
+        assert_eq!(
+            m.list
+                .iter()
+                .filter(|a| a.category == Category::None)
+                .count(),
+            1
+        );
+        assert_eq!(
+            m.list
+                .iter()
+                .find(|a| a.category == Category::None)
+                .map(|a| a.name),
+            Some("GAIN_TORCH_GODS_FAVOR")
+        );
+    }
+
+    #[test]
+    fn every_row_carries_a_distinct_condition_key() {
+        let m = AchievementManager::registry();
+        for a in &m.list {
+            let mut names: Vec<&str> = a.conditions.iter().map(|c| c.name.as_str()).collect();
+            let total = names.len();
+            names.sort_unstable();
+            names.dedup();
+            // `Achievement._conditions` is a dictionary keyed by Name — a
+            // duplicate would drop a condition.
+            assert_eq!(names.len(), total, "{}", a.name);
         }
-        // The Pinky (last condition) closes GELATIN_WORLD_TOUR.
-        assert_eq!(m.notify(CondKind::NpcKilled(-4)), Some("GELATIN_WORLD_TOUR"));
-        assert_eq!(m.notify(CondKind::ItemPickup(9)), Some("TIMBER"));
-        assert_eq!(m.notify(CondKind::ItemCraft), Some("BENCHED"));
-        assert_eq!(m.notify(CondKind::TileDestroyed(7)), Some("OOO_SHINY"));
-        // BULLDOZER needs 10000 — one event leaves it open.
-        assert_eq!(m.notify(CondKind::CustomInt("Pick", 10000)), None);
-        assert!(!m
-            .list
-            .iter()
-            .find(|a| a.name == "BULLDOZER")
-            .unwrap()
-            .completed);
+    }
+
+    #[test]
+    fn the_trackers_report_the_ports_progress() {
+        let mut m = AchievementManager::registry();
+        // BULLDOZER rides `UseTrackerFromCondition("Pick")` — the counter is
+        // the condition's own value.
+        m.notify(CondKind::CustomInt("Pick", 10000));
+        let b = m.list.iter().find(|a| a.name == "BULLDOZER").unwrap();
+        assert_eq!(b.tracker_values(), Some((1, 10000)));
+        // SLAYER_OF_WORLDS rides the conditions-completed tracker: three
+        // `Any` conditions, one kill closes the first.
+        m.notify(CondKind::NpcKilled(13));
+        let s = m.list.iter().find(|a| a.name == "SLAYER_OF_WORLDS").unwrap();
+        assert_eq!(s.tracker_values(), Some((1, 3)));
+    }
+
+    #[test]
+    fn the_multi_id_condition_completes_on_any_listed_id() {
+        let mut m = AchievementManager::registry();
+        // `NPCKilledCondition.Create(13, 14, 15)` is ONE condition
+        // (`NPCKilledCondition.cs:20-30`) — the Eater of Souls kill closes it.
+        assert_eq!(m.notify(CondKind::NpcKilled(14)), Some("WORM_FODDER"));
+        // TIMBER's ten-wood set likewise opens on any listed wood.
+        assert_eq!(m.notify(CondKind::ItemPickup(619)), Some("TIMBER"));
+        // OOO_SHINY's tile set: any listed ore.
+        assert_eq!(m.notify(CondKind::TileDestroyed(169)), Some("OOO_SHINY"));
+        // BENCHED only opens on a workbench craft, not on any craft.
+        assert_eq!(m.notify_craft(35), None);
+        assert_eq!(m.notify_craft(36), Some("BENCHED"));
+    }
+
+    #[test]
+    fn the_sorted_list_puts_completed_rows_first() {
+        let mut m = AchievementManager::registry();
+        m.notify(CondKind::NpcKilled(4)); // EYE_ON_YOU, id 9, icon 9
+        let order = m.sorted_indices();
+        let names: Vec<&str> = order.iter().map(|&i| m.list[i].name).collect();
+        assert_eq!(names[0], "EYE_ON_YOU");
+        // The rest keep registration order (`CompareTo`'s id tiebreak).
+        assert_eq!(names[1], "TIMBER");
+        assert_eq!(names[2], "BENCHED");
+    }
+
+    #[test]
+    fn the_ported_hooks_still_complete_their_rows() {
+        // GELATIN_WORLD_TOUR's tracker shape from the initializer: the
+        // three gel net ids with the conditions-completed tracker.
+        let mut m = AchievementManager::registry();
+        assert_eq!(m.notify(CondKind::NpcKilled(-25)), Some("GELATIN_WORLD_TOUR"));
+        // DUNGEON_HEIST needs both of its conditions.
+        let mut d = m.list.iter_mut().find(|a| a.name == "DUNGEON_HEIST").unwrap();
+        assert!(!d.completed);
+        m.notify(CondKind::ItemPickup(327));
+        assert!(!m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
+        m.notify(CondKind::ProgressionEvent(19));
+        assert!(m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
     }
 
     #[test]
     fn the_save_round_trips_the_condition_state() {
-        let mut m = AchievementManager::ported();
-        m.notify(CondKind::NpcKilled(1));
+        let mut m = AchievementManager::registry();
+        // An Eater of Worlds head closes one of SLAYER_OF_WORLDS' three
+        // conditions, a wood pickup closes TIMBER's ten-item row.
+        m.notify(CondKind::NpcKilled(13));
         m.notify(CondKind::ItemPickup(9));
         let path = std::env::temp_dir().join("tr-ach-test.trdat");
         save(&path, &m).unwrap();
-        let mut fresh = AchievementManager::ported();
+        let mut fresh = AchievementManager::registry();
         load(&path, &mut fresh);
         let timber = fresh.list.iter().find(|a| a.name == "TIMBER").unwrap();
         assert!(timber.completed);
-        let gel = fresh.list.iter().find(|a| a.name == "GELATIN_WORLD_TOUR").unwrap();
-        assert!(!gel.completed);
+        let slayer = fresh
+            .list
+            .iter()
+            .find(|a| a.name == "SLAYER_OF_WORLDS")
+            .unwrap();
+        // One of three conditions rode the save, so the row stays open.
+        assert!(!slayer.completed);
+        assert_eq!(slayer.conditions[0].completed, true);
+        assert_eq!(slayer.conditions[1].completed, false);
+        // Big Booty's `PROGRESSION_EVENT_20` row round-tripped untouched.
         assert_eq!(
-            gel.conditions
+            fresh
+                .list
                 .iter()
-                .find(|c| matches!(c.kind, CondKind::NpcKilled(1)))
+                .find(|a| a.name == "BIG_BOOTY")
                 .unwrap()
+                .conditions[0]
                 .completed,
-            true
+            false
         );
         std::fs::remove_file(&path).unwrap();
     }

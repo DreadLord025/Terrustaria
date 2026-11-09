@@ -5,6 +5,7 @@ mod ammo;
 mod app;
 mod assets;
 mod achievements;
+mod achievements_data;
 mod audio;
 mod bank;
 mod banners;

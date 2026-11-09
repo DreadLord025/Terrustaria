@@ -199,10 +199,10 @@ impl Menu {
             // `UI.Credits`, `Lang.menu[15]` (`Main.cs:48908-48971`).
             Item::new(crate::lang::menu(12), Act::Out(Action::Singleplayer)),
             Item::new(crate::lang::menu(13), Act::Nav(Page::Multiplayer)),
-            Item::new(
-                crate::lang::menu(131),
-                Act::Hint("Achievements are not ported yet"),
-            ),
+            // `Lang.menu[131]` (`Main.cs:48928-48935`): `menuMode = 888`,
+            // `Main.MenuUI.SetState(Main.AchievementsMenu)` — the
+            // achievements menu overlay (M6-ACH-2).
+            Item::new(crate::lang::menu(131), Act::Out(Action::Achievements)),
             Item::new(
                 crate::lang::text("UI.ResourcePacks"),
                 Act::Hint("Resource packs are not ported yet"),

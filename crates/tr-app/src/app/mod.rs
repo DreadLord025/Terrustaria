@@ -204,8 +204,18 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
-    /// `Main.Achievements` — the achievement registry (M6-ACH-1).
+    /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
+    /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
+    /// `UIAchievementsMenu`'s port (M6-ACH-2): the overlay state over the
+    /// menu/world backdrop, opened from `Lang.menu[131]` (`Main.cs:48931`)
+    /// or `TR_ACHIEVEMENTS=1`.
+    pub(crate) achievements_open: bool,
+    /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
+    pub(crate) achievements_scroll: f32,
+    /// The four category toggles, all on at `OnActivate`
+    /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
+    pub(crate) achievements_categories: [bool; 4],
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -1423,7 +1433,7 @@ impl App {
         // The achievement condition states, restored from the port's own
         // `achievements.trdat` (the Rijndael+BSON vanilla format is the
         // documented M6-ACH-1 deviation).
-        let mut loaded_achievements = achievements::AchievementManager::ported();
+        let mut loaded_achievements = achievements::AchievementManager::registry();
         if let Some(path) = tr_core::save::achievements_path() {
             achievements::load(&path, &mut loaded_achievements);
         }
@@ -2115,6 +2125,17 @@ impl App {
             achievements: {
                 // The condition states load below (the sidecar block).
                 loaded_achievements
+            },
+            // `UIAchievementsMenu`'s overlay state (M6-ACH-2):
+            // `TR_ACHIEVEMENTS` opens it for the screenshot runs, the
+            // categories all start on (`InitializePage`'s `SetState(true)`).
+            achievements_open: crate::env::achievements_open(),
+            achievements_scroll: 0.0,
+            // The filter bits default to all-on (`SetState(value: true)`);
+            // a shot run can pin a single category through the bitmask.
+            achievements_categories: {
+                let mask = crate::env::achievements_categories().unwrap_or(0xF);
+                [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
             },
             emotes: {
                 // `TR_EMOTES` opens the wheel for the screenshot runs.

@@ -481,6 +481,16 @@ pub fn load_world_images(
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
+        // The achievements menu (`UIAchievementsMenu.cs`): the 8-per-row
+        // 64 px icon sheet (the locked copy rides +528 px), the icon border,
+        // the name/description inner-panel splices (the `_Large` bottom for
+        // `largeForOtherLanguages = true`) and the four category frames.
+        "UI/Achievements",
+        "UI/Achievement_Borders",
+        "UI/Achievement_InnerPanelTop",
+        "UI/Achievement_InnerPanelBottom",
+        "UI/Achievement_InnerPanelBottom_Large",
+        "UI/Achievement_Categories",
         // P4 minimap chrome (`MinimapFrameTemplate.cs:30-35`) — 9 styles x 4 sheets.
         "UI/Minimap/Default/MinimapFrame",
         "UI/Minimap/Default/MinimapButton_Reset",
@@ -1260,6 +1270,22 @@ pub struct Lookups {
     pub bestiary_npc_sheets: Vec<Option<tr_render::SheetRect>>,
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
+    /// `UI/Achievements`: the 8-per-row 64 px icons (index
+    /// `RegisterIconIndex`), the locked column at +528 px
+    /// (`UIAchievementListItem._iconFrameLocked`).
+    pub ach_icons: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_Borders`: the icon's frame, drawn 4 px out on both axes.
+    pub ach_borders: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelTop`: the 2/2/2 px splices behind the name.
+    pub ach_inner_top: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelBottom`: the 6/7/6 px splices behind the
+    /// description (the large variant wins while `_large`).
+    pub ach_inner_bottom: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelBottom_Large`.
+    pub ach_inner_bottom_large: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_Categories`: the four 32 px category frames at a
+    /// 34 px stride, off row 0 / on row 34.
+    pub ach_categories: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
@@ -1626,6 +1652,12 @@ impl Lookups {
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
+            ach_icons: atlas.sheet("UI/Achievements").copied(),
+            ach_borders: atlas.sheet("UI/Achievement_Borders").copied(),
+            ach_inner_top: atlas.sheet("UI/Achievement_InnerPanelTop").copied(),
+            ach_inner_bottom: atlas.sheet("UI/Achievement_InnerPanelBottom").copied(),
+            ach_inner_bottom_large: atlas.sheet("UI/Achievement_InnerPanelBottom_Large").copied(),
+            ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
