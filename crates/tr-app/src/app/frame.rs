@@ -1169,6 +1169,14 @@ impl App {
                 // nothing (out of P4 scope, the whole-UI P4 plan's
                 // Uncertainty 7).
                 let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
+                // `Main.MapScale` (`Main.cs:67297`, clamp `Main.cs:4494`): the
+                // minimap anchor and the whole panel's render scale, through the
+                // `Matrix.CreateScale(Main.MapScale)` batch transform
+                // (`Main.cs:55309-55329`). The full map keeps
+                // `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f
+                // `:66756`) and the zoom axis `Main.mapMinimapScale` is a
+                // separate multiplier (`Main.cs:55515-55522`).
+                let map_scale = settings.map_scale;
                 if settings.map_enabled
                     && menu.is_none()
                     && front.is_none()
@@ -1181,11 +1189,12 @@ impl App {
                     && self.map_style == 1
                 {
                     if let Some(m) = map.as_ref() {
-                        let pos =
-                            ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
+                        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
+                            screen, map_scale,
+                        ));
                         // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                        ui::minimap::draw_background(renderer, lookups, pos, 1.0);
-                        m.draw_minimap(renderer, world, screen, view_center);
+                        ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
+                        m.draw_minimap(renderer, world, screen, view_center, map_scale);
                         // The hover highlight is `MinimapFrame.Update`'s
                         // `buttonUnderMouse.IsHighlighted`
                         // (`MinimapFrame.cs:163`), resolved per frame in
@@ -1193,7 +1202,14 @@ impl App {
                         // `DrawTo` runs `Update` before the foreground batch
                         // (`MinimapFrameManager.cs:45`, `Main.cs:55769`).
                         let s = ui::minimap::style_index(&settings.minimap_frame);
-                        ui::minimap::draw_foreground(renderer, lookups, s, pos, self.minimap_hover);
+                        ui::minimap::draw_foreground(
+                            renderer,
+                            lookups,
+                            s,
+                            pos,
+                            self.minimap_hover,
+                            map_scale,
+                        );
                     }
                 }
                 if let Some(front) = front.as_mut() {
@@ -1290,6 +1306,10 @@ impl App {
                         &self.hotbar_scales,
                         player.as_ref(),
                         boss,
+                        // `BigProgressBarSystem.ShowText` (`ShowBossBarHealthText`,
+                        // `BigProgressBarSystem.cs:231`/`:236`): the gate on the
+                        // boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
+                        settings.boss_bar_text,
                         self.inventory_open,
                         self.crafting_open,
                         &self.mouse_item,

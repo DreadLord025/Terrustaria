@@ -52,14 +52,6 @@ pub(crate) const WALL_TEMPLE: u16 = 112;
 /// host) is on the dungeon-opposite side.
 const DUNGEON_SIDE_RIGHT: i32 = 1;
 
-/// The `UnifiedRandom.NextDouble()` stand-in: one xorshift draw scaled to
-/// [0, 1). The xorshift-for-`UnifiedRandom` substitution is the recorded
-/// stream-model deviation (`Streams::pass_rng`'s docs); the fraction mapping
-/// is the port-level convention.
-fn next_double(rng: &mut super::Rng) -> f64 {
-    f64::from(rng.next_u32()) / 4294967296.0
-}
-
 /// The faithful `LihzahrdTemple` placement search (`WorldGen.cs:15834-15926`):
 /// per attempt sample `y` from `[rockLayerClamped, maxTilesY - 600)` and `x`
 /// from the dungeon-opposite reach `((NextDouble() * num3 + 0.1) *
@@ -108,7 +100,7 @@ pub(crate) fn find_temple_site(
             // dungeon-opposite reach; the C# `(int)` cast truncates toward
             // zero like `as i32` (the value is positive: the reach is
             // [0.05·maxTilesX, 0.4·maxTilesX] for `dungeonSide == Right`).
-            let num7 = (((next_double(rng) * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
+            let num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
                 * world.width as f64) as i32;
             // `:15877-15882` (the remix branch is above): accept the first
             // active jungle-grass tile.

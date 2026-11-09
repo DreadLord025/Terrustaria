@@ -131,7 +131,18 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::new(world, world_path, atlas, font_atlas, lookups, atlas_stats);
+    // The one `Settings::load()` of the process: the value read for the culture
+    // above is the master copy `App` keeps and the menu clones, so every
+    // consumer sees the same config (the owner's read-once rule).
+    let mut app = app::App::new(
+        settings,
+        world,
+        world_path,
+        atlas,
+        font_atlas,
+        lookups,
+        atlas_stats,
+    );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
     event_loop.run_app(&mut app)?;

@@ -41,7 +41,7 @@ an agent needs before touching code.
 | World generation | `tr-core/src/worldgen/` |
 | Saves: `.trwld`, `.wld`, `.map`, binary primitives | `tr-core/src/{save,wld}.rs`, `map/file.rs`, `binio.rs`; sidecars in `persist.rs` + `app/saveglue.rs` |
 | Multiplayer | `net.rs`, `app/netglue.rs` |
-| Settings / `config.json` | `settings.rs`, `app/settings_ui.rs` |
+| Settings / `config.json` | `settings.rs` (keys/defaults/parse/save, read once in `main.rs` and threaded into `App`/`Menu`), `app/settings_ui.rs` (the `TR_UI` presets + `apply_settings`) |
 | Rain and storms | `rain.rs` (field + draw), `world_sim/weather.rs` (the 60 Hz tick) |
 | Audio | `audio.rs`, `sound.rs` |
 | Fullscreen map / minimap | `map.rs` (app), `tr-core/src/map/`, `ui/minimap.rs` |
