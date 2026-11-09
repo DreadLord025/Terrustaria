@@ -421,6 +421,38 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Angler",
     },
     BestiaryEntryDef {
+        credit_id: "Wizard",
+        net_id: 108,
+        kind: NpcKind::Wizard,
+        variant: None,
+        quick_unlock: false,
+        name: "Wizard",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mechanic",
+        net_id: 124,
+        kind: NpcKind::Mechanic,
+        variant: None,
+        quick_unlock: false,
+        name: "Mechanic",
+    },
+    BestiaryEntryDef {
+        credit_id: "Stylist",
+        net_id: 353,
+        kind: NpcKind::Stylist,
+        variant: None,
+        quick_unlock: false,
+        name: "Stylist",
+    },
+    BestiaryEntryDef {
+        credit_id: "TaxCollector",
+        net_id: 441,
+        kind: NpcKind::TaxCollector,
+        variant: None,
+        quick_unlock: false,
+        name: "Tax Collector",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -1267,6 +1299,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
         // never has an entry of its own.
         NpcKind::SleepingAngler => NpcKind::Angler,
+        // The bound Wizard/Mechanic ride their freed rows (the C#'s
+        // bestiary ids 106/123 have no entries of their own — the bound
+        // Goblin 105 has none either).
+        NpcKind::BoundWizard => NpcKind::Wizard,
+        NpcKind::BoundMechanic => NpcKind::Mechanic,
+        // The webbed Stylist rides the Stylist's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:3557-3561`), so it
+        // never has an entry of its own.
+        NpcKind::WebbedStylist => NpcKind::Stylist,
+        NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
         other => other,
     };
     ENTRIES

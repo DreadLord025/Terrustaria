@@ -3698,6 +3698,33 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Stylist/Tax Collector (M4-TOWN-17)
+
+The three kinds and the Tax Collector's coin system. Deliberate gaps: the tax
+purse is per-player in the C# (`Player.taxMoney`, saved at `Player.cs:54788`) —
+the port carries it on the World until the player-file section exists; the Tax
+Collector's "Andrew" easter egg (`NPC.cs:52968`'s 200-defense and
+`:55033-55037`'s doubled attack) waits for the town-attack task; the hair-window
+UI (`NPCInteractions.cs:425-441`'s `StylistHairWindow` → `Main.OpenHairWindow`)
+lands with the hair system; the bound Tax Collector (534) and his
+Purification-Powder release (`Projectile.cs:14728-14733`) wait for M4-NPC's
+hostile-bound archetype.
+
+## Wizard/Mechanic (M4-TOWN-16)
+
+The pair and their bound forms port the 1.4.5.8 spawn/transform/shop slice. Deliberate gaps, all
+in the ROADMAP row: the attack machines (`AI_007_TownEntities`'s `ai[0] == 10` arm for 124,
+`NPC.cs:54450-54459`, and `ai[0] == 14` for 108, `:54865-54875` + the 108's multi-projectile
+`SelectRandom(1,1,1,1,2,2,3)` at `:54927`) wait for the town-attack task; the Wizard's
+hardmode blood-moon deck (5461) and halloween hat (1739) and the Mechanic's graveyard goggles
+(4409) are constants-off (no season/graveyard stock gates yet); the Mechanic's Rod gate reads the
+moon phase only — the C# also needs `NPC.AnyNPCs(369)` (the Angler), which the port's shop
+engine carries through `StockWhen::PlayerHasItem`-style flags only, so the Angler-presence half
+sits with the town-count gate's follow-up; the bound Mechanic's depth band rides the player's
+tile without the Dungeon biome gate (`NPC.cs:2643-2652`'s `hardDungeon` branch); the
+`hasTownNPC`-style flags the C# counts for the arrival (`num10`/`num12`, `Main.cs:65651-65658`)
+fold into the port's per-kind absence check.
+
 ## Angler quest (M4-TOWN-15)
 
 The quest state lives on the statics in the C# (`Main.anglerQuest`,
@@ -8452,7 +8479,6 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
-
 ## The lunar battery projectiles (M4-EVENT-16)
 
 The Moon Lord's and the pillars' shots run through six aiStyles, all ported
@@ -8494,4 +8520,33 @@ Deviations: the pool's spawn carries no `ai[1]` whoAmI, so the machines
 link their host by kind (the nearest living MoonLordHead/FreeEye,
 MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
 the 452's `Player.FindClosest` folds into the owner's centre; the 456's
-expert duration stays classic until the difficulty modes land.
+expert duration stays classic until the difficulty modes land.## .trwld v11 — the saved ore tiers (M6-SAVE-1f)
+
+`WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) moved onto the World and
+into the world file — the four pre-hardmode metals the setup rolls once per
+world (`Main.cs:11266-11297`) plus the hardmode trio the altar smashes fill.
+Before this, the runtime copy started at the static defaults on every load:
+the alternate-metal flips (tin/lead/tungsten/platinum) and any smashed hardmode
+tier were lost on reload (the recorded ANALYSIS "save-migration follow-up").
+
+- **The shape.** One presence byte, then the seven `i32` tiers in the
+  `SavedOreTiers` field order (copper/iron/silver/gold/cobalt/mythril/
+  adamantite), the -1 sentinels included. The C# rides them in the
+  world-flags block (`WorldFile.cs:1315-1321` + `:1444-1450`); the port's own
+  section, the same values.
+- **The plumbing.** `World.ore_tiers` is the per-world owner (the worldgen's
+  `ores_and_shinies` pass writes its setup roll there; `caves.rs`'s pass), the
+  App reads it back at construction (`app/mod.rs`'s `ore_tiers_seed`), and
+  `save_world` writes the App's live tiers. A file written before v11 leaves
+  the World at the static defaults — the C#'s own reset arm
+  (`WorldFile.cs:796-814`).
+- Tests: `dw_2_6_the_ore_tiers_round_trip_in_v11`,
+  `dw_2_6_a_v10_payload_loads_default_tiers`,
+  `dw_2_6_a_truncated_ore_section_bails`, `dw_2_6_the_ore_section_is_deterministic`,
+  and the app pair `dw_2_6_the_ore_tiers_round_trip_through_the_app` /
+  `dw_2_6_a_v10_world_starts_at_the_static_defaults`. Suite 2719 / 0.
+
+Out: the remaining C# sections — signs (no port store), the angler quest state
+(no port fields), the TownManager rooms, the weighted pressure plates (no port
+store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
+bestiary's Sights/Chats sub-blocks — each needs its own scope.
