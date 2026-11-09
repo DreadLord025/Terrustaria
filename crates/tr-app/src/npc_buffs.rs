@@ -261,6 +261,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
         | NpcKind::SolarTower
+        | NpcKind::VortexTower
         | NpcKind::MoonLordHead
         | NpcKind::MoonLordHand
         | NpcKind::MoonLordCore

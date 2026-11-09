@@ -1706,6 +1706,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.world.downed_tower_stardust = true;
                 app.world.tower_active_stardust = false;
             }
+            // `DoDeathEvents`'s 422 row (`NPC.cs:79327-79332`): the Vortex
+            // pillar sets its own pair — the port had no Vortex kind at all
+            // until M4-NPC-3l, so its `downedTowerVortex`/`TowerActiveVortex`
+            // never cleared.
+            NpcKind::VortexTower => {
+                app.world.downed_tower_vortex = true;
+                app.world.tower_active_vortex = false;
+            }
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
                 // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
                 // meteorite — the guaranteed first (the pre-kill read of

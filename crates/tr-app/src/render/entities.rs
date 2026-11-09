@@ -283,8 +283,23 @@ pub(crate) struct NpcAssets {
     pub(crate) crystal: Option<BgTex>,
     /// `NPC_422` — the Ancient Cultist (1-frame strip of 130x270).
     pub(crate) cultist: Option<BgTex>,
-    /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
-    pub(crate) towers: Option<BgTex>,
+    /// `NPC_493/507/517/422` — the four Lunar pillars (single-frame
+    /// 174x364 sheets — the frame overhangs the 130x270 box on every
+    /// side, so the draw is Centre-anchored). The v1 shared one field
+    /// (`towers`, NPC_493) across all three kinds, so the Nebula and
+    /// Solar pillars rendered the Stardust artwork, and the Vortex pillar
+    /// had no kind at all.
+    pub(crate) tower_stardust: Option<BgTex>,
+    pub(crate) tower_nebula: Option<BgTex>,
+    pub(crate) tower_solar: Option<BgTex>,
+    pub(crate) tower_vortex: Option<BgTex>,
+    /// `Images/Glow_132/143/149/162` — the per-pillar glow masks
+    /// (`Main.cs:24159-24275`'s dedicated tower arm draws four ghost
+    /// copies of each at the velocity-rotated offsets).
+    pub(crate) glow_stardust: Option<BgTex>,
+    pub(crate) glow_nebula: Option<BgTex>,
+    pub(crate) glow_vortex: Option<BgTex>,
+    pub(crate) glow_solar: Option<BgTex>,
     /// `NPC_406/407/423/425/429` — the pillar shards.
     pub(crate) shards: Option<BgTex>,
     pub(crate) shard_hovers: Option<BgTex>,
@@ -413,7 +428,14 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         tavern: sky_tex(atlas, "NPC_550", None),
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
-        towers: sky_tex(atlas, "NPC_493", None),
+        tower_stardust: sky_tex(atlas, "NPC_493", None),
+        tower_nebula: sky_tex(atlas, "NPC_507", None),
+        tower_solar: sky_tex(atlas, "NPC_517", None),
+        tower_vortex: sky_tex(atlas, "NPC_422", None),
+        glow_stardust: sky_tex(atlas, "Glow_132", None),
+        glow_nebula: sky_tex(atlas, "Glow_143", None),
+        glow_vortex: sky_tex(atlas, "Glow_149", None),
+        glow_solar: sky_tex(atlas, "Glow_162", None),
         shards: sky_tex(atlas, "NPC_406", None),
         shard_hovers: sky_tex(atlas, "NPC_425", None),
         pirates: sky_tex(atlas, "NPC_212", None),
@@ -571,6 +593,27 @@ fn prime_draw<'a>(
         fh,
         [fw, fh],
         [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
+}
+
+/// The Lunar pillars' draw (`Main.cs:24159-24263`): the single-frame
+/// 174x364 sheet centred on the NPC's Centre (the `origin = halfSize`
+/// form — unlike the generic bottom anchor, which would sink the frame's
+/// 47-px overhang into the ground). `Main.npcFrameCount` 422/493/507/517
+/// = 1, so the row height is the whole sheet.
+fn tower_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(364.0, |t| t.h);
+    let fw = tex.map_or(174.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -1256,13 +1299,21 @@ pub(crate) fn draw_npcs(
                 [130.0, 270.0],
                 [n.x, n.y],
             ),
-            // The towers: the 1-frame NPC_493/507/517 strips.
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
-                assets.towers.as_ref(),
-                assets.towers.as_ref().map_or(270.0, |t| t.h),
-                [130.0, 270.0],
-                [n.x, n.y],
-            ),
+            // The four pillars: `Main.cs:24159-24263`'s dedicated arm
+            // centres the single 174x364 frame on the NPC's Centre with
+            // `origin = halfSize` (the generic bottom anchor would sink
+            // the overhanging art 47 px into the ground) — `tower_draw`
+            // computes it. The v1 shared `towers` (NPC_493) across all
+            // three kinds at the box's corner.
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower => {
+                let tex = match n.kind {
+                    NpcKind::StardustTower => assets.tower_stardust.as_ref(),
+                    NpcKind::NebulaTower => assets.tower_nebula.as_ref(),
+                    NpcKind::SolarTower => assets.tower_solar.as_ref(),
+                    _ => assets.tower_vortex.as_ref(),
+                };
+                tower_draw(tex, n, w, h)
+            }
             // The shards: the cell/jellyfish/beast 2-row strips + the
             // vortex walkers' 14-frame humanoid strips.
             NpcKind::StardustCellBig => (
@@ -1948,6 +1999,52 @@ pub(crate) fn draw_npcs(
             r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
         } else {
             r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
+        // The Lunar pillars' glow ghosts (`Main.cs:24177-24233`): each
+        // tower's dedicated arm draws FOUR masked copies of its own sheet
+        // at `velocity.RotatedBy(i·π/2) · offset` (the offset 4 +
+        // |light − 0.5|·4, the Solar's 2 + ·9 with the extra +X 2), tinted
+        // by the vanilla's (64,64,64,0)·Opacity mask — the port's
+        // premultiplied pipeline renders them with the glow sheets' own
+        // alpha instead (the mask tint draws nothing there).
+        if matches!(
+            n.kind,
+            NpcKind::StardustTower
+                | NpcKind::NebulaTower
+                | NpcKind::SolarTower
+                | NpcKind::VortexTower
+        ) {
+            let gtex = match n.kind {
+                NpcKind::StardustTower => assets.glow_stardust.as_ref(),
+                NpcKind::NebulaTower => assets.glow_nebula.as_ref(),
+                NpcKind::SolarTower => assets.glow_solar.as_ref(),
+                _ => assets.glow_vortex.as_ref(),
+            };
+            if let Some(gtex) = gtex {
+                let guv = npc_frame_uv(gtex, frame_h, n.frame());
+                // The C# derives the offset from `npcColor`:
+                // `4 + |light − 0.5| · 4` (the Solar's `2 + ·9`).
+                let light_len =
+                    (c[0] - 0.5).hypot(c[1] - 0.5).hypot(c[2] - 0.5);
+                let base_off = if n.kind == NpcKind::SolarTower {
+                    2.0 + light_len * 9.0
+                } else {
+                    4.0 + light_len * 4.0
+                };
+                for i in 0..4u32 {
+                    let a = i as f32 * std::f32::consts::FRAC_PI_2;
+                    let (sx, sy) = a.sin_cos();
+                    let ghost = [
+                        pos[0] + (n.vx * sy - n.vy * sx) * base_off,
+                        pos[1] + (n.vx * sx + n.vy * sy) * base_off
+                            + if n.kind == NpcKind::SolarTower { 2.0 } else { 0.0 },
+                    ];
+                    r.push_sprite(snap_to_screen(ghost, camera, zoom, screen), size, guv, [
+                        1.0, 1.0, 1.0, 1.0
+                    ]);
+                    quads += 1;
+                }
+            }
         }
         // The Prime family's glow masks (`Main.cs:25585-25642`): the head's
         // `Bone_Eyes` and the laser limb's `Bone_Laser` ride the body's
