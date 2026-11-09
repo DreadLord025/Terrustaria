@@ -7004,6 +7004,130 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
+<<<<<<< HEAD
+## Ammo mastery layer (M3-ITEM-6)
+
+Port of the M3-ITEM-3 "Out" list: `Player.PickAmmo`'s mastery half
+(`Player.cs:53458-53749`) — the pair table, the projToShoot resolution chain,
+the not-consume arms, the `gunProj` dontConsume four, the volley specials and
+the ammo-cycling modes. Deliberate deviations and traps:
+
+- **The four `gunProj` weapons read their data from a wire-side id-keyed table,
+  not the registry.** `ItemID.Sets.gunProj` (`ItemID.cs:1327` — the VortexBeater
+  3475 / Phantasm 3540 / DD2PhoenixBow 3854 / Celeb2 3930) makes `PickAmmo` run
+  with `dontConsume = true` (`Player.cs:47071`): the pick still gates on having
+  ammo, but the ammo's damage/speed fuse is discarded (`:47069-47081`) and the
+  spawn uses the fixed gun projectile (615/630/705/714, `:48986-49018`). No drain
+  anywhere in the shoot path — the only drain sits behind `!flag` with `flag`
+  seeded true (verified by reading the whole of `ItemCheck_Shoot`). All four
+  carry placeholder rows in the scaled `itemdata.rs` class (`use_ammo: 0`), so
+  the wire keys their vanilla defs (`Item.cs:31159`/`:31728`/`:34048`/`:34741`)
+  by id; the `tools/GenItemData` fix is a separate M3-ITEM-1 follow-up.
+- **The 1.4.5.8 tick semantics the windows read.** On the press tick
+  `ItemCheck_StartActualUse` sets `itemAnimation = itemAnimationMax` and leaves
+  `itemTime` at 0; the same tick's decrements run and the shot gate
+  (`itemAnimation > 0 && ItemTimeIsZero`) fires the first shot at
+  `itemAnimation == max - 1` — which IS `ItemAnimationJustStarted`
+  (`Player.cs:4066`). The port arms one tick on the press frame to land there
+  and derives the three window booleans in integer ticks (its item timers are
+  per-frame seconds — the C# compares integers). Derived counts: the Clockwork
+  434 (12/4) fires at anim 11/7/3 with the first consuming; the Fairy Queen 4953
+  (30/2) fires 15 shots with the four free ones at anim 29/27/25/23; the
+  Clentaminator (30/5) / Flamethrower (30/6) sprays consume on the first shot
+  only; the Acorn Slingshot 5629's `flag = false` is the chain's last arm and
+  clears the Ammo Box / Ammo Reservation saves (order trap).
+- **The `gunProj` four still spend their own `Main.rand` draw** even though the
+  save is discarded — the arms run unconditionally (`:53579-53594`) — so the
+  golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
+  shooter.
+- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
+  (`useAmmo = 0` → `PickAmmo` never runs) — not ported; the Snowball Cannon
+  1319's remix arm is parked (no celebration-seed stand-in in the port); the
+  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
+  and not ported.
+- **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
+  `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
+  the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
+  ×1.1 scales the weapon's own value only (it precedes `KnockBack +=
+  item.knockBack`, `:53568`) and the NanoBullet 285's ×1.25 scales the FUSED
+  damage (the wire applies the weapon's part too).
+- **The projectile rows land with the unported AI styles** (147 Celebration,
+  75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
+  — the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
+  territory. The visual-only vanilla fields (alpha/scale/ignoreWater/drawLayer/
+  hide) have no port consumer and are dropped; the Snowman rockets' `scale = 0.9`
+  keeps the 14x14 box. `ProjData` gained `uses_local_immunity` +
+  `local_hit_cooldown` (the runtime already carried both) for the immunity pairs.
+- **`ammo.rs` is ~1800 lines** — a single C# function's port (the pair table,
+  the resolution chain and the roll chain share the module); the plan's
+  fallback split behind the same `pub` surface is deferred to a refactor-shaped
+  follow-up.
+=======
+## The yoyo family (M4-PROJ-4)
+
+- **The lifetime table's -1 default is verbatim, not a gap.**
+  `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`)
+  defaults to **-1f — no timeout** — and 547/550/551/554/555/603 are
+  unlisted: those yoyos return only on the channel release or the 1.3x
+  range cap (`Projectile.cs:67957`), never by age. The port keeps the
+  source's default (the C# `CreateFloatSet(-1f, …)` semantics), so the
+  Kraken flies until released.
+- **The dust rolls are skipped.** `AI_099_2_Yoyos`'s 545/553 dust
+  (`:67868-67881`) and the beam's `Lighting.AddLight` (`:34416`) are
+  render-only side effects the pool cannot emit — no roll is consumed
+  for an unrendered effect, and the RNG stream stays aligned for the
+  behaviour rolls. The yoyo sprite's string draw (the `FishingLine`
+  stretch in `Main.DrawProjDirect`, `Main.cs:28039`, the
+  `stringColor`/29 rainbow variants) is the M4-PROJ-4c render row.
+- **The pose block's `direction` write is ported; the rest is stubbed.**
+  `:67838-67847` writes `this.direction = ±1` from the ±2 px X
+  comparison — the rotation (`:68096`) and the dropped twin's nudge
+  (`:68057-68066`) consume it, so it lands. `heldProj`,
+  `SetDummyItemTime(2)` and `player.ChangeDir` are cosmetic player-pose
+  state: stubbed until M3-ITEM-2d's dummy-time gadget.
+- **`meleeSpeed = 1.0` stays in the formulas.** The range/top-speed
+  division (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the
+  lifetime divisor (`:67750`) are neutral exactly at the default; the
+  terms stay so M3-EQUIP-3 only has to supply the accessories' values
+  (yoyoString: range x1.25 + 30, lifetime x1.5; magicString: the -2
+  dropped twin). The `CCed` release arm (`:67920`) is stubbed false (no
+  CC system ported). The Terrarian beam block's `ai[0] != 3f` gate
+  (`:67776`) is verbatim from the source — only an aim exactly at
+  x = 3 is excluded.
+- **The rolls ride the app's item stream.** The jitter
+  (`rand.Next(10, 31)`, `:67748`), the beam's three rolls (`:67786-67793`)
+  and the dropped twin's `penetrate = rand.Next(3, 7)` (`:68041`) draw
+  from a `DropRng` parameter threaded through `pool.update` — the
+  `LootRng(&mut app.item_rng)` seam the throw's crit roll already uses,
+  the port's `Main.rand` analogue (the C# `FastRandom` vs `rand01`
+  difference follows the house's existing deviation record).
+- **The beam scan's `CanHit` is a segment walk.** The C#
+  `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381+`); the
+  port walks the two centers' segment against the solid non-platform
+  tiles. The Terrarian's beams can therefore target through partial
+  cover where the vanilla boxes would not.
+- **The counterweights are the other family.** 556-561/1079 ride
+  `AI_099_1_Counterweights` (`:67380`, they fire musket balls) and stay
+  with M3-EQUIP-3's accessory grants; the yoyo arm's `flag2` guard
+  (`:67819-67823`) never sees them.
+- **GenItemData's break-in-if fix (the 693-row regen).**
+  `Item.cs:30037-30041`'s guard — `default: if (type < 3315 || type >
+  3317) { break; } goto case 3262;` — was executed wrong: the
+  interpreter's `break` exited only the if-body, so the statement list
+  fell through into the goto and the yoyo case body overwrote every id
+  the yoyo switch did not list. 693 rows carried the yoyo placeholder
+  (`shoot = 541 + type - 3278`), including the Terrarian 3389
+  (StaticHook 652, damage 15) and the copper tools 3505/3506/3507/3509
+  (hand-patched over the placeholder in `50bfc51`). `exec_stmts` now
+  returns on `ctx.brk` (the C# switch semantics) and the regen restores
+  the source rows; the already-correct yoyo weapon rows are
+  byte-identical and `test_gen.py` passes. The SEARCH for other
+  `default: … goto case` switches found this the only one in `Item.cs`.
+  The rows whose generated schema has no field (`stringColor`,
+  `hasVanityEffects`, `handOffSlot`, `vanity`, `mountType`) stay
+  committed as improved-but-incomplete and are the follow-up row's
+  scope (M3-EQUIP-3 consumes the accessory flags).
+>>>>>>> origin/main
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
@@ -7202,6 +7326,65 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   truncated once more by `ToPoint` (`:1817-1820`) — so the diagonal buckets
   land on ±1/±1 (the ±1.41 vectors truncate inward) and the flat ones on
   ±1/0 and 0/±1. A standing lock replaces the whole computation (`:1434`).
+- **The wire channels ride the port's sparse `WireState`, not `Tile`
+  headers.** The C#'s `Tile.wire()`/`wire2()`/`wire3()`/`wire4()` are
+  `sTileHeader` bits (`Tile.cs:623/640/657/437`); the port's packed
+  12-byte `Tile` carries no header, so the set bits live in
+  `wiring::WireState` (`wiring.rs`) and the steps read them through
+  `WireState::get` per `WireColor` (Red = wire, Blue = wire2, Green =
+  wire3, Yellow = wire4 — the mapping the C#'s `Step_MulticolorWrench`
+  :1733-1746 pins). The wire steps' anchors need no tile at all: only the
+  channel bits decide.
+- **The wrench settings are caller-passed seams.** `Step_ColoredWrenches`
+  maps the item id to a channel (509 → Red, 850 → Blue, 851 → Green, 3612
+  → Yellow, `:1886-1902`) and `Step_MulticolorWrench` reads
+  `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`, an app-side static) — the
+  port carries the raw bitfield on `Lookup::tool_mode` (`multi_tool_mode`
+  holds the flag values, `WiresUI.cs:13-21`), and the rod's
+  `ActuationRodLock`/`ActuationRodLockSetting` (`Player.cs:2616/:2618`)
+  likewise. The C#'s `&`/`|` bool operators in the multi-wrench's
+  predicates (`:1766`, `:1773` — the non-short-circuit bool AND) read as
+  `&&` over pure operands; the enum math keeps its `!Cutter` mask and
+  `!= 0` channel tests.
+- **The wrench scans anchor on any cell carrying the channel.** The C#'
+  `Step_ColoredWrenches`/`Step_MulticolorWrench` never read the anchor
+  cell's tile state — only its wire bits — so an empty air cell with a wire
+  still extends the line, and the candidates are the four neighbours
+  lacking the channel (the C#'s border reads never happen; the port's
+  out-of-world reads return false, which only ever adds a candidate the
+  `InTileBounds` gate then drops).
+- **The track step's bearing comes from the player's CENTRE, not the
+  cursor.** `Step_MinecartTracks`' first block (`:1170-1171`) normalises
+  `Main.MouseWorld - providedInfo.Center` — the player's box centre
+  (`Entity.cs:50-54`'s `position + (width/2f, height/2f)`, the FLOAT
+  halves) — into the eight direction flags, so the track's growth
+  direction follows where the player LOOKS rather than where the cursor
+  points. `SafeNormalize`'s zero/NaN default is `Vector2.UnitY` (downward).
+  The second block (the pressure track, `:1268`) ignores the bearing and
+  extends left/right only.
+- **The track scan anchors on EVERY track cell, not the line's end.** The
+  C# adds the six directional neighbours for every track-314 cell in the
+  reachable rect, so a diagonal jog in the track extends from each jogged
+  cell; the shared pick then keeps only the freestanding candidates
+  (`:1250-1256`: no track directly above or below) and the closest to the
+  mouse. The tests pin both halves: a track under a candidate drops it, and
+  the line's tail (the second track cell) extends in its own direction.
+- **`Step_ForceCursorToAnyMinableThing` is a seat, not a scan.** The step
+  writes the mouse's own tile (`Utils.ToTileCoordinates`' arithmetic `>> 4`
+  shift — the port keeps the shift, not a float floor) when that tile is
+  minable and not a full solid; the `WorldGen.CanKillTile` half runs
+  `edit::can_kill_tile` with the app-side chest store's closure passing
+  `false` (the same convention as the wiring slice — the chest store fills
+  with M3-CHEST-UI), and the three tool demotions read the new
+  `Main.tileHammer` (4 ids) / `Main.tileAxe` (16 ids) tables, transcribed in
+  `tileobject.rs` beside the `TILE_CUT` precedent because the generator's
+  `wantedSets` does not carry them (the arrays are plain `Main.tile*`
+  assignments, not `TileID.Sets`).
+- **The tool powers are caller-passed on `ItemPort`.** The step reads
+  `item.pick`/`item.axe`/`item.hammer` (`Item.cs:161/163/165`); the item
+  definition data lives in the app's `itemdata.rs`, so the three powers ride
+  `ItemPort` next to `createTile`/`createWall`, defaulting to 0 (the
+  force-cursor step then refuses every tile — the gate is `pick < 1`).
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -7343,7 +7526,6 @@ Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
 metamorphoses, the VortexHunter's shared shooter block and the tower
 spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
 tables themselves stay open.
-
 ## The Moon Lord family (M4-EVENT-10)
 
 **The ids are 396/397/398/400/401, not 517** — `NPCID.cs:11469-11479`: the
@@ -7651,3 +7833,265 @@ Deviations: the dust/gore `HitEffect` rows, the corite's lighting/sound
 arms, the sroller's `ai[3]` FX layer and the tower spawn tables are
 unmodelled; the sroller's height collapse (46×52 → the ball) rides the
 defense/damage overrides rather than a box change.
+## Xorshift core unification (refactor-xorshift-unify)
+
+One xorshift64 core now feeds the worldgen streams and the wind walk alike
+(`crates/tr-core/src/rng.rs`, `pub struct Xorshift64(pub u64)`), replacing two
+private cores and two inlined copies of the same step. Before:
+
+- **`worldgen/noise.rs`'s `Rng`** — the worldgen contract: raw-XOR seeding
+  (`Rng(seed ^ const)` for the three `pipeline::Streams`, `Rng(seed ^
+  fnv1a64(name))` per pass), the high-32-bit word draw `next_u32`, plus
+  `range`/`chance`/`next_f64`.
+- **`wind.rs`'s private `Rng`** — the splitmix64 seeding (`from_seed`: the
+  `0x9E3779B97F4A7C15` add, the `0xBF58476D1CE4E5B9` and `0x94D049BB133111EB`
+  multiplies, the `0x2545F4914F6CDD1D` all-zero guard) with `next_int` taking
+  `next_u64`'s high half modulo.
+- **The duplicates** — `worldgen/temple.rs`'s `next_double` (= `next_f64`) and
+  `menu/mod.rs::random_name`'s inlined 13/7/17 triple.
+
+The step and the word extraction were already identical in both cores, so the
+unified struct carries both draw conventions: `next_u64` returns the full word,
+`next_u32` returns its HIGH 32 bits (the worldgen contract), `from_seed` is the
+splitmix seeding, and `range` (an empty range returns `lo` without a draw —
+wind's `next_int` was this function) / `chance` / `next_f64` round it out. The
+worldgen surface is unchanged: `noise.rs` re-exports the core as `Rng`
+(`pub(crate) use crate::rng::Xorshift64 as Rng`), so every pass's import and the
+seeding contract stay as they were, while `wind.rs`, `temple.rs` and
+`random_name` call the core directly.
+
+Byte-exactness is pinned, not assumed: `rng.rs`'s tests replay the
+pre-refactor cores **verbatim** — the worldgen `old_next_u32` (7 seeds × 512
+draws), wind's `old_next_int` over its real call-site ranges (5 seeds, 16
+range windows) and the splitmix chain over the seeds 0..4096 — while the
+suites that consumed the old cores (`deterministic_for_seed`, the worldgen
+replay-pair tests and the wind tests) stay green unchanged.
+
+- **Out:** the ported C# stream `FastRandom` (`tile_light/palette.rs`, the
+  48-bit LCG) stays as it is — the `UnifiedRandom` replay, not this core;
+  `audio.rs`'s xorshift64*** (the 12/25/27 triple with the `0x2545F4914F6CDD1D`
+  multiplier) is a different core and stays; the ~13 other copies of the
+  splitmix64 finalizer — `spawner.rs`'s splitmix core misnamed `FastRandom`, the
+  `next_rand`/`rand01` streams of `rain.rs`/`sand.rs`/`chest_gen.rs`/
+  `prefix.rs`/`mount.rs`/`app/frame.rs`, `wiring.rs`'s LCG + finalizer — and
+  `flame.rs`'s second 48-bit LCG copy are recorded as a follow-up engineering
+  row.
+
+## .trwld v6 — the world flags, wires and tile entities (M6-SAVE-1) (re-landed)
+
+Re-landed: the `M5-CHEST-gen-flag-extras` merge (`07d786ab`) dropped this work from
+main with its merge resolution. The section and its code are restored verbatim here;
+the v7 chest section builds on it.
+
+The native `.trwld` (`crates/tr-core/src/save.rs`) grew these sections after the v5
+bed-spawn byte. They landed as the v6 tail (`VERSION` 5 → 6), but a later merge
+dropped them and claimed the v6 slot for the secret-seed flags; the re-landed
+sections therefore ride the v7 gate (`VERSION` 7 — the seeds u16 at v6, then the
+flags block, the wires and the tile entities at v7, the chests behind them).
+Before them the three state groups were simply dropped by the save: the recorded gaps were the wires
+("Persistence in `.trwld`/`.map` is pending", the "Wiring engine (M7-WIRE-1)"
+deviations), the tile entities ("Persistence in `.trwld`/`.map` is pending
+(M6-SAVE-1)", the "Tile entities (M7-TE-1)" deviations) and the `SaveWorldFlags`
+progression fields — the world's `downed_*`/invasion/hardmode state only ever
+survived until the next reload, and `unlocked_slime_rainbow_spawn` had no save
+slot at all (the "Shimmer transforms (M7-SHIMMER-1)" note). Each group rides its
+own version gate, so a v5 (or older) file still loads, with the `World::new`
+defaults standing in exactly as they do for the v3/v4/v5 tails.
+
+**1. The world flags block** — `save.rs::write_flags_v6`/`read_flags_v6`: a fixed
+**108 bytes** = two 16-byte bool groups + 14 i32s + 2 f64s + 1 f32 (the second
+group's last byte is a reserved 0 that keeps both groups 16 bytes; a back-compat
+test truncates exactly `V6_FLAGS_LEN` bytes). It carries the port's `World`
+fields that the C# `SaveWorldFlags` persists (`WorldFile.cs:1238-1430`), grouped
+with the C#'s own line citations:
+
+- bool group A (16): `_tempBloodMoon`/`_tempEclipse` (`:1277-1278`), the
+  downed-boss ladder (`:1282-1294` — Boss1/2/3, QueenBee, MechBoss1/2/3,
+  PlantBoss, GolemBoss, SlimeKing, savedGoblin; the port has no
+  MechBossAny/savedWizard/savedMech state, so those slots are not written),
+  `downedGoblins`/`downedFrost`/`downedPirates` (`:1296-1299`).
+- bool group B (15 + the reserved byte): `shadowOrbSmashed`/`spawnMeteor`/
+  `hardMode` (`:1300-1304`), the DD2 event flags (`DD2Event.Save`,
+  `DD2Event.cs:151-156`), `downedMoonlord` (`:1346`), `TowerActive*`
+  (`:1357-1360`) and `downedTower*` (`:1352-1355`).
+- the i32 block: `shadowOrbCount`/`altarCount` (`:1302-1303`), the invasion state
+  (`invasionDelay`/`invasionSize`/`invasionType` `:1306-1309` +
+  `invasionSizeStart` `:1339`), the four tower shields,
+  `lunar_shield_power_normal`, and the port-only slime-rain/DD2 counters; the
+  two f64s `invasionX` and `slimeRainTime` (`:1309-1310`) and the f32
+  `dd2_wave_kills`.
+
+**2. The wire side table** — `World.wires` (`wiring.rs::WireState::write`/`read`):
+per colour — the `WireColor` declaration order Red/Blue/Green/Yellow, which is
+also `TripWire`'s four sequential pass order (`Wiring.cs:525`) — a u32 cell count
+then the (i32, i32) pairs **sorted by (x, y)** (`HashSet` order is unstable, the
+file bytes must not be). The C# has no wire section at all: the four colours ride
+per-tile `sTileHeader` bits packed into the tile stream (`Tile.cs:623-657`) and
+the port's 12-byte `Tile` has no header space, so the side table needs its own
+section — a port-native shape, recorded as a deviation.
+
+**3. The tile entities** — `World.tile_entities`
+(`tile_entities.rs::{TileEntity::write/read, TeData::write/read(r, kind),
+TileEntities::write_all/read_all(r, world)}`): a u32 count, then per record a
+u8 kind, a u32 id, an i16 x/y pair and the per-kind payload — `TileEntity.Write`/
+`Read` (`TileEntity.cs:173-207`, the `WriteInner` half of the save path: the id
+rides, the network send omits it) plus the world-file section
+`SaveTileEntities`/`LoadTileEntities` (`WorldFile.cs:3302-3357`), including the
+load-side re-validation: a record whose cell left the world (`WorldGen.InWorld`,
+`:3334`) or whose `CheckValidTile` frame test fails (`:3338`) is dropped, the
+payload emptied. `TeData::write`/`read(r, kind)` mirror `WriteExtraData`/
+`ReadExtraData` per kind — the item triple `short type, byte prefix, short stack`
+behind the port's presence byte (`TEItemFrame.cs:47-56`), the HatRack
+presence-bitsByte (`TEHatRack.cs:59-80`), the dummy's `npc`
+(`TETrainingDummy.cs:119-126`) and the sensor's `logicCheck`/`On`
+(`TELogicSensor.cs:380-396`).
+
+Deviations and notes:
+
+- **The format is the port's own, not the C#'s 11-section pointer table.** The
+  `.wld` writer emits an `i16 sectionCount` + `i32 sectionPointers[]` index that
+  the reader then walks; `.trwld` appends each new group in order behind its
+  version gate, so a format bump is one new tail and old files keep loading. All
+  three groups are port-native sections even where the C# folds them into another
+  stream — the flags into a flat `BinaryWriter` walk with no section markers at
+  all, the wires into the per-tile header bits.
+- **Port-only persisted state**: the slime-rain flag and kill counter
+  (`slime_rain`/`slime_rain_kills` — the C# writes only `slimeRainTime` and
+  derives the rest on load), the DD2 wave counters (`dd2_wave`, `dd2_spawn_hold`,
+  `dd2_wave_kills`), and the tower shields (`tower_shield_*`,
+  `lunar_shield_power_normal`) as live values — the C# restores the four tower
+  shields from `ShieldStrengthTowerMax` on the load side
+  (`WorldFile.cs:2237-2249`), so saving and restoring the numbers is a different
+  contract rather than a port of it.
+- **Deliberate widenings on the TE record**: the dummy's npc int16 → i32 (the
+  port keeps the tie as the NPC slot) and the logic sensor's `counted` grace
+  (`CountedData`, runtime-only in the C#) is persisted so a load restores the LED
+  state exactly.
+- **The port keeps the stored TE ids** instead of reassigning them on load (the
+  C# does `tileEntity.ID = num2++` and then sets `TileEntitiesNextID`,
+  `WorldFile.cs:3323`/`:3330`), so a save round-trips them and `next_id` runs to
+  `max(id) + 1`; a duplicated cell keeps the `place`/`place_unchecked` insert
+  semantics (the last record is the one the position book reaches) and a repeated
+  id in a hand-written file keeps the first record and drops the rest.
+- **The runtime-only fields stay out**: the WoF/Golem/boss write-through anchors
+  (`wof_*`, `golem_*`, `skeletron_*`, `brain_*`, `prime_*` — live boss-encounter
+  state the C# rebuilds on spawn), `travel_shop`, and the App-side weather block
+  (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `:1312-1314`), which stays in
+  the app layer until the load-side weather block is ported. The C# seed-flavour
+  pair (`vampireSeed`/`infectedSeed` and the `Main.*Seed` family) and the saved
+  NPC/bought-pet writes have no port fields either.
+- **Verification**: `save.rs`'s `dw_2_1_the_v6_flags_wires_and_tes_round_trip`
+  (one flag from every group + the counters + the four wire colours + the
+  dummy/frame/sensor/pylon payloads), `dw_2_1_a_v5_payload_loads_defaults` (the
+  old file keeps the defaults), `dw_2_1_a_truncated_v6_tail_bails` and
+  `dw_2_1_the_wire_and_te_sections_are_deterministic` (byte-identical re-writes),
+  plus the updated version-gate tests. `tile_entities.rs` adds 5 (the round-trip
+  with the `write_all` layout pin, the invalid-cell drops, the unknown-kind
+  refusal, the duplicate-cell semantics); `wiring.rs` adds 3 (the round-trip over
+  every colour, determinism, the truncated read). Full suite: 2327 passed /
+  0 failed (`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+Out:
+
+- the **chests** — the App-side `App.world_chests` store is re-rolled at load by
+  `chest_gen` (the `M5-CHEST-gen` row's documented conflict: the generator and the
+  saved contents disagree), so the section needs both a save path and a load gate;
+- the **signs** — the port has no sign store at all;
+- the **NPCs/homes/names** — the NPCs live App-side (`App.npcs`) with `Npc.home`
+  in memory (the `M4-TOWN-1` recorded note), so the section follows the NPC
+  persistence;
+- the **bestiary kill pairs** — today they ride the `.trplayer` sidecar v5
+  (`bestiary.rs::KillTracker`), while vanilla keeps them in the world file
+  (section 11), so moving them means a world-side field;
+- the **banner counts** — `banners.rs` is a runtime tally with no save;
+- **SavedOreTiers** — the worldgen-local `ores.rs` struct needs a `World` field
+  first (the "OresAndShinies fidelity (M5-ORES-1)" note records the gap), and the
+  vanilla quartet has no port representation yet;
+- the **angler quest state** — `Main.anglerQuest`/`anglerWhoFinishedToday` have no
+  port fields (`fishing.rs` carries the mechanics only);
+- the **TownManager rooms** — the room store follows the housing/persistence work;
+- the **weighted pressure plates** — no port store for the pressed-plate state;
+- the **creative powers/research** — `M6-CREATIVE-1/2`'s per-player state has no
+  persistence yet.
+
+Each is its own scope; none is implied by this tail.
+
+## .trwld v7 — the world chests (M6-SAVE-1b)
+
+The chest section rides the store's data as neutral records (`tr_core::save::ChestItem` /
+`ChestRecord` — the crate cannot see `App`): a `u32` count, then per chest `i32 x`,
+`i32 y`, the name (`u32` length + UTF-8 — the file's own string convention) and a
+`u32` slot count, then per slot `i32 stack` and, while the stack is non-zero, `u16
+kind` + `u8 prefix`. The C# shape is `SaveChests` (`WorldFile.cs:1606-1676`) / `LoadChests`
+(`:2723-2805`).
+
+- **The deviations.** The vanilla always writes `maxItems` slots (40) and a 7-bit
+  length string, and its load re-assigns ids; the port keeps its implicit-air
+  compressed vec (a `stack == 0` entry is an empty slot, trailing airs dropped — the
+  store materializes the 40 on open), its own string encoding, and the record's
+  anchor is the identity. The stack is `i32` where the C# writes `int16` (the vanilla
+  9999 cap fits, the port's `u32` counts saturate on write). The 8000 cap is not
+  written: the port's store already refuses past `MAX_CHESTS` (`chest.rs:40`).
+- **The app wiring.** `save_world` serializes `App.world_chests` — removed entries
+  skipped, the effective name from `chest::chest_name` (the rename or the derived
+  default), the slots mapped through `registry::name`. `App::new` takes the records,
+  `chest_gen::store_from_records` culls the stale anchors (the vanilla's pre-count
+  validity sweep) and maps the slots, and the records seed `merge_store` ahead of the
+  `TR_CHEST` fixture — **the saved contents win over the chest-gen re-roll**, so a
+  player's stock survives the reload; the names ride `chest_names` by the post-merge
+  index (`find_chest` on the anchor). The autosave (10 s), F9 and quit write the
+  section; the MP world transfer does not carry chests (the tile sections do).
+- **Recorded gap (a follow-up, not fixed here).** `worldgen::pipeline::boot_statics`
+  never sets `frame_important[21]`/`[467]` while the vanilla does (`Main.cs:7656-7657`),
+  so a LOADED world's framing pass rewrites the chest tiles' 2x2 frames and the
+  chest-gen anchor scan (`frame_x == 0 && frame_y == 0`) then finds nothing — the roll
+  only fires in a freshly generated, unframed world. The records path is unaffected
+  (its cull only asks for an active 21/341 tile); the fix belongs to the worldgen
+  statics' owner.
+- Tests: `dw_2_2_the_chests_round_trip_in_v7` (names, interior airs, the prefixes),
+  `dw_2_2_a_v6_payload_loads_no_chests`, `dw_2_2_a_truncated_chest_section_bails`,
+  `dw_2_2_the_chest_section_is_deterministic`, and the app pair
+  `dw_2_2_a_saved_chest_round_trips_through_the_app` (contents/prefix/name survive,
+  the no-roll-overwrite control) / `dw_2_2_a_record_with_a_missing_anchor_is_dropped`
+  (the cull). Suite 2409 / 0.
+
+Out: the remaining C# sections — signs (no port store), the NPC block (names/homes/
+homeless, App-side `App.npcs`), the bestiary kill pairs (today the `.trplayer` sidecar
+v5; moving them into the world file), the banner counts, `SavedOreTiers`
+(worldgen-local — needs a `World` field), the angler quest state (no port fields),
+the TownManager rooms, the weighted pressure plates (no port store) and the creative
+powers/research — each needs its own scope.
+
+## The pillar worms (M4-EVENT-14)
+
+The Crawltipede (412/413/414) is the Solar tower's worm: the head
+`ai[3] = whoAmI` + `realLife = whoAmI` (`:51369-51392`), `num34 = 30`
+segments, `num36 = 413` swapped to `414` at index 29, each segment
+linking forward (`ai[0]`) and back (`ai[1]`), `CopyInterrelations` from
+its predecessor. The port's worm pass carries the same shape (`worm_id`,
+`seg_index`, `worm_left`), so the chain rides it with the crawltipede's
+30-segment budget and the 10/0.3 steering pair. The death guards kill a
+segment whose link died (`!Main.npc[ai[1]].active || aiStyle mismatch` →
+`life = 0; HitEffect(); checkDead()`), and the body/tail don't count for
+the enemy cap (`dontCountMe`) while the tail takes ×10 damage
+(`takenDamageMultiplier = 10`, consumed in `StrikeNPC_Inner`).
+
+The StardustWormHead (402) is a lone mega-worm (no segments in this
+build — 403/404 have no `SetDefaults` rows) whose aiStyle-6 arm
+(`:51030-51073`) runs the 600-tick cycle: `ai[2]++`, the
+`Remap(ai[2], 285, 570, 1, 0.5)` deceleration while `ai[2] <= 570`, the
+mark fire at 570 (`SpawnStardustMark_StardustWorm`) with the velocity
+re-normalised to 6, and the reset at 600. Its own movement pair is
+`num45 = 9` / `num46 = 0.3` (`:51740-51743`).
+
+`SpawnStardustMark_StardustWorm` (`:43909-43993`) picks from the list
+405/402/407 (capped at 2 / 3 / 1 alive) and throws the 540 marker
+projectile with `ai[0] = -num5 * 10f` and `ai[1] = 0.5..1.0f` which
+spawns the chosen NPC on its way; the port folds the hop into the sim's
+resolve (`wants_stardust_mark`) because the 540 projectile AI is not
+ported.
+
+Deviations: the dust arms, the ground-avoidance tile scan
+(`:51784-51798`) and the same-type repulsion of the crawltipede are
+unmodelled (the port's worm pass has its own steering), the 540
+projectile hop and the mark's 3-5 chain-length roll are unmodelled.
