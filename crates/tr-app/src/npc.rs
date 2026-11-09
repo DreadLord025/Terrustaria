@@ -3988,6 +3988,30 @@ impl Npc {
         }
     }
 
+    /// The shared `case 266`/`case 262` machine (the Brain of Cthulhu and
+    /// Plantera, `NPC.cs`'s two identical arms): the frame advances every
+    /// 6 ticks; `first_phase` (the shield-down / above-half-life gate) wraps
+    /// the strip at row 3, otherwise the rows clamp into 4..7.
+    fn phase_frame(&mut self, first_phase: bool) {
+        self.frame_counter += 1.0;
+        if self.frame_counter > 6.0 {
+            self.frame_counter = 0.0;
+            self.frame += 1;
+        }
+        if first_phase {
+            if self.frame > 3 {
+                self.frame = 0;
+            }
+        } else {
+            if self.frame < 4 {
+                self.frame = 4;
+            }
+            if self.frame > 7 {
+                self.frame = 4;
+            }
+        }
+    }
+
     /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
     /// frame height unit) cancels out because frames are tracked as row indices;
     /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
@@ -4950,20 +4974,29 @@ impl Npc {
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
-            NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
-                // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
+            NpcKind::Creeper => {
+                // `Main.npcFrameCount[267]` = 1 (`Main.cs:67082`): the
+                // single 34x34 frame (the v1's "30x30" was the box, not
+                // the sheet).
+                self.frame = 0;
+            }
+            // `case 266` (the Brain) and `case 262` (Plantera) share one
+            // shape: the 6-tick advance over the 8-row strip
+            // (`Main.npcFrameCount[266]` = [262] = 8, `Main.cs:67082` —
+            // the v1 pinned the Brain to row 0 claiming 1 and ran a blind
+            // 5-row strip over Plantera claiming 5), the first-four rows
+            // above the half-life gate and the 4..7 rows below it.
+            NpcKind::BrainOfCthulhu => {
+                // The C#'s gate is `ai[0] >= 0 && localAI[2] == 0` — the
+                // creeper-shield count, which the port's brain machine does
+                // not model, so the port reads `ai[0] >= 0` alone: the
+                // shield-down rows 0..3 always ride (the shielded 4..7 rows
+                // are the documented follow-up).
+                self.phase_frame(self.ai[0] >= 0.0);
             }
             NpcKind::Plantera => {
-                // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 5 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
-                }
+                // The C#'s gate is `life > lifeMax / 2` (`:262`'s arm).
+                self.phase_frame(self.hp > self.max_hp / 2);
             }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 // `case 125/126` (`NPC.cs:76905-76926`, shared with the
@@ -15106,6 +15139,51 @@ mod tests {
         e.find_frame();
         assert_eq!(e.frame, 3, "and wraps 5 -> 3");
     }
+
+    #[test]
+    fn the_plantera_and_the_brain_share_the_eight_row_phase_machine() {
+        // `case 262` (Plantera) and `case 266` (the Brain) are the same
+        // shape (`NPC.cs`): the 6-tick advance over the 8-row strips
+        // (`Main.npcFrameCount[262]` = [266] = 8, `Main.cs:67082`), the
+        // first phase wrapping at row 3 and the second clamping into
+        // 4..7.
+        let mut p = bare(NpcKind::Plantera);
+        p.hp = p.max_hp; // above the half life
+        for _ in 0..6 {
+            p.find_frame();
+        }
+        assert_eq!(p.frame, 0, "6 ticks hold row 0");
+        p.find_frame();
+        assert_eq!(p.frame, 1, "the 7th tick advances");
+        // The advance fires every 7 ticks (the counter's `> 6`), so the
+        // 0-1-2-3 cycle closes after 28.
+        for _ in 0..21 {
+            p.find_frame();
+        }
+        assert_eq!(p.frame, 0, "the first phase wraps at row 3");
+        // Below the half life: the rows clamp into 4..7.
+        p.hp = p.max_hp / 4;
+        for _ in 0..14 {
+            p.find_frame();
+        }
+        assert!((4..=7).contains(&p.frame), "the second phase rides 4..7: {}", p.frame);
+        // The Brain rides the same machine through its shield-down gate
+        // (the creeper-shield count is unmodelled — the documented
+        // follow-up), so it always shows the first-phase rows.
+        let mut b = bare(NpcKind::BrainOfCthulhu);
+        b.max_hp = b.hp;
+        for _ in 0..40 {
+            b.find_frame();
+            assert!(b.frame <= 3, "the Brain's first phase wraps at 3: {}", b.frame);
+        }
+        // The Creeper's single frame never moves.
+        let mut c = bare(NpcKind::Creeper);
+        c.frame = 3;
+        for _ in 0..10 {
+            c.find_frame();
+            assert_eq!(c.frame, 0, "the Creeper's one frame");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -15128,6 +15206,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 
