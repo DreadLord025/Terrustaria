@@ -196,6 +196,35 @@ pub struct EmoteSystem {
 }
 
 impl EmoteSystem {
+    /// `UIEmotesMenu.OnActivate`'s rebuild (`UIEmotesMenu.cs:30-44`): the page
+    /// is rebuilt from scratch on every open, so the wheel's scroll starts at 0
+    /// (`UIList`'s `Clear` + `InitializePage`).
+    pub fn open(&mut self) {
+        self.menu_open = true;
+        self.scroll = 0;
+    }
+
+    /// `UIEmotesMenu`'s close (`IngameFancyUI.Close` `:162-188` / the pick and
+    /// Back arms `:281-286`): the state drops with the panel.
+    pub fn close(&mut self) {
+        self.menu_open = false;
+        self.scroll = 0;
+    }
+
+    /// The wheel scroll (`UIList.ScrollWheel`, `UIList.cs:107-114`): the offset
+    /// moves by the wheel's notches and clamps at the roster's end. `visible_rows`
+    /// is how many rows the open panel fits — the caller's (`ui::emotes::grid_rect`
+    /// divided by the 36 px cell), the port's stand-in for `UIScrollbar`'s
+    /// `viewSize`/`maxViewSize` pair.
+    pub fn scroll_by(&mut self, step: i32, visible_rows: usize) {
+        let total = crate::emotes::EMOTE_COUNT as usize;
+        let rows = total.div_ceil(crate::ui::emotes::COLS);
+        let max = rows.saturating_sub(visible_rows) as i32;
+        self.scroll = (self.scroll + step).clamp(0, max);
+    }
+}
+
+impl EmoteSystem {
     /// `EmoteBubble.NewBubble` (`:116-131`): a 360-tick bubble on the
     /// local player.
     pub fn new_bubble(&mut self, emote: i32) {

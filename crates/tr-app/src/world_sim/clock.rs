@@ -1,17 +1,9 @@
 //! The world clock (plan stage A4): `Main.time`'s day/night wrap, the `TR_DAY`
 //! freeze pin and the `Main.Disco*` colour cycle.
 
-use std::sync::OnceLock;
-
 use tr_core::World;
 
 use crate::app::App;
-
-/// `TR_DAY` pins the sky for screenshots; time-of-day advancement pauses.
-pub(crate) fn time_frozen() -> bool {
-    static FROZEN: OnceLock<bool> = OnceLock::new();
-    *FROZEN.get_or_init(|| std::env::var_os("TR_DAY").is_some())
-}
 
 /// `Main.time`: a 15-minute day (`0..54000`) and a 9-minute night (`0..32400`) at 60
 /// ticks per second, times the dial fast-forward rate. Returns the `(blood moon,

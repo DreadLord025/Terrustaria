@@ -41,12 +41,19 @@ const TEXT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// (`NPC_Head_Boss_7` — King Slime, `NPCID.cs:10479`) drawn with
 /// `value.Frame()` = the whole sheet (`Utils.cs:1344-1349`). Draws nothing when
 /// `ui_boss_bar` is missing (`Lookups::default()`).
+///
+/// `show_text` is `BigProgressBarSystem.ShowText` — the `ShowBossBarHealthText`
+/// config key (`BigProgressBarSystem.cs:231` Put / `:236` Get), default `true`
+/// in the static ctor (`:259`): with it off the bar, the frame and the head
+/// icon still draw (`:48-52`) and only the `current / max` numbers disappear
+/// (`:53-55`), which is the port's `boss_bar_text` setting.
 pub fn draw_fancy_bar(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     screen: Vec2,
     current: i32,
     max: i32,
+    show_text: bool,
 ) {
     // Missing `UI_BossBar` (PNG-only run, `Lookups::default()`) draws nothing.
     if lookups.ui_boss_bar.is_none() {
@@ -111,22 +118,61 @@ pub fn draw_fancy_bar(
             r.push_ui_sprite(top_left, size, icon_uv, TEXT_COLOR);
         }
     }
-    // 6. `BigProgressBarSystem.ShowText` is `true` (`BigProgressBarSystem.cs:259`)
-    //    and the port has no toggle, so the health text always draws (`:53-55`).
-    let slash = "/";
-    let current_text = format!("{current}"); // `((int)current).ToString()` (`:66`)
-    let max_text = format!("{max}"); // `((int)max).ToString()` (`:68`)
-    let line = item_line_height(lookups); // `MeasureString(...).Y`
+    // 6. `if (BigProgressBarSystem.ShowText) DrawHealthText(...)` (`:53-55`):
+    //    the `ShowBossBarHealthText` key (`BigProgressBarSystem.cs:231`/`:236`,
+    //    static default `true` `:259`) drives the port's `boss_bar_text`, so an
+    //    off flag drops only the numbers — never the bar.
+    if let Some((slash, current_text, max_text)) = health_texts(show_text, current, max) {
+        draw_health_text(r, lookups, bar, slash, &current_text, &max_text);
+    }
+}
+
+/// `BigProgressBarHelper.cs:53-55` gate + `DrawHealthText` (`:59-70`): the three
+/// strings the numbers pass draws — the `"/"` literal (`:64`),
+/// `((int)current).ToString()` (`:66`) and `((int)max).ToString()` (`:68`) — or
+/// `None` when `BigProgressBarSystem.ShowText` is off, which is the only thing
+/// the flag hides (`:53` guards nothing else).
+pub fn health_texts(
+    show_text: bool,
+    current: i32,
+    max: i32,
+) -> Option<(&'static str, String, String)> {
+    show_text.then(|| ("/", format!("{current}"), format!("{max}")))
+}
+
+/// `BigProgressBarHelper.cs:62-63`: the anchor `area.Center + (0, 1)`, where
+/// `area` is `bar_rect`'s 456x22 rectangle (`:28`/`:46`) — `health_text_positions`
+/// measures the three draw top-lefts from it.
+pub fn health_text_anchor(bar: [f32; 4]) -> [f32; 2] {
+    [
+        bar[0] + bar[2] / 2.0,
+        bar[1] + bar[3] / 2.0 + 1.0, // `+ new Vector2(0f, 1f)` (`:63`)
+    ]
+}
+
+/// `BigProgressBarHelper.DrawHealthText` (`:59-70`) — the private method the
+/// `ShowText` gate calls. Each pass draws at `point - origin`
+/// (`Utils.cs:2494`), with origins `MeasureString(text) * 0.5f`, `* (1, 0.5f)` at
+/// `anchor.x - 5` and `* (0, 0.5f)` at `anchor.x + 5` (`:64-69`), all through
+/// `health_text_positions` and the shared four-way border pass.
+fn draw_health_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    bar: [f32; 4],
+    slash: &str,
+    current_text: &str,
+    max_text: &str,
+) {
+    let line = item_line_height(lookups); // `MeasureString(...).Y` (`:61`)
     let (slash_at, current_at, max_at) = health_text_positions(
-        // `area.Center + (0, 1)` (`:62-63`).
-        [bar[0] + bar[2] / 2.0, bar[1] + bar[3] / 2.0 + 1.0],
+        health_text_anchor(bar),
         [hud_item_text_width(r, lookups, slash, 1.0), line],
-        [hud_item_text_width(r, lookups, &current_text, 1.0), line],
-        [hud_item_text_width(r, lookups, &max_text, 1.0), line],
+        [hud_item_text_width(r, lookups, current_text, 1.0), line],
+        [hud_item_text_width(r, lookups, max_text, 1.0), line],
     );
     draw_border_string_four_way(r, lookups, slash_at, slash);
-    draw_border_string_four_way(r, lookups, current_at, &current_text);
-    draw_border_string_four_way(r, lookups, max_at, &max_text);
+    draw_border_string_four_way(r, lookups, current_at, current_text);
+    draw_border_string_four_way(r, lookups, max_at, max_text);
 }
 
 /// `BigProgressBarHelper.cs:46` + `Utils.cs:947-950`:
@@ -298,6 +344,36 @@ mod tests {
                 [0.0, 0.0, 516.0, 58.0],   // frame (`:51`)
             ]
         );
+    }
+
+    /// DW-4.1: the `ShowBossBarHealthText` gate (`BigProgressBarHelper.cs:53`)
+    /// drops all three strings and nothing else — an off flag leaves the bar,
+    /// the frame and the head icon drawing (`:48-52`).
+    #[test]
+    fn health_texts_gate_on_show_text() {
+        // Off: no strings, so `draw_fancy_bar` skips `DrawHealthText` entirely.
+        assert_eq!(health_texts(false, 500, 1000), None);
+        assert_eq!(health_texts(false, 0, 0), None);
+        // On: the three strings of `:64`/`:66`/`:68`.
+        assert_eq!(
+            health_texts(true, 500, 1000),
+            Some(("/", "500".to_string(), "1000".to_string()))
+        );
+        // Boundary: a full and an empty bar both keep the `current / max` form.
+        assert_eq!(
+            health_texts(true, 0, 456),
+            Some(("/", "0".to_string(), "456".to_string()))
+        );
+    }
+
+    /// `BigProgressBarHelper.cs:62-63`: `area.Center + (0, 1)` — the anchor the
+    /// three origins subtract from.
+    #[test]
+    fn health_text_anchor_is_the_bar_centre_plus_one() {
+        // 1600x900: `(572 + 228, 839 + 11) + (0, 1)`.
+        assert_eq!(health_text_anchor(bar_rect(Vec2::new(1600.0, 900.0))), [800.0, 851.0]);
+        // 1280x720: `(412 + 228, 659 + 11) + (0, 1)`.
+        assert_eq!(health_text_anchor(bar_rect(Vec2::new(1280.0, 720.0))), [640.0, 671.0]);
     }
 
     #[test]

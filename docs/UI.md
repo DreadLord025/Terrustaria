@@ -58,28 +58,42 @@ Every screen sets three constants, reproduced in `menu::Page::layout`:
 
 ## Settings (`settings.rs`)
 
-`Main.SaveSettings` writes `config.json` in the game root; this port writes the same keys
-to `Documents/My Games/Terrustaria/config.json` and reads them back on start (unknown keys
-ignored, missing keys keep their default):
+`Main.SaveSettings` writes `config.json` in the game root; this port writes to
+`Documents/My Games/Terrustaria/config.json` and reads it back **once** at start
+(`main.rs` loads it and threads it into `App::new` and `Menu::new`; the menu holds
+a working clone and the close copies the edited values back into `App.settings`).
+Unknown keys are ignored and missing keys keep their default, which is the vanilla
+`static Main()` set (volumes `1f`, `Event Progress Bar: On`, `Pause When Unfocused:
+On`, `Frame Skip Subtle`, …), so a fresh install shows the original's out-of-box
+labels. The writer uses the **vanilla key names** (so a vanilla `config.json` is
+readable) and `parse` additionally accepts this port's older spellings
+(`PickupText`, `MusicVolume`, `HidePassword`, …) as aliases:
 
-`AutoSave`, `AutoPause`, `MapEnabled`, `HidePassword`, `SettingPlayWhenUnfocused`,
-`PickupText`, `InvasionProgressMode`, `PlacementPreview`, `HighlightNewItems`,
-`MouseShowBuildingGrid`, `GamepadInstructions`, `BackgroundParallax`,
-`FrameSkipMode`, `LightingMode`, `Quality`, `BackgroundEnabled`, `BloodAndGore`,
-`MinersWobble`, `TilesSwayInWind`, `UseStormEffect`, `UseHeatDistortion`,
-`ForegroundSunlightEffects`, `WaveQuality`, `FlashyEffectsWorld`, `UseScreenShake`,
-`Zoom`, `MusicVolume`, `SoundVolume`, `AmbientVolume`, `MapScale`, `MouseColor`
-(R/G/B dict), `MouseBorderColor` (R/G/B/A dict), `SmartCursorToggle`,
-`UseSmartAxeAfterSmartPickaxe`, `UseSmartCursorForCommonBlocks`, `LockOnPriority`,
+`AutoSave`, `AutoPause`, `Language`, `MapEnabled`, `HidePasswords`,
+`PlayWhenUnfocused`, `ShowItemText`, `InvasionBarMode`, `PlacementPreview`,
+`HighlightNewItems`, `MouseShowBuildingGrid`,
+`GamepadDisableInstructionsDisplay`, `BackgroundParallax`, `FrameSkipMode`,
+`LightingMode` (persisted as the C# ordinal: `White 0, Retro 1, Trippy 2, Color 3`),
+`GraphicsQuality`, `BackgroundEnabled`, `GoreVisualsAllowed`,
+`SettingsEnabled_MinersWobble`, `SettingsEnabled_TilesSwayInWind`,
+`UseStormEffect`, `UseHeatDistortion`, `ForegroundSunlightEffects`, `WaveQuality`,
+`FlashyEffectsWorld`, `UseScreenShake`, `Zoom`, `VolumeMusic`, `VolumeSound`,
+`VolumeAmbient`, `MapScale`, `MouseColor` (R/G/B dict), `MouseBorderColor`
+(R/G/B/A dict), `SmartCursorToggle`, `UseSmartAxeAfterSmartPickaxe`,
+`UseSmartCursorForCommonBlocks`, `CraftFromNearbyChests`, `LockOnPriority`,
 `ReverseUpDownForArmorSetBonuses`, `DisableLeftShiftTrashCan`, `DisableQuickTrash`,
 `PlayerResourcesSet`, `PortraitPreference`, `ShowBossBarHealthText`,
 `FlashyEffectsInterface`, `MinimapFrame`.
 
 The renderer reads `LightingMode` (applied when the menu closes, through
 `LightMode::ALL`), `BackgroundEnabled` (the parallax layer gate in `draw_sky`) and
-`MapEnabled` (minimap/full map). The rest is stored and shown in the labels, ready for the
-systems that will consume it (volumes for `audio`, `PlacementPreview` for the outline,
-`FrameSkipMode` for the loop).
+`MapEnabled` (minimap/full map); the volumes feed `audio`/`sound` (including
+M1.4-BG-20's ambience chain), `ShowBossBarHealthText` gates the boss bar's
+`current / max` numbers and `MapScale` scales the minimap panel. The rest is stored
+and shown in the labels, ready for the systems that will consume it — the flags
+whose system the port does not have yet (`blood` without a gore system, the
+smart-cursor flags without the outline) stay stored-only and are recorded in
+`docs/ANALYSIS.md` → "Menu sub-screens (P5)".
 
 ## Menu sub-screens (P5)
 
@@ -242,6 +256,45 @@ select stay with a future multiplayer-flow task.
 `worldnew`, `vk`, `credits`, `delplayer`, `delworld`, `discard` (the legacy pages the
 flow parks onto); `TR_FAKE_CHARS`/`TR_FAKE_WORLDS=<n>` prepend fake list entries so the
 cards are screenshotable; `TR_VK_GRID=1` layers the keyboard's 50-key grid.
+
+## UI framework (`ui/pointer.rs`, `ui/framework.rs`, `ui/select_hit.rs`)
+
+The two halves of `UIElement`/`UserInterface` the screens share, besides the layout
+pass in `ui/uistate.rs`. Screen-model ruling (unchanged): this is an **immediate**
+port — no retained `UIElement` tree and no `UserInterface` object; the screens keep
+drawing and hit-testing themselves, and the framework supplies the two things that
+cannot live per-frame: the hit *order* and the click *timing*.
+
+* `ui/pointer.rs` — the `UserInterface` pointer machine (`UserInterface.cs:53-91`,
+  `:230-255`): the per-button caches (`WasDown`/`LastDown`/`LastClicked`/
+  `LastTimeDown`), the 500 ms double-click window (`:41`) with the `LastClicked`
+  clear (`:236-240`), the release-outside-the-element rule (`:243-251`, `MouseUp`
+  and no click), `ResetState` with `ImmediatelyUpdateInputPointers`' `WasDown`
+  re-sync (`:158-163`, `:165-179`), and the 200 ms
+  `STATE_CHANGE_CLICK_DISABLE_TIME` (`:43`) armed on a front-screen entry
+  (`enter_front`). The clock is `App::anim_time` in ms — deterministic under
+  `TR_SHOT`, which pins the frame step to 1/60 (`frame.rs`).
+* `ui/framework.rs` — `get_element_at` (`UIElement.cs:324-352`): the back-to-front
+  walk over a flat `Element` list, `IgnoresMouseInteraction` per element, and
+  `contains_point` reusing `in_rect`'s inclusive/exclusive edges. The port's
+  screens are flat, so the C#'s recursion (`:341`) is not modelled (the module doc
+  says so); `PassThroughMouseInteraction` is declared but never set in 1.4.5.8, so
+  there is no pass-through flag and the first hit always wins.
+* `ui/select_hit.rs` — the element ids the two select screens' hit order needs
+  (the C#'s `UIElement` references that `UserInterface`'s `InputPointerCache`
+  holds). Card *i*'s body and its four buttons take consecutive ids, and the
+  screens list them in the source's **append** order
+  (`UICharacterListItem.cs:71-121`, then `Back`, then `New`) so the reverse walk
+  gives `New`/`Back` a click over an overlapping card row.
+* **Double-click play**: a card's `OnLeftDoubleClick` → `PlayGame`
+  (`UICharacterListItem.cs:68-69`, `UIWorldListItem.cs:69`/`:99`) is the only
+  double-click user in 1.4.5.8. It needs the same element hit twice inside 500 ms,
+  which a per-frame recompute cannot answer — hence the ids. `card_hit` takes a
+  `double_click` flag and resolves it to `CardAction::DoubleClickPlay(i)`, routed
+  through new indexed `FlowClick::CharPlay(usize)`/`WorldPlay(usize)` arms.
+  **Routing only**: the port has no per-card selection state and its play path
+  closes the front flow instead of loading the entry (spec §9.4), so the index is
+  information, not a load.
 
 ## In-game interface (`crates/tr-app/src/ui/`)
 
@@ -475,6 +528,15 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 
 ## Deviations
 
+* The framework ports the **flat/event halves** of `UIElement`/`UserInterface` only:
+  the retained tree, event bubbling (`UIElement.cs:414-546`'s child→parent walk),
+  `OverflowHidden` scissoring (`:47`, 6 C# users), `IsElementUnderMouse`/
+  `MouseCaptured` as a general predicate, `UIList`'s scroll mechanics and
+  `UIScrollbar`'s drag/handle are deliberately out (the immediate-mode ruling +
+  no ported consumer); `MouseOver`/`MouseOut` *edges* have no ported counterpart
+  because hover is draw-derived and the colour swaps are `ui::hover_pair`
+  (sound 12 is already a recorded deviation). See `docs/ANALYSIS.md` →
+  "UIElement framework (M7-UI-1)" for the full gap list.
 * The world behind the menu is our own surface render (the original draws the world at the
   surface with `Main.DrawMenu`'s camera); the logo, items, font and colours are the
   original's.

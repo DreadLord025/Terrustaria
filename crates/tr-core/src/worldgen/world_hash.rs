@@ -135,15 +135,20 @@ mod tests {
     /// vegetation family (its per-pass stream) — the shell blobs retype the
     /// shore sand, the inland water clears, the seaweed grows — every world
     /// on every seed changes by design.
-    /// Re-pinned for M5-OCEAN phase 5: the vegetation family lands — the
-    /// faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) in the
-    /// cacti step (the three zones, the beach coral 81 / seashells 324, the
-    /// middle cactus via `PlantCactus`, the sea oats 529, the retired compact
-    /// scatter) and the `AddTrees` beach palm arm (`:31372-31386`) in
-    /// `plant_trees`, with the ocean frame statics added — every world on
-    /// every seed changes by design.
-    const SEED42_512: u32 = 3862881231;
-    const DEFAULT_WORLD: u32 = 2822219158;
+    /// Re-pinned for M5-TEMPLE phase 3: `templePart2` lands
+    /// (`WorldGen.cs:34464-34658` — the dart traps with their wire runs, the
+    /// buried chests, the statues, the workbench/table/chair furniture and
+    /// the painting) plus the `LihzahrdAltar` re-write (`:21943`) — every
+    /// world on every seed changes by design. These are the final M5-TEMPLE
+    /// pins.
+    /// Re-pinned for M5-STRUCT-5 over the M5-TEMPLE pins: the cave decorations
+    /// land — the spider caves (`Spread.Spider`'s wall 62 over the cave
+    /// pockets, with the pots/piles/stalactite decor), the gem caves (the gem
+    /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
+    /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
+    /// pass — every world on every seed changes by design.
+    const SEED42_512: u32 = 3074238937;
+    const DEFAULT_WORLD: u32 = 4238218118;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

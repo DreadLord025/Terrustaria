@@ -8,7 +8,7 @@ use winit::keyboard::KeyCode;
 
 use crate::achievements;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
-use crate::app::{App, NetRole, no_hud};
+use crate::app::{App, NetRole};
 use crate::chest;
 use crate::craft;
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
@@ -137,7 +137,7 @@ impl App {
         // `DrawTo` gate): `mapEnabled && !mapFullscreen && mapStyle == 1`,
         // plus the port's screenshot `no_hud` knob that hides the draw too.
         let live = self.settings.map_enabled
-            && !no_hud()
+            && !crate::env::no_hud()
             && self.map.as_ref().is_some_and(|m| !m.open)
             && self.map_style == 1;
         if !live {
@@ -146,15 +146,21 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
+        // `Main.MapScale` (`Main.cs:67297`, clamp `:4494`) — the same value the
+        // draw branch reads (`app/frame.rs`): the panel is laid out in the scaled
+        // batch's transform space (`Main.cs:55309-55329`), so the pointer is
+        // divided by it here exactly as `Main.cs:55512-55513` does
+        // (`mouseX = (int)(mouseX * num16)`, `num16 = 1 / MapScale`).
+        let map_scale = self.settings.map_scale;
         // The frame position from the same formula as the draw branch
         // (`Main.cs:55546`'s `DrawTo` position + `_frameOffset`).
-        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
+        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(screen, map_scale));
         let s = ui::minimap::style_index(&self.settings.minimap_frame);
         let frame_pos = ui::minimap::frame_position(pos, &ui::minimap::FRAME_STYLES[s]);
         let sizes = ui::minimap::button_sizes(&self.lookups, s);
         // `Main.mouseLeft` is the held state (`MinimapFrame.cs:169`).
         let action = ui::minimap::update(
-            self.mouse_pos,
+            self.mouse_pos / map_scale,
             frame_pos,
             &ui::minimap::FRAME_STYLES[s],
             sizes,
@@ -292,7 +298,9 @@ impl App {
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
             self.inventory_open = false;
-            self.emotes.menu_open = true;
+            // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
+            // with its scroll at 0 (`EmoteSystem::open`).
+            self.emotes.open();
             self.ui_left_press = false;
             return;
         }
@@ -303,12 +311,12 @@ impl App {
             let screen = Vec2::new(sw, sh);
             if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
                 self.emotes.new_bubble(id);
-                self.emotes.menu_open = false;
+                self.emotes.close();
                 self.ui_left_press = false;
                 return;
             }
             if ui::bestiary::back_hit(screen, self.mouse_pos) {
-                self.emotes.menu_open = false;
+                self.emotes.close();
                 self.ui_left_press = false;
             }
         }
