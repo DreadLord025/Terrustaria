@@ -1346,6 +1346,48 @@ pub(crate) fn all_town_kinds_present(npcs: &[crate::npc::Npc]) -> bool {
     .all(|kind| alive(*kind))
 }
 
+/// The regression guard for the UI's sheet lookup: every entry's net id
+/// must be in `BESTIARY_NPC_SHEET_IDS` (`assets.rs`), so the derived
+/// `Lookups::bestiary_sheet_index` resolves for every entry the grid can
+/// select — and the table must hold each id once. A release build panicked
+/// on a stale hand-written index; both halves of the invariant are what
+/// keeps the portraits on their own sheets.
+#[test]
+fn every_bestiary_entry_has_its_sheet_slot() {
+    for entry in ENTRIES {
+        // The 1.4.5 renames ride negative net ids (`GreenSlime` = -3,
+        // `BlueSlime` = 1 — `NPCID.cs:10671-10679`); the sheet table keys on
+        // the positive id, so a negative entry is skipped here (it shares the
+        // parent's sheet in the vec).
+        let Some(net_id) = u16::try_from(entry.net_id).ok() else {
+            continue;
+        };
+        let slots = crate::assets::BESTIARY_NPC_SHEET_IDS
+            .iter()
+            .filter(|&&id| id == net_id)
+            .count();
+        // At most one: a duplicate would shift every later slot off its own
+        // sheet. Zero is the known gap (the martian/ancient rows' sheets are
+        // packed for the entity draws but never into `bestiary_npc_sheets`),
+        // which the portrait handles through its height fallback.
+        assert!(
+            slots <= 1,
+            "the entry {} (net {}) has {} sheet slots",
+            entry.credit_id,
+            net_id,
+            slots
+        );
+    }
+    let mut seen: Vec<u16> = crate::assets::BESTIARY_NPC_SHEET_IDS.to_vec();
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(
+        seen.len(),
+        crate::assets::BESTIARY_NPC_SHEET_IDS.len(),
+        "the sheet table holds each id once"
+    );
+}
+
 /// The entry an NPC death credits — the death hook's
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
