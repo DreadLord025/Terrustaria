@@ -7351,3 +7351,49 @@ Out:
   persistence yet.
 
 Each is its own scope; none is implied by this tail.
+
+## .trwld v7 — the world chests (M6-SAVE-1b)
+
+The chest section rides the store's data as neutral records (`tr_core::save::ChestItem` /
+`ChestRecord` — the crate cannot see `App`): a `u32` count, then per chest `i32 x`,
+`i32 y`, the name (`u32` length + UTF-8 — the file's own string convention) and a
+`u32` slot count, then per slot `i32 stack` and, while the stack is non-zero, `u16
+kind` + `u8 prefix`. The C# shape is `SaveChests` (`WorldFile.cs:1606-1676`) / `LoadChests`
+(`:2723-2805`).
+
+- **The deviations.** The vanilla always writes `maxItems` slots (40) and a 7-bit
+  length string, and its load re-assigns ids; the port keeps its implicit-air
+  compressed vec (a `stack == 0` entry is an empty slot, trailing airs dropped — the
+  store materializes the 40 on open), its own string encoding, and the record's
+  anchor is the identity. The stack is `i32` where the C# writes `int16` (the vanilla
+  9999 cap fits, the port's `u32` counts saturate on write). The 8000 cap is not
+  written: the port's store already refuses past `MAX_CHESTS` (`chest.rs:40`).
+- **The app wiring.** `save_world` serializes `App.world_chests` — removed entries
+  skipped, the effective name from `chest::chest_name` (the rename or the derived
+  default), the slots mapped through `registry::name`. `App::new` takes the records,
+  `chest_gen::store_from_records` culls the stale anchors (the vanilla's pre-count
+  validity sweep) and maps the slots, and the records seed `merge_store` ahead of the
+  `TR_CHEST` fixture — **the saved contents win over the chest-gen re-roll**, so a
+  player's stock survives the reload; the names ride `chest_names` by the post-merge
+  index (`find_chest` on the anchor). The autosave (10 s), F9 and quit write the
+  section; the MP world transfer does not carry chests (the tile sections do).
+- **Recorded gap (a follow-up, not fixed here).** `worldgen::pipeline::boot_statics`
+  never sets `frame_important[21]`/`[467]` while the vanilla does (`Main.cs:7656-7657`),
+  so a LOADED world's framing pass rewrites the chest tiles' 2x2 frames and the
+  chest-gen anchor scan (`frame_x == 0 && frame_y == 0`) then finds nothing — the roll
+  only fires in a freshly generated, unframed world. The records path is unaffected
+  (its cull only asks for an active 21/341 tile); the fix belongs to the worldgen
+  statics' owner.
+- Tests: `dw_2_2_the_chests_round_trip_in_v7` (names, interior airs, the prefixes),
+  `dw_2_2_a_v6_payload_loads_no_chests`, `dw_2_2_a_truncated_chest_section_bails`,
+  `dw_2_2_the_chest_section_is_deterministic`, and the app pair
+  `dw_2_2_a_saved_chest_round_trips_through_the_app` (contents/prefix/name survive,
+  the no-roll-overwrite control) / `dw_2_2_a_record_with_a_missing_anchor_is_dropped`
+  (the cull). Suite 2409 / 0.
+
+Out: the remaining C# sections — signs (no port store), the NPC block (names/homes/
+homeless, App-side `App.npcs`), the bestiary kill pairs (today the `.trplayer` sidecar
+v5; moving them into the world file), the banner counts, `SavedOreTiers`
+(worldgen-local — needs a `World` field), the angler quest state (no port fields),
+the TownManager rooms, the weighted pressure plates (no port store) and the creative
+powers/research — each needs its own scope.
