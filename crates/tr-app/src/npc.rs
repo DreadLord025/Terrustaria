@@ -187,6 +187,7 @@ pub enum NpcKind {
     /// `NPCID.TowerNebula` (507).
     NebulaTower,
     /// `NPCID.TowerSolar` (517).
+    VortexTower,
     SolarTower,
     /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
     /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
@@ -785,6 +786,7 @@ impl NpcKind {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
+            NpcKind::VortexTower => 146,
             NpcKind::SolarTower => 115,
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
@@ -998,6 +1000,7 @@ NpcKind::SolarSelenian => 140,
             112 => NpcKind::AncientCultist,
             113 => NpcKind::StardustTower,
             114 => NpcKind::NebulaTower,
+            146 => NpcKind::VortexTower,
             115 => NpcKind::SolarTower,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
@@ -1319,6 +1322,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => (130.0, 270.0),
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
@@ -1692,6 +1696,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 20000,
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
@@ -1896,6 +1901,7 @@ NpcKind::SolarSelenian => 140,
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
@@ -2767,6 +2773,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
@@ -3018,6 +3025,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
             NpcKind::StardustSpiderBig => 40,
@@ -3215,6 +3223,7 @@ impl Npc {
             NpcKind::SolarCrawltipedeTail => 30.0,
             NpcKind::StardustWormHead => 700.0,
             NpcKind::SolarSpearman => 900.0,
+            NpcKind::VortexTower => 0.0,
             NpcKind::NebulaFloater => 400.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
@@ -3298,6 +3307,7 @@ impl Npc {
             | NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
@@ -3619,6 +3629,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
             // The crawltipede chain rides the worm pass entirely.
             NpcKind::SolarCrawltipedeHead
@@ -4186,6 +4197,7 @@ impl Npc {
             NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
+            | NpcKind::VortexTower
             | NpcKind::SolarTower => {
                 self.frame = 0;
             }
@@ -11083,6 +11095,7 @@ impl Npc {
             NpcKind::AncientCultist => 112,
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
+            NpcKind::VortexTower => 422,
             NpcKind::SolarTower => 115,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,

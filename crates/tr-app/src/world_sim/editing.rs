@@ -144,6 +144,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
+        // 44028-44034`): the 3601 use gates on `downedGolemBoss && hardMode
+        // && !AnyDanger && !AnyoneNearCultists` and calls
+        // `WorldGen.StartImpendingDoom(720)` — the countdown's item value
+        // (`NPC.cs:6037`).
+        if held.kind == 3601 && held.count > 0 && use_celestial_sigil(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
         // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
         // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
@@ -5017,6 +5025,44 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
 /// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
 /// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(2)` —
 /// the march state rides the World (the morning-roll resolve's shape).
+/// The Celestial Sigil (`Player.cs:44028-44034`'s `ItemCheck_UseBossSpawners`
+/// arm): the item 3601 gates on `downedGolemBoss && hardMode && !AnyDanger()
+/// && !AnyoneNearCultists()` and calls `WorldGen.StartImpendingDoom(720)` —
+/// the countdown's item value (`NPC.cs:6037`).
+pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
+    if app.world.moon_lord_countdown > 0 || app.world.lunar_apocalypse_is_up {
+        return false;
+    }
+    if !app.world.downed_golem || !app.world.hard_mode {
+        return false;
+    }
+    // `!AnyDanger()`: no invasion and no active event (`Main.cs:80246`).
+    if app.world.invasion_type != 0 || app.world.dd2_event_ongoing {
+        return false;
+    }
+    // `!AnyoneNearCultists()` (`NPC.cs:80290-80313`).
+    if crate::world_sim::lunar::anyone_near_cultists(app) {
+        return false;
+    }
+    app.world.moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    app.world.max_moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "The air is growing colder...",
+        crate::chat::COLOR_COMMAND,
+    );
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    true
+}
+
 pub fn use_snow_globe(app: &mut App) -> bool {
     if app.world.invasion_type != 0 {
         return false;

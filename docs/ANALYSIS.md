@@ -8005,3 +8005,48 @@ Deviations: the dust arms, the ground-avoidance tile scan
 (`:51784-51798`) and the same-type repulsion of the crawltipede are
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
+
+## The lunar chain (M4-EVENT-15)
+
+The apocalypse is a state chain, not a machine: the cultist's death →
+`WorldGen.TriggerLunarApocalypse` (the four towers) → the towers' deaths
+→ `WorldGen.UpdateLunarApocalypse` + `StartImpendingDoom` → the countdown
+tick → the Moon Lord's spawn.
+
+- **The cultist's death** (`DoDeathEvents`'s 439 row,
+  `NPC.cs:79393-79395`) clears `downedAncientCultist` and raises the
+  apocalypse. The port's `AncientCultist` is the tower-shaped kind (its
+  machine is the aiStyle-94 tower machine), so the vanilla's 439 row maps
+  onto it directly.
+- **`TriggerLunarApocalypse`** (`WorldGen.cs:86626-86691`) draws the four
+  tower ids `{517, 422, 507, 493}` without replacement into the four world
+  slots at `maxTilesX / 5 * (1 + j)`; the ±100-tile jitter retries 30
+  times against the vertical clearance scan, with the
+  `(num2 - 40) * 16` fallback when all fail. All four `TowerActive*` flags,
+  `LunarApocalypseIsUp` and the four `ShieldStrengthTower*` (to
+  `ShieldStrengthTowerMax` — 100, halved post-Moon-Lord) raise together.
+  The port's fresh worktree brings the four towers up in the same
+  draw-out order and clears the slot with its own tile lookup.
+- **The towers' deaths** (`NPC.cs:79321-79344`) set the `downedTower*`,
+  clear the `TowerActive*` and call `UpdateLunarApocalypse`, then
+  `MessageLunarApocalypse` (`WorldGen.cs:86778-86801`) picks
+  `Lang.misc[43 + down]` from the inactive count.
+- **`UpdateLunarApocalypse`** (`:86693-86748`) re-derives the four flags
+  from the live NPCs (plus the 398/396/397/400 boss family) and, when all
+  four are down and the boss isn't up, `StartImpendingDoom(3600)`.
+- **`StartImpendingDoom`** (`:86750-86760`) ends the apocalypse, arms
+  `MaxMoonLordCountdown`/`MoonLordCountdown` and (in the vanilla)
+  `GetRidOfCultists` kills the 437/438/439 ritual kinds — constants-off
+  in the port (its ritual support isn't ported).
+- **The countdown tick** (`Main.cs:64987-64994`) decrements once per world
+  update and at zero calls `NPC.SpawnOnPlayer(Player.FindClosest(maxTilesX
+  / 2, worldSurface / 2), 398)`; the port's single player stands in. The
+  Celestial Sigil's route (`Player.cs:44028-44034`) is the same function
+  with the item's 720 (`NPC.cs:6037`'s `ItemMoonlordCountdownTime`) and
+  the Golem/hardmode/danger gates the vanilla's `CanStartInvasion`-like
+  family uses.
+
+Deviations: the Moon Lord's boss bar/head textures, the `MoonLordShake`
+scene filter, the music ducking and the countdown UI are unmodelled; the
+`GetRidOfCultists` ritual-cleanup arm is constants-off; the remix/no-
+surface branch of the tower-place retry is constants-off.

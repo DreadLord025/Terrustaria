@@ -1214,6 +1214,9 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
+    // apocalypse's countdown ticks down and at zero the boss spawns.
+    crate::world_sim::lunar::update_moon_lord_countdown(app);
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
     // PRE-pass: each 397/396/400/401 finds its core, mirrors the core's
@@ -1691,6 +1694,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
                 app.world.tower_active_solar = false;
+                // `NPC.cs:79324-79325`'s `UpdateLunarApocalypse()` +
+                // `MessageLunarApocalypse()`.
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
             }
             // `DoDeathEvents`'s 398 row (`NPC.cs:79397-79404`): the core's
             // death clears the lunar apocalypse (the vanilla's
@@ -1701,10 +1708,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::NebulaTower => {
                 app.world.downed_tower_nebula = true;
                 app.world.tower_active_nebula = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
             }
             NpcKind::StardustTower => {
                 app.world.downed_tower_stardust = true;
                 app.world.tower_active_stardust = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            NpcKind::VortexTower => {
+                app.world.downed_tower_vortex = true;
+                app.world.tower_active_vortex = false;
+                crate::world_sim::lunar::update_lunar_apocalypse(app);
+                crate::world_sim::lunar::message_lunar_apocalypse(app);
+            }
+            // `DoDeathEvents`'s 439 row (`NPC.cs:79393-79396`): the
+            // cultist's death clears its flag and raises the apocalypse
+            // (`WorldGen.TriggerLunarApocalypse`).
+            NpcKind::AncientCultist => {
+                app.world.downed_ancient_cultist = true;
+                let rng = app.item_rng;
+                crate::world_sim::lunar::trigger_lunar_apocalypse(app, rng);
             }
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
                 // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
@@ -5823,6 +5848,172 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+#[cfg(test)]
+mod lunar_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::App;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_ready() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 150.0 * TILE_PX;
+        p.y = 118.0 * TILE_PX;
+        app.player = Some(p);
+        app
+    }
+
+    #[test]
+    fn the_vortex_tower_round_trips() {
+        // The vortex tower (422) joins the three ported pillars with the
+        // shared row (`NPC.cs:15249-15263`).
+        let kind = NpcKind::VortexTower;
+        assert_eq!(kind.to_u16(), 146);
+        assert_eq!(NpcKind::from_u16(146), Some(kind));
+        let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!((n.size().0, n.size().1), (130.0, 270.0));
+        assert_eq!(n.max_hp, 20000);
+        assert_eq!(n.defense(), 20);
+        assert_eq!(n.knock_back_resist(), 0.0);
+    }
+
+    #[test]
+    fn the_cultists_death_raises_the_four_towers() {
+        // `DoDeathEvents`'s 439 row (`NPC.cs:79393-79395`) →
+        // `WorldGen.TriggerLunarApocalypse` (`WorldGen.cs:86626-86691`).
+        let mut app = app_ready();
+        let mut cultist = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        cultist.hp = 0;
+        app.npcs.push(cultist);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let towers = app
+            .npcs
+            .iter()
+            .filter(|n| {
+                matches!(
+                    n.kind,
+                    NpcKind::SolarTower
+                        | NpcKind::VortexTower
+                        | NpcKind::NebulaTower
+                        | NpcKind::StardustTower
+                )
+            })
+            .count();
+        assert_eq!(towers, 4, "the four towers spawn");
+        assert!(app.world.lunar_apocalypse_is_up, "the apocalypse raises");
+        assert!(app.world.tower_active_solar && app.world.tower_active_vortex);
+        assert!(app.world.tower_active_nebula && app.world.tower_active_stardust);
+        // `:86688`'s shield raise to `ShieldStrengthTowerMax` (100).
+        assert_eq!(app.world.tower_shield_solar, 100);
+        assert_eq!(app.world.tower_shield_vortex, 100);
+        assert!(app.world.downed_ancient_cultist, "the cultist's flag");
+    }
+
+    #[test]
+    fn the_tower_deaths_open_the_countdown_and_spawn_the_boss() {
+        // `WorldGen.UpdateLunarApocalypse` (`:86693-86748`) → all four
+        // towers down → `StartImpendingDoom(3600)` → `Main.cs:64987`'s
+        // spawn of the 398 core.
+        let mut app = app_ready();
+        // The apocalypse is up with all four towers.
+        app.world.lunar_apocalypse_is_up = true;
+        for kind in [
+            NpcKind::SolarTower,
+            NpcKind::VortexTower,
+            NpcKind::NebulaTower,
+            NpcKind::StardustTower,
+        ] {
+            let mut t = Npc::new(kind, 60.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+            t.hp = 0;
+            app.npcs.push(t);
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.moon_lord_countdown, 3600, "the countdown arms");
+        assert_eq!(app.world.max_moon_lord_countdown, 3600);
+        assert!(!app.world.lunar_apocalypse_is_up, "the apocalypse ends");
+        assert!(app.world.downed_tower_solar && app.world.downed_tower_vortex);
+        // The countdown's last tick spawns the core on the player.
+        for _ in 0..3601 {
+            crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+        }
+        let cores = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordCore)
+            .count();
+        assert_eq!(cores, 1, "the Moon Lord spawns");
+        assert_eq!(app.world.moon_lord_countdown, 0);
+    }
+
+    #[test]
+    fn the_sigil_arms_the_short_countdown() {
+        // `Player.cs:44028-44034`: the Celestial Sigil's 720-tick countdown
+        // through `WorldGen.StartImpendingDoom(720)`.
+        let mut app = app_ready();
+        // The refusal without the gates (the Golem not down, not hardmode).
+        assert!(!crate::world_sim::editing::use_celestial_sigil(&mut app));
+        assert_eq!(app.world.moon_lord_countdown, 0);
+        // With the gates: the item 3601 in the selected slot.
+        app.world.downed_golem = true;
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 3601;
+        app.inventory[app.selected].count = 1;
+        let armed = crate::world_sim::editing::use_celestial_sigil(&mut app);
+        assert!(armed, "the sigil arms the countdown");
+        assert_eq!(app.world.moon_lord_countdown, 720);
+        assert_eq!(app.inventory[app.selected].count, 0, "the stack pays one");
+    }
+
+    #[test]
+    fn anyone_near_cultists_reads_the_live_cultist() {
+        // `NPC.cs:80290-80313`'s 2500×1500 rect around the cultist.
+        let mut app = app_ready();
+        let cultist = Npc::new(
+            NpcKind::AncientCultist,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        app.npcs.push(cultist);
+        assert!(
+            crate::world_sim::lunar::anyone_near_cultists(&app),
+            "the standing player is near"
+        );
+        if let Some(p) = app.player.as_mut() {
+            p.x = 150.0 * TILE_PX + 20000.0;
+        }
+        assert!(
+            !crate::world_sim::lunar::anyone_near_cultists(&app),
+            "the far player is not"
+        );
     }
 }
 

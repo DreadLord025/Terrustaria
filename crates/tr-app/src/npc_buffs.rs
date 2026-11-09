@@ -285,7 +285,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::StardustWormHead
         | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
+        | NpcKind::VortexTower
         | NpcKind::StardustCellBig
+        | NpcKind::VortexTower
         | NpcKind::StardustCellSmall
         | NpcKind::StardustJellyfishBig
         | NpcKind::NebulaBeast
