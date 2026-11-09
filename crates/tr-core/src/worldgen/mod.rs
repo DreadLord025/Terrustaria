@@ -60,6 +60,10 @@ pub struct GenOptions {
     /// world, so a flag-free options struct generates exactly the
     /// pre-M5-SEED-1 world.
     pub flags: crate::seeds::SeedFlags,
+    /// M5-SEED-2: the 37 micro-seed flags beside the classic ones — the
+    /// `SecretSeed.InitializeSecretSeeds` read (`WorldGen.cs:11124`) the
+    /// worldgen arms take from `opts` and `generate` stamps onto the world.
+    pub micro_flags: crate::seeds::MicroSeedFlags,
 }
 
 impl Default for GenOptions {
@@ -71,6 +75,7 @@ impl Default for GenOptions {
             crimson: false,
             seed: 1,
             flags: crate::seeds::SeedFlags::default(),
+            micro_flags: crate::seeds::MicroSeedFlags::default(),
         }
     }
 }
@@ -119,6 +124,7 @@ pub fn generate(opts: &GenOptions) -> World {
     // loot/fishing/variant/wind conditions, the save layers) see the same
     // special-world identity the passes generated with.
     world.seeds = opts.flags;
+    world.micro_seeds = opts.micro_flags;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three
