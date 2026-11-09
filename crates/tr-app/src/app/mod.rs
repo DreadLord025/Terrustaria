@@ -389,6 +389,19 @@ pub(crate) struct App {
     pub(crate) mouse_item: ItemSlot,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// `UserInterface`'s pointer machine (`UserInterface.cs:53-91`, `:230-255`):
+    /// the press/release → click/`DoubleClick` caches with the 500 ms window and
+    /// the 200 ms state-change lockout. Fed by `app/loop.rs` (the front screens'
+    /// event path) and ticked from `app/frame.rs`; the clock is `pointer_ms`,
+    /// deterministic under `TR_SHOT`.
+    pub(crate) pointer: ui::pointer::PointerState,
+    /// The machine's clock in ms — `Main.TotalGameTime.TotalMilliseconds`'s
+    /// analogue, derived from `anim_time` (1/60-pinned under `TR_SHOT`).
+    pub(crate) pointer_ms: f64,
+    /// The last `PointerEvent` the machine produced on the front screens' event
+    /// path, read by `handle_front_click` and cleared there — the C#'s event
+    /// delegate delivery (`UserInterface.cs:55-70`) without a listener table.
+    pub(crate) pointer_event: Option<ui::pointer::PointerEvent>,
     pub(crate) mouse_pos: Vec2,
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
@@ -1180,6 +1193,12 @@ impl App {
         }
         self.park_menu();
         self.front = Some(front);
+        // `UserInterface.SetState`'s `ResetState` (`UserInterface.cs:295-299`):
+        // a button held across the switch must not read as a fresh press edge
+        // on the new screen, and the next press is locked out for 200 ms.
+        self.pointer
+            .reset_on_state_change([self.front_mouse_down, self.place_down]);
+        self.pointer_ms = self.anim_time as f64 * 1000.0;
     }
 
     /// Opens the virtual keyboard the way `RenameButtonClick` does
@@ -2251,6 +2270,9 @@ impl App {
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            pointer: ui::pointer::PointerState::default(),
+            pointer_ms: 0.0,
+            pointer_event: None,
             mouse_pos: if deterministic_pointer_park() {
                 Vec2::new(-64.0, -64.0)
             } else {

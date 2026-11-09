@@ -180,6 +180,14 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.TowerSolarVortex` — see the kinds below (`NPC.cs`'s cases
+    /// 493/507/517 share the cultist's row: 130×270, aiStyle 94, 20000
+    /// HP, dmg 0, def 20).
+    StardustTower,
+    /// `NPCID.TowerNebula` (507).
+    NebulaTower,
+    /// `NPCID.TowerSolar` (517).
+    SolarTower,
     /// `NPCID.AncientCultist` (422) — the Lunar Events' summoner (`NPC.cs`
     /// `:15172-15189`: 130×270, aiStyle 94, 20000 HP, dmg 0, def 20,
     /// noGravity, noTileCollide; the ritual + the portal-summon machine).
@@ -670,6 +678,9 @@ impl NpcKind {
             NpcKind::DD2Bartender => 109,
             NpcKind::DD2EterniaCrystal => 110,
             NpcKind::AncientCultist => 112,
+            NpcKind::StardustTower => 113,
+            NpcKind::NebulaTower => 114,
+            NpcKind::SolarTower => 115,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -726,8 +737,8 @@ impl NpcKind {
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
             NpcKind::TravellingMerchant => 111,
-            NpcKind::Angler => 114,
-            NpcKind::SleepingAngler => 115,
+            NpcKind::Angler => 116,
+            NpcKind::SleepingAngler => 117,
         }
     }
 
@@ -794,6 +805,9 @@ impl NpcKind {
             109 => NpcKind::DD2Bartender,
             110 => NpcKind::DD2EterniaCrystal,
             112 => NpcKind::AncientCultist,
+            113 => NpcKind::StardustTower,
+            114 => NpcKind::NebulaTower,
+            115 => NpcKind::SolarTower,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -850,8 +864,8 @@ impl NpcKind {
             83 => NpcKind::PrimeVice,
             84 => NpcKind::PrimeLaser,
             111 => NpcKind::TravellingMerchant,
-            114 => NpcKind::Angler,
-            115 => NpcKind::SleepingAngler,
+            116 => NpcKind::Angler,
+            117 => NpcKind::SleepingAngler,
             _ => return None,
         })
     }
@@ -1047,8 +1061,12 @@ impl NpcKind {
             NpcKind::DD2Betsy => (190.0, 90.0),
             // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
             NpcKind::DD2WitherBeast => (18.0, 40.0),
-            // The cultist: 130x270 (`NPC.cs`'s case 422).
-            NpcKind::AncientCultist => (130.0, 270.0),
+            // The cultist + the three towers: 130x270 (`NPC.cs`'s
+            // case 422 + the 493/507/517 rows).
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => (130.0, 270.0),
             // The tavernkeeper + the etherian crystal: 18x40 / 40x40.
             NpcKind::DD2Bartender => (18.0, 40.0),
             NpcKind::DD2EterniaCrystal => (40.0, 40.0),
@@ -1322,8 +1340,11 @@ impl NpcKind {
             NpcKind::DD2Betsy => 50000,
             // The WitherBeast: 500 HP.
             NpcKind::DD2WitherBeast => 500,
-            // The cultist: 20000 HP (`NPC.cs`'s case 422).
-            NpcKind::AncientCultist => 20000,
+            // The cultist + the towers: 20000 HP.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 20000,
             // The tavernkeeper 250, the crystal 1000 (`NPC.cs`'s rows).
             NpcKind::DD2Bartender => 250,
             NpcKind::DD2EterniaCrystal => 1000,
@@ -1475,8 +1496,11 @@ impl NpcKind {
             NpcKind::DD2Betsy => 80,
             // The WitherBeast: dmg 50.
             NpcKind::DD2WitherBeast => 50,
-            // The cultist: dmg 0 (case 422 — the ritual is harmless).
-            NpcKind::AncientCultist => 0,
+            // The cultist + the towers: dmg 0.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0,
             // The tavernkeeper 10, the crystal 0 (its contact damage is 0).
             NpcKind::DD2Bartender => 10,
             NpcKind::DD2EterniaCrystal => 0,
@@ -2188,8 +2212,11 @@ impl Npc {
             NpcKind::DD2Betsy => 0.0,
             // The WitherBeast: kb 0.15.
             NpcKind::DD2WitherBeast => 0.15,
-            // The cultist: kb 0 (case 422 sets nothing).
-            NpcKind::AncientCultist => 0.0,
+            // The cultist + the towers: kb 0.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0.0,
             // The tavernkeeper 0.5, the crystal 0.
             NpcKind::DD2Bartender => 0.5,
             NpcKind::DD2EterniaCrystal => 0.0,
@@ -2369,8 +2396,11 @@ impl Npc {
             NpcKind::DD2Betsy => 38,
             // The WitherBeast: def 30.
             NpcKind::DD2WitherBeast => 30,
-            // The cultist: def 20.
-            NpcKind::AncientCultist => 20,
+            // The cultist + the towers: def 20.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 20,
             // The tavernkeeper 15, the crystal 14.
             NpcKind::DD2Bartender => 15,
             NpcKind::DD2EterniaCrystal => 14,
@@ -2544,7 +2574,10 @@ impl Npc {
             | NpcKind::DD2WitherBeast
             | NpcKind::DD2EterniaCrystal
             | NpcKind::DD2Bartender
-            | NpcKind::AncientCultist => 0.0,
+            | NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2853,8 +2886,11 @@ impl Npc {
             NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
             // The WitherBeast: aiStyle 107's aura/self-heal machine.
             NpcKind::DD2WitherBeast => self.update_wither_beast(world, player, rng),
-            // The cultist: aiStyle 94's ritual/summon machine.
-            NpcKind::AncientCultist => self.update_ancient_cultist(world, player, rng),
+            // The cultist + the towers: aiStyle 94's shared machine.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
             // The tavernkeeper: the town-NPC walker (aiStyle 7).
             NpcKind::DD2Bartender => self.update_guide(world, dt),
             // The etherian crystal: aiStyle 105's machine.
@@ -3157,8 +3193,11 @@ impl Npc {
                     self.frame = (self.frame + 1) % 16;
                 }
             }
-            // The cultist: the 1-frame strip.
-            NpcKind::AncientCultist => {
+            // The cultist + the towers: the 1-frame strips.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => {
                 self.frame = 0;
             }
             // The etherian crystal: the 1-frame strip.
@@ -7992,8 +8031,8 @@ impl Npc {
             NpcKind::PrimeLaser => 84,
             NpcKind::WallOfFleshEye => 80,
             NpcKind::TravellingMerchant => 111,
-            NpcKind::Angler => 114,
-            NpcKind::SleepingAngler => 115,
+            NpcKind::Angler => 116,
+            NpcKind::SleepingAngler => 117,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -8059,6 +8098,9 @@ impl Npc {
             NpcKind::DD2Bartender => 109,
             NpcKind::DD2EterniaCrystal => 110,
             NpcKind::AncientCultist => 112,
+            NpcKind::StardustTower => 113,
+            NpcKind::NebulaTower => 114,
+            NpcKind::SolarTower => 115,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -10458,8 +10500,8 @@ mod tests {
         assert_eq!(a.knock_back_resist(), 0.5);
         assert_eq!(NpcKind::Angler.contact_damage(), 10);
         assert_eq!(NpcKind::Angler.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::Angler.to_u16(), 114);
-        assert_eq!(NpcKind::from_u16(114), Some(NpcKind::Angler));
+        assert_eq!(NpcKind::Angler.to_u16(), 116);
+        assert_eq!(NpcKind::from_u16(116), Some(NpcKind::Angler));
         assert_eq!(NpcKind::Angler.cs_id(), 369);
         assert!(NpcKind::Angler.is_town_resident());
         assert_eq!(
@@ -10472,8 +10514,8 @@ mod tests {
         assert_eq!(s.defense(), 15);
         assert_eq!(s.knock_back_resist(), 0.5);
         assert_eq!(NpcKind::SleepingAngler.size(), (34.0, 8.0));
-        assert_eq!(NpcKind::SleepingAngler.to_u16(), 115);
-        assert_eq!(NpcKind::from_u16(115), Some(NpcKind::SleepingAngler));
+        assert_eq!(NpcKind::SleepingAngler.to_u16(), 117);
+        assert_eq!(NpcKind::from_u16(117), Some(NpcKind::SleepingAngler));
         assert_eq!(NpcKind::SleepingAngler.cs_id(), 376);
         // The bound form is NOT a town NPC (`Sets.BoundTownNPCs`,
         // `NPCID.cs:10441`).

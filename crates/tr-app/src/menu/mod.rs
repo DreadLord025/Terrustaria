@@ -28,6 +28,7 @@ use actions::Act;
 use pages::{default_keybinds, default_map_binds};
 
 use glam::Vec2;
+use tr_core::rng::Xorshift64;
 use tr_render::SpriteRenderer;
 
 use crate::assets;
@@ -1145,7 +1146,9 @@ fn border_string_four_way(
 }
 
 /// `Player.name` style random character names ("Zealot", "Terra", …): two syllables
-/// from the game's name lists, so every launch shows a different character.
+/// from the game's name lists, so every launch shows a different character. The
+/// draw rides the shared xorshift64 core (`tr_core::rng::Xorshift64`) with this
+/// function's seed prep, so the streams stay byte-identical to the inline triple.
 pub fn random_name() -> String {
     const A: &[&str] = &[
         "Al", "Ai", "Ar", "Bel", "Bra", "Ca", "Cle", "Da", "Dra", "E", "El", "Fa", "Fi", "Ga",
@@ -1164,15 +1167,9 @@ pub fn random_name() -> String {
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
         ^ ((std::process::id() as u64) << 32);
-    let mut s = seed | 1;
-    let mut next = || {
-        s ^= s << 13;
-        s ^= s >> 7;
-        s ^= s << 17;
-        s
-    };
-    let a = A[(next() % A.len() as u64) as usize];
-    let b = B[(next() % B.len() as u64) as usize];
+    let mut rng = Xorshift64(seed | 1);
+    let a = A[(rng.next_u64() % A.len() as u64) as usize];
+    let b = B[(rng.next_u64() % B.len() as u64) as usize];
     format!("{a}{b}")
 }
 

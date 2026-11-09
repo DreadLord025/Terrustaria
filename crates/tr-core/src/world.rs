@@ -203,6 +203,28 @@ pub struct World {
     /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
     /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
     pub dd2_spawn_hold: i32,
+    /// `NPC.ShieldStrengthTower*` (`NPC.cs:6399-6405`): the four Lunar
+    /// towers' shield strengths — raised at the spawn (`WorldGen.cs:86688`),
+    /// spent by damage, zeroed at the reset (`NPC.cs:95247`).
+    pub tower_shield_solar: i32,
+    pub tower_shield_vortex: i32,
+    pub tower_shield_nebula: i32,
+    pub tower_shield_stardust: i32,
+    /// `NPC.LunarShieldPowerNormal` (`NPC.cs:6407`) — the shields' max
+    /// (100; `ShieldStrengthTowerMax` halves it post-Moon-Lord).
+    pub lunar_shield_power_normal: i32,
+    /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
+    pub downed_moon_lord: bool,
+        /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
+    pub tower_active_solar: bool,
+    pub tower_active_vortex: bool,
+    pub tower_active_nebula: bool,
+    pub tower_active_stardust: bool,
+    /// `NPC.downedTower*` — the towers defeated.
+    pub downed_tower_solar: bool,
+    pub downed_tower_vortex: bool,
+    pub downed_tower_nebula: bool,
+    pub downed_tower_stardust: bool,
     /// `DD2Event.LostThisRun` — the crystal's death (`NPC.cs`'s case-548
     /// death-flag) sets it (`:79346`'s event-flag family); the weapon
     /// rosters clear with the event's stop.
@@ -349,6 +371,20 @@ impl World {
             dd2_wave_kills: 0.0,
             dd2_spawn_hold: 300,
             dd2_lost: false,
+            tower_shield_solar: 0,
+            tower_shield_vortex: 0,
+            tower_shield_nebula: 0,
+            tower_shield_stardust: 0,
+            lunar_shield_power_normal: 100,
+            downed_moon_lord: false,
+            tower_active_solar: false,
+            tower_active_vortex: false,
+            tower_active_nebula: false,
+            tower_active_stardust: false,
+            downed_tower_solar: false,
+            downed_tower_vortex: false,
+            downed_tower_nebula: false,
+            downed_tower_stardust: false,
             invasion_type: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,

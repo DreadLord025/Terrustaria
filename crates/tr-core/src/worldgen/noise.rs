@@ -1,8 +1,10 @@
-//! Deterministic value noise and the xorshift RNG shared by the generation passes.
+//! Deterministic value noise for the generation passes.
 //!
-//! The output streams of both are part of the world contract — changing a
-//! constant here changes every generated world, which `deterministic_for_seed`
-//! pins.
+//! The value-noise output is part of the world contract — changing a constant
+//! here changes every generated world, which `deterministic_for_seed` pins. The
+//! xorshift RNG the passes draw from moved to [`crate::rng`] (the unified
+//! xorshift64 core shared with the wind walk); it stays re-exported here as
+//! `Rng` so the passes' imports and seeding contract are unchanged.
 
 /// Deterministic 2D value noise with smooth interpolation.
 pub(crate) struct Noise {
@@ -63,48 +65,12 @@ impl Noise {
     }
 }
 
-/// Small xorshift RNG, seeded from the world seed.
-pub(crate) struct Rng(pub(crate) u64);
-
-impl Rng {
-    pub(crate) fn next_u32(&mut self) -> u32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        (x >> 32) as u32
-    }
-
-    /// The `Next(min, max)` draw. An empty range returns `lo` without a
-    /// draw, mirroring `Random.Next` (`minValue == maxValue` → `minValue`;
-    /// only `minValue > maxValue` throws) — the degenerate band widths the
-    /// sub-vanilla 512 test worlds produce (`GenVars` quartet collapses a
-    /// band flat) stay well-formed.
-    pub(crate) fn range(&mut self, lo: i32, hi: i32) -> i32 {
-        debug_assert!(hi >= lo, "range({lo}, {hi})");
-        if hi == lo {
-            return lo;
-        }
-        lo + (self.next_u32() % (hi - lo) as u32) as i32
-    }
-
-    pub(crate) fn chance(&mut self, n: u32) -> bool {
-        self.next_u32() % n == 0
-    }
-
-    /// The fraction draw — the port's `NextDouble` for the passes that draw
-    /// one (the ocean-cave walker's direction/budget/jitter chain
-    /// `WorldGen.cs:76462+`, the `AddTrees` beach-palm probability
-    /// `:31372-31386`, the oasis density `:21333-21348`). One convention over
-    /// the xorshift stream: the next word scaled into `[0, 1)`. The vanilla
-    /// `UnifiedRandom.NextDouble` has different numerics — the port's streams
-    /// are already xorshift (module doc), so only the *fraction* semantics
-    /// (`0.0` inclusive, `1.0` exclusive, deterministic order) carry over.
-    pub(crate) fn next_f64(&mut self) -> f64 {
-        f64::from(self.next_u32()) / 4_294_967_296.0
-    }
-}
+/// The xorshift64 core the passes draw from — the unified
+/// [`crate::rng::Xorshift64`] (shared with the wind walk, byte-exact),
+/// re-exported under its historical name so every pass's import and the
+/// worldgen seeding contract (`Rng(seed ^ const)`, the high-32-bit word draw)
+/// stay unchanged.
+pub(crate) use crate::rng::Xorshift64 as Rng;
 
 #[cfg(test)]
 mod tests {
