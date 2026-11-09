@@ -1438,6 +1438,23 @@ pub(crate) fn is_tile_table(kind: u16) -> bool {
     is_table(kind)
 }
 
+/// `WorldGen.IsOpenDoorAnchorFrame` (`WorldGen.cs:69171-69184`): the open
+/// door's 11 (framed off, type 11) whose frame column anchors a wall grid
+/// point — the columns 0..17 (the top frame) and 54..71 (the bottom).
+pub(crate) fn is_open_door_anchor_frame(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() || t.kind != 11 {
+        return false;
+    }
+    let num = t.frame_x % 72;
+    if num >= 18 {
+        return num >= 54;
+    }
+    true
+}
+
 pub(crate) fn is_table(kind: u16) -> bool {
     TILE_TABLE.contains(&kind)
 }
