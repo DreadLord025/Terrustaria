@@ -2712,13 +2712,351 @@ pub fn step_pickaxe_mine_solids(
     None
 }
 
+// ------------------------------------------------------- wall beam helpers --
+
+/// `Collision.HitWallSubstep` (`Collision.cs:1310-1357`): the wall cell a
+/// hammer's beam may remove — a wall that is not a house wall (or borders
+/// an open cell), and, when the cell also holds a tile, that tile is a
+/// full solid surrounded by full solids (the wall is behind it).
+pub fn hit_wall_substep(w: &crate::World, x: i32, y: i32) -> bool {
+    let Some(t) = w.tile(x, y) else {
+        return false;
+    };
+    if t.wall == 0 {
+        return false;
+    }
+    let mut flag = crate::housing::is_house_wall(t.wall);
+    if !flag {
+        for i in -1..=1 {
+            for j in -1..=1 {
+                if (i != 0 || j != 0) && w.tile(x + i, y + j).is_some_and(|t| t.wall == 0) {
+                    flag = true;
+                }
+            }
+        }
+    }
+    // The C#'s non-short-circuit `&` over pure operands.
+    if t.active() && flag {
+        let mut solid = true;
+        for k in -1..=1 {
+            for l in -1..=1 {
+                if k != 0 || l != 0 {
+                    if let Some(tn) = w.tile(x + k, y + l) {
+                        if !tn.active()
+                            || !crate::tiledata::TILE_SOLID.has(tn.kind)
+                            || crate::tiledata::TILE_SOLID_TOP.has(tn.kind)
+                        {
+                            solid = false;
+                        }
+                    }
+                }
+            }
+        }
+        if solid {
+            flag = false;
+        }
+    }
+    flag
+}
+
+/// `Collision.HitLineWall` (`Collision.cs:1146-1312`): the line walk from
+/// `(x1, y1)` to `(x2, y2)` hitting the first `HitWallSubstep` cell — the
+/// hammer's wall beam. Returns `(-1, -1)` when the walk leaves the world
+/// (the C#'s catch arm — the port's out-of-world read).
+fn hit_line_wall(w: &crate::World, x1: i32, y1: i32, x2: i32, y2: i32) -> (i32, i32) {
+    let (max_x, max_y) = (w.width, w.height);
+    // `:1151-1172` — the C#'s sequential-if clamps (a true `clamp` panics
+    // on the port's small test worlds, where `maxY - 40 < 1`).
+    let mut num = x1;
+    let mut num2 = y1;
+    let mut num3 = x2;
+    let mut num4 = y2;
+    if num <= 1 {
+        num = 1;
+    }
+    if num3 <= 1 {
+        num3 = 1;
+    }
+    if num >= max_x {
+        num = max_x - 1;
+    }
+    if num3 >= max_x {
+        num3 = max_x - 1;
+    }
+    if num2 <= 1 {
+        num2 = 1;
+    }
+    if num4 <= 1 {
+        num4 = 1;
+    }
+    if num2 >= max_y - 40 {
+        num2 = max_y - 40;
+    }
+    if num4 >= max_y - 40 {
+        num4 = max_y - 40;
+    }
+    let (num5, num6) = ((num - num3).abs() as f32, (num2 - num4).abs() as f32);
+    if num5 == 0.0 && num6 == 0.0 {
+        return (num, num2);
+    }
+    // `:1173-1192` — the axis strides (the same shape as `hit_line`'s).
+    let mut num7 = 1.0f32;
+    let mut num8 = 1.0f32;
+    if num5 == 0.0 || num6 == 0.0 {
+        if num5 == 0.0 {
+            num7 = 0.0;
+        }
+        if num6 == 0.0 {
+            num8 = 0.0;
+        }
+    } else if num5 > num6 {
+        num7 = num5 / num6;
+    } else {
+        num8 = num6 / num5;
+    }
+    let mut num9 = 0.0f32;
+    let mut num10 = 0.0f32;
+    let mut num11 = 1;
+    if num2 < num4 {
+        num11 = 2;
+    }
+    let mut num12 = num5 as i32;
+    let mut num13 = num6 as i32;
+    let num14 = (num3 - num).signum();
+    let num15 = (num4 - num2).signum();
+    let mut flag = false;
+    let mut flag2 = false;
+    loop {
+        match num11 {
+            2 => {
+                num9 += num7;
+                let mut num17 = num9 as i32;
+                num9 -= num17 as f32;
+                for _ in 0..num17 {
+                    if hit_wall_substep(w, num, num2) {
+                        return (num, num2);
+                    }
+                    if num12 == 0 && num13 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    num += num14;
+                    num12 -= 1;
+                    if num12 == 0 && num13 == 0 && num17 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num13 != 0 {
+                    num11 = 1;
+                }
+            }
+            _ => {
+                num10 += num8;
+                let mut num16 = num10 as i32;
+                num10 -= num16 as f32;
+                for _ in 0..num16 {
+                    if hit_wall_substep(w, num, num2) {
+                        return (num, num2);
+                    }
+                    if num12 == 0 && num13 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    num2 += num15;
+                    num13 -= 1;
+                    if num12 == 0 && num13 == 0 && num16 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num12 != 0 {
+                    num11 = 2;
+                }
+            }
+        }
+        if w.tile(num, num2).is_none() {
+            return (-1, -1);
+        }
+        if hit_wall_substep(w, num, num2) {
+            return (num, num2);
+        }
+        if flag || flag2 {
+            break;
+        }
+    }
+    (num, num2)
+}
+
+// ------------------------------------------------------------ hammers step --
+
+/// `SmartCursorHelper.Step_Hammers` (`:1537-1723`): the held hammer swings
+/// a beam from the player toward the mouse. The first phase removes WALLS
+/// along the beam (`HitLineWall`), the second phase the closest wall cell
+/// in the reachable rect. Both phases write the player's `poundRelease`
+/// clear — the caller does that for the port when the step hits.
+pub fn step_hammers(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    let (width, height) = (l.player_width, l.player_height);
+    // `:1539` — the hammer's beam gate.
+    if l.item.hammer > 0 && fx == -1 && fy == -1 {
+        let center = player_center(l);
+        // `:1541-1556` — the axis snap (the hammer's own copy, the same 3×
+        // rule as the pickaxe's).
+        let (vector_x, vector_y) = (l.mouse.0 - center.0, l.mouse.1 - center.1);
+        let mut num = vector_x.signum() as i32;
+        let mut num2 = vector_y.signum() as i32;
+        let mut mouse = l.mouse;
+        if vector_x.abs() > vector_y.abs() * 3.0 {
+            num2 = 0;
+            mouse.1 = center.1;
+        }
+        if vector_y.abs() > vector_x.abs() * 3.0 {
+            num = 0;
+            mouse.0 = center.0;
+        }
+        // `:1558-1559` — the C#'s two decompiler artifacts (`_ =
+        // (int)Center.X / 16` — no side effects, dropped).
+        let position = l.player_position;
+        // `:1561` — the beam's start and end grids.
+        let mut points: Vec<(i32, i32)> = Vec::new();
+        let mut endpoints: Vec<(i32, i32)> = Vec::new();
+        let mut num3 = 1;
+        if num2 == -1 && num != 0 {
+            num3 = -1;
+        }
+        let num4 =
+            ((position.0 + (width / 2) as f32 + ((width / 2 - 1) * num) as f32) / 16.0) as i32;
+        let mut num5 = ((position.1 as f64 + 0.1) / 16.0) as i32;
+        if num3 == -1 {
+            num5 = ((position.1 + (height - 1) as f32) / 16.0) as i32;
+        }
+        let num6 = width / 16 + if width % 16 != 0 { 1 } else { 0 };
+        let num7 = height / 16 + if height % 16 != 0 { 1 } else { 0 };
+        if num != 0 {
+            for i in 0..num7 {
+                if w.tile(num4, num5 + i * num3).is_some() {
+                    points.push((num4, num5 + i * num3));
+                }
+            }
+        }
+        if num2 != 0 {
+            for j in 0..num6 {
+                if w.tile((position.0 / 16.0) as i32 + j, num5).is_some() {
+                    points.push(((position.0 / 16.0) as i32 + j, num5));
+                }
+            }
+        }
+        let num8 = ((mouse.0 + ((width / 2 - 1) * num) as f32) / 16.0) as i32;
+        let mut num9 = ((mouse.1 as f64 + 0.1 - (height / 2 + 1) as f64) / 16.0) as i32;
+        if num3 == -1 {
+            num9 = ((mouse.1 + (height / 2) as f32 - 1.0) / 16.0) as i32;
+        }
+        // `:1632-1634` — the gravity correction (the hammer's single arm —
+        // no `gravDir == 1` counterpart here, unlike `Step_Pickaxe_MineSolids`).
+        if l.grav_dir == -1.0 && num2 == 0 {
+            num9 += 1;
+        }
+        if num9 < 10 {
+            num9 = 10;
+        }
+        if num9 > w.height - 10 {
+            num9 = w.height - 10;
+        }
+        let num10 = width / 16 + if width % 16 != 0 { 1 } else { 0 };
+        let num11 = height / 16 + if height % 16 != 0 { 1 } else { 0 };
+        // `:1644-1666` — the endpoints: the hammer skips the `InWorld` fluff
+        // gate the pickaxe's block carries.
+        if num != 0 {
+            for k in 0..num11 {
+                if w.tile(num8, num9 + k * num3).is_some() {
+                    endpoints.push((num8, num9 + k * num3));
+                }
+            }
+        }
+        if num2 != 0 {
+            for m in 0..num10 {
+                if w.tile(((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9)
+                    .is_some()
+                {
+                    endpoints.push((((mouse.0 - (width / 2) as f32) / 16.0) as i32 + m, num9));
+                }
+            }
+        }
+        // `:1668-1691` — the wall beam walk.
+        let mut targets: Vec<(i32, i32)> = Vec::new();
+        while !points.is_empty() {
+            let (a, b) = (points[0], endpoints[0]);
+            let hit = hit_line_wall(w, a.0, a.1, b.0, b.1);
+            if hit == (-1, -1) {
+                points.remove(0);
+                endpoints.remove(0);
+                continue;
+            }
+            if hit != b {
+                targets.push(hit);
+            }
+            if hit_wall_substep(w, hit.0, hit.1) {
+                targets.push(hit);
+            }
+            points.remove(0);
+            endpoints.remove(0);
+        }
+        // `:1693-1720` — the vote from the player's centre, skipping the
+        // altar tile (26 — the hammer cannot Pound it).
+        let mut best: Option<(i32, i32)> = None;
+        let mut best_dist = -1.0f32;
+        for &(x, y) in &targets {
+            if let Some(t) = w.tile(x, y) {
+                if !t.active() || t.kind != 26 {
+                    let d = dist_to_mouse(x, y, center);
+                    if best_dist == -1.0 || d < best_dist {
+                        best_dist = d;
+                        best = Some((x, y));
+                    }
+                }
+            }
+        }
+        if let Some(p) = best {
+            if in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y) {
+                return Some(p);
+            }
+        }
+    }
+    // `:1722` — the wall phase's gate.
+    if l.item.hammer <= 0 || fx != -1 || fy != -1 {
+        return None;
+    }
+    let mut targets: Vec<(i32, i32)> = Vec::new();
+    for n in l.start_x..=l.end_x {
+        for m in l.start_y..=l.end_y {
+            if w.tile(n, m).is_some_and(|t| t.wall > 0) && hit_wall_substep(w, n, m) {
+                targets.push((n, m));
+            }
+        }
+    }
+    // `:1735-1762` — the vote from the mouse, again skipping the altar.
+    let mut best: Option<(i32, i32)> = None;
+    let mut best_dist = -1.0f32;
+    for &(x, y) in &targets {
+        if let Some(t) = w.tile(x, y) {
+            if !t.active() || t.kind != 26 {
+                let d = dist_to_mouse(x, y, l.mouse);
+                if best_dist == -1.0 || d < best_dist {
+                    best_dist = d;
+                    best = Some((x, y));
+                }
+            }
+        }
+    }
+    let p = best?;
+    in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
 /// Axe :118 (or :125 with `SmartAxeAfterPickaxe`) →
 /// ForceCursorToAnyMinableThing :122 → PickaxeMineShinies :123 →
-/// PickaxeMineSolids :124 → ColoredWrenches :129 →
+/// PickaxeMineSolids :124 → Hammers :131 → ColoredWrenches :129 →
 /// MulticolorWrench :130 → ActuationRod :132 →
 /// WireCutter :133 → Platforms :134 → MinecartTracks :135 → Walls :136 →
 /// PumpkinSeeds :137
@@ -2772,10 +3110,11 @@ pub fn smart_cursor_lookup(
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 27] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 28] = [
         step_force_cursor,
         step_pickaxe_mine_shinies,
         step_pickaxe_mine_solids,
+        step_hammers,
         step_colored_wrenches,
         step_multicolor_wrench,
         step_actuation_rod,
@@ -4816,4 +5155,95 @@ mod tests {
         );
     }
 
+    /// A hammer item with the given hammer power.
+    fn hammer_item(hammer: i32) -> ItemPort {
+        ItemPort {
+            kind: 1,
+            create_tile: -1,
+            create_wall: -1,
+            place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer,
+        }
+    }
+
+    /// The hammer's beam lookups park the player mid-world (the same beam
+    /// geometry as the mine-solids tests).
+    fn hammer_lookup(hammer: i32, mouse: (f32, f32)) -> Lookup {
+        Lookup {
+            player_position: (480.0, 660.0),
+            start_x: 20,
+            start_y: 30,
+            end_x: 90,
+            end_y: 70,
+            ..lookup(hammer_item(hammer), mouse)
+        }
+    }
+
+    #[test]
+    fn test_smart_1_the_hammer_beam_removes_the_wall() {
+        // `Step_Hammers` :1668-1691 — the wall beam walks from the player
+        // to the mouse and strikes the hittable wall on the row.
+        let mut world = big();
+        let i = world.index(35, 41);
+        world.tiles[i].wall = 1; // a dirt wall: not a house wall, open around
+        let l = hammer_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            step_hammers(&world, &l, -1, -1),
+            Some((35, 41)),
+            "the hammer beam strikes the wall on its row"
+        );
+        // No wall on the beam and none in the rect — the step no-ops.
+        let clear = big();
+        assert_eq!(
+            step_hammers(&clear, &l, -1, -1),
+            None,
+            "an empty beam has no target"
+        );
+        // The gates: hammer power and the focus sentinel.
+        let no_hammer = hammer_lookup(0, (760.0, 681.0));
+        assert_eq!(step_hammers(&world, &no_hammer, -1, -1), None);
+        assert_eq!(step_hammers(&world, &l, 12, 12), None);
+    }
+
+    #[test]
+    fn test_smart_1_the_hammer_wall_phase_finds_the_off_beam_wall() {
+        // `Step_Hammers` :1722-1762 — the second phase scans the reachable
+        // rect for a hittable wall off the beam and votes from the mouse.
+        let mut world = big();
+        let i = world.index(45, 60);
+        world.tiles[i].wall = 1; // a wall off the beam's row
+        let l = hammer_lookup(1, (760.0, 681.0)); // the beam runs at row 41
+        assert_eq!(
+            step_hammers(&world, &l, -1, -1),
+            Some((45, 60)),
+            "the wall phase finds the off-beam wall"
+        );
+        // The altar tile (26) is skipped by both phases' votes.
+        let mut altar = big();
+        put(&mut altar, 45, 60, 26);
+        let ai = altar.index(45, 60);
+        altar.tiles[ai].wall = 1;
+        assert_eq!(
+            step_hammers(&altar, &l, -1, -1),
+            None,
+            "the altar tile is not a hammer target"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_hammer_step_runs_in_the_chain() {
+        // The dispatch order (:131): the hammer step runs between the
+        // mine-solids step and the wrenches — the chain dispatches it.
+        let mut world = big();
+        let i = world.index(35, 41);
+        world.tiles[i].wall = 1;
+        let l = hammer_lookup(1, (760.0, 681.0));
+        assert_eq!(
+            smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
+            Some((35, 41)),
+            "the hammer step runs inside the lookup chain"
+        );
+    }
 }

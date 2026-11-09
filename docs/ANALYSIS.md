@@ -5144,6 +5144,15 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   mahogany chests; a kind-341 anchor keeps just the repeated rows. The
   mahogany block itself needs no new rows.
 
+- **The cactus seed arms** (`GrowCactus`, `WorldGen.cs:56590-56699` — the
+  M5-SPREAD-1 cactus slice, over the M5-SEED-1 `World.seeds` flags): the
+  drunk world's density cap widens to `Next(11, 20)` (the classic worlds
+  keep `Next(11, 13)`) and the remix world skips the `cactusWaterLimit` 25
+  box above the surface (`!remixWorld || !(j > worldSurface)`). Still open
+  in `grow_cactus`: the tall-column fork branch (`:56736-56770` — the
+  side shoots at `Next(3)` and the tip at `num6 < Next(2, 8)`), which the
+  port's num6==0 arm does not reach.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -7605,6 +7614,20 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
   the force-cursor step), and the vote runs from the player's centre — on a
   client the neighbouring miners perturb that centre by ±12 px per parity
   (`MpMinerCounts`, caller-passed; the C# scans `Main.player[0..255)`).
+- **`Step_Hammers` is the pickaxe's beam with three deliberate differences.**
+  The C# copies the start/end grid math but drops the `gravDir == 1` axis
+  correction (only the `gravDir == -1 && num2 == 0` arm survives, :1599-1602)
+  and skips the `WorldGen.InWorld` fluff guard on the endpoints (the
+  pickaxe's :2443 has it). Its hit test is `Collision.HitLineWall`
+  (`Collision.cs:1146-1312`) — the same Bresenham walker as `hit_line`, but
+  stepping on `HitWallSubstep` (`Collision.cs:1310-1357`: the house-wall /
+  open-neighbour flags over `housing::is_house_wall`, then the full-solid
+  surround arm when the cell holds a tile) and returning `(-1, -1)` on the
+  world exit. Both phases' votes skip the altar tile 26 (the hammer cannot
+  Pound it) and write the player's `poundRelease` clear — the caller does
+  that for the port when the step hits. The second phase (the wall scan)
+  runs only when the beam found nothing, and votes from the mouse instead
+  of the centre.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
