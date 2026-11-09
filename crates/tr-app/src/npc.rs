@@ -220,6 +220,18 @@ pub enum NpcKind {
     /// 24×26, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default);
     /// the rolling rotation and the 300-tick `Transform(427)`).
     VortexHeadcrab,
+    /// `NPCID.NebulaFloater` (420) — the nebula pillar's floater
+    /// (`NPC.cs:15157-15171`: 40×40, aiStyle 97, 1300 HP, dmg 75, def 20,
+    /// kb 0.5; the 574 emission + the 480-tick teleport cycle).
+    NebulaFloater,
+    /// `NPCID.BrainSuckler` (421) — the nebula leech (`NPC.cs:15130-15143`:
+    /// 44×44, aiStyle 85, 330 HP, dmg 70, def 34, kb 0.5; the aiStyle-85
+    /// hoverer with the <40-px attachment onto the player's Top).
+    BrainSuckler,
+    /// `NPCID.Predictor` (424) — the nebula pillar's shooter (`NPC.cs`:
+    /// 15144-15156: 22×56, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the
+    /// 573 fan).
+    Predictor,
     /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
     /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
@@ -725,6 +737,9 @@ impl NpcKind {
             NpcKind::VortexHunter => 127,
             NpcKind::VortexAlien => 128,
             NpcKind::VortexHeadcrab => 129,
+            NpcKind::NebulaFloater => 130,
+            NpcKind::BrainSuckler => 131,
+            NpcKind::Predictor => 132,
             NpcKind::MoonLordHead => 122,
             NpcKind::MoonLordHand => 123,
             NpcKind::MoonLordCore => 124,
@@ -797,6 +812,12 @@ impl NpcKind {
             NpcKind::VortexHunter => 426,
             NpcKind::VortexAlien => 427,
             NpcKind::VortexHeadcrab => 428,
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
             NpcKind::MoonLordHead => 396,
             NpcKind::MoonLordHand => 397,
             NpcKind::MoonLordCore => 398,
@@ -880,6 +901,9 @@ impl NpcKind {
             127 => NpcKind::VortexHunter,
             128 => NpcKind::VortexAlien,
             129 => NpcKind::VortexHeadcrab,
+            130 => NpcKind::NebulaFloater,
+            131 => NpcKind::BrainSuckler,
+            132 => NpcKind::Predictor,
             122 => NpcKind::MoonLordHead,
             123 => NpcKind::MoonLordHand,
             124 => NpcKind::MoonLordCore,
@@ -1143,6 +1167,9 @@ impl NpcKind {
             NpcKind::VortexHunter => (50.0, 62.0),
             NpcKind::VortexAlien => (40.0, 28.0),
             NpcKind::VortexHeadcrab => (24.0, 26.0),
+            NpcKind::NebulaFloater => (40.0, 40.0),
+            NpcKind::BrainSuckler => (44.0, 44.0),
+            NpcKind::Predictor => (22.0, 56.0),
             NpcKind::MoonLordHead => (38.0, 56.0),
             NpcKind::MoonLordHand | NpcKind::MoonLordCore => (46.0, 66.0),
             NpcKind::MoonLordFreeEye => (60.0, 60.0),
@@ -1480,6 +1507,9 @@ impl NpcKind {
             NpcKind::VortexHunter => 1000,
             NpcKind::VortexAlien => 500,
             NpcKind::VortexHeadcrab => 200,
+            NpcKind::NebulaFloater => 1300,
+            NpcKind::BrainSuckler => 330,
+            NpcKind::Predictor => 700,
             NpcKind::MoonLordHead => 45000,
             NpcKind::MoonLordHand => 25000,
             NpcKind::MoonLordCore => 50000,
@@ -1647,6 +1677,9 @@ impl NpcKind {
             | NpcKind::SolarTower => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
             // the headcrab's 50.
+            NpcKind::NebulaFloater => 75,
+            NpcKind::BrainSuckler => 70,
+            NpcKind::Predictor => 80,
             NpcKind::VortexHunter => 100,
             NpcKind::VortexAlien => 75,
             NpcKind::VortexHeadcrab => 50,
@@ -1944,6 +1977,10 @@ pub struct Npc {
     /// The Moon Leech request (`AI_079`'s `:42303-42318` / the leech
     /// blob's `:36658-36690`): a 456 leeched player spawns the 401 clot,
     /// which then drains 1000 hp from the head -> the core -> the hands.
+    /// The Brain Suckler's attached obstruct request (`AI()`'s aiStyle-85
+    /// phase 5, `NPC.cs:37159`'s `AddBuff(163, 59)`): the sim applies the
+    /// Obstructed buff to the player.
+    pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
 }
@@ -2364,6 +2401,7 @@ impl Npc {
             wants_dutchman_drop: None,
             wants_moon_parts: false,
             wants_moon_parts_clear: false,
+            wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
         }
@@ -2477,7 +2515,16 @@ impl Npc {
             NpcKind::NebulaBeast => 0.2,
             // The vortex trio's kb: 0.3/0.5/1.0 (`NPC.cs`'s rows; the headcrab
             // keeps the class default 1.0).
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
             NpcKind::VortexHunter => 0.3,
+            NpcKind::NebulaFloater => 0.5,
+            NpcKind::BrainSuckler => 0.5,
+            NpcKind::Predictor => 0.6,
             NpcKind::VortexAlien => 0.5,
             NpcKind::VortexHeadcrab => 1.0,
             NpcKind::VortexRifleman => 0.4,
@@ -2665,9 +2712,15 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
+            NpcKind::NebulaFloater => 20,
+            NpcKind::BrainSuckler => 34,
+            NpcKind::Predictor => 30,
             NpcKind::VortexHunter => 44,
             NpcKind::VortexAlien => 20,
             NpcKind::VortexHeadcrab => 6,
+            NpcKind::NebulaFloater => 20,
+            NpcKind::BrainSuckler => 34,
+            NpcKind::Predictor => 30,
             NpcKind::MoonLordHead => 50,
             NpcKind::MoonLordHand => 40,
             NpcKind::MoonLordCore => 70,
@@ -2783,6 +2836,9 @@ impl Npc {
             NpcKind::VortexHunter => 1200.0,
             NpcKind::VortexAlien => 400.0,
             NpcKind::VortexHeadcrab => 100.0,
+            NpcKind::NebulaFloater => 400.0,
+            NpcKind::BrainSuckler => 60.0,
+            NpcKind::Predictor => 900.0,
             NpcKind::MoonLordCore => 1_000_000.0,
             NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
@@ -3185,6 +3241,12 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // The nebula trio: the floater's aiStyle-97 teleport cycle, the
+            // suckler's aiStyle-85 hover + attachment, the predictor's
+            // 573 fan.
+            NpcKind::NebulaFloater => self.update_nebula_floater(world, player, rng),
+            NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+            NpcKind::Predictor => self.update_nebula_predictor(world, player, rng),
             // The vortex trio: the hunter's shooter arm, the alien's dive
             // + the `Transform(426)`, the headcrab's roll + the
             // `Transform(427)`.
@@ -3728,6 +3790,18 @@ impl Npc {
                     NpcKind::NebulaBeast => 12,
                     NpcKind::VortexRifleman => 13,
                     _ => 10,
+                };
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The nebula trio's 6/6/12-frame strips.
+            NpcKind::NebulaFloater | NpcKind::BrainSuckler | NpcKind::Predictor => {
+                let count = match self.kind {
+                    NpcKind::Predictor => 12,
+                    _ => 6,
                 };
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
@@ -7620,6 +7694,246 @@ impl Npc {
     /// `GetChaseResults` at the factor 15) folds into the centre aim; the
     /// vanilla's `localAI[0]`-free state means the metamorphosis counter
     /// rides the walker's own counters, so the hunter is the last form.
+    /// `AI()`'s aiStyle-97 block (`NPC.cs:39473-39580`) — the Nebula
+    /// Floater: the 180-tick 574 emission from the ±π/2 (4, 2.5) ring, the
+    /// 480-tick teleport cycle behind `AI_AttemptToFindTeleportSpot`'s
+    /// tile pick (the 20-tick fade, the dust bursts, the shot-count
+    /// shave of the owned 574s), the 7-px cruise to the aim point
+    /// `Center + (direction * 20, 6)` and the `|vx| * direction * 0.1`
+    /// roll.
+    ///
+    /// Deviations: the 242-dust bursts are unmodelled; the teleport-spot
+    /// search folds the vanilla's 40×24 probe into the first non-solid
+    /// tile near the aim; the owned-574 shave rides a per-kind request.
+    fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:39485-39496`'s emission window: the first 180 ticks throw the
+        // 574 (0 damage) every 60 from the resampled ring.
+        if self.caster_counter < 180 {
+            self.caster_counter += 1;
+            if self.caster_counter % 60 == 0 {
+                let (mut sx, mut sy) = (0.0f32, 0.0f32);
+                let mut guard = 0;
+                while sx.abs() < 1.5 && guard < 64 {
+                    let ang = (crate::app::rand01(rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2;
+                    sx = -ang.sin() * 4.0;
+                    sy = ang.cos() * 2.5;
+                    guard += 1;
+                }
+                self.wants_hostile_shot.push((574u16, cx, cy, sx, sy, 0));
+            }
+        }
+        // `:39513-39521`'s aim + the flight decision.
+        let aim = (self.facing as f32 * 20.0, 6.0);
+        let (ax, ay) = (cx + aim.0, cy + aim.1);
+        let (dx, dy) = (pcx - ax, pcy - ay);
+        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let far = (dx * dx + dy * dy).sqrt() > 400.0 || !sight;
+        if far {
+            // `:39580-39620`'s cruise: the 7-px cap toward the aim.
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            self.vx += (dx / d * 7.0 - self.vx) * 0.2;
+            self.vy += (dy / d * 7.0 - self.vy) * 0.2;
+        } else {
+            // The hover (`:39625-39680`'s idle band).
+            self.vx *= 0.95;
+            self.vy *= 0.95;
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:39537-39539`'s roll + the sprite flip.
+        self.rotation = self.vx.abs() * self.facing as f32 * 0.1;
+        // The teleport cycle (`:39566-39575`'s counter).
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 480.0 {
+            self.ai[0] = 0.0;
+            self.ai[1] = 20.0;
+            // The tile pick: a non-solid tile near the aim point.
+            let (tx, ty) = ((ax / TILE_PX) as i32, (ay / TILE_PX) as i32);
+            let mut spot = None;
+            for _ in 0..24 {
+                let bx = tx + (crate::app::rand01(rng) * 40.0 - 20.0) as i32;
+                let by = ty + (crate::app::rand01(rng) * 24.0 - 12.0) as i32;
+                if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
+                    continue;
+                }
+                let solid = world.tile(bx, by).is_some_and(|t| {
+                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                });
+                if !solid {
+                    spot = Some((bx, by));
+                    break;
+                }
+            }
+            if let Some((sx, sy)) = spot {
+                self.ai[2] = sx as f32;
+                self.ai[3] = sy as f32;
+            }
+        }
+        // `:39541-39564`'s fade + the hop: `ai[1]` counts down from 20.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+            if self.ai[1] <= 1.0 && self.ai[2] != 0.0 {
+                // `:39597-39615`'s teleport hop.
+                self.x = self.ai[2] * TILE_PX - w * 0.5;
+                self.y = self.ai[3] * TILE_PX - h * 0.5;
+                self.vx = 0.0;
+                self.vy = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+    }
+
+    /// The shared aiStyle-85 hoverer for the Brain Suckler (421):
+    /// `AI()`'s `:36930-37220` block with the 421's arms — the phase-1
+    /// attachment (`:37013-37033`: the `player.Top` reach under 40 px,
+    /// the same-type/same-target scan, the snap) and phase 5 (the
+    /// `Center = player.Top + direction * 4` ride, the `AddBuff(163,
+    /// 59)` obstruct, `hide = true` and the 0.05 separation).
+    fn update_brain_suckler(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:36996`'s 421 reach vector reads the player's TOP.
+        let (pdx, pdy) = (pcx - cx, pcy - player.height - cy);
+        let dist = (pdx * pdx + pdy * pdy).sqrt();
+        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        if self.ai[0] == 5.0 {
+            // `:37143-37162`'s attached ride: the snap, the obstruct buff
+            // request and the zeroed velocity.
+            self.x = pcx + player.facing as f32 * 4.0 - w * 0.5;
+            self.y = pcy - player.height - h * 0.5;
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.wants_obstruct = true;
+            return;
+        }
+        match self.ai[0] as i32 {
+            1 => {
+                // `:36989-37012`'s approach at the 5.5-px base speed over
+                // the 50-tick smoothing.
+                self.rotation += self.facing as f32 * 0.3;
+                let d = dist.max(0.001);
+                let speed = 5.5 + d / 100.0;
+                self.vx = (self.vx * 49.0 + pdx / d * speed) / 50.0;
+                self.vy = (self.vy * 49.0 + pdy / d * speed) / 50.0;
+                // `:37013-37033`'s attachment: under 40 px the suckler
+                // latches onto the player's Top (the same-type/same-target
+                // scan's refusal rides the port's per-player latch).
+                if dist < 40.0 && player.hp > 0 && self.caster_counter == 0 {
+                    self.caster_counter = 1;
+                    self.x = pcx - w * 0.5;
+                    self.y = pcy - player.height - h * 0.5;
+                    self.vx = 0.0;
+                    self.vy = 0.0;
+                    self.ai[0] = 5.0;
+                    self.ai[1] = 0.0;
+                    return;
+                }
+                if !sight {
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            2 => {
+                // `:37035-37054`'s blind charge (3 px) — the 421's own cap.
+                self.rotation = self.vx * 0.1;
+                if dist < 600.0 {
+                    self.ai[0] = 0.0;
+                }
+            }
+            3 => {
+                // `:37055-37078`'s waypoint homing at the 2-px speed.
+                self.rotation = self.vx * 0.1;
+                let (tx, ty) = (self.ai[1], self.ai[2]);
+                let (dx, dy) = (tx - cx, ty - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                self.vx = (self.vx * 2.0 + dx / d * 2.0) / 3.0;
+                self.vy = (self.vy * 2.0 + dy / d * 2.0) / 3.0;
+                if d < 2.0 || d > 800.0 || sight {
+                    self.ai[0] = 4.0;
+                }
+            }
+            4 => {
+                // `:37079-37142`'s bounce arm with the 180-tick re-probe.
+                self.rotation = self.vx * 0.1;
+                self.ai[1] += 1.0;
+                if self.ai[1] > 180.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 3.0;
+                }
+            }
+            _ => {
+                // `:36933-36988`'s phase 0.
+                if sight {
+                    self.ai[0] = 1.0;
+                } else if dist > 800.0 {
+                    self.ai[0] = 2.0;
+                } else if pdx.abs() > 8.0 || pdy.abs() > 8.0 {
+                    self.ai[1] = pcx;
+                    self.ai[2] = pcy;
+                    self.ai[0] = 3.0;
+                } else {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:37196`'s roll (the vanilla's `hide` while attached has no port
+        // field — the attached suckler stays visible).
+        self.rotation = self.vx * 0.1;
+    }
+
+    /// `AI_003_Fighters`' Predictor arm (`NPC.cs:59069-59756`, the 424 rows
+    /// at `:59159-59192`/`:59475`/`:59578`) — the nebula pillar's shooter:
+    /// the 180-tick cycle with the shot at the 179th tick fires four 573s
+    /// (60) in the `(-3 + 2*i) * 0.15` fan from the muzzle.
+    fn update_nebula_predictor(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59208`'s fire: the four-shot 573 fan (60 damage, the classic
+        // constant of `GetAttackDamage_ForProjectiles(60, 45)`).
+        if self.ai[1] as i32 == 179 && self.ai[2] > 0.0 {
+            let (mx, my) = (cx + self.sprite_dir as f32 * 4.0, cy - 6.0);
+            for i in 0..4 {
+                let vx = (-3.0 + 2.0 * i as f32) * 0.15;
+                self.wants_hostile_shot
+                    .push((573u16, mx, my, vx, -0.1, 60));
+            }
+            self.ai[2] = 0.0;
+            self.ai[1] = 0.0;
+        }
+        // `:59634-59688`'s engage arm: the 700-px gate starts the cycle.
+        if self.ai[1] <= 0.0 && (dx * dx + dy * dy).sqrt() < 700.0 && player.hp > 0 {
+            self.ai[2] = 3.0;
+            self.ai[1] = 180.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     fn update_vortex_hunter(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -9791,6 +10105,9 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::NebulaFloater => 420,
+            NpcKind::BrainSuckler => 421,
+            NpcKind::Predictor => 424,
             NpcKind::VortexHunter => 426,
             NpcKind::VortexAlien => 427,
             NpcKind::VortexHeadcrab => 428,
