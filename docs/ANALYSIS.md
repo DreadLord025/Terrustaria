@@ -6740,6 +6740,18 @@ Deviations and accepted changes:
   (`the_executed_pipeline_is_50_named_steps` + the `test_DW_2_3`/
   `test_DW_4_3`-style vanilla-position tests for the ocean slots).
 
+## Crystal-shard wiring (M5-SPREAD-1, part 2)
+
+`growth::grow_crystal_shards` (the `hardUpdateWorld` `:69604-69644` arm — the
+shard-capable stones 117/116/164/402/403 below the rock layer, the `Next(5)`
+gate, the 4-dir pick that never grows upward, the leaf-quiet neighbour, the
+radius-6 tile-129 density under 2, the `Next(18)` style with the 1/50 big
+shard 18+Next(6)) was ported and unit-tested but unreferenced: the app driver
+runs `spread::hard_update_world`, which carried only the chlorophyte arms.
+The shard arm now runs at that function's head — the C#'s own position — so
+the app's growth tick grows shards. Runtime-only, so the worldgen hashes are
+untouched.
+
 ## Dungeon crawler wiring (M5-DUNGEON)
 
 The pipeline's `Dungeon` step moved from the shape-level approximation
