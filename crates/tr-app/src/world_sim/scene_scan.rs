@@ -221,7 +221,7 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
 /// entirely (the pin holds `severity == intended_severity`, but the periodic
 /// intention roll would still fight it); `forced_severity` marks that.
 pub(crate) fn apply_scene_forces_from_env(state: &mut SceneState, sandstorm: &mut Sandstorm) {
-    apply_scene_forces(state, sandstorm, |var| std::env::var(var).ok());
+    apply_scene_forces(state, sandstorm, crate::env::lookup());
 }
 
 /// The injectable body of [`apply_scene_forces_from_env`]: `lookup` stands in
@@ -807,13 +807,13 @@ mod tests {
         app.settings.wave_quality = 0;
         update_scene(&mut app, 1.0 / 60.0, SCREEN);
         // (A TR_* pin set in the test environment would override; unset here.)
-        if std::env::var_os("TR_STORM").is_none() {
+        if !crate::env::present_raw("TR_STORM") {
             assert!(!app.filter_driver.use_storm_effects);
         }
-        if std::env::var_os("TR_HEAT").is_none() {
+        if !crate::env::present_raw("TR_HEAT") {
             assert!(!app.filter_driver.use_heat_distortion);
         }
-        if std::env::var_os("TR_WAVES").is_none() {
+        if !crate::env::present_raw("TR_WAVES") {
             assert_eq!(app.filter_driver.wave_quality, 0);
         }
     }

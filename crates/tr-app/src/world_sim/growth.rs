@@ -10,7 +10,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     // The hardmode switch (`WorldGen.StartHardmode`, `WorldGen.cs:31701-
     // 31720`): the dev trigger `TR_HARDMODE=1` (the WoF kill rides the
     // M4-NPC families) runs the runner half once.
-    if !app.world.hard_mode && std::env::var_os("TR_HARDMODE").is_some() {
+    if !app.world.hard_mode && crate::env::hardmode_forced() {
         app.world.hard_mode = true;
         let corruption = (app.world.seed >> 56) & 1 == 1;
         let mut rng = app.growth_rng;

@@ -314,10 +314,8 @@ pub(crate) fn draw_tiles(
     let mut water_style = calculate_water_style(world, camera);
     // `TR_WATER_STYLE=<n>`: pin the water style so the per-style passes, the
     // `liquidAlpha` cross-fade and the biome liquid sheets stay screenshotable.
-    if let Ok(v) = std::env::var("TR_WATER_STYLE") {
-        if let Ok(n) = v.parse::<usize>() {
-            water_style = n.min(14);
-        }
+    if let Some(n) = crate::env::water_style() {
+        water_style = n.min(14);
     }
     let t_light = Instant::now();
     // Vanilla applies the waterfall lights one frame late (the engine keeps the
@@ -335,30 +333,24 @@ pub(crate) fn draw_tiles(
     );
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
-    if let Ok(v) = std::env::var("TR_LIGHT_AT") {
+    if let Some((lx, ly)) = crate::env::light_at() {
         use std::sync::atomic::{AtomicBool, Ordering};
         static ONCE: AtomicBool = AtomicBool::new(false);
         if !ONCE.swap(true, Ordering::Relaxed) {
-            if let Some((sx, sy)) = v.split_once(',') {
-                if let (Ok(lx), Ok(ly)) = (sx.trim().parse::<i32>(), sy.trim().parse::<i32>()) {
-                    let c = light.get(lx, ly);
-                    let tile = world.tile(lx, ly).copied().unwrap_or_default();
-                    log::info!(
-                        "light at {lx},{ly} = {:.3},{:.3},{:.3} (tile {} wall {} liquid {})",
-                        c[0],
-                        c[1],
-                        c[2],
-                        tile.kind,
-                        tile.wall,
-                        tile.liquid
-                    );
-                }
-            }
+            let c = light.get(lx, ly);
+            let tile = world.tile(lx, ly).copied().unwrap_or_default();
+            log::info!(
+                "light at {lx},{ly} = {:.3},{:.3},{:.3} (tile {} wall {} liquid {})",
+                c[0],
+                c[1],
+                c[2],
+                tile.kind,
+                tile.wall,
+                tile.liquid
+            );
         }
     }
 
-    static DRAW_WALLS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let draw_walls = *DRAW_WALLS.get_or_init(|| std::env::var("TR_NO_WALLS").is_err());
     let width = world.width as usize;
     let white = r.white_uv();
     let mut stats = TileDrawStats {
@@ -378,7 +370,7 @@ pub(crate) fn draw_tiles(
     let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
     // M1.4-BG-18 phase 4: the same records feed the WaterDistortion mask.
     scratch.water_rects = crate::render::liquids::water_mask_rects(&liquid_draws);
-    if std::env::var_os("TR_DUMP_LIQUID").is_some() {
+    if crate::env::dump_liquid() {
         let cam_x = camera.x as i32 / 16;
         let cam_y = camera.y as i32 / 16;
         let mut n_vis = 0;
@@ -418,7 +410,7 @@ pub(crate) fn draw_tiles(
     }
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
-    if std::env::var_os("TR_NO_LIQBACK").is_none() {
+    if !crate::env::no_liqback() {
         stats.liquids += draw_waters(
             r,
             lookups,
@@ -456,7 +448,7 @@ pub(crate) fn draw_tiles(
     // frame is a 32x32 sprite placed 8 px up/left of the cell, so neighbouring walls
     // join without seams; drawing it interleaved with tiles would let the overhang
     // cut into tiles drawn earlier in the row.
-    if draw_walls {
+    if crate::env::walls_enabled() {
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let tile = &world.tiles[ty as usize * width + tx as usize];
@@ -622,7 +614,7 @@ pub(crate) fn draw_tiles(
                         || tr_core::flame::has_glow_branch(tile.kind));
                 if light_is_zero(l)
                     && !flame_tile
-                    && (active || (draw_walls && wall_visible(tile.wall)))
+                    && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
                 {
                     if run_start < 0 {
                         run_start = tx;
@@ -920,7 +912,7 @@ pub(crate) fn draw_tiles(
         stats.dark_rects += 1;
     }
 
-    if std::env::var_os("TR_NO_FOLIAGE").is_none() {
+    if !crate::env::no_foliage() {
         stats.foliage = draw_tree_foliage(
             r,
             world,
@@ -1017,7 +1009,7 @@ pub(crate) fn draw_tiles(
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
-    if std::env::var_os("TR_NO_LIQFRONT").is_none() {
+    if !crate::env::no_liqfront() {
         stats.liquids += draw_waters(
             r,
             lookups,
