@@ -2017,6 +2017,220 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_009_MagicMissiles` (`Projectile.cs:43195-43425`): the channeled
+    /// aimed spells — Magic Missile 16, Flamelash 34 and Rainbow Rod's bolt
+    /// 79 (the `type == 491` `_Old` variant has no ported row).
+    ///
+    /// The machine: while the owner holds the channel the spell keeps its aim
+    /// (`ai[0..1]` = the clamped `MouseWorld`, `ai[1]`'s high bits carrying the
+    /// 34 drag-lift flag); releasing it drops `ai[0]` to −1, hunts a homing
+    /// target (`ai[1]` = the npc index, or −1 for none) and flies it at the
+    /// cruise speed 32; the 64f close-range re-aim, the 4f min-boost, the time
+    /// floor/cap and the rotation lerps follow. The `_Old` arm (491) and the
+    /// 16/34 dust-and-sound blocks are SKIPPED (no RNG, sound or dust layer in
+    /// the pool).
+    fn ai_magic_missile(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        // `:43199`: `num = 32f` — the cruise speed.
+        const CRUISE: f32 = 32.0;
+        // `:43201`: `num2 = Main.maxTilesY * 16` — the bitmap-height unit the
+        // Flamelash packs its drag-lift flag into `ai[1]`'s high bits.
+        let world_h = world.height as f32 * TILE_PX;
+        // `:43210-43213`: `num3 = (int)(ai[1] / num2)` while aiming.
+        let mut lift = if self.ai[0] >= 0.0 {
+            (self.ai[1] / world_h) as i32
+        } else {
+            0
+        };
+        // `:43214`: `flag = ai[0] == -1f || ai[0] == -2f` — released or failed.
+        let released = self.ai[0] == -1.0 || self.ai[0] == -2.0;
+        // `:43215-43235`: the Flamelash block. Its `frameCounter++` / `frame`
+        // animation (`:43216-43222`) has no slot fields — SKIPPED, like the
+        // spell's `netUpdate` writes.
+        if self.kind == FLAMELASH {
+            if self.penetrate == 1 && self.ai[0] >= 0.0 && lift == 0 {
+                // `:43223-43227`: the first NOT-penetrating pass arms the drag.
+                self.ai[1] += world_h;
+                lift = 1;
+            }
+            if self.penetrate == 1 && self.ai[0] == -1.0 {
+                // `:43228-43231`: a release while still penetrating fails the
+                // homing (−2) so the drag-lift counter keeps running.
+                self.ai[0] = -2.0;
+            }
+            if lift > 0 || self.ai[0] == -2.0 {
+                // `:43232-43235`: the drag-lift frame counter.
+                self.local_ai[0] += 1.0;
+            }
+        }
+        // `:43236-43275`: the owner block — the port's local player is
+        // `self.owner == 0`. The `owner` centre context pins the release's
+        // away-boost to the resolved player; the channel itself rides `player`.
+        if self.owner == 0 {
+            if self.ai[0] >= 0.0 {
+                if let Some(p) = player {
+                    // `:43239-43249`: hold — keep the aim only while the
+                    // channel is open and the held item shoots this kind.
+                    if p.channel && p.channel_item == self.kind {
+                        if self.ai[0] != p.channel_target.x || self.ai[1] != p.channel_target.y {
+                            // The C# writes `pointPosition.Y + num2 * num3`;
+                            // when the 34 block above just armed the flag it
+                            // raised `num3` to 1, so the sign test reads the
+                            // new value exactly as the C# does.
+                            self.ai[0] = p.channel_target.x;
+                            self.ai[1] =
+                                p.channel_target.y + world_h * lift as f32;
+                        }
+                    } else {
+                        // `:43250-43262`: release.
+                        self.ai[0] = -1.0;
+                        self.ai[1] = -1.0;
+                        let target = find_target_with_line_of_sight(
+                            world, npcs, self.pos, self.w, self.h, 3000.0, &[],
+                        );
+                        if target != -1 {
+                            self.ai[1] = target as f32;
+                        } else if self.vel.length() < 2.0 {
+                            // `:43259-43260`: `DirectionFrom(player.Center)`.
+                            let Some((ox, oy)) = owner.or(Some(p.center())) else {
+                                return;
+                            };
+                            let away = Vec2::new(
+                                self.pos.x + self.w * 0.5 - ox,
+                                self.pos.y + self.h * 0.5 - oy,
+                            );
+                            let dir = if away.length() > 0.0 {
+                                away.normalize()
+                            } else {
+                                Vec2::ZERO
+                            };
+                            self.vel = dir * CRUISE;
+                        } else {
+                            // `:43261-43262`.
+                            self.vel = safe_normalize(self.vel) * CRUISE;
+                        }
+                    }
+                }
+            }
+            if released && self.ai[1] == -1.0 {
+                // `:43266-43271`: the failed-homing re-search.
+                let target =
+                    find_target_with_line_of_sight(world, npcs, self.pos, self.w, self.h, 3000.0, &[]);
+                if target != -1 {
+                    self.ai[1] = target as f32;
+                }
+            }
+        }
+        // `:43273-43336`: the aim resolution and the steering.
+        // `:43278-43279`: the held aim (the high bits are the 34 flag).
+        let mut aim: Option<Vec2> = if self.ai[0] > 0.0 && self.ai[1] > 0.0 {
+            Some(Vec2::new(self.ai[0], self.ai[1] % world_h))
+        } else {
+            None
+        };
+        // `:43280-43298`: the released homing — the packed npc index.
+        let mut amount = 1.0f32;
+        if released && self.ai[1] >= 0.0 {
+            let index = self.ai[1] as i32;
+            if let Some(npc) = npcs.get(index as usize) {
+                if chaseable(npc) {
+                    let center = npc_center(npc);
+                    aim = Some(center);
+                    // `:43292-43295`: the distance-ramped blend.
+                    let t = self.vel.distance(center);
+                    amount = get_lerp_value(200.0, 20.0, {
+                        1.0 - get_lerp_value(0.0, 100.0, t) * get_lerp_value(600.0, 400.0, t)
+                    });
+                } else {
+                    // `:43296-43297`: the mid-flight death of the target.
+                    self.ai[1] = -1.0;
+                }
+            }
+        }
+        // `:43300-43303`: the rotation direction gate.
+        let mut spin = released;
+        if let Some(target) = aim {
+            if target.distance(Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5))
+                >= 64.0
+            {
+                // `:43306-43320`: the far case — the capped approach vector,
+                // the 4f min-boost, the `amount`-lerped velocity.
+                spin = true;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let delta = target - center;
+                let approach = safe_normalize(delta) * CRUISE.min(delta.length());
+                if self.vel.length() < 4.0 {
+                    // `:43313-43314`: `velocity.SafeNormalize(Zero).RotatedBy
+                    // (PI/4).SafeNormalize(Zero) * 4f` — the zero vector keeps
+                    // its own direction (0, 0).
+                    let boost = if self.vel == Vec2::ZERO {
+                        Vec2::ZERO
+                    } else {
+                        self.vel
+                            .normalize()
+                            .rotate(Vec2::from_angle(std::f32::consts::FRAC_PI_4))
+                            .normalize()
+                            * 4.0
+                    };
+                    self.vel += boost;
+                }
+                if self.vel.is_nan() {
+                    // `:43316-43317`: the NaN guard's `Kill()`.
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+                // `:43319`: `Vector2.Lerp(velocity, value2, amount)`.
+                self.vel += (approach - self.vel) * amount;
+            } else {
+                // `:43321-43327`: the close case — the direct pull and the
+                // 2f speed requirement.
+                self.vel *= 0.3;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                self.vel += (target - center) * 0.3;
+                spin = self.vel.length() >= 2.0;
+            }
+            // `:43328-43331`: the survival floor.
+            if self.time_left < 60 {
+                self.time_left = 60;
+            }
+        }
+        if released && self.ai[1] < 0.0 {
+            // `:43332-43338`: the lost target — the 32f fly-out and the cap.
+            if self.vel.length() != CRUISE {
+                // `MoveTowards(velocity.SafeNormalize(UnitY) * num, 4f)` — the
+                // zero vector walks to (0, 32) in 4f steps.
+                let target = safe_normalize(self.vel) * CRUISE;
+                self.vel = move_towards(self.vel, target, 4.0);
+            }
+            if self.time_left > 300 {
+                self.time_left = 300;
+            }
+        }
+        // `:43339-43344`: the rotation lerps.
+        if spin && self.vel != Vec2::ZERO {
+            self.rot = angle_towards(self.rot, self.vel.y.atan2(self.vel.x), std::f32::consts::FRAC_PI_4);
+        } else {
+            // `AngleLerp(rotation, 0f, 0.2f)` — the shortest-way clamped turn
+            // toward 0, which is what `angle_towards` computes for the 0 target.
+            self.rot = angle_towards(self.rot, 0.0, 0.2 * std::f32::consts::PI);
+        }
+        // `:43346`: `flag3` (the turn-sharpness detector) is read only by the
+        // 16/34 dust blocks below — both SKIPPED (no RNG, sound or dust layer
+        // in the pool, the same skip the gem arm records). The 16 soundDelay
+        // gate and its `SoundID.Item9` cue go with them.
+        // `:43390+`: the Flamelash's `Utils.GetLerpValue(0f, 10f, localAI[0])`
+        // trail tint feeds its dust blocks only — no draw state on the slot.
+        // The movement: the family has no bounce arm, so the port's generic
+        // blocked-move default (`:19851-19855`) applies — `kill_step`.
+        self.kill_step(world);
+    }
+
     /// `AI_029_GemStaffs` (`Projectile.cs:37643-37827`) → the bolts'
     /// `AI_029_GemStaffs_ActuallyGemStaffs` (`:37829-38001`): the gem-staff
     /// family (kinds 121-126 and 597 — the C#'s `else` arm; the 521/522/619/
@@ -2285,6 +2499,222 @@ impl Projectile {
         self.max_penetrate += penetration;
         self.penetrate += penetration;
         // `:22098`: the armor-penetration write rides the +4 skip above.
+    }
+
+    /// `AI_047_MagnetSphere` (`Projectile.cs:41403-41444`): the ball's spin,
+    /// its 4-frame animation, the ×0.98 damp over 2f and the same-type
+    /// same-owner dedupe. The spawn-velocity cache lives in `ai[0..1]`, the
+    /// frame counter in `localAI[3]` (the pool has no frame fields — the
+    /// 5-frame sheet's wrap is the animation's only observable). Returns the
+    /// bolt request `TryAttacking` fires: the spawn point and the NPC index.
+    /// `AI_047_MagnetSphere` (`Projectile.cs:41403-41444`): the ball's spin,
+    /// its 4-frame animation, the ×0.98 damp over 2f and — the pool-side
+    /// half — the same-type same-owner dedupe. The spawn-velocity cache
+    /// lives in `ai[0..1]`, the cooldown in `localAI[0]` and the frame
+    /// counter in `localAI[3]` (the pool has no frame fields — the sheet's
+    /// frame wrap is the animation's only observable). Returns the bolt
+    /// request `TryAttacking` fires: the spawn point and the NPC index.
+    fn ai_magnet_sphere(&mut self, world: &World, npcs: &[Npc]) -> Option<(Vec2, usize)> {
+        // `:41405-41408`: the first tick caches the spawn velocity.
+        if self.ai[0] == 0.0 && self.ai[1] == 0.0 {
+            self.ai[0] = self.vel.x;
+            self.ai[1] = self.vel.y;
+        }
+        // `:41409-41415`: the spin rate, signed by the flight direction.
+        let rate = (self.vel.y.abs() + self.vel.x.abs()) * 0.001;
+        if self.vel.x > 0.0 {
+            self.rot += rate;
+        } else {
+            self.rot -= rate;
+        }
+        // `:41416-41423`: the 4-frame wrap (`frameCounter > 6` → `frame++`)
+        // — SKIPPED: the slot carries no frame/frameCounter fields and the
+        // projectile draw has no frame slicing yet (render follow-up).
+        // `:41424-41427`: the damp while the flight outruns 2f.
+        if self.vel.length() > 2.0 {
+            self.vel *= 0.98;
+        }
+        // `AI_047_MagnetSphere_TryAttacking` (`:41446-41499`) — the owner
+        // gate is the caller's. `:41448-41475`: the scan — the candidates
+        // are the chaseable NPCs inside the Manhattan 300f with a clear
+        // line; the C#'s `Main.rand.Next(num)` pick has no pool RNG, so the
+        // first candidate in the `Main.npc` order (the port's slice order)
+        // fires — the vanilla behaviour for the single-candidate case the
+        // spawn usually sees (deviation, ANALYSIS).
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut target: Option<usize> = None;
+        for (i, n) in npcs.iter().enumerate() {
+            if !chaseable(n) {
+                continue;
+            }
+            let c = npc_center(n);
+            let manhattan = (center.x - c.x).abs() + (center.y - c.y).abs();
+            if manhattan < 300.0
+                && can_hit(world, center.x, center.y, 1.0, 1.0, n.x, n.y, n.size().0, n.size().1)
+            {
+                target = Some(i);
+                break;
+            }
+        }
+        // `:41489-41491`: the dying ball stops hunting (`timeLeft < 30`),
+        // and a tick with no candidate arms nothing either.
+        if self.time_left < 30 {
+            return None;
+        }
+        let target = target?;
+        // `:41494-41497`: the cooldown — `localAI[0]++` with a candidate
+        // present, the bolt once past 8.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] <= 8.0 {
+            return None;
+        }
+        self.local_ai[0] = 0.0;
+        Some((center + self.vel * 4.0, target))
+    }
+
+    /// `AI()`'s aiStyle-48 arm (`Projectile.cs:28204-28242`): the magnet
+    /// bolt's lifetime — the out-of-world kill on a 5-tile margin, the
+    /// delay-gated centre snapshot (`AI_048_GetStartPositionSettingDelay`
+    /// `:53986-54000`: 255→4, 260/290→3, 294→9) and the alpha 255 write. The
+    /// 290's one-shot sound is SKIPPED (no sound layer in the pool) and the
+    /// movement is the generic blocked-move default (`kill_step`).
+    fn ai_magnet_bolt(&mut self, world: &World) {
+        let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+        // `WorldGen.InWorld(..., 5)`: the 5-tile world margin.
+        let in_world =
+            tx >= 5 && ty >= 5 && tx < world.width - 5 && ty < world.height - 5;
+        if !in_world {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:28212-28214`: the snapshot at the delay tick.
+        let delay = match self.kind {
+            MAGNET_SPHERE_BOLT => 4,
+            _ => 0,
+        };
+        if self.local_ai[0] == delay as f32 {
+            self.local_ai[1] = cx;
+            self.local_ai[2] = cy;
+        }
+        self.local_ai[0] += 1.0;
+        // `:28216-28236`: every type writes alpha 255 (the 290's sound at
+        // `localAI[0] == 1` SKIPPED).
+        self.alpha = 255;
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-129 arm (`Projectile.cs:36198-36309`): the Spirit
+    /// Flame's hunt-and-track machine. The 659's parameters (3/7.5/1/420/240
+    /// — the steering weights, the retarget radius, the two timeLeft caps)
+    /// override the defaults (10/5/40/300/180); the `ai[0]` slot is the NPC
+    /// index (−1/−2 = the no-target states), `ai[1]` the orbit counter and
+    /// `localAI[0]` the retarget cooldown. The orbital dust
+    /// (`:36253-36276`), the sound and the frame animation are SKIPPED (no
+    /// RNG, sound or dust layer in the pool, no frame fields on the slot).
+    fn ai_spirit_flame(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        let _ = (owner, player);
+        // The 659 override (`:36202-36208`); the other kinds ride the
+        // default shape.
+        let (weight, boost, radius, retarget_life, no_target_life) =
+            if self.kind == SPIRIT_FLAME {
+                (3.0f32, 7.5f32, 1.0f32, 420i32, 240i32)
+            } else {
+                (10.0, 5.0, 40.0, 300, 180)
+            };
+        if self.kind == SPIRIT_FLAME {
+            // `:36209-36210`: the retarget cooldown ticks down.
+            if self.local_ai[0] > 0.0 {
+                self.local_ai[0] -= 1.0;
+            }
+            // `:36212-36231`: the owner-only retarget — the closest-by-scan
+            // chaseable NPC within 400f with a clear line to its centre or
+            // top; the C# assigns in loop order (the last qualifying wins),
+            // mirrored here. A failed search leaves `ai[0]` negative and the
+            // flame keeps sitting.
+            if self.local_ai[0] == 0.0 && self.ai[0] < 0.0 && self.owner == 0 {
+                self.local_ai[0] = 5.0;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let mut found = -1i32;
+                for (i, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let c = npc_center(n);
+                    let clear = can_hit_line(world, center.x, center.y, 0.0, 0.0, c.x, c.y, 0.0, 0.0)
+                        || can_hit_line(world, center.x, center.y, 0.0, 0.0, n.x, n.y, 0.0, 0.0);
+                    if clear && center.distance(c) < 400.0 {
+                        found = i as i32;
+                    }
+                }
+                self.ai[0] = found as f32;
+                if found >= 0 {
+                    // `:36228-36231`: a found target extends the life.
+                    self.time_left = retarget_life;
+                }
+            }
+            // `:36233-36244`: the alpha fade, the solid clamp, the floor.
+            if self.time_left > 30 && self.alpha > 0 {
+                self.alpha -= 12;
+            }
+            if self.time_left > 30
+                && self.alpha < 128
+                && crate::player::collides_rect(world, self.pos.x, self.pos.y, self.w, self.h)
+            {
+                self.alpha = 128;
+            }
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            // `:36245-36252`: the 4-frame animation (`frameCounter > 4` →
+            // `frame++`) — SKIPPED: no frame fields on the slot, no frame
+            // slicing in the projectile draw (render follow-up).
+            // `:36253-36276`: the orbital dust and its scale ramp — SKIPPED,
+            // while `ai[1]++` (the orbit angle) rides the skip.
+            self.ai[1] += 1.0;
+        }
+        // `:36278-36281`: the solid kill — the life drops to 2 inside a tile.
+        if self.time_left > 2 && crate::player::collides_rect(world, self.pos.x, self.pos.y, self.w, self.h) {
+            self.time_left = 2;
+        }
+        // `:36282-36293`: the tracking — while the target is live and past
+        // the radius, the weighted blend pulls the flight.
+        let target = self.ai[0] as i32;
+        if target >= 0 {
+            if let Some(n) = npcs.get(target as usize) {
+                let c = npc_center(n);
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let distance = center.distance(c);
+                if distance > radius {
+                    let mut toward = (c - center).normalize_or_zero();
+                    if toward.is_nan() {
+                        // `:36285-36287`: the NaN guard's `Vector2.UnitY`.
+                        toward = Vec2::new(0.0, 1.0);
+                    }
+                    self.vel = (self.vel * (weight - 1.0) + toward * boost) / weight;
+                }
+                return;
+            }
+        }
+        // `:36296-36308`: the no-target fallbacks — the −1 flame dies at 5,
+        // the −2 waiter at the cap, and a stale index falls to −1.
+        if self.ai[0] == -1.0 && self.time_left > 5 {
+            self.time_left = 5;
+        }
+        if self.ai[0] == -2.0 && self.time_left > no_target_life {
+            self.time_left = no_target_life;
+        }
+        if self.ai[0] >= 0.0 {
+            self.ai[0] = -1.0;
+        }
+        self.kill_step(world);
     }
 
     /// The wind tail the C# applies after the AI sub-steps
@@ -3200,6 +3630,21 @@ impl ProjectilePool {
                         29 => {
                             self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
                         }
+                        // The aiStyle-9 aimed spells (`:43195-43425`): the
+                        // owner channel block reads the player's channel
+                        // state, hence the family signature.
+                        9 => self.slots[i].ai_magic_missile(world, npcs, owner, player.as_deref()),
+                        // The aiStyle-47 magnet sphere (`:41403-41499`): the
+                        // pool-side step — the dedupe walk and the bolt spawn
+                        // need the whole pool, so it is not a slot arm.
+                        47 => self.magnet_sphere_step(i, world, npcs),
+                        // The aiStyle-48 magnet bolt (`:28204-28242`).
+                        48 => self.slots[i].ai_magnet_bolt(world),
+                        // The aiStyle-129 spirit flame (`:36198-36309`): the
+                        // retarget reads `Main.npc` and the owner gate.
+                        129 => {
+                            self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
+                        }
                         _ => {}
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
@@ -3348,6 +3793,62 @@ impl ProjectilePool {
         p.w = 22.0;
         p.h = 22.0;
         p.pos = Vec2::new(cx - 11.0, cy - 11.0);
+    }
+
+    /// The dedupe scan (`:41428-41438`): every other slot of the same kind
+    /// and owner with a shorter life and past 30 gets `timeLeft = 30`.
+    fn magnet_sphere_dedupe(&mut self, slot: usize) {
+        let (kind, owner, life) = {
+            let p = &self.slots[slot];
+            (p.kind, p.owner, p.time_left)
+        };
+        for i in 0..MAX_PROJECTILES {
+            if i == slot {
+                continue;
+            }
+            let other = &mut self.slots[i];
+            if other.active
+                && other.owner == owner
+                && other.kind == kind
+                && life > other.time_left
+                && other.time_left > 30
+            {
+                other.time_left = 30;
+            }
+        }
+    }
+
+    /// The pool-side half of aiStyle 47: the dedupe walk, then the arm, then
+    /// the bolt spawn (`:41498` — `NewProjectile(..., 255, damage,
+    /// knockBack, owner)` at `Center + velocity * 4`, the velocity
+    /// normalized to 6 toward the NPC centre). The C#'s `TryAttacking` is
+    /// owner-only, so the whole step gates on the local player (slot owner
+    /// 0).
+    fn magnet_sphere_step(&mut self, slot: usize, world: &World, npcs: &[Npc]) {
+        self.magnet_sphere_dedupe(slot);
+        if self.slots[slot].owner != 0 {
+            return;
+        }
+        let request = self.slots[slot].ai_magnet_sphere(world, npcs);
+        let Some((spawn, target)) = request else {
+            return;
+        };
+        let (damage, knock_back) = {
+            let p = &self.slots[slot];
+            (p.damage, p.knock_back)
+        };
+        let to = npc_center(&npcs[target]) - spawn;
+        // `:41504-41507`: the 6f normalization (`6 / length`).
+        let speed = 6.0 / to.length().max(f32::MIN_POSITIVE);
+        self.spawn_with_data(
+            MAGNET_SPHERE_BOLT,
+            spawn.x,
+            spawn.y,
+            to.x * speed,
+            to.y * speed,
+            damage,
+            knock_back,
+        );
     }
 
     /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
@@ -6597,6 +7098,266 @@ mod magic_ai_tests {
             "inside the box the burst lands ({} → {})",
             near_before,
             npcs[0].hp
+        );
+    }
+
+    // ---- DW-4b: the aimed spells, the magnet sphere and the spirit flame --
+
+    #[test]
+    fn test_dw_4b_the_spell_holds_the_aim_while_the_channel_is_open() {
+        // `:43239-43249`: the channel keeps `ai[0..1]` on the clamped
+        // `MouseWorld` while the held item shoots this kind.
+        let mut p = crate::player::Player::spawn(&world());
+        p.channel = true;
+        p.channel_item = MAGIC_MISSILE;
+        p.channel_target = Vec2::new(500.0, 400.0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 30, 0.0, 320.0, 384.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            Some(&mut p),
+        );
+        let spell = &pool.slots()[slot];
+        assert_eq!(spell.ai[0], 500.0, "the aim X rides the channel target");
+        assert_eq!(spell.ai[1], 400.0, "the aim Y rides the channel target");
+    }
+
+    #[test]
+    fn test_dw_4b_the_spell_releases_finds_a_target_and_floors_the_life() {
+        // `:43250-43271`: the release drops the aim to −1, hunts a target
+        // within line of sight, and the aiming floor holds `timeLeft` past
+        // 60; a miss flies out at the cruise speed 32.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 30, 0.0, 320.0, 384.0,
+            )
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&world());
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            10.0 * TILE_PX + 64.0,
+            10.0 * TILE_PX,
+            SlimeVariant::Blue,
+        )];
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            Some(&mut p),
+        );
+        let spell = &pool.slots()[slot];
+        assert_eq!(spell.ai[0], -1.0, "the release clears the aim");
+        assert_eq!(spell.ai[1], 0.0, "the found target rides ai[1] as the index + 1");
+        assert!(spell.time_left >= 60, "the aiming floor holds the life");
+        // A miss: no target, the fly-out at the cruise speed.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 30, 0.0, 320.0, 384.0,
+            )
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&world());
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            Some(&mut p),
+        );
+        let spell = &pool.slots()[slot];
+        assert_eq!(spell.ai[1], -1.0, "a miss leaves the slot indexless");
+        assert!(
+            (spell.vel.length() - 32.0).abs() < 1e-3,
+            "the fly-out rides the cruise speed (|v|={})",
+            spell.vel.length()
+        );
+    }
+
+    #[test]
+    fn test_dw_4b_the_lost_spell_caps_the_life_at_300() {
+        // `:43341-43350`: a released spell with no target walks its flight
+        // to 32 and caps `timeLeft` at 300.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 3.0, 4.0, 30, 0.0, -1.0, -1.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 900;
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(&mut w, &mut npcs, None, None);
+        let spell = &pool.slots()[slot];
+        assert!(
+            spell.time_left <= 300,
+            "the lost spell caps at 300 (got {})",
+            spell.time_left
+        );
+        assert!(
+            spell.vel.length() > 5.0,
+            "the flight walks toward 32 (|v|={})",
+            spell.vel.length()
+        );
+    }
+
+    #[test]
+    fn test_dw_4b_the_magnet_sphere_dedupes_the_elder_ball() {
+        // `:41428-41438`: the elder ball forces the younger same-type
+        // same-owner ball's life to 30 (the tick's own decrement aside).
+        let mut pool = ProjectilePool::new();
+        let elder = pool
+            .spawn_with_data(MAGNET_SPHERE_BALL, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        let younger = pool
+            .spawn_with_data(MAGNET_SPHERE_BALL, 12.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        pool.slots_mut()[elder].time_left = 200;
+        pool.slots_mut()[younger].time_left = 100;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[younger].time_left - 30).abs() <= 1,
+            "the younger drops to 30 (got {})",
+            pool.slots()[younger].time_left
+        );
+        assert!(pool.slots()[elder].time_left > 30, "the elder keeps its life");
+    }
+
+    #[test]
+    fn test_dw_4b_the_magnet_sphere_fires_its_bolt_past_the_cooldown() {
+        // `:41446-41499`: the cooldown 9 with a candidate inside the
+        // Manhattan 300f spawns the bolt 255 — and no candidate arms
+        // nothing.
+        for (with_npc, label) in [(true, "with a candidate"), (false, "without")] {
+            let mut pool = ProjectilePool::new();
+            pool.spawn_with_data(MAGNET_SPHERE_BALL, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+                .unwrap();
+            let mut w = world();
+            let mut npcs = if with_npc {
+                vec![Npc::spawn_slime_sky(
+                    20.0 * TILE_PX + 48.0,
+                    24.0 * TILE_PX,
+                    SlimeVariant::Blue,
+                )]
+            } else {
+                Vec::new()
+            };
+            for _ in 0..12 {
+                tick_npcs(&mut w, &mut pool, &mut npcs);
+            }
+            // The spawned bolt leaves the world in its own spawn tick (101
+            // sub-steps at speed 6), so the spawn itself is counted.
+            let bolts = pool
+                .slots()
+                .iter()
+                .filter(|p| p.kind == MAGNET_SPHERE_BOLT)
+                .count();
+            if with_npc {
+                assert!(bolts >= 1, "the cooldown fires the bolt ({label})");
+            } else {
+                assert_eq!(bolts, 0, "no candidate, no bolt ({label})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_dw_4b_the_magnet_bolt_snapshots_at_the_delay_and_fades_out_of_world() {
+        // `:28204-28242` + `AI_048_GetStartPositionSettingDelay` (`:53986-
+        // 54000`): the 255's delay is 4 ticks, and the out-of-world kill
+        // fires on the 5-tile margin.
+        let mut pool = ProjectilePool::new();
+        // The row's extraUpdates 100 runs the arm 101 sub-steps per tick,
+        // so one tick probes the delay-4 snapshot: the 5th sub-step sees
+        // the box at 100 + 4 * 0.6, centre 106.4.
+        let slot = pool
+            .spawn_with_data(MAGNET_SPHERE_BOLT, 100.0, 100.0, 0.6, 0.0, 20, 0.0)
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let bolt = &pool.slots()[slot];
+        assert_eq!(bolt.local_ai[0], 101.0, "one sub-step per AI run");
+        assert!(
+            (bolt.local_ai[1] - 106.4).abs() < 1e-3,
+            "the snapshot rides the 5th sub-step's centre (got {})",
+            bolt.local_ai[1]
+        );
+        assert!((bolt.local_ai[2] - 104.0).abs() < 1e-3, "the y snapshot");
+        assert_eq!(bolt.alpha, 255, "the alpha write (`:28216`)");
+        // Past the margin: the bolt dies.
+        pool.slots_mut()[slot].pos.x = (w.width - 3) as f32 * TILE_PX;
+        pool.slots_mut()[slot].pos.y = 100.0;
+        step(&mut pool, &mut w);
+        assert!(
+            !pool.slots()[slot].active,
+            "outside the 5-tile margin the bolt dies"
+        );
+    }
+
+    #[test]
+    fn test_dw_4b_the_spirit_flame_retargets_inside_400f_and_caps_the_life() {
+        // `:36202-36308`: the 659's parameters — the 400f retarget into
+        // `ai[0]` with the life extended to 420, the −1 death at 5 and the
+        // −2 wait cap at 240, and the tracking blend toward the target.
+        let mut pool = ProjectilePool::new();
+        // The shoot spawns the flame sitting still with `ai0 = -2`
+        // (`Player.cs:48842-48851`).
+        let slot = pool
+            .spawn_with_data_ai(
+                SPIRIT_FLAME, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 80, 0.0, -2.0, 0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            20.0 * TILE_PX + 200.0,
+            24.0 * TILE_PX,
+            SlimeVariant::Blue,
+        )];
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let flame = &pool.slots()[slot];
+        assert_eq!(flame.ai[0], 0.0, "the retarget stores the NPC index");
+        assert!(
+            flame.time_left >= 419,
+            "a found target extends the life to 420 (got {})",
+            flame.time_left
+        );
+        assert!(flame.vel.x > 0.0, "the tracking blend pulls toward the target");
+        // The no-target deaths.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                SPIRIT_FLAME, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 80, 0.0, -1.0, 0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(&mut w, &mut npcs, None, None);
+        assert!(
+            pool.slots()[slot].time_left <= 5,
+            "the aimless flame dies at 5"
+        );
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                SPIRIT_FLAME, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 80, 0.0, -2.0, 0.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 900;
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(&mut w, &mut npcs, None, None);
+        assert!(
+            pool.slots()[slot].time_left <= 240,
+            "the waiting flame caps at 240"
         );
     }
 }
