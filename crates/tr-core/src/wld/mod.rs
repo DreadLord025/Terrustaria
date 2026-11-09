@@ -1292,9 +1292,11 @@ mod tests {
     fn save_refuses_a_section_that_has_data_but_no_writer() {
         let world = World::new("t".into(), 8, 6);
         let mut data = SectionData::default();
-        data.chests.push(sections::WldChest::default());
+        // Chests carries a real codec since phase 3, so the example moves to
+        // the next stub lane (signs, phase 5); the assertion is unchanged.
+        data.signs.push(sections::WldSign::default());
         assert!(to_bytes(&world, &data, 1).is_err());
-        data.chests.clear();
+        data.signs.clear();
         data.bestiary.kills.push(("Slime".into(), 1));
         assert!(to_bytes(&world, &data, 1).is_err());
     }

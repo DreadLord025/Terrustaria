@@ -745,6 +745,8 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
             out.push(WorldChest {
                 tile: (x, y),
                 slots,
+                name: String::new(),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
             });
             dungeon.advance(true);
             if out.len() >= 8000 {
@@ -771,6 +773,34 @@ pub(crate) fn merge_store(mut rolled: Vec<crate::chest::WorldChest>, seeded: Vec
     rolled.retain(|c| !taken.contains(&c.tile));
     rolled.extend(seeded);
     rolled
+}
+
+/// The `.wld` load path's store (`LoadChests:2723`): the file's chests win —
+/// they are the player's own contents — and the deterministic re-roll only
+/// fills the anchors the file does not carry. Unlike [`merge_store`], the
+/// loaded roster keeps its file order and its tombstones (`Chest.RemoveChest`
+/// nulls the array slot, so every held `Player.chest` index stays valid), and
+/// it leads: a vanilla world that never stored a chest for an anchor gets the
+/// roll's stock for it, while a player-placed chest beyond worldgen's roster
+/// survives untouched.
+pub(crate) fn displace_loaded_chests(
+    rolled: Vec<crate::chest::WorldChest>,
+    loaded: Vec<crate::chest::WorldChest>,
+) -> Vec<crate::chest::WorldChest> {
+    let taken: std::collections::HashSet<(i32, i32)> = loaded
+        .iter()
+        .filter(|c| !is_displaced_removed(c))
+        .map(|c| c.tile)
+        .collect();
+    let mut out = loaded;
+    out.extend(rolled.into_iter().filter(|c| !taken.contains(&c.tile)));
+    out
+}
+
+/// A tombstone reads as "no anchor here" for the displacement's taken-set
+/// (the C# `Main.chest[i] == null`), mirroring `chest::find_chest`'s skip.
+fn is_displaced_removed(c: &crate::chest::WorldChest) -> bool {
+    c.tile == (i32::MIN, i32::MIN)
 }
 
 #[cfg(test)]
@@ -870,5 +900,91 @@ mod tests {
     fn test_chest_gen_empty_world_has_no_chests() {
         let w = World::new("empty".into(), 200, 300);
         assert!(generate_world_chests(&w).is_empty());
+    }
+
+    /// One rolled chest at (x, y) — the generator's own stock.
+    fn rolled(x: i32, y: i32, kind: u16) -> crate::chest::WorldChest {
+        crate::chest::WorldChest {
+            tile: (x, y),
+            slots: vec![ItemSlot {
+                kind,
+                name: crate::registry::name(kind),
+                count: 3,
+                prefix: 0,
+            }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+        }
+    }
+
+    /// A file-loaded chest at (x, y) with the player's own contents.
+    fn loaded(x: i32, y: i32, name: &str, kind: u16) -> crate::chest::WorldChest {
+        crate::chest::WorldChest {
+            tile: (x, y),
+            slots: vec![ItemSlot {
+                kind,
+                name: crate::registry::name(kind),
+                count: 99,
+                prefix: 0,
+            }],
+            name: name.into(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+        }
+    }
+
+    /// DW-3.4 — the `.wld` load path (M6-SAVE-1 phase 3): the file's chests win
+    /// and the roll only fills the anchors the file does not carry. The loaded
+    /// roster leads — its order and its tombstones are the C# `Main.chest`
+    /// array's, so a held `Player.chest` index stays valid.
+    #[test]
+    fn test_DW_3_4_the_wld_load_displaces_the_reroll() {
+        let roll = vec![rolled(40, 199, 21), rolled(60, 194, 22)];
+        let file = vec![
+            crate::chest::WorldChest {
+                tile: (i32::MIN, i32::MIN), // a removed slot (`Chest.RemoveChest`)
+                slots: Vec::new(),
+                name: String::new(),
+                max_items: 40,
+            },
+            loaded(40, 199, "Stash", 9),
+            loaded(90, 90, "Extra", 8), // a player-placed chest worldgen never rolls
+        ];
+        let store = displace_loaded_chests(roll, file);
+        assert_eq!(store.len(), 4);
+        // The file's roster keeps its slots and order, tombstones included.
+        assert!(store[0].tile == (i32::MIN, i32::MIN));
+        assert_eq!(store[1].name, "Stash");
+        assert_eq!(store[1].slots[0].count, 99, "the player's contents win");
+        assert_eq!(store[2].tile, (90, 90), "a player-placed chest survives");
+        // Only the anchor the file does not carry is filled by the roll.
+        assert_eq!(store[3].tile, (60, 194));
+        assert_eq!(store[3].slots[0].count, 3, "the roll's stock");
+        // And the roll never re-stocks an anchor the file owns.
+        assert!(
+            store.iter().filter(|c| c.tile == (40, 199)).count() == 1,
+            "the rolled (40,199) is displaced"
+        );
+    }
+
+    /// DW-3.4 — the `.trwld` path is untouched: `merge_store` still appends
+    /// the seeded store after the roll's survivors with its own order (the
+    /// `TR_CHEST` fixture's behaviour the load path has always had).
+    #[test]
+    fn test_DW_3_4_the_trwld_path_keeps_merge_store() {
+        let roll = vec![rolled(40, 199, 21), rolled(60, 194, 22)];
+        let seeded = vec![loaded(40, 199, "Fixture", 9)];
+        let store = merge_store(roll, seeded);
+        // The roll's own anchors first (minus the seeded one), the seeded after.
+        assert_eq!(store.len(), 2);
+        assert_eq!(store[0].tile, (60, 194));
+        assert_eq!(store[1].tile, (40, 199));
+        assert_eq!(store[1].name, "Fixture");
+        // The two functions differ in order, not in win semantics.
+        let displaced =
+            displace_loaded_chests(vec![rolled(40, 199, 21)], vec![loaded(40, 199, "F", 9)]);
+        assert_eq!(
+            displaced[0].name, "F",
+            "the loaded roster leads on the .wld path"
+        );
     }
 }

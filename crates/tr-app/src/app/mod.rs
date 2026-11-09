@@ -246,12 +246,6 @@ pub(crate) struct App {
     /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
     /// phase-4 file scope excludes assets.rs/cursor.rs).
     pub(crate) cursor_override: i32,
-    /// The stored `Chest.name` (`Chest.cs:82`) per store index — the panel's
-    /// name line and the rename submit's write target (`App.chest_names`
-    /// feeds `chest::chest_name`). A side map until M6-SAVE-2 widens the
-    /// `WorldChest` entity: the frozen `editing.rs` stocked-chest test
-    /// literal pins the struct shape (the phase-5 discovery, Gap #2).
-    pub(crate) chest_names: HashMap<usize, String>,
     /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
     /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
     /// submit's empty-if-default read (`ChestUI.cs:849-852`).
@@ -2056,7 +2050,6 @@ impl App {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
-            chest_names: HashMap::new(),
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,

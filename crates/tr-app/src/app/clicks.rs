@@ -1088,6 +1088,8 @@ mod tests {
         app.world_chests.push(WorldChest {
             tile: (20, 10),
             slots,
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         app.player = Some(crate::player::Player::spawn(&app.world));
         let p = app.player.as_mut().unwrap();
@@ -1514,6 +1516,8 @@ mod tests {
         app.world_chests.push(WorldChest {
             tile: (40, 10),
             slots: vec![],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         app.player.as_mut().unwrap().chest = 0;
         app.mouse_pos = tile_click(40, 10);
@@ -1583,7 +1587,10 @@ mod tests {
         assert!(app.handle_chest_clicks(), "the cancel button took the click");
         assert!(!app.chest_editing(), "the editor closed");
         assert_eq!(app.front, None, "back into gameplay");
-        assert!(app.chest_names.is_empty(), "the cancel never wrote");
+        assert!(
+            app.world_chests.iter().all(|c| c.name.is_empty()),
+            "the cancel never wrote"
+        );
     }
 
     /// The editing-state Save arm (`ChestUI.RenameChest`'s else, `:834-837`):

@@ -3220,6 +3220,8 @@ mod tests {
                 count: 6,
                 prefix: 0,
             }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {
