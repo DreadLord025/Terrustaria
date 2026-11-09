@@ -6486,3 +6486,34 @@ The envelope and the ported bodies are 1:1; the deviations:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
+
+## Projectile + strike sync (M6-NET-5)
+
+The projectile and strike messages are 1:1 ports; the deviations:
+
+- **This build's msg 17 is TileChange, not CreateProjectile.** The spawn+update
+  payloads are unified in `27` (`NetMessage.cs:780-841`) with the
+  `ProjectileKey`'s owner/slot/generation packing, and the despawn is `29`
+  (`MessageBuffer.cs:1825-1850`). The roadmap's earlier "17 CreateProjectile"
+  row was wrong; the port's tile edits ride `20` (ported in M6-NET-3) and no
+  `17` body is implemented.
+- **The host owns the server's hostile shots (owner 255)** instead of the
+  single-player quirk (owner 0), so a peer's slot index can never collide
+  with the host's player id.
+- **The strike's damage is the sender's value, not the server's recompute.**
+  The C#'s `StrikeNPC_Inner` recomputes through `CalculateDamageNPCsTake`;
+  the port applies the strike as sent (the host validates the generation and
+  the target) and the pending-damage/ack accounting (`msg 162`,
+  `NPC.PushPendingDamage`) is not ported — the client's local prediction is
+  replaced by the relayed strike.
+- **The client applies the strike's hp/hurt_cd/flash, not the full inner.**
+  Knockback rides the `23` snapshots (the C# applies it locally through
+  `StrikeNPC_Inner`).
+- **The section culling of `27` is not ported**: the host broadcasts every
+  changed projectile of its own (the budget-gated diff covers the spam
+  control), and the `netImportant` set (type 12/pets/aiStyle 11) rides as
+  ordinary traffic — the port's section stream (M6-NET-3) already covers the
+  tiles.
+- **The projectile `netSpam` budget is the C#'s numbers, port-tuned**: 60
+  budget, 5 cost, refill 10 per net tick (the C#'s 1/tick at 60 Hz); a
+  parked projectile retries on the next tick (`netUpdate2`'s park).
