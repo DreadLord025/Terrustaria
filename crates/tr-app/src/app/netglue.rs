@@ -1256,7 +1256,7 @@ impl App {
         self.remote_players.clear();
         self.local_id = 0;
         if self.menu.is_none() {
-            let mut m = menu::Menu::new(self.player_name.clone());
+            let mut m = menu::Menu::new(self.settings.clone(), self.player_name.clone());
             m.error = Some(format!("Disconnected: {reason}"));
             self.menu = Some(m);
         }
@@ -1747,6 +1747,10 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2WitherBeast
         | crate::npc::NpcKind::DD2Bartender
         | crate::npc::NpcKind::DD2EterniaCrystal
+        | crate::npc::NpcKind::AncientCultist
+        | crate::npc::NpcKind::StardustTower
+        | crate::npc::NpcKind::NebulaTower
+        | crate::npc::NpcKind::SolarTower
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

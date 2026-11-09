@@ -180,6 +180,18 @@ pub enum NpcKind {
     /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
+    /// `NPCID.TowerSolarVortex` — see the kinds below (`NPC.cs`'s cases
+    /// 493/507/517 share the cultist's row: 130×270, aiStyle 94, 20000
+    /// HP, dmg 0, def 20).
+    StardustTower,
+    /// `NPCID.TowerNebula` (507).
+    NebulaTower,
+    /// `NPCID.TowerSolar` (517).
+    SolarTower,
+    /// `NPCID.AncientCultist` (422) — the Lunar Events' summoner (`NPC.cs`
+    /// `:15172-15189`: 130×270, aiStyle 94, 20000 HP, dmg 0, def 20,
+    /// noGravity, noTileCollide; the ritual + the portal-summon machine).
+    AncientCultist,
     /// `NPCID.DD2Bartender` (550) — the tavernkeeper (`NPC.cs`:
     /// 18×40, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5).
     DD2Bartender,
@@ -653,6 +665,10 @@ impl NpcKind {
             NpcKind::DD2WitherBeast => 108,
             NpcKind::DD2Bartender => 109,
             NpcKind::DD2EterniaCrystal => 110,
+            NpcKind::AncientCultist => 112,
+            NpcKind::StardustTower => 113,
+            NpcKind::NebulaTower => 114,
+            NpcKind::SolarTower => 115,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -774,6 +790,10 @@ impl NpcKind {
             108 => NpcKind::DD2WitherBeast,
             109 => NpcKind::DD2Bartender,
             110 => NpcKind::DD2EterniaCrystal,
+            112 => NpcKind::AncientCultist,
+            113 => NpcKind::StardustTower,
+            114 => NpcKind::NebulaTower,
+            115 => NpcKind::SolarTower,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -1022,6 +1042,12 @@ impl NpcKind {
             NpcKind::DD2Betsy => (190.0, 90.0),
             // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
             NpcKind::DD2WitherBeast => (18.0, 40.0),
+            // The cultist + the three towers: 130x270 (`NPC.cs`'s
+            // case 422 + the 493/507/517 rows).
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => (130.0, 270.0),
             // The tavernkeeper + the etherian crystal: 18x40 / 40x40.
             NpcKind::DD2Bartender => (18.0, 40.0),
             NpcKind::DD2EterniaCrystal => (40.0, 40.0),
@@ -1316,6 +1342,11 @@ impl NpcKind {
             NpcKind::DD2Betsy => 50000,
             // The WitherBeast: 500 HP.
             NpcKind::DD2WitherBeast => 500,
+            // The cultist + the towers: 20000 HP.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 20000,
             // The tavernkeeper 250, the crystal 1000 (`NPC.cs`'s rows).
             NpcKind::DD2Bartender => 250,
             NpcKind::DD2EterniaCrystal => 1000,
@@ -1465,6 +1496,11 @@ impl NpcKind {
             NpcKind::DD2Betsy => 80,
             // The WitherBeast: dmg 50.
             NpcKind::DD2WitherBeast => 50,
+            // The cultist + the towers: dmg 0.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0,
             // The tavernkeeper 10, the crystal 0 (its contact damage is 0).
             NpcKind::DD2Bartender => 10,
             NpcKind::DD2EterniaCrystal => 0,
@@ -2198,6 +2234,11 @@ impl Npc {
             NpcKind::DD2Betsy => 0.0,
             // The WitherBeast: kb 0.15.
             NpcKind::DD2WitherBeast => 0.15,
+            // The cultist + the towers: kb 0.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0.0,
             // The tavernkeeper 0.5, the crystal 0.
             NpcKind::DD2Bartender => 0.5,
             NpcKind::DD2EterniaCrystal => 0.0,
@@ -2375,6 +2416,11 @@ impl Npc {
             NpcKind::DD2Betsy => 38,
             // The WitherBeast: def 30.
             NpcKind::DD2WitherBeast => 30,
+            // The cultist + the towers: def 20.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 20,
             // The tavernkeeper 15, the crystal 14.
             NpcKind::DD2Bartender => 15,
             NpcKind::DD2EterniaCrystal => 14,
@@ -2545,7 +2591,11 @@ impl Npc {
             | NpcKind::DD2Betsy
             | NpcKind::DD2WitherBeast
             | NpcKind::DD2EterniaCrystal
-            | NpcKind::DD2Bartender => 0.0,
+            | NpcKind::DD2Bartender
+            | NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2850,6 +2900,11 @@ impl Npc {
             NpcKind::DD2Betsy => self.update_betsy(world, player, rng),
             // The WitherBeast: aiStyle 107's aura/self-heal machine.
             NpcKind::DD2WitherBeast => self.update_wither_beast(world, player, rng),
+            // The cultist + the towers: aiStyle 94's shared machine.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
             // The tavernkeeper: the town-NPC walker (aiStyle 7).
             NpcKind::DD2Bartender => self.update_guide(world, dt),
             // The etherian crystal: aiStyle 105's machine.
@@ -3301,6 +3356,13 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 16;
                 }
+            }
+            // The cultist + the towers: the 1-frame strips.
+            NpcKind::AncientCultist
+            | NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower => {
+                self.frame = 0;
             }
             // The etherian crystal: the 1-frame strip.
             NpcKind::DD2EterniaCrystal => {
@@ -6235,6 +6297,73 @@ impl Npc {
         let _ = (world, player);
     }
 
+    /// `AI()`'s aiStyle-94 block (`NPC.cs:38968-39400`) — the Ancient Cultist's
+    /// machine. `ai[1]`'s timer counts to 180 and the cultist dissolves
+    /// (`life = 0`, the death chain); the hover rides the sine bob
+    /// (velocity.Y = sin(2π·ai[0]/300)·0.5, the 300-tick cycle); the summon
+    /// arms: the ritual projectiles (578/579, 0 damage, the "ritual"
+    /// markers) at the player's tile (3240-px gate, the line-of-sight
+    /// refusal, the 60+120 rearm) and the 1080-px arm (the 420+360 rearm,
+    /// the 20-tile window's non-solid pick, the lava/solid/line gates); the
+    /// hp regen (`+200` per 60 ticks while no player within 2000 px).
+    ///
+    /// Deviations: the dust/sound arms are unmodelled; the shield-strength
+    /// reads (`ShieldStrengthTower*`) fold out (no pillar shields yet).
+    fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The timer: the 180-tick dissolve (`:39060-39066`'s `ai[1]`).
+        self.ai[2] += 1.0;
+        if self.ai[2] >= 180.0 {
+            self.hp = 0;
+            return;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The hover: the sine bob + the 300-tick cycle.
+        self.vy = (std::f32::consts::PI * 2.0 * self.ai[0] / 300.0).sin() * 0.5;
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 300.0 {
+            self.ai[0] = 0.0;
+        }
+        // The regen: +200 per 60 ticks while the player stays 2000+ px
+        // (`localAI[0]` — the port's `caster_counter`).
+        if (pcx - cx).hypot(pcy - cy) > 2000.0 {
+            self.caster_counter += 1;
+            if self.caster_counter >= 60 {
+                self.caster_counter = 0;
+                self.hp = (self.hp + 200).min(self.max_hp);
+            }
+        } else {
+            self.caster_counter = 0;
+        }
+        // The ritual arm (`:39273-39292`): the player within 3240 px with
+        // no line of sight — the 578/579 projectiles at the player's tile.
+        if player.hp > 0
+            && (pcx - cx).hypot(pcy - cy) < 3240.0
+            && !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[1] = 0.0;
+            let ritual = 579u16;
+            self.wants_hostile_shot
+                .push((ritual, pcx, pcy, 0.0, 0.0, 0));
+            let _ = ritual;
+        }
+        // The 1080-px arm (`:39293-39336`): the 420+360 rearm + the
+        // 20-tile window's pick.
+        if player.hp > 0
+            && (pcx - cx).hypot(pcy - cy) < 1080.0
+            && pcy - cy < 400.0
+            && self.caster_counter == 0
+        {
+            self.caster_counter = 420;
+            let ritual = 579u16;
+            self.wants_hostile_shot
+                .push((ritual, pcx, pcy, 0.0, 0.0, 0));
+            let _ = ritual;
+        }
+        let _ = rng;
+    }
+
     fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -8148,6 +8277,10 @@ impl Npc {
             NpcKind::DD2WitherBeast => 108,
             NpcKind::DD2Bartender => 109,
             NpcKind::DD2EterniaCrystal => 110,
+            NpcKind::AncientCultist => 112,
+            NpcKind::StardustTower => 113,
+            NpcKind::NebulaTower => 114,
+            NpcKind::SolarTower => 115,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

@@ -227,6 +227,10 @@ pub(crate) struct NpcAssets {
     /// `NPC_548` — the Etheria Crystal (40x40).
     pub(crate) tavern: Option<BgTex>,
     pub(crate) crystal: Option<BgTex>,
+    /// `NPC_422` — the Ancient Cultist (1-frame strip of 130x270).
+    pub(crate) cultist: Option<BgTex>,
+    /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
+    pub(crate) towers: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -345,6 +349,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         wither_beast: sky_tex(atlas, "NPC_568", None),
         tavern: sky_tex(atlas, "NPC_550", None),
         crystal: sky_tex(atlas, "NPC_548", None),
+        cultist: sky_tex(atlas, "NPC_422", None),
+        towers: sky_tex(atlas, "NPC_493", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_27", None),
@@ -1153,6 +1159,20 @@ pub(crate) fn draw_npcs(
                 assets.crystal.as_ref(),
                 assets.crystal.as_ref().map_or(40.0, |t| t.h),
                 [40.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The cultist: the 1-frame NPC_422 strip over the 130x270 frames.
+            NpcKind::AncientCultist => (
+                assets.cultist.as_ref(),
+                assets.cultist.as_ref().map_or(270.0, |t| t.h),
+                [130.0, 270.0],
+                [n.x, n.y],
+            ),
+            // The towers: the 1-frame NPC_493/507/517 strips.
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
+                assets.towers.as_ref(),
+                assets.towers.as_ref().map_or(270.0, |t| t.h),
+                [130.0, 270.0],
                 [n.x, n.y],
             ),
             NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (

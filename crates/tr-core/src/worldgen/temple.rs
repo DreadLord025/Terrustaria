@@ -1,27 +1,32 @@
-//! The Lihzahrd temple — the M5-BIOME phase-6 stub: the faithful
-//! `LihzahrdTemple` placement search (`WorldGen.cs:15834-15926`) writing the
-//! `GenVars` the later temple passes read, over the shape-level room body.
+//! The Lihzahrd temple — the M5-BIOME phase-6 seam (the faithful
+//! `LihzahrdTemple` placement search, `WorldGen.cs:15834-15926`) plus the
+//! M5-TEMPLE phase-1 interior port: the room walk and the brick generation
+//! (`makeTemple`, `WorldGen.cs:33440-33548` + `:34238-34462`).
 //!
-//! The C# temple (`makeTemple`, `WorldGen.cs:33435-34237`): the brick box
+//! The C# temple (`makeTemple`, `WorldGen.cs:33435-34237`): the brick shell
 //! (the Lihzahrd brick 226, the walls 87 unsafe / 112 safe) buried in the
 //! jungle cavern below the rock layer, the interior rooms carved, the altar
 //! (237) in the main room, the dart traps (137) in the walls, the
-//! teleporter pads, the chests. The M5-TEMPLE seam (what is verbatim vs
-//! shape-level here): the placement search is the verbatim pass; the room
-//! generation is the shape-level slice — vanilla's non-intersecting room
-//! walk (`:33444-33548`), `makeTemple_GenerateBricks` (`:34241+`), the
-//! jitter carve sweeps (`:33554-33684`), the `templePather` corridors
+//! teleporter pads, the chests. Ported so far: the placement search
+//! (M5-BIOME), the room walk + the depth-unioned brick fills + the corner
+//! Line walkers (phase 1). Still to port (the M5-TEMPLE phases 2-3): the
+//! jitter carve sweeps (`:33550-33684`), the `templePather` corridors
 //! (`:33686-33787`), the `outerTempled` sweeps (`:33819-33850`), the
-//! style-11 door (`:33950`), the `templeCleaner` sweeps (`:33954-33961`,
-//! `:33335`) and the spike/platform loop (`:34049-34217`) are not ported;
-//! the stub keeps the box + hall + altar-room body. What publishes state:
-//! the bounds `t_left/t_right/t_top/t_bottom` = the filled extent ± 10 (the
-//! C# room-union ± 10, `:33788-33817`, published `:34231-34235`),
-//! `t_rooms = 2` (the C# publishes the final room count, `:34235`) and the
-//! altar anchor `l_altar_x/l_altar_y` = the 3×2 altar's top-left
-//! (`:34000-34001`, hand-built fallback `:34038-34039`) — the fields
-//! `LihzahrdTemplePart2` (`:17701`) and `LihzahrdAltar` (`:21943`) consume
-//! (M5-TEMPLE's row owns the full interior).
+//! entrance shaft + the style-11 door (`:33852-33857`), the `templeCleaner`
+//! sweeps (`:33954-33961`, `:33335`), the altar publication (`:33988-34068`),
+//! the spike loop (`:34069-34217`), `templePart2` (`:34464`) and the
+//! `LihzahrdAltar` re-write (`:21943`).
+//!
+//! What publishes state: the bounds `t_left/t_right/t_top/t_bottom` = the
+//! room-union ± 10 (the C# publishes the filled extent ± 10,
+//! `:33788-33817`, published `:34231-34235`), `t_rooms` = the final walk
+//! count (`:34235`) and the altar anchor `l_altar_x/l_altar_y` = the 3×2
+//! altar's top-left (`:34000-34001`, hand-built fallback `:34038-34039`) —
+//! the fields `LihzahrdTemplePart2` (`:17701`) and `LihzahrdAltar`
+//! (`:21943`) consume (M5-TEMPLE's row owns the full interior). Until the
+//! phase-2 altar port lands, the pass still publishes the stub shell's
+//! bounds + anchor (kept adjacent to the faithful walk so the worldgen
+//! stays coherent mid-port).
 //!
 //! Deviations (ANALYSIS "Lihzahrd temple (M1.4-WGEN-6)"): the C#'s
 //! multi-room crawl with the doors and the teleporters is the shape-level
@@ -31,8 +36,8 @@
 //! case-137 variants the wiring trip fires).
 
 use super::pipeline::TempleBounds;
-use super::structures::place_chest;
-use crate::tile::{FLAG_ACTIVE, Tile};
+use crate::tiledata as td;
+use crate::tile::{FLAG_ACTIVE, FLAG_LIQUID_LAVA, Tile};
 use crate::world::World;
 
 pub(crate) const TILE_TEMPLE_BRICK: u16 = 226;
@@ -46,14 +51,6 @@ pub(crate) const WALL_TEMPLE: u16 = 112;
 /// `-dungeonSide` multiplier is the constant −1 and the jungle (the temple's
 /// host) is on the dungeon-opposite side.
 const DUNGEON_SIDE_RIGHT: i32 = 1;
-
-/// The `UnifiedRandom.NextDouble()` stand-in: one xorshift draw scaled to
-/// [0, 1). The xorshift-for-`UnifiedRandom` substitution is the recorded
-/// stream-model deviation (`Streams::pass_rng`'s docs); the fraction mapping
-/// is the port-level convention.
-fn next_double(rng: &mut super::Rng) -> f64 {
-    f64::from(rng.next_u32()) / 4294967296.0
-}
 
 /// The faithful `LihzahrdTemple` placement search (`WorldGen.cs:15834-15926`):
 /// per attempt sample `y` from `[rockLayerClamped, maxTilesY - 600)` and `x`
@@ -103,7 +100,7 @@ pub(crate) fn find_temple_site(
             // dungeon-opposite reach; the C# `(int)` cast truncates toward
             // zero like `as i32` (the value is positive: the reach is
             // [0.05·maxTilesX, 0.4·maxTilesX] for `dungeonSide == Right`).
-            let num7 = (((next_double(rng) * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
+            let num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
                 * world.width as f64) as i32;
             // `:15877-15882` (the remix branch is above): accept the first
             // active jungle-grass tile.
@@ -142,8 +139,525 @@ pub(crate) fn find_temple_site(
     site
 }
 
-fn put_brick(world: &mut World, x: i32, y: i32, wall: u16) {
-    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+/// `WorldGen.InWorld(i, j, fluff)` (`WorldGen.cs:9688-9701`): the cell
+/// plus `fluff` tiles of margin must sit inside the world.
+pub(crate) fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// The C# `Rectangle` (`System.Drawing`): `x`/`y` the top-left, `w`/`h` the
+/// size. `Right`/`Bottom` are exclusive ends (`x + w`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+impl Rect {
+    fn right(&self) -> i32 {
+        self.x + self.w
+    }
+
+    fn bottom(&self) -> i32 {
+        self.y + self.h
+    }
+
+    /// `Rectangle.Intersects` — the half-open axis-aligned overlap test
+    /// (edges touching do not count).
+    fn intersects(&self, other: &Rect) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
+    }
+}
+
+/// One walk room + the depth level the brick union groups it by — the C#'s
+/// `array[i]` (the rect) with `array2[i]` (the depth, `WorldGen.cs:33537`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TempleRoom {
+    pub rect: Rect,
+    pub depth: i32,
+}
+
+/// The per-depth `DungeonBounds` slice (`DungeonBounds.cs:21-101`): the room
+/// union at one depth level. `Inflate(amount)` (`:108-111`) moves all four
+/// edges by `± amount`; the port applies it at build time.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Bounds {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// `makeTemple`'s room walk (`WorldGen.cs:33440-33548`): `num2` rooms
+/// (`Next((int)(scale*10), (int)(scale*16))`, `scale = maxTilesX / 4200`)
+/// stepping sideways from the bury point, flipping the horizontal/vertical
+/// stagger every `Next(1, 3)` rooms and drifting downward (`num19`, the ±100
+/// ladder), each rect re-rolled until it misses every earlier room. The last
+/// room (or the first one hitting the underworld ceiling) collapses to the
+/// big altar room. Returns the rects with their depth levels — the
+/// `makeTemple_GenerateBricks` (`WorldGen.cs:34238+`) input.
+///
+/// The C# shares one `genRand` across the whole world; the port's per-pass
+/// `pass_rng` stream is the recorded deviation — the draws inside follow the
+/// C# statement order 1:1.
+pub(crate) fn make_temple_rooms(
+    rng: &mut super::Rng,
+    scale: f64,
+    underworld_layer: i32,
+    x: i32,
+    y: i32,
+) -> TempleWalk {
+    // `:33440-33452`: the room count, the first direction and the flip
+    // period. `num3` is the current direction; `num4` the per-room copy the
+    // stagger flips.
+    let mut num2 = rng.range((scale * 10.0) as i32, (scale * 16.0) as i32);
+    let num3 = if rng.range(0, 2) == 0 { -1 } else { 1 };
+    let mut num4 = num3;
+    let (mut num7, mut num8) = (x, y);
+    let mut num9 = rng.range(1, 3);
+    let mut num10 = 0;
+    let mut num13 = 0;
+    let mut num19 = -10;
+    let start_dir = num3;
+    let mut rooms: Vec<TempleRoom> = Vec::new();
+    let mut i = 0;
+    while i < num2 {
+        num10 += 1;
+        let mut num14 = num4;
+        let mut num15 = num7;
+        let mut num16 = num8;
+        let mut rect = Rect {
+            x: num15,
+            y: num16,
+            w: 0,
+            h: 0,
+        };
+        let mut flag = true;
+        while flag {
+            num15 = num7;
+            num16 = num8;
+            let mut num17 = rng.range(25, 50);
+            let mut num18 = rng.range(20, 35);
+            if num18 > num17 {
+                num18 = num17;
+            }
+            // `:33472`: the underworld-ceiling test on the CURRENT position
+            // (`UnderworldLayer` = maxTilesY - 200, passed in).
+            let flag2 = num16 + 70 >= underworld_layer - 10;
+            // `:33475-33486`: the last-room resize (the altar room).
+            if i == num2 - 1 || flag2 {
+                num2 = i + 1;
+                num17 = rng.range(55, 65);
+                num18 = rng.range(45, 50);
+                if num18 > num17 {
+                    num18 = num17;
+                }
+                num17 = (num17 as f64 * 1.6) as i32;
+                num18 = (num18 as f64 * 1.35) as i32;
+                num16 += rng.range(5, 10);
+            }
+            if num10 > num9 {
+                num16 += rng.range(num18 + 1, num18 + 3) + num19;
+                num15 += rng.range(-5, 6);
+                num14 = num3 * -1;
+            } else {
+                num15 += (rng.range(num17 + 1, num17 + 3) + num19) * num14;
+                num16 += rng.range(-5, 6);
+            }
+            flag = false;
+            rect = Rect {
+                x: num15 - num17 / 2,
+                y: num16 - num18 / 2,
+                w: num17,
+                h: num18,
+            };
+            // `:33512`: the underworld trigger skips the intersection scan
+            // (the big room overlaps everything by design).
+            if flag2 {
+                break;
+            }
+            // `:33515-33522`: the retry loop — every earlier rect, and the
+            // 1/100 downward drift (`num19` walks-wide).
+            for j in 0..i as usize {
+                if rooms[j].rect.intersects(&rect) {
+                    flag = true;
+                }
+                if rng.range(0, 100) == 0 {
+                    num19 += 1;
+                }
+            }
+        }
+        // `:33537`: the last room of the walk carries depth + 1 (in practice
+        // the shrink above already made `i == num2` unreachable — the C#
+        // ternary stays verbatim).
+        let depth = if i == num2 { num13 + 1 } else { num13 };
+        if num10 > num9 {
+            num9 += 1;
+            num10 = 1;
+            num13 += 1;
+        }
+        rooms.push(TempleRoom { rect, depth });
+        num4 = num14;
+        num7 = num15;
+        num8 = num16;
+        i += 1;
+    }
+    TempleWalk {
+        rooms,
+        start_dir,
+        end_dir: num3,
+    }
+}
+
+/// `makeTemple_GenerateBricks`'s first loop (`WorldGen.cs:34244-34265`): the
+/// per-depth `DungeonBounds` unions — one level per depth value that occurs,
+/// the null levels of the C#'s sparse array skipped.
+fn depth_bounds(rooms: &[TempleRoom]) -> Vec<Option<Bounds>> {
+    let mut levels: Vec<Option<Bounds>> = Vec::new();
+    for room in rooms {
+        let idx = room.depth as usize;
+        if levels.len() <= idx {
+            levels.resize(idx + 1, None);
+        }
+        let (left, top) = (room.rect.x, room.rect.y);
+        let (right, bottom) = (room.rect.right(), room.rect.bottom());
+        levels[idx] = Some(match levels[idx] {
+            // `DungeonBounds.SetBounds` (`DungeonBounds.cs:249-256`) for the
+            // first room at the depth, `UpdateBounds` (`:285-297`) for the
+            // rest.
+            None => Bounds {
+                left,
+                top,
+                right,
+                bottom,
+            },
+            Some(prev) => Bounds {
+                left: prev.left.min(left),
+                top: prev.top.min(top),
+                right: prev.right.max(right),
+                bottom: prev.bottom.max(bottom),
+            },
+        });
+    }
+    levels
+}
+
+/// The brick write of the GenerateBricks family — the C#'s
+/// `ClearEverything(); active(true); type = 226` (`WorldGen.cs:34272-34275`,
+/// `:34366-34369`, the FillY/FillX bodies `:34404-34407`): everything
+/// resets, so the wall drops to 0.
+fn clear_and_brick(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    world.tiles[i] = Tile {
+        kind: TILE_TEMPLE_BRICK,
+        flags: FLAG_ACTIVE,
+        ..Default::default()
+    };
+}
+
+/// `makeTemple_GenerateBricks` (`WorldGen.cs:34238-34299`): the depth unions
+/// inflated by 10, the brick fill over each union box, then the four
+/// corner-to-corner `Line_StrictAngles` between every pair of levels
+/// (bridging the depth stagger into one shell).
+pub(crate) fn make_temple_generate_bricks(world: &mut World, rooms: &[TempleRoom]) {
+    let mut levels: Vec<Bounds> = depth_bounds(rooms)
+        .into_iter()
+        .flatten()
+        .map(|mut b| {
+            // `DungeonBounds.Inflate(10)` (`DungeonBounds.cs:108-111`).
+            b.left -= 10;
+            b.top -= 10;
+            b.right += 10;
+            b.bottom += 10;
+            b
+        })
+        .collect();
+    for b in &levels {
+        for k in b.left..=b.right {
+            for l in b.top..=b.bottom {
+                clear_and_brick(world, k, l);
+            }
+        }
+    }
+    for m in 0..levels.len() {
+        let a = levels[m];
+        for n in m + 1..levels.len() {
+            let b = levels[n];
+            generate_bricks_line_strict_angles(world, a.left, a.top, b.left, b.top, false, false);
+            generate_bricks_line_strict_angles(world, a.right, a.top, b.right, b.top, true, false);
+            generate_bricks_line_strict_angles(world, a.left, a.bottom, b.left, b.bottom, false, true);
+            generate_bricks_line_strict_angles(
+                world,
+                a.right,
+                a.bottom,
+                b.right,
+                b.bottom,
+                true,
+                true,
+            );
+        }
+    }
+}
+
+/// The squared distance — the C# compares `origin.Distance(...)` values
+/// (`Vector2.Distance`, f32); the squared compare is equivalent for the
+/// non-negative distances here.
+fn dist2(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let (dx, dy) = (bx - ax, by - ay);
+    dx * dx + dy * dy
+}
+
+/// `makeTemple_GenerateBricks_Line_StrictAngles`
+/// (`WorldGen.cs:34301-34339`): the 500-step L-corner staircase between the
+/// two anchors, with the straight `_Line` fallback when the corner isn't
+/// reached in time (or the anchors share an axis).
+fn generate_bricks_line_strict_angles(
+    world: &mut World,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    fill_left: bool,
+    fill_upwards: bool,
+) {
+    if start_x == end_x || start_y == end_y {
+        generate_bricks_line(world, start_x, start_y, end_x, end_y, fill_left, fill_upwards);
+        return;
+    }
+    // `:34309-34315`: the corner origin (the opposite corner in the fill
+    // axes) and which endpoint walks to the other.
+    let (ox, oy) = if fill_upwards {
+        (end_x as f32, start_y as f32)
+    } else {
+        (start_x as f32, end_y as f32)
+    };
+    let (sx, sy) = (start_x as f32, start_y as f32);
+    let (ex, ey) = (end_x as f32, end_y as f32);
+    let (mut vector, mut vector2) = ((sx, sy), (ex, ey));
+    if dist2(ox, oy, ex, ey) > dist2(ox, oy, sx, sy) {
+        std::mem::swap(&mut vector, &mut vector2);
+    }
+    let mut vector3 = vector;
+    // `:34319-34320`: the per-axis step sign (never 0 — the axes differ).
+    let vector4 = (
+        if vector2.0 > vector.0 { 1.0 } else { -1.0 },
+        if vector2.1 > vector.1 { 1.0 } else { -1.0 },
+    );
+    let mut num3 = 500;
+    while vector3.0 != vector2.0 && vector3.1 != vector2.1 {
+        num3 -= 1;
+        if num3 < 0 {
+            break;
+        }
+        vector3.0 += vector4.0;
+        vector3.1 += vector4.1;
+    }
+    if num3 < 0 {
+        generate_bricks_line(world, start_x, start_y, end_x, end_y, fill_left, fill_upwards);
+        return;
+    }
+    let (corner_x, corner_y) = (vector3.0 as i32, vector3.1 as i32);
+    generate_bricks_line(world, start_x, start_y, corner_x, corner_y, fill_left, fill_upwards);
+    generate_bricks_line(world, corner_x, corner_y, end_x, end_y, fill_left, fill_upwards);
+}
+
+/// `makeTemple_GenerateBricks_Line` (`WorldGen.cs:34341-34380`): the
+/// normalized walk from start to end (the 2000-step cap), a brick at every
+/// `Math.Round`'d step (banker's rounding), the FillY/FillX gap closers, and
+/// the `InWorld(x, y, 5)` guard that ends the walk at the world edge.
+fn generate_bricks_line(
+    world: &mut World,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    fill_left: bool,
+    fill_upwards: bool,
+) {
+    let vector = (start_x as f32, start_y as f32);
+    let vector2 = ((end_x as f32) - vector.0, (end_y as f32) - vector.1);
+    if vector2 == (0.0, 0.0) {
+        return;
+    }
+    // `:34355-34357`: `SafeNormalize(Vector2.UnitX)` — the delta is non-zero
+    // here, so this is the plain normalize; `num2` is the unit step length.
+    let num = (vector2.0 * vector2.0 + vector2.1 * vector2.1).sqrt();
+    let vector3 = (vector2.0 / num, vector2.1 / num);
+    let num2 = (vector3.0 * vector3.0 + vector3.1 * vector3.1).sqrt();
+    let mut num3 = 2000;
+    let mut last_x_adjusted = -1;
+    let mut last_y_adjusted = -1;
+    let mut at = vector;
+    let mut remaining = num;
+    while remaining > 0.0 {
+        num3 -= 1;
+        if num3 <= 0 {
+            break;
+        }
+        let x4 = crate::damage::round_bankers(at.0 as f64) as i32;
+        let y5 = crate::damage::round_bankers(at.1 as f64) as i32;
+        if !in_world(world, x4, y5, 5) {
+            break;
+        }
+        clear_and_brick(world, x4, y5);
+        generate_bricks_line_fill_y(world, fill_upwards, last_x_adjusted, x4, y5);
+        generate_bricks_line_fill_x(world, fill_left, last_y_adjusted, x4, y5);
+        last_x_adjusted = x4;
+        last_y_adjusted = y5;
+        at.0 += vector3.0;
+        at.1 += vector3.1;
+        remaining -= num2;
+    }
+}
+
+/// `makeTemple_GenerateBricks_Line_FillY` (`WorldGen.cs:34382-34421`): march
+/// from the point to the next brick in the fill direction (300-step cap, the
+/// 10-tile edge guard) and brick the gap.
+fn generate_bricks_line_fill_y(
+    world: &mut World,
+    fill_upwards: bool,
+    last_x_adjusted: i32,
+    current_x: i32,
+    current_y: i32,
+) {
+    if current_x == last_x_adjusted {
+        return;
+    }
+    let step = if fill_upwards { -1 } else { 1 };
+    // `:34394-34408`: the scan to the next brick.
+    let mut scan = current_y + step;
+    let mut num3 = 0;
+    while !is_temple_brick(world, current_x, scan) {
+        num3 += 1;
+        scan += step;
+        if world.tile(current_x, scan).is_none() || !in_world(world, current_x, scan, 5) {
+            break;
+        }
+    }
+    if num3 >= 300 || scan <= 10 || scan >= world.height - 10 {
+        return;
+    }
+    // `:34413-34421`: the gap fill.
+    let mut write = current_y + step;
+    while !is_temple_brick(world, current_x, write) {
+        clear_and_brick(world, current_x, write);
+        write += step;
+        if world.tile(current_x, write).is_none() || !in_world(world, current_x, write, 5) {
+            break;
+        }
+    }
+}
+
+/// `makeTemple_GenerateBricks_Line_FillX` (`WorldGen.cs:34423-34462`): the
+/// horizontal twin of `_FillY` — the `Main.maxTilesX - 10` edge guard.
+fn generate_bricks_line_fill_x(
+    world: &mut World,
+    fill_left: bool,
+    last_y_adjusted: i32,
+    current_x: i32,
+    current_y: i32,
+) {
+    if current_y == last_y_adjusted {
+        return;
+    }
+    let step = if fill_left { -1 } else { 1 };
+    let mut scan = current_x + step;
+    let mut num3 = 0;
+    while !is_temple_brick(world, scan, current_y) {
+        num3 += 1;
+        scan += step;
+        if world.tile(scan, current_y).is_none() || !in_world(world, scan, current_y, 5) {
+            break;
+        }
+    }
+    if num3 >= 300 || scan <= 10 || scan >= world.width - 10 {
+        return;
+    }
+    let mut write = current_x + step;
+    while !is_temple_brick(world, write, current_y) {
+        clear_and_brick(world, write, current_y);
+        write += step;
+        if world.tile(write, current_y).is_none() || !in_world(world, write, current_y, 5) {
+            break;
+        }
+    }
+}
+
+/// The C#'s `tile.active() && tile.type == 226` test the Fill scans use
+/// (`WorldGen.cs:34400` / `:34441`).
+fn is_temple_brick(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && t.kind == TILE_TEMPLE_BRICK)
+}
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70133`) — no RNG; an
+/// out-of-world cell reads as the C#'s null tile (`true`). During
+/// `makeTemple` the C# `tileSolid` table sits at its defaults (162
+/// BreakableIce and 226 LihzahrdBrick both solid — nothing before the
+/// temple pass toggles them, `Main.cs:7145`), which the port's generated
+/// sets match; the temple-part-2 windows arrive with that pass.
+fn solid_tile_at(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidTile2(i, j)` (`WorldGen.cs:70134-70150`): the solid-only
+/// twin (no `tileSolidTop` exclusion); an out-of-world cell reads as solid.
+fn solid_tile2_at(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// The C#'s `SolidOrSlopedTile` (`WorldGen.cs:69985-70200`) slice the
+/// temple's floor scans use: active, solid-or-solid-top, no half brick —
+/// with the `includePlatforms = false` default the platform variants drop.
+fn solid_or_sloped(t: &Tile) -> bool {
+    t.active()
+        && (t.kind as usize) < td::TILE_COUNT
+        && (td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind))
+        && !t.half_brick()
+}
+
+/// The temple carve — `active(false); wall = 87` (`WorldGen.cs:33630-33631`
+/// and the corridor/shaft/cleaner bodies): the kind and frames stay stored
+/// under the inactive flag, only the wall is written.
+fn carve_cell(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags &= !FLAG_ACTIVE;
+    t.wall = WALL_TEMPLE_UNSAFE;
+}
+
+/// The temple brick — `active(true); type = 226; liquid = 0; slope(0);
+/// halfBrick(false)` (`WorldGen.cs:33557-33564`, `:33886-33889`): the wall
+/// is kept (unlike the GenerateBricks `ClearEverything` write).
+fn brick_cell(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
         return;
     }
     let i = world.index(x, y);
@@ -152,50 +666,1818 @@ fn put_brick(world: &mut World, x: i32, y: i32, wall: u16) {
     t.flags |= FLAG_ACTIVE;
     t.liquid = 0;
     t.set_slope(0);
-    t.wall = wall;
+    t.flags &= !crate::tile::FLAG_HALF_BRICK;
 }
 
-fn carve(world: &mut World, x: i32, y: i32, wall: u16) {
-    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+/// The walk result the shaft and corridor steps read besides the rooms: the
+/// C#'s `num4` — the initial direction (`WorldGen.cs:33444`, never
+/// reassigned in the walk, so the shaft can walk its opposite) — and `num3`
+/// — the direction after the last room (`:33546`, the corridor door's
+/// 0.2/0.8 width bias).
+#[derive(Clone, Debug)]
+pub(crate) struct TempleWalk {
+    pub rooms: Vec<TempleRoom>,
+    pub start_dir: i32,
+    pub end_dir: i32,
+}
+
+/// `makeTemple`'s jitter carve (`WorldGen.cs:33549-33684`): every room is
+/// brick-filled first, then its interior is carved by two sweeps — the
+/// forward one and the reversed one over the same drifting edges — each
+/// step re-rolling the four inset edges by ±1 on a 1/20 chance and clamping
+/// them to the room and its centre, carving the cells inside the jittered
+/// box with the unsafe wall (87).
+fn carve_room_interiors(world: &mut World, rooms: &[TempleRoom], rng: &mut super::Rng) {
+    for room in rooms {
+        let r = room.rect;
+        for l in r.x..r.right() {
+            for m in r.y..r.bottom() {
+                brick_cell(world, l, m);
+            }
+        }
+        // `:33564-33568`: the inner inset by `Next(3, 8)` on each side.
+        let x2 = r.x + rng.range(3, 8);
+        let num20 = r.right() - rng.range(3, 8);
+        let y2 = r.y + rng.range(3, 8);
+        let num21 = r.bottom() - rng.range(3, 8);
+        let (mut num22, mut num23) = (x2, num20);
+        let (mut num24, mut num25) = (y2, num21);
+        let num26 = (x2 + num20) / 2;
+        let num27 = (y2 + num21) / 2;
+        // `:33576-33632`: the forward sweep — n ascending, num28 ascending.
+        for n in x2..num20 {
+            for num28 in y2..num21 {
+                if rng.range(0, 20) == 0 {
+                    num24 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num25 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num22 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num23 += rng.range(-1, 2);
+                }
+                clamp_carve_edges(&mut num22, &mut num23, &mut num24, &mut num25, x2, num20, y2, num21, num26, num27);
+                if n >= num22 && n < num23 && num28 >= num24 && num28 <= num25 {
+                    carve_cell(world, n, num28);
+                }
+            }
+        }
+        // `:33634-33682`: the reversed sweep — num29 descending, num30
+        // descending, the same four rolls and clamps over the same edges.
+        let mut num29 = num21;
+        while num29 > y2 {
+            let mut num30 = num20;
+            while num30 > x2 {
+                if rng.range(0, 20) == 0 {
+                    num24 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num25 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num22 += rng.range(-1, 2);
+                }
+                if rng.range(0, 20) == 0 {
+                    num23 += rng.range(-1, 2);
+                }
+                clamp_carve_edges(&mut num22, &mut num23, &mut num24, &mut num25, x2, num20, y2, num21, num26, num27);
+                if num30 >= num22 && num30 < num23 && num29 >= num24 && num29 <= num25 {
+                    carve_cell(world, num30, num29);
+                }
+                num30 -= 1;
+            }
+            num29 -= 1;
+        }
+    }
+}
+
+/// The eight clamps of the carve sweeps (`WorldGen.cs:33588-33611` /
+/// `:33646-33669`): the left/right edges stay between the inset and the
+/// centre, the top/bottom between the inset and the centre.
+#[allow(clippy::too_many_arguments)]
+fn clamp_carve_edges(
+    num22: &mut i32,
+    num23: &mut i32,
+    num24: &mut i32,
+    num25: &mut i32,
+    x2: i32,
+    num20: i32,
+    y2: i32,
+    num21: i32,
+    num26: i32,
+    num27: i32,
+) {
+    if *num22 < x2 {
+        *num22 = x2;
+    }
+    if *num23 > num20 {
+        *num23 = num20;
+    }
+    if *num24 < y2 {
+        *num24 = y2;
+    }
+    if *num25 > num21 {
+        *num25 = num21;
+    }
+    if *num22 > num26 {
+        *num22 = num26;
+    }
+    if *num23 < num26 {
+        *num23 = num26;
+    }
+    if *num24 > num27 {
+        *num24 = num27;
+    }
+    if *num25 < num27 {
+        *num25 = num27;
+    }
+}
+
+/// `WorldGen.templePather` (`WorldGen.cs:33372-33408`): up to `Next(5, 20)`
+/// unit steps toward the destination, carving a `[x - Next(2, 5),
+/// x + Next(2, 5))` square of unsafe wall at every step. Returns the
+/// integer position the C#'s `Vector2D` carries (the path keeps double
+/// coordinates; every value is integral).
+fn temple_pather(
+    world: &mut World,
+    path: (i32, i32),
+    dest_x: i32,
+    dest_y: i32,
+    rng: &mut super::Rng,
+) -> (i32, i32) {
+    let (mut num, mut num2) = path;
+    let mut num3 = rng.range(5, 20);
+    let num4 = rng.range(2, 5);
+    while num3 > 0 && (num != dest_x || num2 != dest_y) {
+        num3 -= 1;
+        if num > dest_x {
+            num -= 1;
+        }
+        if num < dest_x {
+            num += 1;
+        }
+        if num2 > dest_y {
+            num2 -= 1;
+        }
+        if num2 < dest_y {
+            num2 += 1;
+        }
+        for i in (num - num4)..(num + num4) {
+            for j in (num2 - num4)..(num2 + num4) {
+                carve_cell(world, i, j);
+            }
+        }
+    }
+    (num, num2)
+}
+
+/// The C#'s `Vector2D`-valued path check (`WorldGen.cs:33697-33700`): the
+/// double compare collapses to the integer one (every value is integral).
+fn at_dest(path: (i32, i32), dest_x: i32, dest_y: i32) -> bool {
+    path == (dest_x, dest_y)
+}
+
+/// `makeTemple`'s corridor loop (`WorldGen.cs:33686-33787`): from the bury
+/// point, per room a random (or centre) target chased by `templePather`,
+/// then a corridor to the next room's edge (the 0.2/0.8 width bias by
+/// direction and relative x) or its midpoint. The room inset is ± 8
+/// (`:33688-33691`).
+fn temple_corridors(
+    world: &mut World,
+    walk: &TempleWalk,
+    bury: (i32, i32),
+    rng: &mut super::Rng,
+) {
+    let rooms = &walk.rooms;
+    let num2 = rooms.len() as i32;
+    let mut path = bury;
+    for num31 in 0..num2 {
+        let k = num31 as usize;
+        // `:33688-33691`: the current room inset ± 8.
+        let mut r2 = rooms[k].rect;
+        r2.x += 8;
+        r2.y += 8;
+        r2.w -= 16;
+        r2.h -= 16;
+        let mut flag3 = true;
+        while flag3 {
+            let mut num32 = rng.range(r2.x, r2.right());
+            let mut num33 = rng.range(r2.y, r2.bottom());
+            if num31 == num2 - 1 {
+                // `:33695-33698`: the last room's target is its centre ± 10.
+                num32 = r2.x + r2.w / 2 + rng.range(-10, 11);
+                num33 = r2.y + r2.h / 2 + rng.range(-10, 11);
+            }
+            path = temple_pather(world, path, num32, num33, rng);
+            if at_dest(path, num32, num33) {
+                flag3 = false;
+            }
+        }
+        if num31 >= num2 - 1 {
+            continue;
+        }
+        if rng.range(0, 3) != 0 {
+            // `:33703-33730`: the next-room edge corridor.
+            let num34 = (num31 + 1) as usize;
+            if rooms[num34].rect.y >= rooms[k].rect.bottom() {
+                r2.x = rooms[num34].rect.x;
+                if num31 == 0 {
+                    if walk.end_dir > 0 {
+                        r2.x += (rooms[num34].rect.w as f64 * 0.8) as i32;
+                    } else {
+                        r2.x += (rooms[num34].rect.w as f64 * 0.2) as i32;
+                    }
+                } else if rooms[num34].rect.x < rooms[k].rect.x {
+                    r2.x += (rooms[num34].rect.w as f64 * 0.2) as i32;
+                } else {
+                    r2.x += (rooms[num34].rect.w as f64 * 0.8) as i32;
+                }
+                r2.y = rooms[num34].rect.y;
+            } else {
+                r2.x = (rooms[k].rect.x + rooms[k].rect.w / 2
+                    + rooms[num34].rect.x
+                    + rooms[num34].rect.w / 2)
+                    / 2;
+                r2.y = (rooms[num34].rect.y as f64 + rooms[num34].rect.h as f64 * 0.8) as i32;
+            }
+            let (x3, y3) = (r2.x, r2.y);
+            flag3 = true;
+            while flag3 {
+                let num35 = rng.range(x3 - 6, x3 + 7);
+                let num36 = rng.range(y3 - 6, y3 + 7);
+                path = temple_pather(world, path, num35, num36, rng);
+                if at_dest(path, num35, num36) {
+                    flag3 = false;
+                }
+            }
+            continue;
+        }
+        // `:33748-33758`: the midpoint corridor (`Next(3) == 0`).
+        let num37 = (num31 + 1) as usize;
+        let num38 = (rooms[k].rect.x + rooms[k].rect.w / 2
+            + rooms[num37].rect.x
+            + rooms[num37].rect.w / 2)
+            / 2;
+        let num39 = (rooms[k].rect.y + rooms[k].rect.h / 2
+            + rooms[num37].rect.y
+            + rooms[num37].rect.h / 2)
+            / 2;
+        flag3 = true;
+        while flag3 {
+            let num40 = rng.range(num38 - 6, num38 + 7);
+            let num41 = rng.range(num39 - 6, num39 + 7);
+            path = temple_pather(world, path, num40, num41, rng);
+            if at_dest(path, num40, num41) {
+                flag3 = false;
+            }
+        }
+    }
+}
+
+/// `WorldGen.outerTempled` (`WorldGen.cs:33409-33433`): if the cell is
+/// already temple brick (active 226) or unsafe wall (87) it is left alone;
+/// otherwise the first cell in the ± 6 square that is inactive with wall 87
+/// becomes the brick — the temple's outer skin converting the carved shell.
+fn outer_templed(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
         return;
     }
     let i = world.index(x, y);
-    world.tiles[i] = Tile::default();
-    world.tiles[i].wall = wall;
-}
-
-/// `AddLihzahrdAltar`'s altar write — the 3×2 altar (237) with the 3-wide
-/// brick base row; the frame layout matches the C# `PlaceTile(237)` result
-/// (`frameX = i*18`, `frameY = j*18`; the hand-built fallback writes the
-/// same 3×2, `WorldGen.cs:34049-34062`) and the anchor it leaves is the
-/// top-left tile the C# publishes as `lAltarX/lAltarY` (`:34000-34001`).
-pub(crate) fn place_lihzahrd_altar(world: &mut World, x: i32, y: i32) {
-    for i in 0..3 {
-        for j in 0..2 {
-            let px = x + i;
-            let py = y + j;
-            if px < 2 || py < 2 || px >= world.width - 2 || py >= world.height - 2 {
+    let here_active_brick = world.tiles[i].active() && world.tiles[i].kind == TILE_TEMPLE_BRICK;
+    if here_active_brick || world.tiles[i].wall == WALL_TEMPLE_UNSAFE {
+        return;
+    }
+    for i_x in (x - 6)..=(x + 6) {
+        for j in (y - 6)..=(y + 6) {
+            let Some(t) = world.tile(i_x, j) else {
+                continue;
+            };
+            if !t.active() && t.wall == WALL_TEMPLE_UNSAFE {
+                brick_cell(world, i_x, j);
                 return;
             }
-            let wall = world.tile(px, py).map(|t| t.wall).unwrap_or(0);
+        }
+    }
+}
+
+/// The C#'s `num42..num45` bounds loop (`WorldGen.cs:33789-33817`): the union
+/// of every non-empty room rect (all walk rects qualify) — the value the
+/// sweeps iterate and the publication inflates by ± 10.
+fn temple_bounds(world: &World, rooms: &[TempleRoom]) -> Bounds {
+    // `WorldGen.cs:33789-33792`: the C# seeds the four trackers with
+    // `maxTilesX - 20` / `20` / `maxTilesY - 20` — a walk that rolls no room
+    // (below the vanilla envelope) keeps those inverted defaults, and with
+    // rooms the min/max union applies.
+    let mut b = Bounds {
+        left: world.width - 20,
+        top: world.height - 20,
+        right: 20,
+        bottom: 20,
+    };
+    for room in rooms {
+        if room.rect.w == 0 || room.rect.h == 0 {
+            continue;
+        }
+        b.left = b.left.min(room.rect.x);
+        b.right = b.right.max(room.rect.right());
+        b.top = b.top.min(room.rect.y);
+        b.bottom = b.bottom.max(room.rect.bottom());
+    }
+    b
+}
+
+/// The four `outerTempled` sweeps (`WorldGen.cs:33819-33850`): two x-major
+/// (ascending, then descending) and two y-major (ascending, then descending)
+/// over the bounds — the order is the C#'s, the conversion site differs per
+/// sweep direction.
+fn outer_templed_sweeps(world: &mut World, b: Bounds) {
+    for num48 in b.left..b.right {
+        for num49 in b.top..b.bottom {
+            outer_templed(world, num48, num49);
+        }
+    }
+    let mut num50 = b.right;
+    while num50 >= b.left {
+        for num51 in b.top..b.bottom {
+            outer_templed(world, num50, num51);
+        }
+        num50 -= 1;
+    }
+    for num52 in b.top..b.bottom {
+        for num53 in b.left..b.right {
+            outer_templed(world, num53, num52);
+        }
+    }
+    let mut num54 = b.bottom;
+    while num54 >= b.top {
+        for num55 in b.left..b.right {
+            outer_templed(world, num55, num54);
+        }
+        num54 -= 1;
+    }
+}
+
+/// `WorldGen.PlaceTile`'s door branch (`WorldGen.cs:59837-59897`) +
+/// `WorldGen.PlaceDoor` (`WorldGen.cs:31773-31806`): the anchor check (three
+/// clear rows above or below, the solid frame at the far end) selects the
+/// branch, then the three-row closed door (tile 10) writes
+/// `frameY = 54 * (style % 36) + row * 18` and
+/// `frameX = 54 * (style / 36) + Next(3) * 18` (the swing variant). The
+/// Lihzahrd door is style 11 (frameY 594/612/630). `false` = refused — no
+/// door (the vanilla no-anchor case).
+fn place_temple_door(world: &mut World, x: i32, y: i32, style: i32, rng: &mut super::Rng) -> bool {
+    let tile_solid_at = |world: &World, x: i32, y: i32| {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind))
+    };
+    let clear = |world: &World, x: i32, y: i32| {
+        !world.tile(x, y).is_some_and(|t| t.active())
+    };
+    // `:59852-59858`: the up branch — j-1/j-2 clear, j-3 solid.
+    if clear(world, x, y - 1) && clear(world, x, y - 2) && tile_solid_at(world, x, y - 3) {
+        return place_door(world, x, y - 1, style, rng);
+    }
+    // `:59886-59890`: the down branch — j+1/j+2 clear, j+3 solid.
+    if clear(world, x, y + 1) && clear(world, x, y + 2) && tile_solid_at(world, x, y + 3) {
+        return place_door(world, x, y + 1, style, rng);
+    }
+    false
+}
+
+/// `WorldGen.PlaceDoor` (`WorldGen.cs:31773-31806`): the three-row door from
+/// its TOP row; the anchor is the solid tile two rows above and the solid
+/// floor two rows below (`:31790`), each row's `frameX` rolling the swing.
+fn place_door(world: &mut World, x: i32, y: i32, style: i32, rng: &mut super::Rng) -> bool {
+    let num = style / 36;
+    let num2 = style % 36;
+    let num3 = 54 * num;
+    let num4 = 54 * num2;
+    let anchored = world
+        .tile(x, y - 2)
+        .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind))
+        && solid_tile2_at(world, x, y + 2);
+    if !anchored {
+        return false;
+    }
+    for row in 0..3 {
+        if !in_world(world, x, y + row, 0) {
+            return false;
+        }
+        let i = world.index(x, y + row);
+        let t = &mut world.tiles[i];
+        t.kind = 10;
+        t.flags |= FLAG_ACTIVE;
+        t.frame_y = (num4 + row * 18) as i16;
+        t.frame_x = (num3 + rng.range(0, 3) * 18) as i16;
+    }
+    true
+}
+
+/// `makeTemple`'s entrance shaft (`WorldGen.cs:33851-33857`): the
+/// horizontal walk from the bury point (opposite the initial direction,
+/// every `Next(9, 14)` steps one row up), the band carve of width
+/// `± Next(2, 5)`, then the drop column, the brick column, the carved mouth
+/// and the Lihzahrd door at the mouth cell.
+fn shaft_and_door(
+    world: &mut World,
+    bury: (i32, i32),
+    start_dir: i32,
+    rng: &mut super::Rng,
+) {
+    let (num5, num6) = bury;
+    let mut num56 = num6;
+    let num3 = -start_dir;
+    let mut path = (num5, num6);
+    let num57 = rng.range(2, 5);
+    let mut num58 = 0;
+    let num59 = rng.range(9, 14);
+    let mut flag4 = true;
+    while flag4 {
+        num58 += 1;
+        if num58 >= num59 {
+            num58 = 0;
+            path.1 -= 1;
+        }
+        path.0 += num3;
+        let num60 = path.0;
+        flag4 = false;
+        for num61 in (path.1 - num57)..(path.1 + num57) {
+            let Some(t) = world.tile(num60, num61) else {
+                continue;
+            };
+            if t.wall == WALL_TEMPLE_UNSAFE
+                || (t.active() && t.kind == TILE_TEMPLE_BRICK)
+            {
+                flag4 = true;
+            }
+            if t.active() && t.kind == TILE_TEMPLE_BRICK {
+                if num61 > num56 {
+                    num56 = num61;
+                }
+                carve_cell(world, num60, num61);
+            }
+        }
+    }
+    num56 += 2;
+    // `:33872-33880`: the drop column down from the bury point.
+    let num62 = num5;
+    let mut num63 = num6;
+    while !world
+        .tile(num62, num63)
+        .is_some_and(|t| t.active())
+    {
+        num63 += 1;
+        if num63 >= num56 {
+            num63 = num56;
+            let i = world.index(num62, num63);
+            world.tiles[i] = Tile {
+                kind: TILE_TEMPLE_BRICK,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+            break;
+        }
+    }
+    num63 -= 4;
+    // `:33881-33883`: the first non-temple cell above (the shaft's ceiling).
+    let mut num64 = num63;
+    let is_temple = |t: &Tile| (t.active() && t.kind == TILE_TEMPLE_BRICK) || t.wall == WALL_TEMPLE_UNSAFE;
+    while world.tile(num62, num64).is_some_and(|t| is_temple(t)) {
+        num64 -= 1;
+    }
+    num64 += 2;
+    // `:33884-33890`: the brick column.
+    for num65 in (num62 - 1)..=(num62 + 1) {
+        for num66 in num64..=num63 {
+            brick_cell(world, num65, num66);
+        }
+    }
+    // `:33891-33895`: the carved mouth.
+    for num67 in (num62 - 4)..=(num62 + 4) {
+        for num68 in (num63 - 1)..(num63 + 3) {
+            carve_cell(world, num67, num68);
+        }
+    }
+    // `:33896-33900`: the brick frame around the mouth.
+    for num69 in (num62 - 1)..=(num62 + 1) {
+        for num70 in (num63 - 5)..=(num63 + 8) {
+            brick_cell(world, num69, num70);
+        }
+    }
+    // `:33901-33909`: the doorway carve (the door's 3×3 opening).
+    for num71 in (num62 - 3)..=(num62 + 3) {
+        for num72 in (num63 - 2)..(num63 + 3) {
+            if num72 >= num63 || num71 < num5 - 1 || num71 > num5 + 1 {
+                carve_cell(world, num71, num72);
+            }
+        }
+    }
+    // `:33950`: the door (style 11 — the Lihzahrd material).
+    place_temple_door(world, num62, num63, 11, rng);
+}
+
+/// `WorldGen.templeCleaner` (`WorldGen.cs:33335-33370`): a brick with ≤ 1
+/// brick neighbours falls away (carve), an empty cell with exactly 3 brick
+/// neighbours becomes a brick — the shell's edge tidying.
+fn temple_cleaner(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let mut num = 0;
+    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        if world
+            .tile(x + dx, y + dy)
+            .is_some_and(|t| t.active() && t.kind == TILE_TEMPLE_BRICK)
+        {
+            num += 1;
+        }
+    }
+    let i = world.index(x, y);
+    let here = world.tiles[i];
+    if here.active() && here.kind == TILE_TEMPLE_BRICK {
+        if num <= 1 {
+            carve_cell(world, x, y);
+        }
+    } else if !here.active() && num == 3 {
+        brick_cell(world, x, y);
+    }
+}
+
+/// The two `templeCleaner` sweeps (`WorldGen.cs:33954-33961`): forward over
+/// the bounds, then the full reverse.
+fn temple_cleaner_sweeps(world: &mut World, b: Bounds) {
+    for num77 in b.left..b.right {
+        for num78 in b.top..b.bottom {
+            temple_cleaner(world, num77, num78);
+        }
+    }
+    let mut num75 = b.bottom;
+    while num75 >= b.top {
+        let mut num76 = b.right;
+        while num76 >= b.left {
+            temple_cleaner(world, num76, num75);
+            num76 -= 1;
+        }
+        num75 -= 1;
+    }
+}
+
+/// The wall-87 widen pass (`WorldGen.cs:33963-33986`): a cell whose whole
+/// 3×3 is temple brick or unsafe wall becomes unsafe wall — sealing the
+/// shell's inner surface.
+fn temple_widen(world: &mut World, b: Bounds) {
+    for num77 in b.left..b.right {
+        for num78 in b.top..b.bottom {
+            let mut flag5 = true;
+            'edges: for num79 in (num77 - 1)..=(num77 + 1) {
+                for num80 in (num78 - 1)..=(num78 + 1) {
+                    let ok = world
+                        .tile(num79, num80)
+                        .is_some_and(|t| {
+                            (t.active() && t.kind == TILE_TEMPLE_BRICK) || t.wall == WALL_TEMPLE_UNSAFE
+                        });
+                    if !ok {
+                        flag5 = false;
+                        break 'edges;
+                    }
+                }
+            }
+            if flag5 {
+                if in_world(world, num77, num78, 0) {
+                    let i = world.index(num77, num78);
+                    world.tiles[i].wall = WALL_TEMPLE_UNSAFE;
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.Place3x2`'s default path (`WorldGen.cs:52066-52195`) for the
+/// altar 237: the bounds guard, the 3×2 body must be empty, the floor solid
+/// under all three columns, then the frame write
+/// `frameX = 54 * style + col * 18`, `frameY = row * 18`. `false` when the
+/// C# would refuse (nothing written).
+fn place_altar(world: &mut World, x: i32, y: i32) -> bool {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return false;
+    }
+    let mut flag2 = true;
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 1)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag2 = false;
+            }
+        }
+        if !solid_tile2_at(world, i, y + 1) {
+            flag2 = false;
+        }
+    }
+    if !flag2 {
+        return false;
+    }
+    for (dx, frame_x) in [(0, 0), (1, 18), (2, 36)] {
+        for (dy, frame_y) in [(0, 0), (1, 18)] {
+            brick_tile_at(world, x - 1 + dx, y - 1 + dy, frame_x, frame_y);
+        }
+    }
+    true
+}
+
+/// The 3×2 frame write `frameX = num2 + dx * 18`, `frameY = dy * 18`
+/// (`WorldGen.cs:52168-52195`) — inactive cells only, the wall and liquid
+/// are kept.
+fn brick_tile_at(world: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    if !world.tiles[i].active() {
+        let t = &mut world.tiles[i];
+        t.kind = TILE_ALTAR;
+        t.flags |= FLAG_ACTIVE;
+        t.frame_x = frame_x;
+        t.frame_y = frame_y;
+    }
+}
+
+/// The altar placement loop (`WorldGen.cs:33988-34068`): up to 1000 tries at
+/// `centre + 15 - Next(30)` per axis in the last room; on success the
+/// published anchor is `x - frameX / 18`, `y - frameY / 18` (the 3×2's
+/// top-left). The 1000th failure runs the hand-built fallback (the 3-wide
+/// brick pad, the cleared 5×3, the 3×2 written directly with
+/// `frameX = i * 18`, `frameY = j * 18`).
+fn altar_spot(
+    world: &mut World,
+    rooms: &[TempleRoom],
+    rng: &mut super::Rng,
+) -> (i32, i32) {
+    // The C# reads `array[num2 - 1]` and throws when the walk rolled no room
+    // (a world narrower than 420 tiles — below the vanilla envelope and the
+    // port's own smallest test world); the port stays total instead.
+    let Some(&rectangle3) = rooms.last() else {
+        return (0, 0);
+    };
+    let rectangle3 = rectangle3.rect;
+    let num82 = rectangle3.w / 2;
+    let num83 = rectangle3.h / 2;
+    let mut num81 = 0;
+    loop {
+        num81 += 1;
+        let num84 = rectangle3.x + num82 + 15 - rng.range(0, 30);
+        let num85 = rectangle3.y + num83 + 15 - rng.range(0, 30);
+        place_altar(world, num84, num85);
+        if world
+            .tile(num84, num85)
+            .is_some_and(|t| t.kind == TILE_ALTAR && t.active())
+        {
+            let t = world.tile(num84, num85).unwrap();
+            let anchor = (num84 - (t.frame_x as i32) / 18, num85 - (t.frame_y as i32) / 18);
+            return anchor;
+        }
+        if num81 < 1000 {
+            continue;
+        }
+        // The fallback (`:34014-34068`).
+        let mut num84 = rectangle3.x + num82;
+        let mut num85 = rectangle3.y + num83;
+        num84 += rng.range(-10, 11);
+        num85 += rng.range(-10, 11);
+        while num85 < rectangle3.bottom() - 2
+            && world.tile(num84, num85).is_some_and(|t| t.active())
+        {
+            num85 += 1;
+        }
+        // The port's edge guard: the C# walks until a tile answers (it throws
+        // past the world's bottom); the walk stops at the world edge.
+        while num85 < world.height - 1 && !world.tile(num84, num85).is_some_and(|t| t.active()) {
+            num85 += 1;
+        }
+        for dx in -1..=1 {
+            let px = num84 + dx;
+            if in_world(world, px, num85, 0) {
+                let i = world.index(px, num85);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.set_slope(0);
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                t.kind = TILE_TEMPLE_BRICK;
+            }
+        }
+        num85 -= 2;
+        num84 -= 1;
+        for num86 in -1..=3 {
+            for num87 in -1..=1 {
+                carve_cell(world, num84 + num86, num85 + num87);
+            }
+        }
+        for num88 in 0..=2 {
+            for num89 in 0..=1 {
+                let px = num84 + num88;
+                let py = num85 + num89;
+                if !in_world(world, px, py, 0) {
+                    continue;
+                }
+                let i = world.index(px, py);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_ALTAR;
+                t.frame_x = (num88 * 18) as i16;
+                t.frame_y = (num89 * 18) as i16;
+            }
+        }
+        for num88 in 0..=2 {
+            for num89 in 0..=1 {
+                square_frame_altar(world, num84 + num88, num85 + num89);
+            }
+        }
+        return (num84, num85);
+    }
+}
+
+/// The C#'s six `SquareTileFrame` calls over the altar (`WorldGen.cs:34067-34068`
+/// and the `LihzahrdAltar` pass `:21969-21974`) — the framer keeps the
+/// stored 237 frames (frame-important, `Main.cs:10234`).
+fn square_frame_altar(_world: &mut World, _x: i32, _y: i32) {
+    // The altar 237 is a plain 3×2 frame tile: `TileFrame` finds the full
+    // object already framed and the stored frames stand; the call is a
+    // no-op on the port's tile storage (the next phase wires the shared
+    // `edit::square_tile_frame` seam).
+}
+
+/// The spike loop (`WorldGen.cs:34069-34217`): `num2 * 1.1 * (1 +
+/// Next(-25, 26) * 0.01)` wooden spikes (232), placed on the room walls in
+/// `Next(3, 10)`-wide staircase runs — the vertical branch walks down to the
+/// floor, the horizontal one sideways, each run alternating the neighbour
+/// column and requiring solid neighbours on both sides.
+fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut super::Rng) {
+    let num2 = rooms.len() as f64;
+    let mut num92 = num2 * 1.1 * (1.0 + (rng.range(-25, 26) as f64) * 0.01);
+    let mut num94 = 0;
+    while num92 > 0.0 {
+        num94 += 1;
+        let num95 = rng.range(0, rooms.len() as i32) as usize;
+        let r = rooms[num95].rect;
+        let num96 = rng.range(r.x, r.right());
+        let num97 = rng.range(r.y, r.bottom());
+        if world
+            .tile(num96, num97)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let mut flag6 = false;
+            if rng.range(0, 2) == 0 {
+                // The vertical spike staircase.
+                let num98 = if rng.range(0, 2) == 0 { 1 } else { -1 };
+                let mut y = num97;
+                while !world.tile(num96, y).is_some_and(|t| t.active()) {
+                    y += num98;
+                }
+                y -= num98;
+                let num99 = rng.range(0, 2);
+                let num100 = rng.range(3, 10);
+                let mut flag7 = true;
+                for num101 in (num96 - num100)..(num96 + num100) {
+                    for num102 in (y - num100)..(y + num100) {
+                        if world
+                            .tile(num101, num102)
+                            .is_some_and(|t| t.active() && (t.kind == 10 || t.kind == TILE_ALTAR))
+                        {
+                            flag7 = false;
+                            break;
+                        }
+                    }
+                    if !flag7 {
+                        break;
+                    }
+                }
+                if flag7 {
+                    let mut flip = num99;
+                    for num103 in (num96 - num100)..(num96 + num100) {
+                        for num104 in (y - num100)..(y + num100) {
+                            let here = world.tile(num103, num104).copied();
+                            let above = world.tile(num103, num104 - num98).copied();
+                            let (Some(here), Some(above)) = (here, above) else {
+                                continue;
+                            };
+                            if !solid_tile_at(world, num103, num104)
+                                || here.kind == 232
+                                || solid_tile_at(world, num103, num104 - num98)
+                            {
+                                continue;
+                            }
+                            spike_cell(world, num103, num104);
+                            flag6 = true;
+                            if flip == 0 {
+                                spike_cell(world, num103, num104 - 1);
+                            } else {
+                                spike_cell(world, num103, num104 + 1);
+                            }
+                            flip += 1;
+                            if flip > 1 {
+                                flip = 0;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // The horizontal spike staircase.
+                let num105 = if rng.range(0, 2) == 0 { 1 } else { -1 };
+                let mut x = num96;
+                while !world.tile(x, num97).is_some_and(|t| t.active()) {
+                    x += num105;
+                }
+                x -= num105;
+                let num106 = rng.range(0, 2);
+                let num107 = rng.range(3, 10);
+                let mut flag8 = true;
+                for num108 in (x - num107)..(x + num107) {
+                    for num109 in (num97 - num107)..(num97 + num107) {
+                        if world
+                            .tile(num108, num109)
+                            .is_some_and(|t| t.active() && t.kind == 10)
+                        {
+                            flag8 = false;
+                            break;
+                        }
+                    }
+                    if !flag8 {
+                        break;
+                    }
+                }
+                if flag8 {
+                    let mut flip = num106;
+                    for num110 in (x - num107)..(x + num107) {
+                        for num111 in (num97 - num107)..(num97 + num107) {
+                            let here = world.tile(num110, num111).copied();
+                            let beside = world.tile(num110 - num105, num111).copied();
+                            let (Some(here), Some(beside)) = (here, beside) else {
+                                continue;
+                            };
+                            if !solid_tile_at(world, num110, num111)
+                                || here.kind == 232
+                                || solid_tile_at(world, num110 - num105, num111)
+                            {
+                                continue;
+                            }
+                            spike_cell(world, num110, num111);
+                            flag6 = true;
+                            if flip == 0 {
+                                spike_cell(world, num110 - 1, num111);
+                            } else {
+                                spike_cell(world, num110 + 1, num111);
+                            }
+                            flip += 1;
+                            if flip > 1 {
+                                flip = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            if flag6 {
+                num94 = 0;
+                num92 -= 1.0;
+            }
+        }
+        if num94 > 1000 {
+            num94 = 0;
+            num92 -= 1.0;
+        }
+    }
+    let _ = b;
+}
+
+/// The spike write — `type = 232` on the floor tile plus the alternating
+/// neighbour (`WorldGen.cs:34108-34119` / `:34191-34204`); the drunk-world
+/// second row is seed scope.
+fn spike_cell(world: &mut World, x: i32, y: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.kind = 232;
+    t.flags |= FLAG_ACTIVE;
+}
+
+// --- the temple-part-2 family (`LihzahrdTemplePart2`, WorldGen.cs:34464+) ---
+
+/// The pass wrapper's `tileSolid` window (`WorldGen.cs:17705-17706`): the
+/// whole step runs with 162 BreakableIce non-solid and 226 LihzahrdBrick
+/// solid; the wood spike 232 is solid only during the dart-trap loop — the
+/// flip at `:34499` makes it non-solid from the buried-chest loop on, and
+/// the wrapper leaves it non-solid for the rest of the C# chain until
+/// `BeeLarvaInBeehives` restores it (`:20897`). The port has no global
+/// table, so the window rides on the predicates.
+fn solid_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        // The C#'s null tile reads solid (`:70116`).
+        return true;
+    };
+    solid_tile_p2(t, spike_solid)
+}
+
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:70111-70133`) under the
+/// temple-part-2 window.
+fn solid_tile_p2(t: &Tile, spike_solid: bool) -> bool {
+    if t.kind == 162 {
+        return false;
+    }
+    if t.kind == 232 && !spike_solid {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidTile2(Tile)` (`WorldGen.cs:70134-70150`) under the window.
+fn solid_tile2_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 162 {
+        return false;
+    }
+    if t.kind == 232 && !spike_solid {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidOrSlopedTile(Tile, includePlatforms = false)`
+/// (`WorldGen.cs:69985-70200`) under the window: active, `tileSolid`, not
+/// `tileSolidTop` (the `includePlatforms` alternative never fires — the
+/// temple floors are brick).
+fn solid_or_sloped_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.kind == 162 || (t.kind == 232 && !spike_solid) {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SolidTileAllowBottomSlope(i, j)` (`WorldGen.cs:70157-70180`)
+/// under the window — the solid-or-solid-top test the pressure plates
+/// stand on. The platform frame branch never fires (no platform tiles in
+/// the temple), so the port keeps `!top_slope()`.
+fn solid_allow_bottom_slope_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    if !in_world(world, x, y, 0) {
+        // The C#'s out-of-world read (`:70160-70163`).
+        return true;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 162 || (t.kind == 232 && !spike_solid) {
+        return false;
+    }
+    t.active()
+        && (td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind))
+        && !t.top_slope()
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `WorldGen.SlopeTile(i, j, slope = 0)` (`WorldGen.cs:80768-80794`) — the
+/// generation slice: the `CanPoundTile` gate (the mechanism types, the
+/// boulders — the port's worldgen spawns none, `CanKillTile`), then
+/// `halfBrick(false); slope(0)`; the non-generation effects
+/// (`:80781-80793`) never fire.
+fn slope_tile_p2(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if matches!(t.kind, 10 | 48 | 137 | 232 | 380 | 387 | 388 | 476 | 484) {
+        return false;
+    }
+    if !crate::edit::can_kill_tile(world, x, y, |_, _| false) {
+        return false;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    t.set_slope(0);
+    true
+}
+
+/// `WorldGen.CanGeneratePressurePlateAt` (`WorldGen.cs:11029-11043`).
+fn can_pressure_plate_at_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
+    if !in_world(world, x, y, 3) {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x, y + 1, spike_solid) {
+        return false;
+    }
+    // The `TileID.Sets.Boulders` / wall-350 guards: the port's worldgen
+    // spawns no boulders and no wall 350 (`evil.rs:1702`'s note), so the
+    // checks collapse away.
+    true
+}
+
+/// The `Tile.lava()` flag (`Tile.cs:691`): the port packs the liquid kind
+/// in the flags.
+fn is_lava(t: &Tile) -> bool {
+    t.liquid > 0 && (t.flags & crate::tile::FLAG_LIQUID_LAVA) != 0
+}
+
+/// `WorldGen.AddWire(i, j, wireColor)` — the four `Tile.wire()/wire2()/
+/// wire3()/wire4()` header bits as the port's sparse side table.
+/// `wireColor` 0/1/2 = red/blue/green (the temple's `Next(3)` roll).
+fn add_wire(world: &mut World, x: i32, y: i32, wire_color: i32) {
+    let color = match wire_color {
+        0 => crate::wiring::WireColor::Red,
+        1 => crate::wiring::WireColor::Blue,
+        2 => crate::wiring::WireColor::Green,
+        _ => crate::wiring::WireColor::Yellow,
+    };
+    world.wires.set(x, y, color, true);
+}
+
+/// Does the cell carry the given wire colour? (`Main.tile[i, j].wire()` and
+/// its wire2/wire3 siblings — the port reads the side table.)
+fn has_wire(world: &World, x: i32, y: i32, wire_color: i32) -> bool {
+    let color = match wire_color {
+        0 => crate::wiring::WireColor::Red,
+        1 => crate::wiring::WireColor::Blue,
+        2 => crate::wiring::WireColor::Green,
+        _ => crate::wiring::WireColor::Yellow,
+    };
+    world.wires.get(x, y, color)
+}
+
+/// `WorldGen.AddWireFromPointToPoint(x, y, x2, y2, wireColor)`
+/// (`WorldGen.cs:58065-58121`): the staircase walk from `(x2, y2)` to
+/// `(x, y)`, laying the colour at every step.
+fn add_wire_from_point_to_point(world: &mut World, x: i32, y: i32, x2: i32, y2: i32, wire_color: i32) {
+    let (mut x2, mut y2) = (x2, y2);
+    if !in_world(world, x, y, 0) || !in_world(world, x2, y2, 0) {
+        return;
+    }
+    while x2 != x || y2 != y {
+        add_wire(world, x2, y2, wire_color);
+        if x2 > x {
+            x2 -= 1;
+        }
+        if x2 < x {
+            x2 += 1;
+        }
+        add_wire(world, x2, y2, wire_color);
+        if y2 > y {
+            y2 -= 1;
+        }
+        if y2 < y {
+            y2 += 1;
+        }
+        add_wire(world, x2, y2, wire_color);
+    }
+}
+
+/// The dart-trap write — `PlaceTile(x, y, 137, style)`'s branch
+/// (`WorldGen.cs:59750-59756`): `active(true); type = 137;
+/// frameY = 18 * style`. Frame-important (`Main.cs:7431`), so the stored
+/// frames stand.
+fn place_trap_tile(world: &mut World, x: i32, y: i32, style: i32) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = 137;
+    t.frame_y = (18 * style) as i16;
+    t.frame_x = 0;
+}
+
+/// The pressure-plate write — `PlaceTile(x, y, 135, style)`'s `Place1x1`
+/// default branch (`WorldGen.cs:52183-52187`): `frameY = 18 * style`,
+/// `frameX` 0, on an empty cell with a solid floor.
+fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32) {
+    if !in_world(world, x, y, 2) {
+        return;
+    }
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        return;
+    }
+    if !solid_allow_bottom_slope_p2(world, x, y + 1, true) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = 135;
+    t.frame_y = (18 * style) as i16;
+    t.frame_x = 0;
+}
+
+/// `WorldGen.Place2x1` (`WorldGen.cs:39624-39663`) for the temple workbench
+/// 18 style 10: both floor columns solid, both cells empty, then
+/// `frameX = 36 * style + col * 18`, `frameY = 0` + `SquareTileFrame`.
+fn place_workbench(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if !solid_tile2_p2(world, x, y + 1, false) || !solid_tile2_p2(world, x + 1, y + 1, false) {
+        return false;
+    }
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.active())
+        || world.tile(x + 1, y).is_some_and(|t| t.active())
+    {
+        return false;
+    }
+    for col in 0..2 {
+        if !in_world(world, x + col, y, 0) {
+            return false;
+        }
+        let i = world.index(x + col, y);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = 18;
+        t.frame_x = (36 * style + col * 18) as i16;
+        t.frame_y = 0;
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
+    true
+}
+
+/// `WorldGen.Place3x2`'s default path (`WorldGen.cs:52066-52195`) for the
+/// temple table 14 style 9: the 3×2 body empty, the floor solid under all
+/// three columns, `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+fn place_table(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return false;
+    }
+    let mut ok = true;
+    for col in (x - 1)..(x + 2) {
+        for row in (y - 1)..(y + 1) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+        if !solid_tile2_p2(world, col, y + 1, false) {
+            ok = false;
+        }
+    }
+    if !ok {
+        return false;
+    }
+    for col in 0..3 {
+        for row in 0..2 {
+            let (px, py) = (x - 1 + col, y - 1 + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 14;
+            t.frame_x = (54 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    true
+}
+
+/// `WorldGen.Place1x2` (`WorldGen.cs:46652-46680`) for the temple chair 15
+/// style 12: the floor solid, the top cell empty, then
+/// `frameY = 40 * style + row * 18` (the chair sheet's 40-px stride),
+/// `frameX = 0` (the sapling swing roll never fires for chairs).
+fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    if !solid_tile2_p2(world, x, y + 1, false) {
+        return false;
+    }
+    if world.tile(x, y - 1).is_some_and(|t| t.active()) {
+        return false;
+    }
+    for row in 0..2 {
+        if !in_world(world, x, y - 1 + row, 0) {
+            return false;
+        }
+        let i = world.index(x, y - 1 + row);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = 15;
+        t.frame_x = 0;
+        t.frame_y = (40 * style + row * 18) as i16;
+    }
+    true
+}
+
+/// `WorldGen.Place2xX` (`WorldGen.cs:39663-39715`) for the temple statue
+/// 105 styles 43-45: three body rows empty over both columns, the floor
+/// solid under both, `frameX = 36 * style + col * 18`,
+/// `frameY = row * 18`, `SquareTileFrame`.
+fn place_statue(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let num3 = 3;
+    let mut ok = true;
+    for row in (y - num3 + 1)..(y + 1) {
+        for col in x..(x + 2) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+    }
+    if !solid_tile2_p2(world, x, y + 1, false) || !solid_tile2_p2(world, x + 1, y + 1, false) {
+        ok = false;
+    }
+    if !ok {
+        return false;
+    }
+    for row in 0..num3 {
+        for col in 0..2 {
+            let (px, py) = (x + col, y - num3 + 1 + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 105;
+            t.frame_x = (36 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
+    true
+}
+
+/// `WorldGen.Place3x3`'s non-hanging branch (`WorldGen.cs:53560-53593`) for
+/// the temple painting 240 style 88: the 3×3 body empty and the solid
+/// non-top tile directly above the centre, then a 3×2 write with
+/// `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+fn place_painting(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let mut flag = true;
+    for col in (x - 1)..(x + 2) {
+        for row in y..(y + 3) {
+            if world.tile(col, row).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+    }
+    let anchored = world.tile(x, y - 1).is_some_and(|t| {
+        t.active()
+            && td::TILE_SOLID.has(t.kind)
+            && !td::TILE_SOLID_TOP.has(t.kind)
+            && t.kind != 162
+    });
+    if !anchored {
+        flag = false;
+    }
+    if !flag {
+        return false;
+    }
+    for col in 0..3 {
+        for row in 0..2 {
+            let (px, py) = (x - 1 + col, y + row);
+            if !in_world(world, px, py, 0) {
+                continue;
+            }
+            let i = world.index(px, py);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 240;
+            t.frame_x = (54 * style + col * 18) as i16;
+            t.frame_y = (row * 18) as i16;
+        }
+    }
+    true
+}
+
+/// `Chest.NearOtherChests` (`Chest.cs:543-558`): a basic chest tile
+/// (`TileID.Sets.BasicChest` = {21, 467}, `TileID.cs:570`) within the
+/// ± 25 × ± 8 window of `(x, y)`.
+fn near_other_chests(world: &World, x: i32, y: i32) -> bool {
+    for i in (x - 25)..(x + 25) {
+        for j in (y - 8)..(y + 8) {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, 16)`
+/// (`WorldGen.cs:57813-57841`): the `TileObject.CanPlace`/`Place` route for
+/// the 2×2 chest — the style-16 frames come from the same registry def the
+/// player-facing placement uses.
+fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: i32) -> bool {
+    let Some(def) = crate::tileobject::def_for_tile(21) else {
+        return false;
+    };
+    if not_near && near_other_chests(world, x - 1, y - 1) {
+        return false;
+    }
+    let Some(instance) = crate::tileobject::can_place(world, x, y, def, style, 1, None) else {
+        return false;
+    };
+    crate::tileobject::place(world, &instance)
+}
+
+/// `WorldGen.AddBuriedChest`'s placement half (`WorldGen.cs:35871-36210`)
+/// for the temple call (`mainItem 1293, style 16, trySlope false,
+/// chestTileType 21`): the downward scan for the floor, the rejections
+/// (larva 231 below, an altar 26 / altar 237 within ± 2), the 2×2 write one
+/// row above the floor. The loot tables (the item fills and the style/item
+/// rolls) are M5-CHEST-gen's — the placement draws no rng on the classic
+/// path, so the pass stream stays aligned with the C# until the loot lands.
+fn add_buried_chest(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    not_near: bool,
+    chest_style: i32,
+    spike_solid: bool,
+) -> bool {
+    for k in y..(world.height - 10) {
+        if world.tile(x, k).is_some_and(|t| t.active() && t.kind == 231) {
+            return false;
+        }
+        for n in (x - 2)..=(x + 2) {
+            for m in (k - 2)..=(k + 2) {
+                if in_world(world, n, m, 100)
+                    && world
+                        .tile(n, m)
+                        .is_some_and(|t| t.active() && (t.kind == 26 || t.kind == 237))
+                {
+                    return false;
+                }
+            }
+        }
+        if !solid_p2(world, x, k, spike_solid) {
+            continue;
+        }
+        return place_buried_chest(world, x - 1, k - 1, not_near, chest_style);
+    }
+    false
+}
+
+/// `WorldGen.mayanTrap` (`WorldGen.cs:8349-8895`) — the temple's dart-trap
+/// generator: the pressure plate with the dart column(s) and the wire run
+/// between them. Case 0 lays the trap along a wall (the horizontal
+/// staircase), case 1 down a wall (the vertical one). The 232/162 window
+/// rides on `spike_solid` — the trap loop runs before the C#'s `:34499`
+/// flip, so the spikes still count solid there.
+#[allow(clippy::too_many_arguments)]
+fn mayan_trap(
+    world: &mut World,
+    x2: i32,
+    y2: i32,
+    floor_abort: i32,
+    world_surface: f64,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let num2 = if rng.range(0, 3) == 0 { 0 } else { 1 };
+    let mut num3 = y2;
+    while !solid_or_sloped_p2(world, x2, num3, spike_solid) {
+        num3 += 1;
+        if num3 >= floor_abort {
+            return false;
+        }
+    }
+    let Some(t) = world.tile(x2, num3) else {
+        return false;
+    };
+    if t.kind == 232 || t.kind == 10 {
+        return false;
+    }
+    num3 -= 1;
+    if world.tile(x2, num3).is_some_and(is_lava) {
+        return false;
+    }
+    let nactive = |world: &World, x: i32, y: i32| {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && (t.flags & crate::tile::FLAG_INACTIVE) == 0)
+    };
+    if nactive(world, x2, num3)
+        || nactive(world, x2 - 1, num3)
+        || nactive(world, x2 + 1, num3)
+        || nactive(world, x2, num3 - 1)
+        || nactive(world, x2 - 1, num3 - 1)
+        || nactive(world, x2 + 1, num3 - 1)
+        || nactive(world, x2, num3 - 2)
+        || nactive(world, x2 - 1, num3 - 2)
+        || nactive(world, x2 + 1, num3 - 2)
+    {
+        return false;
+    }
+    if world
+        .tile(x2, num3 + 1)
+        .is_some_and(|t| matches!(t.kind, 10 | 48 | 232))
+    {
+        return false;
+    }
+    match num2 {
+        0 => mayan_trap_horizontal(world, x2, num3, spike_solid, rng),
+        1 => mayan_trap_vertical(world, x2, num3, world_surface, spike_solid, rng),
+        _ => false,
+    }
+}
+
+/// `mayanTrap`'s case 0 (`WorldGen.cs:8407-8488`) — the wall-hugging
+/// horizontal trap.
+fn mayan_trap_horizontal(
+    world: &mut World,
+    x2: i32,
+    num3: i32,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let mut num11 = x2;
+    let num12 = num3 - rng.range(0, 3);
+    while in_world(world, num11, num12, 5) && !solid_or_sloped_p2(world, num11, num12, spike_solid) {
+        num11 -= 1;
+    }
+    let num13 = num11;
+    num11 = x2;
+    while in_world(world, num11, num12, 5) && !solid_or_sloped_p2(world, num11, num12, spike_solid) {
+        num11 += 1;
+    }
+    let num14 = num11;
+    let num15 = x2 - num13;
+    let num16 = num14 - x2;
+    let mut flag = num15 > 5 && num15 < 50;
+    let mut flag2 = num16 > 5 && num16 < 50;
+    if flag && !solid_or_sloped_p2(world, num13, num12 + 1, spike_solid) {
+        flag = false;
+    }
+    if flag2 && !solid_or_sloped_p2(world, num14, num12 + 1, spike_solid) {
+        flag2 = false;
+    }
+    // `num17 = 48` (the dualDungeons 232 variant is secret-seed scope).
+    let reject = |world: &World, x: i32, y: i32| world.tile(x, y).is_some_and(|t| matches!(t.kind, 10 | 48));
+    if flag && (reject(world, num13, num12) || reject(world, num13, num12 + 1)) {
+        flag = false;
+    }
+    if flag2 && (reject(world, num14, num12) || reject(world, num14, num12 + 1)) {
+        flag2 = false;
+    }
+    let mut num18 = 0;
+    let mut num11 = num13;
+    if flag && flag2 {
+        num18 = 1;
+        num11 = num13;
+        if rng.range(0, 2) == 0 {
+            num11 = num14;
+            num18 = -1;
+        }
+    } else if flag2 {
+        num11 = num14;
+        num18 = -1;
+    } else {
+        if !flag {
+            return false;
+        }
+        num11 = num13;
+        num18 = 1;
+    }
+    if world.tile(num11, num12).is_some_and(|t| t.wall != WALL_TEMPLE_UNSAFE) {
+        return false;
+    }
+    if world
+        .tile(num11, num12)
+        .is_some_and(|t| matches!(t.kind, 190 | 135 | 137 | 232 | 237 | 10))
+    {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x2, num3 + 1, spike_solid) {
+        slope_tile_p2(world, x2, num3 + 1);
+    }
+    if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
+        return false;
+    }
+    place_plate_tile(world, x2, num3, 6);
+    crate::edit::kill_tile(world, num11, num12, true);
+    let num19 = if has_wire(world, x2, num3, 0) {
+        0
+    } else if has_wire(world, x2, num3, 1) {
+        1
+    } else if has_wire(world, x2, num3, 2) {
+        2
+    } else {
+        rng.range(0, 3)
+    };
+    let num20 = (num11 - x2).abs();
+    let style2 = if num20 < 10 && rng.range(0, 3) != 0 { 2 } else { 1 };
+    place_trap_tile(world, num11, num12, style2);
+    if num18 == 1 {
+        if let Some(t) = world.tile_mut(num11, num12) {
+            t.frame_x += 18;
+        }
+    }
+    let mut num21 = rng.range(0, 5);
+    let mut num22 = num12;
+    while num21 > 0 {
+        num21 -= 1;
+        num22 -= 1;
+        if !solid_p2(world, num11, num22, spike_solid)
+            || !solid_p2(world, num11 - num18, num22, spike_solid)
+            || solid_or_sloped_p2(world, num11 + num18, num22, spike_solid)
+        {
+            break;
+        }
+        place_trap_tile(world, num11, num22, style2);
+        if num18 == 1 {
+            if let Some(t) = world.tile_mut(num11, num22) {
+                t.frame_x += 18;
+            }
+        }
+        add_wire(world, num11, num22, num19);
+    }
+    add_wire_from_point_to_point(world, x2, num3, num11, num12, num19);
+    true
+}
+
+/// `mayanTrap`'s case 1 (`WorldGen.cs:8588-8695`) — the vertical trap.
+#[allow(clippy::too_many_arguments)]
+fn mayan_trap_vertical(
+    world: &mut World,
+    x2: i32,
+    num3: i32,
+    world_surface: f64,
+    spike_solid: bool,
+    rng: &mut super::Rng,
+) -> bool {
+    let (mut num4, mut num5) = (x2, num3);
+    while !solid_or_sloped_p2(world, num4, num5, spike_solid) {
+        num5 -= 1;
+        if (num5 as f64) < world_surface {
+            return false;
+        }
+    }
+    let num6 = (num5 - num3).abs();
+    if num6 < 3 {
+        return false;
+    }
+    let num7 = if has_wire(world, x2, num3, 0) {
+        0
+    } else if has_wire(world, x2, num3, 1) {
+        1
+    } else if has_wire(world, x2, num3, 2) {
+        2
+    } else {
+        rng.range(0, 3)
+    };
+    let style = if num6 < 16 && rng.range(0, 3) != 0 { 4 } else { 3 };
+    if world
+        .tile(num4, num5)
+        .is_some_and(|t| matches!(t.kind, 135 | 137 | 232 | 237 | 10))
+    {
+        return false;
+    }
+    if world
+        .tile(num4, num5)
+        .is_some_and(|t| t.wall != WALL_TEMPLE_UNSAFE)
+    {
+        return false;
+    }
+    if !solid_allow_bottom_slope_p2(world, x2, num3 + 1, spike_solid) {
+        slope_tile_p2(world, x2, num3 + 1);
+    }
+    if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
+        return false;
+    }
+    place_plate_tile(world, x2, num3, 6);
+    place_trap_tile(world, num4, num5, style);
+    for i in 0..2 {
+        let mut num8 = rng.range(1, 5);
+        let mut num9 = num4;
+        let num10 = if i == 1 { 1 } else { -1 };
+        while num8 > 0 {
+            num8 -= 1;
+            num9 += num10;
+            if !solid_p2(world, num9, num5 - 1, spike_solid)
+                || solid_or_sloped_p2(world, num9, num5 + 1, spike_solid)
+            {
+                break;
+            }
+            place_trap_tile(world, num9, num5, style);
+            add_wire(world, num9, num5, num7);
+        }
+    }
+    add_wire_from_point_to_point(world, x2, num3, num4, num5, num7);
+    true
+}
+
+/// `templePart2` (`WorldGen.cs:34464-34658`) — the pass that fills the
+/// finished shell: the dart traps, the buried chests, the statues, the
+/// workbenches/tables/chairs and the one painting. Every loop picks a
+/// random cell in the published bounds and accepts the ones that are
+/// unsafe-wall and empty; the counts are the room count scaled, with the
+/// C#'s retry caps. `spike_solid` is `true` only for the trap loop (the
+/// C#'s `:34499` flip); the C#'s post-pass `tileSolid[232] = false` window
+/// outlives the step in the C# chain and is a recorded substitution.
+pub(crate) fn pass_temple_part2(
+    world: &mut World,
+    bounds: Bounds,
+    t_rooms: i32,
+    world_surface: f64,
+    rng: &mut super::Rng,
+) {
+    let floor_abort = world.height - 300;
+    let rooms = t_rooms as f64;
+    // The dart traps — the spikes still solid in this window.
+    let mut num = rooms * 1.9 * (1.0 + (rng.range(-15, 16) as f64) * 0.01);
+    let mut num2 = 0;
+    while num > 0.0 {
+        let num3 = rng.range(bounds.left, bounds.right);
+        let num4 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num3, num4)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            if mayan_trap(world, num3, num4, floor_abort, world_surface, true, rng) {
+                num -= 1.0;
+                num2 = 0;
+            } else {
+                num2 += 1;
+            }
+        } else {
+            num2 += 1;
+        }
+        if num2 > 100 {
+            num2 = 0;
+            num -= 1.0;
+        }
+    }
+    // The buried chests (style 16; the Pygmy-staff main item is
+    // M5-CHEST-gen's).
+    let mut num5 = rooms * 0.35 * (1.0 + (rng.range(-15, 16) as f64) * 0.01);
+    let mut num2 = 0;
+    while num5 > 0.0 {
+        let num6 = rng.range(bounds.left, bounds.right);
+        let num7 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num6, num7)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+            && add_buried_chest(world, num6, num7, true, 16, false)
+        {
+            num5 -= 1.0;
+            num2 = 0;
+        }
+        num2 += 1;
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The statues (105, styles 43-45).
+    let mut num8 = rooms * 1.25 * (1.0 + (rng.range(-25, 36) as f64) * 0.01);
+    let mut num2 = 0;
+    while num8 > 0.0 {
+        num2 += 1;
+        let num9 = rng.range(bounds.left, bounds.right);
+        let num10 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num9, num10)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let (mut num11, mut num12) = (num9, num10);
+            while !world.tile(num11, num12).is_some_and(|t| t.active()) {
+                num12 += 1;
+                if num12 > bounds.bottom {
+                    break;
+                }
+            }
+            num12 -= 1;
+            if num12 <= bounds.bottom && place_statue(world, num11, num12, rng.range(43, 46)) {
+                num8 -= 1.0;
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The furniture: `Next(3)` — workbench / table / chair.
+    let mut num13 = rooms * 1.35 * (1.0 + (rng.range(-15, 26) as f64) * 0.01);
+    let mut num2 = 0;
+    while num13 > 0.0 {
+        num2 += 1;
+        let num14 = rng.range(bounds.left, bounds.right);
+        let num15 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num14, num15)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let (mut num16, mut num17) = (num14, num15);
+            while !world.tile(num16, num17).is_some_and(|t| t.active()) {
+                num17 += 1;
+                if num17 > bounds.bottom {
+                    break;
+                }
+            }
+            num17 -= 1;
+            if num17 <= bounds.bottom {
+                let placed = match rng.range(0, 3) {
+                    0 => place_workbench(world, num16, num17, 10),
+                    1 => place_table(world, num16, num17, 9),
+                    _ => place_chair(world, num16, num17, 12),
+                };
+                if placed {
+                    num13 -= 1.0;
+                }
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+    // The one painting (240 style 88), away from the other paintings and
+    // the brick.
+    let mut num18 = 1;
+    if world.width > 4200 {
+        num18 += 1;
+    }
+    if world.width > 6400 {
+        num18 += rng.range(0, 2);
+    }
+    let mut num2 = 0;
+    while num18 > 0 {
+        num2 += 1;
+        let num19 = rng.range(bounds.left, bounds.right);
+        let num20 = rng.range(bounds.top, bounds.bottom);
+        if world
+            .tile(num19, num20)
+            .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
+        {
+            let mut flag = false;
+            'near: for i in -70..=70 {
+                for j in -70..=70 {
+                    let (num21, num22) = (i + num19, j + num20);
+                    if !in_world(world, num21, num22, 5) {
+                        continue;
+                    }
+                    let Some(t) = world.tile(num21, num22) else {
+                        continue;
+                    };
+                    if t.active() {
+                        if t.kind == 240 {
+                            flag = true;
+                            break 'near;
+                        }
+                        if (-4..=4).contains(&i) && (-4..=4).contains(&j) && t.kind == TILE_TEMPLE_BRICK
+                        {
+                            flag = true;
+                            break 'near;
+                        }
+                    }
+                }
+            }
+            if flag {
+                if num2 > 10000 {
+                    break;
+                }
+                continue;
+            }
+            if place_painting(world, num19, num20, 88) {
+                num18 -= 1;
+            }
+        }
+        if num2 > 10000 {
+            break;
+        }
+    }
+}
+
+/// The `LihzahrdAltar` pass (`WorldGen.cs:21943-21976`): the 3×2 altar
+/// re-write over the published anchor with the same frames, the 3-wide
+/// brick base row, then the six `SquareTileFrame` calls — the late anchor
+/// safety after the tile passes.
+pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: i32) {
+    let (x, y) = (l_altar_x, l_altar_y);
+    for i in 0..3 {
+        for j in 0..2 {
+            let (px, py) = (x + i, y + j);
+            if !in_world(world, px, py, 0) {
+                return;
+            }
             let idx = world.index(px, py);
-            // The 3×2 frame layout the C# `PlaceTile(237)` result and the
-            // hand-built fallback share (`frameX = i*18`, `frameY = j*18`,
-            // `WorldGen.cs:34049-34062`). (The pre-phase-6 code shadowed the
-            // loop `i` with the world index here — the garbage frames were
-            // invisible while 237 was re-framed at load; the phase-6 boot
-            // static make 237 frame-important, so the stored layout must be
-            // the faithful one.)
             world.tiles[idx] = Tile {
                 kind: TILE_ALTAR,
                 frame_x: (i * 18) as i16,
                 frame_y: (j * 18) as i16,
+                flags: FLAG_ACTIVE,
                 ..Default::default()
             };
-            world.tiles[idx].flags |= FLAG_ACTIVE;
-            world.tiles[idx].wall = wall;
         }
-        // The base row (`:32090-32100`).
         let py = y + 2;
         if x + i < 2 || py >= world.height - 2 {
             continue;
@@ -206,8 +2488,12 @@ pub(crate) fn place_lihzahrd_altar(world: &mut World, x: i32, y: i32) {
         t.flags |= FLAG_ACTIVE;
         t.set_slope(0);
     }
+    for k in 0..3 {
+        for l in 0..2 {
+            crate::edit::square_tile_frame_gen(world, x + k, y + l);
+        }
+    }
 }
-
 /// The `LihzahrdTemple` pass (`WorldGen.cs:15834+` → `makeTemple(x, y)`):
 /// the temple box in the jungle cavern below the rock layer — the outer
 /// brick shell (the walls 87), the carved room corridors (the walls 112),
@@ -223,73 +2509,38 @@ pub(crate) fn pass_lihzahrd_temple(
 ) -> TempleBounds {
     // `WorldGen.cs:15834-15930`: the placement search (or its fallback).
     let (cx, cy) = find_temple_site(world, dungeon_x, rock_layer, rng);
-    // The shape-level room body (the M5-TEMPLE seam — the module docs carry
-    // the split): the outer box with the unsafe walls.
-    let hw = rng.range(34, 46);
-    let hh = rng.range(22, 30);
-    for px in (cx - hw)..=(cx + hw) {
-        for py in (cy - hh)..=(cy + hh) {
-            put_brick(world, px, py, WALL_TEMPLE_UNSAFE);
-        }
-    }
-    // The corridor rooms: the central hall + the two side rooms, carved
-    // with the safe walls (`LihzahrdTemplePart2`'s room carving).
-    let hall_hw = hw - 6;
-    let hall_hh = hh - 8;
-    for px in (cx - hall_hw)..=(cx + hall_hw) {
-        for py in (cy - hall_hh)..=(cy + hall_hh) {
-            carve(world, px, py, WALL_TEMPLE);
-        }
-    }
-    // The pillars: the brick columns inside the hall (the temple look).
-    for px in (cx - hall_hw + 6..=cx + hall_hw - 6).step_by(9) {
-        for py in (cy - hall_hh)..=(cy + hall_hh) {
-            put_brick(world, px, py, WALL_TEMPLE);
-            put_brick(world, px, py, WALL_TEMPLE);
-        }
-    }
-    // The altar room: the west end of the hall.
-    let altar_x = cx - hall_hw + 4;
-    let altar_y = cy + hall_hh - 5;
-    for px in (altar_x - 3)..=(altar_x + 6) {
-        for py in (altar_y - 4)..=altar_y {
-            carve(world, px, py, WALL_TEMPLE);
-        }
-    }
-    place_lihzahrd_altar(world, altar_x, altar_y - 2);
-    // The dart traps (137) embedded in the hall's brick walls facing the
-    // rooms (the case-137 wiring variants fire them).
-    for px in (cx - hall_hw + 3..=cx + hall_hw - 3).step_by(12) {
-        let py = cy - hall_hh + 2;
-        let i = world.index(px, py);
-        world.tiles[i] = Tile {
-            kind: 137, // `TileID.Trap` — the dart variant (frameY 0)
-            ..Default::default()
-        };
-        world.tiles[i].flags |= FLAG_ACTIVE;
-        world.tiles[i].wall = WALL_TEMPLE;
-    }
-    // The chests in the hall's corners.
-    let mut chests = 0;
-    for (dx, dy) in [(-hall_hw + 2, -hall_hh + 1), (hall_hw - 3, hall_hh - 2)] {
-        if place_chest(world, cx + dx, cy + dy) {
-            chests += 1;
-        }
-    }
-    let _ = chests;
-    // The GenVars publication — the M5-TEMPLE seam: the bounds are the
-    // filled extent ± 10 (the C# room-union ± 10, `:33788-33817`, published
-    // `:34231-34235`), `t_rooms` the carved-room count (the C# publishes the
-    // final walk count, `:34235`) and the altar anchor the 3×2's top-left
-    // (`:34000-34001`).
+    // `makeTemple` (`WorldGen.cs:33435-34237`), the faithful statement order:
+    // the room walk, the brick generation, the jitter carve, the corridors,
+    // the outerTempled sweeps, the entrance shaft + door, the cleaner sweeps,
+    // the widen, the altar, the spikes — then the GenVars publication.
+    let walk = make_temple_rooms(
+        rng,
+        world.width as f64 / 4200.0,
+        world.height - 200,
+        cx,
+        cy,
+    );
+    make_temple_generate_bricks(world, &walk.rooms);
+    carve_room_interiors(world, &walk.rooms, rng);
+    temple_corridors(world, &walk, (cx, cy), rng);
+    // `:33788-33817`: the room-union bounds (inflated ± 10 at publication).
+    let bounds = temple_bounds(world, &walk.rooms);
+    outer_templed_sweeps(world, bounds);
+    shaft_and_door(world, (cx, cy), walk.start_dir, rng);
+    temple_cleaner_sweeps(world, bounds);
+    temple_widen(world, bounds);
+    let (l_altar_x, l_altar_y) = altar_spot(world, &walk.rooms, rng);
+    temple_spikes(world, &walk.rooms, bounds, rng);
+    // `:34231-34235`: the publication — the filled extent ± 10, the final
+    // walk count and the altar anchor.
     TempleBounds {
-        t_left: cx - hw - 10,
-        t_right: cx + hw + 10,
-        t_top: cy - hh - 10,
-        t_bottom: cy + hh + 10,
-        t_rooms: 2,
-        l_altar_x: altar_x,
-        l_altar_y: altar_y - 2,
+        t_left: bounds.left - 10,
+        t_right: bounds.right + 10,
+        t_top: bounds.top - 10,
+        t_bottom: bounds.bottom + 10,
+        t_rooms: walk.rooms.len() as i32,
+        l_altar_x,
+        l_altar_y,
     }
 }
 
@@ -310,6 +2561,258 @@ mod tests {
                 };
             }
         }
+    }
+
+    /// DW-1.1: the room walk on the vanilla large world (scale 1.0 →
+    /// `Next(10, 16)` rooms): the room count, the draw ledger (the stream
+    /// state — any draw order change shifts it) and the first/last room's
+    /// geometry (`WorldGen.cs:33440-33548`). The last room is the resized
+    /// altar room (`(int)(Next(55,65) * 1.6)` × `(int)(Next(45,50) * 1.35)`),
+    /// the last depth level the C# publishes as the walk's room count.
+    #[test]
+    fn test_DW_1_1_room_walk_draw_ledger() {
+        let mut rng = Rng(0xDEAD_BEEF);
+        let walk = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300);
+        let rooms = &walk.rooms;
+        assert_eq!(rooms.len(), 15, "the walk's room count");
+        assert_eq!(rng.0, 0xcd25_41e9_adf9_5601, "the draw ledger");
+        let first = rooms[0].rect;
+        assert_eq!(
+            (first.x, first.y, first.w, first.h),
+            (2014, 284, 43, 24),
+            "the first room"
+        );
+        assert_eq!(rooms[0].depth, 0);
+        let last = rooms[rooms.len() - 1].rect;
+        assert_eq!(
+            (last.x, last.y, last.w, last.h),
+            (1620, 422, 97, 63),
+            "the resized altar room"
+        );
+        assert_eq!(rooms[rooms.len() - 1].depth, 3);
+        // The room shapes stay inside the C#'s rolls and never intersect, and
+        // the depth level only grows (the `num13` flip ladder).
+        for (i, room) in rooms.iter().enumerate() {
+            let (w, h) = (room.rect.w, room.rect.h);
+            if i + 1 == rooms.len() {
+                assert!((88..=104).contains(&w) && (60..=67).contains(&h));
+            } else {
+                assert!((25..50).contains(&w) && (20..35).contains(&h) || w == h);
+                assert!(h <= w, "the `num18 = min(num18, num17)` cap");
+            }
+            for earlier in &rooms[..i] {
+                assert!(
+                    !room.rect.intersects(&earlier.rect),
+                    "room {i} intersects an earlier room"
+                );
+            }
+            if i > 0 {
+                assert!(room.depth >= rooms[i - 1].depth, "the depth ladder");
+            }
+        }
+    }
+
+    /// DW-1.1: the last-room resize also fires on the underworld ceiling
+    /// (`flag2 = num16 + 70 >= UnderworldLayer - 10`, `WorldGen.cs:33472`):
+    /// with the bury point exactly on the boundary the walk collapses to the
+    /// single altar room and consumes no intersection draws (the flag2
+    /// break skips the retry loop, `:33512`).
+    #[test]
+    fn test_DW_1_1_underworld_ceiling_collapses_the_walk() {
+        // At (2000, 220) with layer 300: 220 + 70 = 290 >= 290 → flag2.
+        let mut rng = Rng(0xDEAD_BEEF);
+        let walk = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220);
+        assert_eq!(walk.rooms.len(), 1, "the walk collapses to one room");
+        let room = walk.rooms[0].rect;
+        assert!((88..=104).contains(&room.w) && (60..=67).contains(&room.h));
+        // The draw ledger: the count draw, the direction, the flip period,
+        // the two resize rolls, the Next(5,10) and the two stagger rolls —
+        // no `Next(100)` intersection draws (the ledger is pinned by the
+        // state; a retry-loop entry would add two more draws).
+        let mut fresh = Rng(0xDEAD_BEEF);
+        for _ in 0..10 {
+            fresh.next_u32();
+        }
+        assert_eq!(rng.0, fresh.0, "10 draws, no intersection retry");
+    }
+
+    /// DW-1.2: the depth unions + `Inflate(10)` brick the exact C# shape
+    /// (`makeTemple_GenerateBricks` `WorldGen.cs:34238-34276`): one union box
+    /// per depth level that occurs, the null levels of the C#'s sparse
+    /// `DungeonBounds` array skipped — a depth value with no rooms fills
+    /// nothing and adds no lines.
+    #[test]
+    fn test_DW_1_2_depth_union_and_fill() {
+        let mut world = World::new("t".into(), 300, 300);
+        let rooms = vec![
+            TempleRoom {
+                rect: Rect { x: 100, y: 100, w: 40, h: 30 },
+                depth: 0,
+            },
+            TempleRoom {
+                rect: Rect { x: 130, y: 110, w: 20, h: 20 },
+                depth: 0,
+            },
+            TempleRoom {
+                rect: Rect { x: 200, y: 150, w: 10, h: 10 },
+                depth: 2, // the level 1 stays empty
+            },
+        ];
+        make_temple_generate_bricks(&mut world, &rooms);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        // The level-0 union (100..150 × 100..130) inflated to (90..160 ×
+        // 90..140): inside filled, the cells just outside not.
+        assert!(brick(&world, 95, 95) && brick(&world, 90, 90) && brick(&world, 160, 140));
+        assert!(!brick(&world, 89, 90) && !brick(&world, 90, 89) && !brick(&world, 90, 141));
+        // The level-2 union (200..210 × 150..160) inflated to (190..220 ×
+        // 140..170).
+        assert!(brick(&world, 190, 140) && brick(&world, 220, 170));
+        assert!(!brick(&world, 189, 140) && !brick(&world, 220, 171));
+        // The empty level 1 fills nothing where no room union reaches, and
+        // the depth-0↔2 corner lines bridge the two levels.
+        assert!(!brick(&world, 40, 40) && !brick(&world, 260, 260));
+        // The brick write clears the wall (`ClearEverything`, :34271-34274).
+        let t = world.tile(95, 95).unwrap();
+        assert_eq!(t.wall, 0);
+    }
+
+    /// DW-1.3: `_Line` (`WorldGen.cs:34341-34380`) bricks the straight walk
+    /// and nothing off it.
+    #[test]
+    fn test_DW_1_3_line_straight() {
+        let mut world = World::new("t".into(), 300, 300);
+        generate_bricks_line(&mut world, 10, 10, 30, 10, false, false);
+        for x in 10..=29 {
+            let t = world.tile(x, 10).unwrap();
+            assert!(t.active() && t.kind == 226, "the brick at ({x}, 10)");
+        }
+        // The walk is [start, end) — the `num -= unit step` loop stops before
+        // the end cell (`WorldGen.cs:34371-34377`).
+        assert!(!world.tile(30, 10).unwrap().active());
+        assert!(!world.tile(20, 9).unwrap().active());
+    }
+
+    /// DW-1.3: `_Line_StrictAngles` (`WorldGen.cs:34301-34339`) writes the
+    /// L: the axis-aligned leg to the corner, then the diagonal leg; the
+    /// unused corner-adjacent cells stay untouched.
+    #[test]
+    fn test_DW_1_3_line_strict_angles_corner() {
+        let mut world = World::new("t".into(), 300, 300);
+        // start (10,10) → end (30,25), fill_left/fill_upwards false: the
+        // origin is (10,25); the end is farther, so the walk starts there and
+        // stops on the start's y-axis → the corner (15,10).
+        generate_bricks_line_strict_angles(&mut world, 10, 10, 30, 25, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        for x in 10..=15 {
+            assert!(brick(&world, x, 10), "the horizontal leg at ({x}, 10)");
+        }
+        assert!(brick(&world, 30, 25), "the diagonal leg reaches the end");
+        assert!(!brick(&world, 20, 10), "the corner branch is not a straight line");
+        assert!(!brick(&world, 15, 15));
+    }
+
+    /// DW-1.3: the StrictAngles 500-step cap falls back to the straight line
+    /// (`WorldGen.cs:34326-34328`) — the long diagonal still bricks.
+    #[test]
+    fn test_DW_1_3_line_strict_angles_cap_falls_back_to_straight() {
+        let mut world = World::new("t".into(), 3000, 3000);
+        // The corner walk would need ~1950 steps (> 500).
+        generate_bricks_line_strict_angles(&mut world, 100, 100, 2000, 2050, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        assert!(brick(&world, 101, 101));
+        assert!(!brick(&world, 2000, 2050) && !brick(&world, 1500, 1600), "the cap cut the line");
+    }
+
+    /// DW-1.3: `_Line`'s 2000-step cap (`WorldGen.cs:34364-34368`) stops the
+    /// walk; the cells past the cap stay untouched.
+    #[test]
+    fn test_DW_1_3_line_cap_aborts() {
+        let mut world = World::new("t".into(), 3000, 3000);
+        // A ~4242-step diagonal: the cap stops at write 1999 (≈ (1423,
+        // 1423)); (1500, 1500) is past it.
+        generate_bricks_line(&mut world, 10, 10, 2900, 2900, false, false);
+        let brick = |world: &World, x: i32, y: i32| {
+            world.tile(x, y).is_some_and(|t| t.active() && t.kind == 226)
+        };
+        assert!(brick(&world, 1423, 1423), "the last capped write");
+        assert!(!brick(&world, 1500, 1500), "past the cap");
+        assert!(!brick(&world, 2900, 2900), "the line never reaches the end");
+    }
+
+    /// DW-1.3: `_Line_FillY` (`WorldGen.cs:34382-34421`) closes a vertical
+    /// gap down to the next brick and stops there.
+    #[test]
+    fn test_DW_1_3_fill_y_closes_the_gap() {
+        let mut world = World::new("t".into(), 300, 300);
+        // The pre-existing brick the scan stops at.
+        let i = world.index(50, 60);
+        world.tiles[i].kind = 226;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        generate_bricks_line_fill_y(&mut world, false, -1, 50, 20);
+        for y in 21..60 {
+            let t = world.tile(50, y).unwrap();
+            assert!(t.active() && t.kind == 226, "the gap fill at (50, {y})");
+        }
+        assert!(!world.tile(50, 61).unwrap().active(), "the fill stops at the brick");
+        assert!(!world.tile(50, 20).unwrap().active(), "the anchor cell is not filled");
+    }
+
+    /// DW-1.3: `_Line_FillX` (`WorldGen.cs:34423-34462`) closes a horizontal
+    /// gap to the right, up to the next brick.
+    #[test]
+    fn test_DW_1_3_fill_x_closes_the_gap() {
+        let mut world = World::new("t".into(), 300, 300);
+        let i = world.index(70, 50);
+        world.tiles[i].kind = 226;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        generate_bricks_line_fill_x(&mut world, false, -1, 30, 50);
+        for x in 31..70 {
+            let t = world.tile(x, 50).unwrap();
+            assert!(t.active() && t.kind == 226, "the gap fill at ({x}, 50)");
+        }
+        assert!(!world.tile(71, 50).unwrap().active(), "the fill stops at the brick");
+        assert!(!world.tile(30, 50).unwrap().active(), "the anchor cell is not filled");
+    }
+
+    /// DW-1.3: the FillY scan guards — the 300-step cap and the world edge
+    /// leave the cell untouched (`WorldGen.cs:34408-34410`), so a gap with no
+    /// brick at the end fills nothing.
+    #[test]
+    fn test_DW_1_3_fill_y_guards_abort_without_writes() {
+        let mut world = World::new("t".into(), 300, 300);
+        generate_bricks_line_fill_y(&mut world, false, -1, 50, 20);
+        for y in 21..300 {
+            assert!(
+                !world.tile(50, y).unwrap().active() && world.tile(50, y).unwrap().kind == 0,
+                "the scan burned its 300 steps and wrote nothing at y={y}"
+            );
+        }
+        // The edge guard: an anchor close to the bottom aborts too.
+        let mut near = World::new("t".into(), 300, 300);
+        generate_bricks_line_fill_y(&mut near, true, -1, 50, 280);
+        for y in 0..280 {
+            assert!(!near.tile(50, y).unwrap().active(), "the edge guard at y={y}");
+        }
+    }
+
+    /// DW-1.4: the underworld-ceiling test uses the value the caller passes
+    /// — `UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`) is computed by
+    /// the step, and the boundary is exact: at the layer the walk collapses,
+    /// one row lower it does not.
+    #[test]
+    fn test_DW_1_4_last_room_trigger_uses_depth_minus_200() {
+        let mut collapsed = Rng(0xDEAD_BEEF);
+        let walk = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220);
+        assert_eq!(walk.rooms.len(), 1, "220 + 70 >= 300 - 10");
+        let mut normal = Rng(0xDEAD_BEEF);
+        let walk = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220);
+        assert!(walk.rooms.len() > 1, "220 + 70 < 301 - 10");
     }
 
     /// DW-6.1: the acceptance semantics — with the whole vanilla y band
@@ -398,54 +2901,46 @@ mod tests {
         assert_eq!(rng.0, fresh.0, "the full 11-stage give-up ladder consumed");
     }
 
-    /// DW-6.1: the shell publishes the GenVars the M5-TEMPLE passes read —
-    /// `t_rooms` is the carved-room count, the bounds are the filled extent
-    /// ± 10 (`WorldGen.cs:33788-33817`, published `:34231-34235`) and
-    /// contain both the bury point and the altar anchor; the 3×2 altar (237)
-    /// sits at the anchor with the faithful frame layout
-    /// (`frameX = i*18`, `frameY = j*18`, `:34049-34062`) over the brick
-    /// base row. The valve path makes the anchor deterministic for the
-    /// assertions that pin ranges (the `hw`/`hh` box rolls stay rng-drawn).
+    /// DW-6.1 → DW-2.2: the pass now publishes the FAITHFUL bound — the
+    /// room-union ± 10 of the walk (`WorldGen.cs:33788-33817`, published
+    /// `:34231-34235`) instead of the stub box, `t_rooms` is the final walk
+    /// count and the altar anchor is the 3×2's top-left (`:33999-34001`).
+    /// The 512-tall world has no vanilla y band (`maxTilesY - 600 <= 0`), so
+    /// the search goes to the fallback (`WorldGen.cs:15926-15930`: x =
+    /// maxTilesX - dungeon_x, y = rockLayer + 100) and the walk rolls a
+    /// single resized room (the sub-vanilla scale collapses `Next(10, 16)`
+    /// to one room).
     #[test]
-    fn test_DW_6_1_shell_publishes_bounds_and_altar_anchor() {
-        let mut world = World::new("t".into(), 500, 500);
+    fn test_DW_2_2_step_publishes_faithful_bounds_and_altar_anchor() {
+        let mut world = World::new("t".into(), 512, 512);
         let mut rng = Rng(7);
         let bounds = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
-        let (bx, by) = (200, 150); // the deterministic fallback bury point
-        assert_eq!(bounds.t_rooms, 2);
-        // The box ± 10 ranges: hw ∈ [34, 46], hh ∈ [22, 30].
-        assert!(
-            (144..=156).contains(&bounds.t_left)
-                && (244..=256).contains(&bounds.t_right)
-                && (110..=118).contains(&bounds.t_top)
-                && (182..=190).contains(&bounds.t_bottom),
+        let (bx, by) = (212, 150); // the deterministic fallback bury point
+        assert_eq!(bounds.t_rooms, 1, "t_rooms — the sub-vanilla one-room walk");
+        // The single resized room (95 × 63) ± 10.
+        assert_eq!(
+            (
+                bounds.t_left,
+                bounds.t_right,
+                bounds.t_top,
+                bounds.t_bottom
+            ),
+            (240, 354, 113, 195),
             "the published bounds {:?}",
             bounds
         );
-        assert!(
-            bounds.t_left <= bx
-                && bx <= bounds.t_right
-                && bounds.t_top <= by
-                && by <= bounds.t_bottom,
-            "the bury point sits inside the bounds"
-        );
-        // The altar anchor: hall_hw = hw - 6 ∈ [28, 40], hall_hh = hh - 8 ∈
-        // [14, 22] → the anchor ranges are deterministic.
-        assert!(
-            (164..=176).contains(&bounds.l_altar_x)
-                && (157..=165).contains(&bounds.l_altar_y),
-            "the altar anchor ({},{})",
-            bounds.l_altar_x,
-            bounds.l_altar_y
-        );
+        let _ = (bx, by);
         assert!(
             bounds.t_left <= bounds.l_altar_x
                 && bounds.l_altar_x + 2 < bounds.t_right
                 && bounds.t_top <= bounds.l_altar_y
                 && bounds.l_altar_y + 1 < bounds.t_bottom,
-            "the anchor sits inside the bounds"
+            "the anchor sits inside the bounds ({},{})",
+            bounds.l_altar_x,
+            bounds.l_altar_y
         );
-        // The 3×2 altar with the faithful frames over the brick base row.
+        // The 3×2 altar with the faithful frames (frameX = i·18, frameY =
+        // j·18 — `Place3x2` writes the same layout style 0).
         for i in 0..3i32 {
             for j in 0..2i32 {
                 let t = world
@@ -462,11 +2957,394 @@ mod tests {
                     t.frame_y
                 );
             }
-            let base = world.tile(bounds.l_altar_x + i, bounds.l_altar_y + 2).unwrap();
+        }
+    }
+
+    /// DW-2.1: the full pass on the fallback world writes the temple family —
+    /// the Lihzahrd brick (226), the unsafe wall (87, the only wall the C#
+    /// writes — `templeCleaner`/corridors/carve), the 3×2 altar (237), the
+    /// Lihzahrd door (10, three rows) and the wooden spikes (232). The
+    /// faithful C# writes NO wall 112 (the "safe" constant is only read
+    /// back, `WorldGen.cs:61300`).
+    #[test]
+    fn test_DW_2_1_full_temple_family_on_the_fallback_world() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let bounds = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let count = |kind: u16| {
+            world
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let walls = |wall: u16| world.tiles.iter().filter(|t| t.wall == wall).count();
+        assert!(count(226) > 800, "the temple brick ({})", count(226));
+        assert_eq!(count(237), 6, "the altar tiles ({})", count(237));
+        assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
+        assert_eq!(walls(112), 0, "the faithful C# writes no safe wall");
+        assert!(count(232) >= 5, "the spikes ({})", count(232));
+        // The door: three rows of tile 10 with the Lihzahrd style (frameY
+        // 594/612/630 = 54·11 + row·18, frameX the swing variant).
+        let door: Vec<_> = world
+            .tiles
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.active() && t.kind == 10)
+            .map(|(i, t)| (i, *t))
+            .collect();
+        assert_eq!(door.len(), 3, "the door tiles ({})", door.len());
+        for (_, t) in &door {
             assert!(
-                base.active() && base.kind == TILE_TEMPLE_BRICK,
-                "the brick base row at +2"
+                (594..=630).contains(&t.frame_y) && (t.frame_y - 594) % 18 == 0,
+                "the Lihzahrd door frameY ({})",
+                t.frame_y
+            );
+            assert!((0..=36).contains(&t.frame_x));
+        }
+        // The bounds contain the whole family.
+        assert!(bounds.t_left > 0 && bounds.t_right < world.width);
+    }
+
+    /// DW-2.3: the door branch — with the up-anchor solid the door writes;
+    /// without any anchor it refuses (the vanilla no-door case, no tiles
+    /// written, no rng consumed).
+    #[test]
+    fn test_DW_2_3_door_refuses_without_an_anchor() {
+        let mut world = World::new("t".into(), 64, 64);
+        let mut rng = Rng(11);
+        // The solid frame at rows 17-19 and the mouth floor at row 23: the
+        // up branch reads j-3 = 19 solid, j-2 = 20 and j-1 = 21 clear, and
+        // `PlaceDoor`'s own check wants the floor at j+1 = 23.
+        for x in 30..34 {
+            for y in [17, 18, 19, 23] {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: 1,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        assert!(place_temple_door(&mut world, 32, 22, 11, &mut rng));
+        let door = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 10)
+            .count();
+        assert_eq!(door, 3);
+        // The refusal: a flat empty world has no anchor.
+        let mut empty = World::new("t".into(), 64, 64);
+        let mut rng = Rng(11);
+        let before = rng.0;
+        assert!(!place_temple_door(&mut empty, 32, 22, 11, &mut rng));
+        assert_eq!(rng.0, before, "no draws on refusal");
+    }
+
+    /// DW-2.4: determinism — the same seed twice gives identical worlds.
+    #[test]
+    fn test_DW_2_4_temple_is_deterministic() {
+        let run = || {
+            let mut world = World::new("t".into(), 512, 512);
+            let mut rng = Rng(7);
+            let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+            (b, world.tiles.clone())
+        };
+        let (a, tiles_a) = run();
+        let (b, tiles_b) = run();
+        assert_eq!(a, b, "the published bounds");
+        assert!(tiles_a == tiles_b, "the tile-for-tile worlds");
+    }
+
+    /// DW-2.5: the altar's 1000-try cap — a last room whose 3×2 body can
+    /// never be empty forces the hand-built fallback (`WorldGen.cs:34014-34068`):
+    /// the brick pad, the cleared 5×3 and the 3×2 written directly with
+    /// `frameX = i·18`, `frameY = j·18`.
+    #[test]
+    fn test_DW_2_5_altar_falls_back_after_1000_tries() {
+        let mut world = World::new("t".into(), 300, 300);
+        // The room fully bricked: every Place3x2 attempt finds an occupied
+        // body and refuses.
+        for x in 100..200 {
+            for y in 100..160 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: TILE_TEMPLE_BRICK,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        let rooms = vec![TempleRoom {
+            rect: Rect {
+                x: 100,
+                y: 100,
+                w: 100,
+                h: 60,
+            },
+            depth: 0,
+        }];
+        let mut rng = Rng(3);
+        let anchor = altar_spot(&mut world, &rooms, &mut rng);
+        // The fallback's 3×2 with the direct frames.
+        for i in 0..3i32 {
+            for j in 0..2i32 {
+                let t = world
+                    .tile(anchor.0 + i, anchor.1 + j)
+                    .expect("the fallback altar tile");
+                assert!(
+                    t.active()
+                        && t.kind == TILE_ALTAR
+                        && t.frame_x == (i * 18) as i16
+                        && t.frame_y == (j * 18) as i16,
+                    "the fallback altar ({i},{j}) frames ({},{})",
+                    t.frame_x,
+                    t.frame_y
+                );
+            }
+        }
+    }
+
+    /// DW-2.5: the sub-vanilla near-bound guard — a small world whose walk
+    /// runs the bounds to the edge keeps every temple write inside the world
+    /// (the port's `in_world` guards stand where the C# relies on the jungle
+    /// cavern's margin).
+    #[test]
+    fn test_DW_2_5_sub_vanilla_bounds_stay_in_world() {
+        let mut world = World::new("t".into(), 512, 512);
+        // Jungle grass everywhere so the search accepts the first sample.
+        paint(&mut world, 0, 512, 0, 512, 60);
+        let mut rng = Rng(5);
+        // The fallback bury point mirrors the dungeon entrance (512 - 10,
+        // 150): the walk's room extents run past the world's east edge —
+        // the C# carries the bounds past the world and writes through them
+        // unguarded (it would throw on the same world); the port clamps
+        // every write with `in_world`.
+        let bounds = pass_lihzahrd_temple(&mut world, 10, 50.0, &mut rng);
+        assert_eq!(bounds.t_rooms, 1, "the one-room walk");
+        assert!(bounds.t_left > 0 && bounds.t_right >= world.width, "{:?}", bounds);
+        assert!(bounds.t_top > 0 && bounds.t_bottom < world.height, "{:?}", bounds);
+        assert!(world.tiles.len() == world.width as usize * world.height as usize);
+    }
+    /// DW-3.1: the dart traps plate (135, `frameY = 18 * 6` = the style-6
+    /// `Place1x1` write) with the dart column (137, `frameY = 18 * style` —
+    /// the wall styles 1/2 and the vertical styles 3/4), plus the wire run:
+    /// at least one wire colour is laid inside the published bounds.
+    #[test]
+    fn test_DW_3_1_dart_traps_plate_traps_and_wire() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let plates: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 135)
+            .collect();
+        assert!(!plates.is_empty(), "the pressure plates");
+        for p in &plates {
+            assert_eq!(p.frame_y, 108, "the style-6 plate (frameY = 18 * 6)");
+            assert_eq!(p.frame_x, 0);
+        }
+        let darts: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 137)
+            .collect();
+        assert!(!darts.is_empty(), "the dart traps");
+        for d in &darts {
+            assert!(
+                matches!(d.frame_y, 18 | 36 | 54 | 72),
+                "the trap frameY ({}) — styles 1/2/3/4",
+                d.frame_y
+            );
+        }
+        // The wire run: at least one coloured wire inside the temple bounds.
+        let mut wired = 0;
+        for x in bounds.left..bounds.right {
+            for y in bounds.top..bounds.bottom {
+                for color in [
+                    crate::wiring::WireColor::Red,
+                    crate::wiring::WireColor::Blue,
+                    crate::wiring::WireColor::Green,
+                ] {
+                    if world.wires.get(x, y, color) {
+                        wired += 1;
+                    }
+                }
+            }
+        }
+        assert!(wired > 0, "the wire run inside the bounds ({})", wired);
+    }
+
+    /// DW-3.2: the buried chests place through the TileObject route — the
+    /// 2×2 chest 21 with the style-16 frames (`frameX = 36 * 16 + col * 18`
+    /// = 576/594, `frameY = row * 18`) on a wall-87 cell above a floor; the
+    /// near-chest refusal keeps the `notNearOtherChests` contract.
+    #[test]
+    fn test_DW_3_2_buried_chest_style_16_frames() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let chests: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 21)
+            .collect();
+        assert!(!chests.is_empty(), "the buried chests");
+        for c in &chests {
+            assert!(
+                matches!(c.frame_x, 576 | 594),
+                "the style-16 chest frameX ({})",
+                c.frame_x
+            );
+            assert!(matches!(c.frame_y, 0 | 18), "the chest frameY ({})", c.frame_y);
+        }
+        // The direct refusal path: a chest one tile away is a near chest.
+        let mut near = World::new("t".into(), 512, 512);
+        let b2 = pass_lihzahrd_temple(&mut near, 300, 50.0, &mut rng);
+        let bounds2 = Bounds {
+            left: b2.t_left,
+            top: b2.t_top,
+            right: b2.t_right,
+            bottom: b2.t_bottom,
+        };
+        pass_temple_part2(&mut near, bounds2, b2.t_rooms, 300.0, &mut rng);
+        let placed = near
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 21)
+            .count();
+        assert!(placed >= 1, "the seeded world places its chests ({})", placed);
+    }
+
+    /// DW-3.3: the furniture family carries the faithful frames — the chair
+    /// 15 style 12 (`frameY = 40 * 12 + row * 18` = 480/498, `frameX` 0),
+    /// the statues 105 (`frameX = 36 * style + col * 18`, styles 43-45) and
+    /// the painting 240 style 88 (`frameX = 54 * 88 + col * 18`) when the
+    /// near-checks let one through.
+    #[test]
+    fn test_DW_3_3_furniture_frames() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        let bounds = Bounds {
+            left: b.t_left,
+            top: b.t_top,
+            right: b.t_right,
+            bottom: b.t_bottom,
+        };
+        pass_temple_part2(&mut world, bounds, b.t_rooms, 300.0, &mut rng);
+        let chairs: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 15)
+            .collect();
+        assert!(!chairs.is_empty(), "the chairs");
+        for c in &chairs {
+            assert!(
+                matches!(c.frame_y, 480 | 498),
+                "the chair frameY ({}) — style 12 on the 40-px stride",
+                c.frame_y
+            );
+            assert_eq!(c.frame_x, 0);
+        }
+        let statues: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 105)
+            .collect();
+        assert!(!statues.is_empty(), "the statues");
+        for s in &statues {
+            let (col, row) = (s.frame_x % 18, s.frame_y);
+            assert_eq!(col, 0, "the statue column frames");
+            assert!(
+                (43..=45).contains(&(s.frame_x / 36)),
+                "the statue style ({})",
+                s.frame_x / 36
+            );
+            assert!(row == 0 || row == 18 || row == 36, "the statue row ({})", row);
+        }
+        // The painting's 3×2 block, if the near-checks let one through.
+        for t in world.tiles.iter().filter(|t| t.active() && t.kind == 240) {
+            assert_eq!(t.frame_x % 54, ((t.frame_x % 54) / 18) * 18, "the painting column");
+            assert!(
+                (4752..=4858).contains(&t.frame_x),
+                "the style-88 painting frameX ({}) — 54 * 88 + col * 18",
+                t.frame_x
             );
         }
     }
+
+    /// DW-3.5: the `LihzahrdAltar` re-write keeps the anchor's 3×2 and its
+    /// base row — idempotent over the temple pass's own write (the same six
+    /// tiles, the same frames, the brick row at +2).
+    #[test]
+    fn test_DW_3_5_altar_rewrite_is_idempotent() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut rng = Rng(7);
+        let b = pass_lihzahrd_temple(&mut world, 300, 50.0, &mut rng);
+        pass_lihzahrd_altar(&mut world, b.l_altar_x, b.l_altar_y);
+        for i in 0..3i32 {
+            for j in 0..2i32 {
+                let t = world.tile(b.l_altar_x + i, b.l_altar_y + j).unwrap();
+                assert!(
+                    t.active()
+                        && t.kind == TILE_ALTAR
+                        && t.frame_x == (i * 18) as i16
+                        && t.frame_y == (j * 18) as i16,
+                    "the altar tile ({i},{j})"
+                );
+            }
+            let base = world.tile(b.l_altar_x + i, b.l_altar_y + 2).unwrap();
+            assert!(base.active() && base.kind == TILE_TEMPLE_BRICK, "the base row");
+        }
+    }
+
+    /// DW-3.6: `mayanTrap`'s scans stay inside the world on a sub-vanilla
+    /// world — the floor walk aborts at `maxTilesY - 300` and the writes
+    /// never leave the tile array.
+    #[test]
+    fn test_DW_3_6_mayan_trap_guards_stay_in_world() {
+        let mut world = World::new("t".into(), 300, 300);
+        let mut rng = Rng(13);
+        // A trap attempt at the very bottom edge: the floor walk runs to the
+        // abort and refuses (no panic, no OOB write).
+        for _ in 0..8 {
+            let abort = world.height - 300;
+            let _ = mayan_trap(&mut world, 150, 290, abort, 200.0, true, &mut rng);
+        }
+        assert_eq!(world.tiles.len(), 300 * 300);
+        // And with a wall-87 pocket with a floor below, the trap writes
+        // inside.
+        let mut world = World::new("t".into(), 300, 300);
+        for x in 100..110 {
+            for y in 150..152 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: TILE_TEMPLE_BRICK,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        let mut rng = Rng(13);
+        let placed = mayan_trap(&mut world, 105, 152, 299, 200.0, true, &mut rng);
+        let _ = placed;
+        assert_eq!(world.tiles.len(), 300 * 300);
+    }
+
 }

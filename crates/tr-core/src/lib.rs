@@ -38,6 +38,7 @@ pub mod ores;
 pub mod spread;
 pub mod growth;
 pub mod pylons;
+pub mod rng;
 pub mod tile_entities;
 pub mod torch;
 pub mod tree;

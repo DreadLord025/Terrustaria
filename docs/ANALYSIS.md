@@ -1695,12 +1695,18 @@ and the boss bar (`BigProgressBarHelper.DrawFancyBar`) are ported at the source
 geometry (`docs/UI.md` → "Minimap frame" / "Boss bar"). The deviations and
 behaviour notes:
 
-* `Main.MapScale` is `1.0` only. The whole minimap transform chain
-  (`mapScale = Main.MapScale`, the `CreateScale(MapScale)` position/scale
-  fixups, `Main.cs:55308-55329`, and the foreground batch at `:55768`) is
-  evaluated at the reference value, where every `*= num16` fixup is a no-op;
-  the `MapScale` config key still round-trips (load-clamped `0.5..1.0`,
-  `Main.cs:4494`). The `Map Scale` Interface slider is a P5 hand-off, not ported.
+* `Main.MapScale` is **live** as of M6-SETTINGS P4 (before that it was pinned to
+  the reference `1.0`): the minimap anchor and the whole panel's render scale
+  read the `MapScale` config key (load-clamped `0.5..1.0`, `Main.cs:4494`), and
+  the port stands in for `Matrix.CreateScale(Main.MapScale)`
+  (`Main.cs:55308-55329`, foreground batch at `:55768`) by keeping
+  `ui::minimap`'s geometry in the source's transform space — the origin divided
+  by the scale (`:55510-55511`), the pointer too (`:55512-55513`) — and
+  multiplying back inside the two draw passes. The full map keeps
+  `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f `:66756`) and the zoom
+  axis `Main.mapMinimapScale` (`Main.cs:55515-55522`) is unaffected. The
+  Interface slider itself is still a P5 hand-off — the key is read from
+  `config.json` only.
 * No UI cue plays: the buttons' hover/click sounds `SoundEngine.PlaySound(12)`
   (`MinimapFrame.cs:167,174`) and the icon row's `PlaySound(10)/(12)`
   (`Main.cs:41100,41109-41119`) are not ported — no UI cue is loaded
@@ -1719,8 +1725,11 @@ behaviour notes:
 * The shielded 7-arg `DrawFancyBar` overload (`BigProgressBarHelper.cs:72-126`)
   and `DrawBareBonesBar` (`:11-23`) are not ported — the former has no
   reachable caller in this port, the latter is dead code.
-* `BigProgressBarSystem.ShowText` is always on (`:259`); the boss-bar-numbers
-  settings toggle does not exist in the port, so the health text always draws.
+* `BigProgressBarSystem.ShowText` is **live** as of M6-SETTINGS P4 (before that
+  it was always on): `boss_bar_text` feeds `ui::bars::draw_fancy_bar`, which
+  skips `DrawHealthText` when the flag is off (`BigProgressBarHelper.cs:53-55`)
+  — the bar, the frame and the head icon keep drawing, only the `current / max`
+  numbers disappear.
 * The map-style icon row draws without the `Main.mapEnabled` gate
   (`:41056`) while its clicks keep the gate (the documented draw/click
   asymmetry in `chrome.rs`/`app/clicks.rs`): the row is visible with the map disabled,
@@ -1790,16 +1799,100 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
   password strings where vanilla shares one `Netplay.ServerPassword`. Host keeps
   the vanilla fixed listen port 7777 (`HostAndPlay`, `:52011`); the old custom
   port row is gone (`TR_HOST` still overrides for tests).
-* **`"HidePassword"` vs vanilla `"HidePasswords"`** (`Main.cs:4144` Put,
-  `:4422` Get): the port's config key drops the plural — pre-existing from the
-  settings-persistence milestone, kept so existing port configs still load
-  (a vanilla `config.json`'s `HidePasswords` entry is ignored by the port).
+* **M6-SETTINGS (config parity, 2026-11-09).** The settings layer now matches
+  the source on all four axes:
+  - **Defaults.** `Settings::default()` is the `static Main()` set:
+    `musicVolume`/`ambientVolume`/`soundVolume` `1f` (`Main.cs:66857-66859`),
+    `invasionProgressMode` `2` (`:67080`), `SettingPlayWhenUnfocused` `false`
+    (`:66512`), `FrameSkipMode` `Subtle` (`:67204`) — the port's earlier
+    `0.75`/`1`/`true`/`0` were plain parity breaks (the out-of-box screen
+    labels and the first-run audio levels differed).
+  - **Key names.** `to_json` writes the vanilla `SaveSettings` names —
+    `ShowItemText` (`Main.cs:4135`), `GraphicsQuality` (`:4130`),
+    `GoreVisualsAllowed` (`:4101`), `SettingsEnabled_MinersWobble` (`:4153`),
+    `SettingsEnabled_TilesSwayInWind` (`:4157`),
+    `GamepadDisableInstructionsDisplay` (`:4151`), `InvasionBarMode` (`:4096`),
+    `VolumeMusic`/`VolumeSound`/`VolumeAmbient` (`:4105-4107`),
+    `PlayWhenUnfocused` (`:4217`), `HidePasswords` (`:4144`) — and `parse`
+    keeps every pre-parity port spelling as an alias, so a port-written config
+    from before this pass still restores its values. The earlier
+    `"HidePassword"`-singular note is superseded: the port now writes the
+    vanilla plural and reads both spellings.
+  - **The `LightingMode` ordinal.** The C# enum is
+    `{White=0, Retro=1, Trippy=2, Color=3}`
+    (`Terraria/Graphics/Light/LightMode.cs:3-9`) while the port's internal
+    order is `{Color=0, White=1, Retro=2, Trippy=3}`
+    (`tr-core/src/lighting/params.rs:12-17`), so `parse`/`to_json` translate in
+    both directions and only the persisted byte is the vanilla ordinal
+    (vanilla casts the stored int unchecked, `Main.cs:4398-4403`; an
+    out-of-range byte keeps the default instead — a deliberate robustness
+    deviation).
+  - **Read-once.** `config.json` is read exactly once (`main.rs` →
+    `App::new(settings, …)` → `Menu::new(settings, …)`, the menu holding a
+    working clone); the four read sites the research listed (`main.rs`,
+    `App::new`, `Menu::new` and `CursorState::default`) collapse to one, and the
+    menu-close sync (`close_menu`/`park_menu` → `App.settings` +
+    `apply_settings`) still carries the edited values back.
+  - **Kept limitation:** a real vanilla `config.json`'s `MouseColor` /
+    `MouseBorderColor` dictionaries are multi-line (Newtonsoft
+    `Formatting.Indented`, `Preferences.cs:47-53`), which the port's line-based
+    parser cannot read; the port writes one-line dicts itself, so its own
+    round-trips work and a vanilla file's colours fall back to their defaults.
+  - **Kept port-wide behaviour:** a malformed boolean coerces to `false`
+    rather than vanilla's `Preferences.Get` keeping the field default
+    (`Preferences.cs:176-190`); changing that is a parser-wide change, not a
+    settings one, so it is recorded here instead.
 * **Stored without consumers yet** (visual-only, spec §9.1): the volume sliders
   (no audio engine reads the volumes), the six Effects toggles / smart-cursor
-  flags / `FlashyEffects*` (no gameplay consumer), `boss_bar_text` (P4's boss bar
-  draws the numbers unconditionally), `resource_sets` (the HUD always renders the
-  Classic set — the default above) and `portrait_preference`. The Interface
-  "Minimap Border" row is the exception — live, see below.
+  flags / `FlashyEffects*` (no gameplay consumer), `resource_sets` (the HUD
+  always renders the Classic set — the default above) and
+  `portrait_preference`. The Interface "Minimap Border" row is the exception —
+  live, see below. `boss_bar_text` and `map_scale` left this list with the
+  P4 consumers below.
+  Flags whose *system* the port does not have at all stay stored-only, each with
+  its own note (never a stand-in consumer — the P4 rule): a flag is either wired
+  to the real system or written down here.
+  - **`blood`** (`ChildSafety.Disabled`, key `GoreVisualsAllowed`, `Main.cs:4101`
+    Put / `:4349` Get) is vanilla's gore gate — it also suppresses the dangerous
+    dust (`Dust.cs:194`, `:445`) and the player-side blood
+    (`Player.cs:38912`), with the gore check itself at `Gore.cs:1334`. The port
+    has no gore system (only the ambient leaf gores of `render/foliage.rs`), so
+    nothing exists for the flag to turn off: it stays stored-only until the gore
+    port lands.
+  - **`placement_preview`** (`Main.placementPreview`, key `PlacementPreview`,
+    `Main.cs:4100`/`:4348`) drives the placement preview's opacity ramp —
+    `Player.UpdatePlacementPreview` (`Player.cs:43402`) counts the frames the
+    player has been moving and `GetPlacementPreviewOpacity`
+    (`Player.cs:43389-43399`) remaps that count from full alpha to zero, which
+    `TileObject.DrawPreview` draws (`TileDrawing.cs:740`). The port places tiles
+    without drawing the tile-object preview, so the flag has no consumer yet.
+  - **`mouse_border_color`** (`Main.MouseBorderColor`, key `MouseBorderColor`,
+    `Main.cs:4179` Put / `:4462` Get, default `(64,64,64,64)` `:66514`) is the
+    cursor's border tint: `Main.ThickMouse` (`Main.cs:2599`) thickens the
+    smart-cursor outline with it and shifts the mouse-text block 6 px
+    (`Main.cs:20203`; the other reader is `Utils.cs:2789`). The port draws
+    neither a cursor border nor a smart-cursor outline, so the colour (like
+    `mouse_color`, which the cursor tint does read) has no consumer.
+  - **`smart_cursor_toggle`** (`Main.cSmartCursorModeIsToggleAndNotHold`, key
+    `SmartCursorToggle`, `Main.cs:4094`/`:4330`, default `true` `:67178`) picks
+    toggle vs hold for the smart cursor in `Player.TryToToggleSmartCursor`
+    (`Player.cs:28814-28842`). The port has no `SmartCursorHelper` block
+    selection, so there is no smart cursor to toggle.
+  - **`smart_axe_first`** (`Player.SmartCursorSettings.SmartAxeAfterPickaxe`,
+    `Player.cs:331`, key `UseSmartAxeAfterSmartPickaxe`, `Main.cs:4139`/`:4412`,
+    default `false`) is the smart-cursor priority order — axe before pickaxe
+    instead of after. Without the ported block selection there is no priority to
+    order.
+  - **`smart_blocks`** (`Player.SmartCursorSettings.SmartBlocksEnabled`,
+    `Player.cs:330`, key `UseSmartCursorForCommonBlocks`, `Main.cs:4138`/`:4411`,
+    default `false`) lets the smart cursor bridge to common blocks; it is the
+    branch `SmartCursorHelper` takes when scanning for a target. The port has no
+    such scan, so the flag is inert.
+  All three smart-cursor flags share one missing system:
+  `SmartCursorHelper` (`SmartCursorHelper.cs`) and its drawing half
+  `Main.DrawSmartCursor` (`Main.cs:46609`) — the 16x16 outline around
+  `Main.SmartCursorX/Y` plus the directional arrows (`:46650-46656`) — are not
+  ported, so no consumer is honest until that task lands.
 * **The menuMode 888 destinations stay hints**: the 1127 "Keybindings" row shows
   the not-ported notice because `ManageControlsMenu` is a `UIState` screen, out
   of P5 scope (spec §9.1) — the 27/272727 lists below cover the raw bind data.
@@ -1845,9 +1938,9 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
     Retro.
   - `BigProgressBarSystem.ShowText` defaults **true** (static ctor,
     `BigProgressBarSystem.cs:259`), so `TR_PAGE=interface` shows "Boss Health
-    Bar Numbers: On" by default, not the plan's "Off". The flag is stored
-    only; P4's boss bar draws the numbers unconditionally (its note above
-    still holds until a consumer lands).
+    Bar Numbers: On" by default, not the plan's "Off". The flag is live:
+    `boss_bar_text` reaches `ui::bars::draw_fancy_bar`, which skips
+    `DrawHealthText` when it is off (`BigProgressBarHelper.cs:53-55`).
 * `resource_sets` defaults to `"Default"` (label "Classic") while vanilla's
   config default is `"New"` (`PlayerResourceSetsManager.cs:28`) — the planned
   deviation: the port renders the Classic set, so the row must agree with the
@@ -1855,8 +1948,15 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
 * The Interface "Minimap Border" row is *live* behaviour, not visual-only:
   cycling rewrites `settings.minimap_frame`, which the game loop feeds
   through `ui::minimap::style_index` (`app/clicks.rs`), so the minimap frame
-  re-renders immediately. Map Scale stays the P4 visual-only ruling
-  (reference 1.0).
+  re-renders immediately. Map Scale is the other live row: `map_scale` feeds
+  the minimap's anchor (`52 + (int)(240 * MapScale)`, `Main.cs:55275-55276`) and
+  the whole panel's render scale, through the port's stand-in for
+  `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`): `ui::minimap`
+  keeps its geometry in the source's transform space (the origin divided by the
+  scale, `Main.cs:55510-55511`, the pointer likewise `:55512-55513`) and the two
+  draw passes multiply back. The full map is untouched — it scales by
+  `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f `:66756`) — and so is
+  the `mapMinimapScale` zoom axis (`Main.cs:55515-55522`).
 
 ## Front-end screens (P6) (`ui/`, `app/flow.rs`)
 
@@ -1918,6 +2018,76 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
 * **`Color` multiplication wraps, not saturates** (`color.rs`'s pinned
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` — the ghosted Master-difficulty bunny preview.
+
+## UIElement framework (M7-UI-1, 2026-11-08)
+
+The framework halves of `UIElement`/`UserInterface` that the screens cannot live
+without — the pointer machine (`ui/pointer.rs`) and the flat hit order
+(`ui/framework.rs`, `ui/select_hit.rs`) — landed on branch `M7-UI-1-uielement`
+with the layout pass unchanged in `ui/uistate.rs`. The screen-model ruling stays:
+an immediate port, no retained tree, no `UserInterface` object. Card double-click
+play is the feature it buys, and it is **routing only**: the port has no per-card
+selection state and its play path closes the front flow rather than loading the
+entry (spec §9.4), so a double-click resolves to the same flow a Play button
+click does.
+
+Corrected deviations (both were geometry the layout pass would have got right):
+
+* **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
+  `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
+  `UIBestiaryTest.cs:71-79` is `Top 180` + `Height.Set(-220f, 1f)` = `screenH − 220`
+  tall (bottom at `screenH − 40`), `MaxWidth 900`, `MinWidth 700`
+  (`600 + Utils.ToInt(true) * 100`). The container is now `uistate::resolve`'d
+  verbatim; the old numbers stayed because nothing pinned the absolute bottom in
+  a test.
+* **The emotes wheel borrowed the bestiary panel.** `ui/emotes.rs` reused
+  `bestiary::panel_rect` and a 44 px / 8-column grid, while `UIEmotesMenu.cs`
+  has its own 590-wide container (`Top 120 / Height −120` in game,
+  `Top 220 / −220` in the menu) and `EmotesGroupListItem.cs:15`/`:25` specify
+  36 px cells at `maxEmotesPerRow = 14`. The wheel now owns its container and
+  grid, and its scroll offset moved from standing still to `UIList.ScrollWheel`
+  (`UIList.cs:107-114`) with `UIScrollbar`'s clamp (`:37-47`), reset on each open
+  (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
+  — the port keeps one flat roster — and the menu-side container split is
+  unimplemented (the wheel is reachable only in-game).
+
+Open gaps (deliberately out, each with its reason):
+
+* **Event bubbling** (`UIElement.cs:414-546`: every mouse event fires the
+  element's handler and then the *parent's*) — a no-op on flat screens; the port's
+  click tables return one action.
+* **`MouseOver`/`MouseOut` edges** — hover is draw-derived (`in_rect` at draw
+  time) and the colour swaps are `ui::hover_pair`; the edge itself has no ported
+  consumer, and the sound 12 it drives is a recorded deviation.
+* **`OverflowHidden`** (`:47`, `:222-237`, 6 users: `UIList`,
+  `UIBestiaryEntryButton`, `UIBestiaryNPCEntryPortrait`, `UIResourcePack`,
+  `AWorkshopPublishInfoState`) — the select screens' clipped rows already emulate
+  the clip by omitting the row from the element list.
+* **`UIList`/`UIScrollbar` behaviour** (`UIList.cs:107-128`, `UIScrollbar.cs:37-143`):
+  the draw-only helpers exist in `ui/panel.rs`, but there is no `view_position`,
+  no drag and no handle geometry; the char/world select bars draw at a hard-coded
+  ratio and the emotes wheel's scroll is a plain row offset.
+* **`IsElementUnderMouse`/`MouseCaptured`** (`UserInterface.cs:113-124`, `:349-356`)
+  — only the minimap's hover mirrors the mine/place suppression today.
+* **`OnActivate`/`OnDeactivate` for the remaining screens** —
+  `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
+  `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
+  `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
+  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
+  enter direction only (`enter_front`), not on the leave direction the C#'s
+  `SetState(null)` also resets.
+* **Snap points / gamepad** (already recorded as out of scope) and
+  `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
+
+Screenshot baselines (deterministic double-run pairs, SHA256, 1600x900):
+`TR_CHEST` `d4ba148e…` (also byte-identical to the pre-phase HEAD build taken in
+the same session), `TR_BESTIARY=0` `faf45d9e…` (new — the panel's bottom moved),
+`TR_EMOTES` `9d00f7b0…` (new — the wheel's box and cell pitch moved), `TR_UI=charsel`
+`39b1f697…` and `TR_UI=worldsel` `077087ab…` (both need `TR_NAME` — the session
+name falls back to `menu::random_name()`, `app/mod.rs:1830`, so an unpinned pair
+differs in the card name's pixels). The absolute HUD hash is environment-dependent:
+two sessions produced `c4980496…` and `d4ba148e…` for the *same* code, so a
+cross-session comparison must re-take the baseline beside the run.
 
 ## Architecture refactor (2026-11-01)
 
@@ -2950,6 +3120,21 @@ The tier-2/tier-3 rosters and budgets (`Difficulty_2/3_*`): the tiers
 swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
 554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
 wave 7's tier-3 budget is Betsy's own HP bucket.
+
+## The Ancient Cultist (M4-EVENT-6)
+
+The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual
+dissolve, the sine-bob hover, the far-player regen and the two ritual
+projectile arms (the 3240-px line-of-sight gate, the 1080-px below
+gate). The pillar summons (Stardust 493 / Nebula 507 / Solar 517 with
+their shield strengths) and the boss bar ride the next slice.
+
+## The pillar shields (M4-EVENT-7)
+
+The Lunar towers' shield lifecycle on `World`: the raise
+(`ShieldStrengthTowerMax` = 100, / 2 post-Moon-Lord), the spend
+(per-tower drain, the downed flag) and the reset. The 629 pulse fires
+from the towers' hit path.
 
 ## The invasion progress bar (M4-EVENT-1b)
 
@@ -4908,30 +5093,89 @@ walls too); the remix `ChlorophyteDefense` conversion is out (no remix
 worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
 unconditionally).
 
-## Lihzahrd temple (M1.4-WGEN-6)
+## Lihzahrd temple (M1.4-WGEN-6 / M5-TEMPLE)
 
-The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
-temple, the last big generation structure:
+The temple is now the faithful C# port, landed as three pipeline steps over
+the M5-BIOME seam:
 
-- **The placement** (`:15840-15848`): the y between the rock layer and
-  `maxTilesY − 600` (the port clamps to the height), the x under the
-  jungle band's deep half (`dungeonSide`'s opposite in the C#).
-- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
-  Lihzahrd brick (226) with the unsafe walls (87), the carved central
-  hall + the side rooms with the safe walls (112), the brick pillars
-  inside the hall.
-- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
-  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
-  room at the hall's west end.
-- **The traps**: the dart traps (137, the case-137 wiring variants the
-  wiring trip fires — the trap frameY selects the variant) embedded in
-  the hall's brick walls every 12 columns.
-- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+- **The placement search** (`LihzahrdTemple` pass, `WorldGen.cs:15834-15926`):
+  the y between `(int)Main.rockLayer` and `maxTilesY − 600`, the x from the
+  dungeon-opposite reach `((NextDouble() · num3 + 0.1) · −dungeonSide + 0.5) ·
+  maxTilesX`, the tile-60 acceptance, the 1,000,000-attempt widening valve
+  (0.25 → 0.30 → 0.35, 11 cap stages) and the fallback — the M5-BIOME
+  phase-6 port, unchanged.
+- **The interior** (`makeTemple`, `:33435-34237`): the room walk
+  (`Next(10,16)` rooms at `scale = maxTilesX/4200`, the staggered
+  horizontal/vertical steps with the `Next(1,3)` flip period and the −10
+  downward drift), `makeTemple_GenerateBricks` (the per-depth `DungeonBounds`
+  union, `Inflate(10)`, the `ClearEverything` brick fill and the four
+  corner-to-corner `Line_StrictAngles`/`Line`/`FillY`/`FillX` walkers), the
+  jitter carve (the two counter-sweeps over the drifting inset edges), the
+  `templePather` corridors, the four `outerTempled` sweeps (the unsafe-wall
+  skin conversion), the entrance shaft with the Lihzahrd door (tile 10,
+  style 11, `frameY = 594/612/630`), the `templeCleaner` sweeps, the wall-87
+  widen pass, the altar (`PlaceTile(237)` → `Place3x2`, the published
+  `lAltarX/lAltarY` from the frames, the hand-built 1000-try fallback) and
+  the wooden-spike (232) staircase loop.
+- **The part-2 content** (`LihzahrdTemplePart2` pass, `:17701-17709` →
+  `templePart2`, `:34464-34658`): the dart traps (`mayanTrap` — the pressure
+  plate 135 style 6 over the dart column 137 with the `AddWireFromPointToPoint`
+  wire run), the buried chests (`AddBuriedChest`, style 16, the Pygmy-staff
+  main item is M5-CHEST-gen's), the statues (105, styles 43-45), the
+  workbench/table/chair furniture (`Place2x1`/`Place3x2`/`Place1x2` with the
+  faithful frame strides) and the one painting (240, style 88).
+- **The altar re-write** (`LihzahrdAltar` pass, `:21943-21976`): the 3×2
+  frames + the 3-wide brick base row + six `SquareTileFrame`, as the late
+  anchor safety.
 
-Deviations: the C#'s multi-room crawl with the doors
-(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
-summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
-are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+Deviations:
+
+- **The stream model**: the C# shares one `genRand` across the world; the
+  port re-seeds per pass (`pass_rng("Jungle Temple")` / `"Temple"` /
+  `"Lihzahrd Altars"` — the step slugs map to the vanilla chain rows
+  "Jungle Temple" / "Temple" / "Lihzahrd Altars"). The draws INSIDE each
+  step follow the C# statement order 1:1 (pinned by the draw-ledger tests);
+  the loot tables' draws in `AddBuriedChest` are M5-CHEST-gen's — until they
+  land, the part-2 stream carries their absence (a documented sub-vanilla
+  gap, same class as the earlier phases).
+- **The `tileSolid` windows**: the port has no global table. The part-2
+  wrapper runs with 162 (BreakableIce) non-solid / 226 solid for the whole
+  step, and the wood spike 232 solid only during the trap loop (the C#'s
+  `:34499` flip); the C# leaves 162/232 non-solid for the rest of the chain
+  until `BeeLarvaInBeehives` — the port's later passes keep their own
+  predicates (recorded delta; the temple's spikes are the only 232 tiles).
+- **The executed-pipeline order**: `temple part 2` runs immediately after
+  `lihzahrd temple` (the C# runs it after the liquid/tile passes — the port's
+  compact chain delta), and `lihzahrd altar` sits between `cacti` and
+  `water plants` (vanilla `:21310` → `:21943` → `:21963`). 50 → 52 steps.
+- **The sub-vanilla guards**: the C#'s unguarded writes (`templePather`'s
+  carve squares, the altar fallback's floor scan, `array[num2-1]` on a
+  world whose walk rolls no room) would throw on the port's smaller test
+  worlds; the port's `in_world` guards keep the writes total.
+- **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
+  (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) —
+  M5-SEED-1's scope, not a deviation here.
+- **The drunk/good/remix branches** (×3/×2 room counts, the drunk spike
+  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
+  M5-SEED-1/2's scope.
+- **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
+  Golem-BOSC-19's; the traps fire through the wiring engine's case-137
+  variants (the frameY selects the variant, the trap column's wires are
+  laid by the pass itself).
+- **The world hashes** are re-pinned (every world on every seed changes by
+  design): `SEED42_512 = 1248943602`, `DEFAULT_WORLD = 3359703751` (the
+  phase-3/final pair; the phase-1 pins 2067651109/2366599377 and the phase-2
+  pins 2109138558/948698174 are recorded in the commits). Screenshot
+  determinism pair (seed 1, the altar room at `TR_CAM=1836,703`
+  `TR_SHOT_FRAME=600` `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`): zoom 1.0
+  `8a75a259…` and zoom 2.0 `352859a2…`, each byte-equal on its repeat run
+  (taken from the merged `main` build); the worktree-built pair differed
+  from these by 900 px (max channel 9, the near-black altar-room corner) —
+  a cross-build f32-order delta in the render path, not a world-state or
+  determinism difference (the world hashes are pinned by the tests). A
+  zoom-2.0 frame-900 pair separately showed the known `TR_SHOT` harness
+  timing sensitivity (the ANALYSIS harness note) in the HUD hotbar region
+  only.
 
 ## Polish passes (M1.4-WGEN-7)
 
@@ -6542,3 +6786,25 @@ The envelope and the ported bodies are 1:1; the deviations:
 - **The sheets' rows are 56 px (70 for the Tim)**, not the v1's fixed 48,
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
+
+## Cave decorations (M5-STRUCT-5)
+
+Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
+
+Deliberate deviations, all in the module header:
+
+- **The wall-0 gates read the port's pre-laid walls as the C#'s 0.** The port's `fill_terrain` writes a wall under every solid row (dirt 2 / stone 1 / sandstone 187 — `terrain.rs:284-289`); the C# leaves them 0 until `Cave Walls` runs (`WorldGen.cs:17711`, after these passes). Every `wall != 0` test in `nextCount`, `Spread.Spider`, `Spread.Gem` and `Spread.Moss` is therefore evaluated against the baseline set via `BASELINE_WALLS`; only a wall the port actually painted (jungle/mud/hive/gem/moss) counts as "walled". Without this the passes abort on the first cell and place nothing.
+- **The RNG is the port's per-pass xorshift stream**, not the shared `UnifiedRandom`: `Streams::pass_rng("Spider Caves")`, `("Gem Caves")`, `("Moss")`, `("Webs And Honey")`. The draw ORDER is faithful, the byte stream is not (the port's worldgen contract is already xorshift).
+- **`Spread.Spider`'s chest arm uses the port's `place_chest`** — the buried chest's stocked loot is M5-CHEST-gen territory, so the C#'s `chestStyle 15` / `mainItemInChest 939` book is out of this task's scope.
+- **`PlaceTile`-shaped writes use the port's single-tile idiom** (`frame_x = style * 18`, `frame_y = 0`) instead of the C#'s 2x2/3x2 `TileObjectData` frames; the port's framer recomputes object frames at the pipeline end.
+- **`neonMossBiome`/`SpreadGrass` ride the port's one-shot `growth::spread_grass`** (`WorldGen.cs:75146-75270`): the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled, so the sweeps call it per neighbour (arm F) / per qualifying tile (`neonMossBiome`).
+- **Arm D's unbounded loop is capped.** The C#'s `num13` loop (`:17612-17623`) decrements only on a hit and relies on the vanilla cave field always offering another exposed stone cell; the port caps the attempts at `6 * maxTilesX` so a degenerate world cannot spin.
+- **No seed framework**: the port carries no remix / not-the-bees / tenth-anniversary / drunk / for-the-worthy flags, so those arms take the vanilla normal path; the secret-seed `noSpiderCaves` pair (`:269-291`, `:2618`) and `DoNoSpiderCavesILiedMoreSpiderCaves` are out of scope.
+- **No `GenVars.shimmerPosition`/`shimmerSafetyDistance`** in the port (shimmer is not a worldgen liquid yet) — the moss pass's shimmer-exclusion arms (`:17585`, `:17604`, `:17614`) are skipped.
+- **The hive arm of `Webs And Honey` is inert**: it keys on wall 86 (`WallID.HiveUnsafe`), which the port's beehive pass does not paint (`structures.rs:404` uses its own walls). Left as a documented no-op until the beehive wall lands.
+- **The stalactite frame table keeps the arms the port's world can produce** (spiders, the ice family, stone/moss, hive, the sandstone pair, granite, marble) with `CopyPaintAndCoating` folded into the port's frame write; `Main.tileSolid[379] = false` (`:17360`) rides inside the pass's own `solid_tile`.
+- **`Plain` counts**: `count_tiles` is an explicit-stack rewrite of the recursive `nextCount` (the fill carries no RNG, so the traversal order is free), and `Spread.*` walks the frontier lists rather than the C#'s per-level `List`/`HashSet` pair — the visited-set semantics and the `SolidTile`/wall gate are the C#'s.
+
+Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
+
+
