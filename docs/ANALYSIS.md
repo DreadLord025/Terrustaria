@@ -2939,6 +2939,97 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+### The EoC task's loss and re-land (M4-NPC-3n)
+
+The smart-cursor agent's `5075a462` "sync" merge resolved its conflicts by
+taking its own branch's wholesale tree, which predated `07c1d4e4` — main
+lost the entire M4-NPC-3m task (the case-4 `find_frame`, the 110x166
+frames, the `halfSize` override, the `eoc` hook name and the ROADMAP
+row). The AGENTS.md hazard ("another agent's merge reverts a finished
+feature — verify your markers after every merge") caught it in the audit
+log (`git show origin/main:... | grep -c`), and the work was cherry-picked
+back on this branch. The lesson joins the 2026-11-08 incidents list: a
+"sync" merge whose message says it restores dropped work is exactly where
+someone else's finished work gets dropped again.
+
+## The draw-anchor overrides (M4-NPC-3n)
+
+`Main.cs:23048`'s switch overrides the per-kind draw anchor in two ways,
+and the port now models both:
+
+- `halfSize` (the origin point that lands on the anchor) shifts the frame
+  by `override − frame_h / 2`: the EoC/Twins' (55, 107) gives +24/+7, and
+  the Plantera head's absolute 77 (over its 86-px row's 43) gives +34.
+- `num47`/`num46` are flat pixel nudges: the Plantera head's +26, the
+  Brain's `+50 · scale`, the DD2 group's negative shifts (the
+  javelineers' −8, the bombers' −5, the Wither Beasts' −3).
+
+`npc_anchor_nudge` sums them and is applied once after the draw match, so
+every generic-anchored kind takes its own value; the towers, the saucer
+family and the Deerclops compute their own positions in dedicated
+`DrawNPCDirect` arms and are excluded, exactly like the C#. The still
+unported arms (626/627's wet dual switch, 692's `num46 = wet ? 10 : 6`,
+688/694's direction terms, 469's ai[2]-gated +14, and the DD2 sprite
+effects/flip toggles) are the follow-ups.
+
+## The Eye of Cthulhu's display (M4-NPC-3m)
+
+The EoC's `find_frame` arm ran an 8-tick strip over all six rows of its
+sheet, and its comment described a "pupil blink" that does not exist in
+the decompile. `case 4/125/126` (`NPC.cs:76905-76926`) is ONE shared
+machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
+
+- The 20-tick counter walks the bands rows 0/1/2 (splits at 7/14/21,
+  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 onto the
+  phase-2 rows 3/4/5. The Twins ported this in M4-NPC-3k; the EoC was
+  still on the v1 strip, so the boss and its summonable twins animated
+  differently.
+- **The sheet is 110x996** (six 166-px rows, `Main.npcFrameCount[4] = 6`)
+  and the v1 squeezed each row into a 110-px quad at the box's corner —
+  a horizontally stretched, vertically cropped eye. `boss_draw` now
+  takes the real 110x166 frames at the generic anchor (the same shape
+  the Twins ride, whose 200-px rows come off the same helper).
+- **The `halfSize` override** (`Main.cs:23051-23056`): the C#'s draw sets
+  `halfSize = (55, 107)` for all three kinds — the point that lands on
+  the NPC's anchor. For a 166-px row the sheet-derived half is 83, so the
+  override pushes the frame's centre 24 px lower (the Twins' 200-px rows:
+  7 px). `boss_half_size` folds that into the anchor as
+  `override − frame_h/2`, which is the shift the C#'s formula produces.
+- The rest of the C#'s override switch (the Plantera head's absolute 77
+  with `num47 += 26`, the Brain's `+50·scale`, the small walkers' +4/+8,
+  the DD2 families' negative nudges, the 626/627 wet switch) stays the
+  documented follow-up — the `case 4/125/126` trio is the only override
+  that is a plain (55, 107).
+
+Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
+SHA256-stable across runs.
+
+## The Plantera and the Brain (M4-NPC-3o)
+
+`case 262` (Plantera) and `case 266` (the Brain of Cthulhu) are the same
+machine in the decompile — a 6-tick advance over the 8-row strip with the
+first phase wrapping at row 3 and the second clamping into 4..7 — and both
+npcFrameCount entries the port's comments quoted were wrong ([262] = [266]
+= 8, not 5 and 1). The v1 pinned the Brain to row 0 with `frame_h = t.h`
+(a whole-strip "frame") and cycled Plantera over rows 0..4 with `t.h / 5`.
+
+- The shared `phase_frame` helper takes the gate per kind: the Plantera's
+  `life > lifeMax / 2` and the Brain's `ai[0] >= 0 && localAI[2] == 0`.
+  The port's brain machine does not model the creeper-shield count, so the
+  Brain rides the shield-down rows 0..3 and the shielded 4..7 rows are the
+  documented follow-up (same honesty as the EoC's mech-queen rows).
+- Measured sheets: NPC_262 116x1232 (154-px rows), NPC_266 200x1456
+  (182-px rows), NPC_267 34x34. All three draw at the generic anchor
+  through `boss_draw`.
+- The anchor overrides from M4-NPC-3n are now applied in ONE place after
+  the draw match, gated by `uses_generic_anchor` — the Plantera's
+  (halfSize 77, +26) and the Brain's (+50·scale) shift their real frames,
+  while the towers, the saucer family and the Deerclops keep their own
+  dedicated `DrawNPCDirect` formulas.
+
+Screenshots: `plantera_flower.png` (the flower at its 116x154 frame) and
+`brain_creepers.png` (the 200x182 brain), both SHA256-stable across runs.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -3663,6 +3754,47 @@ Deviations:
 - **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
+
+## Golfer (M4-TOWN-18)
+
+The pair and its shop. The whole shop's variable stock keys off
+`Player.golferScoreAccumulated` (`Chest.cs:3158`), which only the golf system
+grows (`GolfHelper.PutBallInCup` → `AccumulateGolfingScore`, `Player.cs:4932`);
+the port carries the score on the shop flags and the accumulator, so the rows
+are faithful but stay at their score-0 tier until M4-GOLF-1 ports the balls,
+cups and `GolfState` scoring. The bound-Golfer spawn's desert-wall gate
+(`SpawnTileOrAboveHasAnyWallInSet(..., AllowsUndergroundDesertEnemiesToSpawn)`,
+`NPC.cs:1680`) has no port table yet, so the port spawns it from the depth band
+and rate alone. The Golfer's attack machine (projectile 721, `NPC.cs:54378`) and
+the 480-tick shot lifetime (`:54868`) ride the town-attack task; the chatter
+tiers (`GolferQuestsChatter*`, `NPC.cs:94792`) ride M6-LOCALIZE.
+
+## Stylist/Tax Collector (M4-TOWN-17)
+
+The three kinds and the Tax Collector's coin system. Deliberate gaps: the tax
+purse is per-player in the C# (`Player.taxMoney`, saved at `Player.cs:54788`) —
+the port carries it on the World until the player-file section exists; the Tax
+Collector's "Andrew" easter egg (`NPC.cs:52968`'s 200-defense and
+`:55033-55037`'s doubled attack) waits for the town-attack task; the hair-window
+UI (`NPCInteractions.cs:425-441`'s `StylistHairWindow` → `Main.OpenHairWindow`)
+lands with the hair system; the bound Tax Collector (534) and his
+Purification-Powder release (`Projectile.cs:14728-14733`) wait for M4-NPC's
+hostile-bound archetype.
+
+## Wizard/Mechanic (M4-TOWN-16)
+
+The pair and their bound forms port the 1.4.5.8 spawn/transform/shop slice. Deliberate gaps, all
+in the ROADMAP row: the attack machines (`AI_007_TownEntities`'s `ai[0] == 10` arm for 124,
+`NPC.cs:54450-54459`, and `ai[0] == 14` for 108, `:54865-54875` + the 108's multi-projectile
+`SelectRandom(1,1,1,1,2,2,3)` at `:54927`) wait for the town-attack task; the Wizard's
+hardmode blood-moon deck (5461) and halloween hat (1739) and the Mechanic's graveyard goggles
+(4409) are constants-off (no season/graveyard stock gates yet); the Mechanic's Rod gate reads the
+moon phase only — the C# also needs `NPC.AnyNPCs(369)` (the Angler), which the port's shop
+engine carries through `StockWhen::PlayerHasItem`-style flags only, so the Angler-presence half
+sits with the town-count gate's follow-up; the bound Mechanic's depth band rides the player's
+tile without the Dungeon biome gate (`NPC.cs:2643-2652`'s `hardDungeon` branch); the
+`hasTownNPC`-style flags the C# counts for the arrival (`num10`/`num12`, `Main.cs:65651-65658`)
+fold into the port's per-kind absence check.
 
 ## Angler quest (M4-TOWN-15)
 
@@ -5109,6 +5241,24 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   writes that tile), so the gates only bite the hand-placed/fixture
   mahogany chests; a kind-341 anchor keeps just the repeated rows. The
   mahogany block itself needs no new rows.
+
+- **The vanity-tree growth** (`GrowTreeWithSettings`,
+  `WorldGen.cs:30388-30847` + `TryGrowingTreeByType` `:30343-30387` — the
+  M5-SPREAD-1 sapling slice): the settings-driven tree grow lands — the
+  sapling-stack walk, the liquid/ground/wall gates (the wall test is the
+  hand-transcribed `WallID.Sets.AllowsPlantsToGrow` set, `WallID.cs:97`),
+  the 7-12 height roll, the trunk's `num5` branch-shape frame table with
+  the `num4` column pick and the re-roll guard, the left/right branch arms,
+  the side-ground caps (the `IsTileTypeFitForTree` neighbours with the
+  1/3 kills) and the 1/13 top cap, closing with `RangeFrame`.
+  `AttemptToGrowTreeFromSapling`'s 595/615 arms now dispatch it (the
+  Sakura/Willow profiles); the kind-20 style-10 arm grows the ash profile.
+  Deviations: `treeHeightAddon`/`ignoreWalls` parked (all callers pass
+  0/false); the tenthAnniversary colour roll and the errorWorld height arm
+  park with M5-SEED-1; the gem sapling's 590 arm is underground-only (the
+  underground dispatcher = GROWTH-2); the kind-20 styles 6-9 palms park
+  (no `GrowPalmTree` port); the paint cache copies the ground's paint (the
+  C#'s `UseBlockColors` coating bits ride the port's paint field alone).
 
 ## Structures (M1.4-WGEN-2)
 
@@ -8418,3 +8568,114 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+## The lunar battery projectiles (M4-EVENT-16)
+
+The Moon Lord's and the pillars' shots run through six aiStyles, all ported
+in `projectile.rs`'s pool dispatch.
+
+- **452 PhantasmalEye (aiStyle 82)** drifts in three legs: 45 ticks, then
+  the drift angle negates; 90 more, then `ai[1]` becomes the target player
+  index; then the homing — the 14-px target over the 0.6 lerp with the Y
+  floor of 6 and an accel that ramps 0.4 → 0 as `ai[2]` ages 0→90, killing
+  at 30 px. Every leg's drift rotates `velocity.X` off `ai[1]`, clamps to
+  ±6, drifts Y by −0.08 (−0.2 when rising) and floors at −7.
+- **454 PhantasmalSphere (aiStyle 83)** fades its alpha by 6 and sets
+  `scale = 1 - alpha/255`; while `ai[0] < 30` it locks its position to
+  `Main.npc[ai[1]].Center - halfbox - velocity` (the hand's held charge),
+  then decays at 0.96 and cycles its 2 frames. The damage suppression
+  (`Projectile.cs:15406-15412`) rides the same window.
+- **455 PhantasmalDeathray (aiStyle 84)** derives its position from the
+  host every tick — the (27, 59) ellipse for the Moon Lord head, (30, 30)
+  for the True Eye — scaled by the host's `localAI[1]` open factor and
+  rotated by its `localAI[0]` aim. Its heading sweeps by `ai[0]` per tick
+  (the ±2π/540 the head's spawn sets), it lives 180 ticks with the
+  `sin(t·π/180)·10` scale curve, and its length smooths toward the port's
+  tile ray at 0.5 (0.75 when the host can't see its player).
+- **456 MoonLeech (aiStyle 85)** runs the outbound leg at the 16-px cap
+  toward its player, applies buff 145 (840 classic / 960 expert) once at
+  the 20-px contact, and after 330 ticks (or the player's death) flips
+  `ai[0]` negative for the return leg that dies at the head.
+- **540 StardustMark (aiStyle 103)** fades in over 30 ticks and spawns the
+  NPC id carried in `localAI[0]` (the tower's mark: 405/402/407 picked
+  from the culled list), then fades out. The port's pool can't grow the NPC
+  vec, so the spawn rides `wants_mark_spawn` out to `drain_mark_spawns`.
+- **574 NebulaEye (aiStyle 102)** is dragged along its host's frame delta
+  while `ai[0] < 180`, homing at the ±0.15/±0.075 accel clamped to 6 px.
+- **629 TowerDamageBolt (aiStyle 122)** homes at 5 px toward the host tower
+  in `ai[0]` and dies with it; on contact the dispatch spends the tower's
+  `ShieldStrengthTower*` (clamped at 0) — the M4-EVENT-7 shield's drain.
+
+Deviations: the pool's spawn carries no `ai[1]` whoAmI, so the machines
+link their host by kind (the nearest living MoonLordHead/FreeEye,
+MoonLordHand or NebulaFloater); the dust/light/shade tails are unmodelled;
+the 452's `Player.FindClosest` folds into the owner's centre; the 456's
+expert duration stays classic until the difficulty modes land.## .trwld v11 — the saved ore tiers (M6-SAVE-1f)
+
+`WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) moved onto the World and
+into the world file — the four pre-hardmode metals the setup rolls once per
+world (`Main.cs:11266-11297`) plus the hardmode trio the altar smashes fill.
+Before this, the runtime copy started at the static defaults on every load:
+the alternate-metal flips (tin/lead/tungsten/platinum) and any smashed hardmode
+tier were lost on reload (the recorded ANALYSIS "save-migration follow-up").
+
+- **The shape.** One presence byte, then the seven `i32` tiers in the
+  `SavedOreTiers` field order (copper/iron/silver/gold/cobalt/mythril/
+  adamantite), the -1 sentinels included. The C# rides them in the
+  world-flags block (`WorldFile.cs:1315-1321` + `:1444-1450`); the port's own
+  section, the same values.
+- **The plumbing.** `World.ore_tiers` is the per-world owner (the worldgen's
+  `ores_and_shinies` pass writes its setup roll there; `caves.rs`'s pass), the
+  App reads it back at construction (`app/mod.rs`'s `ore_tiers_seed`), and
+  `save_world` writes the App's live tiers. A file written before v11 leaves
+  the World at the static defaults — the C#'s own reset arm
+  (`WorldFile.cs:796-814`).
+- Tests: `dw_2_6_the_ore_tiers_round_trip_in_v11`,
+  `dw_2_6_a_v10_payload_loads_default_tiers`,
+  `dw_2_6_a_truncated_ore_section_bails`, `dw_2_6_the_ore_section_is_deterministic`,
+  and the app pair `dw_2_6_the_ore_tiers_round_trip_through_the_app` /
+  `dw_2_6_a_v10_world_starts_at_the_static_defaults`. Suite 2719 / 0.
+
+Out: the remaining C# sections — signs (no port store), the angler quest state
+(no port fields), the TownManager rooms, the weighted pressure plates (no port
+store), the creative powers/research, the `SaveNPCs` blocks A/C, and the
+bestiary's Sights/Chats sub-blocks — each needs its own scope.
+
+expert duration stays classic until the difficulty modes land.
+
+## The Vortex ritual projectiles (M4-EVENT-17)
+
+The vortex tower's ritual arms (the port's `update_ancient_cultist`'s
+`:39273-39336` machine) throw two markers, both carried by the pool's
+aiStyle-108 machine.
+
+- **579 (the portal)** and **578 (the lightning)** share a 32×32 box with
+  `tileCollide = false` and `ignoreWater`. The marker's timeline
+  (`Projectile.cs:33679-33988`) is `ai[0] <= 50` (the wind-up, dust only),
+  `<= 90` (the charge: `scale = (ai[0] - 50)/40`, `alpha = 255 -
+  255·scale`, `rotation -= π/20`), `<= 120` (the full charge: `scale = 1`,
+  `alpha = 0`, `rotation -= π/60`) and the dissolve (`scale = 1 -
+  (ai[0] - 120)/60`, `alpha = 255 - 255·scale`, `rotation -= π/30`, dying
+  at `alpha >= 255`). The 578's first tick stores the aim rotation
+  (`Player.FindClosest`'s centre → `ai[1]`, the zero fallback `UnitY`).
+- **At the 90th tick** the 578 spawns the **580 VortexLightning** — the aim
+  vector × 8 behind the centre, damage 50 (`:33841`'s call), knockback 1,
+  `ai0 = ai[1]` (the bolt's spin) and `ai1 = rand(80)` (the wand's seed);
+  the 579 spawns **two VortexAliens (427)** at its centre with
+  `-UnitY.RotatedByRandom(2π) * rand(4, 9) - UnitY * 2`.
+- **580 (aiStyle 88, 14×14, `extraUpdates = 4`, `ignoreWater`)** runs the
+  ritual bolt: the `localAI[0] == 0 && ai[0] >= 900` wrap latch
+  (`ai[0] -= 1000`, `localAI[0] = -1`), then the moving arm integrates the
+  velocity and stops it on a solid tile (`:32308`), the stopped arm dies
+  after `extraUpdates * 2` ticks (`:32156-32174`) and the moving arm's
+  wand (`:32195-32249`) draws the per-step lateral jitter with the
+  100-roll rejection (`Y <= -0.02`, `|X| <= 40`) and accumulates
+  `localAI[0]`.
+- The resolution seam: the projectile can't grow the NPC vec, so the 579's
+  aliens ride the M4-EVENT-16 intent (`wants_mark_spawn`, now carrying
+  the (kind, x, y, vx, vy) payload) out to the world_sim's
+  `drain_mark_spawns`; the 580's spawn rides `wants_ritual_bolt`.
+
+Deviations: the dust arms (229/240/5 and the `ai[1] == 1f` burst's 25
+dusts), the sounds and the light are unmodelled; the wand's
+`UnifiedRandom((int)ai[1])` reseed folds into the shared stream; the
+late-stage clone spawn (`:32251-32257`) is unmodelled.

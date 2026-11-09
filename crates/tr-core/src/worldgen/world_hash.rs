@@ -86,6 +86,11 @@ mod tests {
     /// granite step moves after the cave carve (the vanilla order — its
     /// CanPlace gate needs the pre-carved caves). Every world on every seed
     /// changes by design (the ANALYSIS section lands with the branch).
+    /// Re-pinned for the M5-DUNGEON entrance-hall precalculation
+    /// (`MakeDungeon_GenerateNextEntranceHall_Precalculated`): the brick
+    /// shell now rides ±(strength+4) around the surface entrance, so every
+    /// world with a dungeon changes — `SEED42_512` included (the entrance
+    /// tower's shell above the shaft).
     /// `SEED42_512` is UNCHANGED by the phase-4 move: on a 512-wide world
     /// the evil pass runs nothing (the sub-vanilla width gate skips it —
     /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
@@ -161,8 +166,8 @@ mod tests {
     // crawler (`worldgen/dungeon.rs::generate_dungeon`), so the generated
     // worlds carry the crawler's halls/rooms instead of the corridor
     // approximation.
-    const SEED42_512: u32 = 608156777;
-    const DEFAULT_WORLD: u32 = 3295755475;
+    const SEED42_512: u32 = 3541994916;
+    const DEFAULT_WORLD: u32 = 602739768;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

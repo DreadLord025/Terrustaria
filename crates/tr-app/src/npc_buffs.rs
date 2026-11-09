@@ -175,6 +175,22 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // debuff (31).
         NpcKind::Angler => &[31],
         NpcKind::SleepingAngler => &[31],
+        // `NPCID.cs:8254-8308` has no `DebuffImmunitySets` row for 106/
+        // 108/123/124 — the same empty row as the rest of the town set.
+        NpcKind::Wizard => &[],
+        NpcKind::BoundWizard => &[],
+        NpcKind::Mechanic => &[],
+        NpcKind::BoundMechanic => &[],
+        // `NPCID.cs:8143-8148`/`:8604-8610`: the Stylist's, the webbed
+        // Stylist's and the Tax Collector's `SpecificallyImmuneTo` rows —
+        // the Confused debuff (31).
+        NpcKind::Stylist => &[31],
+        NpcKind::WebbedStylist => &[31],
+        NpcKind::TaxCollector => &[31],
+        // `NPCID.cs:6080-6089`: the Golfer's and the sleeping Golfer's
+        // `SpecificallyImmuneTo` rows — the Confused debuff (31).
+        NpcKind::Golfer => &[31],
+        NpcKind::SleepingGolfer => &[31],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],

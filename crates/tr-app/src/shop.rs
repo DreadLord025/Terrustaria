@@ -21,6 +21,22 @@ pub struct ShopFlags {
     pub zone_jungle: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
+    /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
+    /// and mana maxima, the copper purse, the Party Girl's presence, the
+    /// mech bosses and the martian invasion.
+    pub life_max_400: bool,
+    pub mana_max_200: bool,
+    pub coins_over_gold: bool,
+    pub party_girl_present: bool,
+    pub downed_mech_any: bool,
+    pub downed_mech_1: bool,
+    pub downed_mech_2: bool,
+    pub downed_mech_3: bool,
+    pub downed_martians: bool,
+    /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
+    /// Golfer shop's score gates — the port has no golf system yet, so it
+    /// reads 0 until one lands (the gated rows stay hidden).
+    pub golfer_score: i32,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
@@ -37,6 +53,16 @@ impl Default for ShopFlags {
             zone_jungle: false,
             downed_boss2: false,
             downed_boss3: false,
+            life_max_400: false,
+            mana_max_200: false,
+            coins_over_gold: false,
+            party_girl_present: false,
+            downed_mech_any: false,
+            downed_mech_1: false,
+            downed_mech_2: false,
+            downed_mech_3: false,
+            downed_martians: false,
+            golfer_score: 0,
             travel_stock: [0; 40],
         }
     }
@@ -74,6 +100,34 @@ pub enum StockWhen {
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
     MoonPhasePair(u8),
+    /// The ODD moon phases only (`Chest.cs:2085`'s
+    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
+    MoonPhaseOdd,
+    /// `statLifeMax >= 400` (`:2704`) — the Life Hair Dye row.
+    LifeMax400,
+    /// `statManaMax >= 200` (`:2709`) — the Mana Hair Dye row.
+    ManaMax200,
+    /// The purse's copper total ≥ 1,000,000 (`:2743`) — the Money Hair
+    /// Dye row.
+    CoinsOverGold,
+    /// The moon-phase/day parity pair (`:2747`): even phase + day OR odd
+    /// phase + night — the Time Hair Dye row.
+    MoonPhaseDayParity,
+    /// `NPC.AnyNPCs(208)` (`:2762`) — the Party Hair Dye row.
+    PartyGirlPresent,
+    /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
+    DownedMechAll,
+    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
+    DownedMechAny,
+    /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
+    DownedMartians,
+    /// The Golfer shop's painting pair (`Chest.cs:3238-3260`): the score
+    /// `>= 2000` gate AND the moon-phase pair, exactly one of four.
+    GolfPainting(u8),
+    /// The Golfer shop's score tier — the vanilla mixes `>=` and `>` per
+    /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
+    /// `:3233`), so each row names its own threshold + operator.
+    GolfScore(i32, bool),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -237,6 +291,131 @@ pub fn setup_shop(
             row(4437, StockWhen::MoonPhasePair(2)),
             row(4439, StockWhen::MoonPhasePair(3)),
             row(4440, StockWhen::MoonPhasePair(3)),
+        ],
+        // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
+        // hair-dye family — the two always-on rows, the life/mana/money
+        // gates, the moon-phase parity, the hardmode + Party Girl +
+        // mech/martian rows; the multiplayer team dye (1982) and the
+        // graveyard mirror (5577) sit constants-off.
+        18 => vec![
+            row(1990, StockWhen::Always),
+            row(1979, StockWhen::Always),
+            row(1977, StockWhen::LifeMax400),
+            row(1978, StockWhen::ManaMax200),
+            row(1980, StockWhen::CoinsOverGold),
+            row(1981, StockWhen::MoonPhaseDayParity),
+            row(1983, StockWhen::HardMode),
+            row(1984, StockWhen::PartyGirlPresent),
+            row(1985, StockWhen::DownedMechAll),
+            row(1986, StockWhen::DownedMechAny),
+            row(2863, StockWhen::DownedMartians),
+            row(3259, StockWhen::DownedMartians),
+            row(5104, StockWhen::Always),
+        ],
+        // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
+        // magic rows always, the hardmode blood-moon deck (5461) and the
+        // halloween hat (1739) constants-off (the port has neither
+        // season).
+        7 => vec![
+            row(487, StockWhen::Always),
+            row(496, StockWhen::Always),
+            row(500, StockWhen::Always),
+            row(507, StockWhen::Always),
+            row(508, StockWhen::Always),
+            row(531, StockWhen::Always),
+            row(149, StockWhen::Always),
+            row(576, StockWhen::Always),
+            row(3186, StockWhen::Always),
+        ],
+        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
+        // family's rows; the graveyard goggles (4409) constants-off and
+        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
+        // pair (1/3/5/7).
+        8 => vec![
+            row(509, StockWhen::Always),
+            row(850, StockWhen::Always),
+            row(851, StockWhen::Always),
+            row(3612, StockWhen::Always),
+            row(510, StockWhen::Always),
+            row(530, StockWhen::Always),
+            row(513, StockWhen::Always),
+            row(538, StockWhen::Always),
+            row(529, StockWhen::Always),
+            row(541, StockWhen::Always),
+            row(542, StockWhen::Always),
+            row(543, StockWhen::Always),
+            row(852, StockWhen::Always),
+            row(853, StockWhen::Always),
+            row(4261, StockWhen::Always),
+            row(3707, StockWhen::Always),
+            row(2739, StockWhen::Always),
+            row(849, StockWhen::Always),
+            row(1263, StockWhen::Always),
+            row(3616, StockWhen::Always),
+            row(3725, StockWhen::Always),
+            row(2799, StockWhen::Always),
+            row(3619, StockWhen::Always),
+            row(3627, StockWhen::Always),
+            row(3629, StockWhen::Always),
+            row(585, StockWhen::Always),
+            row(584, StockWhen::Always),
+            row(583, StockWhen::Always),
+            row(4484, StockWhen::Always),
+            row(4485, StockWhen::Always),
+            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
+            // port's town count reads the Angler's presence.
+            row(2295, StockWhen::MoonPhaseOdd),
+        ],
+        // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
+        // gear — the clubs, the cup flags, the tees/balls, the signs, the
+        // clothes and the mower are always on; every better club, the
+        // chest, the trophies, the cart and the paintings ride
+        /// `golferScoreAccumulated`'s tiers (and the cart's Skeletron
+        /// gate) — the port carries the score on the ShopFlags so the
+        /// rows stay faithful once the golf system lands.
+        22 => vec![
+            row(4587, StockWhen::Always),
+            row(4590, StockWhen::Always),
+            row(4589, StockWhen::Always),
+            row(4588, StockWhen::Always),
+            row(4083, StockWhen::Always),
+            row(4084, StockWhen::Always),
+            row(4085, StockWhen::Always),
+            row(4086, StockWhen::Always),
+            row(4087, StockWhen::Always),
+            row(4088, StockWhen::Always),
+            row(4039, StockWhen::GolfScore(500, true)),
+            row(4094, StockWhen::GolfScore(500, true)),
+            row(4093, StockWhen::GolfScore(500, true)),
+            row(4092, StockWhen::GolfScore(500, true)),
+            row(4089, StockWhen::Always),
+            row(3989, StockWhen::Always),
+            row(4095, StockWhen::Always),
+            row(4040, StockWhen::Always),
+            row(4319, StockWhen::Always),
+            row(4320, StockWhen::Always),
+            row(4591, StockWhen::GolfScore(1000, false)),
+            row(4594, StockWhen::GolfScore(1000, false)),
+            row(4593, StockWhen::GolfScore(1000, false)),
+            row(4592, StockWhen::GolfScore(1000, false)),
+            row(4135, StockWhen::Always),
+            row(4138, StockWhen::Always),
+            row(4136, StockWhen::Always),
+            row(4137, StockWhen::Always),
+            row(4049, StockWhen::Always),
+            row(4265, StockWhen::GolfScore(500, false)),
+            row(4595, StockWhen::GolfScore(2000, false)),
+            row(4598, StockWhen::GolfScore(2000, false)),
+            row(4597, StockWhen::GolfScore(2000, false)),
+            row(4596, StockWhen::GolfScore(2000, false)),
+            row(4264, StockWhen::DownedBoss3),
+            row(4599, StockWhen::GolfScore(500, false)),
+            row(4600, StockWhen::GolfScore(1000, true)),
+            row(4601, StockWhen::GolfScore(2000, true)),
+            row(4658, StockWhen::GolfPainting(0)),
+            row(4659, StockWhen::GolfPainting(1)),
+            row(4660, StockWhen::GolfPainting(2)),
+            row(4661, StockWhen::GolfPainting(3)),
         ],
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
@@ -862,6 +1041,27 @@ pub fn resolve_stock_moon(
             StockWhen::BloodMoonCorruption => flags.blood_moon,
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
+            StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
+            StockWhen::LifeMax400 => flags.life_max_400,
+            StockWhen::ManaMax200 => flags.mana_max_200,
+            StockWhen::CoinsOverGold => flags.coins_over_gold,
+            StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
+            StockWhen::PartyGirlPresent => flags.party_girl_present,
+            StockWhen::DownedMechAll => {
+                flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
+            }
+            StockWhen::DownedMechAny => flags.hard_mode && flags.downed_mech_any,
+            StockWhen::DownedMartians => flags.hard_mode && flags.downed_martians,
+            StockWhen::GolfPainting(pair) => {
+                flags.golfer_score >= 2000 && moon_phase / 2 == pair as u32
+            }
+            StockWhen::GolfScore(min, inclusive) => {
+                if inclusive {
+                    flags.golfer_score >= min
+                } else {
+                    flags.golfer_score > min
+                }
+            }
         })
         .map(|e| e.item)
         .collect()
@@ -972,9 +1172,10 @@ mod tests {
 
     #[test]
     fn the_unknown_shop_index_is_empty() {
-        // The port carries the Merchant's shop only; the other indexes
-        // land with their NPCs.
-        assert!(resolve_stock(22, &ShopFlags::default(), &[]).is_empty());
+        // The unclaimed indexes carry nothing (the ported ones land with
+        // their NPCs — 1..8, 15..19, 22).
+        assert!(resolve_stock(0, &ShopFlags::default(), &[]).is_empty());
+        assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
     }
 
 

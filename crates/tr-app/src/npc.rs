@@ -469,6 +469,47 @@ pub enum NpcKind {
     /// `Sets.BoundTownNPCs` (`NPCID.cs:10441`): the talk transforms
     /// 376 -> 369 and raises `savedAngler` (`NPC.cs:19853`).
     SleepingAngler,
+    /// `NPCID.Stylist` (353) — the hair-dye seller (`NPC.cs:13488-13501`:
+    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[353]` = 23, `Main.cs:67119`) — the shop index 18
+    /// (`Chest.cs:2698`) — M4-TOWN-17.
+    Stylist,
+    /// `NPCID.WebbedStylist` (354) — the spider-cavern tied Stylist
+    /// (`NPC.cs:13502-13516`: 18x34, scale 0.9, aiStyle 0 the bound stand,
+    /// rarity 1, `npcFrameCount[354]` = 1); the talk transforms 354 → 353.
+    WebbedStylist,
+    /// `NPCID.TaxCollector` (441) — the coin collector (`NPC.cs:14704-14717`:
+    /// the town twin, aiStyle 7; `npcFrameCount[441]` = 25, `Main.cs:67128`)
+    /// — no shop: his tax timer rides the player's coin purse
+    /// (`Main.cs:64994`) — M4-TOWN-17.
+    TaxCollector,
+    /// `NPCID.Golfer` (588) — the golf seller (`NPC.cs:16638-16651`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
+    /// `npcFrameCount[588]` = 25, `Main.cs:67142`) — the shop index 22
+    /// (`Chest.cs:3156`) — M4-TOWN-18.
+    Golfer,
+    /// `NPCID.GolferRescue` (589) — the underground-desert tied Golfer
+    /// (`NPC.cs:16652-16665`: 18x34, aiStyle 0 the bound stand, rarity 1,
+    /// `npcFrameCount[589]` = 13) — `Sets.BoundTownNPCs`
+    /// (`NPCID.cs:10441`); the talk transforms 589 → 588.
+    SleepingGolfer,
+    /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
+    /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
+    Wizard,
+    /// `NPCID.BoundWizard` (106) — the tied Wizard awaiting the rescue
+    /// (`NPC.cs:10257-10270`: 18x40, aiStyle 0 the bound stand, rarity 1,
+    /// `npcFrameCount[106]` = 1) — `Sets.BoundTownNPCs`
+    /// (`NPCID.cs:10441`); the talk transforms 106 → 108.
+    BoundWizard,
+    /// `NPCID.Mechanic` (124) — the wire seller (`NPC.cs:10508-10521`: the
+    /// town twin, aiStyle 7; `npcFrameCount[124]` = 23) — M4-TOWN-16.
+    Mechanic,
+    /// `NPCID.BoundMechanic` (123) — the tied Mechanic awaiting the rescue
+    /// (`NPC.cs:10493-10507`: 18x34, scale 0.9, aiStyle 0, rarity 1,
+    /// `npcFrameCount[123]` = 1) — `Sets.BoundTownNPCs`; the talk
+    /// transforms 123 → 124.
+    BoundMechanic,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
@@ -958,6 +999,15 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
+            NpcKind::Wizard => 156,
+            NpcKind::BoundWizard => 157,
+            NpcKind::Mechanic => 158,
+            NpcKind::BoundMechanic => 159,
+            NpcKind::Stylist => 160,
+            NpcKind::WebbedStylist => 161,
+            NpcKind::TaxCollector => 162,
+            NpcKind::Golfer => 163,
+            NpcKind::SleepingGolfer => 164,
         }
     }
 
@@ -1137,6 +1187,15 @@ NpcKind::SolarSelenian => 140,
             111 => NpcKind::TravellingMerchant,
             150 => NpcKind::Angler,
             151 => NpcKind::SleepingAngler,
+            156 => NpcKind::Wizard,
+            157 => NpcKind::BoundWizard,
+            158 => NpcKind::Mechanic,
+            159 => NpcKind::BoundMechanic,
+            160 => NpcKind::Stylist,
+            161 => NpcKind::WebbedStylist,
+            162 => NpcKind::TaxCollector,
+            163 => NpcKind::Golfer,
+            164 => NpcKind::SleepingGolfer,
             _ => return None,
         })
     }
@@ -1162,6 +1221,11 @@ NpcKind::SolarSelenian => 140,
                 | NpcKind::GoblinTinkerer
                 | NpcKind::TravellingMerchant
                 | NpcKind::Angler
+                | NpcKind::Wizard
+                | NpcKind::Mechanic
+                | NpcKind::Stylist
+                | NpcKind::TaxCollector
+                | NpcKind::Golfer
         )
     }
 
@@ -1279,6 +1343,15 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => (18.0, 40.0),
             NpcKind::Angler => (18.0, 40.0),
             NpcKind::SleepingAngler => (34.0, 8.0),
+            NpcKind::Wizard => (18.0, 40.0),
+            NpcKind::BoundWizard => (18.0, 40.0),
+            NpcKind::Mechanic => (18.0, 40.0),
+            NpcKind::BoundMechanic => (18.0, 34.0),
+            NpcKind::Stylist => (18.0, 40.0),
+            NpcKind::WebbedStylist => (18.0, 34.0),
+            NpcKind::TaxCollector => (18.0, 40.0),
+            NpcKind::Golfer => (18.0, 40.0),
+            NpcKind::SleepingGolfer => (18.0, 34.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
@@ -1509,6 +1582,15 @@ NpcKind::SolarSelenian => 140,
             NpcKind::TravellingMerchant => 368,
             NpcKind::Angler => 369,
             NpcKind::SleepingAngler => 376,
+            NpcKind::Wizard => 108,
+            NpcKind::BoundWizard => 106,
+            NpcKind::Mechanic => 124,
+            NpcKind::BoundMechanic => 123,
+            NpcKind::Stylist => 353,
+            NpcKind::WebbedStylist => 354,
+            NpcKind::TaxCollector => 441,
+            NpcKind::Golfer => 588,
+            NpcKind::SleepingGolfer => 589,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 77,
@@ -1634,6 +1716,15 @@ NpcKind::SolarSelenian => 140,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
             NpcKind::Angler => 250,
+            NpcKind::Wizard => 250,
+            NpcKind::BoundWizard => 250,
+            NpcKind::Mechanic => 250,
+            NpcKind::Stylist => 250,
+            NpcKind::WebbedStylist => 250,
+            NpcKind::Golfer => 250,
+            NpcKind::SleepingGolfer => 250,
+            NpcKind::TaxCollector => 250,
+            NpcKind::BoundMechanic => 250,
             NpcKind::SleepingAngler => 250,
             NpcKind::TravellingMerchant => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
@@ -1854,6 +1945,15 @@ NpcKind::SolarSelenian => 140,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
             NpcKind::Angler => 10,
+            NpcKind::Wizard => 10,
+            NpcKind::BoundWizard => 10,
+            NpcKind::Mechanic => 10,
+            NpcKind::Stylist => 10,
+            NpcKind::WebbedStylist => 10,
+            NpcKind::Golfer => 10,
+            NpcKind::SleepingGolfer => 10,
+            NpcKind::TaxCollector => 10,
+            NpcKind::BoundMechanic => 10,
             NpcKind::SleepingAngler => 10,
             NpcKind::TravellingMerchant => 10,
             NpcKind::EyeOfCthulhu => 15,
@@ -2119,8 +2219,14 @@ pub struct Npc {
     pub wants_minion_batch: u32,
     /// The town NPC's assigned home tile (`homeTileX/Y`); `None` =
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
-    /// world-file persistence lands with M6-SAVE-1's NPC sections.
+    /// world-file persistence lands with M6-SAVE-1's NPC sections
+    /// (M6-SAVE-1e).
     pub home: Option<(i32, i32)>,
+    /// `NPC.GivenName` (`NPC.cs:6497`): the town NPC's display name —
+    /// empty carries the kind's static name, exactly the vanilla's
+    /// "give it a name at the first world-file save" convention. The
+    /// world-file persistence rides M6-SAVE-1's NPC section.
+    pub given_name: String,
     /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
     /// 100/200/300 shot triggers, the 650 teleport threshold).
     pub caster_counter: i32,
@@ -2649,6 +2755,7 @@ impl Npc {
             y,
             vx: 0.0,
             vy: 0.0,
+            given_name: String::new(),
             hp: kind.max_hp(),
             max_hp: kind.max_hp(),
             on_ground: false,
@@ -2947,6 +3054,15 @@ impl Npc {
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
             NpcKind::Angler => 0.5,
+            NpcKind::Wizard => 0.5,
+            NpcKind::BoundWizard => 0.5,
+            NpcKind::Mechanic => 0.5,
+            NpcKind::Stylist => 0.5,
+            NpcKind::WebbedStylist => 0.5,
+            NpcKind::Golfer => 0.5,
+            NpcKind::SleepingGolfer => 0.5,
+            NpcKind::TaxCollector => 0.5,
+            NpcKind::BoundMechanic => 0.5,
             NpcKind::SleepingAngler => 0.5,
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
@@ -3183,6 +3299,15 @@ impl Npc {
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
             NpcKind::Angler => 15,
+            NpcKind::Wizard => 15,
+            NpcKind::BoundWizard => 15,
+            NpcKind::Mechanic => 15,
+            NpcKind::Stylist => 15,
+            NpcKind::WebbedStylist => 15,
+            NpcKind::Golfer => 15,
+            NpcKind::SleepingGolfer => 15,
+            NpcKind::TaxCollector => 15,
+            NpcKind::BoundMechanic => 15,
             NpcKind::SleepingAngler => 15,
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
@@ -3419,6 +3544,15 @@ impl Npc {
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
             NpcKind::Angler => 0.0,
+            NpcKind::Wizard => 0.0,
+            NpcKind::BoundWizard => 0.0,
+            NpcKind::Mechanic => 0.0,
+            NpcKind::Stylist => 0.0,
+            NpcKind::WebbedStylist => 0.0,
+            NpcKind::Golfer => 0.0,
+            NpcKind::SleepingGolfer => 0.0,
+            NpcKind::TaxCollector => 0.0,
+            NpcKind::BoundMechanic => 0.0,
             NpcKind::SleepingAngler => 0.0,
             NpcKind::TravellingMerchant => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
@@ -3573,6 +3707,11 @@ impl Npc {
             | NpcKind::Clothier
             | NpcKind::TravellingMerchant
             | NpcKind::Angler
+            | NpcKind::Wizard
+            | NpcKind::Mechanic
+            | NpcKind::Stylist
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
@@ -3593,6 +3732,10 @@ impl Npc {
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
             NpcKind::SleepingAngler => {}
+            NpcKind::BoundWizard => {}
+            NpcKind::BoundMechanic => {}
+            NpcKind::WebbedStylist => {}
+            NpcKind::SleepingGolfer => {}
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
                 self.update_goblin(world, player)
             }
@@ -3876,6 +4019,30 @@ impl Npc {
         }
     }
 
+    /// The shared `case 266`/`case 262` machine (the Brain of Cthulhu and
+    /// Plantera, `NPC.cs`'s two identical arms): the frame advances every
+    /// 6 ticks; `first_phase` (the shield-down / above-half-life gate) wraps
+    /// the strip at row 3, otherwise the rows clamp into 4..7.
+    fn phase_frame(&mut self, first_phase: bool) {
+        self.frame_counter += 1.0;
+        if self.frame_counter > 6.0 {
+            self.frame_counter = 0.0;
+            self.frame += 1;
+        }
+        if first_phase {
+            if self.frame > 3 {
+                self.frame = 0;
+            }
+        } else {
+            if self.frame < 4 {
+                self.frame = 4;
+            }
+            if self.frame > 7 {
+                self.frame = 4;
+            }
+        }
+    }
+
     /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
     /// frame height unit) cancels out because frames are tracked as row indices;
     /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
@@ -3898,6 +4065,12 @@ impl Npc {
                 // for type 36 — the strip is one frame).
                 self.frame = 0;
             }
+            // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
+            // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
+            // own — the shared town body's rows stand.
+            NpcKind::Wizard | NpcKind::Mechanic => {}
+            NpcKind::Stylist | NpcKind::TaxCollector => {}
+            NpcKind::Golfer => {}
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -4474,15 +4647,27 @@ impl Npc {
             // counter ticks with the motion class, the frame wraps over the
             // 6-frame (the eye) / 2-frame (the servant) strip.
             NpcKind::EyeOfCthulhu => {
-                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
-                if self.frame_counter >= 8.0 {
+                // `case 4/125/126` (`NPC.cs:76905-76926`): the EoC SHARES
+                // the Twins' machine — the 20-tick counter walks the bands
+                // rows 0/1/2 and the `ai[0] > 1` phase offset lifts them to
+                // the 3/4/5 rows (the v1 ran an 8-tick strip over all six
+                // rows and claimed a "pupil blink", which the C# has no arm
+                // for). `num2` never enters this case.
+                self.frame_counter += 1.0;
+                let mut row = if self.frame_counter < 7.0 {
+                    0
+                } else if self.frame_counter < 14.0 {
+                    1
+                } else if self.frame_counter < 21.0 {
+                    2
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 6 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    0
+                };
+                if self.ai[0] > 1.0 {
+                    row += 3;
                 }
+                self.frame = row;
             }
             NpcKind::ServantOfCthulhu => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
@@ -4821,23 +5006,33 @@ impl Npc {
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
-            NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
-                // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
+            NpcKind::Creeper => {
+                // `Main.npcFrameCount[267]` = 1 (`Main.cs:67082`): the
+                // single 34x34 frame (the v1's "30x30" was the box, not
+                // the sheet).
+                self.frame = 0;
+            }
+            // `case 266` (the Brain) and `case 262` (Plantera) share one
+            // shape: the 6-tick advance over the 8-row strip
+            // (`Main.npcFrameCount[266]` = [262] = 8, `Main.cs:67082` —
+            // the v1 pinned the Brain to row 0 claiming 1 and ran a blind
+            // 5-row strip over Plantera claiming 5), the first-four rows
+            // above the half-life gate and the 4..7 rows below it.
+            NpcKind::BrainOfCthulhu => {
+                // The C#'s gate is `ai[0] >= 0 && localAI[2] == 0` — the
+                // creeper-shield count, which the port's brain machine does
+                // not model, so the port reads `ai[0] >= 0` alone: the
+                // shield-down rows 0..3 always ride (the shielded 4..7 rows
+                // are the documented follow-up).
+                self.phase_frame(self.ai[0] >= 0.0);
             }
             NpcKind::Plantera => {
-                // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 5 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
-                }
+                // The C#'s gate is `life > lifeMax / 2` (`:262`'s arm).
+                self.phase_frame(self.hp > self.max_hp / 2);
             }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
-                // `case 125/126` (`NPC.cs:76906-76924`): the Twins' sheets
+                // `case 125/126` (`NPC.cs:76905-76926`, shared with the
+                // EoC's `case 4`): the Twins' sheets
                 // are 6 rows of 200 (`Main.npcFrameCount[125/126]` = 6,
                 // `Main.cs:67082` — the v1's comment claimed 2 and ran an
                 // 8-tick strip over rows 0/1), laid out as the two 3-row
@@ -4903,15 +5098,26 @@ impl Npc {
                 // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
             }
             NpcKind::QueenBee => {
-                // `Main.npcFrameCount[222]` = 2 (`Main.cs:67082`).
+                // `case 222` (`NPC.cs`): NPC_222's strip is TWELVE rows
+                // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082` — the
+                // v1 claimed 2 and ran an 8-tick strip over both), laid
+                // out as the charging rows 0..3 and the flight rows
+                // 4..11. The 5-tick cadence rides both halves; the
+                // `localAI[0] == 1` gate that selects the charging half is
+                // an angle slot in the C# (the queen's orbit rotation),
+                // which the port does not model — so the flight rows
+                // 4..11 always ride, exactly as they do in the vanilla
+                // where the angle is never exactly 1.
                 self.frame_counter += 1.0;
-                if self.frame_counter >= 8.0 {
+                if self.frame_counter > 4.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 {
-                        0
-                    } else {
-                        self.frame + 1
-                    };
+                    self.frame += 1;
+                }
+                if self.frame < 4 {
+                    self.frame = 4;
+                }
+                if self.frame >= 12 {
+                    self.frame = 4;
                 }
             }
             NpcKind::EyeOfCthulhu => {
@@ -4938,6 +5144,17 @@ impl Npc {
                 // default arm — rows 2..count-1).
                 self.humanoid_town_frame();
             }
+            // The bound Wizard/Mechanic: `Main.npcFrameCount` 106/123 = 1
+            // (`Main.cs:67094`/`:67096`) and `FindFrame` has no case for
+            // them — one row, the still stand.
+            NpcKind::BoundWizard | NpcKind::BoundMechanic => {}
+            // The webbed Stylist: `Main.npcFrameCount[354]` = 1
+            // (`Main.cs:67119`) and no `FindFrame` case — one row.
+            NpcKind::WebbedStylist => {}
+            // The sleeping Golfer: `Main.npcFrameCount[589]` = 13
+            // (`Main.cs:67142`) and `FindFrame` has no case for the bound
+            // form — the still stand's row stands.
+            NpcKind::SleepingGolfer => {}
             NpcKind::SleepingAngler => {
                 // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
                 // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
@@ -11041,6 +11258,13 @@ impl Npc {
                     | NpcKind::TravellingMerchant
                     | NpcKind::Angler
                     | NpcKind::SleepingAngler
+                    | NpcKind::Wizard
+                    | NpcKind::BoundWizard
+                    | NpcKind::Mechanic
+                    | NpcKind::BoundMechanic
+                    | NpcKind::Stylist
+                    | NpcKind::WebbedStylist
+                    | NpcKind::TaxCollector
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
@@ -11103,6 +11327,15 @@ impl Npc {
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
+            NpcKind::Wizard => 156,
+            NpcKind::BoundWizard => 157,
+            NpcKind::Mechanic => 158,
+            NpcKind::BoundMechanic => 159,
+            NpcKind::Stylist => 160,
+            NpcKind::WebbedStylist => 161,
+            NpcKind::TaxCollector => 162,
+            NpcKind::Golfer => 163,
+            NpcKind::SleepingGolfer => 164,
             NpcKind::DemonEye => 1,
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
@@ -13528,6 +13761,286 @@ mod tests {
     /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
     /// two rows flip once past 30 ticks and wrap — the headless twin of the
     /// screenshot pair (the port's draw rides the same rows).
+
+
+
+    #[test]
+    fn the_golfer_kinds_stats_roundtrip_and_shop() {
+        // `SetDefaults` 588 (`NPC.cs:16638-16651`) and 589 (`:16652-16665`):
+        // the town twin's numbers on both, the sleeping body's 18x34, the
+        // kind<->u16 round-trips, the Golfer's shop (`NPCInteractions.cs:509`'s
+        // `Shop(588, 22)`), the town flag (589 is `Sets.BoundTownNPCs`,
+        // `NPCID.cs:10441`) and the bestiary row.
+        for (kind, id) in [
+            (NpcKind::Golfer, 588u16),
+            (NpcKind::SleepingGolfer, 589),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+        }
+        assert_eq!(NpcKind::Golfer.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::SleepingGolfer.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(NpcKind::Golfer.to_u16(), 163);
+        assert_eq!(NpcKind::from_u16(163), Some(NpcKind::Golfer));
+        assert_eq!(NpcKind::SleepingGolfer.to_u16(), 164);
+        assert_eq!(NpcKind::from_u16(164), Some(NpcKind::SleepingGolfer));
+        assert!(NpcKind::Golfer.is_town_resident());
+        assert!(!NpcKind::SleepingGolfer.is_town_resident());
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Golfer),
+            Some(22)
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Golfer, SlimeVariant::Blue).net_id, 588);
+    }
+
+    /// `Chest.SetupShop`'s case 22 (`Chest.cs:3156-3262`): the Golfer's always
+    /// rows and the score-gated tiers — the vanilla mixes `>=` and `>` per row
+    /// (`:3169` vs `:3186`), which the port's `StockWhen::GolfScore` carries.
+    #[test]
+    fn the_golfer_shop_scores_its_clubs_and_trophies() {
+        let base = crate::shop::resolve_stock(22, &crate::shop::ShopFlags::default(), &[]);
+        for id in [
+            4587, 4590, 4589, 4588, 4083, 4084, 4085, 4086, 4087, 4088, 4089, 3989, 4095, 4040, 4319,
+            4320, 4135, 4138, 4136, 4137, 4049,
+        ] {
+            assert!(base.contains(&id), "the always row {id}");
+        }
+        for id in [4039, 4591, 4265, 4601, 4264, 4658] {
+            assert!(!base.contains(&id), "the gated {id} stays off at score 0");
+        }
+        let mid = crate::shop::ShopFlags {
+            golfer_score: 600,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(22, &mid, &[]);
+        assert!(rows.contains(&4039), "the iron set at >= 500");
+        assert!(rows.contains(&4265), "the golf chest at > 500");
+        assert!(rows.contains(&4599), "the bronze trophy at > 500");
+        assert!(!rows.contains(&4591), "no mythril set under 1000");
+        assert!(!rows.contains(&4600), "no silver trophy under 1000");
+        let high = crate::shop::ShopFlags {
+            golfer_score: 1500,
+            ..Default::default()
+        };
+        let rows = crate::shop::resolve_stock(22, &high, &[]);
+        assert!(rows.contains(&4591), "the mythril set at > 1000");
+        assert!(!rows.contains(&4595), "no titanium set under 2000");
+        let master = crate::shop::ShopFlags {
+            golfer_score: 2500,
+            ..Default::default()
+        };
+        let phase1 = crate::shop::resolve_stock_moon(22, &master, &[], 1);
+        assert!(phase1.contains(&4658), "the phase-1 painting");
+        assert!(!phase1.contains(&4659), "not the phase-3 painting");
+        let phase3 = crate::shop::resolve_stock_moon(22, &master, &[], 3);
+        assert!(phase3.contains(&4659), "the phase-3 painting");
+    }
+
+    #[test]
+    fn the_stylist_and_tax_collector_kinds_stats_roundtrip_and_shops() {
+        // `SetDefaults` 353 (`NPC.cs:13488-13501`), 354 (`:13502-13516`) and
+        // 441 (`:14704-14717`): the town twin's numbers on all three, the
+        // webbed body's 18x34, the kind<->u16 round-trips, the Stylist's shop
+        // (`NPCInteractions.cs:505`'s `Shop(353, 18)`) and the Tax
+        // Collector's absence (no `Shop(441, ...)` row at all), the town flag
+        // (the webbed Stylist is a bound NPC).
+        for (kind, id) in [
+            (NpcKind::Stylist, 353u16),
+            (NpcKind::WebbedStylist, 354),
+            (NpcKind::TaxCollector, 441),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+        }
+        assert_eq!(NpcKind::Stylist.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::WebbedStylist.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(NpcKind::TaxCollector.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::Stylist.to_u16(), 160);
+        assert_eq!(NpcKind::from_u16(160), Some(NpcKind::Stylist));
+        assert_eq!(NpcKind::WebbedStylist.to_u16(), 161);
+        assert_eq!(NpcKind::from_u16(161), Some(NpcKind::WebbedStylist));
+        assert_eq!(NpcKind::TaxCollector.to_u16(), 162);
+        assert_eq!(NpcKind::from_u16(162), Some(NpcKind::TaxCollector));
+        assert!(NpcKind::Stylist.is_town_resident());
+        assert!(NpcKind::TaxCollector.is_town_resident());
+        assert!(!NpcKind::WebbedStylist.is_town_resident());
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Stylist),
+            Some(18)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::TaxCollector),
+            None,
+            "the Tax Collector sells nothing"
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Stylist, SlimeVariant::Blue).net_id, 353);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::TaxCollector, SlimeVariant::Blue).net_id,
+            441
+        );
+    }
+
+    /// `Chest.SetupShop`'s case 18 (`Chest.cs:2698-2790`): the Stylist's
+    /// hair-dye rows and their gates.
+    #[test]
+    fn the_stylist_shop_carries_the_dye_rows_and_gates() {
+        let flags = crate::shop::ShopFlags {
+            life_max_400: true,
+            mana_max_200: true,
+            coins_over_gold: true,
+            party_girl_present: true,
+            downed_mech_1: true,
+            downed_mech_2: true,
+            downed_mech_3: true,
+            downed_mech_any: true,
+            downed_martians: true,
+            hard_mode: true,
+            ..Default::default()
+        };
+        let stock = crate::shop::resolve_stock(18, &flags, &[]);
+        for id in [1990, 1979, 1977, 1978, 1980, 1983, 1984, 1985, 1986, 2863, 3259, 5104] {
+            assert!(stock.contains(&id), "the {id} dye row");
+        }
+        // The moon-phase parity row: even phase + day, odd phase + night.
+        let day_even = crate::shop::resolve_stock_moon(
+            18,
+            &crate::shop::ShopFlags {
+                night: false,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert!(day_even.contains(&1981), "even phase by day");
+        let night_even = crate::shop::resolve_stock_moon(
+            18,
+            &crate::shop::ShopFlags {
+                night: true,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert!(!night_even.contains(&1981), "no even-phase row by night");
+        let night_odd = crate::shop::resolve_stock_moon(
+            18,
+            &crate::shop::ShopFlags {
+                night: true,
+                ..Default::default()
+            },
+            &[],
+            1,
+        );
+        assert!(night_odd.contains(&1981), "odd phase by night");
+    }
+
+    #[test]
+    fn the_wizard_and_mechanic_kinds_stats_roundtrip_and_shops() {
+        // `SetDefaults` 108 (`NPC.cs:10285-10298`), 106 (`:10257-10270`),
+        // 124 (`:10508-10521`) and 123 (`:10493-10507`): the town twin's
+        // numbers on all four, the bound Mechanic's shorter 18x34 body, the
+        // kind<->u16 round-trips, the shops (`NPCInteractions.cs:494-495`'s
+        // `Shop(108, 7)`/`Shop(124, 8)`) and the town flag (the bound forms
+        // are NOT town NPCs — `Sets.BoundTownNPCs`, `NPCID.cs:10441`).
+        for (kind, id) in [
+            (NpcKind::Wizard, 108u16),
+            (NpcKind::BoundWizard, 106),
+            (NpcKind::Mechanic, 124),
+            (NpcKind::BoundMechanic, 123),
+        ] {
+            assert_eq!(kind.max_hp(), 250, "{kind:?}");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?}");
+            assert_eq!(kind.cs_id(), id, "{kind:?}");
+        }
+        assert_eq!(NpcKind::Wizard.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::BoundWizard.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::Mechanic.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::BoundMechanic.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(NpcKind::Wizard.to_u16(), 156);
+        assert_eq!(NpcKind::from_u16(156), Some(NpcKind::Wizard));
+        assert_eq!(NpcKind::BoundWizard.to_u16(), 157);
+        assert_eq!(NpcKind::from_u16(157), Some(NpcKind::BoundWizard));
+        assert_eq!(NpcKind::Mechanic.to_u16(), 158);
+        assert_eq!(NpcKind::from_u16(158), Some(NpcKind::Mechanic));
+        assert_eq!(NpcKind::BoundMechanic.to_u16(), 159);
+        assert_eq!(NpcKind::from_u16(159), Some(NpcKind::BoundMechanic));
+        assert!(NpcKind::Wizard.is_town_resident());
+        assert!(NpcKind::Mechanic.is_town_resident());
+        assert!(!NpcKind::BoundWizard.is_town_resident());
+        assert!(!NpcKind::BoundMechanic.is_town_resident());
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Wizard),
+            Some(7)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Mechanic),
+            Some(8)
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Wizard, SlimeVariant::Blue).net_id, 108);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Mechanic, SlimeVariant::Blue).net_id,
+            124
+        );
+    }
+
+    /// `Chest.SetupShop`'s case 7 (`Chest.cs:2004-2032`): the Wizard's nine
+    /// magic rows always on; the hardmode blood-moon and halloween rows sit
+    /// constants-off.
+    #[test]
+    fn the_wizard_shop_carries_the_magic_rows() {
+        let stock = crate::shop::resolve_stock(7, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(
+            stock,
+            vec![487, 496, 500, 507, 508, 531, 149, 576, 3186],
+            "the nine base rows"
+        );
+        assert!(!stock.contains(&5461), "the hardmode blood-moon deck is off");
+        assert!(!stock.contains(&1739), "the halloween hat is off");
+        let empty = crate::shop::resolve_stock(
+            7,
+            &crate::shop::ShopFlags {
+                blood_moon: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(empty, stock, "the flags do not add the off rows");
+    }
+
+    /// `Chest.SetupShop`'s case 8 (`Chest.cs:2033-2090`): the wire family's
+    /// 30 rows and the Mechanic's Rod (2295) behind the moon-phase pair.
+    #[test]
+    fn the_mechanic_shop_carries_the_wire_rows_and_the_rod() {
+        let stock = crate::shop::resolve_stock(8, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(stock.len(), 30, "the base wire rows: {stock:?}");
+        // The Rod rides the ODD phases (`:2085`'s 1/3/5/7), so phase 0 hides
+        // it and phase 1 shows it.
+        for id in [509, 850, 510, 530, 513, 849, 1263, 583, 4484, 4485] {
+            assert!(stock.contains(&id), "the {id} wire row");
+        }
+        // The Rod rides the even moon phase (1/3/5/7 in the C#), so phase 0
+        // (the pair's mid) shows it and phase 2 hides it.
+        assert!(!stock.contains(&2295), "no Rod at moonPhase 0");
+        let phase1 = crate::shop::resolve_stock_moon(
+            8,
+            &crate::shop::ShopFlags::default(),
+            &[],
+            1,
+        );
+        let phase4 = crate::shop::resolve_stock_moon(
+            8,
+            &crate::shop::ShopFlags::default(),
+            &[],
+            4,
+        );
+        assert!(phase1.contains(&2295), "the Rod at moonPhase 1");
+        assert!(!phase4.contains(&2295), "no Rod at moonPhase 5");
+        // The graveyard goggles sit constants-off.
+        assert!(!stock.contains(&4409));
+    }
+
     #[test]
     fn the_sleeping_angler_frame_flips_on_thirty_ticks() {
         let w = ground();
@@ -14709,6 +15222,128 @@ mod tests {
         assert_eq!(NpcKind::VortexTower.to_u16(), 146);
         assert_eq!(NpcKind::SolarTower.to_u16(), 115);
     }
+
+    #[test]
+    fn the_eye_of_cthulhu_shares_the_twins_twenty_tick_beat() {
+        // `case 4/125/126` (`NPC.cs:76905-76926`): the Eye of Cthulhu rides
+        // the Twins' machine — the 20-tick counter walks the bands rows
+        // 0/1/2 and the `ai[0] > 1` phase lifts them to 3/4/5. The v1 ran
+        // an 8-tick strip over all six rows (the "pupil blink" the C# has
+        // no arm for).
+        let mut e = bare(NpcKind::EyeOfCthulhu);
+        for _ in 0..6 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 0, "the first band holds row 0");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 1, "the second band advances to row 1");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 2, "the third band advances to row 2");
+        e.find_frame();
+        assert_eq!((e.frame, e.frame_counter), (0, 0.0), "the 21st tick wraps");
+        // The phase-2 rows (`ai[0] > 1`).
+        e.ai[0] = 2.0;
+        for _ in 0..6 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 3, "the phase-2 beat rides rows 3/4/5");
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 4);
+        for _ in 0..7 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 5);
+        e.find_frame();
+        assert_eq!(e.frame, 3, "and wraps 5 -> 3");
+    }
+
+    #[test]
+    fn the_plantera_and_the_brain_share_the_eight_row_phase_machine() {
+        // `case 262` (Plantera) and `case 266` (the Brain) are the same
+        // shape (`NPC.cs`): the 6-tick advance over the 8-row strips
+        // (`Main.npcFrameCount[262]` = [266] = 8, `Main.cs:67082`), the
+        // first phase wrapping at row 3 and the second clamping into
+        // 4..7.
+        let mut p = bare(NpcKind::Plantera);
+        p.hp = p.max_hp; // above the half life
+        for _ in 0..6 {
+            p.find_frame();
+        }
+        assert_eq!(p.frame, 0, "6 ticks hold row 0");
+        p.find_frame();
+        assert_eq!(p.frame, 1, "the 7th tick advances");
+        // The advance fires every 7 ticks (the counter's `> 6`), so the
+        // 0-1-2-3 cycle closes after 28.
+        for _ in 0..21 {
+            p.find_frame();
+        }
+        assert_eq!(p.frame, 0, "the first phase wraps at row 3");
+        // Below the half life: the rows clamp into 4..7.
+        p.hp = p.max_hp / 4;
+        for _ in 0..14 {
+            p.find_frame();
+        }
+        assert!((4..=7).contains(&p.frame), "the second phase rides 4..7: {}", p.frame);
+        // The Brain rides the same machine through its shield-down gate
+        // (the creeper-shield count is unmodelled — the documented
+        // follow-up), so it always shows the first-phase rows.
+        let mut b = bare(NpcKind::BrainOfCthulhu);
+        b.max_hp = b.hp;
+        for _ in 0..40 {
+            b.find_frame();
+            assert!(b.frame <= 3, "the Brain's first phase wraps at 3: {}", b.frame);
+        }
+        // The Creeper's single frame never moves.
+        let mut c = bare(NpcKind::Creeper);
+        c.frame = 3;
+        for _ in 0..10 {
+            c.find_frame();
+            assert_eq!(c.frame, 0, "the Creeper's one frame");
+        }
+    }
+
+    #[test]
+    fn the_queen_bee_rides_its_flight_rows_over_the_twelve_row_strip() {
+        // `case 222` (`NPC.cs`): NPC_222's strip is TWELVE rows
+        // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082` — the v1
+        // claimed 2 and ran an 8-tick strip over both), laid out as the
+        // charging rows 0..3 and the flight rows 4..11, both at the 5-tick
+        // cadence with the flight half wrapping back to 4.
+        let mut q = bare(NpcKind::QueenBee);
+        q.frame = 4;
+        for _ in 0..4 {
+            q.find_frame();
+        }
+        assert_eq!(q.frame, 4, "4 ticks hold row 4");
+        q.find_frame();
+        assert_eq!(q.frame, 5, "the 5th tick advances");
+        // Walk the flight half to the wrap: 4 → 5 → … → 11 → 4 (each
+        // advance is a 5-tick step).
+        let mut steps = 0;
+        while q.frame != 11 {
+            q.find_frame();
+            assert!((4..12).contains(&q.frame), "the flight band rides 4..11: {}", q.frame);
+            steps += 1;
+            assert!(steps < 50, "the band must climb to 11");
+        }
+        // The wrap itself needs another 5-tick step: 11 → 12 → clamped 4.
+        for _ in 0..5 {
+            q.find_frame();
+        }
+        assert_eq!(q.frame, 4, "the flight band wraps back to 4");
+        // The charging rows 0..3 stay unreachable while the port does not
+        // model the `localAI[0] == 1` gate (an angle slot in the C#), so
+        // the row is always clamped into the flight half.
+        q.frame = 0;
+        q.find_frame();
+        assert!(q.frame >= 4, "the flight half always rides: {}", q.frame);
+    }
 }
 
 #[cfg(test)]
@@ -14731,6 +15366,12 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
+
+
+
+
 
 
 
