@@ -217,6 +217,9 @@ pub struct Player {
     /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
     /// milestone switch, `Player.cs:56323`).
     pub angler_quests_finished: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`): the golf score
+    /// the Golfer's shop and chatter tier (`Chest.cs:3158`, `NPC.cs:94792`).
+    pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
     /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
@@ -696,6 +699,7 @@ impl Player {
             dead: false,
             deaths_pve: 0,
             angler_quests_finished: 0,
+            golfer_score: 0,
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
