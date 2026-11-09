@@ -158,6 +158,49 @@ impl DungeonCycle {
     }
 }
 
+/// `WorldGen.GetNextJungleChestItem` (`WorldGen.cs:10170-10196`): the jungle
+/// chests' main item — the `GenVars.JungleItemCount % 4` cycle over the
+/// living-wood wand family {211, 212, 213, 964} with the two rare overrides
+/// (`Next(15) == 0` → 2292, else `Next(20) == 0` → 3017), the counter
+/// advancing once per item (`:10196`).
+///
+/// The counter's walk is the port's approximation: vanilla's
+/// `JungleItemCount` advances once per *attempted* shrine chest, in the
+/// `GenVars.JChestX[i]` spot order (`ChestsInJungleShrines` `WorldGen.cs:17219`),
+/// while the port's load-time sweep advances it once per stocked jungle
+/// anchor, in the scan order — the same per-world counter semantics
+/// (deterministic across loads), a different order (ANALYSIS "World chest
+/// loot (M5-CHEST-gen)"). The `Prefix(-1)` on the row rides the caller, the
+/// vanilla slot-0 arm's `chest.item[0].Prefix(-1)` (`:36230`).
+struct JungleCycle {
+    count: u32,
+}
+
+impl JungleCycle {
+    fn new() -> Self {
+        Self { count: 0 }
+    }
+
+    /// The next main item. The vanilla draw order is exact: the cycle pick
+    /// is branch-free, the `Next(15)` gate rolls first and the `Next(20)`
+    /// gate only rolls on its else (`:10186-10194`).
+    fn take(&mut self, rng: &mut u64) -> u16 {
+        let mut item = match self.count % 4 {
+            0 => 211,
+            1 => 212,
+            2 => 213,
+            _ => 964,
+        };
+        if next(rng, 15) == 0 {
+            item = 2292;
+        } else if next(rng, 20) == 0 {
+            item = 3017;
+        }
+        self.count += 1;
+        item
+    }
+}
+
 /// The per-chest context the style dispatcher reads (`flag*` arms of
 /// `:36010-36205`): the jungle/mahogany/skyware/idol/dungeon flags
 /// approximated by the anchors' surroundings.
@@ -668,33 +711,42 @@ fn ore_pick() -> u16 {
 
 /// One anchored chest's stock decided by its surroundings: the fixed
 /// special slot (`GetDungeonLootAndChestStyle`'s dungeon cycle, the
-/// underwater override 939), then the depth band rows.
+/// `GetNextJungleChestItem` cycle, the underwater override 939), then the
+/// depth band rows.
 fn stock_chest(
     world: &World,
     x: i32,
     y: i32,
     hell: bool,
     dungeon: &mut DungeonCycle,
+    jungle: &mut JungleCycle,
     rng: &mut u64,
 ) -> Vec<Row> {
     let ctx = context_at(world, x, y);
     let band = band_for(y, world.world_surface, world.rock_layer as f64, world.height);
     let mut rows = stock_band(band, &ctx, rng);
-    if !ctx.dungeon {
-        // The non-dungeon natural chests carry no fixed special slot in
-        // this port slice (the vanilla num10 assignment rides the
-        // placement-style dispatcher [7]); the underwater/water-style
-        // chests carry the 939 override.
-        if ctx.water {
-            rows.insert(0, Row::plain(UNDERWATER_ITEM));
-        }
-    } else {
+    if ctx.dungeon {
         // The dungeon-family chests cycle the fixed loot item
         // (`DungeonUtils.cs:342-355`); the shallow caves roll the plain
         // `num10 == 0` skip.
         if let Some(item) = dungeon.take(hell) {
             rows.insert(0, Row::plain(item.0));
         }
+    } else if ctx.jungle {
+        // The jungle family's main item — the `GetNextJungleChestItem`
+        // cycle replaces the band-weapon approximation on slot 0. The
+        // vanilla water override only fires on `num10 == 0`
+        // (`:36201-36203`), so the cycle wins over it wherever both
+        // families read true.
+        let mut row = Row::plain(jungle.take(rng));
+        roll_prefix_on(rng, &mut row);
+        rows.insert(0, row);
+    } else if ctx.water {
+        // The non-dungeon natural chests carry no fixed special slot in
+        // this port slice (the vanilla num10 assignment rides the
+        // placement-style dispatcher [7]); the underwater/water-style
+        // chests carry the 939 override.
+        rows.insert(0, Row::plain(UNDERWATER_ITEM));
     }
     rows
 }
@@ -715,6 +767,7 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
     let mut rng = seed | 1;
     let mut out: Vec<WorldChest> = Vec::new();
     let mut dungeon = DungeonCycle::new();
+    let mut jungle = JungleCycle::new();
     for y in 1..world.height - 1 {
         for x in 1..world.width - 1 {
             let Some(t) = world.tile(x, y) else { continue };
@@ -728,7 +781,7 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
                 continue;
             }
             let hell = doubled_hell_depth(world, y);
-            let rows = stock_chest(world, x, y, hell, &mut dungeon, &mut rng);
+            let rows = stock_chest(world, x, y, hell, &mut dungeon, &mut jungle, &mut rng);
             if rows.is_empty() {
                 continue;
             }
@@ -871,4 +924,94 @@ mod tests {
         let w = World::new("empty".into(), 200, 300);
         assert!(generate_world_chests(&w).is_empty());
     }
+
+    #[test]
+    fn the_jungle_cycle_walks_the_four_item_table() {
+        // `GetNextJungleChestItem`'s `JungleItemCount % 4` table
+        // (`WorldGen.cs:10170-10196`) — a seed whose override draws miss
+        // shows the raw 4-step cycle.
+        let seed = (1u64..2000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                let mut cycle = JungleCycle::new();
+                (0..4).all(|_| {
+                    let item = cycle.take(&mut rng);
+                    matches!(item, 211 | 212 | 213 | 964)
+                })
+            })
+            .expect("a clean seed exists in the first 2000");
+        let mut rng = seed | 1;
+        let mut cycle = JungleCycle::new();
+        let items: Vec<u16> = (0..4).map(|_| cycle.take(&mut rng)).collect();
+        assert_eq!(items, vec![211, 212, 213, 964], "the 4-step wand table");
+        // The counter wraps at 4 — the fifth draw starts the cycle again.
+        assert_eq!(cycle.count, 4);
+    }
+
+    #[test]
+    fn the_jungle_cycle_overrides_roll_the_rare_items() {
+        // The two overrides: `Next(15) == 0` → 2292 (checked first), else
+        // `Next(20) == 0` → 3017 (the else-only roll).
+        let flower_seed = (1u64..4000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                JungleCycle::new().take(&mut rng) == 2292
+            })
+            .expect("the 1/15 override is reachable");
+        let mut rng = flower_seed | 1;
+        assert_eq!(JungleCycle::new().take(&mut rng), 2292, "`Next(15) == 0`");
+        let shell_seed = (1u64..4000)
+            .find(|&s| {
+                let mut rng = s | 1;
+                JungleCycle::new().take(&mut rng) == 3017
+            })
+            .expect("the 1/20 override is reachable");
+        let mut rng = shell_seed | 1;
+        assert_eq!(JungleCycle::new().take(&mut rng), 3017, "`Next(20) == 0`");
+    }
+
+    #[test]
+    fn jungle_chests_stock_the_cycle_item() {
+        // A jungle-family anchor (tile 60 near the anchor) stocks the
+        // cycle item on slot 0 — not the band weapon the approximation
+        // used before.
+        let mut w = rig();
+        // The jungle grass beside the chest seat (`context_at`'s `near(60)`).
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-2, -2)] {
+            let i = w.index(100 + dx, 199 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 60,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 100, 198);
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut rng = 42u64 | 1;
+        let rows = stock_chest(&w, 100, 198, false, &mut dungeon, &mut jungle, &mut rng);
+        let slot0 = &rows[0];
+        assert!(
+            matches!(slot0.kind, 211 | 212 | 213 | 964 | 2292 | 3017),
+            "slot 0 rides the jungle cycle ({})",
+            slot0.kind
+        );
+        assert_eq!(jungle.count, 1, "the counter advances per stocked chest");
+        // A second jungle chest in the same world takes the next cycle
+        // entry when no override fires — the per-world counter semantics.
+        let mut seen_next = false;
+        for seed in 1..4000 {
+            let mut rng2 = seed | 1;
+            let mut c2 = JungleCycle::new();
+            let first = c2.take(&mut rng2);
+            let second = c2.take(&mut rng2);
+            if matches!(first, 211 | 212 | 213 | 964) && matches!(second, 212 | 213 | 964 | 2292) {
+                seen_next = true;
+                break;
+            }
+        }
+        assert!(seen_next, "the counter walks the table");
+    }
+
+
 }

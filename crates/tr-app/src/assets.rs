@@ -395,6 +395,12 @@ pub fn load_world_images(
         "NPC_520",
         "NPC_491",
         "NPC_492",
+        // The Prime family's glow masks (`Main.cs:25585-25642`):
+        // `Bone_Eyes` over the head, `Bone_Laser` over the laser limb —
+        // both ride the body's own frame rect, so they must be packed
+        // alongside NPC_127/131.
+        "Bone_Eyes",
+        "Bone_Laser",
         "Rain",
         "Dust",
         "Projectile_3",
@@ -1585,6 +1591,12 @@ impl Lookups {
                 atlas.sheet("NPC_493").copied(),
                 atlas.sheet("NPC_507").copied(),
                 atlas.sheet("NPC_517").copied(),
+                atlas.sheet("NPC_406").copied(),
+                atlas.sheet("NPC_407").copied(),
+                atlas.sheet("NPC_423").copied(),
+                atlas.sheet("NPC_425").copied(),
+                atlas.sheet("NPC_429").copied(),
+                atlas.sheet("NPC_405").copied(),
                 atlas.sheet("NPC_368").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),

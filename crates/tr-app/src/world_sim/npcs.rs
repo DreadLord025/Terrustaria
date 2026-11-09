@@ -1783,6 +1783,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
+    // tick sets `wants_limbs` and the sim resolves it here — the four
+    // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
+    // -1, the saw +1, the vice -1 with `ai[3] = 150`, the laser +1 with
+    // `ai[3] = 150`). The v1 set the flag but never drained it, so no
+    // limb ever existed outside the direct-call test.
+    let mut limbs = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::SkeletronPrime || !n.wants_limbs {
+            continue;
+        }
+        n.wants_limbs = false;
+        let (hw, hh) = n.size();
+        let (ccx, ccy) = (n.x + hw * 0.5, n.y + hh * 0.5);
+        let seats: [(NpcKind, i32, bool); 4] = [
+            (NpcKind::PrimeCannon, -1, false),
+            (NpcKind::PrimeSaw, 1, false),
+            (NpcKind::PrimeVice, -1, true),
+            (NpcKind::PrimeLaser, 1, true),
+        ];
+        for (kind, side, timed) in seats {
+            let (w, h) = kind.size();
+            let mut limb = Npc::new(kind, ccx - w * 0.5, ccy - h * 0.5, side, 0.0);
+            limb.ai[0] = side as f32;
+            if timed {
+                limb.ai[3] = 150.0;
+            }
+            limb.hp = limb.max_hp;
+            limbs.push(limb);
+        }
+    }
+    app.npcs.append(&mut limbs);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -4582,6 +4614,79 @@ mod dutchman_tests {
 }
 
 #[cfg(test)]
+mod prime_limb_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_prime_head_spawns_its_four_limbs_with_the_vanilla_seats() {
+        // `AI_032`'s init (`NPC.cs:27635-27661`): the head's first tick
+        // sets `wants_limbs` and the sim resolves it — the four limbs at
+        // the head's centre with the seat signs (the cannon -1, the saw
+        // +1, the vice -1 and the laser +1, the last two with
+        // `ai[3] = 150`). The v1 set the flag but never drained it.
+        let (mut app, mut player) = app_with_player();
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        // The head rides inside the 300x200 test world, 20 tiles above the
+        // surface (an out-of-world spawn would hit the head's own
+        // off-world clamp on the first tick).
+        let mut head = Npc::new(NpcKind::SkeletronPrime, 160.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let kinds: Vec<(NpcKind, i32, f32, i32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind.is_prime_limb())
+            .map(|n| (n.kind, n.ai[0] as i32, n.ai[3], n.hp))
+            .collect();
+        assert_eq!(kinds.len(), 4, "the four limbs spawn: {kinds:?}");
+        for (kind, seat, ai3, hp) in kinds {
+            assert!(hp > 0, "{kind:?} spawns alive");
+            match kind {
+                NpcKind::PrimeCannon => assert_eq!(seat, -1),
+                NpcKind::PrimeSaw => assert_eq!(seat, 1),
+                NpcKind::PrimeVice => assert_eq!((seat, ai3), (-1, 150.0)),
+                NpcKind::PrimeLaser => assert_eq!((seat, ai3), (1, 150.0)),
+                _ => unreachable!(),
+            }
+        }
+        // The anchor write-through feeds the tether: the limbs ride it.
+        assert!(app.world.prime_present, "the head anchors the world's Prime fields");
+        assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
+    }
+}
+
+#[cfg(test)]
 mod pirate_shot_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -5650,3 +5755,251 @@ mod pillar_mob_tests {
     }
 }
 
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_shards_round_trip_their_stats() {
+        // The five shards (`NPC.cs`'s cases 406/407/423/425/429) round-trip
+        // their ids and carry their rows.
+        for (kind, id, w, h, hp, def, kb) in [
+            (NpcKind::StardustCellBig, 121u16, 44.0, 44.0, 300, 50, 0.3),
+            (NpcKind::StardustCellSmall, 116, 22.0, 22.0, 300, 0, 0.4),
+            (NpcKind::StardustJellyfishBig, 117, 40.0, 60.0, 1500, 38, 0.03),
+            (NpcKind::NebulaBeast, 118, 50.0, 44.0, 850, 46, 0.2),
+            (NpcKind::VortexRifleman, 119, 30.0, 56.0, 800, 40, 0.4),
+            (NpcKind::VortexSoldier, 120, 22.0, 56.0, 700, 34, 0.6),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h));
+            assert_eq!(n.max_hp, hp);
+            assert_eq!(n.defense(), def);
+        }
+    }
+
+    #[test]
+    fn the_stardust_cell_grows_into_the_big() {
+        // `AI()`'s aiStyle-95: the 300-tick scale ramp — the ai[0] counter
+        // grows to the cap (the Transform to the BigCell rides the next
+        // slice).
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.ai[0] - 120.0).abs() < 0.01, "the ramp's counter: {}", n.ai[0]);
+    }
+
+    #[test]
+    fn the_jellyfish_shoots_the_539_on_the_70_tick_cycle() {
+        // `AI()`'s aiStyle-96: the 70-tick cycle fires the 539 (60 damage)
+        // from the |X| >= 1.5 ring.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustJellyfishBig,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut saw = false;
+        for _ in 0..75 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(saw, "the 539 fires on the cycle");
+    }
+
+    #[test]
+    fn the_cell_transforms_into_the_big_on_the_300th_tick() {
+        // `AI()`'s aiStyle-95 cap (`NPC.cs:39394-39401`): `Transform(405)`
+        // — the port swaps the kind in place and the growth ramps the scale
+        // 1.0 → 1.3.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustCellSmall,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..150 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!((n.scale - 1.15).abs() < 0.01, "the mid-ramp scale: {}", n.scale);
+        for _ in 0..160 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.kind, NpcKind::StardustCellBig, "the transform");
+        assert_eq!(n.scale, 1.0, "the grown form resets its scale");
+    }
+
+    #[test]
+    fn the_nebula_beast_charges_and_fires_the_575() {
+        // `AI_026_Unicorns`' NebulaBeast arm (`NPC.cs:62497-62557`): the
+        // charge opens on the 180-tick grounded idle inside the 500-px
+        // reach, the 575 (50) fires at the 30-tick wind-up, the 60-tick
+        // release re-arms.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::NebulaBeast, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut charged = false;
+        let mut saw = false;
+        for _ in 0..320 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.ai[2] == 1.0 && !charged {
+                charged = true;
+            }
+            if charged && !n.wants_hostile_shot.is_empty() {
+                saw = true;
+                break;
+            }
+        }
+        assert!(charged, "the charge opened");
+        assert!(saw, "the 575 fired");
+        let shot = n.wants_hostile_shot.last().copied().expect("the payload");
+        assert_eq!(shot.0, 575, "the projectile");
+        assert_eq!(shot.5, 50, "the classic damage constant");
+    }
+
+    #[test]
+    fn the_rifleman_fires_the_four_shot_577_salvo() {
+        // `AI_003_Fighters`' VortexRifleman arm (`NPC.cs:58463-58621`): the
+        // ai[3] timer rearms to −120 on the first tick, arms on the 800-px
+        // horizontal line of sight, and its 30th tick fires the four 577s
+        // at 75 with the −150 cooldown behind them.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexRifleman,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        player.x = 162.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[3], -119.0, "the −120 rearm ticks once");
+        // The salvo's own tick: the test pre-arms the timer to the last
+        // arming step (the vanilla's −120 ladder would take 150 ticks and
+        // the port's walker reaches the player first).
+        n.rifleman_rearmed = true;
+        n.ai[3] = 29.0;
+        let mut saw = 0usize;
+        for _ in 0..24 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                saw = n.wants_hostile_shot.len();
+                break;
+            }
+        }
+        assert_eq!(saw, 4, "the salvo is four shots");
+        for (id, dmg) in n.wants_hostile_shot.iter().map(|s| (s.0, s.5)) {
+            assert_eq!(id, 577);
+            assert_eq!(dmg, 75);
+        }
+        assert_eq!(n.ai[3], 31.0, "the windup holds past the shot");
+    }
+
+    #[test]
+    fn the_star_cell_approaches_through_the_sighted_phase() {
+        // `AI()`'s aiStyle-85 block (`NPC.cs:36930-37012`): phase 0 picks
+        // the approach on the line of sight and phase 1 steers at the
+        // 8 + dist/100 speed over the 50-tick smoothing.
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(NpcKind::StardustCellBig, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the sighted approach holds");
+        assert!(
+            n.vx > 0.0 && n.vx <= 8.6,
+            "the approach's velocity: {}",
+            n.vx
+        );
+        assert!(
+            (n.x + n.size().0 * 0.5) > 2422.0,
+            "the cell closed on the player"
+        );
+    }
+}

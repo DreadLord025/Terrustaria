@@ -2908,6 +2908,56 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Prime family's display (M4-NPC-3j)
+
+Skeletron Prime's head and four limbs had the port's earliest stub: the
+head's `find_frame` arm was empty (its comment even claimed
+`npcFrameCount[127] = 1`) and the four limbs all forced row 0 as "the
+limbs' single frame". Against `NPC.cs:74498-74570`:
+
+- **The head** (`case 127`) rides a 6-row 156-px strip: the hover phase
+  alternates rows 0/1 every 12 ticks, the enraged/day/despawn phases hold
+  the wide row 2, and the Mech-Queen variant (the head's `ai[3] != 0`)
+  alternates 3/4 and pins 5.
+- **The saw** (`case 129`) and **the vice** (`case 130`) spin 2-row strips
+  at 2 and 8 ticks with the wrap at `npcFrameCount`'s 2, and both write
+  `spriteDirection = direction` while grounded — on top of the AI's own
+  `-(int)ai[0]` seat write, which the port's `sprite_dir` field now
+  carries (the flip rides it, `Main.cs:23124-23128`).
+- **The cannon and the laser have no `FindFrame` case at all** — row 0
+  forever, matching the v1's outcome but now with the citation (a missing
+  case with a tall sheet is exactly how the martian family's
+  whole-strip-as-one-frame bug would look).
+- **The motion was written nowhere**: `AI_032`'s head roll
+  (`rotation = velocity.X / 15` in the hover, `direction * 0.3` in the
+  charge/day, the `AngleLerp` easing for the queen) and every limb's
+  `atan2` rotation (the saw/cannon/vice aim their "up" along the dock
+  vector at +π/2 — the vice's rise at the wider 280 dock — and the laser
+  aims at the player at -π/2) are ported; the head and the limbs joined
+  the draw's rotation branch.
+- **The draws took the whole strip as one frame** (`frame_h = t.h` over
+  box-sized quads at the box's corner). Now the sheets' real rows
+  (140x156, 38x76, 38x78, 40x70, 40x62) draw at the generic anchor, and
+  the two glow masks (`Bone_Eyes` over the head, `Bone_Laser` over the
+  laser, `Main.cs:25585-25642`) ride the body's own frame/rotation/anchor
+  as a second pass — both sheets were never packed into the atlas, so the
+  masks had nothing to draw from (the port renders the overlays with the
+  sheets' own alpha: the vanilla's (200,200,200,0) mask tint is a no-op in
+  a premultiplied pipeline).
+- **The enabling half**: the head's init request (`wants_limbs`,
+  `NPC.cs:27635-27661`) was set on the first tick and never drained — no
+  limb existed outside the direct-call test. The sim resolves it now with
+  the vanilla's seat signs (`ai[0]` -1/+1/-1/+1, the vice and laser with
+  `ai[3] = 150`), and `TR_BOSS=prime` spawns the whole boss for the shots.
+- Deviations: the Mech-Queen's `Chain12` links (`Main.cs:25590-25630`)
+  and the family's `TrailingMode 6` after-images (`Main.cs:25124-25136`)
+  stay unmodelled (the port has no trail pass); the glow masks' tint is
+  the alpha-carried equivalent noted above.
+
+Screenshots: `prime_family.png` (the head over the four limbs, all at
+their real frame sizes) and `prime_limbs.png` (the dock-rotated limbs),
+both SHA256-stable across runs.
+
 ## The martians' display (M4-NPC-3i)
 
 The Martian Madness family's 16 kinds had a `find_frame` arm each and a
@@ -4872,6 +4922,22 @@ the filters cover the world, never the map or the HUD.
 Verification: rain/sand/leaf shots with the fullscreen map and the
 minimap — no particle over either; the sandstorm filter no longer paints
 the minimap (the twins SHA256-equal); the workspace suite 1261/0.
+- **The jungle chest cycle** (`GetNextJungleChestItem`, `WorldGen.cs:10170-10196`
+  — the M5-CHEST-gen jungle slice): the jungle family's slot-0 main item
+  rides the `JungleItemCount % 4` table {211, 212, 213, 964} with the two
+  overrides (`Next(15) == 0` → 2292 first, else `Next(20) == 0` → 3017) and
+  `Prefix(-1)`, replacing the depth-band weapon approximation. Recorded
+  approximations: the counter advances once per *stocked* jungle anchor in
+  the load-time sweep's scan order (vanilla advances once per *attempted*
+  shrine chest in the `JChestX[i]` order, `ChestsInJungleShrines`
+  `:17219` — the sweep cannot see the failed attempts), and the port's
+  single `ctx.jungle` flag merges vanilla's flag4 (jungle, `chestStyle == 10`
+  `:36089`) and flag6 (living-tree, wall 244 `:36144`) families, so the
+  cycle now covers both — vanilla's slot-0 arm (`:36229`) writes `num10`
+  only under `(flag23 && (flag | flag6)) | flag11`, which leaves the deep
+  shrine chests' vanilla slot-0 question open for the style-dispatcher
+  follow-up.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -6920,5 +6986,96 @@ Deliberate deviations, all in the module header:
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
+## The pillar shards (M4-EVENT-9)
 
+The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
+`SetDefaults`: 405/406/407/423/425/429). Every row was re-read from the
+decompile before porting — the first pass' stats (the 407 at 1200 HP/def
+50, the 423 at 44×44/3000 HP, the 425 at 22×56) were wrong, as was the
+aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
+26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
+"shard hover" machine belongs to the Star Cell alone.
+
+
+## Micro-biome passes (M5-BIOME-2)
+
+The three micro-biome passes are 1:1 ports; the deviations:
+
+- **`tile_is_ore` is a hardcoded kind list**, not the generated
+  `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
+  Ore set, so the slab map's ore preservation uses the vanilla's ore ids
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
+  tile yet — the pots land with M5-STRUCT's pots step.
+- **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
+  cave-house voters read the tiles directly, so the registration has no
+  consumer yet.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — the port
+  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
+  slabs' corner states flatten to the active pattern).
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
+  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
+  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
+  decor family.
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
+  The pass's own isolated stream keeps the move RNG-neutral for the other
+  steps; the world contract's per-step pins hold.
+- The three passes draw from their own `pass_rng` streams; the shared
+  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
+  `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
+  300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
+  vanilla's `SetDefaultsFromNetId` keeps `life`; both are 300 HP so the
+  numbers agree) and resets the ramp. `npcFrameCount[405/406]` = 4/2.
+- **The 407's aiStyle-96 flyer** (`:39430-39472`): `TargetClosest`, the
+  aim vector is the player's centre lifted 250 px, the bands are <20
+  (hold the current velocity) / <40 (1.75) / <80 (3.25) / else 5, the
+  `moveSpeed` 0.15 smoothing, the rotation `velocity.X * 0.1`, and the
+  70-tick cycle throws the 539 at 60 damage from the ring: `UnitY`
+  rotated by a random ±π/2 and scaled by (5, 3), resampled until
+  `|X| >= 1.5` (the port's 64-iteration guard stands in for the vanilla's
+  unbounded loop). 5 frames.
+- **The 405's aiStyle-85 hover** (`:36930-37220`): five `ai[0]` phases.
+  Phase 0 probes (sighted → 1; 800 px → 2; the 8-px corner probe →
+  3 with the player centre as the waypoint; else the drift → 4). Phase 1
+  steers at `8 + dist/100` (the 405's base) over the 50-tick smoothing
+  `(velocity * 49 + desired) / 50` and drops back to 0 when the line of
+  sight breaks. Phases 2/3 charge/homing at 6 and 3 over the 3-tick
+  divisor; phase 4 bounces with the 0.8 restitution and re-probes every
+  180 ticks. The separator loop pushes 0.05 per axis off the player
+  within a width. The 421-only attachment arm and the dust arms are
+  unmodelled.
+- **The 423's `AI_026_Unicorns` arm** (`:62366-62924`): the machine is
+  the unicorn/wolf/hellhound/tumbleweed walker with per-type speed/accel
+  tails — the NebulaBeast's is the 10-px cap, the 0.2 accel and the 0.85
+  turnaround damping. Its own arms sit at `:62497-62557`: the charge
+  (`ai[2] == 1`) damps `velocity.X` by 0.7 each tick, fires the 575 at 50
+  damage (`GetAttackDamage_ForProjectiles(50, 35)` — the classic
+  constant) from 20 px behind the centre at `spriteDirection * -7` on
+  the 30th tick, and releases at 60 by setting `ai[1] = -rand(320, 600)`.
+  The idle arms the charge on the grounded 180-tick idle inside the
+  500-px reach. The ledge-jump arm's tile probes (the −8.5/−7.5/−7/−6/−8
+  ladder at `:62806-62903`) fold into the walker's single jump.
+- **The 425's `AI_003_Fighters` arm** (`:58463-58621`): `localAI[3]`'s
+  one-shot latch rearms `ai[3]` to −120 on the first tick (the port's
+  `rifleman_rearmed` field — without the latch the idling timer retriggers
+  the init forever). Grounded clears the leap state `ai[2]`; in the air
+  the homing aims 300 px to the side of the player and 20 px off its
+  bottom, with the 0.3/8 vertical and 0.3/7 horizontal accel/cap pairs.
+  The leap arm fires when the player's centre is 100 px below with line
+  of sight (`velocity.Y = -5`). The arming window advances `ai[3]` from
+  0 to 30 only inside the 800-px horizontal line of sight, the 31..40
+  windup wraps back to −150, and the 30th tick fires the four 577s at 75
+  damage from 30 px behind the centre — only the first shot is exact.
+- **The 429 rides the plain walker** with the 4-px cap (`:57681`) and
+  has no AI attack; its 578 lightning is a `HitEffect`-death spawn
+  (`:83161-83203`) the port leaves out with the dust/gore arms.
+
+Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
+`DoDeathEvents`'s 629 shield-hit projectile (`:79290`), the 427/428
+metamorphoses, the VortexHunter's shared shooter block and the tower
+spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
+tables themselves stay open.
 

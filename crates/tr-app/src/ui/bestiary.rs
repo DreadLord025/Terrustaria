@@ -510,6 +510,12 @@ fn portrait_data(
         NpcKind::StardustTower => 105,    // NPC_493
         NpcKind::NebulaTower => 106,      // NPC_507
         NpcKind::SolarTower => 107,       // NPC_517
+        NpcKind::StardustCellSmall => 114, // NPC_406
+        NpcKind::StardustJellyfishBig => 115, // NPC_407
+        NpcKind::NebulaBeast => 116,      // NPC_423
+        NpcKind::VortexRifleman => 117,   // NPC_425
+        NpcKind::VortexSoldier => 118,    // NPC_429
+        NpcKind::StardustCellBig => 119,  // NPC_405
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -813,6 +819,37 @@ fn portrait_data(
                 .map(|s| s.height as f32)
                 .unwrap_or(270.0);
             (sheet_i, h, 130.0, h, white)
+        }
+        // The shards' portraits.
+        (NpcKind::StardustCellBig, _) => {
+            let h = lookups.bestiary_npc_sheets[119]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::StardustCellSmall, _) => {
+            let h = lookups.bestiary_npc_sheets[114]
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::StardustJellyfishBig, _) => {
+            let h = lookups.bestiary_npc_sheets[115]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(60.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::NebulaBeast, _) => {
+            let h = lookups.bestiary_npc_sheets[116]
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::VortexRifleman | NpcKind::VortexSoldier, _) => {
+            let h = lookups.bestiary_npc_sheets[117]
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(56.0);
+            (sheet_i, h, 30.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
