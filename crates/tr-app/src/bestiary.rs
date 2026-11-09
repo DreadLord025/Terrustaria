@@ -29,6 +29,7 @@ pub struct BestiaryEntryDef {
 /// BlueSlime's 1; the list stays in that (net-id) order for the grid's
 /// display indexes.
 pub const ENTRIES: &[BestiaryEntryDef] = &[
+    // (the Moon Lord entries land with their boss rows)
     BestiaryEntryDef {
         credit_id: "BlueSlime",
         net_id: crate::loot_db::BLUE_SLIME,
@@ -899,6 +900,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Vortex Soldier",
+    },
+    BestiaryEntryDef {
+        credit_id: "MoonLordHead",
+        net_id: 396,
+        kind: NpcKind::MoonLordHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Moon Lord",
+    },
+    BestiaryEntryDef {
+        credit_id: "MoonLordHand",
+        net_id: 397,
+        kind: NpcKind::MoonLordHand,
+        variant: None,
+        quick_unlock: false,
+        name: "Moon Lord's Hand",
+    },
+    BestiaryEntryDef {
+        credit_id: "MoonLordCore",
+        net_id: 398,
+        kind: NpcKind::MoonLordCore,
+        variant: None,
+        quick_unlock: false,
+        name: "Moon Lord's Core",
+    },
+    BestiaryEntryDef {
+        credit_id: "MoonLordFreeEye",
+        net_id: 400,
+        kind: NpcKind::MoonLordFreeEye,
+        variant: None,
+        quick_unlock: false,
+        name: "True Eye of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "MoonLordLeechBlob",
+        net_id: 401,
+        kind: NpcKind::MoonLordLeechBlob,
+        variant: None,
+        quick_unlock: false,
+        name: "Moon Leech Clot",
     },
     BestiaryEntryDef {
         credit_id: "PirateDeckhand",

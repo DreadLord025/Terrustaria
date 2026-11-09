@@ -208,6 +208,27 @@ pub enum NpcKind {
     /// `NPCID.VortexSoldier` (429) — the vortex soldier (`NPC.cs`:
     /// 22×56, aiStyle 3, dmg 90, def 34).
     VortexSoldier,
+    /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
+    /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
+    /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
+    MoonLordHead,
+    /// `NPCID.MoonLordHand` (397) — the Moon Lord's hand (`NPC.cs`:
+    /// 14101-14120: 46×66, aiStyle 78, 25000 HP, dmg 0, def 40, kb 0,
+    /// boss/hide/netAlways; `AI_078_MoonLordHands`, two of them).
+    MoonLordHand,
+    /// `NPCID.MoonLordCore` (398) — the Moon Lord's heart (`NPC.cs`:
+    /// 14120-14140: 46×66, aiStyle 77, 50000 HP, dmg 0, def 70, kb 0,
+    /// dontTakeDamage/boss/behindTiles/hide/netAlways; the `AI_077`
+    /// hover + the 600-tick death drama).
+    MoonLordCore,
+    /// `NPCID.MoonLordFreeEye` (400) — the True Eye of Cthulhu
+    /// (`NPC.cs:14141-14158`: 60×60, aiStyle 81, 100 HP, dmg 60, def 0,
+    /// dontTakeDamage/netAlways; a dying hand or head spawns one).
+    MoonLordFreeEye,
+    /// `NPCID.MoonLordLeechBlob` (401) — the Moon Leech Clot (`NPC.cs`:
+    /// 14159-14175: 30×30, aiStyle 82, 400 HP, dmg 0, def 0, hide; it
+    /// drains 1000 hp from the head, the core and the hands).
+    MoonLordLeechBlob,
     /// `NPCID.AncientCultist` (422) — the Lunar Events' summoner (`NPC.cs`
     /// `:15172-15189`: 130×270, aiStyle 94, 20000 HP, dmg 0, def 20,
     /// noGravity, noTileCollide; the ritual + the portal-summon machine).
@@ -689,6 +710,11 @@ impl NpcKind {
             NpcKind::StardustTower => 113,
             NpcKind::NebulaTower => 114,
             NpcKind::SolarTower => 115,
+            NpcKind::MoonLordHead => 122,
+            NpcKind::MoonLordHand => 123,
+            NpcKind::MoonLordCore => 124,
+            NpcKind::MoonLordFreeEye => 125,
+            NpcKind::MoonLordLeechBlob => 126,
             NpcKind::StardustCellBig => 121,
             NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
@@ -750,6 +776,11 @@ impl NpcKind {
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
+            NpcKind::MoonLordHead => 396,
+            NpcKind::MoonLordHand => 397,
+            NpcKind::MoonLordCore => 398,
+            NpcKind::MoonLordFreeEye => 400,
+            NpcKind::MoonLordLeechBlob => 401,
             NpcKind::TravellingMerchant => 111,
         }
     }
@@ -825,6 +856,11 @@ impl NpcKind {
             118 => NpcKind::NebulaBeast,
             119 => NpcKind::VortexRifleman,
             120 => NpcKind::VortexSoldier,
+            122 => NpcKind::MoonLordHead,
+            123 => NpcKind::MoonLordHand,
+            124 => NpcKind::MoonLordCore,
+            125 => NpcKind::MoonLordFreeEye,
+            126 => NpcKind::MoonLordLeechBlob,
             121 => NpcKind::StardustCellBig,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
@@ -1080,6 +1116,10 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => (130.0, 270.0),
+            NpcKind::MoonLordHead => (38.0, 56.0),
+            NpcKind::MoonLordHand | NpcKind::MoonLordCore => (46.0, 66.0),
+            NpcKind::MoonLordFreeEye => (60.0, 60.0),
+            NpcKind::MoonLordLeechBlob => (30.0, 30.0),
             NpcKind::StardustCellBig => (44.0, 44.0),
             NpcKind::StardustCellSmall => (22.0, 22.0),
             NpcKind::StardustJellyfishBig => (40.0, 60.0),
@@ -1410,6 +1450,11 @@ impl NpcKind {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20000,
+            NpcKind::MoonLordHead => 45000,
+            NpcKind::MoonLordHand => 25000,
+            NpcKind::MoonLordCore => 50000,
+            NpcKind::MoonLordFreeEye => 100,
+            NpcKind::MoonLordLeechBlob => 400,
             NpcKind::StardustCellBig => 300,
             NpcKind::StardustCellSmall => 300,
             NpcKind::StardustJellyfishBig => 1500,
@@ -1571,6 +1616,11 @@ impl NpcKind {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 0,
             // The shards' damage: 70/70/120/90/100/90.
+            NpcKind::MoonLordHead
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordCore => 0,
+            NpcKind::MoonLordFreeEye => 60,
+            NpcKind::MoonLordLeechBlob => 0,
             NpcKind::StardustCellBig => 120,
             NpcKind::StardustCellSmall | NpcKind::StardustJellyfishBig => 70,
             NpcKind::NebulaBeast => 90,
@@ -1764,6 +1814,17 @@ pub struct Npc {
     /// The VortexRifleman's `localAI[3]` one-shot latch
     /// (`AI_003_Fighters`' `NPC.cs:58465-58469` 0 -> 1 arm: the first
     /// tick rearms `ai[3]` to −120, once).
+    /// `AI_077_MoonLordCore`'s `localAI[0..2]` (`NPC.cs:41229-41232`): the
+    /// core's three part slots — 0/1 the hands (`ai[2]` 0/1) and 2 the
+    /// head — as the NPC indices the pre-pass resolves.
+    /// The Moon Lord parts' `localAI[0..2]` (`AI_078`'s eyelid angle,
+    /// `AI_079`'s open factor, the lid): the port packs the vanilla's
+    /// per-part locals into one array.
+    pub moon_local: [f32; 3],
+    /// `AI_078`/`AI_079`/`AI_081`'s alive-core gate: the pre-pass sets
+    /// it while `Main.npc[ai[3]]` is the living 398.
+    pub moon_core_alive: bool,
+    pub moon_parts: [i32; 3],
     pub rifleman_rearmed: bool,
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
@@ -1840,6 +1901,16 @@ pub struct Npc {
     pub wants_dutchman_drop: Option<(NpcKind, f32, f32)>,
     /// The Dutchman's cannon-crew spawn request (`AI_093`'s init arm:
     /// the 4 cannons 492 at the ship's centre, `NPC.cs:38859-38872`).
+    /// `AI_077_MoonLordCore`'s spawn-in request (`NPC.cs:41209-41232`):
+    /// the two hands (`ai[2]` 0/1) + the head, at the core's offsets.
+    pub wants_moon_parts: bool,
+    /// `AI_077_MoonLordCore`'s despawn request (`:41492-41513`): clear
+    /// the parts with the core.
+    pub wants_moon_parts_clear: bool,
+    /// The Moon Leech request (`AI_079`'s `:42303-42318` / the leech
+    /// blob's `:36658-36690`): a 456 leeched player spawns the 401 clot,
+    /// which then drains 1000 hp from the head -> the core -> the hands.
+    pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
 }
 
@@ -2236,6 +2307,9 @@ impl Npc {
             defense_override: None,
             dont_take_damage: false,
             swarm_done: false,
+            moon_local: [0.0; 3],
+            moon_core_alive: false,
+            moon_parts: [-1, -1, -1],
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_martian_invasion: false,
@@ -2254,6 +2328,9 @@ impl Npc {
             crew_turrets: 0,
             crew_cannons: 0,
             wants_dutchman_drop: None,
+            wants_moon_parts: false,
+            wants_moon_parts_clear: false,
+            wants_moon_leech: false,
             wants_dutchman_crew: false,
         }
     }
@@ -2355,7 +2432,12 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
-            NpcKind::StardustCellBig => 0.3,
+            // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
+            NpcKind::MoonLordHead
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordCore
+            | NpcKind::MoonLordFreeEye
+            | NpcKind::MoonLordLeechBlob => 0.0,
             NpcKind::StardustCellSmall => 0.4,
             NpcKind::StardustJellyfishBig => 0.03,
             NpcKind::NebulaBeast => 0.2,
@@ -2544,6 +2626,11 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 20,
             // The shards' defense: 50/0/38/46/40/34.
+            NpcKind::MoonLordHead => 50,
+            NpcKind::MoonLordHand => 40,
+            NpcKind::MoonLordCore => 70,
+            NpcKind::MoonLordFreeEye => 0,
+            NpcKind::MoonLordLeechBlob => 0,
             NpcKind::StardustCellBig => 50,
             NpcKind::StardustCellSmall => 0,
             NpcKind::StardustJellyfishBig => 38,
@@ -2649,6 +2736,13 @@ impl Npc {
             return self.slime.stats().value;
         }
         match self.kind {
+            // `NPC.cs:14130`: the core alone carries a value (1 platinum
+            // = 1000000 copper); the parts are value 0.
+            NpcKind::MoonLordCore => 1_000_000.0,
+            NpcKind::MoonLordHead
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordFreeEye
+            | NpcKind::MoonLordLeechBlob => 0.0,
             NpcKind::DemonEye => 75.0,
             NpcKind::WanderingEye => 500.0,
             // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
@@ -2725,6 +2819,12 @@ impl Npc {
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower => 0.0,
+            // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
+            NpcKind::MoonLordHead
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordCore
+            | NpcKind::MoonLordFreeEye
+            | NpcKind::MoonLordLeechBlob => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             NpcKind::StardustCellBig => 0.3,
             NpcKind::StardustCellSmall => 0.4,
@@ -3065,6 +3165,12 @@ impl Npc {
                     MAX_FALL,
                 );
             }
+            // The Moon Lord family: aiStyles 77/78/79/81/82.
+            NpcKind::MoonLordCore => self.update_moon_lord_core(world, player, rng),
+            NpcKind::MoonLordHand => self.update_moon_lord_hand(world, player, rng),
+            NpcKind::MoonLordHead => self.update_moon_lord_head(world, player, rng),
+            NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng),
+            NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
             // The tavernkeeper: the town-NPC walker (aiStyle 7).
             NpcKind::DD2Bartender => self.update_guide(world, dt),
             // The etherian crystal: aiStyle 105's machine.
@@ -3577,6 +3683,52 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % count;
                 }
+            }
+            // The Moon Lord family: the 396's 4x8 accumulator (the
+            // rand boost), the 397's frameCounter/7, the 398's
+            // 30/6 counter (the gore burst on its first frame is
+            // unmodelled), the 400's 16/4 with the double-tick in the
+            // drift/laser states and the 401's single frame.
+            NpcKind::MoonLordHead => {
+                self.frame_counter += 1.0;
+                // `:71955`'s `Main.rand.Next(10) == 0` counter boost —
+                // the port has no rng in `find_frame`, so the hash
+                // stand-in gives the same 1-in-10 jitter.
+                let jitter = (self.frame_counter as i32)
+                    .wrapping_mul(0x9E37_79B1u32 as i32)
+                    .wrapping_add(
+                        (self.frame_counter as i32).wrapping_mul(0x85EB_CA6Bu32 as i32)
+                    );
+                if (jitter >> 28) & 0xF == 0 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 32.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter / 4.0) as u32 % 8;
+            }
+            NpcKind::MoonLordHand => {
+                self.frame = ((self.frame_counter / 7.0) as u32).min(3);
+            }
+            NpcKind::MoonLordCore => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 30.0 {
+                    self.frame_counter = 6.0;
+                }
+                self.frame = ((self.frame_counter as i32 % 30) / 6) as u32;
+            }
+            NpcKind::MoonLordFreeEye => {
+                self.frame_counter += 1.0;
+                if self.ai[0] == 0.0 || self.ai[0] == 3.0 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 16.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = ((self.frame_counter as i32 % 16) / 4) as u32;
+            }
+            NpcKind::MoonLordLeechBlob => {
+                self.frame = 0;
             }
             // The etherian crystal: the 1-frame strip.
             NpcKind::DD2EterniaCrystal => {
@@ -6907,6 +7059,501 @@ impl Npc {
         );
     }
 
+    /// `AI_077_MoonLordCore` (`NPC.cs:41157-41575`) — the Moon Lord's
+    /// heart: the spawn-in (`ai[0] == -1`), the cruise (`ai[0] == 0/1`),
+    /// the 600-tick crash drama (`ai[0] == 2`), the despawn
+    /// (`ai[0] == 3`), the teleport re-entry (`ai[0] == -2`) and the
+    /// >2400-px enrage hop.
+    ///
+    /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
+    /// is unmodelled — the port's drama is the timer + the 622 smoke.
+    fn update_moon_lord_core(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+        // `:41163-41168`'s init: the first tick arms the spawn phase.
+        if self.ai[0] == 0.0 {
+            self.ai[0] = -1.0;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        match self.ai[0] as i32 {
+            -2 => {
+                // `:41169-41192`'s teleport re-entry: the 60-tick windup,
+                // then back to the cruise.
+                self.dont_take_damage = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 60.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            -1 => {
+                // `:41193-41235`'s spawn-in: the two hands + the head ride
+                // `wants_moon_parts` on the 60th tick.
+                self.dont_take_damage = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 60.0 && !self.wants_moon_parts {
+                    self.wants_moon_parts = true;
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            2 => {
+                // `:41307-41445`'s crash drama: the slow rise, the 622
+                // smoke every 15 ticks inside [90, 480), the 600-tick end.
+                self.dont_take_damage = true;
+                self.vx += (0.0 - self.vx) * 0.98;
+                self.vy += (-0.5 - self.vy) * 0.98;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 90.0
+                    && self.ai[1] < 480.0
+                    && (self.ai[1] as i64) % 15 == 0
+                {
+                    // `:41405-41428`'s smoke: one 622 (0 damage) at the
+                    // ±(π/8 + π/4·rand) rotation about the down axis.
+                    let rot = std::f32::consts::FRAC_PI_8
+                        + std::f32::consts::FRAC_PI_4 * crate::app::rand01(rng);
+                    let sign = if crate::app::rand01(rng) < 0.5 { -1.0 } else { 1.0 };
+                    let vx = rot.sin() * sign * 6.0;
+                    let vy = -rot.cos() * (crate::app::rand01(rng) * 0.5 + 0.5);
+                    self.wants_hostile_shot.push((622u16, cx, cy, vx, vy, 0));
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+                if self.ai[1] >= 600.0 {
+                    // `:41439-41442`'s end: `life = 0` → the death pass
+                    // raises `downed_moon_lord`.
+                    self.hp = 0;
+                }
+            }
+            3 => {
+                // `:41446-41515`'s despawn ride.
+                self.dont_take_damage = true;
+                self.vx += (self.facing as f32 - self.vx) * 0.98;
+                self.vy += (-0.5 - self.vy) * 0.98;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 60.0 {
+                    self.wants_moon_parts_clear = true;
+                    self.hp = 0;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            _ => {
+                // `:41236-41306`'s cruise: the 130-px-above hover at the
+                // 8-px cap over the 0.5 smoothing.
+                self.dont_take_damage = self.ai[0] != 1.0;
+                let (dx, dy) = (pcx - cx, pcy - cy + 130.0);
+                let d = (dx * dx + dy * dy).sqrt();
+                if d > 20.0 {
+                    let inv = 8.0 / d.max(0.001);
+                    self.vx += (dx * inv - self.vx) * 0.5;
+                    self.vy += (dy * inv - self.vy) * 0.5;
+                }
+                self.x += self.vx;
+                self.y += self.vy;
+                // `:41537-41542`'s player guard: no live player despawns.
+                if player.hp <= 0 {
+                    self.ai[0] = 3.0;
+                    self.ai[1] = 0.0;
+                    return;
+                }
+                // `:41543-41550`'s enrage hop past 2400 px (the parts ride
+                // it in the pre-pass).
+                if (pcx - cx).hypot(pcy - cy) > 2400.0 {
+                    self.x += pcx - cx;
+                    self.y += pcy - cy - 150.0;
+                }
+                // `:41251-41291`'s part bookkeeping: a missing part opens
+                // the death ride, and all parts dead-and-ghosted hands the
+                // core its vulnerable phase.
+                let lost = self.moon_parts.iter().any(|p| *p < 0);
+                if lost {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+        }
+    }
+
+    /// The Moon Lord attack-table sequencer (`AI_078`'s `:41600-41626`,
+    /// `AI_079`'s `:42104-42133`, `AI_081`'s `:42476-42493`): the 5-entry
+    /// (or the True Eye's 10-entry) walk over the (attack, duration) rows
+    /// — returns the picked index, the ticks inside the attack and the
+    /// attack's own duration.
+    fn moon_lord_pick(row: &[(u32, i32)], timer: &mut f32) -> (usize, f32, f32) {
+        let mut i = 0usize;
+        let mut elapsed = 0i32;
+        while i < row.len() {
+            let dur = row[i].1;
+            if !(dur as f32 + elapsed as f32 <= *timer) {
+                break;
+            }
+            elapsed += dur;
+            i += 1;
+        }
+        if i >= row.len() {
+            i = 0;
+            *timer = 0.0;
+            elapsed = 0;
+        }
+        (i, *timer - elapsed as f32, row[i].1 as f32)
+    }
+
+    /// `AI_078_MoonLordHands` (`NPC.cs:41577-42082`) — the two 397s: the
+    /// sequencer over `ai[2]`'s row (0/1), the hover (attack 0), the
+    /// Phantasmal Eyes (1), the flood + the release wave (2) and the
+    /// retargeting laser (3).
+    ///
+    /// Deviations: the 452/454 projectile engines (the vanilla's aiStyle
+    /// 82/83) are unmodelled; the release wave fires the wave projectile
+    /// through `wants_hostile_shot` instead of rewriting the owned 454s.
+    fn update_moon_lord_hand(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+        // `:41579-41583`'s orphan guard (the pre-pass owns the link).
+        if !self.moon_core_alive {
+            self.hp = 0;
+            return;
+        }
+        let row: [(u32, i32); 5] = if self.ai[2] == 0.0 {
+            [(0, 50), (1, 70), (2, 330), (0, 60), (3, 90)]
+        } else {
+            [(1, 70), (0, 50), (3, 90), (0, 60), (2, 330)]
+        };
+        let num = if self.ai[2] == 0.0 { -1.0f32 } else { 1.0f32 };
+        self.ai[1] += 1.0;
+        let (pick, num2, dur) = Self::moon_lord_pick(&row, &mut self.ai[1]);
+        self.ai[0] = row[pick].0 as f32;
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The anchor (`:41642`/`:41701`'s slot): the core's centre +
+        // (±350, -100).
+        let (ax, ay) = (self.carrier_x + 350.0 * num, self.carrier_y - 100.0);
+        match self.ai[0] as i32 {
+            -2 | 0 => {
+                // `:41628-41675`'s hover: the side slot at the 6-px cap
+                // over the 0.3 smoothing.
+                self.dont_take_damage = self.ai[0] == -2.0;
+                let (dx, dy) = (ax - cx, ay - cy);
+                let d = (dx * dx + dy * dy).sqrt();
+                if d > 20.0 {
+                    let inv = 6.0 / d.max(0.001);
+                    self.vx += (dx * inv - self.vx) * 0.3;
+                    self.vy += (dy * inv - self.vy) * 0.3;
+                }
+            }
+            1 => {
+                // `:41676-41717`'s Phantasmal Eyes: the 56-tick eyelid
+                // cycle (`7 × 4` half-point ticks) fires the 452 (30) every
+                // 4 ticks from the ring's point.
+                let (ex, ey) = (30.0f32, 66.0f32);
+                if num2 >= dur - 4.0 {
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
+                } else if num2 >= 28.0 {
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.75);
+                    if num2 % 4.0 < 1.0 {
+                        let ang = std::f32::consts::PI * 2.0 * (num2 % 28.0) / 28.0
+                            - std::f32::consts::FRAC_PI_2;
+                        let (rx, ry) = (ang.cos() * ex, ang.sin() * ey);
+                        let d = (rx * rx + ry * ry).sqrt().max(0.001);
+                        self.wants_hostile_shot.push((
+                            452u16,
+                            cx + rx / d * (d * 0.4) + 1.0 * -num,
+                            cy + ry / d * (d * 0.4) + 3.0,
+                            rx / d * 8.0,
+                            ry / d * 8.0,
+                            30,
+                        ));
+                    }
+                } else {
+                    self.moon_local[1] = (self.moon_local[1] + 0.02).min(0.75);
+                }
+            }
+            2 => {
+                // `:41718-41817`'s flood: six 454s (40) on the 30-tick
+                // cadence, the 20-px travel, the release wave at the
+                // 292nd tick.
+                let t = num2 - 30.0;
+                if t >= 0.0 && t < 180.0 && (t as i64) % 30 == 0 {
+                    let i = t / 30.0;
+                    let mut vx = (5.0 * num + (i - 3.5) * num * 3.0) * 1.2;
+                    let mut vy = (-8.0 + (i - 4.5)) * 1.2;
+                    vx = vx;
+                    vy = vy;
+                    self.wants_hostile_shot.push((454u16, cx, cy, vx, vy, 40));
+                }
+                if num2 == 292.0 {
+                    // `:41846`'s release wave: the 12-px lance aimed from
+                    // 350 px above the hand.
+                    let (dx, dy) = (pcx - cx, pcy - (cy - 350.0));
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        462u16,
+                        cx,
+                        cy - 350.0,
+                        dx / d * 12.0,
+                        dy / d * 12.0,
+                        30,
+                    ));
+                }
+                // The travel (`:41787`'s SmoothStep at the 20-px cap).
+                let (dx, dy) = (ax - cx, ay - cy);
+                let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                let inv = 20.0 / d;
+                self.vx += (dx * inv - self.vx) * 0.2;
+                self.vy += (dy * inv - self.vy) * 0.2;
+            }
+            _ => {
+                // `:41819-41846`'s retargeting laser: the 462 (30) aimed
+                // at the player's led position at the −14/−7/0 ticks.
+                if num2 < dur - 19.0 {
+                    self.moon_local[0] +=
+                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                }
+                if num2 == dur - 14.0 || num2 == dur - 7.0 || num2 == dur {
+                    let (ex, ey) = (
+                        self.moon_local[0].cos() * 30.0 * self.moon_local[1],
+                        self.moon_local[0].sin() * 66.0 * self.moon_local[1],
+                    );
+                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        462u16,
+                        cx + ex / d * 30.0,
+                        cy + ey / d * 66.0,
+                        ex / d * 8.0,
+                        ey / d * 8.0,
+                        30,
+                    ));
+                }
+                // The idle drift toward the anchor.
+                let (dx, dy) = (ax - cx, ay - cy);
+                let d = (dx * dx + dy * dy).sqrt();
+                if d > 20.0 {
+                    let inv = 6.0 / d.max(0.001);
+                    self.vx += (dx * inv - self.vx) * 0.3;
+                    self.vy += (dy * inv - self.vy) * 0.3;
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:41847-41882`'s frame box clamp (the hand's wander limits).
+        let min_x = self.carrier_x + 220.0 * num - 100.0;
+        let max_x = self.carrier_x + (220.0 + 370.0) * num;
+        let min_y = self.carrier_y - 60.0 - 150.0;
+        let max_y = self.carrier_y - 60.0 + 150.0;
+        let (lo_x, hi_x) = if min_x <= max_x { (min_x, max_x) } else { (max_x, min_x) };
+        let (lo_y, hi_y) = if min_y <= max_y { (min_y, max_y) } else { (max_y, min_y) };
+        self.x = self.x.clamp(lo_x, hi_x);
+        self.y = self.y.clamp(lo_y, hi_y);
+        let _ = rng;
+    }
+
+    /// `AI_079_MoonLordHead` (`NPC.cs:42084-42457`) — the 396: the head
+    /// row of `MoonLordAttacksArray`, the eye's open/close factor, the
+    /// phantom deathray (455), the Moon Leech summon (456) and the
+    /// retargeting laser (462).
+    fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+        // `:42086-42091`'s orphan guard (the pre-pass owns the link).
+        if !self.moon_core_alive {
+            self.hp = 0;
+            return;
+        }
+        // `:42098`'s fixed slot: the core's centre 400 px up.
+        self.x = self.carrier_x - self.size().0 * 0.5;
+        self.y = self.carrier_y - 400.0 - self.size().1 * 0.5;
+        let (cx, cy) = (self.carrier_x, self.carrier_y - 400.0);
+        let (pcx, pcy) = player.center();
+        let row: [(u32, i32); 5] = [(3, 180), (0, 30), (2, 435), (3, 180), (1, 375)];
+        self.ai[1] += 1.0;
+        let (pick, num, dur) = Self::moon_lord_pick(&row, &mut self.ai[1]);
+        if self.ai[0] >= 0.0 {
+            self.ai[0] = row[pick].0 as f32;
+        }
+        let _ = dur;
+        match self.ai[0] as i32 {
+            0 => {
+                // `:42172-42190`'s open/close factor: `1 - |aim| / 500`.
+                let (dx, dy) = (pcx - cx, pcy - cy + 22.0);
+                let d = (dx * dx + dy * dy).sqrt();
+                let open = ((1.0 - d / 500.0).clamp(0.0, 1.0) * 2.0).clamp(0.0, 1.0);
+                self.moon_local[0] = dy.atan2(dx);
+                self.moon_local[1] = open;
+                self.moon_local[2] += (1.0 - self.moon_local[2]) * 0.2;
+            }
+            1 => {
+                // `:42191-42280`'s phantom deathray: the 455 (75) on the
+                // 180th tick, sweeping at the ±2π/540 rate.
+                if num < 180.0 {
+                    self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
+                } else if num == 180.0 {
+                    let (dx, dy) = (pcx - cx, pcy - cy);
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        455u16,
+                        cx,
+                        cy,
+                        dx / d * 6.0,
+                        dy / d * 6.0,
+                        75,
+                    ));
+                    self.moon_local[0] = dy.atan2(dx);
+                    self.moon_local[1] = 1.0;
+                } else {
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                }
+            }
+            2 => {
+                // `:42281-42318`'s Moon Leech summon: the 456 (0) per
+                // player at the attack's start, the 401 clot per leeched
+                // player at 120/180/240 — both ride the sim's resolve.
+                if num == 0.0 || num == 120.0 || num == 180.0 || num == 240.0 {
+                    self.wants_moon_leech = true;
+                }
+            }
+            _ => {
+                // `:42319-42346`'s retargeting laser: the 462 (30) at the
+                // −14/−7/0 ticks over the attack's own duration.
+                if num < dur - 19.0 {
+                    self.moon_local[0] +=
+                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                }
+                if num == dur - 14.0 || num == dur - 7.0 || num == dur {
+                    let (ex, ey) = (
+                        self.moon_local[0].cos() * 27.0 * self.moon_local[1],
+                        self.moon_local[0].sin() * 59.0 * self.moon_local[1],
+                    );
+                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        462u16,
+                        cx + ex / d * 27.0,
+                        cy + ey / d * 59.0,
+                        ex / d * 8.0,
+                        ey / d * 8.0,
+                        30,
+                    ));
+                }
+            }
+        }
+        // `:42347-42380`'s lid/iris counters (the two clamping bugs of the
+        // original fold into one clamp).
+        self.moon_local[2] = self.moon_local[2].clamp(0.0, 14.0);
+        let _ = rng;
+    }
+
+    /// `AI_081_TrueEyeOfCthulhu` (`NPC.cs:42459-42880`) — the 400: the
+    /// `MoonLordAttacksArray2` sequencer, the aimed drift (0), the
+    /// retargeting laser (1), the orbit + the 454 release (2) and the
+    /// ring's 452 volley (3).
+    ///
+    /// Deviations: the 454/452 projectile engines (the vanilla's aiStyle
+    /// 82/83) are unmodelled.
+    fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+        // `:42466-42470`'s orphan guard (the pre-pass owns the link).
+        if !self.moon_core_alive {
+            self.hp = 0;
+            return;
+        }
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let row: [(u32, i32); 10] = [
+            (0, 53),
+            (1, 90),
+            (0, 53),
+            (2, 135),
+            (0, 53),
+            (3, 200),
+            (0, 53),
+            (4, 375),
+            (0, 53),
+            (2, 135),
+        ];
+        self.ai[1] += 1.0;
+        let (pick, num, dur) = Self::moon_lord_pick(&row, &mut self.ai[1]);
+        self.ai[0] = row[pick].0 as f32;
+        let _ = dur;
+        match self.ai[0] as i32 {
+            1 => {
+                // `:42579-42619`'s retargeting laser: the 462 (35) at the
+                // −14/−7/0 ticks.
+                self.vx *= 0.95;
+                if num < 90.0 - 19.0 {
+                    self.moon_local[0] +=
+                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                }
+                if num == 90.0 - 14.0 || num == 90.0 - 7.0 || num == 90.0 {
+                    let (ex, ey) = (
+                        self.moon_local[0].cos() * 30.0 * self.moon_local[1],
+                        self.moon_local[0].sin() * 30.0 * self.moon_local[1],
+                    );
+                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
+                    self.wants_hostile_shot.push((
+                        462u16,
+                        cx + ex / d * 30.0,
+                        cy + ey / d * 30.0,
+                        ex / d * 8.0,
+                        ey / d * 8.0,
+                        35,
+                    ));
+                }
+            }
+            2 => {
+                // `:42620-42737`'s orbit: the inward ring (the 454 (40) at
+                // speed 4 every 10 ticks), the charge, the release over
+                // 105..120.
+                if num >= 15.0 && num < 75.0 && ((num as i64) - 15) % 10 == 0 {
+                    self.wants_hostile_shot.push((454u16, cx, cy, 0.0, -4.0, 40));
+                }
+                if num >= 105.0 && num < 120.0 {
+                    let (dx, dy) = (pcx - cx, pcy - cy);
+                    let ang = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
+                    self.wants_hostile_shot
+                        .push((454u16, cx, cy, ang.cos() * 24.0, ang.sin() * 24.0, 40));
+                }
+            }
+            3 => {
+                // `:42739-42880`'s ring: the 452 (35) volley every 10
+                // ticks inside the 150-tick window at the 8-px speed.
+                if num >= 45.0 && num < 185.0 && ((num as i64) - 45) % 10 == 0 {
+                    let ang = crate::app::rand01(rng) * std::f32::consts::PI * 2.0;
+                    self.wants_hostile_shot
+                        .push((452u16, cx, cy, ang.cos() * 8.0, ang.sin() * 8.0, 35));
+                }
+            }
+            _ => {
+                // `:42538-42578`'s drift: aim at the player's led centre,
+                // hover 200 px above at the 24-px cap.
+                if num <= 53.0 {
+                    self.moon_local[0] +=
+                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.7);
+                    let (dx, dy) = (pcx - cx, pcy - cy - 200.0);
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    self.vx += (dx / d * 24.0 - self.vx) / 30.0;
+                    self.vy += (dy / d * 24.0 - self.vy) / 30.0;
+                }
+            }
+        }
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// `AI()`'s aiStyle-82 block (`NPC.cs:36629-36756`) — the Moon Leech
+    /// Clot: the 90-tick glide, then the 1000-hp drain from the head →
+    /// the core → the hands.
+    fn update_moon_leech_blob(&mut self, _world: &World, _player: &Player) {
+        self.ai[2] += 1.0;
+        if self.ai[2] >= 90.0 {
+            // `:36658-36690`'s drain: the resolve rides the sim (the blob
+            // needs the sibling NPCs) — the blob itself dies here.
+            self.wants_moon_leech = true;
+            self.hp = 0;
+        }
+    }
+
     fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The timer: the 180-tick dissolve (`:39060-39066`'s `ai[1]`).
         self.ai[2] += 1.0;
@@ -8863,6 +9510,11 @@ impl Npc {
         h ^= self.frame << 2;
         h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
+            NpcKind::MoonLordHead => 396,
+            NpcKind::MoonLordHand => 397,
+            NpcKind::MoonLordCore => 398,
+            NpcKind::MoonLordFreeEye => 400,
+            NpcKind::MoonLordLeechBlob => 401,
             NpcKind::Slime => 0,
             NpcKind::SkeletronHand => 79,
             NpcKind::PrimeCannon => 81,
