@@ -5018,6 +5018,18 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   counterparts need the chest kind plumbed, the seed-flavour rows wait for
   M5-SEED-1).
 
+- **The chest 21-block kind gates** (`AddBuriedChest`'s two
+  `itemIndex > 0` blocks, `WorldGen.cs:37384-47400` (tile 21) and
+  `:47466-47500` (tile 467)): the mahogany block repeats only the
+  flag4/flag2/flag12 rows — the Cloud 751 stack, the flag13 globe (2195),
+  the flag9 dungeon row (2192, 1/8 — the `getGoodWorld` 5515 arm parks with
+  M5-SEED-1), the style 5234 rows and the flag13 water pair are 21-only, so
+  the port gates them on the anchor kind (`stock_chest` now carries it, the
+  sweep's `t.kind`). The port's worldgen places no 467/341 anchors (no pass
+  writes that tile), so the gates only bite the hand-placed/fixture
+  mahogany chests; a kind-341 anchor keeps just the repeated rows. The
+  mahogany block itself needs no new rows.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
