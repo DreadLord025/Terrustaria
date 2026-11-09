@@ -25,8 +25,10 @@
 //! (`Step_WireCutter` :1455-1493, `Step_Actuators` :582-620,
 //! `Step_ActuationRod` :1495-1535, `Step_ColoredWrenches` :1879-2030,
 //! `Step_MulticolorWrench` :1725-1877 (the last two over the caller-passed
-//! `Lookup::tool_mode`/`actuation_rod_lock`) and `Step_MinecartTracks`
-//! (:1166-1322, over the caller-passed player centre) — the
+//! `Lookup::tool_mode`/`actuation_rod_lock`), `Step_MinecartTracks`
+//! (:1166-1322, over the caller-passed player centre) and
+//! `Step_ForceCursorToAnyMinableThing` (:2229-2268, over the caller-passed
+//! gamepad state and the held item's pick/axe/hammer power) — the
 //! seed/herb/planting family plus the paint family, gated on item id /
 //! `createTile` / `createWall` and shared with the closest-to-mouse vote.
 //! The paint steps read the caller-passed
@@ -115,6 +117,13 @@ pub struct ItemPort {
     /// `Item.placeStyle` (`Item.cs:173`'s `0` default): the sub-style the
     /// placement takes.
     pub place_style: i32,
+    /// `Item.pick` (`Item.cs:161`): the pickaxe power — the force-cursor
+    /// step's tool gate.
+    pub pick: i32,
+    /// `Item.axe` (`Item.cs:163`): the axe power.
+    pub axe: i32,
+    /// `Item.hammer` (`Item.cs:165`): the hammer power.
+    pub hammer: i32,
 }
 
 /// `SmartCursorUsageInfo` (`SmartCursorHelper.cs:14-41`): the per-call
@@ -177,6 +186,10 @@ pub struct Lookup {
     /// `player.ActuationRodLockSetting` (`Player.cs:2618`) — the lock's
     /// target actuation state.
     pub actuation_rod_lock_setting: bool,
+    /// `PlayerInput.UsingGamepad` (`Player.cs` input state): the
+    /// force-cursor step refuses on a gamepad (input is app-side, so the
+    /// caller passes it).
+    pub using_gamepad: bool,
 }
 
 /// `Collision.InTileBounds` (`Collision.cs:3776`): the inclusive rect
@@ -2022,19 +2035,70 @@ pub fn step_minecart_tracks(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> O
     in_tile_bounds(p.0, p.1, l.start_x, l.start_y, l.end_x, l.end_y).then_some(p)
 }
 
+// ------------------------------------------------------- force-cursor step --
+
+/// `SmartCursorHelper.Step_ForceCursorToAnyMinableThing` (`:2229-2268`):
+/// when the tile under the mouse is minable with the held item, the cursor
+/// is forced onto it — the step writes the mouse's own tile, not a scan.
+pub fn step_force_cursor(w: &crate::World, l: &Lookup, fx: i32, fy: i32) -> Option<(i32, i32)> {
+    // `:2236-2239` — the local aliases + the C#'s two decompiler artifacts
+    // (`_ = screenTargetX/Y`, no side effects) are dropped.
+    // `:2241` — the focus sentinel + the gamepad arm (input is app-side,
+    // caller-passed).
+    if fx != -1 || fy != -1 || l.using_gamepad {
+        return None;
+    }
+    // `:2243-2245` — the mouse's tile (`Utils.ToTileCoordinates`' `>> 4`
+    // shift — the arithmetic shift floors, matching the C#'s int shift).
+    let (x, y) = ((l.mouse.0 as i32) >> 4, (l.mouse.1 as i32) >> 4);
+    if !in_tile_bounds(x, y, l.start_x, l.start_y, l.end_x, l.end_y) {
+        return None;
+    }
+    let Some(t) = w.tile(x, y) else {
+        return None;
+    };
+    // `:2249` — the minable non-full-solid half: a tile the world lets the
+    // player kill and that is not a solid (or is a solidTop). The chest
+    // arm's store is app-side (`edit::can_kill_tile`'s closure) — the
+    // sources without one pass `false`, as the actuation slice does.
+    let mut flag = t.active()
+        && crate::edit::can_kill_tile(w, x, y, |_, _| false)
+        && (!crate::tiledata::TILE_SOLID.has(t.kind)
+            || crate::tiledata::TILE_SOLID_TOP.has(t.kind));
+    // `:2250-2261` — the three tool demotions: an axe tile needs the axe,
+    // a hammer tile the hammer, everything else the pickaxe.
+    if flag && crate::tileobject::tile_axe(t.kind) && l.item.axe < 1 {
+        flag = false;
+    }
+    if flag && crate::tileobject::tile_hammer(t.kind) && l.item.hammer < 1 {
+        flag = false;
+    }
+    if flag
+        && !crate::tileobject::tile_hammer(t.kind)
+        && !crate::tileobject::tile_axe(t.kind)
+        && l.item.pick < 1
+    {
+        flag = false;
+    }
+    if flag {
+        return Some((x, y));
+    }
+    None
+}
+
 // ------------------------------------------------------------ the dispatch --
 
 /// `SmartCursorHelper.SmartCursorLookup` (`:61-165`) restricted to the
 /// ported steps, run in the vanilla chain's order (`:118-156`):
-/// ColoredWrenches :129 → MulticolorWrench :130 → ActuationRod :132 →
-/// WireCutter :133 → Platforms :134 → MinecartTracks :135 → Walls :136 →
-/// PumpkinSeeds :137 → GrassSeeds :138 → Moss :139 → Pigronata :140 →
-/// Torch :142 → LawnMower :143 → BlocksLines :145 → PaintRoller :146 →
-/// PaintBrush :147 → PaintScrapper :148 → Acorns :149 → GemCorns :150 →
-/// EmptyBuckets :151 → Actuators :152 → AlchemySeeds :153 → PlanterBox
-/// :154 → ClayPots :155 → StaffOfRegrowth :156. Each step's gate refuses a
-/// taken focus, so the first step that finds a spot wins — the C#
-/// straight-line chain.
+/// ForceCursorToAnyMinableThing :122 → ColoredWrenches :129 →
+/// MulticolorWrench :130 → ActuationRod :132 → WireCutter :133 →
+/// Platforms :134 → MinecartTracks :135 → Walls :136 → PumpkinSeeds :137
+/// → GrassSeeds :138 → Moss :139 → Pigronata :140 → Torch :142 →
+/// LawnMower :143 → BlocksLines :145 → PaintRoller :146 → PaintBrush :147
+/// → PaintScrapper :148 → Acorns :149 → GemCorns :150 → EmptyBuckets :151
+/// → Actuators :152 → AlchemySeeds :153 → PlanterBox :154 → ClayPots :155
+/// → StaffOfRegrowth :156. Each step's gate refuses a taken focus, so the
+/// first step that finds a spot wins — the C# straight-line chain.
 ///
 /// The interactable-block gate (`IsHoveringOverAnInteractableTileThatBlocksSmartCursor`,
 /// :193 — the port has no sign/chest hover routing yet) stays a no-op that
@@ -2069,7 +2133,8 @@ pub fn smart_cursor_lookup(
     if let Some(p) = step_platforms(w, l, focus.0, focus.1, state) {
         focus = p;
     }
-    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 24] = [
+    let steps: [fn(&crate::World, &Lookup, i32, i32) -> Option<(i32, i32)>; 25] = [
+        step_force_cursor,
         step_colored_wrenches,
         step_multicolor_wrench,
         step_actuation_rod,
@@ -2192,6 +2257,7 @@ mod tests {
             tool_mode: 0,
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
+            using_gamepad: false,
             player_position: (30.0 * 16.0, 21.0 * 16.0),
             player_width: 20,
             player_height: 42,
@@ -2204,6 +2270,22 @@ mod tests {
             create_tile: -1,
             create_wall: -1,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
+        }
+    }
+
+    /// A tool item with the given pickaxe power.
+    fn pickaxe(kind: u16, pick: i32) -> ItemPort {
+        ItemPort {
+            kind,
+            create_tile: -1,
+            create_wall: -1,
+            place_style: 0,
+            pick,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2213,6 +2295,9 @@ mod tests {
             create_tile,
             create_wall: -1,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2223,6 +2308,9 @@ mod tests {
             create_tile: -1,
             create_wall,
             place_style: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
         }
     }
 
@@ -2485,6 +2573,9 @@ mod tests {
                 kind: 0,
                 create_tile: 82,
                 create_wall: -1,
+                pick: 0,
+                axe: 0,
+                hammer: 0,
                 place_style: 0,
             },
             mouse_at(25, 19),
@@ -2499,6 +2590,9 @@ mod tests {
                 kind: 0,
                 create_tile: 82,
                 create_wall: -1,
+                pick: 0,
+                axe: 0,
+                hammer: 0,
                 place_style: 1,
             },
             mouse_at(25, 19),
@@ -3653,6 +3747,113 @@ mod tests {
             smart_cursor_lookup(&world, &l, -1, -1, &mut ContinuityState::default()),
             Some((31, 15)),
             "the track step runs inside the lookup chain"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_locks_the_minable_tile() {
+        // `Step_ForceCursorToAnyMinableThing` :2243-2268 — the step writes
+        // the mouse's own tile when it is minable with the held tool.
+        let mut world = bare();
+        put(&mut world, 25, 19, 4); // a torch: minable, non-solid
+        let pick = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&world, &pick, -1, -1),
+            Some((25, 19)),
+            "the cursor locks onto the minable torch"
+        );
+        // A full solid tile is not forced (the `!tileSolid || tileSolidTop`
+        // half).
+        let mut stone = bare();
+        put(&mut stone, 25, 19, 1);
+        assert_eq!(
+            step_force_cursor(&stone, &pick, -1, -1),
+            None,
+            "the solid tile is not a force target"
+        );
+        // A taken focus keeps the earlier step's target.
+        assert_eq!(
+            step_force_cursor(&world, &pick, 12, 12),
+            None,
+            "the focus sentinel gate holds"
+        );
+        // The gamepad arm (input state, caller-passed).
+        let pad = Lookup {
+            using_gamepad: true,
+            ..lookup(pickaxe(1, 1), mouse_at(25, 19))
+        };
+        assert_eq!(
+            step_force_cursor(&world, &pad, -1, -1),
+            None,
+            "the gamepad skips the force cursor"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_demotes_the_tool_families() {
+        // `Step_ForceCursorToAnyMinableThing` :2250-2261 — the axe tiles
+        // need the axe, the hammer tiles the hammer, the rest the pickaxe.
+        let tree = {
+            let mut w = bare();
+            put(&mut w, 25, 19, 5); // a tree trunk: tileAxe
+            w
+        };
+        let no_axe = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&tree, &no_axe, -1, -1),
+            None,
+            "the tree trunk needs an axe"
+        );
+        let with_axe = lookup(ItemPort { axe: 1, ..item(1) }, mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&tree, &with_axe, -1, -1),
+            Some((25, 19)),
+            "the axe-equipped item forces the cursor onto the trunk"
+        );
+        let altar = {
+            let mut w = bare();
+            put(&mut w, 25, 19, 26); // the demon altar: tileHammer
+            w
+        };
+        let no_hammer = lookup(item(1), mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&altar, &no_hammer, -1, -1),
+            None,
+            "the altar needs a hammer"
+        );
+        let with_hammer = lookup(
+            ItemPort {
+                hammer: 1,
+                ..item(1)
+            },
+            mouse_at(25, 19),
+        );
+        assert_eq!(
+            step_force_cursor(&altar, &with_hammer, -1, -1),
+            Some((25, 19)),
+            "the hammer-equipped item forces the cursor onto the altar"
+        );
+        // And the demoted families do not accept the wrong tool: an axe
+        // does not break the altar, a pickaxe does not break the trunk.
+        let axe_only = lookup(ItemPort { axe: 1, ..item(1) }, mouse_at(25, 19));
+        assert_eq!(
+            step_force_cursor(&altar, &axe_only, -1, -1),
+            None,
+            "the axe does not break the hammer tile"
+        );
+    }
+
+    #[test]
+    fn test_smart_1_the_force_cursor_runs_first_in_the_chain() {
+        // The dispatch order (:122): the force-cursor step runs at the head
+        // of the chain — the chain dispatches it.
+        let mut world = bare();
+        put(&mut world, 25, 19, 4);
+        let pick = lookup(pickaxe(1, 1), mouse_at(25, 19));
+        assert_eq!(
+            smart_cursor_lookup(&world, &pick, -1, -1, &mut ContinuityState::default()),
+            Some((25, 19)),
+            "the force-cursor step runs inside the lookup chain"
         );
     }
 }
