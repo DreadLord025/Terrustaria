@@ -2908,6 +2908,86 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Twins' display (M4-NPC-3k)
+
+Retinazer and Spazmatism had the same v1 shape as the martians did: a
+blind 8-tick `(frame + 1) % 2` strip whose comment claimed
+`npcFrameCount[125/126] = 2`, drawn with `frame_h = t.h / 2` (a 600-px
+slice of the sheet as "one frame") over the 100x110 box at the box's
+corner. Against the decompile:
+
+- **The sheets are 6 rows of 200** (NPC_125/126 measured 110x1200,
+  `Main.npcFrameCount[125/126] = 6`, `Main.cs:67096`) — the v1's count
+  was wrong and its draw read a 600-px slice.
+- **`case 125/126`** (`NPC.cs:76906-76924`) is a 20-tick beat, not an
+  8-tick strip: the counter walks the bands 0/1/2 (splits at 7/14/21,
+  the 21st tick resetting), and `ai[0] > 1` offsets every row +3 — the
+  pair rides the live rows 3/4/5 from its first anchored tick onward.
+- **`ai[0]` is the AI's hover anchor** (`AI_022`'s `NPC.cs:24758`:
+  `ai[0] = position.X`), not a phase counter — the port's simplified
+  hover writes it once per tick so the offset engages; the pre-anchor
+  spawn ticks show the spawn rows 0/1/2, exactly like the vanilla.
+- **The Twins never flip**: the aiStyle-22 block has no
+  `spriteDirection` arm (the 24893 write belongs to type 169's eye), so
+  the pair keeps the `SetDefaults` default -1 and joins the
+  `flips_on_sprite_dir` predicate (with the martians and the Prime
+  family) instead of flipping on the motion `facing`.
+- The laser/spit phases and the second-form transformations stay the AI
+  follow-ups; the port's `update_twin` is still the v1 EoC-cycle shape.
+
+Screenshot: `twins_family.png` (both eyes at their real 110x200 frames
+on the live rows), SHA256-stable across runs.
+
+## The Prime family's display (M4-NPC-3j)
+
+Skeletron Prime's head and four limbs had the port's earliest stub: the
+head's `find_frame` arm was empty (its comment even claimed
+`npcFrameCount[127] = 1`) and the four limbs all forced row 0 as "the
+limbs' single frame". Against `NPC.cs:74498-74570`:
+
+- **The head** (`case 127`) rides a 6-row 156-px strip: the hover phase
+  alternates rows 0/1 every 12 ticks, the enraged/day/despawn phases hold
+  the wide row 2, and the Mech-Queen variant (the head's `ai[3] != 0`)
+  alternates 3/4 and pins 5.
+- **The saw** (`case 129`) and **the vice** (`case 130`) spin 2-row strips
+  at 2 and 8 ticks with the wrap at `npcFrameCount`'s 2, and both write
+  `spriteDirection = direction` while grounded — on top of the AI's own
+  `-(int)ai[0]` seat write, which the port's `sprite_dir` field now
+  carries (the flip rides it, `Main.cs:23124-23128`).
+- **The cannon and the laser have no `FindFrame` case at all** — row 0
+  forever, matching the v1's outcome but now with the citation (a missing
+  case with a tall sheet is exactly how the martian family's
+  whole-strip-as-one-frame bug would look).
+- **The motion was written nowhere**: `AI_032`'s head roll
+  (`rotation = velocity.X / 15` in the hover, `direction * 0.3` in the
+  charge/day, the `AngleLerp` easing for the queen) and every limb's
+  `atan2` rotation (the saw/cannon/vice aim their "up" along the dock
+  vector at +π/2 — the vice's rise at the wider 280 dock — and the laser
+  aims at the player at -π/2) are ported; the head and the limbs joined
+  the draw's rotation branch.
+- **The draws took the whole strip as one frame** (`frame_h = t.h` over
+  box-sized quads at the box's corner). Now the sheets' real rows
+  (140x156, 38x76, 38x78, 40x70, 40x62) draw at the generic anchor, and
+  the two glow masks (`Bone_Eyes` over the head, `Bone_Laser` over the
+  laser, `Main.cs:25585-25642`) ride the body's own frame/rotation/anchor
+  as a second pass — both sheets were never packed into the atlas, so the
+  masks had nothing to draw from (the port renders the overlays with the
+  sheets' own alpha: the vanilla's (200,200,200,0) mask tint is a no-op in
+  a premultiplied pipeline).
+- **The enabling half**: the head's init request (`wants_limbs`,
+  `NPC.cs:27635-27661`) was set on the first tick and never drained — no
+  limb existed outside the direct-call test. The sim resolves it now with
+  the vanilla's seat signs (`ai[0]` -1/+1/-1/+1, the vice and laser with
+  `ai[3] = 150`), and `TR_BOSS=prime` spawns the whole boss for the shots.
+- Deviations: the Mech-Queen's `Chain12` links (`Main.cs:25590-25630`)
+  and the family's `TrailingMode 6` after-images (`Main.cs:25124-25136`)
+  stay unmodelled (the port has no trail pass); the glow masks' tint is
+  the alpha-carried equivalent noted above.
+
+Screenshots: `prime_family.png` (the head over the four limbs, all at
+their real frame sizes) and `prime_limbs.png` (the dock-rotated limbs),
+both SHA256-stable across runs.
+
 ## The martians' display (M4-NPC-3i)
 
 The Martian Madness family's 16 kinds had a `find_frame` arm each and a
@@ -4872,6 +4952,40 @@ the filters cover the world, never the map or the HUD.
 Verification: rain/sand/leaf shots with the fullscreen map and the
 minimap — no particle over either; the sandstorm filter no longer paints
 the minimap (the twins SHA256-equal); the workspace suite 1261/0.
+- **The jungle chest cycle** (`GetNextJungleChestItem`, `WorldGen.cs:10170-10196`
+  — the M5-CHEST-gen jungle slice): the jungle family's slot-0 main item
+  rides the `JungleItemCount % 4` table {211, 212, 213, 964} with the two
+  overrides (`Next(15) == 0` → 2292 first, else `Next(20) == 0` → 3017) and
+  `Prefix(-1)`, replacing the depth-band weapon approximation. Recorded
+  approximations: the counter advances once per *stocked* jungle anchor in
+  the load-time sweep's scan order (vanilla advances once per *attempted*
+  shrine chest in the `JChestX[i]` order, `ChestsInJungleShrines`
+  `:17219` — the sweep cannot see the failed attempts), and the port's
+  single `ctx.jungle` flag merges vanilla's flag4 (jungle, `chestStyle == 10`
+  `:36089`) and flag6 (living-tree, wall 244 `:36144`) families, so the
+  cycle now covers both — vanilla's slot-0 arm (`:36229`) writes `num10`
+  only under `(flag23 && (flag | flag6)) | flag11`, which leaves the deep
+  shrine chests' vanilla slot-0 question open for the style-dispatcher
+  follow-up.
+
+- **The chest family extras** (`AddBuriedChest`'s two `num10 > 0` arms,
+  `WorldGen.cs:36236-36257` surface / `:36806-36847` deep — the M5-CHEST-gen
+  flag-extras slice): the surface arm's flag6 (living-tree) extras
+  (5629 on 1/3, 4429/4427 on 1/6 with the 1/2 pick, 5528 on the 2/3
+  complement) and the deep arm's flag2 (ice) 3199 (1/5), flag3
+  (underground desert) 4346 (1/7) + 4066 (1/15), flag4 (jungle) 3360/3361
+  (the once-per-world `gennedLivingMahoganyWands` fairness — the first
+  jungle chest grants unconditionally, later ones on 1/5), 4426 and 5525
+  (1/10 each) — all at the vanilla draw order, replacing the approximations.
+  The port's `Context.jungle` (flag4, jungle grass 60 at the anchor) and
+  `Context.living_tree` (flag6, wall 244) are the split of the merged flag
+  the approximations ran on: the pre-existing pottery/2198 rows keep the
+  combined `wood_family` gate, the exact arms use the split families. Still
+  parked: the tenth anniversary's flag11 rows (M5-SEED-1), flag5's rows, the
+  remaining family rows the probes approximate (2198/669, 2197/751,
+  2766/2767), and the vanilla slot-0 arm's band question (ANALYSIS's jungle
+  chest cycle note).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -6844,6 +6958,138 @@ The envelope and the ported bodies are 1:1; the deviations:
   and their widths differ per town NPC (40/46/48/50/52/56) — the draw
   takes each sheet's real frame instead of a stretched 38x48.
 
+## Smart cursor (M7-SMARTCURSOR-1)
+
+`tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
+(`GameContent/SmartCursorHelper.cs:61-165`) as a step chain over the caller's
+reachable rect — grass seeds (`:266`), moss (`:334`), pigronata (`:969`), torch
+(`:2795` + `IsValidSpotForTorch` `:2867`), lawn mower (`:2895`), alchemy seeds
+(`:492`), planter box (`:437`), clay pots (`:381`), staff of regrowth (`:224`),
+each voting its candidates by distance-to-mouse (`:2849`'s `_targets` pick) and
+committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
+
+- **The edge convention is deliberately stricter than vanilla.** `Main.tile` is
+  exactly world-sized (`Main.cs:66984`) and the reachable rect never touches the
+  border, so vanilla never indexes out of world. `World::tile` returns `None` at
+  the edge and every step skips such a cell, while a *neighbour* read — the
+  flag/flag2 halves, `:236-239` — counts an out-of-world cell as the inactive
+  tile the C#'s default `Tile` would read. `InTileBounds` rejects any
+  OOB-derived candidate, so the two skip semantics converge with the C# for
+  `Step_PlanterBox`'s side extensions.
+- **`Collision.EmptyTile`'s entity arms are stubbed.** The clay-pots filter
+  (`:418`/`:428`) calls it with `ignoreTiles: true`
+  (`Collision.cs:1359-1386`), so the tile half is skipped; the player/NPC hitbox
+  arms have no tr-core store behind them and `collision_empty_tile` returns
+  `true` until the app-side wiring lands.
+- **`WeatherCtx` is a seam, not a deviation.** `IsAlchemyPlantHarvestable`
+  (`WorldGen.cs:66148-66175`) reads `Main.raining`/`cloudAlpha`/`remixWorld` —
+  session state, not `World` fields — so the caller passes them
+  (`growth.rs`'s `WeatherCtx`); every other input (`dayTime`, `bloodMoon`,
+  `moonPhase`, `worldSurface`, `time`) is saved world state.
+- **The C#'s `&`/`|` bool operators become `&&`/`||`.** `Step_StaffOfRegrowth`'s
+  `(tile.type == 0) & flag2` (`:238`) is redundant — the outer clause already
+  tests `tile.type == 0`, so it reduces to `flag2` — and
+  `IsAlchemyPlantHarvestable`'s `(!Main.raining | flag)` (`:66173`); both
+  operands are pure, so the short-circuit forms are provably equivalent.
+- **`Step_BlocksFilling` (`:2692-2793`) is unreachable in vanilla.** Its `:2709`
+  gate opens with `SmartBlocksEnabled ||` — reached with the setting on,
+  already returned at `:2694` with it off — so the body is dead code. Not
+  ported; do not "fix" it by dropping the flag.
+- **`Step_Pickaxe_MineShinies`'s priority filter (`:2315-2327`) is inert.** Both
+  loops iterate the just-cleared `_targets2`, so the
+  `SmartCursorPickaxePriorityOverride` comparison and the removal never see a
+  candidate; when the pickaxe family lands, port the observable behaviour (a
+  no-op filter), not the intended one.
+- **The torch step's gates were corrected to the real sets.** `:2812` reads
+  `ItemID.Sets.Torches` (24 ids, `ItemID.cs:1371`), the placement test
+  `Main.tileCut` (41 ids) with `TileID.Sets.BreakableWhenPlacing`, and
+  `IsValidSpotForTorch`'s anchors read `TileID.Sets.NotReallySolid` {387, 388,
+  10} (`TileID.cs:592`). This changes the previously merged torch behaviour; no
+  caller existed, so there is no runtime impact.
+- **`edit::solid_tile` gained the `!inActive` term.** The C#'s `nactive()`
+  (`WorldGen.cs:69957-69969`) and the indexed overload's explicit `!inActive()`
+  (`:70111-70131`) both exclude framed-off tiles, so an actuated tile is no
+  longer solid (vanilla parity). `Step_Pigronata`'s seat test
+  (`smart_cursor.rs:582`) reads it; the worldgen-only callers are unaffected —
+  worldgen has no actuated tiles.
+- **The paint lookup is a seam, like `WeatherCtx`.** `Step_PaintBrush`/
+  `Step_PaintRoller` (:727/:772) read `SmartCursorUsageInfo.paintLookup`/
+  `paintCoatingLookup` (:31-32), which the C# fills with
+  `TryFindingPaintInplayerInventory` (:177-191) — a scan of the player's
+  inventory (`Player.FindPaintOrCoating`, `Player.cs:41927-41944`). The
+  inventory is app-side, so the port's `Lookup.paint_lookup`/
+  `paint_coating_lookup` stay caller-passed u32s until the app wiring lands;
+  `Step_PaintScrapper` (:678) never reads them — :182 fills them only for the
+  brush/roller ids (1071/1543/1072/1544).
+- **The coating is a raw u32, not a port-side type.** `paintCoatingLookup`
+  carries 1 = Glow (the fullbright flags — GlowPaint 4668, `Item.cs:38496`) and
+  2 = Echo (the invisible flags — EchoCoating 5344, `Item.cs:42416`), decoded
+  by `WorldGen.paintCoatTile`/`paintCoatWall` (`WorldGen.cs:44134-44217`). The
+  port had no coating type before this pass, so the steps compare the raw
+  values (`coating == 1 && !fullbright_block()`,
+  `coating == 2 && !invisible_block(i, j)` and the wall pair) and leave the
+  encoding to the caller.
+- **The scraper's second target is LongMoss 184.** `Step_PaintScrapper`'s tile
+  arm (:692-697) also accepts a LongMoss tile — the scraper's moss arm lives
+  on the player (`Player.cs:41822-41824`'s
+  `PlaceThing_PaintScraper_LongMoss`) — so the scan is `tile.color() > 0`,
+  a `kind == 184` LongMoss tile, `fullbright_block()` or
+  `invisible_block()`, OR-ed with the wall arm behind the cell
+  (`wallColor() > 0`, `fullbright_wall` or `invisible_wall`).
+- **`empty_tile_check`'s ignore arm was corrected to the C#'s two-part
+  flag.** The C# arms are `flag = ignoreID != -1 && CommonSapling[ignoreID]`
+  (`WorldGen.cs:31471-31475`) and `if (flag && !CommonSapling[cell.type])`
+  (`:31501`): when the ignoreID is a sapling, EVERY `CommonSapling`
+  {20, 590, 595, 615} cell passes the box. The port had compared the single
+  passed kind, so a gem/sakura/willow sapling (590/595/615) wrongly blocked the
+  box; the seed steps pass `ignore = Some(20)` (and `Step_GemCorns` will pass
+  the profile's sapling), so the corrected arm matters for them. The worldgen
+  callers (`growth.rs`' tree arm) pass the same `Some(20)` and never see a
+  590/595/615 cell — worldgen spawns only the common sapling — so their
+  behaviour is unchanged.
+- **`Step_PumpkinSeeds` was ported but never dispatched.** The seed/herb pass
+  landed the step (`:1027-1098`) without adding it to the chain's array, so no
+  held pumpkin seed could reach it; it now runs at its C# place (`:137`, before
+  `Step_GrassSeeds` `:138`). Nothing else in the repo called the step, so the
+  omission had no runtime effect — but the ported tests for it were only
+  reachable directly. Found while wiring `Step_Acorns`: the chain's arity and
+  order now mirror the C# exactly (12 → 14 steps).
+- **`Step_Acorns`'s ground gate is `SolidTile2`, not `SolidTile`.** The step's
+  `:2054` reads `WorldGen.SolidTile2(tile3)` (`:70134-70147` — the
+  solid-top-tolerant overload, widened to `pub(crate)` for the port), unlike
+  the pigronata's `SolidTile`; the two C# overloads differ on exactly that, and
+  the port keeps both.
+- **The sapling window is `flag2 = flag || (±2/±3)`, so the immediate ±1
+  neighbours block the grass arm too.** The C#'s `:2058-2060` defines `flag2`
+  over `flag`, so the effective blocked window is ±3 columns (the sand arm's
+  `!flag` reads the inner ±1 only). The tests pin the vote falling outside the
+  window (a ±2 sapling at 27 makes the spot 25 drop and the vote take 23; an
+  immediate sapling at 26 widens the block to 23..=29 and the vote takes 22).
+- **The tree-seed profiles are the C#'s struct, minus the wall arm.**
+  `GrowTreeSettings` (`WorldGen.cs:3825-4048`) carries two delegates per
+  profile; no smart-cursor step reads the wall one (the C#'s worldgen callers
+  do), so the port keeps `GroundTest` (as the `GroundTestKind` enum over the
+  three ported functions, `WorldGen.cs:30304-30341`) and documents `WallTest`
+  out pending the `WallID.Sets.AllowsPlantsToGrow` table. The gem trees are
+  one shared profile shape (12/7/4/590) differing only in `TreeTileType`;
+  the ash profile (634/20) has no item entry — `TryGetFromItemId`
+  (`:3853-3884`) lists the nine gem/vanity seeds only, and the ash tree's only
+  door is `TryGetFromTreeId`'s tree tile.
+- **The two `Conversion` tile sets landed through the generator, not by hand.**
+  The ground tests read `TileID.Sets.Conversion.Stone` (`TileID.cs:90` =
+  {1, 25, 117, 203}) and `Conversion.Moss` (`:96` = the 11 moss tiles);
+  `Conversion.Grass` was already generated as `SET_GRASS`. Per the house rule
+  (`AGENTS.md`: never hand-edit `tiledata/`), the sets went through
+  `tools/GenTileData`'s `wantedSets` with a baseline regen first — the
+  baseline is a byte-empty diff and the new run adds exactly the two bitsets
+  (the `mod.rs` re-exports stay hand-written, as the generator documents).
+- **The generator defaults to the primary checkout's path.**
+  `tools/GenTileData/Program.cs`'s root is the hardcoded
+  `C:\Users\DreadLord\Desktop\Terraria-Rust` unless args[0] overrides it, so a
+  task worktree must pass its own root (`dotnet run --project tools/GenTileData
+  -- <worktree-root>`) or the regeneration lands in the shared primary. The
+  baseline run used by this pass confirmed the primary stayed clean (the
+  rewrite is content-identical), but a task should always pass the override.
 ## Projectile + strike sync (M6-NET-5)
 
 The projectile and strike messages are 1:1 ports; the deviations:
@@ -6893,5 +7139,195 @@ Deliberate deviations, all in the module header:
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
+## The pillar shards (M4-EVENT-9)
+
+The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
+`SetDefaults`: 405/406/407/423/425/429). Every row was re-read from the
+decompile before porting — the first pass' stats (the 407 at 1200 HP/def
+50, the 423 at 44×44/3000 HP, the 425 at 22×56) were wrong, as was the
+aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
+26 (`AI_026_Unicorns`)** — only 405/421/467 feed aiStyle 85, so the
+"shard hover" machine belongs to the Star Cell alone.
 
 
+## Micro-biome passes (M5-BIOME-2)
+
+The three micro-biome passes are 1:1 ports; the deviations:
+
+- **`tile_is_ore` is a hardcoded kind list**, not the generated
+  `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
+  Ore set, so the slab map's ore preservation uses the vanilla's ore ids
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
+  tile yet — the pots land with M5-STRUCT's pots step.
+- **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
+  cave-house voters read the tiles directly, so the registration has no
+  consumer yet.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — the port
+  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
+  slabs' corner states flatten to the active pattern).
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
+  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
+  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
+  decor family.
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
+  The pass's own isolated stream keeps the move RNG-neutral for the other
+  steps; the world contract's per-step pins hold.
+- The three passes draw from their own `pass_rng` streams; the shared
+  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
+  `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
+  300 the vanilla `Transform(405)` — the port swaps `kind` in place (the
+  vanilla's `SetDefaultsFromNetId` keeps `life`; both are 300 HP so the
+  numbers agree) and resets the ramp. `npcFrameCount[405/406]` = 4/2.
+- **The 407's aiStyle-96 flyer** (`:39430-39472`): `TargetClosest`, the
+  aim vector is the player's centre lifted 250 px, the bands are <20
+  (hold the current velocity) / <40 (1.75) / <80 (3.25) / else 5, the
+  `moveSpeed` 0.15 smoothing, the rotation `velocity.X * 0.1`, and the
+  70-tick cycle throws the 539 at 60 damage from the ring: `UnitY`
+  rotated by a random ±π/2 and scaled by (5, 3), resampled until
+  `|X| >= 1.5` (the port's 64-iteration guard stands in for the vanilla's
+  unbounded loop). 5 frames.
+- **The 405's aiStyle-85 hover** (`:36930-37220`): five `ai[0]` phases.
+  Phase 0 probes (sighted → 1; 800 px → 2; the 8-px corner probe →
+  3 with the player centre as the waypoint; else the drift → 4). Phase 1
+  steers at `8 + dist/100` (the 405's base) over the 50-tick smoothing
+  `(velocity * 49 + desired) / 50` and drops back to 0 when the line of
+  sight breaks. Phases 2/3 charge/homing at 6 and 3 over the 3-tick
+  divisor; phase 4 bounces with the 0.8 restitution and re-probes every
+  180 ticks. The separator loop pushes 0.05 per axis off the player
+  within a width. The 421-only attachment arm and the dust arms are
+  unmodelled.
+- **The 423's `AI_026_Unicorns` arm** (`:62366-62924`): the machine is
+  the unicorn/wolf/hellhound/tumbleweed walker with per-type speed/accel
+  tails — the NebulaBeast's is the 10-px cap, the 0.2 accel and the 0.85
+  turnaround damping. Its own arms sit at `:62497-62557`: the charge
+  (`ai[2] == 1`) damps `velocity.X` by 0.7 each tick, fires the 575 at 50
+  damage (`GetAttackDamage_ForProjectiles(50, 35)` — the classic
+  constant) from 20 px behind the centre at `spriteDirection * -7` on
+  the 30th tick, and releases at 60 by setting `ai[1] = -rand(320, 600)`.
+  The idle arms the charge on the grounded 180-tick idle inside the
+  500-px reach. The ledge-jump arm's tile probes (the −8.5/−7.5/−7/−6/−8
+  ladder at `:62806-62903`) fold into the walker's single jump.
+- **The 425's `AI_003_Fighters` arm** (`:58463-58621`): `localAI[3]`'s
+  one-shot latch rearms `ai[3]` to −120 on the first tick (the port's
+  `rifleman_rearmed` field — without the latch the idling timer retriggers
+  the init forever). Grounded clears the leap state `ai[2]`; in the air
+  the homing aims 300 px to the side of the player and 20 px off its
+  bottom, with the 0.3/8 vertical and 0.3/7 horizontal accel/cap pairs.
+  The leap arm fires when the player's centre is 100 px below with line
+  of sight (`velocity.Y = -5`). The arming window advances `ai[3]` from
+  0 to 30 only inside the 800-px horizontal line of sight, the 31..40
+  windup wraps back to −150, and the 30th tick fires the four 577s at 75
+  damage from 30 px behind the centre — only the first shot is exact.
+- **The 429 rides the plain walker** with the 4-px cap (`:57681`) and
+  has no AI attack; its 578 lightning is a `HitEffect`-death spawn
+  (`:83161-83203`) the port leaves out with the dust/gore arms.
+
+Deviations: the dust/gore arms (229/241/242, the 778-810 gores),
+`DoDeathEvents`'s 629 shield-hit projectile (`:79290`), the 427/428
+metamorphoses, the VortexHunter's shared shooter block and the tower
+spawn weights/caps (`:1327-1337`) are unmodelled — the pillar spawn
+tables themselves stay open.
+
+## The Moon Lord family (M4-EVENT-10)
+
+**The ids are 396/397/398/400/401, not 517** — `NPCID.cs:11469-11479`: the
+Moon Lord is `MoonLordHead` 396, `MoonLordHand` 397, `MoonLordCore` 398,
+`MoonLordFreeEye` 400 (the True Eye of Cthulhu) and `MoonLordLeechBlob`
+401. 517 is the Solar Tower (M4-EVENT-8). The boss bar reads 396/397/398
+(`MoonLordProgressBar.ValidIds`) and the boss-head index for 396 is 8.
+
+- **The core (aiStyle 77, `NPC.cs:41157-41575`)** runs six `ai[0]` phases.
+  The spawn-in (-1) arms `wants_moon_parts` at the 60th tick → the two
+  hands at `Center.X + seat*800 - 400, Center.Y - 100` with `ai[2] =
+  seat`, the head at `Center.Y - 400`, all carrying the core's index in
+  `ai[3]` (the port stores them in `moon_parts[0..2]`). The cruise (0/1)
+  hovers 130 px above the player at the 8-px cap over the 0.5 smoothing;
+  past 2400 px the core teleports to the player lifted 150 px and the
+  parts ride it in the pre-pass. The crash drama (2) rises at the 0.98
+  lerp toward (0, -0.5), throws the 622 smoke every 15 ticks inside
+  [90, 480) and ends at 600 with `life = 0` → `downed_moon_lord`
+  (`DoDeathEvents`'s 398 row). The despawn (3) clears the parts at 60.
+  A missing part opens the death ride — the port's pre-pass mirrors the
+  live parts into `moon_parts` so the check reads them.
+- **The hands (aiStyle 78, `:41577-42082`)** run `MoonLordAttacksArray`'s
+  two rows (the 600-tick loop): attack 0 the hover at the (±350, -100)
+  side slot, 1 the Phantasmal Eyes — the 56-tick eyelid cycle with the
+  452 (30) every 4 ticks over the ring, 2 the flood — six 454s (40) on
+  the 30-tick cadence, the 20-px travel and the release wave (the 462 at
+  30 from 350 px above the hand) at the 292nd tick, 3 the retargeting
+  laser — the 462 (30) at the -14/-7/0 ticks. The frame box clamps the
+  hand to the core-centred wander limits.
+- **The head (aiStyle 79, `:42084-42457`)** sits on the fixed 400-px slot
+  and runs the head row: the deathray attack fires the 455 (75) on the
+  180th in-attack tick sweeping at ±2π/540, the leech attack fires the
+  456 per player within 3000 px and grows a 401 clot per leeched player
+  at 120/180/240, and the laser attack throws the 462 (30).
+- **The True Eye (aiStyle 81, `:42459-42880`)** runs
+  `MoonLordAttacksArray2`: the 53-tick drift attacks sandwich the aimed
+  laser (462, 35), the orbit (the inward 454 ring then the release) and
+  the ring's 452 (35) volley every 10 ticks in the 150-tick window. A
+  dying hand or head spawns one (`checkDead`'s 397/396 rows), each with
+  the phase offset `188 + 400 * (1 + already-spawned)`.
+- **The leech blob (aiStyle 82, `:36629-36756`)** glides 90 ticks to the
+  head, then drains 1000 hp in the order head → core → hand0 → hand1
+  and dies.
+
+Deviations: the 452/454/455/456 projectile engines (the vanilla's
+aiStyles 82-85 — the homing eye, the sphere's lock, the deathray's
+LaserScan, the leech's buff application) are unmodelled; the pool's
+`proj_data` rows carry their boxes/flags only. `MoonlordDeathDrama`'s
+light/explosion/pieces event is unmodelled (the port's drama is the
+timer + the 622 smoke). The core's `SpawnOnPlayer`/`MoonLordCountdown`
+(`Main.cs:64987-64993`), the Celestial Sigil (item 3601 →
+`StartImpendingDoom(720)`), the boss bar/head textures and the 3544/58
+loot rows stay open. The `FindFrame` cases port their counters (the
+396's 4×8 accumulator with the rand boost folded into a hash, the 397's
+frameCounter/7, the 398's 30/6, the 400's 16/4) — the 398's gore burst
+on its first frame is unmodelled.
+
+## The Vortex hive trio (M4-EVENT-11)
+
+The Vortex pillar spawns 426/427/428 (`NPC.cs:1327`'s `SelectRandom(429,
+429, 429, 429, 427, 427, 425, 425, 426)` — the 426 caps at 3 alive, the
+429 at 4). All three ride aiStyle 3.
+
+- **The hunter (426)** is the only vortex mob in the shared shooter block
+  (`NPC.cs:59069`): `flag17` (`:59072`) lets it shoot mid-air, its
+  cooldown is 60 with the shot at the 59th tick (`:59163-59192`), the
+  muzzle sits at `spriteDirection * 2, -12` and the speed is 7
+  (`:59304-59308`), the spread is `rand(-30..31) * 0.3` on both axes
+  (`:59374-59378`), the projectile is the 581 at 60 damage
+  (`:59480-59484`, the classic constant of `GetAttackDamage_ForProjectiles
+  (60, 45)`), and its walk runs the 4-px cap / 0.6 accel / 0.95 drag
+  (`:59751-59756`). `UpdateNPC_UpdateGravity`'s 426 arm (`:90910`) runs
+  gravity 0.1 with the 3-px fall clamp. The interception aim
+  (`:59529-59542`) folds into the centre aim.
+- **The alien (427)** flies the same dive skeleton as the rifleman with
+  its own constants (`:58622-58711`): landing clears `ai[2]` and flattens
+  the rotation, airborne the rotation rides `velocity.X * 0.1`; the dive
+  homing accelerates 0.015 (X) and 0.15 (Y) over the ±6 caps with the
+  0.98 damping and the 20-px deadband (no 300-px aim offset); the 0.05
+  separation pushes off the player; the leap (`:58705-58709`) throws
+  `velocity.Y = -5` when the player's centre is 100 px below. At the
+  1200-tick counter (`localAI[0]++ + |vx|/2`) behind the empty 5×5 box it
+  `Transform(426)`s (`:56886-56901`). Gravity 0.1 / 4-px clamp while
+  `ai[2] == 1` (`:90902-90908`).
+- **The headcrab (428)** rides the generic walker with no speed override
+  and rolls its rotation (`velocity.Y == 0` → 0, else `+= velocity.X *
+  0.08`, `:58832-58841`). At the 300-tick counter behind the empty 3×2
+  box above its centre it `Transform(427)`s (`:56855-56869`).
+- **`Transform(newType)`** (`NPC.cs:81084-81114`) re-runs `SetDefaults`
+  with `withReposition` and rescales `life`; both hive arms pre-set
+  `life = lifeMax`, so the port's in-place kind swap sets the new max,
+  heals and clears the ai slots (the vanilla's own `localAI[0] = 0`
+  resets the counter).
+
+Deviations: the dust cadences (`:56871`'s 16/8/4/2/1 and `:56903`'s
+32/16/6/2/1), the hunter's `GetChaseResults` interception, the 426-only
+`ai[2]` re-pick by the velocity ratio and the `stealth`/`itemAnimation`
+gate are unmodelled; the walker's snapshot accel folds the vanilla's
+per-type 0.6 accel / 0.95 drag into its speed cap.

@@ -1056,8 +1056,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // M5-DESERT-structures underground desert.
     step!("full desert", "Full Desert", step_full_desert),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
-    step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
+    // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
+    // Granite (:12839): the granite caves recruit into pre-carved caves
+    // (the `GraniteBiome.CanPlace` inactive-origin gate feeds the
+    // pressure simulation's low-resistance air), so the step moves after
+    // the carve. The two passes draw from their own isolated streams, so
+    // the move is RNG-neutral for every other step.
+    step!("granite and marble", "Marble", step_granite_marble),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
@@ -1074,7 +1080,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
     step!("beaches", "Beaches", step_beaches),
-    step!("gravitating sand", "Gravitating Sand", step_gravitating_sand),
+    step!(
+        "gravitating sand",
+        "Gravitating Sand",
+        step_gravitating_sand
+    ),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
@@ -1355,11 +1365,7 @@ fn step_plan_biome_spans(
     gv.jungle_origin_x = jungle_origin_x;
     let (width, left_beach_end, right_beach_start) = {
         let map = gv.map();
-        (
-            world.width,
-            map.left_beach_end,
-            map.right_beach_start,
-        )
+        (world.width, map.left_beach_end, map.right_beach_start)
     };
     let surface = gv.map().heights.clone();
     gv.spans = Some(biomes::plan_spans(
@@ -1472,7 +1478,13 @@ fn step_mushroom(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biomes::pass_mushroom(world, gv.spans(), gv.layers().rock_layer, &mut streams.rng);
+    biomes::pass_mushroom(
+        world,
+        gv.spans(),
+        gv.layers().rock_layer,
+        gv.layers().world_surface,
+        &mut streams.pass_rng("GlowingMushroomPatches"),
+    );
 }
 
 fn step_granite_marble(
@@ -1483,7 +1495,16 @@ fn step_granite_marble(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biomes::pass_granite_marble(world, gv.layers().rock_layer, &mut streams.rng);
+    biomes::pass_marble(
+        world,
+        gv.layers().rock_layer,
+        &mut streams.pass_rng("Marble"),
+    );
+    biomes::pass_granite(
+        world,
+        gv.layers().rock_layer,
+        &mut streams.pass_rng("Granite"),
+    );
 }
 
 fn step_cave_fields(
@@ -1650,7 +1671,12 @@ fn step_ocean_caves(
     // change of this phase (the later `drng` consumers shift along their
     // stream — the same class as the M5-BIOME phase-3/6 accepted shifts).
     let layers = *gv.layers();
-    ocean::ocean_caves(world, gv, &layers, &mut streams.pass_rng("Create Ocean Caves"));
+    ocean::ocean_caves(
+        world,
+        gv,
+        &layers,
+        &mut streams.pass_rng("Create Ocean Caves"),
+    );
 }
 
 fn step_fragile_ice(
@@ -2154,7 +2180,12 @@ fn step_shell_piles(
 ) {
     // The shell-pile blobs (`WorldGen.cs:16266`) over the Beaches anchors.
     let world_surface = gv.layers().world_surface;
-    ocean::shell_piles(world, gv, world_surface, &mut streams.pass_rng("Shell Piles"));
+    ocean::shell_piles(
+        world,
+        gv,
+        world_surface,
+        &mut streams.pass_rng("Shell Piles"),
+    );
 }
 
 fn step_water_plants(
@@ -2183,7 +2214,11 @@ fn step_cacti(
     // sea oats — replacing the compact desert-only cactus scatter (the
     // faithful middle zone's `PlantCactus` covers the desert's cacti).
     let layers = *gv.layers();
-    ocean::cactus_palm_trees_and_coral(world, &layers, &mut streams.pass_rng("Cactus, Palm Trees, & Coral"));
+    ocean::cactus_palm_trees_and_coral(
+        world,
+        &layers,
+        &mut streams.pass_rng("Cactus, Palm Trees, & Coral"),
+    );
 }
 
 fn step_world_tail(
@@ -2366,8 +2401,11 @@ mod tests {
                 "mud caves to grass",
                 "full desert",
                 "mushroom patches",
-                "granite and marble",
                 "cave fields",
+                // M5-BIOME-2: granite moved after the cave carve (the vanilla
+                // order) — the `GraniteBiome.CanPlace` inactive-origin gate
+                // needs the pre-carved caves.
+                "granite and marble",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
                 "dirt to mud",
