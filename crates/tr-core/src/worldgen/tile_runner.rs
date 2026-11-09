@@ -47,6 +47,12 @@ pub(crate) struct TileRunnerOpts {
     /// `GenVars.lavaLine` — read by the wall-arm depth split (`:76877`) and
     /// the type -2 lava fill (`:76895`, `:76906`).
     pub lava_line: f64,
+    /// M5-SEED-1: the classic secret-seed flags the runner's own arms read
+    /// (`WorldGen.cs:76774-76788` — the drunk jitter pair and the
+    /// for-the-worthy strength/steps multipliers, plus the `:76806`
+    /// not-the-bees constant wall variant). `Default` = a classic world, so
+    /// every existing call site is byte-identical until it sets the flags.
+    pub flags: crate::seeds::SeedFlags,
 }
 
 impl Default for TileRunnerOpts {
@@ -62,6 +68,7 @@ impl Default for TileRunnerOpts {
             rock_layer: 0.0,
             water_line: 0.0,
             lava_line: 0.0,
+            flags: crate::seeds::SeedFlags::default(),
         }
     }
 }

@@ -36,7 +36,9 @@ mod surface;
 mod temple;
 mod terrain;
 mod tile_runner;
+mod wavy;
 mod world_hash;
+mod finish_seeds;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;

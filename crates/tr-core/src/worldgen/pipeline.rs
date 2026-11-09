@@ -34,6 +34,7 @@ use super::biomes::{self, BiomeSpans};
 use super::caves;
 use super::desert;
 use super::desert_dunes;
+use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::evil;
 use super::islands;
@@ -47,6 +48,7 @@ use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
 use crate::tree;
@@ -1084,6 +1086,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("granite and marble", "Marble", step_granite_marble),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    // The vanilla Wavy Caves slot (`WorldGen.cs:12271`): after the cave
+    // family (Dirt In Rocks `:11935`) and before the ice/grass pair —
+    // M5-SEED-1's Don't Starve pass, whose body exists only for that seed
+    // (a classic world runs the step and draws nothing).
+    step!("wavy caves", "Wavy Caves", step_wavy_caves),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
@@ -1094,6 +1101,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
     step!("dungeon", "Dungeon", step_dungeon),
+    // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
+    // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
+    // called from the Dungeon pass when the seed is on — M5-SEED-1.
+    step!("constant lava layer", "", step_constant_lava_layer),
     // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
@@ -1180,6 +1191,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
     step!("world tail", "", step_world_tail),
+    // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
+    // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
+    // seed (a classic world's tail is unchanged).
+    step!("seed finish", "", step_seed_finish),
 ];
 
 pub(crate) fn executed_pass_names() -> Vec<&'static str> {
@@ -1187,6 +1202,59 @@ pub(crate) fn executed_pass_names() -> Vec<&'static str> {
 }
 
 // --- the step adapters (the generate() call sites, verbatim) ----------------
+
+/// The vanilla Wavy Caves slot (`WorldGen.cs:12271`): the Don't Starve
+/// pass (`wavy::wavy_caves`). Classic worlds fall straight through.
+fn step_wavy_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        return;
+    }
+    wavy::wavy_caves(world, gv, streams, opts);
+}
+
+/// The vanilla Dungeon-tail call (`WorldGen.cs:14867`): the Constant's
+/// `LavaLayerCaverer` (`wavy::lava_layer_caverer`).
+fn step_constant_lava_layer(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        return;
+    }
+    wavy::lava_layer_caverer(world, streams, opts);
+}
+
+/// The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the seed
+/// `Finish*` passes (`finish_seeds`), each gated on its own flag.
+fn step_seed_finish(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::DRUNK) {
+        finish_seeds::finish_drunk_gen(world, streams, opts);
+    }
+    if opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
+        finish_seeds::finish_get_good_world(world, streams, opts);
+    }
+    if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+        finish_seeds::finish_tenth_anniversary_world(world, streams, opts);
+    }
+}
 
 fn step_terrain_height_map(
     _world: &mut World,
@@ -2389,7 +2457,8 @@ mod tests {
         // honey` (vanilla `:17356` / `:17428` / `:17472` / `:19995`).
         // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
         // `:12500`).
-        assert_eq!(names.len(), 58);
+        // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
+        assert_eq!(names.len(), 61);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2434,12 +2503,14 @@ mod tests {
                 "granite and marble",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "wavy caves",
                 "dirt to mud",
                 "ash blobs",
                 "ores and gems",
                 "evil",
                 "liquids",
                 "dungeon",
+                "constant lava layer",
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
@@ -2479,6 +2550,7 @@ mod tests {
                 "lihzahrd altar",
                 "water plants",
                 "world tail",
+                "seed finish",
             ]
         );
     }
@@ -2493,7 +2565,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
-        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 1);
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 2); // + wavy caves (M5-SEED-1)
         assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -2519,7 +2591,7 @@ mod tests {
         assert_eq!(pos("ocean sand"), pos("dunes") + 1);
         assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "jungle");
-        assert_eq!(pos("beaches"), pos("dungeon") + 1);
+        assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
