@@ -2908,6 +2908,56 @@ The bridge: with the crew dead and the core open (the classic arm),
 the shell drives the core's `ai[0] = 3` — the death ride — so a saucer
 whose guns die falls out of the fight on its own.
 
+## The Prime family's display (M4-NPC-3j)
+
+Skeletron Prime's head and four limbs had the port's earliest stub: the
+head's `find_frame` arm was empty (its comment even claimed
+`npcFrameCount[127] = 1`) and the four limbs all forced row 0 as "the
+limbs' single frame". Against `NPC.cs:74498-74570`:
+
+- **The head** (`case 127`) rides a 6-row 156-px strip: the hover phase
+  alternates rows 0/1 every 12 ticks, the enraged/day/despawn phases hold
+  the wide row 2, and the Mech-Queen variant (the head's `ai[3] != 0`)
+  alternates 3/4 and pins 5.
+- **The saw** (`case 129`) and **the vice** (`case 130`) spin 2-row strips
+  at 2 and 8 ticks with the wrap at `npcFrameCount`'s 2, and both write
+  `spriteDirection = direction` while grounded — on top of the AI's own
+  `-(int)ai[0]` seat write, which the port's `sprite_dir` field now
+  carries (the flip rides it, `Main.cs:23124-23128`).
+- **The cannon and the laser have no `FindFrame` case at all** — row 0
+  forever, matching the v1's outcome but now with the citation (a missing
+  case with a tall sheet is exactly how the martian family's
+  whole-strip-as-one-frame bug would look).
+- **The motion was written nowhere**: `AI_032`'s head roll
+  (`rotation = velocity.X / 15` in the hover, `direction * 0.3` in the
+  charge/day, the `AngleLerp` easing for the queen) and every limb's
+  `atan2` rotation (the saw/cannon/vice aim their "up" along the dock
+  vector at +π/2 — the vice's rise at the wider 280 dock — and the laser
+  aims at the player at -π/2) are ported; the head and the limbs joined
+  the draw's rotation branch.
+- **The draws took the whole strip as one frame** (`frame_h = t.h` over
+  box-sized quads at the box's corner). Now the sheets' real rows
+  (140x156, 38x76, 38x78, 40x70, 40x62) draw at the generic anchor, and
+  the two glow masks (`Bone_Eyes` over the head, `Bone_Laser` over the
+  laser, `Main.cs:25585-25642`) ride the body's own frame/rotation/anchor
+  as a second pass — both sheets were never packed into the atlas, so the
+  masks had nothing to draw from (the port renders the overlays with the
+  sheets' own alpha: the vanilla's (200,200,200,0) mask tint is a no-op in
+  a premultiplied pipeline).
+- **The enabling half**: the head's init request (`wants_limbs`,
+  `NPC.cs:27635-27661`) was set on the first tick and never drained — no
+  limb existed outside the direct-call test. The sim resolves it now with
+  the vanilla's seat signs (`ai[0]` -1/+1/-1/+1, the vice and laser with
+  `ai[3] = 150`), and `TR_BOSS=prime` spawns the whole boss for the shots.
+- Deviations: the Mech-Queen's `Chain12` links (`Main.cs:25590-25630`)
+  and the family's `TrailingMode 6` after-images (`Main.cs:25124-25136`)
+  stay unmodelled (the port has no trail pass); the glow masks' tint is
+  the alpha-carried equivalent noted above.
+
+Screenshots: `prime_family.png` (the head over the four limbs, all at
+their real frame sizes) and `prime_limbs.png` (the dock-rotated limbs),
+both SHA256-stable across runs.
+
 ## The martians' display (M4-NPC-3i)
 
 The Martian Madness family's 16 kinds had a `find_frame` arm each and a
