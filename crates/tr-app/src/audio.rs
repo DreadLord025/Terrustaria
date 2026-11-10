@@ -113,6 +113,10 @@ pub struct Audio {
     liquid_cues: [Option<(u16, u32, Vec<i16>)>; 2],
     /// Per-frame `Main.Camera.Center` + the volume sliders (see [`crate::sound`]).
     listener: Listener,
+    /// The played-cue counter (a test seam — the headless Apps have no output
+    /// device, so the bug/UI flows assert the click sounds through this
+    /// instead of a real playback).
+    played: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Audio {
@@ -192,6 +196,7 @@ impl Audio {
             _stream: stream,
             handle,
             cues,
+            played: Default::default(),
             liquid_loops: [None, None],
             liquid_cues,
             ambient_loop_cues,
@@ -219,7 +224,14 @@ impl Audio {
 
     /// A positioned sound (`PlaySound(type, x, y, volumeScale)`), attenuated by
     /// [`crate::sound::play_sound`] against the current listener.
+    /// The played-cue count (the test seam — the headless Apps have no output
+    /// device, so the UI flows assert their cues through this).
+    pub fn played_count(&self) -> u64 {
+        self.played.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn play_at(&self, cue: &str, x: f32, y: f32, volume_scale: f32) {
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some((channels, rate, samples)) = self.cues.get(cue) else {
             return;
         };

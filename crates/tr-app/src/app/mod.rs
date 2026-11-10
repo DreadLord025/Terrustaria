@@ -303,6 +303,12 @@ pub(crate) struct App {
     /// The port's not-ported notice for front-screen clicks whose target
     /// lands with Tasks 6-8 (ours, like `Menu.hint`).
     pub(crate) front_hint: Option<String>,
+
+    /// Bug 17: the front-end hover edge — the framework element id the pointer
+    /// sat on last frame (`None` = outside), so `FadedMouseOver`'s menu tick
+    /// fires once per enter (`UICharacterSelect.cs:124`,
+    /// `UIWorldSelect.cs:126`).
+    pub(crate) front_hover_hit: Option<u32>,
     /// `Main.mouseLeft`'s port for the front screens (`Main.cs:51101`'s role):
     /// held between the press and release events while `front` is live — the
     /// creation screen's HSL sliders drag off it, like the menu's value bars.
@@ -2360,6 +2366,7 @@ impl App {
             players: Vec::new(),
             worlds: Vec::new(),
             front_hint: None,
+            front_hover_hit: None,
             front_mouse_down: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
