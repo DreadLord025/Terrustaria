@@ -672,7 +672,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
-        bestiary_completion: crate::bestiary::completion_percent(&app.kill_tracker),
+        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
@@ -2296,7 +2296,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
         // the bestiary completion ≥ 10 % — the same gate the C# reads
         // through `GetBestiaryProgressReport()`.
-        if crate::bestiary::completion_percent(&app.kill_tracker) >= 0.10
+        if crate::bestiary::completion_percent(&app.bestiary.kills) >= 0.10
             && !app.npcs.iter().any(|n| n.kind == NpcKind::Zoologist)
         {
             if let Some(player) = app.player.as_ref() {

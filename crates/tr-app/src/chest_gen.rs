@@ -1278,6 +1278,8 @@ mod tests {
                 count: 1,
                 prefix: 0,
             }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         }];
         let mut rng = 0x5EED_u64 | 1;
         improve_all_chest_contents(&mut chests, &mut rng);
@@ -1296,6 +1298,8 @@ mod tests {
                 count: 1,
                 prefix: 0,
             }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         }];
         let mut rng2 = 0x5EED_u64 | 1;
         improve_all_chest_contents(&mut again, &mut rng2);

@@ -15439,10 +15439,12 @@ mod tests {
                 kind_from_legacy_name("Pinky").map(|(_, v)| v),
                 Some(crate::npc::SlimeVariant::Pinky)
             );
-            // A "Little/Big X" sub-variant or an unported NPC maps to nothing:
-            // the record is parsed and discarded (recorded deviation).
+            // A "Little/Big X" sub-variant, an unported NPC or an empty name
+            // maps to nothing: the record is parsed and discarded (recorded
+            // deviation). (The Party Girl used to sit here until M4-TOWN
+            // ported her; the town kinds keep growing.)
             assert!(kind_from_legacy_name("Big Zombie").is_none());
-            assert!(kind_from_legacy_name("Party Girl").is_none());
+            assert!(kind_from_legacy_name("Party Girl").is_some());
             assert!(kind_from_legacy_name("").is_none());
             // And the legacy record lands as that kind through `from_wld`.
             let npcs = from_wld(&WldNpcs {
