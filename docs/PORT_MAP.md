@@ -15,6 +15,10 @@ re-implement something that already exists, or to port the wrong file.
 **State legend:** `done` = ported and tested · `partial` = core present, gaps remain ·
 `wip` = actively being ported · `todo` = not started · `n/a` = deliberately not ported.
 
+> **Known player-facing defects:** the 2026-11-10 audit (20 reported bugs, each with the
+> exact diverging C# and Rust sites) lives in [`BUG_REPORT.md`](BUG_REPORT.md); the
+> claimable fix rows are in [`ROADMAP.md`](ROADMAP.md) → "Known bugs — player audit".
+
 ## Core world / simulation (`crates/tr-core`)
 
 | C# source (under `Terraria/`) | Rust target | State |
