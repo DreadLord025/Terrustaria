@@ -575,12 +575,22 @@ calls `audio.play("Menu_Tick")`/`("Grab")` from the in-game click handlers
 **Root cause.** The front-end click/activate path never got the sound wiring the
 in-game path has.
 
-**Fix plan.**
-1. Call `audio.play("Menu_Tick")` on row hover/selection and `("Grab")` on
-   activation in `menu/mod.rs`'s click dispatch (the same helper the in-game path
-   uses).
-2. Cover char select / world select (`apply_front_flow`) and the Back buttons.
-3. Test: a scripted front click increments the audio cue counter.
+**Status: FIXED 2026-11-10** (`fix-front-end-click-sounds`).
+
+What landed: the front-end activation cue in `handle_front_click`
+(`UICharacterSelect.cs:110/:118`, `UIWorldListItem.cs:365`) — the Back-family
+clicks play `Menu_Close` (11), the rest `Menu_Open` (10); the legacy menu's
+click plays `Menu_Tick` (`DoStatefulTickSound`, `Main.cs:3244`); the hover
+edge — the front screens' element enter (`FadedMouseOver`,
+`UICharacterSelect.cs:124` / `UIWorldSelect.cs:126`) and the legacy menu's row
+enter — plays one `Menu_Tick` per enter. `Audio` gained a `played` counter
+(the test seam the headless flows assert through — `played_count()`). 2 tests
+(the activation cue, the single hover tick).
+
+Note on the report's item 1: the front-end paths call the same `audio.play`
+helper the in-game path uses, but the legacy menu's activation cue is
+`Menu_Tick` (the C#'s stateful tick), not `Grab` (7) — the `Grab` cue is the
+chest/inventory slot movement's cue, not the menu's.
 
 ---
 
