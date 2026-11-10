@@ -8552,6 +8552,60 @@ replay-pair tests and the wind tests) stay green unchanged.
   `flame.rs`'s second 48-bit LCG copy are recorded as a follow-up engineering
   row.
 
+## Magic staves (M4-PROJ-6)
+
+The port's caster families land in `crates/tr-app/src/projectile.rs` beside
+the arrow/boomerang/bomb arms. The slot state the machines need
+(`localAI`/`alpha`/`scale`) and the row defaults the spawn applies ride the
+C# `SetDefaults` reset group; the dispatch arms 8/9/18/22/24/28/29/47/48/50/
+129 plus the aiStyle-1 rider gate sit at `ProjectilePool::update`'s
+`match data.ai_style`.
+
+Deliberate deviations and skips (all one-line-cited in the code):
+- **Dust and sound are skipped in every arm** — the pool has no dust layer
+  and no sound sink; the `Main.rand`/`SoundEngine` calls inside the C# AI
+  blocks are recorded per arm. The frame animations (`frameCounter`/`frame`)
+  are skipped the same way: no frame fields on the slot and no frame slicing
+  in the projectile draw. Both are the render/Audio follow-up.
+- **The Magnet Sphere's candidate pick is the first in `Main.npc` order** —
+  the C#'s `Main.rand.Next(num)` pick has no pool RNG (the determinism rule);
+  identical to the vanilla for the single-candidate case the spawn usually
+  sees. The rider damage/penetrate bumps (the lasers' `rand.Next` rolls) are
+  skipped for the same reason.
+- **AllGems2's seven-bolt branch is ported but unreachable in this
+  decompilation** — only `AllGems` (the Bejeweled Staff 6171) has a writer in
+  `Player.cs`, so bit 9 is never set; the initial `NextFromList` draw the
+  branch's loop overwrites is therefore not consumed.
+- **Wind physics runs only for the new arms** (styles 8/24/28/29, the C#'s
+  `ShouldUseWindPhysics` `:22101-22124`, applied after the AI sub-steps). The
+  ported arrow/bomb arms keep their pre-existing no-wind behaviour — the fix
+  is behaviour-affecting and belongs to a follow-up row. `Main.windPhysics`
+  is false in this decompile, so the pool's `wind_speed` defaults to inert
+  and the faithful behaviour is "no wind" either way. The C#'s
+  `MathHelper.Clamp` on the tail line discards its return (a no-op in the
+  source) — ported as written.
+- **The PVE walk's fixed centre point stands in for the boxes** in the
+  normal (flight-size) pass; the resized death bursts (the gem bolts' AoE)
+  ride the new `damage_pve_boxed` rectangle walk `Projectile.Damage` actually
+  runs — without it the burst's 160×160 box would deal no damage.
+- **The channel reads a one-tick-old aim**: the frame runs
+  `update_projectiles` before `update_editing`, so the aim the spell reads
+  was written on the previous tick — the same net state as the C#, where
+  `ItemCheck` precedes `UpdateWorld_Projectiles` and the owner block reads
+  the previous tick's player state too.
+- **The Bejeweled Staff 6171 rides `registry::ITEM_CORRECTIONS`** — the
+  GenItemData placeholder band (3263-3989) still emits the zero row for it
+  (the generator misses its case); the id-keyed correction is the `place_tile`
+  3813 precedent. The band's other in-scope staves (3377/3779/3787) were
+  fixed by the M6-SAVE-1 `itemdata.rs` regen and now ride the generated rows.
+- The style-22 owner tile writes (the Ice Rod's `PlaceTile`/`KillTile`) run
+  at the owner branch through `tr_core::edit`; the frozen block variant of
+  the hostile 291 style-50 branch stays out (no ported row).
+
+The batch review's three spell-arm findings (the missing
+`MathHelper.Lerp(0f, 0.2f, …)` wrap on the aim blend, the 800f target-search
+default and the retarget's closest-wins loop) were fixed forward against the
+decompilation and pinned with tests.
 ## .trwld v6 — the world flags, wires and tile entities (M6-SAVE-1) (re-landed)
 
 Re-landed: the `M5-CHEST-gen-flag-extras` merge (`07d786ab`) dropped this work from

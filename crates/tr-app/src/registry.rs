@@ -22,8 +22,77 @@ use crate::itemdata::ITEMS;
 
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
-pub fn get(id: u16) -> Option<&'static ItemDef> {
+/// The hand-written corrections of the GenItemData placeholder band
+/// (items 3263-3989): the M6-SAVE-1 merge regenerated `itemdata.rs` and
+/// fixed the band's rows (the Amber Staff 3377 / Spirit Flame 3779 / Sky
+/// Fracture 3787 now ride the generated rows). The 6171 row is still the
+/// band's zero row (the generator misses it): the Bejeweled Staff's C#
+/// case (`Item.cs:47550-47555`) transcribed over the `ResetStats` stock -
+/// the item the gem-staff shoot's AllGems gate reads (`Player.cs:49262`,
+/// `PackGemStaffFeatures`'s `HeldItem.type == 6171`), so the branch is
+/// live in the game rather than a test shape.
+static ITEM_CORRECTIONS: [ItemDef; 1] = [
+    ItemDef {
+        id: 6171,
+            name: "Bejeweled Staff",
+            max_stack: 1,
+            tile: None,
+            place_style: 0,
+            wall: None,
+            projectile: Some(126),
+            damage: 27,
+            rare: 5,
+            use_time: 22,
+            use_animation: 22,
+            use_style: 5,
+            hold_style: 0,
+            auto_reuse: true,
+            head_slot: -1,
+            body_slot: -1,
+            leg_slot: -1,
+            defense: 0,
+            class: DamageClass::Magic,
+            crit: 0,
+            value: 50000,
+            knock_back: 6.0,
+            mana: 15,
+            use_ammo: 0,
+            ammo: 0,
+            channel: false,
+            reuse_delay: 0,
+            consumable: false,
+            use_turn: false,
+            buff_type: 0,
+            buff_time: 0,
+            shoot_speed: 6.0,
+            width: 40,
+            height: 40,
+            material: false,
+            potion: false,
+            heal_life: 0,
+            heal_mana: 0,
+            scale: 1.0,
+            stack: 1,
+            bait: 0,
+            pick: 0,
+            axe: 0,
+            hammer: 0,
+            accessory: false,
+        },
+];
+
+/// The kind's defaults with the [`ITEM_CORRECTIONS`] overrides applied —
+/// the single seam every read of the generated table goes through (M4-PROJ-6
+/// Phase 2: `prefixed_stats` and every `registry` accessor route here).
+pub fn item(id: u16) -> Option<&'static ItemDef> {
+    if let Some(d) = ITEM_CORRECTIONS.iter().find(|d| d.id == id) {
+        return Some(d);
+    }
     ITEMS.iter().find(|d| d.id == id)
+}
+
+pub fn get(id: u16) -> Option<&'static ItemDef> {
+    item(id)
 }
 
 /// `Item.makeNPC` (`Item.cs`'s per-item field) — the item's critter/bait
@@ -375,5 +444,95 @@ mod tests {
         }
         assert_eq!(tile_drop(82, 0), None, "by_tile(82) must not yield 307");
         assert_eq!(by_tile(82), Some(307), "the fallback itself is intact");
+    }
+
+    // DW-2.3: the M4-PROJ-6 corrections of the GenItemData placeholder band.
+    #[test]
+    fn test_DW_2_3_the_corrected_staff_rows_answer_the_item_cs_values() {
+        // `registry::item` — the Amber Staff, `Item.cs:30858-30875`.
+        let amber = item(3377).unwrap();
+        assert_eq!((amber.damage, amber.mana), (21, 9));
+        assert_eq!(amber.class, DamageClass::Magic);
+        assert_eq!(amber.projectile, Some(597));
+        assert_eq!((amber.use_time, amber.use_animation, amber.use_style), (28, 28, 5));
+        assert_eq!((amber.shoot_speed, amber.knock_back), (9.0, 4.75));
+        assert!(amber.auto_reuse);
+        assert!(!amber.channel, "the case body never sets `channel`");
+        assert_eq!((amber.rare, amber.value, amber.width, amber.height), (1, 20000, 40, 40));
+        // The same row through `registry::get` and its `use_time`.
+        assert!(std::ptr::eq(get(3377).unwrap(), amber));
+        assert_eq!(get(3377).unwrap().use_time, 28);
+        // The accessor surface over the seam.
+        assert_eq!(projectile(3377), Some(597));
+        assert_eq!(damage(3377), 21);
+        assert_eq!(rare(3377), 1);
+        assert!(is_weapon(3377));
+        // `prefixed_stats` with prefix 0 (the short-circuit branch).
+        let s = crate::prefix::prefixed_stats(3377, 0).unwrap();
+        assert_eq!((s.damage, s.mana, s.use_time, s.use_animation), (21, 9, 28, 28));
+        assert_eq!((s.shoot_speed, s.knock_back, s.rare, s.value), (9.0, 4.75, 1, 20000));
+        // The Spirit Flame, `Item.cs:33455-33472` (value = `sellPrice(0,1)`).
+        let flame = item(3779).unwrap();
+        assert_eq!((flame.damage, flame.mana), (85, 14));
+        assert_eq!(flame.class, DamageClass::Magic);
+        assert_eq!(flame.projectile, Some(659));
+        assert_eq!((flame.use_time, flame.use_animation), (22, 22));
+        assert_eq!((flame.shoot_speed, flame.knock_back), (3.0, 5.0));
+        assert!(flame.auto_reuse);
+        assert_eq!((flame.rare, flame.value, flame.width, flame.height), (4, 50000, 26, 28));
+        // The Sky Fracture, `Item.cs:33531-33550`.
+        let sky = item(3787).unwrap();
+        assert_eq!((sky.damage, sky.mana, sky.crit), (38, 17, 20));
+        assert_eq!(sky.class, DamageClass::Magic);
+        assert_eq!(sky.projectile, Some(660));
+        assert_eq!((sky.use_time, sky.use_animation, sky.reuse_delay), (4, 12, 18));
+        assert_eq!((sky.shoot_speed, sky.knock_back), (8.75, 6.0));
+        assert!(sky.auto_reuse);
+        assert_eq!((sky.rare, sky.value, sky.width, sky.height), (4, 300000, 16, 16));
+        let s = crate::prefix::prefixed_stats(3787, 0).unwrap();
+        assert_eq!((s.damage, s.mana), (38, 17));
+        assert_eq!((s.use_time, s.use_animation, s.reuse_delay), (4, 12, 18));
+        // An unregistered kind keeps the `None`.
+        assert!(item(7000).is_none());
+    }
+
+    #[test]
+    fn test_DW_2_3_a_prefixed_staff_rides_the_corrected_base() {
+        // The Mystic prefix (26, `PREFIXES_FOR_MAGIC`'s head — `Item.cs`'s
+        // switch: damage x1.1, manaCost x0.85) multiplies the CORRECTED base:
+        // 21 -> 23 (the placeholder's 15 would give 16), mana 9 -> 8 (the
+        // placeholder's 0 stays 0).
+        let s = crate::prefix::prefixed_stats(3377, 26).unwrap();
+        assert_eq!(s.damage, 23);
+        assert_eq!(s.mana, 8);
+        assert_eq!(s.use_time, 28, "the speed multiplier is 1");
+        assert_eq!(s.shoot_speed, 9.0);
+    }
+
+    #[test]
+    fn test_DW_2_3_the_placeholder_band_neighbours_stay_untouched() {
+        // The correction is one seam over three ids: every other row of the
+        // 3263-3989 placeholder band still reads the generated row verbatim.
+        // The M6-SAVE-1 merge regenerated `itemdata.rs`, so the placeholder
+        // band reads its generated rows: the three staves answer their
+        // `Item.cs` values from the generated table (their own tests pin the
+        // values), and only 6171 rides the correction.
+        for id in [3376u16, 3378, 3778, 3780, 3786, 3788] {
+            let got = item(id).unwrap();
+            assert!(std::ptr::eq(got, &ITEMS[id as usize]), "id {id} must not be shadowed");
+        }
+        // The full-table sweep: only 6171 rides the corrections, and the
+        // corrected row is not the generated one.
+        for id in 0..ITEMS.len() as u16 {
+            let got = item(id).unwrap();
+            match ITEM_CORRECTIONS.iter().find(|d| d.id == id) {
+                Some(want) => assert!(std::ptr::eq(got, want), "id {id} must ride the correction"),
+                None => assert!(
+                    std::ptr::eq(got, &ITEMS[id as usize]),
+                    "id {id} must keep its generated row"
+                ),
+            }
+        }
+        assert!(!std::ptr::eq(item(6171).unwrap(), &ITEMS[6171]));
     }
 }
