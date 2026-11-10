@@ -9393,3 +9393,61 @@ sprays the loose moss 184 into a free neighbour.
 - Out: the netcode (`NetMessage.SendTileSquare`), the paint/coating copy (the
   port's growth writes carry no color cache) and `SpreadGrass`'s `color`
   argument; `SpreadGrassWalls`/`SpreadDesertWalls` landed earlier in the row.
+
+## The chest style main items (M5-CHEST-gen)
+
+The `num10` (slot-0 main item) dispatcher of `AddBuriedChest`
+(`WorldGen.cs:35892-36205`) and the caller-side mains that pre-set it landed
+2026-11-10 as the `Context` probes over the anchor's surroundings:
+
+- **The `Pyramid` structure's own chest** (`WorldGen.cs:27853-27873`): the
+  caller pre-sets the main with the `Next(3)` pick and a second `Next(3)` on
+  the zero, so the Pharaoh'sMask 848 lands only on two zeros (1/9) and the
+  SandstorminaBottle 857 / FlyingCarpet 934 otherwise; `Main.tenthAnniversaryWorld`'s
+  `0 → 1` rides M5-SEED-1. `flag11`'s companion row writes the
+  Pharaoh'sRobe 866 into slot 1 right after the mask (`:36234-36239`) — the
+  only family whose main carries a second slot in the same write.
+- **`flag3`'s underground-desert arm** (`:36023-36047`): the shallow four
+  {4056, 4055, 4262, 4263} or the deep three {4061, 4062, 4276}, split by
+  `flag20 = num7 > (desertHiveHigh*3 + desertHiveLow*4)/7`. **Deviation:**
+  the hive bounds ride the worldgen-only `GenVars` and are gone by the
+  load-time sweep, so the port keeps the `GenVars` reset values
+  (`High = maxTilesY`, `Low = 0`) — the deep table below three sevenths of
+  the world height. The vanilla's second flag3 disjunct (`chestTileType == 467
+  && chestStyle == 10`) overlaps the port's jungle family, which keeps the
+  `JungleCycle` main; the desert table rides only the hardened-sand (216)
+  probe.
+- **The probe split**: the old single `pyramid` flag read both 216 and 187;
+  it now splits into `pyramid` (187 — the `Pyramid` structure's own chamber)
+  and `desert` (216 — the hive's shell), because the vanilla's two arms write
+  different mains and the flag3 extras (`:36814-36823`) belong to the desert
+  family alone. The pyramid's chest is NOT a flag3 chest — its main is
+  pre-set, so the `num10 != 0` disjuncts all fail.
+- **`flag2`'s ice arm** (`:36064-36088`): the seven-item table with the 1/20
+  Extractinator 997; the remix's `1319 → 725` swap and the FTW `52`
+  overrides stay parked with their seeds.
+- **`flag8`'s hell arm** (`:36115-36118`): the world-shuffled
+  `GenVars.hellChestItem` (`WorldGen.cs:11246-11258` — the `while (Count > 0)`
+  pick-and-remove over {274, 220, 112, 218, 3019}, the remix row swapping the
+  112 for the 683) walked once per place with the `hellChest` counter's wrap
+  (`:36210-36217`). **Deviation:** the vanilla shuffles the worldgen
+  `genRand` at the reset; the port shuffles the sweep's own per-world stream
+  as its first consumer, so a world re-loads with the same table (a
+  different order than vanilla, which the port cannot share).
+- **`IslandHouse`'s sky arm** (`:79344-79363`): the `skyIslandHouseCount`
+  cycle 159/65/158/2219 for the first four houses and `Next(4)` after.
+  **Deviation:** the vanilla's counter advances once per island house built
+  (`:79344`); the port advances once per sky-flagged anchor stocked in the
+  scan order.
+- **The chain order**: the vanilla's arms are sequential `if`s whose last
+  write wins on `num10`, and the water 939 arm is gated on `num10 == 0`
+  (`:36197-36200`). The port keeps one `if/else if` chain with the water arm
+  last, so the other families' mains win where both probes read true. The
+  band rows' draws still run first (the port's pre-existing inversion of the
+  vanilla's num10-then-band order) — the stream is the port's own splitmix,
+  so the order matters for determinism, not for parity.
+- **Parked with their seeds**: the anniversary's flag11 row (848,
+  `:36267-36271`), the remix's flag12 `num9` style rows (`:36179-36195`),
+  error's chest row, and `GrowLivingTreePassageRoom`'s style-12 main
+  (832/4281, `:29303-29306`) — the port's living trees and pyramids place
+  plain style-0 chests, so the style-gated arms have no anchor to read.
