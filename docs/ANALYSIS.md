@@ -5529,6 +5529,23 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   (`push_half_shifted`) applies it and the flat path stays unshifted. The
   `cactus_source_y_offset` helper stays as the data layer.
 
+- **Bug 20 — the trash slot** (the vanilla's destroy-on-quick-trash
+  container): the quick-trash — `GetAlternateClickAction`'s else-chain tail
+  (`ItemSlot.cs:679-682`) lights `AlternateClickAction.Trash`'s cursor 6 on a
+  Shift-held hover over a non-favorited, non-air inventory slot when no
+  crafting/reforge/chest arm matched (the chain tail sits after the chest
+  arm — an earlier placement stole the chest's shift-click), and the click arm
+  (`OverrideLeftClick`'s cursor-6 arm `:759-775`) replaces the trash with the
+  stack and empties the slot; the cues are `TrashItem` (no port asset — the
+  recorded gap) and `Grab`. `on_player_death` clears the trash
+  (`Player.DropItems`' first line, `Player.cs:54304`); the event-item purge
+  (`:24729-24736`) rides the unported event items and the wholesale clear
+  covers it. The slot's rect shifts to (453, 426) at 0.755 while
+  `Main.ChestOrShopUIVisible` (`Main.cs:42349-42366`) through one
+  `trash_rect` helper shared by the draw and the hit test. Deviations: the
+  Journey research exception (`:762`) and the shop's sell cursor wait for
+  their models.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^

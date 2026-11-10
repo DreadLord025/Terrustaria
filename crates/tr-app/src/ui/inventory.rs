@@ -235,6 +235,7 @@ pub fn draw(
     mouse: Vec2,
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
+    chest_or_shop: bool,
 ) -> InventoryHit {
     // `ItemSlot.cs:2499`: cell = `InventoryBack.Size() * inventoryScale`.
     let cell = lookups
@@ -480,20 +481,22 @@ pub fn draw(
         hit.defense_anchor = Some((armor_x, equip_row_y(base_y, last_row, true, INVENTORY_SCALE)));
     }
 
-    // `Main.cs:42349-42366`: the trash slot at (448, 258), context 6, scale 0.85.
+    // `Main.cs:42349-42366`: the trash slot at (448, 258), context 6, scale
+    // 0.85 — (+5, +168) at 0.755 while `Main.ChestOrShopUIVisible` (bug 20).
+    let ([trash_x, trash_y, _, _], trash_scale) = trash_rect(chest_or_shop);
     slot::draw_slot(
         r,
         lookups,
         &equip.trash,
-        TRASH_X,
-        TRASH_Y,
+        trash_x,
+        trash_y,
         6,
         -1,
         false,
-        INVENTORY_SCALE,
+        trash_scale,
         INVENTORY_BACK,
     );
-    if hit.hovered.is_none() && hit_test(mouse, TRASH_X, TRASH_Y, INVENTORY_SCALE, cell) {
+    if hit.hovered.is_none() && hit_test(mouse, trash_x, trash_y, trash_scale, cell) {
         hit.hovered = Some(HoverRef::Trash);
     }
 
@@ -608,12 +611,32 @@ pub(crate) fn bank_slot_at(mouse: Vec2, m_h: f32) -> Option<usize> {
     None
 }
 
+/// `Main.DrawTrashItemSlot`'s chest/shop scale (`Main.cs:42353-42356`): with a
+/// container open the slot shrinks to 0.755 and shifts (+5, +168).
+const TRASH_CHEST_SCALE: f32 = 0.755;
+const TRASH_CHEST_DX: f32 = 5.0;
+const TRASH_CHEST_DY: f32 = 168.0;
+
+/// The trash slot's draw/hit rect — `(448, 258)` at scale 0.85, or
+/// `(453, 426)` at 0.755 with a container open (`Main.cs:42349-42366`'s
+/// `Main.ChestOrShopUIVisible` arm).
+pub fn trash_rect(chest_or_shop: bool) -> ([f32; 4], f32) {
+    if chest_or_shop {
+        (
+            [TRASH_X + TRASH_CHEST_DX, TRASH_Y + TRASH_CHEST_DY, 0.0, 0.0],
+            TRASH_CHEST_SCALE,
+        )
+    } else {
+        ([TRASH_X, TRASH_Y, 0.0, 0.0], INVENTORY_SCALE)
+    }
+}
+
 /// The trash cell at `mouse` for the click pass — the same `hit_test` shape
-/// the draw pass's hover uses (`Main.cs:42349-42366`: (448, 258), scale 0.85).
-/// The slot is screen-anchored (no `m_h` — the draw and hover sit at the raw
-/// pivot), unlike the bank grid below it.
-pub(crate) fn trash_slot_at(mouse: Vec2) -> bool {
-    hit_test(mouse, TRASH_X, TRASH_Y, INVENTORY_SCALE, SLOT_FALLBACK_PX)
+/// the draw pass's hover uses, at the same shifted rect (`Main.cs:42359-42365`
+/// hit-tests the drawn slot).
+pub(crate) fn trash_slot_at(mouse: Vec2, chest_or_shop: bool) -> bool {
+    let ([x, y, _, _], scale) = trash_rect(chest_or_shop);
+    hit_test(mouse, x, y, scale, SLOT_FALLBACK_PX)
 }
 
 #[cfg(test)]
@@ -641,16 +664,16 @@ mod tests {
     fn trash_slot_hit_matches_the_draw_geometry() {
         // `Main.cs:42352-42353`: (448, 258) at scale 0.85, cell 52 —
         // inclusive edges, the same shape the draw pass's hover uses.
-        assert!(trash_slot_at(Vec2::new(448.0, 258.0)));
-        assert!(trash_slot_at(Vec2::new(470.0, 280.0)));
-        assert!(trash_slot_at(Vec2::new(
-            448.0 + 52.0 * 0.85,
-            258.0 + 52.0 * 0.85
-        )));
-        assert!(!trash_slot_at(Vec2::new(447.9, 280.0)));
-        assert!(!trash_slot_at(Vec2::new(470.0, 257.9)));
-        assert!(!trash_slot_at(Vec2::new(492.3, 280.0)));
-        assert!(!trash_slot_at(Vec2::new(470.0, 302.3)));
+        assert!(trash_slot_at(Vec2::new(448.0, 258.0), false));
+        assert!(trash_slot_at(Vec2::new(470.0, 280.0), false));
+        assert!(trash_slot_at(
+            Vec2::new(448.0 + 52.0 * 0.85, 258.0 + 52.0 * 0.85),
+            false
+        ));
+        assert!(!trash_slot_at(Vec2::new(447.9, 280.0), false));
+        assert!(!trash_slot_at(Vec2::new(470.0, 257.9), false));
+        assert!(!trash_slot_at(Vec2::new(492.3, 280.0), false));
+        assert!(!trash_slot_at(Vec2::new(470.0, 302.3), false));
     }
 
     #[test]

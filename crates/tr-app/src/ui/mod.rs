@@ -362,6 +362,9 @@ pub fn draw_hud(
             mouse_pos,
             m_h,
             bank,
+            // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
+            // slot shifts while a container or shop panel is open (bug 20).
+            chest_panel.chest >= 0 || shop.is_some(),
         );
         open_hover = hit.hovered;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).

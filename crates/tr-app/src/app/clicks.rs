@@ -27,6 +27,9 @@ const CURSOR_TO_CHEST: i32 = 9;
 /// The favorite override's cursor id — `Main.cursorOverride = 3`
 /// (`ItemSlot.cs:616-619`).
 const CURSOR_FAVORITE: i32 = 3;
+/// `AlternateClickAction.Trash`'s cursor id (`ItemSlot.cs:213`): the
+/// Shift-click quick-trash (`GetAlternateClickAction`'s tail, `:679-682`).
+const CURSOR_TRASH: i32 = 6;
 
 /// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
 /// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
@@ -600,7 +603,8 @@ impl App {
         // same cue the grid movement uses); the separate `TrashItem` cue
         // (`:1007`) has no port cue — the recorded gap. Right-click stays
         // unported (the Journey research arm `:940-943`).
-        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos) {
+        let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
                 self.audio.play("Grab");
@@ -626,6 +630,18 @@ impl App {
             if self.toggle_favorite(slot) != 0 {
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
+            return;
+        }
+        if left && self.cursor_override == CURSOR_TRASH {
+            // `OverrideLeftClick`'s cursor-6 arm (`ItemSlot.cs:759-775`): the
+            // stack moves to the trash (REPLACING its contents) and the slot
+            // turns to air. The research exception (`:762`) rides the Journey
+            // research (unported); the cues are `TrashItem` (`:764`, no port
+            // cue — the recorded gap) then `Grab` (`:765`).
+            self.equip.trash = self.inventory[slot].clone();
+            self.inventory[slot] = EMPTY_SLOT;
+            self.audio.play("TrashItem"); // no port cue — the recorded gap
+            self.audio.play("Grab");
             return;
         }
         let mut held = self.mouse_item;
@@ -829,6 +845,24 @@ impl App {
                 // cannot fire for one either.
                 if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
+            return;
+        }
+        // The tail arm — `GetAlternateClickAction`'s else-chain close
+        // (`ItemSlot.cs:679-682`): Shift held and no crafting/reforge/chest
+        // arm matched, so a hovered inventory slot with an item lights the
+        // quick-trash cursor (`GetSellOrTrash` → `AlternateClickAction.Trash`
+        // while no shop is open, `:198-209`; the port has no sell cursor, so
+        // the shop case stands down — the recorded gap). The head guard
+        // (`:631-634`): air or favorited slots answer null.
+        if self.shop_npc.is_none() {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                {
+                    self.cursor_override = CURSOR_TRASH;
                 }
             }
         }
@@ -1125,6 +1159,75 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bug20_shift_click_moves_the_stack_to_the_trash() {
+        // Bug 20: `GetAlternateClickAction`'s tail + `OverrideLeftClick`'s
+        // cursor-6 arm (`ItemSlot.cs:679-682`/`:759-775`) — Shift-clicking an
+        // inventory slot REPLACES the trash with the stack and leaves the slot
+        // empty; the cues fire.
+        let mut app = inv_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3,
+            name: "Dirt",
+            count: 7,
+            prefix: 0,
+        };
+        app.equip.trash = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 2,
+            prefix: 0,
+        };
+        // Shift held over the grid's first cell.
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(20.0 + 28.0, 20.0 + 28.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        // The click pass evaluates the cursor then runs the arms.
+        app.evaluate_cursor_override();
+        assert_eq!(app.cursor_override, CURSOR_TRASH, "the trash cursor lights");
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash.kind, 3, "the trash takes the stack");
+        assert_eq!(app.equip.trash.count, 7);
+        assert_eq!(app.inventory[0].count, 0, "the slot is emptied");
+        assert!(app.audio.played_count() > before, "the cues fired");
+    }
+
+    #[test]
+    fn bug20_death_clears_the_trash() {
+        // `Player.DropItems`'s first line (`Player.cs:54304`): the trash is
+        // emptied on death.
+        let mut app = inv_app();
+        app.equip.trash = crate::item::ItemSlot {
+            kind: 3,
+            name: "Dirt",
+            count: 5,
+            prefix: 0,
+        };
+        crate::death::on_player_death(&mut app, 100.0, 100.0, "text");
+        assert_eq!(app.equip.trash.count, 0, "the trash cleared");
+    }
+
+    #[test]
+    fn bug20_the_trash_shifts_with_the_chest_open() {
+        // `Main.DrawTrashItemSlot`'s `ChestOrShopUIVisible` arm
+        // (`Main.cs:42351-42356`): the slot moves to (453, 426) at 0.755.
+        let (rect, scale) = crate::ui::inventory::trash_rect(true);
+        assert_eq!(rect[0], 453.0, "the chest-open x");
+        assert_eq!(rect[1], 426.0, "the chest-open y");
+        assert_eq!(scale, 0.755);
+        // The hit test follows the drawn rect.
+        assert!(crate::ui::inventory::trash_slot_at(
+            Vec2::new(453.0, 426.0),
+            true
+        ));
+        assert!(!crate::ui::inventory::trash_slot_at(
+            Vec2::new(448.0, 258.0),
+            true
+        ));
+    }
+
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
@@ -2336,7 +2439,7 @@ mod tests {
     fn trash_cell_is_outside_the_inventory_grid() {
         let mut app = inv_app();
         app.mouse_pos = TRASH_CELL;
-        assert!(ui::inventory::trash_slot_at(TRASH_CELL));
+        assert!(ui::inventory::trash_slot_at(TRASH_CELL, false));
         assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
     }
 }
