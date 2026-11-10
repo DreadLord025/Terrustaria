@@ -2951,6 +2951,12 @@ pub struct ProjectilePool {
     id_static: HashMap<(u16, u16), u64>,
     /// `Main.GameUpdateCount`.
     update_count: u64,
+    /// `Player.grappling[10]` / `Player.grapCount` (`Player.cs:2742`/`:2744`):
+    /// the attached aiStyle-7 hook slots, rebuilt in slot order on every tick's
+    /// projectile pass. `Player.grappling` is `int[20]` in the C# but only 10
+    /// entries are reachable (the `AI_007` `< 10` guard), so 10 suffice.
+    hook_reg: [i16; 10],
+    hook_grap_count: usize,
 }
 
 impl Default for ProjectilePool {
@@ -2985,6 +2991,8 @@ impl ProjectilePool {
             local_immunity: vec![0; MAX_PROJECTILES * 256],
             id_static: HashMap::new(),
             update_count: 0,
+            hook_reg: [-1; 10],
+            hook_grap_count: 0,
         }
     }
 
@@ -3120,6 +3128,49 @@ impl ProjectilePool {
 
     pub fn active_count(&self) -> usize {
         self.slots.iter().filter(|p| p.active).count()
+    }
+
+    /// `Player.grappling` / `Player.grapCount` — the attached aiStyle-7 slots in
+    /// registration order (the C#'s slot order), rebuilt each tick by
+    /// [`Self::update`]. `GrappleMovement`'s pull and the fire-time budgets read
+    /// this; the AI arm and the recycle tables are the only writers.
+    pub fn hook_reg(&self) -> (&[i16; 10], usize) {
+        (&self.hook_reg, self.hook_grap_count)
+    }
+
+    /// `Player.Update`'s `grappling[0] = -1; grapCount = 0` (`:28300-28301`):
+    /// the clear. The port runs it at the top of the projectile pass, which
+    /// keeps the vanilla's one-tick latency (the pull reads last tick's set).
+    fn clear_hook_reg(&mut self) {
+        self.hook_reg = [-1; 10];
+        self.hook_grap_count = 0;
+    }
+
+    /// `AI_007`'s `grappling[grapCount++] = whoAmI` (`:52705`/`:52862`), under the
+    /// `< 10` guard. Only an active slot is ever appended (the caller gates it),
+    /// so a dead index cannot land.
+    fn register_hook(&mut self, slot: usize) {
+        if self.hook_grap_count < self.hook_reg.len() {
+            self.hook_reg[self.hook_grap_count] = slot as i16;
+            self.hook_grap_count += 1;
+        }
+    }
+
+    /// `QuickGrapple`'s fire-time gate and recycle (`Player.cs:6396-6399`): the
+    /// in-flight and attached counts over this owner's aiStyle-7 slots.
+    pub fn hook_counts(&self, owner: u8) -> (usize, usize) {
+        let mut flight = 0usize;
+        let mut attached = 0usize;
+        for p in self.slots.iter() {
+            if p.active && p.owner == owner && proj_data(p.kind).is_some_and(|d| d.ai_style == 7) {
+                if p.ai[0] == 2.0 {
+                    attached += 1;
+                } else {
+                    flight += 1;
+                }
+            }
+        }
+        (flight, attached)
     }
 
     /// `Projectile.NewProjectile` → `NewProjectileSetup` (`:10823-10880`): the
@@ -3529,6 +3580,10 @@ impl ProjectilePool {
         hostile_local: bool,
     ) {
         self.update_count += 1;
+        // `Player.Update`'s clear (`Player.cs:28300-28301`) — the C# runs it at
+        // the end of the player pass, i.e. just before this one, so starting
+        // here preserves the vanilla's one-tick latency exactly.
+        self.clear_hook_reg();
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
                 continue;
@@ -3580,12 +3635,45 @@ impl ProjectilePool {
                             let tick = self.slots[i].ai_hook(world, center, dead);
                             let attached = tick.attached;
                             let dead = tick.dead;
+                            let latched = tick.latched;
                             if dead {
                                 self.kill(i);
                             } else if let Some(c) = attached {
-                                // The bridge to `GrappleMovement`'s pull
-                                // (retired by the multi-hook phase).
+                                // `:52705`/`:52862` — an attached hook registers
+                                // itself every tick; `GrappleMovement`'s pull
+                                // reads the rebuilt set.
                                 self.slots[i].grapple_center = c;
+                                self.register_hook(i);
+                                // `:52719-52741` — the attach cap. The count is
+                                // this owner's aiStyle-7 slots that are attached
+                                // plus the slot that just latched; the victim is
+                                // the lowest `timeLeft` of them.
+                                if latched {
+                                    let owner = self.slots[i].owner;
+                                    let cap = crate::grapple::hook_spec_id(self.slots[i].kind)
+                                        .max_attached;
+                                    let mut count = 0usize;
+                                    let mut worst = usize::MAX;
+                                    // The C#'s `num13 = 100000` initial — so the
+                                    // first candidate always wins and ties keep
+                                    // the earliest slot.
+                                    let mut worst_time = i64::MAX;
+                                    for (k, p) in self.slots.iter().enumerate() {
+                                        let hook = p.active
+                                            && p.owner == owner
+                                            && proj_data(p.kind).is_some_and(|d| d.ai_style == 7);
+                                        if (hook && p.ai[0] == 2.0) || k == i {
+                                            count += 1;
+                                            if (p.time_left as i64) < worst_time {
+                                                worst = k;
+                                                worst_time = p.time_left as i64;
+                                            }
+                                        }
+                                    }
+                                    if count > cap && worst != usize::MAX {
+                                        self.kill(worst);
+                                    }
+                                }
                             }
                         }
                         3 => self.slots[i].ai_boomerang(world, owner),

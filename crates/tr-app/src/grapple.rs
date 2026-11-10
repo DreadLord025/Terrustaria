@@ -34,31 +34,44 @@ pub(crate) struct HookSpec {
     pub retract_speed: f32,
     /// `Player.cs:22832-22846`: the pull speed cap in px/tick.
     pub pull_speed: f32,
+    /// `Projectile.cs:52719-52741`: the count of attached hooks after which the
+    /// oldest dies. 3 is the source's default; 165 → 8, 646-649 → 4, 256/372 → 2,
+    /// 73/74/652 → 1.
+    pub max_attached: usize,
 }
 
 pub(crate) fn hook_spec(hook_type: i32) -> HookSpec {
-    let (max_distance, retract_speed, pull_speed) = match hook_type {
-        32 => (400.0, 15.0, 11.0),
-        73 | 74 => (440.0, 22.0, 12.5),
-        165 => (375.0, 11.0, 11.0),
-        230..=235 => (300.0 + (hook_type - 230) as f32 * 30.0, 11.0 + (hook_type - 230) as f32 * 0.75, 11.0),
-        315 => (500.0, 20.0, 14.0),
-        322 => (550.0, 22.0, 11.0),
-        331 => (400.0, 11.0, 11.0),
-        332 => (550.0, 17.0, 11.0),
-        372 => (400.0, 11.0, 11.0),
-        396 => (300.0, 11.0, 11.0),
-        446 => (500.0, 20.0, 11.0),
-        486..=489 => (480.0, 18.0, 11.0),
-        652 => (600.0, 24.0, 11.0),
-        753 => (420.0, 15.0, 11.0),
+    let (max_distance, retract_speed, pull_speed, max_attached) = match hook_type {
+        13 => (300.0, 11.0, 11.0, 3),
+        32 => (400.0, 15.0, 11.0, 3),
+        73 | 74 => (440.0, 22.0, 12.5, 1),
+        165 => (375.0, 11.0, 11.0, 8),
+        256 => (425.0, 11.0, 11.0, 2),
+        230..=235 => (
+            300.0 + (hook_type - 230) as f32 * 30.0,
+            11.0 + (hook_type - 230) as f32 * 0.75,
+            11.0,
+            3,
+        ),
+        315 => (500.0, 20.0, 14.0, 3),
+        322 => (550.0, 22.0, 11.0, 3),
+        331 => (400.0, 11.0, 11.0, 3),
+        332 => (550.0, 17.0, 11.0, 3),
+        372 => (400.0, 11.0, 11.0, 2),
+        396 => (300.0, 11.0, 11.0, 3),
+        446 => (500.0, 20.0, 11.0, 3),
+        486..=489 => (480.0, 18.0, 11.0, 3),
+        646..=649 => (550.0, 24.0, 16.0, 4),
+        652 => (600.0, 24.0, 11.0, 1),
+        753 => (420.0, 15.0, 11.0, 3),
         // Hook (13) and everything unlisted.
-        _ => (300.0, 11.0, 11.0),
+        _ => (300.0, 11.0, 11.0, 3),
     };
     HookSpec {
         max_distance,
         retract_speed,
         pull_speed,
+        max_attached,
     }
 }
 
@@ -77,6 +90,9 @@ pub(crate) struct HookTick {
     /// The hook died this tick (owner dead, >2500 px, or retracted into the
     /// owner) — the caller drops it from any registration.
     pub dead: bool,
+    /// The state flipped to Attached on THIS tick — the one moment
+    /// `AI_007`'s attach-cap recycle (`:52719-52741`) runs.
+    pub latched: bool,
 }
 
 impl HookTick {
@@ -84,6 +100,14 @@ impl HookTick {
         Self {
             attached: None,
             dead: false,
+            latched: false,
+        }
+    }
+    fn attached_at(center: Vec2, fresh: bool) -> Self {
+        Self {
+            attached: Some(center),
+            dead: false,
+            latched: fresh,
         }
     }
 }
@@ -114,6 +138,68 @@ fn tile_of(px: f32, tiles: i32) -> i32 {
     ((px / 16.0) as i32).clamp(0, tiles - 1)
 }
 
+/// `QuickGrapple`'s two fire-time budgets (`Player.cs:6344-6378`): `num6` is
+/// the cap on **in-flight** hooks (the gate `:6399`), `num7` the total count
+/// that recycles the oldest (`:6396`). They are the source's own two tables and
+/// they disagree for 73/74, 652 and 372 — ported verbatim, not reconciled.
+pub(crate) struct FireBudget {
+    /// `num6` — the in-flight cap (`Math.Max(1, num6 − num5)`).
+    pub in_flight: i32,
+    /// `num7` — 999 = no recycle, 1 = one hook at a time.
+    pub total: i32,
+}
+
+/// The per-shoot-id rows. Every unlisted kind keeps the vanilla 3 / 999.
+pub(crate) fn fire_budget(shoot: u16) -> FireBudget {
+    let (in_flight, total) = match shoot {
+        73 => (2, 999),
+        372 => (3, 999),
+        165 => (8, 999),
+        652 => (2, 999),
+        646 => (4, 999),
+        13 | 315 | 230..=235 | 331 | 753 | 865 | 935 => (1, 1),
+        256 => (2, 2),
+        _ => (3, 999),
+    };
+    FireBudget { in_flight, total }
+}
+
+/// The `:6399` gate — the fire is refused once the in-flight count reaches
+/// `Math.Max(1, num6 − num5)` (`num5` = the attached count).
+pub(crate) fn fire_allowed(in_flight: usize, attached: usize, shoot: u16) -> bool {
+    let b = fire_budget(shoot);
+    (in_flight as i32) < (1).max(b.in_flight - attached as i32)
+}
+
+/// The `:6396` recycle — the oldest hook dies once the total reaches `num7`.
+pub(crate) fn recycles_oldest(in_flight: usize, attached: usize, shoot: u16) -> bool {
+    let b = fire_budget(shoot);
+    in_flight + attached >= b.total as usize
+}
+
+/// The Lunar Hook's kind cycle (`Player.cs:6425-6456`): the item 3572 walks
+/// 646 → 647 → 648 → 649 → 646 by the **highest** `timeLeft` of the in-flight
+/// set, with no hook out starting at Solar again.
+pub(crate) fn next_lunar_kind(highest_time_left_kind: Option<u16>) -> u16 {
+    match highest_time_left_kind {
+        Some(646) => 647,
+        Some(647) => 648,
+        Some(648) => 649,
+        Some(649) | None => 646,
+        _ => 646,
+    }
+}
+
+/// The Dual Hook's colour swap (`:6420-6424`): a blue head already out means
+/// the new shot is the red one.
+pub(crate) fn dual_next_kind(blue_out: bool) -> u16 {
+    if blue_out {
+        crate::projectile::DUAL_HOOK_RED
+    } else {
+        crate::projectile::DUAL_HOOK_BLUE
+    }
+}
+
 /// The tile visual hitbox (`WorldGen.GetTileVisualHitbox` `:66577-66595`):
 /// tile 323's `frameY` shift and a half-brick's top half. Returns the center
 /// the latch pins the hook to.
@@ -129,6 +215,34 @@ fn latch_center(world: &World, tx: i32, ty: i32) -> Vec2 {
         }
     }
     Vec2::new(x, y)
+}
+
+/// `Player.GetGrapplingForces` (`Player.cs:22757-22856`) — the multi-hook half:
+/// the pull is the vector from the player's center to the **average** of every
+/// registered hook's center, clamped to the pull speed of `grappling[0]`'s type
+/// (the C# reads the first registered slot, not each hook). The per-kind
+/// steering arms (446/652/865) are this task's next phase.
+///
+/// Returns `(velocity, going_down)`. Zero registered hooks carries the caller's
+/// velocity through unchanged, so the return mirrors the input in that case.
+pub(crate) fn grapple_pull(hooks: &[(u16, Vec2)], player_center: Vec2) -> Option<(Vec2, bool)> {
+    let (first_kind, first_center) = *hooks.first()?;
+    let mut sum = Vec2::ZERO;
+    for (_, c) in hooks {
+        sum += *c;
+    }
+    let avg = sum / hooks.len() as f32;
+    let _ = first_center;
+    let to_hook = avg - player_center;
+    let dist = to_hook.length();
+    // `:22832-22851` — the cap switches on `grappling[0]`'s type.
+    let pull_speed = hook_spec_id(first_kind).pull_speed;
+    let pull = if dist > 0.001 {
+        to_hook * (pull_speed / dist).min(1.0)
+    } else {
+        Vec2::ZERO
+    };
+    Some((pull, pull.y > 0.0))
 }
 
 /// The `AI_007` per-type tables (`Projectile.cs:52646-52665` max distances,
@@ -159,6 +273,7 @@ pub(crate) fn ai_hook(
         return HookTick {
             attached: None,
             dead: true,
+            latched: false,
         };
     }
     let delta = player_center - center;
@@ -176,6 +291,7 @@ pub(crate) fn ai_hook(
         return HookTick {
             attached: None,
             dead: true,
+            latched: false,
         };
     }
 
@@ -194,6 +310,7 @@ pub(crate) fn ai_hook(
                 return HookTick {
                     attached: None,
                     dead: true,
+                    latched: false,
                 };
             }
             slot.vel = delta * (spec.retract_speed / dist);
@@ -206,10 +323,7 @@ pub(crate) fn ai_hook(
             if !can_latch(slot.kind, world, tx, ty) {
                 slot.ai[0] = 1.0;
             } else {
-                return HookTick {
-                    attached: Some(Vec2::new(slot.center().0, slot.center().1)),
-                    dead: false,
-                };
+                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), false);
             }
         }
     }
@@ -245,10 +359,7 @@ pub(crate) fn ai_hook(
                 slot.vel = Vec2::ZERO;
                 slot.damage = 0;
                 slot.ai[0] = 2.0;
-                return HookTick {
-                    attached: Some(Vec2::new(slot.center().0, slot.center().1)),
-                    dead: false,
-                };
+                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), true);
             }
         }
     }
@@ -502,5 +613,231 @@ mod tests {
         assert!(len > 0.0);
         let pull = to_hook * (11.0 / len).min(1.0);
         assert!((pull.length() - 11.0).abs() < 1e-3, "the pull is capped at 11");
+    }
+}
+
+#[cfg(test)]
+mod hook_multi_tests {
+    use super::*;
+    use crate::projectile::*;
+
+    /// One tick's projectile pass on a world with no NPCs.
+    fn tick(pool: &mut ProjectilePool, w: &mut World, center: Vec2) {
+        let mut npcs: [crate::npc::Npc; 0] = [];
+        let mut seed: u64 = 0x5EED_1234;
+        let mut rng = crate::world_sim::npcs::LootRng(&mut seed);
+        let inputs = YoyoInputs::default();
+        pool.update(
+            w,
+            &mut npcs,
+            Some((center.x, center.y)),
+            None,
+            None,
+            inputs,
+            &mut rng,
+            0,
+            true,
+        );
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = tr_core::Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    // `Player.cs:6399` — the gate reads the IN-FLIGHT count (`ai[0] != 2`), so
+    // 8 hooks still flying refuse the 9th shot; 8 latched ones do not.
+    #[test]
+    fn dw_3_1_the_web_slinger_gate_counts_in_flight_hooks() {
+        let mut w = crate::test_world_helpers::ground();
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        let mut pool = ProjectilePool::new();
+        for _ in 0..8 {
+            pool.spawn_hook(WEB_SLINGER_HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        }
+        let (flight, attached) = pool.hook_counts(0);
+        assert_eq!((flight, attached), (8, 0));
+        assert!(!fire_allowed(flight, attached, WEB_SLINGER_HOOK), "8 flying refuse");
+        // Latch all eight against the ceiling: the gate opens again.
+        // The floor row three tiles under the player, wide enough for
+        // all eight to latch on it.
+        for x in 0..10 {
+            put(&mut w, 36 + x, 33, 1);
+        }
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, center);
+        }
+        let (flight, attached) = pool.hook_counts(0);
+        assert_eq!(attached, 8, "eight latched: {flight}/{attached}");
+        assert!(fire_allowed(flight, attached, WEB_SLINGER_HOOK), "the gate opens");
+    }
+
+    // `Player.cs:6425-6456` — the Lunar cycle walks 646→647→648→649→646 by the
+    // highest-`timeLeft` in-flight kind; `num6 = 4` allows four.
+    #[test]
+    fn dw_3_2_the_lunar_cycle_and_the_static_caps() {
+        let mut w = crate::test_world_helpers::ground();
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        // Four latched Lunar hooks: `num6 = 4`, so all four hold, and the next
+        // attach recycles the oldest (`num14 = 4` is only checked on latch).
+        for x in 0..6 {
+            put(&mut w, 37 + x, 33, 1);
+        }
+        let mut pool = ProjectilePool::new();
+        let mut seen = Vec::new();
+        let mut kind = LUNAR_HOOK_SOLAR;
+        for _ in 0..4 {
+            pool.spawn_hook(kind, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+            seen.push(kind);
+            kind = next_lunar_kind(Some(kind));
+        }
+        assert_eq!(seen, vec![646, 647, 648, 649], "the cycle in order");
+        assert_eq!(next_lunar_kind(Some(649)), 646, "wraps to Solar");
+        assert_eq!(next_lunar_kind(None), 646, "no hook out starts Solar");
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, center);
+        }
+        assert_eq!(pool.hook_counts(0).1, 4, "four Lunar hooks latch");
+        // The Static Hook fires twice (`num6 = 2`) but only one stays attached
+        // (`num14 = 1`), because the latch arm recycles the oldest.
+        put(&mut w, 40, 33, 1);
+        let mut sp = ProjectilePool::new();
+        sp.spawn_hook(STATIC_HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        assert!(fire_allowed(sp.hook_counts(0).0, sp.hook_counts(0).1, STATIC_HOOK));
+        sp.spawn_hook(STATIC_HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        assert!(!fire_allowed(sp.hook_counts(0).0, sp.hook_counts(0).1, STATIC_HOOK), "two is the cap");
+        for _ in 0..20 {
+            tick(&mut sp, &mut w, center);
+        }
+        assert_eq!(sp.hook_counts(0).1, 1, "one stays latched (num14 = 1)");
+    }
+
+    // `Player.cs:6353-6357` — the Fish Hook's two tables disagree (`num6 = 3`,
+    // `num14 = 2`): three may fly, two may latch, the third latch recycles.
+    #[test]
+    fn dw_3_3_the_fish_hooks_disagreeing_tables() {
+        let mut w = crate::test_world_helpers::ground();
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        for x in 0..6 {
+            put(&mut w, 37 + x, 33, 1);
+        }
+        let mut pool = ProjectilePool::new();
+        for _ in 0..3 {
+            pool.spawn_hook(FISH_HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        }
+        let (f, a) = pool.hook_counts(0);
+        assert!(!fire_allowed(f, a, FISH_HOOK), "three flying saturate num6 = 3");
+        for _ in 0..25 {
+            tick(&mut pool, &mut w, center);
+        }
+        let (f, a) = pool.hook_counts(0);
+        assert_eq!(a, 2, "num14 = 2 keeps two latched (saw {f}/{a})");
+    }
+
+    // `Player.cs:6420-6424` — the Dual Hook's colour swap, and the asymmetry the
+    // source carries: only 73 is special-cased, so 74 keeps the default budget.
+    #[test]
+    fn dw_3_7_the_dual_hook_colour_and_its_asymmetry() {
+        assert_eq!(dual_next_kind(false), DUAL_HOOK_BLUE);
+        assert_eq!(dual_next_kind(true), DUAL_HOOK_RED);
+        // 73: num6 = 2 (special-cased). 74: falls through to the default 3.
+        assert_eq!(fire_budget(DUAL_HOOK_BLUE).in_flight, 2);
+        assert_eq!(fire_budget(DUAL_HOOK_RED).in_flight, 3, "74 keeps the default");
+        // Both share `num14 = 1` on the attach side.
+        let mut w = crate::test_world_helpers::ground();
+        put(&mut w, 40, 33, 1);
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        let mut pool = ProjectilePool::new();
+        pool.spawn_hook(DUAL_HOOK_BLUE, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        pool.spawn_hook(DUAL_HOOK_RED, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, center);
+        }
+        assert_eq!(pool.hook_counts(0).1, 1, "num14 = 1 shared");
+    }
+
+    // The registration is rebuilt in slot order every tick and a hook killed
+    // mid-registration never leaves a dead index behind.
+    #[test]
+    fn dw_3_5_the_registration_holds_no_dead_index() {
+        let mut w = crate::test_world_helpers::ground();
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        for x in 0..6 {
+            put(&mut w, 36 + x, 33, 1);
+        }
+        let mut pool = ProjectilePool::new();
+        for _ in 0..3 {
+            pool.spawn_hook(WOOD_HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        }
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, center);
+        }
+        let (reg, n) = pool.hook_reg();
+        assert_eq!(n, 3, "three registered (the default cap is 3)");
+        let slots = pool.slots();
+        for &i in reg.iter().take(n) {
+            assert!(slots[i as usize].active, "slot {i} is live");
+        }
+        // Kill the middle one; the next rebuild drops it.
+        let dead = reg[2];
+        pool.kill(dead as usize);
+        tick(&mut pool, &mut w, center);
+        let (reg, n) = pool.hook_reg();
+        assert!(!reg[..n].contains(&dead), "the dead slot is gone");
+        assert_eq!(n, 2, "the count follows the live set");
+    }
+
+    // `Player.cs:22613-22740`: the pull averages every registered hook and the
+    // cap comes from `grappling[0]`'s type — a mixed pair uses the first's.
+    #[test]
+    fn dw_4_3_the_pull_averages_them_and_caps_on_the_first() {
+        let p0 = Vec2::new(100.0, 40.0);
+        let hooks: &[(u16, Vec2)] = &[(BAT_HOOK, Vec2::new(0.0, -10.0)), (HOOK, Vec2::new(40.0, -30.0))];
+        let (vel, down) = grapple_pull(hooks, p0).expect("a pull");
+        // The average of the two centers is (20, -20); the vector from the
+        // player is (-80, -60) and its cap is 14 (the first hook's type).
+        assert!((vel.length() - 14.0).abs() < 1e-3, "the Bat Hook's cap 14");
+        assert!(vel.x < 0.0 && vel.y < 0.0, "toward the average");
+        assert!(!down);
+        // A single hook is the PHYS-6 case unchanged.
+        let (v, _) = grapple_pull(&[(HOOK, Vec2::new(0.0, -14.0))], Vec2::ZERO).unwrap();
+        assert!((v.length() - 11.0).abs() < 1e-3, "the Hook's cap 11");
+        // Zero hooks carries the caller through.
+        assert!(grapple_pull(&[], Vec2::ZERO).is_none());
+    }
+
+    // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off kills
+    // this owner's aiStyle-7 slots and nothing else.
+    #[test]
+    fn dw_3_6_the_remove_all_kills_only_the_owners_hooks() {
+        let mut w = crate::test_world_helpers::ground();
+        let center = Vec2::new(40.0 * 16.0, 30.0 * 16.0);
+        put(&mut w, 40, 33, 1);
+        let mut pool = ProjectilePool::new();
+        pool.spawn_hook(HOOK, center, center + Vec2::new(0.0, 400.0), 16.0, 0, 0.0, 0, 1);
+        // An unowned/other-owner projectile must survive the sweep.
+        pool.spawn(WOODEN_ARROW, 1, center, Vec2::new(1.0, 0.0), 5, 2.0, false);
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, center);
+        }
+        assert_eq!(pool.hook_counts(0).1, 1, "one latched");
+        let hooks: Vec<usize> = pool
+            .slots()
+            .iter()
+            .enumerate()
+            .filter(|(_, pr)| {
+                pr.active && pr.owner == 0 && proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for i in hooks {
+            pool.kill(i);
+        }
+        assert_eq!(pool.hook_counts(0).1, 0, "the owner's hooks are gone");
+        assert_eq!(pool.active_count(), 1, "the arrow survives");
     }
 }
