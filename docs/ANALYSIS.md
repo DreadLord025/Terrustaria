@@ -1457,6 +1457,12 @@ Deliberate deviations recorded:
   vanity/noWet/mech/noMelee/noUseGraphic/paint/flame, and the equip-slot tail
   (wing/hand/back/waist/face/balloon/neck/shield/front/beard/voice) are parsed but
   not provisioned — each skip carries a reason string; nothing is dropped silently.
+  Consequence for the melee arm (BUG-09): `ItemDef` has no `noMelee`, so the
+  vanilla's `damage > 0 && !noMelee` melee-hit gate (`Player.cs:43648`) is
+  approximated by the editing path's `held_use_ammo == 0` — the ammo shooters are
+  refused, but a non-ammo projectile weapon (a magic staff, the Terra Blade, a
+  boomerang — all `noMelee = true` in `Item.SetDefaults`) can still swing its own
+  melee damage at an NPC, which the vanilla refuses. M3-ITEM owns the field.
 - **`Main.infectedSeed` conditional** (Item.cs:2180, id 66): the seed branch is not
   evaluated; the base value is kept, the site is recorded by the generator.
 - **Slots are i16** (−1 = none): slot 0 is real (the Familiar set, ids 269-271);
