@@ -3105,6 +3105,28 @@ machine — the Eye of Cthulhu, Retinazer and Spazmatism all ride it:
 Screenshot: `eoc_eye.png` (the eye at its real 110x166 frame mid-flight),
 SHA256-stable across runs.
 
+## The Lunar pillars' mobs (M4-NPC-3s)
+
+The 22 lunar-family kinds had the port's earliest stub: one blind
+walker strip in `find_frame` and four shared sheets in the draw (the
+whole solar family drew `NPC_409`, a stardust spider). Against
+`NPC.cs`'s lunar block (70120-70806) and the measured sheets:
+
+- 21 of the 22 kinds have real cases — the tick-cycles (405/406 at 4,
+  407 at 6, 420/421 at 5 with 421's latch double), the `|vx|` walkers
+  (410/425/427/429/518), the state poses (411's shield, 424's attack,
+  409's shoot, 423's spawn, 416's mount mirror), the velocity-gated
+  walkers and the dying rows (415/419). Only 428 (the larva) has no
+  case.
+- The spriteDirection writes split three ways: `direction` (the ground
+  walkers, the queen/hornet), `-direction` (the stargazer, predictor,
+  diver, vortexian) and `-sign(velocity.X)` (the beast).
+- The sheets are now one per kind (all 27 measured and packed); the
+  draws take the real rows at the generic anchor through `martian_draw`.
+
+Screenshot: `lunar_mobs.png` (the 23-piece lineup at the generic
+anchor), SHA256-stable across runs.
+
 ## The WoF family and the WoF-side mobs (M4-NPC-3r)
 
 - **`case 113/114`** (`NPC.cs:73516-73537`) is shared by the Wall of Flesh

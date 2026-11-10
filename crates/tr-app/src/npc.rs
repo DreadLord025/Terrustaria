@@ -1799,6 +1799,33 @@ NpcKind::SolarSelenian => 140,
         }
     }
 
+
+    /// The lunar family's `Main.npcFrameCount` rows (`Main.cs:67124-67126`,
+    /// `:67135`) — the per-kind strip heights the `find_frame` arms wrap
+    /// over. The v1 shared one walker strip across the whole family.
+    pub fn lunar_frame_count(self) -> u32 {
+        match self {
+            NpcKind::StardustCellBig => 4,
+            NpcKind::StardustCellSmall => 2,
+            NpcKind::StardustJellyfishBig => 5,
+            NpcKind::StardustSpiderBig
+            | NpcKind::StardustSpiderSmall
+            | NpcKind::StardustSoldier => 11,
+            NpcKind::SolarDrakomire | NpcKind::SolarDrakomireRider => 10,
+            NpcKind::SolarSroller => 15,
+            NpcKind::SolarCorite => 8,
+            NpcKind::SolarSelenian => 17,
+            NpcKind::SolarSpearman => 10,
+            NpcKind::NebulaFloater | NpcKind::BrainSuckler => 6,
+            NpcKind::NebulaBeast | NpcKind::Predictor => 12,
+            NpcKind::VortexRifleman => 13,
+            NpcKind::VortexHunter => 15,
+            NpcKind::VortexAlien => 9,
+            NpcKind::VortexHeadcrab => 5,
+            NpcKind::VortexSoldier => 10,
+            _ => 1,
+        }
+    }
     /// The kinds whose display flip rides the dedicated `sprite_dir`
     /// (`NPC.spriteDirection`, `NPC.cs:6515`) rather than the motion
     /// `facing`: the martian family (the Scutlix pair's inverted write,
@@ -4836,65 +4863,539 @@ impl Npc {
             NpcKind::DD2LanePortal => {
                 self.frame = 0;
             }
-            // The shards: the walker accumulator over their strips — the
-            // 405's 4 frames (`Main.npcFrameCount[405]` = 4), the 406's
-            // 2, the 407's 5, the 423's 12, the 425's 13 and the 429's 10.
-            NpcKind::StardustCellBig
-            | NpcKind::StardustCellSmall
-            | NpcKind::StardustJellyfishBig
-            | NpcKind::NebulaBeast
-            | NpcKind::VortexRifleman
-            | NpcKind::VortexSoldier => {
-                let count = match self.kind {
-                    NpcKind::StardustCellBig => 4,
-                    NpcKind::StardustCellSmall => 2,
-                    NpcKind::StardustJellyfishBig => 5,
-                    NpcKind::NebulaBeast => 12,
-                    NpcKind::VortexRifleman => 13,
-                    _ => 10,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+            // The lunar family's machines (`NPC.cs`'s lunar block,
+            // 70120-70806). `Main.npcFrameCount` (`Main.cs:67124-67126`):
+            // 402..404 = 1, 405 = 4, 406 = 2, 407 = 5, 409/411 = 11,
+            // 410 = 5, 412..414 = 1, 415/416 = 10, 417 = 15, 418 = 8,
+            // 419 = 17, 420/421 = 6, 423/424 = 12, 425 = 13, 426 = 15,
+            // 427 = 9, 428 = 5, 429 = 10, 518 = 10. The v1 ran one blind
+            // walker strip over the whole family.
+            // `case 405/406` (`NPC.cs:70728-70738`): the 4-tick cycle.
+            NpcKind::StardustCellBig | NpcKind::StardustCellSmall => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
+                    self.frame = if self.frame + 1 >= self.kind.lunar_frame_count() {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
                 }
             }
-            // The tower mobs' strips: the spiders 4/11 rows, the soldier 5,
-            // the drakomire 1, its rider 10, the sroller 10, the corite 15
-            // and the selenian 8.
-            NpcKind::StardustSpiderBig
-            | NpcKind::StardustSpiderSmall
-            | NpcKind::StardustSoldier
-            | NpcKind::SolarDrakomire
-            | NpcKind::SolarDrakomireRider
-            | NpcKind::SolarSroller
-            | NpcKind::SolarCorite
-            | NpcKind::SolarCrawltipedeHead
+            // `case 407` (`NPC.cs:70717-70722`): the 6-tick cycle.
+            NpcKind::StardustJellyfishBig => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= self.kind.lunar_frame_count() {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // `case 410` (`NPC.cs:70705-70713`): the `|vx|` accumulator
+            // over the 5-row strip, the advance at 10.
+            NpcKind::StardustSpiderSmall => {
+                self.frame_counter += self.vx.abs();
+                if self.frame_counter >= 10.0 {
+                    self.frame_counter -= 10.0;
+                    self.frame = if self.frame + 1 >= self.kind.lunar_frame_count() {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // `case 409` (`NPC.cs:70684-70703`): the shoot pose pins the
+            // last row while `ai[1]` rides (0, 30]; otherwise the idle
+            // cycle wraps at `count - 2` (the last two rows are the shoot
+            // pair) every 6 ticks.
+            NpcKind::StardustSpiderBig => {
+                if self.vy == 0.0 && self.ai[1] <= 30.0 && self.ai[1] > 0.0 {
+                    self.frame = self.kind.lunar_frame_count() - 1;
+                    self.frame_counter = 0.0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame + 2 >= self.kind.lunar_frame_count() {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // `case 411` (`NPC.cs:70643-70660`): the shield pose pins the
+            // last row while `ai[1]` rides [120, 240); otherwise the
+            // grounded walk (rows 2..count-2) with `spriteDirection =
+            // -direction` and the air's row 1.
+            NpcKind::StardustSoldier => {
+                if self.ai[1] >= 120.0 && self.ai[1] < 240.0 {
+                    self.sprite_dir = -self.facing;
+                    self.frame = self.kind.lunar_frame_count() - 1;
+                    self.frame_counter = 0.0;
+                } else if self.vy == 0.0 {
+                    self.sprite_dir = -self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame + 1 >= self.kind.lunar_frame_count() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // `case 423` (`NPC.cs:70538-70560`): the spawn pose (rows 2/3
+            // by `ai[1]`), the air's row 1, the idle's row 0, and the walk
+            // rows 4..count-1 with `spriteDirection = -sign(vx)`.
+            NpcKind::NebulaBeast => {
+                if self.ai[2] == 1.0 {
+                    let row = if self.ai[1] >= 30.0 && self.ai[1] < 45.0 {
+                        3
+                    } else {
+                        2
+                    };
+                    self.frame = row;
+                } else if self.vy != 0.0 {
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame = 0;
+                } else {
+                    self.sprite_dir = if self.vx < 0.0 { 1 } else { -1 };
+                    if self.frame < 4 {
+                        self.frame = 4;
+                    }
+                    self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.kind.lunar_frame_count() {
+                        self.frame = 4;
+                    }
+                }
+            }
+            // `case 424` (`NPC.cs:70593-70618`): the attack pose (the last
+            // two rows by `ai[1] > 90`), `spriteDirection = -direction`,
+            // the grounded walk rows 2..count-2 and the air's row 1.
+            NpcKind::Predictor => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = -self.facing;
+                    if self.ai[2] > 0.0 {
+                        let last = self.kind.lunar_frame_count();
+                        self.frame = if self.ai[1] > 90.0 { last - 2 } else { last - 1 };
+                        self.frame_counter = 0.0;
+                    } else if self.vx == 0.0 {
+                        self.frame = 0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs();
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame + 2 >= self.kind.lunar_frame_count() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // `case 420` (`NPC.cs:70632-70640`): the plain 5-tick cycle.
+            NpcKind::NebulaFloater => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= self.kind.lunar_frame_count() {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // `case 421` (`NPC.cs:70578-70587`): the 5-tick cycle with the
+            // latch (`ai[0] == 5`) advancing twice per tick.
+            NpcKind::BrainSuckler => {
+                if self.ai[0] == 5.0 {
+                    self.frame_counter += 1.0;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= self.kind.lunar_frame_count() {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // `case 425` (`NPC.cs:70332-70352`): the aim pose (rows
+            // 10..12), the air's row 1, the idle's row 0 and the walk
+            // rows 2..9 — the only lunar case with `spriteDirection =
+            // -direction`.
+            NpcKind::VortexRifleman => {
+                self.sprite_dir = -self.facing;
+                if self.ai[2] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 3.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 12 || self.frame < 10 {
+                        self.frame = 10;
+                    }
+                } else if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 9 || self.frame < 2 {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // `case 429` (`NPC.cs:70466-70484`): the grounded walk
+            // (rows 2..count-1) with `spriteDirection = -direction` and
+            // the air's row 1.
+            NpcKind::VortexSoldier => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = -self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.kind.lunar_frame_count() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // `case 426` (`NPC.cs:70411-70439`): the attack cycle (rows
+            // 12..14, the grounded row 8), the flight rows 9..11, the
+            // idle row 0 and the walk rows 1..7.
+            NpcKind::VortexHunter => {
+                if self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.ai[1] >= 45.0 {
+                    if self.vy == 0.0 {
+                        self.frame = 8;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= 2.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 15 || self.frame < 12 {
+                            self.frame = 12;
+                        }
+                    }
+                } else if self.vy != 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 2.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 12 || self.frame < 9 {
+                        self.frame = 9;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 10.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 7 || self.frame < 1 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // `case 427` (`NPC.cs:70374-70394`): the flight rows 6..8, the
+            // walk rows 1..5, the idle row 0, the 2-tick flight cadence.
+            NpcKind::VortexAlien => {
+                if self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vy != 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 2.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 9 || self.frame < 6 {
+                        self.frame = 6;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 5 || self.frame < 1 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // The 428 arm (`NPC.cs`'s lunar block carries no `case 428`):
+            // the 5-row strip holds row 0.
+            NpcKind::VortexHeadcrab => {
+                self.frame = 0;
+            }
+            // The solar family (`NPC.cs:70120-70312`).
+            // `case 415` (`NPC.cs:70120-70170`): the dying rows 0/8/9/10
+            // over `ai[2] < 0`, the grounded walk rows 2..count-3 and the
+            // air's row 1.
+            NpcKind::SolarDrakomire => {
+                if self.ai[2] < 0.0 {
+                    self.frame_counter += 1.0;
+                    let mut row = 0u32;
+                    if self.frame_counter > 18.0 - 8.0 {
+                        row = 8 + (self.frame_counter as i32 / 4 % 2) as u32;
+                    }
+                    if self.frame_counter > 18.0 + 24.0 {
+                        row = 0;
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame = row;
+                } else if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += self.vx.abs() * 0.5;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame + 3 >= self.kind.lunar_frame_count() {
+                        self.frame = 2;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // `case 416` (`NPC.cs:70173-70212`): the rider mirrors its
+            // mount's row — the port carries the mount's row through
+            // `ai[2]` (the sim-side write-through), so the linked arm
+            // reads it back and the standalone cycles the 2..7 band.
+            NpcKind::SolarDrakomireRider => {
+                if self.ai[2] > 0.0 {
+                    self.frame = self.ai[2] as u32;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 7 || self.frame < 2 {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // `case 417` (`NPC.cs:70196-70252`): the spin cycle
+            // `(|vx| * 1.1 / 6)`, the charge rows 9..12, the attack rows
+            // 13..17 and the tuning row 14.
+            NpcKind::SolarSroller => {
+                match self.ai[0] {
+                    0.0 => {
+                        self.rotation = 0.0;
+                        if self.vy == 0.0 {
+                            if self.facing != 0 {
+                                self.sprite_dir = self.facing;
+                            }
+                        } else if self.vy < 0.0 {
+                            self.frame_counter = 0.0;
+                        }
+                        self.frame_counter += self.vx.abs() * 1.1;
+                        self.frame = (self.frame_counter / 6.0) as u32;
+                        if self.frame_counter >= 48.0 {
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                    1.0 => {
+                        self.frame_counter = 0.0;
+                        self.frame = 9 + (self.ai[1] / 6.0) as u32;
+                    }
+                    5.0 => {
+                        self.frame_counter = 0.0;
+                        self.frame = 13 - (self.ai[1] / 6.0) as u32;
+                    }
+                    _ => {
+                        self.frame_counter = 0.0;
+                        self.frame = 14;
+                    }
+                }
+            }
+            // `case 418` (`NPC.cs:70758-70806`): the idle cycle over rows
+            // 0..4, the charge rows 5..7 by `ai[1]` and the long cycle
+            // over rows 5..7 at the 12-tick cadence.
+            NpcKind::SolarCorite => {
+                match self.ai[0] {
+                    0.0 | 1.0 | -1.0 => {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 4 {
+                            self.frame = 0;
+                        }
+                    }
+                    2.0 => {
+                        self.frame = if self.ai[1] < 10.0 {
+                            5
+                        } else if self.ai[1] < 20.0 {
+                            6
+                        } else {
+                            7
+                        };
+                    }
+                    -2.0 => {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 12.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 7 || self.frame < 5 {
+                            self.frame = 5;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // `case 419` (`NPC.cs:70266-70312`): the dying rows 2..4 and
+            // 4..8, the walk rows 9..16 and the air's row 1.
+            NpcKind::SolarSelenian => {
+                if self.ai[2] < 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.frame >= 9 {
+                        self.frame = 2;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter < 6.0 {
+                        self.frame = 2 + (self.frame_counter / 3.0) as u32;
+                    } else {
+                        self.frame = 4 + (self.frame_counter - 6.0) as u32;
+                    }
+                } else if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.kind.lunar_frame_count() {
+                            self.frame = 9;
+                        }
+                        if self.frame < 9 {
+                            self.frame = 9;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // `case 518` (`NPC.cs:70231-70252`): the grounded walk
+            // (rows 2..count-1) with both counter terms and the air's
+            // row 1.
+            NpcKind::SolarSpearman => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.kind.lunar_frame_count() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // No `FindFrame` case (`NPC.cs` carries none for these): the
+            // crawltipede chain (412/413/414) and the stardust worm head
+            // (402) are single-frame sheets.
+            NpcKind::SolarCrawltipedeHead
             | NpcKind::SolarCrawltipedeBody
             | NpcKind::SolarCrawltipedeTail
-            | NpcKind::StardustWormHead
-            | NpcKind::SolarSpearman
-            | NpcKind::SolarSelenian => {
-                let count = match self.kind {
-                    NpcKind::SolarDrakomire => 1,
-                    NpcKind::SolarCrawltipedeHead
-                    | NpcKind::SolarCrawltipedeBody
-                    | NpcKind::SolarCrawltipedeTail
-                    | NpcKind::StardustWormHead => 1,
-                    NpcKind::SolarSpearman => 10,
-                    NpcKind::SolarCorite => 15,
-                    NpcKind::StardustSpiderBig => 4,
-                    NpcKind::StardustSpiderSmall => 11,
-                    NpcKind::SolarDrakomireRider => 10,
-                    NpcKind::SolarSroller => 10,
-                    NpcKind::SolarSelenian => 8,
-                    _ => 5,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
-                }
+            | NpcKind::StardustWormHead => {
+                self.frame = 0;
             }
             // The nebula trio's 6/6/12-frame strips.
             NpcKind::NebulaFloater | NpcKind::BrainSuckler | NpcKind::Predictor => {
@@ -16979,6 +17480,102 @@ mod tests {
         }
         assert_eq!(h.frame_counter, 1.0, "the reset lands and the counter re-runs");
     }
+
+    #[test]
+    fn the_lunar_mobs_ride_their_own_counters() {
+        // The lunar family's `FindFrame` machines (`NPC.cs`'s lunar block):
+        // the plain tick-cycles (405/406 at 4, 407 at 6, 420 at 5, 421 at 5
+        // with the latch's double tick), the `|vx|` strips (410, 425, 427,
+        // 429, 518) and the state poses (423's spawn rows, 411's shield
+        // row, 424's attack rows, 409's shoot row).
+        let mut c = bare(NpcKind::StardustCellBig);
+        for _ in 0..4 {
+            c.find_frame();
+        }
+        assert_eq!(c.frame, 1, "the star cell's 4-tick cycle");
+        // 12 more ticks (3 cycles of 4) wrap the 4-row strip back to 0.
+        for _ in 0..12 {
+            c.find_frame();
+        }
+        assert_eq!(c.frame, 0, "the 4-row strip wraps to 0");
+        // The flow invader's 6-tick cycle over its own 5-row strip.
+        let mut j = bare(NpcKind::StardustJellyfishBig);
+        for _ in 0..6 {
+            j.find_frame();
+        }
+        assert_eq!(j.frame, 1, "the flow invader's 6-tick cycle");
+        for _ in 0..24 {
+            j.find_frame();
+        }
+        assert_eq!(j.frame, 0, "the 5-row strip wraps");
+        // The walkers: the `|vx|` accumulator with the per-kind advance.
+        let mut w = bare(NpcKind::VortexRifleman);
+        w.vy = 0.0;
+        w.find_frame();
+        assert_eq!(w.frame, 0, "the diver's idle row 0 while it stands");
+        w.vx = 6.0;
+        w.find_frame();
+        assert_eq!(w.frame, 2, "the walk clamps to the band's floor 2");
+        for _ in 0..1 {
+            w.find_frame();
+        }
+        assert_eq!(w.frame, 3, "the 8-tick stride lifts row 3");
+        // The spider's shoot pose pins the last row over `ai[1]`.
+        let mut sp = bare(NpcKind::StardustSpiderBig);
+        sp.ai[1] = 20.0;
+        sp.vy = 0.0;
+        sp.find_frame();
+        assert_eq!(sp.frame, 10, "the shoot pose pins the last row");
+        sp.ai[1] = 0.0;
+        for _ in 0..6 {
+            sp.find_frame();
+        }
+        assert_ne!(sp.frame, 10, "the idle releases the pose");
+        // The stargazer's shield row.
+        let mut sg = bare(NpcKind::StardustSoldier);
+        sg.ai[1] = 200.0;
+        sg.find_frame();
+        assert_eq!(sg.frame, 10, "the shield pins the last row");
+        // The beast's spawn pose.
+        let mut b = bare(NpcKind::NebulaBeast);
+        b.ai[2] = 1.0;
+        b.find_frame();
+        assert_eq!(b.frame, 2, "the spawn pose's row 2");
+        b.ai[1] = 40.0;
+        b.find_frame();
+        assert_eq!(b.frame, 3, "the spawn pose's row 3");
+    }
+
+    #[test]
+    fn the_lunar_sprite_directions_follow_the_c_sharp() {
+        // The C#'s spriteDirection writes in the lunar block
+        // (`NPC.cs:70120-70806`): the ground walkers write `direction`,
+        // the stargazer/predictor/diver/vortexian write `-direction`, the
+        // beast writes `-sign(velocity.X)`, and the hunter/hornet write
+        // `direction` when airborne.
+        let mut t = bare(NpcKind::VortexRifleman);
+        t.facing = 1;
+        t.find_frame();
+        assert_eq!(t.sprite_dir, -1, "the diver inverts the sprite direction");
+        let mut s = bare(NpcKind::StardustSoldier);
+        s.facing = -1;
+        s.find_frame();
+        assert_eq!(s.sprite_dir, 1, "the stargazer inverts too");
+        let mut b = bare(NpcKind::NebulaBeast);
+        b.ai[2] = 0.0;
+        b.vx = 5.0;
+        b.vy = 0.0;
+        b.find_frame();
+        assert_eq!(b.sprite_dir, -1, "the beast rides the velocity's sign");
+        let mut h = bare(NpcKind::VortexHunter);
+        h.facing = 1;
+        h.find_frame();
+        assert_eq!(h.sprite_dir, 1, "the queen follows the direction");
+        let mut c = bare(NpcKind::SolarCorite);
+        c.ai[0] = 0.0;
+        c.find_frame();
+        assert_eq!(c.sprite_dir, -1, "the grounded corite holds its default");
+    }
 }
 
 mod shard_stat_tests {
@@ -17000,6 +17597,8 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
+
+
 
 
 
