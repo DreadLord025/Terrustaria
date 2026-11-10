@@ -172,6 +172,23 @@ the `.plr` writer was stubbed with a zero.
 3. Test: toggle two slots → save → load → the same two slots are starred; and the
    vanilla round-trip test (`M6-SAVE-2`) still passes.
 
+**Fixed 2026-11-10 (`BUG-03-favorites-persist`).** `PlayerFile`/`PlayerFileWrite`
+carry `inv_favorites: u64` — bit `i` is `inventory[i].favorited`, the exact
+`Player.cs:54820-54824` layout (type, stack, prefix, favorited) the reader had
+already been consuming at `:55340-55362` for release ≥ 114. The writer emitted a
+hardcoded `false` per slot and the reader dropped the byte; both halves carry the
+real value now. `save_list::PlayerEntry` gains the field (filled from the `.plr`),
+`App::hydrate_favorites`/`App::favorite_bits` convert between the live
+`favorite_slots` and the bitfield, and the creation save writes the live stars.
+**Found on the way:** the port's reader skipped the armour/dye `favorited` byte
+at release ≥ 322 (`Player.cs:55315`/`:55336`), so a real vanilla 326 file
+desynced the section walk from the armour block onward — now gated and consumed.
+Parked: the armour/dye favourites have no port UI (kept consumed-and-dropped)
+and the in-game re-save of a loaded character rides BUG-05's `WorldPlay`, since
+the port's only player-file writer today is the creation path. 5 tests: the
+sample's bits, the save/load round trip, the version gate, the App-side toggle
+pair through the bitfield, and the disk card's stars.
+
 ---
 
 ## 4. World-creation seed is ignored — S1 / High
