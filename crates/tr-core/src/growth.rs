@@ -2859,6 +2859,77 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn bug16_a_forest_tree_trunk_drops_wood() {
+        // `KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`): a trunk cell
+        // standing on forest dirt drops the wood item 9 — the family walk
+        // reads the ground under the trunk column.
+        let mut w = world();
+        put(&mut w, 100, 210, 2, 0); // the forest grass ground
+        put(&mut w, 100, 209, 5, 0); // a trunk cell (frame 0/0)
+        let mut rng = FastRandom::new(11);
+        let (item, secondary, _bonus, is_wood) =
+            tree_drops(&w, 100, 209, 0, 0, &mut rng);
+        assert_eq!(item, 9, "the forest trunk drops wood");
+        assert_eq!(secondary, None, "the trunk cell rolls no acorn");
+        assert!(is_wood, "the drop is wood");
+    }
+
+    #[test]
+    fn bug16_the_family_grounds_swap_the_wood_variant() {
+        // The ground family picks the wood variant: ebonwood 619 on corrupt
+        // grass, shadewood 911 on crimson, jungle wood 620, pearlwood 621,
+        // a 1/2 glowing mushroom 183 on mushroom grass, boreal wood 2503 on
+        // snow (Ash 5215 rides the ash grass 633).
+        for (ground, expect) in [
+            (23u16, 619u16),
+            (199, 911),
+            (60, 620),
+            (109, 621),
+            (147, 2503),
+            (633, 5215),
+        ] {
+            let mut w = world();
+            put(&mut w, 100, 210, ground, 0);
+            put(&mut w, 100, 209, 5, 0);
+            let mut rng = FastRandom::new(11);
+            let (item, ..) = tree_drops(&w, 100, 209, 0, 0, &mut rng);
+            assert_eq!(item, expect, "ground {ground} drops {expect}");
+        }
+        // The mushroom grass rolls at 1/2.
+        let mut w = world();
+        put(&mut w, 100, 210, 70, 0);
+        put(&mut w, 100, 209, 5, 0);
+        // One stream, one roll per draw (re-seeding walks the LCG's first
+        // step only, which is parity-constant for small seeds).
+        let mut rng = FastRandom::new(7);
+        let rolled = (0..64)
+            .map(|_| tree_drops(&w, 100, 209, 0, 0, &mut rng).0)
+            .collect::<Vec<_>>();
+        assert!(rolled.contains(&183), "the glowing mushroom drops");
+        assert!(rolled.contains(&0), "or nothing at 1/2");
+    }
+
+    #[test]
+    fn bug16_the_canopy_cell_rolls_the_acorn() {
+        // The canopy arm (`:66191-66209`): a cell with frameX >= 22 and
+        // frameY >= 198 rolls `Next(2)`; on a hit a family that drops acorns
+        // adds the secondary item 27. The trunk cell (frame 0/0) never does.
+        let mut w = world();
+        put(&mut w, 100, 210, 2, 0); // forest — drops acorns
+        put(&mut w, 100, 209, 5, 22); // the canopy frame marker
+        let mut any_acorn = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            let (_item, secondary, ..) = tree_drops(&w, 100, 209, 22, 198, &mut rng);
+            if secondary == Some(27) {
+                any_acorn = true;
+            }
+        }
+        assert!(any_acorn, "the canopy rolls the acorn secondary");
+    }
+
     #[test]
     fn the_beach_shells_arm_places_the_pile() {
         // The beach-shells arm (`:72073-72135`): a dry empty beach cell under
@@ -4215,4 +4286,155 @@ pub fn update_world_underground_tile(
         spread_grass_walls(world, wall_dist, i, j, rng);
         spread_desert_walls(world, wall_dist, i, j, rng);
     }
+}
+
+// --- Bug 16: the tree drops ---------------------------------------------------
+
+/// `WorldGen.TreeTypes` (`Terraria/TreeTypes.cs`): the tree family a ground
+/// tile grows. Only the families with a wood variant carry their own drop.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TreeType {
+    None,
+    Forest,
+    Corrupt,
+    Crimson,
+    Jungle,
+    Snow,
+    Hallowed,
+    Mushroom,
+    Palm,
+    PalmCorrupt,
+    PalmCrimson,
+    PalmHallowed,
+    Ash,
+}
+
+/// `WorldGen.GetTreeType(int tileType)` (`WorldGen.cs:63080-63111`): the
+/// ground tile's family. Forest dirt (2) and the forest dirt variant 477 map
+/// to Forest; the evil/hallow grasses map to their families; the palms map to
+/// theirs (the ground tile, not the trunk).
+pub fn tree_type(kind: u16) -> TreeType {
+    match kind {
+        2 | 477 => TreeType::Forest,
+        23 | 661 => TreeType::Corrupt,
+        70 => TreeType::Mushroom,
+        199 | 662 => TreeType::Crimson,
+        60 => TreeType::Jungle,
+        147 => TreeType::Snow,
+        109 | 492 => TreeType::Hallowed,
+        53 => TreeType::Palm,
+        112 => TreeType::PalmCorrupt,
+        234 => TreeType::PalmCrimson,
+        116 => TreeType::PalmHallowed,
+        633 => TreeType::Ash,
+        _ => TreeType::None,
+    }
+}
+
+/// `WorldGen.GetTreeBottom` (`WorldGen.cs:63436-63480`): the trunk column's
+/// base. A palm (323) walks down to the first active solid; the other cells
+/// decode the column from the frame (`frameX / 22`, `frameY / 22` — the
+/// branch/lean offsets) and walk down past the trunk kinds (and 72) to the
+/// ground. Returns the base cell.
+pub fn tree_bottom(world: &World, i: i32, j: i32) -> (i32, i32) {
+    let (mut x, mut y) = (i, j);
+    // The palm arm (`:63442-63449`).
+    if world.tile(x, y).is_some_and(|t| t.kind == 323) {
+        while y < world.height - 1
+            && !world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && t.kind != 323)
+        {
+            y += 1;
+        }
+        return (x, y);
+    }
+    // The trunk-column decode (`:63451-63473`).
+    let (num, num2) = world
+        .tile(x, y)
+        .map(|t| (t.frame_x / 22, t.frame_y / 22))
+        .unwrap_or((0, 0));
+    if num == 3 && num2 <= 2 {
+        x += 1;
+    } else if num == 4 && (3..=5).contains(&num2) {
+        x -= 1;
+    } else if num == 1 && (6..=8).contains(&num2) {
+        x -= 1;
+    } else if num == 2 && (6..=8).contains(&num2) {
+        x += 1;
+    } else if num == 2 && num2 >= 9 {
+        x += 1;
+    } else if num == 3 && num2 >= 9 {
+        x -= 1;
+    }
+    // The down walk (`:63474-63480`): past inactive cells, trunks and 72.
+    while y < world.height - 1
+        && world.tile(x, y).is_some_and(|t| {
+            !t.active() || crate::tileobject::is_a_tree_trunk(t.kind) || t.kind == 72
+        })
+    {
+        y += 1;
+    }
+    (x, y)
+}
+
+/// `WorldGen.TreeTypeDropsAcorns` (`WorldGen.cs:63112-63119`): every family
+/// but None/Mushroom/Jungle carries the acorn secondary.
+fn tree_type_drops_acorns(t: TreeType) -> bool {
+    !matches!(t, TreeType::None | TreeType::Mushroom | TreeType::Jungle)
+}
+
+/// `WorldGen.KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`) — the tree
+/// drops of a killed trunk cell (kinds 5/596/616/634). The wood variant comes
+/// from the ground family ([`tree_bottom`] → [`tree_type`]); the canopy cell
+/// (frameX >= 22 && frameY >= 198) rolls the acorn first. Returns
+/// `(item, secondary, bonus_wood, drop_is_wood)`.
+///
+/// Deviation (documented): the `bonusWood` roll (`:66250-66256` — the closest
+/// player's axe power plus `Main.rand.Next(3) == 0`) needs the player store the
+/// `kill_tile` path does not carry; it parks with the player-seam work, so
+/// `bonus_wood` is always false. The `ShouldDropExtraWood` seed arm parks with
+/// M5-SEED-1.
+pub fn tree_drops(
+    world: &World,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+    rng: &mut crate::tile_light::FastRandom,
+) -> (u16, Option<u16>, bool, bool) {
+    let mut drop_item = 9u16; // wood
+    let mut secondary = None;
+    // The canopy arm (`:66191-66209`).
+    if frame_x >= 22 && frame_y >= 198 {
+        if rng.next(2) == 0 {
+            let (bx, by) = tree_bottom(world, x, y);
+            let t = tree_type(world.tile(bx, by).map(|t| t.kind).unwrap_or(0));
+            if tree_type_drops_acorns(t) {
+                secondary = Some(27); // the acorn
+            }
+        }
+    }
+    // The wood variant (`:66210-66249`).
+    let mut drop_is_wood = false;
+    let family = {
+        let (bx, by) = tree_bottom(world, x, y);
+        tree_type(world.tile(bx, by).map(|t| t.kind).unwrap_or(0))
+    };
+    match family {
+        TreeType::Ash => drop_item = 5215,
+        TreeType::Corrupt => drop_item = 619,
+        TreeType::Crimson => drop_item = 911,
+        TreeType::Jungle => drop_item = 620,
+        TreeType::Hallowed => drop_item = 621,
+        TreeType::Mushroom => {
+            drop_item = if rng.next(2) == 0 { 183 } else { 0 };
+        }
+        TreeType::Snow => drop_item = 2503,
+        _ => {}
+    }
+    if drop_item == 9 {
+        drop_is_wood = true;
+    }
+    (drop_item, secondary, false, drop_is_wood)
 }

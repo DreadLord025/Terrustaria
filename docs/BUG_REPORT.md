@@ -510,18 +510,25 @@ the whole trunk (the ground-sand walk is `WorldGen.cs:47687-47737`).
 **Root cause.** The tree object's destruction cascade was never ported; only the
 generic single-tile kill exists.
 
-**Fix plan.**
-1. Port `KillTile_GetTreeDrops` (the `GetTreeTypeAndTreeBottom` walk, the
-   `TreeTypeDropsAcorns` roll, the wood/acorn/seed item ids and the `dropIsWood`
-   flag).
-2. Port the cascade: after killing a trunk cell, walk up the same column while the
-   tile is a tree kind, clearing and dropping each cell; handle the branch/leaf
-   merge tiles (191/192) and the sand-ground rule.
-3. Keep the RNG order: the drop roll uses `WorldGen.genRand` (`Next(2)` then the
-   tree-type pick), so it must be consumed in that order.
-4. Test: a 10-tall tree felled from the base yields exactly one wood stack per
-   trunk cell + the acorn roll; a world-hash/determinism test is unaffected
-   (runtime only).
+**Status: FIXED 2026-11-10** (`fix-tree-fell-cascade`, merge `b3b7692c`+1).
+
+What landed (`growth.rs::tree_drops` + the `cell_drops` arms): the whole
+`KillTile_GetTreeDrops` port — `tree_bottom` (`GetTreeBottom`'s frame-column
+decode + the trunk walk), `tree_type` (the ground family map),
+`TreeTypeDropsAcorns`, the canopy acorn roll (`Next(2)` on frameX ≥ 22 &&
+frameY ≥ 198) and the per-family wood variants (ash 5215, ebonwood 619,
+shadewood 911, jungle 620, pearlwood 621, the 1/2 glowing mushroom 183,
+boreal 2503). 3 tests (the wood drop, the family swap, the canopy roll).
+
+One correction from the C# re-read: the vanilla `KillTile` tree arm
+(`WorldGen.cs:65214-65231`) carries **only the drops** — there is no
+whole-tree collapse in the C# `KillTile` (no `IsATreeTrunk` cascade, no
+felling arm); the trunk above a felled base stands until it is struck, and
+each struck trunk cell drops through the port's arms now. So the fix plan's
+item 2 was taken against the golden rule and dropped as a deviation: the
+expected behaviour is the per-cell drop, not the collapse. The `bonusWood`
+roll (`:66250-66256`, the closest player's axe) parks with the player seam —
+the `kill_tile` path carries no player.
 
 ---
 
