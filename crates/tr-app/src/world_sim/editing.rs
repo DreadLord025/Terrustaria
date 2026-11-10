@@ -911,11 +911,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
-/// 's tile-first order for the tools: the cursor cell is a
-/// minable/chopable tile the held tool can work (the vanilla checks the
-/// tile against the tool before the NPC boxes — 's
-/// /mining order). The weapons take the NPC arm
-/// regardless (, ).
+/// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
+/// minable/chopable tile the held tool can work, and the vanilla checks the
+/// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
+/// (`Player.cs:43593`) runs ahead of the melee-hit box block
+/// (`Player.cs:43644-43686`). The weapons take the NPC arm regardless
+/// (`damage > 0` and `!noMelee`, `Player.cs:43648`).
 fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     let held = app.inventory[app.selected];
     if held.count == 0 {
@@ -939,7 +940,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
 
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
     // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
-    // `!noMelee` (`Player.cs:43659`) — the tools included, their damage
+    // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
     // coming from the same registry row. The ammo shooters skip it — they
     // fire their `useAmmo` projectile instead (`ItemCheck_Shoot`'s gate,
     // `Player.cs:47069-47075`). The vanilla prioritises the TILE under the
@@ -1023,7 +1024,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
-                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43676`):
+                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
                 // the item's `knockBack` times the glove/buff multipliers (the
                 // port's 1f — no ported accessory grants them).
                 let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
@@ -3439,8 +3440,9 @@ mod tests {
     /// surface; the cursor tile (30, 260) stays air so nothing is mined.
 
     /// BUG-09: the melee arms run for weapons and tools alike — the inverted
-    /// early return is gone and the damage reads the item's registry row
-    /// (the tools included: the pickaxe's ).
+    /// early return is gone and the damage reads the held row (`ItemCheck`'s
+    /// `GetWeaponDamage` × the class multiplier → `DamageVar` → the NPC's
+    /// defence; the tools included: the pickaxe's own `damage: 5`).
     #[test]
     fn bug_09_the_melee_hit_reads_the_item_damage() {
         // A wooden sword (damage 7, knockback 5.0) over the slime.
@@ -3450,16 +3452,27 @@ mod tests {
         let hp_0 = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp < hp_0, "the sword hit lands (defence-reduced > 0)");
+        // The amount is the sword's OWN row through the ±15 % `DamageVar`
+        // band and the slime's defence (`CalculateDamageNPCsTake`), x2 on a
+        // crit — `item_rng` starts at 0 in the rig, so the draws are fixed.
+        // The pre-BUG-09 placeholder never reached this arm (the sword
+        // returned early); the flat 15 discriminator is the pick below.
+        let sword = hp_0 - a.npcs[0].hp;
+        assert_eq!(sword, 6, "the sword's 7 through DamageVar − defence = {sword}");
         // The Iron Pickaxe (damage 5, knockback 2.0) with the cursor on the
         // NPC over air: the vanilla's `!noMelee && damage > 0` gate runs the
         // melee arm for the tools too — over an idle cursor cell the tool
-        // hits (ItemCheck's tile-first order only diverts the hit when the
+        // hits (`ItemCheck`'s tile-first order only diverts the hit when the
         // cursor sits on a tile the tool can work).
         let mut b = melee_app();
         b.inventory[b.selected].kind = 1;
         let hp_b = b.npcs[0].hp;
         mine_frames(&mut b, 1);
         assert!(b.npcs[0].hp < hp_b, "the tool hits the NPC over air");
+        // The pick's own 5 (±15 %) after the defence — NOT the pre-BUG-09
+        // flat 15 (that row read 14 here: 15 − 2/2).
+        let pick = hp_b - b.npcs[0].hp;
+        assert_eq!(pick, 4, "the pick's 5 through DamageVar − defence = {pick}");
         // The same pick over a tile under the cursor mines instead — the
         // tile arm runs (the pick's power clears the stone under it).
         let mut c = melee_app();

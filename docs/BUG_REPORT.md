@@ -419,6 +419,34 @@ non-ammo case. The fallback 15 was the original placeholder never replaced.
 4. Test: iron broadsword on a zombie removes `defense`-reduced damage > 0; pickaxe
    deals its own damage (not 15); a gun still fires its projectile.
 
+**Fixed 2026-11-11 (`BUG-09-melee-damage`).** The inverted early return is gone —
+`ItemCheck_Shoot` fires from inside the swing arm (`Player.cs:43568-43571`), above
+the mining/placing arms, so every item falls through and the melee block keeps its
+own `held_use_ammo == 0` gate for the shooters. The hit reads the held row: the
+`registry` `damage` (or the prefixed value) × the class multiplier
+(`Player.GetWeaponDamage`, `Player.cs:53421-53429`), the crit roll
+(`GetWeaponCrit` + `Item.crit`, `:53371`), `Main.DamageVar` with the player's luck
+(`:44342`), then `NPC.StrikeNPC`'s `max(1, Damage − Defense/2) × (crit ? 2 : 1)`
+(`NPC.cs:81239`, the port's `tr_core::damage::strike_npc_damage`), and the
+knockback is the item's `knockBack` with the glove/buff multipliers at 1
+(`Player.cs:43664-43679`). `cursor_cell_is_tile_target` restores the vanilla's
+tile-first order for the tools (`ItemCheck_UseMiningTools`, `:43593`, ahead of the
+melee-hit box block `:43644-43686`), so a pick over a minable tile still mines.
+Verified statement-by-statement against the C#; the tests were re-run green
+(`bug_09_the_melee_hit_reads_the_item_damage` — now pinning the *amount*: the
+wooden sword's 7 and the pick's 5 through `DamageVar` minus the slime's defence,
+never the flat 15 — plus `bug_10_melee_refuses_the_town_npcs` and
+`test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var`, and the workspace
+suite 1912/0). Parked: the registry carries no `noMelee` (a named generator skip,
+ANALYSIS), so the `held_use_ammo == 0` gate is the port's approximation of the
+vanilla's `damage > 0 && !noMelee` — a non-ammo projectile weapon can still
+swing its own melee damage, which the vanilla refuses. Observed on a throwaway
+rig (not a test): the Wooden Boomerang (284) deals 9 to a defence-2 slime on its
+first swing, while the Space Gun (127) escapes only because the `gunProj`
+id-keyed table gives it a `useAmmo`. The real fix is the `no_melee` field on
+`ItemDef` (M3-ITEM) — excluding every `projectile` item instead would be wrong:
+the Enchanted Sword (989) melees *and* shoots in vanilla.
+
 ---
 
 ## 10. Melee damages town NPCs (friendly fire) — S2 / High
