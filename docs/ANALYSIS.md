@@ -5519,6 +5519,16 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   bundled content jsons reads the key (documented; the resource loading is
   `lang.rs`'s existing path).
 
+- **Bug 19 — the biome-cactus frame** (`DrawSingleTile`'s case 80,
+  `TileDrawing.cs:1132-1147`): the port folded the `rectangle.Y += 54/108/162`
+  shift into the shared `add_fr_y`, which the FLAT build path also consumes
+  (`render/tiles.rs`'s source rect `fy + add_fr_y`) — so every cactus on any
+  ground shifted, while the C# mutates only the local `rectangle` (`:1007`)
+  whose single consumer is the half-brick arm (`:1298`). `TileDrawData` now
+  carries `half_brick_src_y` for that rect's shift; the half-brick draw
+  (`push_half_shifted`) applies it and the flat path stays unshifted. The
+  `cactus_source_y_offset` helper stays as the data layer.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^

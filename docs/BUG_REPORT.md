@@ -632,14 +632,20 @@ shift applies on every cactus, including the ones that should not shift.
 **Root cause.** The port folded a `DrawSingleTile`-local rectangle adjustment into
 the shared `DrawData`, which is also consumed by the flat path.
 
-**Fix plan.**
-1. Keep `cactus_type` as data, but apply the `54/108/162` offset only in the draw
-   branch that corresponds to the C# `rectangle` path (the half-brick arm), or
-   rewrite the flat path to use `rectangle` exactly as the C# does.
-2. Prove with a screenshot pair (`TR_CAM` on a corrupt-sand cactus, seed 1) that the
-   flat and half-brick cases match the vanilla sheet rows.
-3. Confidence note: the C# `rectangle` is also passed to the half-brick draw; the
-   exact set of branches consuming it is the point to re-verify before coding.
+**Status: FIXED 2026-11-10** (`fix-cactus-biome-frame`).
+
+The re-verification the report asked for (item 3) confirms the shape: the
+mutated `rectangle` (`TileDrawing.cs:1007`) has exactly ONE consumer — the
+half-brick arm (`:1298`); every other arm (the flat, `:1295`, the slope and
+sliced paths) rebuilds its own rect from `tileFrameY + addFrY` unshifted.
+So the fix takes item 1's first arm: `TileDrawData` carries a
+`half_brick_src_y` field, `apply_world_corrections`' kind-80 arm writes the
+`54/108/162` offset there instead of `add_fr_y`, and the renderer's
+half-brick draw (`push_half_shifted`) applies the shift to its source row
+while the flat path draws unshifted — the pre-fix behaviour (the shift
+folded into the shared `add_fr_y`, which the flat path also consumes) is
+gone. 1 new test + 1 updated expectation; the item-2 screenshot pair stays
+available via the deterministic `TR_CAM` harness.
 
 ---
 
