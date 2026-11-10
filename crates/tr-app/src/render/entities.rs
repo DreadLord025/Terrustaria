@@ -2167,17 +2167,13 @@ pub(crate) fn draw_npcs(
         // The Deerclops' sheet is a 5x5 grid, not a column: the cell
         // index in `npc.frame` decodes as column `cell / 5`, row
         // `cell % 5`, and the C#'s `spriteEffects ^ FlipHorizontally`
-        // (Main.cs:26386) cancels the generic flip — the sheet faces
-        // RIGHT by default, so the flip rides `facing < 0`. The martians
-        // ride their own `spriteDirection` (`NPC.cs:6515`, read by
-        // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
-        // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
-        // `facing` cannot stand in for them.
-        let flip_dir = if n.kind.flips_on_sprite_dir() {
-            n.sprite_dir
-        } else {
-            n.facing
-        };
+        // `Main.DrawNPC` flips on `spriteDirection == 1` for EVERY NPC
+        // (`Main.cs:23124-23128`) — BUG-07: the whitelist read `facing` for
+        // the kinds whose `spriteDirection` the AI machines do maintain (the
+        // walker's lockstep write in `npc_ai.rs`), which flipped them
+        // against the sheet whenever the body turned without moving. The
+        // whitelist is gone: one flip source, the vanilla one.
+        let flip_dir = n.sprite_dir;
         let uv = if n.kind == NpcKind::Deerclops {
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
         } else {

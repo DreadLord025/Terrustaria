@@ -37,6 +37,13 @@ pub struct TileDrawData {
     pub frame_x_override: Option<i16>,
     /// Final value of C#'s `ref tileFrameY` when the case rewrites it.
     pub frame_y_override: Option<i16>,
+    /// Bug 19: the `DrawSingleTile`-local `rectangle` Y shift (case 80's
+    /// biome-cactus `rectangle.Y += 54/108/162`). The C# builds `rectangle`
+    /// once and only the half-brick arm draws it (`TileDrawing.cs:1007`,
+    /// `:1298`) — the flat path rebuilds its own rect from `addFrY` without
+    /// the shift — so the offset lives on its own field and the half-brick
+    /// draw applies it.
+    pub half_brick_src_y: i16,
 }
 
 impl Default for TileDrawData {
@@ -54,6 +61,7 @@ impl Default for TileDrawData {
             flip: false,
             frame_x_override: None,
             frame_y_override: None,
+        half_brick_src_y: 0,
         }
     }
 }
@@ -1188,9 +1196,14 @@ impl TileDrawData {
             }
             // `DrawSingleTile` `case 80`: source-Y shift by the ground sand
             // (TileDrawing.cs:1132-1147). Only kind 80 — 142/143 are pumps.
+            // The shift lands on `half_brick_src_y`, NOT `add_fr_y`: the C#
+            // mutates the local `rectangle` (`:1007`) only the half-brick arm
+            // consumes (`:1298`), while the flat path rebuilds its rect from
+            // `tileFrameY + addFrY` unshifted — folding it into the shared
+            // `add_fr_y` (the pre-fix behaviour) shifted every cactus.
             80 => {
                 let (evil, good, crimson) = cactus_type(world, x, y, frame_x, frame_y);
-                self.add_fr_y += cactus_source_y_offset(evil, good, crimson) as i16;
+                self.half_brick_src_y += cactus_source_y_offset(evil, good, crimson) as i16;
             }
             // `DrawSingleTile` `case 272`: parity shift; C# adds it to both
             // `addFrY` and the built rectangle, the port's source rectangle is
@@ -1217,6 +1230,7 @@ mod tests {
         flip: false,
         frame_x_override: None,
         frame_y_override: None,
+        half_brick_src_y: 0,
     };
 
     fn dd(kind: u16, x: i32, y: i32, fx: i16, fy: i16, tile_frame: i32) -> TileDrawData {
@@ -2022,6 +2036,48 @@ mod tests {
         assert_eq!(palm_tree_biome(&w2, 500, 10), 3);
     }
 
+
+    #[test]
+    fn bug19_the_cactus_shift_lands_on_the_half_brick_rect_only() {
+        // Bug 19: `DrawSingleTile` case 80 (`TileDrawing.cs:1132-1147`) shifts the
+        // local `rectangle` (`:1007`) that ONLY the half-brick arm draws
+        // (`:1298`); the flat path rebuilds its own rect from `addFrY`
+        // unshifted. The port's `half_brick_src_y` carries the offset and
+        // `add_fr_y` stays clean.
+        let mut w = World::new("t".into(), 60, 40);
+        // The cactus column: a segment above the ground, the ebonstone sand
+        // 112 below it (the walk needs the segment under the probe).
+        put(&mut w, 30, 29, 80);
+        put(&mut w, 30, 30, 112);
+        let mut dd = TileDrawData::default();
+        dd.apply_world_corrections(&w, 80, 30, 29, 0, 0, 0);
+        assert_eq!(dd.half_brick_src_y, 54, "evil shifts the half-brick rect");
+        assert_eq!(dd.add_fr_y, 0, "the flat path stays unshifted");
+        // The hallow ground 116 → 108; the crimson 234 → 162.
+        let mut w2 = World::new("t".into(), 60, 40);
+        put(&mut w2, 30, 29, 80);
+        put(&mut w2, 30, 30, 116);
+        let mut dd2 = TileDrawData::default();
+        dd2.apply_world_corrections(&w2, 80, 30, 29, 0, 0, 0);
+        assert_eq!(dd2.half_brick_src_y, 108);
+        assert_eq!(dd2.add_fr_y, 0);
+        let mut w3 = World::new("t".into(), 60, 40);
+        put(&mut w3, 30, 29, 80);
+        put(&mut w3, 30, 30, 234);
+        let mut dd3 = TileDrawData::default();
+        dd3.apply_world_corrections(&w3, 80, 30, 29, 0, 0, 0);
+        assert_eq!(dd3.half_brick_src_y, 162);
+        assert_eq!(dd3.add_fr_y, 0);
+        // A normal-sand cactus (53) shifts nothing.
+        let mut w4 = World::new("t".into(), 60, 40);
+        put(&mut w4, 30, 29, 80);
+        put(&mut w4, 30, 30, 53);
+        let mut dd4 = TileDrawData::default();
+        dd4.apply_world_corrections(&w4, 80, 30, 29, 0, 0, 0);
+        assert_eq!(dd4.half_brick_src_y, 0);
+        assert_eq!(dd4.add_fr_y, 0);
+    }
+
     #[test]
     fn test_DW_2_2_cactus_type() {
         // The walk goes through the non-solid cactus (Main.tileSolid[80] is
@@ -2167,14 +2223,16 @@ mod tests {
             dye.apply_world_corrections(&w2, 227, 30, 30, fx, 0, 0);
             assert_eq!(dye.frame_x_override, None, "frameX {fx}");
         }
-        // 80: source-Y shift on top of the cleared animation row; other
-        // fields untouched (TileDrawing.cs:1132-1147).
+        // 80: source-Y shift on the half-brick rect only (bug 19) — the C#'
+        // `rectangle` shift lands on `half_brick_src_y`, `add_fr_y` stays
+        // clean (TileDrawing.cs:1132-1147 / :1007 / :1298).
         let mut w3 = World::new("t".into(), 64, 64);
         put(&mut w3, 30, 30, 80);
         put(&mut w3, 30, 31, 116);
         let mut cac = dd(80, 30, 30, 0, 0, 0);
         cac.apply_world_corrections(&w3, 80, 30, 30, 0, 0, 0);
-        assert_eq!(cac.add_fr_y, 108, "pearlsand → +108");
+        assert_eq!(cac.half_brick_src_y, 108, "pearlsand → +108");
+        assert_eq!(cac.add_fr_y, 0, "the flat path stays unshifted");
         assert_eq!(cac.top, 2);
         // Dirty: 142/143 are pumps sharing only the top-2 arm — the
         // `DrawSingleTile` correction is `case 80:` only.

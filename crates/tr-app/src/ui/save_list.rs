@@ -39,6 +39,69 @@ pub struct PlayerEntry {
     /// The `.plr` file a disk-backed card erases; `None` for the session
     /// stand-in and the fakes.
     pub path: Option<PathBuf>,
+    /// `Item.favorited`'s per-inventory-slot bits from the `.plr`
+    /// (`Player.cs:54820-54824`, the read at `:55340-55362` ≥ 114) — the
+    /// App's `favorite_slots` hydrate from these on Play (BUG-03).
+    pub inv_favorites: u64,
+    /// The appearance the character-select preview draws
+    /// (`UICharacter.cs:104-119`'s `Main.PlayerRenderer.DrawPlayer`, BUG-02).
+    /// `PlayerFile`'s seven RGB triplets read at `player_file.rs:238-242`
+    /// (`Player.cs:55279-55285`'s order — hair, skin, eye, shirt, undershirt,
+    /// pants, shoe) plus the hair style and skin variant; the card preview
+    /// decodes only the base sheets, so only the colours reach the draw.
+    pub appearance: Appearance,
+}
+
+/// The player's appearance: the seven `.plr` colour triplets, the hair style
+/// and the skin variant (`Player.Deserialize`, `Player.cs:55158`/`:55213`/
+/// `:55279-55285`). Alpha stays 255 — the port stores RGB, the preview draws
+/// opaque sprites (`Color` with no alpha in `PlayerRenderer`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Appearance {
+    pub hair: i32,
+    pub skin_variant: i32,
+    /// hair / skin / eye / shirt / undershirt / pants / shoe, the C# order.
+    pub colors: [[u8; 3]; 7],
+}
+
+impl Default for Appearance {
+    /// `new Player()`'s field initializers (`Player.cs:2554-2566`): the
+    /// vanilla's hair `(215, 90, 55)`, skin `(255, 125, 90)`, eye
+    /// `(105, 90, 75)`, shirt `(175, 165, 140)`, undershirt
+    /// `(160, 180, 215)`, pants `(255, 230, 175)` and shoe `(160, 105, 60)`.
+    fn default() -> Self {
+        Self {
+            hair: 0,
+            skin_variant: 0,
+            colors: [
+                [215, 90, 55],
+                [255, 125, 90],
+                [105, 90, 75],
+                [175, 165, 140],
+                [160, 180, 215],
+                [255, 230, 175],
+                [160, 105, 60],
+            ],
+        }
+    }
+}
+
+impl Appearance {
+    /// The preview's RGBA view of the seven triplets — the 255 alpha the
+    /// draw's opaque sprites carry.
+    pub fn preview_colors(&self) -> super::char_creation::PreviewColors {
+        let rgb = |c: [u8; 3]| [c[0], c[1], c[2], 255];
+        let c = &self.colors;
+        super::char_creation::PreviewColors {
+            hair: rgb(c[0]),
+            skin: rgb(c[1]),
+            eye: rgb(c[2]),
+            shirt: rgb(c[3]),
+            undershirt: rgb(c[4]),
+            pants: rgb(c[5]),
+            shoe: rgb(c[6]),
+        }
+    }
 }
 
 /// `WorldFileData` as the cards need it (`UIWorldListItem` reads: GetWorldName,
@@ -207,6 +270,9 @@ pub fn list_players(
             playable: true,
             deletable: true,
             path: None,
+            // `new Player()`'s colour initializers (`Player.cs:2554-2566`).
+            appearance: Appearance::default(),
+            inv_favorites: 0,
         });
     }
     let mut disk = Vec::new();
@@ -234,6 +300,20 @@ pub fn list_players(
                     playable: true,
                     deletable: true,
                     path: Some(path),
+                    appearance: Appearance {
+                        hair: file.hair,
+                        skin_variant: file.skin_variant as i32,
+                        colors: [
+                            file.hair_color,
+                            file.skin_color,
+                            file.eye_color,
+                            file.shirt_color,
+                            file.undershirt_color,
+                            file.pants_color,
+                            file.shoe_color,
+                        ],
+                    },
+                    inv_favorites: file.inv_favorites,
                 });
             }
         }
@@ -380,6 +460,8 @@ mod tests {
             playable: true,
             deletable: true,
             path: None,
+            appearance: Appearance::default(),
+            inv_favorites: 0,
         }
     }
 
@@ -515,6 +597,8 @@ mod tests {
             playable: true,
             deletable: false,
             path: None,
+            appearance: Appearance::default(),
+            inv_favorites: 0,
         };
         assert_eq!(
             list_players(None, Some(session.clone()), 0),
@@ -571,6 +655,7 @@ mod tests {
             pants_color: [255, 230, 175],
             shoe_color: [160, 105, 60],
             inventory,
+            inv_favorites: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -597,6 +682,8 @@ mod tests {
             playable: true,
             deletable: false,
             path: None,
+            appearance: Appearance::default(),
+            inv_favorites: 0,
         };
         let replaced = list_players(Some(&dir), Some(session.clone()), 0);
         assert_eq!(replaced.len(), 1);
@@ -729,5 +816,114 @@ mod tests {
         assert!(worlds[0].path.is_none());
         assert_eq!(worlds[1].path.as_deref(), Some(Path::new("saves/a.trwld")));
         assert_eq!(worlds[2].path.as_deref(), Some(Path::new("saves/z.trwld")));
+    }
+
+    /// `new Player()`'s colour initializers (`Player.cs:2554-2566`) — the
+    /// appearance a session/fake card carries until a `.plr` says otherwise.
+    #[test]
+    fn the_default_appearance_carries_the_vanilla_colors() {
+        let a = Appearance::default();
+        assert_eq!(
+            a.colors,
+            [
+                [215, 90, 55],   // hairColor
+                [255, 125, 90],  // skinColor
+                [105, 90, 75],   // eyeColor
+                [175, 165, 140], // shirtColor
+                [160, 180, 215], // underShirtColor
+                [255, 230, 175], // pantsColor
+                [160, 105, 60],  // shoeColor
+            ],
+            "the seven `Player` field initializers in the serialized order"
+        );
+        assert_eq!((a.hair, a.skin_variant), (0, 0), "a fresh player's 0/0");
+    }
+
+    /// The preview's view of the seven triplets: the RGBA slots in
+    /// `UICharacter.cs:104-119`'s per-part colour order, alpha 255 (the
+    /// draw's sprites are opaque).
+    #[test]
+    fn the_preview_colors_map_the_seven_triplets() {
+        let mut a = Appearance::default();
+        a.colors = [
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+            [13, 14, 15],
+            [16, 17, 18],
+            [19, 20, 21],
+        ];
+        let c = a.preview_colors();
+        assert_eq!(
+            (c.hair, c.skin, c.eye, c.shirt, c.undershirt, c.pants, c.shoe),
+            (
+                [1, 2, 3, 255],
+                [4, 5, 6, 255],
+                [7, 8, 9, 255],
+                [10, 11, 12, 255],
+                [13, 14, 15, 255],
+                [16, 17, 18, 255],
+                [19, 20, 21, 255],
+            ),
+            "hair/skin/eye/shirt/undershirt/pants/shoe — the C# ReadRGB order"
+        );
+    }
+
+    /// The disk-backed card carries its `.plr` appearance into the preview
+    /// (BUG-02): a written player file round-trips all seven colours through
+    /// `list_players`, so the card draws the saved character, not a blank one.
+    #[test]
+    fn a_disk_card_carries_its_plr_appearance() {
+        let dir = temp_dir("tr-save-list-appearance");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hero.plr");
+        crate::player_file::write_player_file(
+            &path,
+            &crate::player_file::PlayerFileWrite {
+                name: "Hero".into(),
+                difficulty: 2,
+                skin_variant: 9,
+                hair: 42,
+                life: 100,
+                life_max: 120,
+                mana: 20,
+                mana_max: 40,
+                hair_color: [11, 12, 13],
+                skin_color: [21, 22, 23],
+                eye_color: [31, 32, 33],
+                shirt_color: [41, 42, 43],
+                undershirt_color: [51, 52, 53],
+                pants_color: [61, 62, 63],
+                shoe_color: [71, 72, 73],
+                inventory: [(0, 0, 0); 58],
+                // Slots 0 and 4 starred — the BUG-03 half of the card.
+                inv_favorites: 1 << 0 | 1 << 4,
+            },
+        )
+        .unwrap();
+        let entries = list_players(Some(&dir), None, 0);
+        assert_eq!(entries.len(), 1, "the one card");
+        let a = &entries[0].appearance;
+        assert_eq!(
+            a.colors,
+            [
+                [11, 12, 13],
+                [21, 22, 23],
+                [31, 32, 33],
+                [41, 42, 43],
+                [51, 52, 53],
+                [61, 62, 63],
+                [71, 72, 73],
+            ],
+            "the saved character's colours ride the card"
+        );
+        assert_eq!((a.hair, a.skin_variant), (42, 9), "the hair and skin variant");
+        assert_eq!(
+            entries[0].inv_favorites,
+            1 << 0 | 1 << 4,
+            "the saved stars ride the card (BUG-03)"
+        );
+        assert_eq!(entries[0].difficulty, 2, "the difficulty still rides");
     }
 }

@@ -357,7 +357,13 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::CharSelect => {
                 let header_w = self.header_w(d);
                 ui::char_select::draw(
-                    d.renderer, d.lookups, d.screen, header_w, d.players, d.mouse,
+                    d.renderer,
+                    d.lookups,
+                    d.player_assets,
+                    d.screen,
+                    header_w,
+                    d.players,
+                    d.mouse,
                 );
             }
             FrontScreen::WorldSelect => {
@@ -1007,6 +1013,20 @@ impl App {
         // The `UIState` dispatch: the live screen owns its `Click_*` table.
         let click = front.click(self, screen, mouse, double_click);
         if let Some(click) = click {
+            // Bug 17: the activation cue — the vanilla clicks play the menu
+            // open (10) on activation and the menu close (11) on the Back
+            // hops (`UICharacterSelect.cs:110/:118`, `UIWorldListItem.cs:365`).
+            if matches!(
+                click,
+                FlowClick::CharBack
+                    | FlowClick::WorldBack
+                    | FlowClick::WorldCreateBack
+                    | FlowClick::ConfirmNo
+            ) {
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+            } else {
+                self.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+            }
             self.apply_front_flow(front, click);
         }
     }
@@ -1022,6 +1042,15 @@ impl App {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
         };
+        // `UIWorldListItem.PlayGame` (`:360-374`) → `Main.LoadWorld`: the
+        // card's file is parked on the App, and the flow's launch arm closes
+        // both screens. The frame loop performs the swap at the next boundary
+        // (BUG-04) — the vanilla enters its loading flow here.
+        if let FlowClick::WorldPlay(i) = click {
+            if let Some(path) = self.worlds.get(i).and_then(|w| w.path.clone()) {
+                self.play_world = Some(path);
+            }
+        }
         let (front, backup, page) =
             next_flow_state(Some(front), self.front_backup.clone(), None, click);
         self.front_backup = backup;
@@ -1233,6 +1262,68 @@ pub(crate) mod front_flow_tests {
             assert_eq!(front, Some(parked), "the exact parked screen returns");
             assert!((backup.is_none()) && page.is_none());
         }
+    }
+
+
+    #[test]
+    fn bug17_a_front_click_plays_the_activation_cue() {
+        // Bug 17: the front-end clicks play the menu open (10) — the vanilla
+        // `UICharacterListItem.cs:198` / `UIWorldListItem.cs:365` cues.
+        let players = vec![entry("Alpha", true), entry("Beta", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        // The 200 ms entry lockout from `enter_front` must be gone first.
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 2);
+        let c0 = ui::char_select::card_layout(l.list, 0);
+        let before = app.audio.played_count();
+        // The double-click on the card body runs the play flow
+        // (`UICharacterListItem.cs:198`'s `PlaySound(10)`).
+        app.mouse_pos = Vec2::new(c0.card[0] + c0.card[2] * 0.5, c0.card[1] + c0.card[3] * 0.5);
+        app.pointer_event = Some(ui::pointer::PointerEvent::DoubleClick);
+        app.handle_front_click();
+        assert!(
+            app.audio.played_count() > before,
+            "the activation plays a cue ({} -> {})",
+            before,
+            app.audio.played_count()
+        );
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+    }
+
+    #[test]
+    fn bug17_the_hover_edge_plays_the_menu_tick_once() {
+        // Bug 17: the hover edge — entering an element plays one Menu_Tick
+        // (`UICharacterSelect.cs:124`'s `FadedMouseOver`), staying inside
+        // plays nothing more.
+        let mut app = flow_app(Some(FrontScreen::CharSelect), Vec::new(), Vec::new());
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 0);
+        // The Back/New buttons' rect is the hover target.
+        let back = l.back;
+        app.mouse_pos = Vec2::new(back[0] + back[2] * 0.5, back[1] + back[3] * 0.5);
+        let before = app.audio.played_count();
+        // The hover edge comparison the loop's cursor-moved path runs.
+        let hit = app.front_hit();
+        assert!(hit.is_some(), "the pointer is over an element");
+        if hit != app.front_hover_hit {
+            if hit.is_some() {
+                app.audio.play("Menu_Tick");
+            }
+            app.front_hover_hit = hit;
+        }
+        assert_eq!(app.audio.played_count(), before + 1, "one tick on the enter");
+        // A second hover inside the same element is silent.
+        let hit2 = app.front_hit();
+        if hit2 != app.front_hover_hit {
+            if hit2.is_some() {
+                app.audio.play("Menu_Tick");
+            }
+            app.front_hover_hit = hit2;
+        }
+        assert_eq!(app.audio.played_count(), before + 1, "no repeat inside");
     }
 
     #[test]
@@ -1635,6 +1726,8 @@ pub(crate) mod front_flow_tests {
             playable: true,
             deletable,
             path: None,
+            appearance: ui::save_list::Appearance::default(),
+            inv_favorites: 0,
         }
     }
 
@@ -1711,6 +1804,7 @@ pub(crate) mod front_flow_tests {
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            play_world: None,
             invasion_spawn_timer: 0.0,
             npc_rng: 0,
             spawn_no_cycle: false,
@@ -1741,6 +1835,7 @@ pub(crate) mod front_flow_tests {
             players,
             worlds,
             front_hint: None,
+            front_hover_hit: None,
             front_mouse_down: false,
             session_draft: None,
             vk_grid: false,
@@ -1804,6 +1899,8 @@ pub(crate) mod front_flow_tests {
             item_time: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: PathBuf::new(),
             dev_break: None,
             dev_place: Vec::new(),
@@ -2690,5 +2787,99 @@ pub(crate) mod front_flow_tests {
             app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
             "the pickaxe landed in the first free slot"
         );
+    }
+
+    /// The front end's Play parks the selected world's file on the App
+    /// (`UIWorldListItem.PlayGame` → `Main.LoadWorld`, BUG-04) — the click
+    /// used to close the screens without loading anything, so the boot world
+    /// played no matter which card was pressed.
+    #[test]
+    fn world_play_parks_the_selected_file() {
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        let mut w0 = world_entry("Alpha");
+        w0.path = Some(std::path::PathBuf::from("saves/Alpha.trwld"));
+        let mut w1 = world_entry("Beta");
+        w1.path = Some(std::path::PathBuf::from("saves/Beta.trwld"));
+        open_world_select(&mut app, vec![w0, w1]);
+        app.pointer.tick(300.0);
+        let (_screen, l, _favorites) = world_screen(&app);
+        let c1 = ui::world_select::card_layout(l.list, 1, false);
+        app.mouse_pos = centre(c1.play);
+        app.apply_front_flow(FrontScreen::WorldSelect, FlowClick::WorldPlay(1));
+        assert_eq!(
+            app.play_world.as_deref(),
+            Some(std::path::Path::new("saves/Beta.trwld")),
+            "the pressed card's file rides the swap"
+        );
+        assert!(app.front.is_none(), "the launch arm closes the front screens");
+    }
+
+    /// The favourites survive the save/load round (BUG-03): two slots
+    /// toggled, flattened into the `.plr` bitfield and read back, land on the
+    /// same two slots — the App's `favorite_slots` used to be UI state with no
+    /// file representation.
+    #[test]
+    fn the_favorites_round_trip_through_the_bitfield() {
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        app.hydrate_favorites(0);
+        assert_eq!(app.toggle_favorite(3), 12, "the menu tick id");
+        assert!(app.is_favorite(3));
+        app.toggle_favorite(9);
+        let bits = app.favorite_bits();
+        assert_eq!(bits, 1 << 3 | 1 << 9, "the two stars flatten into the bits");
+        // The load half: a fresh App hydrates the same two slots.
+        let mut loaded = flow_app(None, Vec::new(), Vec::new());
+        loaded.hydrate_favorites(bits);
+        assert!(loaded.is_favorite(3) && loaded.is_favorite(9));
+        assert!(
+            !loaded.is_favorite(4),
+            "the untouched slot stays unstarred"
+        );
+        // The toggle is reversible and the bits follow it.
+        loaded.toggle_favorite(3);
+        assert_eq!(loaded.favorite_bits(), 1 << 9);
+    }
+
+    /// The front-end half of the audio clock (BUG-01): with a front screen
+    /// live, the per-frame `update_menu_music` decides the title track
+    /// (`Main.cs:12455-12532`'s `gameMenu` arm), so `cur_music` leaves 0
+    /// before any world is entered.
+    #[test]
+    fn the_front_screen_ticks_the_menu_music() {
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        app.front = Some(FrontScreen::WorldSelect);
+        assert_eq!(app.music.cur_music, 0, "the boot state is silent");
+        app.update_menu_music();
+        assert_eq!(
+            app.music.cur_music, 51,
+            "the world-select screen plays the title track"
+        );
+        // The menu env is the menu arm regardless of which screen is up.
+        let mut no_menu = flow_app(None, Vec::new(), Vec::new());
+        no_menu.update_menu_music();
+        assert_eq!(no_menu.music.cur_music, 51, "no front screen: the plain track");
+    }
+
+    /// The world-creation screen's seed text feeds the menu ladder — the
+    /// vanilla's `WorldGen.*WorldGen` statics (`Main.cs:12463-12494`) are the
+    /// front-end's view of the pending seed.
+    #[test]
+    fn the_creation_screens_seed_drives_the_menu_track() {
+        let draft = ui::world_creation::NewWorldDraft::new(1, 0);
+        let mut app = flow_app(
+            Some(FrontScreen::WorldCreation(draft)),
+            Vec::new(),
+            Vec::new(),
+        );
+        if let Some(FrontScreen::WorldCreation(d)) = &mut app.front {
+            d.seed = "5162020".into(); // the drunk world's seed text
+        }
+        app.update_menu_music();
+        assert_eq!(app.music.cur_music, 60, "the drunk title track");
+        if let Some(FrontScreen::WorldCreation(d)) = &mut app.front {
+            d.seed = "celebrationmk10".into(); // the anniversary seed text
+        }
+        app.update_menu_music();
+        assert_eq!(app.music.cur_music, 11, "the anniversary title track");
     }
 }

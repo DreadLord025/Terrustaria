@@ -30,7 +30,10 @@ impl App {
         }
         draft.name = draft.name.trim().to_string();
         self.player_name = draft.name.clone();
-        save_created_character(&draft);
+        // The live `favorite_slots` ride the new `.plr` bitfield
+        // (`Player.cs:54820-54824`) so a re-loaded character keeps its stars
+        // (BUG-03).
+        save_created_character(&draft, self.favorite_bits());
         self.session_draft = Some(draft);
         self.front_backup = None;
         self.front = None;
@@ -78,6 +81,31 @@ impl App {
             playable: true,
             deletable: false,
             path: None,
+            // The session character's appearance: the creation draft's
+            // colours when the session came out of character creation
+            // (`Main.PendingPlayer` carries them, `UICharacterSelect.cs:110`),
+            // else `new Player()`'s initializers (`Player.cs:2554-2566`).
+            // The session character's favourites live on the `App`
+            // (`favorite_slots`); the file's bitfield hydrates the disk
+            // cards (`Main.PendingPlayer`'s slots), so the stand-in starts
+            // empty here.
+            inv_favorites: 0,
+            appearance: match &self.session_draft {
+                Some(d) => ui::save_list::Appearance {
+                    hair: d.hair,
+                    skin_variant: d.skin_variant,
+                    colors: [
+                        [d.hair_color[0], d.hair_color[1], d.hair_color[2]],
+                        [d.skin_color[0], d.skin_color[1], d.skin_color[2]],
+                        [d.eye_color[0], d.eye_color[1], d.eye_color[2]],
+                        [d.shirt_color[0], d.shirt_color[1], d.shirt_color[2]],
+                        [d.undershirt_color[0], d.undershirt_color[1], d.undershirt_color[2]],
+                        [d.pants_color[0], d.pants_color[1], d.pants_color[2]],
+                        [d.shoe_color[0], d.shoe_color[1], d.shoe_color[2]],
+                    ],
+                },
+                None => ui::save_list::Appearance::default(),
+            },
         }
     }
 
@@ -110,7 +138,7 @@ impl App {
 /// draft saves under `Main.PlayerPath` via `Main.GetPlayerPathFromName`
 /// (`Main.cs:4820`). The session inventory stays as the port runs it; the
 /// file records the vanilla fresh defaults.
-fn save_created_character(draft: &ui::char_creation::NewPlayerDraft) {
+fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: u64) {
     let mut inventory = [(0i32, 0i32, 0u8); 58];
     inventory[0] = (3507, 1, 0); // Copper Shortsword (`Player.cs:54356`)
     inventory[1] = (3509, 1, 0); // Copper Axe (`:54358`)
@@ -132,6 +160,10 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft) {
         pants_color: rgb(draft.pants_color),
         shoe_color: rgb(draft.shoe_color),
         inventory,
+        // `Item.favorited`'s bitfield (`Player.cs:54820-54824`) — the App's
+        // live `favorite_slots`, flattened (`App::favorite_bits`); a fresh
+        // character has none.
+        inv_favorites: favorites,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

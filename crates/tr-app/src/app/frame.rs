@@ -250,6 +250,32 @@ impl App {
             }
         }
 
+        // `Main.UpdateAudio` runs on every frame, in the menus as well as in
+        // the world (`Main.cs:17816`); the `Main.gameMenu` arm of
+        // `UpdateAudio_DecideOnNewMusic` (`:12455`) picks the title track.
+        // The port's audio clock was wired to the world step only, so the
+        // front-end screens were silent (BUG-01).
+        if self.menu.is_some() || self.front.is_some() {
+            self.update_menu_music();
+        }
+
+        // The front end's Play tail (`UIWorldListItem.PlayGame` →
+        // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
+        // boundary — after the front screens' clicks parked it and before the
+        // world branch runs, so the swap never interleaves a half-ticked world.
+        if let Some(path) = self.play_world.take() {
+            match self.swap_world(&path) {
+                Ok(()) => log::info!("world: {}", path.display()),
+                Err(e) => {
+                    // A failed load keeps the current world: the menu stays
+                    // alive with its own world rather than a black screen (the
+                    // vanilla's `LoadWorld` failure keeps `Main.gameMenu`).
+                    log::warn!("world load failed: {e:#}");
+                    self.front_hint = Some(format!("world load failed: {e:#}"));
+                }
+            }
+        }
+
         if self.menu.is_none() && self.front.is_none() {
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
@@ -398,6 +424,8 @@ impl App {
                 jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
                     + screen.y * 0.5,
                 quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+                menu: false,
+                menu_flags: Default::default(),
                 music_box: self.scene_metrics.active_music_box,
                 music_box_silence: self.scene_metrics.music_box_silence,
             });
@@ -1318,6 +1346,10 @@ impl App {
                         &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
+                        // BUG-11: the in-game options window's state
+                        // (`Main.ingameOptionsWindow`) — the Settings button
+                        // and the panel draw over the open inventory.
+                        Some((settings, &self.ingame_options)),
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
@@ -1391,6 +1423,7 @@ impl App {
                                 &self.death_text,
                                 self.lost_coins,
                                 &self.lost_coin_string,
+                                p.respawn_timer,
                             );
                         }
                     }

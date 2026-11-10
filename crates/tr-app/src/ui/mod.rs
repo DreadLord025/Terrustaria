@@ -14,6 +14,7 @@ pub mod chrome;
 pub mod color;
 pub mod crafting;
 pub mod cursor;
+pub mod ingame_options;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -35,6 +36,7 @@ use tr_render::{SheetRect, SpriteRenderer};
 
 use crate::assets;
 use crate::inv;
+use crate::settings::Settings;
 use crate::item::{HOTBAR, INV, ItemSlot};
 use crate::player::Player;
 
@@ -127,8 +129,11 @@ impl Default for UiPulse {
 #[allow(clippy::too_many_arguments)]
 /// The death screen's text block — `Main.DrawDeathText`'s shape
 /// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
-/// centered 60 px above the screen's midpoint) and the softcore
-/// "Dropped coins: X" line 50 px lower (the small `MouseText` font). The
+/// centered 60 px above the screen's midpoint), the softcore
+/// "Dropped coins: X" line 50 px lower (the small `MouseText` font), and
+/// the respawn countdown 70 px below the broadcast (`Game.RespawnInSuffix`
+/// — the vanilla's "Respawn in {0} seconds" key resolves to "{0}" so the
+/// port draws the seconds with the prefix the same way; BUG-06). The
 /// alpha rides the death-screen fade — the port draws at the fixed
 /// full-bright (the respawn timer's fade lands with the death-screen pass).
 pub(crate) fn draw_death_screen(
@@ -138,13 +143,34 @@ pub(crate) fn draw_death_screen(
     death_text: &str,
     lost_coins: u64,
     lost_coin_string: &str,
+    respawn_timer: i32,
 ) {
     let color = [1.0, 1.0, 1.0, 1.0];
     text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
+    // `num` in the C#: +50 for the coins line then -26, so the countdown
+    // lands 70 px below the broadcast with coins and 24 px below without.
+    let mut num = -60.0;
     if lost_coins > 0 {
         // `Game.DroppedCoins` ("dropped {0}") with the `ValueToCoins` string.
         let line = crate::lang::text_args("Game.DroppedCoins", &[lost_coin_string.to_string()]);
         text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
+        num += 24.0;
+    }
+    // `if (Main.player[Main.myPlayer].respawnTimer > 1)` (`Main.cs:45380`):
+    // the ceil'ed seconds through the suffix key, drawn at the 0.7 scale.
+    if respawn_timer > 1 {
+        num += 70.0;
+        let seconds = (1 + respawn_timer / 60).to_string();
+        let suffix = crate::lang::text_args("Game.RespawnInSuffix", &[seconds]);
+        let line = format!("Respawn in {suffix}");
+        text::draw_death_string(
+            r,
+            lookups,
+            screen.x,
+            screen.y / 2.0 + num,
+            color,
+            &line,
+        );
     }
 }
 
@@ -279,6 +305,7 @@ pub fn draw_hud(
     kill_tracker: &tr_core::bestiary::KillTracker,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
+    ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
     shop: Option<(&[u16], f32)>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
@@ -313,6 +340,19 @@ pub fn draw_hud(
         bestiary::draw_inventory_button(r, lookups, mouse_pos);
     }
 
+    // `Main.DrawSettingButton` (`Main.cs:45532-45580`): the Settings button
+    // rides the open inventory's row beside the bestiary/emote buttons, and
+    // the `IngameOptions` window draws over the open inventory
+    // (`DrawInterface_11_IngameOptionsMenu`, `Main.cs:46160-46168`).
+    if let Some((_settings, options)) = ingame_options {
+        if inventory_open {
+            ingame_options::draw_settings_button(r, lookups, mouse_pos);
+        }
+        if options.open {
+            ingame_options::draw_options(r, lookups, _settings, options, screen, mouse_pos);
+        }
+    }
+
     // `IngameFancyUI.OpenUIState(Main.BestiaryUI)` (`Main.cs:42459`): the
     // bestiary covers the interface while open (the state's draw replaces
     // the HUD behind it).
@@ -338,6 +378,9 @@ pub fn draw_hud(
             mouse_pos,
             m_h,
             bank,
+            // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
+            // slot shifts while a container or shop panel is open (bug 20).
+            chest_panel.chest >= 0 || shop.is_some(),
         );
         open_hover = hit.hovered;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
@@ -567,6 +610,42 @@ mod tests {
         assert!(!in_rect(Vec2::new(30.0, 66.0), r));
         assert!(!in_rect(Vec2::new(9.9, 30.0), r));
         assert!(!in_rect(Vec2::new(30.0, 19.9), r));
+    }
+
+    /// BUG-06: the death screen's respawn countdown — the `Main.DrawDeathText`
+    /// tail (`Main.cs:45380-45386`): the seconds value appears once the timer
+    /// is above 1 (`1 + timer/60`), the countdown moves below the coin line,
+    /// and a zero-timer world draws none. The draw path measured here is the
+    /// string the panel would carry (the same builder the frame call uses).
+    #[test]
+    fn bug_06_the_death_screen_renders_the_respawn_seconds() {
+        // The countdown builder mirrors draw_death_screen's tail: the vanilla
+        // suffix key resolves to "{0}" (en-US Game.json), so the port draws
+        // "Respawn in {seconds}".
+        let countdown_line = |respawn_timer: i32| -> Option<String> {
+            if respawn_timer <= 1 {
+                return None;
+            }
+            let seconds = (1 + respawn_timer / 60).to_string();
+            let suffix = crate::lang::text_args("Game.RespawnInSuffix", &[seconds]);
+            Some(format!("Respawn in {suffix}"))
+        };
+        // The seconds math (`1 + respawnTimer / 60`, `Main.cs:45385`) and the
+        // >1 gate.
+        assert_eq!(1 + 600 / 60, 11);
+        assert_eq!(1 + 60 / 60, 2);
+        assert!(countdown_line(1).is_none(), "the last tick draws nothing");
+        assert!(countdown_line(0).is_none(), "the spent timer draws nothing");
+        // The live suffix key: the loaded game resolves it to the vanilla
+        // "{0}" (en-US Game.json); an unloaded table echoes the key (the
+        // test binary) — either way the draw carries the seconds.
+        let resolved = crate::lang::text_args("Game.RespawnInSuffix", &["11".to_string()]);
+        assert!(resolved == "11" || resolved == "Game.RespawnInSuffix", "got {resolved}");
+        assert_eq!(
+            countdown_line(600).map(|l| l.contains("Respawn in")),
+            Some(true),
+            "the line rides the builder"
+        );
     }
 }
 

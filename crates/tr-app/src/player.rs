@@ -1514,6 +1514,27 @@ impl Player {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
 
+    /// `Player.meleeSpeed` (`Player.cs:2458`, reset to 1f at `:18335`): the
+    /// base 1f plus the accumulator the equipment/buff grants write
+    /// (`meleeSpeedBonus`; the C# folds its flat `+=` arms straight into
+    /// `meleeSpeed`, the port keeps the same sum). The flail family scales
+    /// its per-kind speeds and its 900-px leash by `1 / meleeSpeed`
+    /// (`AI_015_Flails` `Projectile.cs:43824-43831`, `:43727`), and the
+    /// melee shoot path's `speed /= meleeSpeed` (`Player.cs:47063`) reads it.
+    pub fn melee_speed(&self) -> f32 {
+        1.0 + self.melee_speed_bonus
+    }
+
+    /// `Player.MountedCenter` (`Player.cs:3335-3343`):
+    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
+    /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
+    /// offsets (no mounts yet), so both fold to 0 and the vector equals
+    /// `center()` — kept as its own accessor so the flail chain anchor cites
+    /// the C# point and survives the mount port.
+    pub fn mounted_center(&self) -> (f32, f32) {
+        self.center()
+    }
+
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
     /// the ported classes: the classless items pass the 1f default.
     pub fn weapon_damage_multiplier(&self, class: registry::DamageClass) -> f32 {
@@ -3202,7 +3223,7 @@ impl Player {
     }
 
     /// `Player.CCed` (`Player.cs:3377-3385`): frozen, webbed or stoned.
-    fn cced(&self) -> bool {
+    pub fn cced(&self) -> bool {
         self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
     }
 

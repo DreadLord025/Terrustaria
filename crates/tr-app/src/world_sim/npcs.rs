@@ -1345,6 +1345,16 @@ pub(crate) fn update_invasion_state(app: &mut App) {
     } else {
         app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
     }
+    // `if (Main.invasionProgressMode == 0)` (`Main.cs:47718`): the off mode
+    // zeroes BOTH the display timer and the alpha — the bar never shows. The
+    // C#'s mode-1 arm (`>= 3` at `:49908`) is the completion path the port
+    // does not model. (Re-landed: the fix-front-end-click-sounds merge
+    // `13834a96` resolved main against a base that predated it and dropped
+    // this arm and its test.)
+    if app.settings.event_progress == 0 {
+        app.invasion_progress_display_left = 0;
+        app.invasion_progress_alpha = 0.0;
+    }
     if app.invasion_progress_near {
         app.invasion_progress_display_left = app.invasion_progress_display_left.max(160);
     }
@@ -5371,6 +5381,37 @@ mod invasion_bar_tests {
                 ));
             }
         }
+    }
+
+    /// BUG-08: the invasion progress bar's off mode (Main.cs:47718): the
+    /// off setting zeroes both the display timer and the alpha, so the panel
+    /// never draws; the default (mode 2) leaves the ramp untouched.
+    /// (Re-landed with the arm — the BUG-11-15/front-end-sound merge dropped
+    /// this test with the code.)
+    #[test]
+    fn bug_08_the_off_mode_zeroes_the_invasion_bar() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 40;
+        app.world.invasion_size_start = 80;
+        app.world.invasion_goblins = true;
+        app.invasion_progress = 40;
+        app.invasion_progress_max = 80;
+        app.invasion_progress_icon = 4;
+        app.invasion_progress_display_left = 160;
+        app.invasion_progress_alpha = 1.0;
+        update_invasion_state(&mut app);
+        assert!(app.invasion_progress_alpha > 0.0, "the default leaves the alpha");
+        app.settings.event_progress = 0;
+        app.invasion_progress_alpha = 0.7;
+        app.invasion_progress_display_left = 120;
+        update_invasion_state(&mut app);
+        assert_eq!(app.invasion_progress_alpha, 0.0, "mode 0 zeroes the alpha");
+        assert_eq!(
+            app.invasion_progress_display_left, 0,
+            "mode 0 zeroes the display timer"
+        );
     }
 }
 

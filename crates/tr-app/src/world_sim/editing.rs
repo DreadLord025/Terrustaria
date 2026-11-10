@@ -614,22 +614,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
-            // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
-            // is ×1 at the port's default melee speed), the spawn at the
-            // player center (`RotatedRelativePoint(MountedCenter)`), the
-            // damage `weaponDamage` (the class multiplier) and the item's
-            // knockback.
+            // `shootSpeed` (`:47274-47292`), the spawn at the player center
+            // (`RotatedRelativePoint(MountedCenter)`), the damage
+            // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
-                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
                     let (fx_dmg, fx_spd, fx_kb) = held_fx
                         .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
                             (s.damage, s.shoot_speed, s.knock_back)
                         });
+                    // `if (sItem.melee && !ProjectileID.Sets
+                    // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
+                    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
+                    // the exception set (`ProjectileID.cs:547`), so every melee
+                    // shot divides (×1 at the default 1f bonus).
+                    let fx_spd = if class == registry::DamageClass::Melee {
+                        fx_spd / p.melee_speed()
+                    } else {
+                        fx_spd
+                    };
+                    // `if (sItem.type == 2611 || sItem.type == 5526)
+                    // pointPosition += vector2` (`:47239-47245`): the 1-px
+                    // spawn shift along the aim (the Flairon's arm).
+                    let spawn = if held.kind == 2611 || held.kind == 5526 {
+                        Vec2::new(pcx, pcy) + dir * 10.0 + dir
+                    } else {
+                        Vec2::new(pcx, pcy) + dir * 10.0
+                    };
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
@@ -885,33 +900,85 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
 
-        // The ammo shooters fall through to the fire block below — the
-        // vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
-        // mining/placing arms return.
-        if held_use_ammo == 0 {
-            return;
-        }
+        // The vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
+        // mining/placing arms return (`Player.cs:43681` fires the shot from
+        // the swing arm itself), so every item falls through to this pass's
+        // melee/mining/placing arms — including the ammo shooters, whose
+        // projectile block sits ABOVE this point. The pre-BUG-09 code
+        // returned here for the non-ammo case, which made every melee weapon
+        // unreachable.
     }
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
+/// 's tile-first order for the tools: the cursor cell is a
+/// minable/chopable tile the held tool can work (the vanilla checks the
+/// tile against the tool before the NPC boxes — 's
+/// /mining order). The weapons take the NPC arm
+/// regardless (, ).
+fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
+    let held = app.inventory[app.selected];
+    if held.count == 0 {
+        return false;
+    }
+    let tx = (world_pos.x / TILE_PX).floor() as i32;
+    let ty = (world_pos.y / TILE_PX).floor() as i32;
+    let Some(tile) = app.world.tile(tx, ty).copied() else {
+        return false;
+    };
+    if !tile.active() {
+        return false;
+    }
+    if tr_core::tool::is_axe_tile(tile.kind) {
+        return registry::get(held.kind).map(|d| d.axe).unwrap_or(0) > 0;
+    }
+    let pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
+    let below_surface = (ty as f64) > app.world.world_surface;
+    pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
+}
+
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    // The ammo shooters skip it — they fire their `useAmmo` projectile
-    // instead (`Player.ItemCheck_Shoot`'s gate, `Player.cs:47069-47075`). The
-    // `held_use_ammo` read is the effective one from the top of the pass, so the
-    // four `gunProj` placeholder rows are shooters here too.
+    // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
+    // `!noMelee` (`Player.cs:43659`) — the tools included, their damage
+    // coming from the same registry row. The ammo shooters skip it — they
+    // fire their `useAmmo` projectile instead (`ItemCheck_Shoot`'s gate,
+    // `Player.cs:47069-47075`). The vanilla prioritises the TILE under the
+    // cursor for the tools: an NPC hit only lands when the cell under the
+    // cursor is not a targetable tile (the `ItemCheck` tile-first order).
     if app.mine_down
         && held_use_ammo == 0
         && app.attack_cd <= 0.0
         && app.reuse_delay <= 0.0
         && !app.inventory_open
+        && (held_weapon || !cursor_cell_is_tile_target(app, world_pos))
     {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            let hit_idx = app.npcs.iter().position(|n| n.contains(ax, ay));
+            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
+            // a town NPC takes no player melee unless the hit is the explicit
+            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
+            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
+            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
+            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
+            // the crystal's spawn shield). The vanilla also skips every
+            // `friendly` NPC — the port's town set is `is_town_npc` (the
+            // Travelling Merchant/Angler ride their own easter eggs). The
+            // vanilla arms the flags when the doll/curse is EQUIPPED
+            // (`Player.cs:15123-15129`); the port has no equip slot for them,
+            // so the inventory's presence arms the same flag (the recorded
+            // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
+            // `6f9ec6f4` resolved main against a base that predated this gate
+            // and dropped it and its test.)
+            let easter_egg = matches!(held.kind, 267 | 1307)
+                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
+            let hit_idx = app.npcs.iter().position(|n| {
+                n.contains(ax, ay)
+                    && !n.dont_take_damage
+                    && (!n.kind.is_town_npc() || easter_egg)
+            });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
@@ -927,16 +994,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     registry::DamageClass::Melee
                 };
                 let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-                let raw = if held_weapon {
-                    held_fx.map_or(registry::damage(held.kind), |s| s.damage) as f32
-                        * app
-                            .player
-                            .as_ref()
-                            .map(|p| p.weapon_damage_multiplier(class))
-                            .unwrap_or(1.0)
-                } else {
-                    15.0
-                };
+                // `ProcessHitAgainstNPC`'s `weaponDamage` (`Player.cs:44241`):
+                // the class multiplier over the item's damage. Tools are
+                // weapons in vanilla for `ItemCheck` purposes — the pickaxe
+                // row carries `damage: 5, knock_back: 2.0` — so the tool arm
+                // reads the same registry values (the pre-BUG-09 fixed 15
+                // was the placeholder).
+                let raw = held_fx
+                    .map_or(registry::damage(held.kind), |s| s.damage)
+                    .max(0) as f32
+                    * app
+                        .player
+                        .as_ref()
+                        .map(|p| p.weapon_damage_multiplier(class))
+                        .unwrap_or(1.0);
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -952,13 +1023,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
-                // The melee stand-in's knockback: a mid-sword 5.5
-                // (`Item.knockBack` for the copper shortsword class); the
-                // per-item values land with M3-ITEM.
-                n.hurt(dmg, pcx, 5.5, crit);
+                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43676`):
+                // the item's `knockBack` times the glove/buff multipliers (the
+                // port's 1f — no ported accessory grants them).
+                let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
+                n.hurt(dmg, pcx, kb, crit);
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, 5.5, crit, pcx >= nx);
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
@@ -3365,6 +3437,78 @@ mod tests {
     /// `mine_down` arm takes the NPC branch (`ItemCheck_MeleeHitNPCs` →
     /// `ProcessHitAgainstNPC`). A floor row at y 300 gives the spawner a
     /// surface; the cursor tile (30, 260) stays air so nothing is mined.
+
+    /// BUG-09: the melee arms run for weapons and tools alike — the inverted
+    /// early return is gone and the damage reads the item's registry row
+    /// (the tools included: the pickaxe's ).
+    #[test]
+    fn bug_09_the_melee_hit_reads_the_item_damage() {
+        // A wooden sword (damage 7, knockback 5.0) over the slime.
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        let hp_0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp_0, "the sword hit lands (defence-reduced > 0)");
+        // The Iron Pickaxe (damage 5, knockback 2.0) with the cursor on the
+        // NPC over air: the vanilla's `!noMelee && damage > 0` gate runs the
+        // melee arm for the tools too — over an idle cursor cell the tool
+        // hits (ItemCheck's tile-first order only diverts the hit when the
+        // cursor sits on a tile the tool can work).
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 1;
+        let hp_b = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp < hp_b, "the tool hits the NPC over air");
+        // The same pick over a tile under the cursor mines instead — the
+        // tile arm runs (the pick's power clears the stone under it).
+        let mut c = melee_app();
+        c.inventory[c.selected].kind = 1;
+        let ci = c.world.index(30, 260); // the cursor cell (the camera anchor)
+        c.world.tiles[ci] = Tile { kind: 1, ..Default::default() };
+        c.world.tiles[ci].flags |= FLAG_ACTIVE;
+        let hp_c = c.npcs[0].hp;
+        mine_frames(&mut c, 1);
+        assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
+    }
+
+
+    /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
+    /// friendly gate, `Player.cs:44261-44264`) — the voodoo doll (267) and
+    /// the Clothier's curse (1307) are the only melee exceptions.
+    /// (Re-landed with the gate — the BUG-03 merge dropped this test with
+    /// the code.)
+    #[test]
+    fn bug_10_melee_refuses_the_town_npcs() {
+        // A Guide standing on the floor at the cursor.
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.inventory[a.selected].kind = 24; // the wooden sword
+        let hp = a.npcs[0].hp;
+        let hp_max = a.npcs[0].max_hp;
+        mine_frames(&mut a, 1);
+        assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
+        assert_eq!(a.npcs[0].max_hp, hp_max);
+        // The voodoo doll arms the easter egg.
+        let mut b = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
+        b.npcs.clear();
+        b.npcs.push(guide);
+        b.inventory[b.selected].kind = 24; // the sword does the hit
+        b.inventory[0].kind = 267; // the voodoo doll arms the flag
+        b.inventory[0].count = 1;
+        // The Guide spawns at the surface; the rig's cursor sits at
+        // (30, 260) — park the Guide into the cursor's box the way the
+        // slime rig does.
+        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].y = 260.0 * TILE_PX;
+        let hp = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
+    }
+
     fn melee_app() -> App {
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
