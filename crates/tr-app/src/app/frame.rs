@@ -259,6 +259,23 @@ impl App {
             self.update_menu_music();
         }
 
+        // The front end's Play tail (`UIWorldListItem.PlayGame` →
+        // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
+        // boundary — after the front screens' clicks parked it and before the
+        // world branch runs, so the swap never interleaves a half-ticked world.
+        if let Some(path) = self.play_world.take() {
+            match self.swap_world(&path) {
+                Ok(()) => log::info!("world: {}", path.display()),
+                Err(e) => {
+                    // A failed load keeps the current world: the menu stays
+                    // alive with its own world rather than a black screen (the
+                    // vanilla's `LoadWorld` failure keeps `Main.gameMenu`).
+                    log::warn!("world load failed: {e:#}");
+                    self.front_hint = Some(format!("world load failed: {e:#}"));
+                }
+            }
+        }
+
         if self.menu.is_none() && self.front.is_none() {
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.

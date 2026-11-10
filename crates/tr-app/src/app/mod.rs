@@ -329,6 +329,10 @@ pub(crate) struct App {
     pub(crate) vk_grid: bool,
     /// `config.json` options edited by the settings screens.
     pub(crate) settings: settings::Settings,
+    /// The world the front end selected on Play (`UIWorldListItem.PlayGame`
+    /// → `Main.LoadWorld`, BUG-04): the file the world swap loads at the next
+    /// frame boundary. `None` while no world is pending.
+    pub(crate) play_world: Option<PathBuf>,
     pub(crate) player_name: String,
     pub(crate) net: NetRole,
     /// Players of other machines streaming from the host/client.
@@ -1462,6 +1466,92 @@ impl App {
     pub(crate) fn pan_camera(&mut self, dt: f32) {
         world_sim::camera::pan_camera(self, dt);
     }
+
+    /// The front end's Play tail (`UIWorldListItem.PlayGame` → `Main.LoadWorld`,
+    /// BUG-04): the selected `.wld`/`.trwld` is loaded and the whole
+    /// world-derived state re-derives from it through [`App::new`]'s own body —
+    /// the same construction the boot path runs, so a swapped world is
+    /// indistinguishable from a booted one. The window/GPU/audio/music and the
+    /// shot-capture state survive the swap (the vanilla's `LoadWorld` walks the
+    /// same split: the device and the config stay, the world state reloads).
+    ///
+    /// The atlas is rebuilt from the new world's tile/wall usage
+    /// ([`build_atlas`]) and the renderer is recreated from it — the old one
+    /// holds the old atlas texture (the same recreation the boot's `loop` runs).
+    /// A failed load leaves the current world untouched and returns the error,
+    /// so the menu stays alive with its own world rather than a black screen.
+    pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
+        let (world, sections) = load_world(path)?;
+        let content = assets::content_dir().context("no retail Content directory")?;
+        let (atlas, font_atlas, lookups, atlas_stats) =
+            build_atlas(&world, &content.join("Images"))?;
+        let settings = self.settings.clone();
+        let shot_path = self.shot_path.clone();
+        let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
+        let music =
+            std::mem::replace(&mut self.music, audio::MusicSystem::new(assets::content_dir()));
+        let window = self.window.take();
+        let gpu = self.gpu.take();
+        let post = self.post.take();
+        let noise_tex = self.noise_tex.take();
+        let water_mask = self.water_mask.take();
+        // The fresh App carries the new world's state (clouds, sky, stars,
+        // player, npcs, town rooms, chests, liquids, rain, wind, atmo,
+        // bestiary, the loader pins) exactly as App::new built it at boot.
+        *self = App::new(
+            settings,
+            world,
+            sections,
+            path.to_path_buf(),
+            atlas,
+            font_atlas,
+            lookups,
+            atlas_stats,
+        );
+        self.window = window;
+        self.gpu = gpu;
+        self.audio = audio;
+        self.music = music;
+        self.post = post;
+        self.noise_tex = noise_tex;
+        self.water_mask = water_mask;
+        self.shot_path = shot_path;
+        // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
+        // world's spawn and the zoom on the setting, before the first frame.
+        self.camera = Vec2::new(
+            self.world.width as f32 * TILE_PX * 0.5,
+            self.world.spawn_y as f32 * TILE_PX,
+        );
+        if let Some((x, y)) = crate::env::camera_pin() {
+            self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
+        }
+        self.zoom = self.settings.zoom;
+        if let Some(z) = crate::env::zoom_pin() {
+            self.zoom = z.clamp(0.25, 8.0);
+            self.zoom_pinned = true;
+        }
+        // The renderer rides the new atlas texture (the dye-param table is
+        // static vanilla data, re-uploaded like the boot's).
+        if let Some(gpu) = self.gpu.as_ref() {
+            if let Some(atlas) = self.atlas.as_ref() {
+                let mut renderer = SpriteRenderer::new(gpu, atlas, 8, self.font_atlas.as_ref());
+                renderer.set_dye_params(
+                    gpu,
+                    &crate::dye::dye_params()
+                        .iter()
+                        .map(|p| tr_render::sprite::DyeParam {
+                            mode: p.mode,
+                            _pad: p._pad,
+                            color: p.color,
+                            secondary: p.secondary,
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                self.renderer = Some(renderer);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl App {
@@ -1898,34 +1988,6 @@ impl App {
                         "kingslime" => NpcKind::KingSlime,
                         // The boss parts (M4-NPC-3r).
                         "wof" => NpcKind::WallOfFlesh,
-                        // The lunar family (M4-NPC-3s): the four pillars'
-                        // mobs — one name per kind so the lineup shot can
-                        // stand them side by side.
-                        "lunacell" => NpcKind::StardustCellBig,
-                        "lunacellsm" => NpcKind::StardustCellSmall,
-                        "lunajelly" => NpcKind::StardustJellyfishBig,
-                        "twinklebig" => NpcKind::StardustSpiderBig,
-                        "twinkle" => NpcKind::StardustSpiderSmall,
-                        "stargazer" => NpcKind::StardustSoldier,
-                        "lunaworm" => NpcKind::StardustWormHead,
-                        "drakomire" => NpcKind::SolarDrakomire,
-                        "drakomirerider" => NpcKind::SolarDrakomireRider,
-                        "sroller" => NpcKind::SolarSroller,
-                        "corite" => NpcKind::SolarCorite,
-                        "selenian" => NpcKind::SolarSelenian,
-                        "drakanian" => NpcKind::SolarSpearman,
-                        "crawlhead" => NpcKind::SolarCrawltipedeHead,
-                        "crawlbody" => NpcKind::SolarCrawltipedeBody,
-                        "crawltail" => NpcKind::SolarCrawltipedeTail,
-                        "floater" => NpcKind::NebulaFloater,
-                        "suckler" => NpcKind::BrainSuckler,
-                        "beast" => NpcKind::NebulaBeast,
-                        "predictor" => NpcKind::Predictor,
-                        "diver" => NpcKind::VortexRifleman,
-                        "vortexian" => NpcKind::VortexSoldier,
-                        "queen" => NpcKind::VortexHunter,
-                        "hornet" => NpcKind::VortexAlien,
-                        "larva" => NpcKind::VortexHeadcrab,
                         "wofeye" => NpcKind::WallOfFleshEye,
                         "hungry" => NpcKind::Hungry,
                         "skeletronhead" => NpcKind::SkeletronHead,
@@ -2248,6 +2310,7 @@ impl App {
             creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            play_world: None,
             invasion_spawn_timer: 0.0,
             npc_rng: world_seed,
             spawn_no_cycle: false,

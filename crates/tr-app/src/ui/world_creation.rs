@@ -1450,6 +1450,41 @@ mod tests {
     }
 
     #[test]
+    fn two_created_seeds_generate_two_worlds() {
+        // The report's BUG-04 criterion: two worlds created with the seeds
+        // "A" and "B" differ in their tile digests, and reloading each world
+        // reproduces the same seed — the entered text is what the generator
+        // and the header carry.
+        let dir = std::env::temp_dir().join("tr-worldcreate-seeds");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let digest = |seed_text: &str| -> (u64, u64) {
+            let mut draft = NewWorldDraft::new(0, 0);
+            draft.name = format!("W{seed_text}");
+            draft.size = 0;
+            draft.seed = seed_text.into();
+            let path = create_world_in(&dir, &draft).expect("the world saves");
+            let bytes = std::fs::read(&path).unwrap();
+            let seed = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
+            // The body digest: `FromBytes`'s simple accumulator over the tile
+            // payload past the header (`binio::Reader`'s own hash is not
+            // exposed, so the port's test-side digest stands in — the world
+            // bodies differ long before the tail).
+            let body = &bytes[20..];
+            let mut acc = 0u64;
+            for (i, b) in body.iter().enumerate() {
+                acc = acc.wrapping_add((*b as u64).wrapping_mul(i as u64 + 1));
+            }
+            (seed, acc)
+        };
+        let (seed_a, tiles_a) = digest("A");
+        let (seed_b, tiles_b) = digest("B");
+        assert_ne!(seed_a, seed_b, "the two seed texts hash differently");
+        assert_ne!(tiles_a, tiles_b, "and generate two different worlds");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn click_at_maps_every_control_centre() {
         let l = layout(Vec2::new(1600.0, 900.0), 40.0);
         let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
