@@ -123,6 +123,26 @@ expects a world camera, light and a `Player` with live physics state).
 3. Test: a deterministic `TR_UI=charsel` screenshot contains non-background pixels
    inside the preview rect.
 
+**Fixed 2026-11-10 (`BUG-02-char-preview`).** The extraction step already
+existed for the creation screen — `render::entities::draw_player_preview` over
+`ui::char_creation::PreviewColors` — so the card reuses it instead of a second
+walk. The missing half was the data: `save_list::PlayerEntry` now carries
+`Appearance { hair, skin_variant, colors: [[u8; 3]; 7] }`, filled from
+`PlayerFile` in `list_players` (the port's `player_file.rs:238-242` block, the
+C#'s `Player.cs:55279-55285` ReadRGB order — hair, skin, eye, shirt, undershirt,
+pants, shoe) and defaulted to `new Player()`'s initializers
+(`Player.cs:2554-2566`) for the session/fake cards; the session entry carries
+the creation draft's colours when it came out of character creation. The card
+draws the sprite into the 59x58 panel at `characterScale = 1`
+(`UICharacterListItem.cs:170`) on the static animation row 0
+(`UICharacter.cs:89`) at the `GetPlayerPosition` anchor
+(`UICharacter.cs:122-130`), the `PlayerBackground` sheet still underneath.
+Documented deviation (unchanged): the preview decodes only the base body
+sheets, so every skin variant / hair id renders the base frame — the port has
+no per-variant player sets. 4 tests: the vanilla default colours, the seven-
+triplet → RGBA mapping, the disk card's `.plr` round-trip, and the existing
+charsel layout suite.
+
 ---
 
 ## 3. Inventory favourites are lost on reload — S2 / High
