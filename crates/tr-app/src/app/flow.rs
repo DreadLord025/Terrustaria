@@ -357,7 +357,13 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::CharSelect => {
                 let header_w = self.header_w(d);
                 ui::char_select::draw(
-                    d.renderer, d.lookups, d.screen, header_w, d.players, d.mouse,
+                    d.renderer,
+                    d.lookups,
+                    d.player_assets,
+                    d.screen,
+                    header_w,
+                    d.players,
+                    d.mouse,
                 );
             }
             FrontScreen::WorldSelect => {
@@ -1711,6 +1717,7 @@ pub(crate) mod front_flow_tests {
             playable: true,
             deletable,
             path: None,
+            appearance: ui::save_list::Appearance::default(),
         }
     }
 

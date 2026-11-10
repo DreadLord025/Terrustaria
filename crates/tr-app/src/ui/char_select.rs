@@ -643,6 +643,7 @@ use super::cards::{button_sheet, draw_card_button, draw_inner_panel, fat_button_
 fn draw_card(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
+    player_assets: &crate::render::entities::PlayerAssets,
     l: &Layout,
     index: usize,
     entry: &save_list::PlayerEntry,
@@ -733,12 +734,26 @@ fn draw_card(
 
     // Children, in append order (`:66-133`).
     // The 59x58 `UICharacter`: the `PlayerBackground` sheet whole
-    // (`UICharacter.cs:100-103`); the player sprite lands with Task 7
-    // (`:104-119`'s `Main.PlayerRenderer.DrawPlayer` half) — a deliberate no-op
-    // here, not a dangling call.
+    // (`UICharacter.cs:100-103`), then the player sprite
+    // (`:104-119`'s `Main.PlayerRenderer.DrawPlayer` half — BUG-02): the
+    // same `draw_player_preview` the creation screen uses, at the card's
+    // `characterScale = 1` (`UICharacterListItem.cs:170`) with the static
+    // animation row 0 (`UICharacter.cs:89`) and the entry's `.plr` colours.
     if let Some(sheet) = lookups.ui_player_background {
         push_whole(r, lookups, &sheet, c.preview, [1.0; 4]);
     }
+    let anchor = [
+        c.preview[0] + c.preview[2] * 0.5 - 10.0,
+        c.preview[1] + c.preview[3] * 0.5 - 21.0,
+    ];
+    crate::render::entities::draw_player_preview(
+        r,
+        player_assets,
+        anchor,
+        1.0,
+        0,
+        &entry.appearance.preview_colors(),
+    );
     // The buttons (`:71-121`), each `VAlign 1` except delete's `HAlign 1` —
     // sheets resolve through [`button_sheet`], never a raw ordinal.
     let play_hover = hovered && in_rect(mouse, c.play);
@@ -825,6 +840,7 @@ fn draw_card(
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
+    player_assets: &crate::render::entities::PlayerAssets,
     screen: Vec2,
     header_w: f32,
     players: &[save_list::PlayerEntry],
@@ -845,7 +861,7 @@ pub fn draw(
         if l.list[1] + i as f32 * CARD_PITCH >= list_bottom {
             break;
         }
-        draw_card(r, lookups, &l, i, entry, mouse);
+        draw_card(r, lookups, player_assets, &l, i, entry, mouse);
     }
     // The scrollbar draws only while attached (a `Recalculate`-appended panel
     // child, `:100`), the view over the content height `UIList.UpdateScrollbar`
@@ -1265,6 +1281,7 @@ mod tests {
                 playable: true,
                 deletable: true,
                 path: None,
+                appearance: save_list::Appearance::default(),
             },
             save_list::PlayerEntry {
                 name: "A".into(),
@@ -1275,6 +1292,7 @@ mod tests {
                 playable: true,
                 deletable: true,
                 path: None,
+                appearance: save_list::Appearance::default(),
             },
         ];
         sort_players(&mut players);
