@@ -1282,6 +1282,7 @@ mod tests {
                 deletable: true,
                 path: None,
                 appearance: save_list::Appearance::default(),
+                inv_favorites: 0,
             },
             save_list::PlayerEntry {
                 name: "A".into(),
@@ -1293,6 +1294,7 @@ mod tests {
                 deletable: true,
                 path: None,
                 appearance: save_list::Appearance::default(),
+                inv_favorites: 0,
             },
         ];
         sort_players(&mut players);
