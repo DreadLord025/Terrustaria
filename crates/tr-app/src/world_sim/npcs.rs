@@ -1345,6 +1345,14 @@ pub(crate) fn update_invasion_state(app: &mut App) {
     } else {
         app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
     }
+    // `if (Main.invasionProgressMode == 0)` (`Main.cs:47718`): the off mode
+    // zeroes BOTH the display timer and the alpha — the bar never shows. The
+    // C#'s mode-1 arm (`>= 3` at `:49908`) is the completion path the port
+    // does not model.
+    if app.settings.event_progress == 0 {
+        app.invasion_progress_display_left = 0;
+        app.invasion_progress_alpha = 0.0;
+    }
     if app.invasion_progress_near {
         app.invasion_progress_display_left = app.invasion_progress_display_left.max(160);
     }
@@ -4578,6 +4586,7 @@ mod tests {
             );
         }
     }
+
 }
 
 #[cfg(test)]
@@ -5372,7 +5381,37 @@ mod invasion_bar_tests {
             }
         }
     }
-}
+    /// BUG-08: the invasion progress bar's mode-0 arm (): the
+    /// off setting zeroes both the display timer and the alpha, so the
+    /// panel never draws; mode 2 (the default) leaves the ramp untouched.
+    #[test]
+    fn bug_08_the_off_mode_zeroes_the_invasion_bar() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        // A live invasion report with a running alpha.
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 40;
+        app.world.invasion_size_start = 80;
+        app.world.invasion_goblins = true;
+        app.invasion_progress = 40;
+        app.invasion_progress_max = 80;
+        app.invasion_progress_icon = 4;
+        app.invasion_progress_display_left = 160;
+        app.invasion_progress_alpha = 1.0;
+        // The default (mode 2) keeps the alpha ramping.
+        update_invasion_state(&mut app);
+        assert!(app.invasion_progress_alpha > 0.0, "mode 2 leaves the alpha");
+        // The off mode kills both.
+        app.settings.event_progress = 0;
+        app.invasion_progress_alpha = 0.7;
+        app.invasion_progress_display_left = 120;
+        update_invasion_state(&mut app);
+        assert_eq!(app.invasion_progress_alpha, 0.0, "mode 0 zeroes the alpha");
+        assert_eq!(
+            app.invasion_progress_display_left, 0,
+            "mode 0 zeroes the display timer"
+        );
+    }}
 
 #[cfg(test)]
 mod probe_tests {
