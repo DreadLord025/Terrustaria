@@ -219,6 +219,25 @@ because the load path is the boot path.
 3. Test: two worlds created with seeds "A" and "B" have different
    `world_hash`/tile digests; reloading the created world reproduces the same seed.
 
+**Fixed 2026-11-10 (`BUG-04-world-seed`).** The typed seed already reached the
+generator: `create_world_in` feeds `GenOptions.seed` from
+`world_creation::seed_value`/`seed_identity` (`WorldFileData.TranslateSeed`'s
+port, `WorldFileData.cs:386-397`) and the header records it — a test pins
+`seed == 12345` from the written bytes. The observable half was the play path:
+`FlowClick::WorldPlay` closed the screens without loading anything, so the world
+you played was the boot one and the seed "had no effect". The click now parks
+the card's file on `App.play_world` (the vanilla's `PlayGame` → `Main.LoadWorld`),
+and the frame loop runs the new `App::swap_world` at a frame boundary: the
+selected file loads through the existing `load_world` (side sections applied),
+the world-derived state re-derives through `App::new`'s own body, the atlas
+rebuilds from the new world's tile/wall usage and the renderer is recreated from
+it, while the window/GPU/audio/music/settings and the shot-capture state survive
+— and a failed load keeps the current world with a `front_hint` line instead of a
+black screen. Deviation: the port has no loading-screen flow (the swap is
+instantaneous in-frame). 3 tests: the Play parking, the two-seed tile digest and
+the header's seed. BUG-05 closes the remaining half — the boot path's
+pre-baked-world default.
+
 ---
 
 ## 5. Lobby shows a pre-loaded world ("Play" starts the wrong world) — S1 / High

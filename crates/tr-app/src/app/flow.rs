@@ -1042,6 +1042,15 @@ impl App {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
         };
+        // `UIWorldListItem.PlayGame` (`:360-374`) → `Main.LoadWorld`: the
+        // card's file is parked on the App, and the flow's launch arm closes
+        // both screens. The frame loop performs the swap at the next boundary
+        // (BUG-04) — the vanilla enters its loading flow here.
+        if let FlowClick::WorldPlay(i) = click {
+            if let Some(path) = self.worlds.get(i).and_then(|w| w.path.clone()) {
+                self.play_world = Some(path);
+            }
+        }
         let (front, backup, page) =
             next_flow_state(Some(front), self.front_backup.clone(), None, click);
         self.front_backup = backup;
@@ -1795,6 +1804,7 @@ pub(crate) mod front_flow_tests {
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            play_world: None,
             invasion_spawn_timer: 0.0,
             npc_rng: 0,
             spawn_no_cycle: false,
@@ -2775,6 +2785,31 @@ pub(crate) mod front_flow_tests {
             app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
             "the pickaxe landed in the first free slot"
         );
+    }
+
+    /// The front end's Play parks the selected world's file on the App
+    /// (`UIWorldListItem.PlayGame` → `Main.LoadWorld`, BUG-04) — the click
+    /// used to close the screens without loading anything, so the boot world
+    /// played no matter which card was pressed.
+    #[test]
+    fn world_play_parks_the_selected_file() {
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        let mut w0 = world_entry("Alpha");
+        w0.path = Some(std::path::PathBuf::from("saves/Alpha.trwld"));
+        let mut w1 = world_entry("Beta");
+        w1.path = Some(std::path::PathBuf::from("saves/Beta.trwld"));
+        open_world_select(&mut app, vec![w0, w1]);
+        app.pointer.tick(300.0);
+        let (_screen, l, _favorites) = world_screen(&app);
+        let c1 = ui::world_select::card_layout(l.list, 1, false);
+        app.mouse_pos = centre(c1.play);
+        app.apply_front_flow(FrontScreen::WorldSelect, FlowClick::WorldPlay(1));
+        assert_eq!(
+            app.play_world.as_deref(),
+            Some(std::path::Path::new("saves/Beta.trwld")),
+            "the pressed card's file rides the swap"
+        );
+        assert!(app.front.is_none(), "the launch arm closes the front screens");
     }
 
     /// The favourites survive the save/load round (BUG-03): two slots
