@@ -214,6 +214,14 @@ fn check_tile(
     Ok(true)
 }
 
+/// `StartRoomCheck(x, y, NoRoomCheckFeedback.WithoutText)` the way
+/// `WorldFile.FixAgainstExploits:1884`/`:1889` calls it: the room scan alone,
+/// without the `RoomNeeds` furniture gate that belongs to the move-in
+/// evaluation (`town::quick_find_home`'s `scan_spot`).
+pub fn start_room_check(world: &World, x: i32, y: i32) -> bool {
+    check_room(world, x, y).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +369,24 @@ mod tests {
             check_room(&w, 55, 105),
             Err(RoomFailure::HoleInWallIsTooBig)
         ));
+    }
+
+    #[test]
+    fn start_room_check_is_the_scan_without_the_furniture_gate() {
+        // `FixAgainstExploits:1884` calls `StartRoomCheck` alone: an
+        // enclosed but unfurnished room still passes (the furniture gate is
+        // `RoomNeeds`, the move-in evaluation's concern).
+        let mut w = ground();
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        assert!(start_room_check(&w, 55, 105));
+        assert!(room_needs(&check_room(&w, 55, 105).unwrap().house_tiles));
+        let mut bare = ground();
+        carve_room(&mut bare, 50, 100, 12, 9, &[]);
+        assert!(start_room_check(&bare, 55, 105), "no furniture needed");
+        assert!(!room_needs(&check_room(&bare, 55, 105).unwrap().house_tiles));
+        // The failures the re-validation reacts to.
+        assert!(!start_room_check(&w, 5, 105), "too close to the world edge");
+        assert!(!start_room_check(&w, 30, 130), "a hole in the wall");
     }
 
     #[test]

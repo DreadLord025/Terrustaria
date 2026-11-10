@@ -531,20 +531,18 @@ impl App {
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
-        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // (`ChestUI.cs:115-122`, the `WorldChest` entity's own field since the
+        // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
-        // reads the map field directly so the borrow stays field-scoped).
+        // reads the entity directly so the borrow stays field-scoped).
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
-        let chest_stored_name = if chest_open > -1 {
-            self.chest_names
-                .get(&(chest_open as usize))
-                .map(String::as_str)
-                .unwrap_or("")
-        } else {
-            ""
-        };
+        let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+        // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
+        // per-chest slot count from the file (`Chest.maxItems`), the default
+        // 40 for every port-created chest.
+        let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
 
         {
             let App {
@@ -1317,7 +1315,7 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        &self.kill_tracker,
+                        &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
                         self.shop_npc
@@ -1348,6 +1346,7 @@ impl App {
                                 .flatten(),
                             editing: chest_editing,
                             name: chest_stored_name,
+                            max_items: chest_max_items,
                             edit_text: &chest_edit_text,
                             blinker: &mut self.text_blinker,
                             scroll_row: &mut self.chest_scroll_row,

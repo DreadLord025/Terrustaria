@@ -1655,7 +1655,9 @@ pub(crate) mod front_flow_tests {
             ambient_lavafall: (0.0, 0.0, 0.0),
             grapple: None,
             ambient_counter: 0.0,
-            kill_tracker: tr_core::bestiary::KillTracker::new(),
+            bestiary: tr_core::bestiary::WorldBestiary::new(),
+            town_rooms: crate::town::TownRooms::new(),
+            shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),
             bestiary_open: false,
             bestiary_selected: None,
             chat: crate::chat::ChatMonitor::default(),
@@ -1730,7 +1732,6 @@ pub(crate) mod front_flow_tests {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
-            chest_names: HashMap::new(),
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
@@ -2351,7 +2352,10 @@ pub(crate) mod front_flow_tests {
         );
         app.handle_front_click();
         assert_eq!(app.front, None, "the Save click closed into gameplay");
-        assert!(app.chest_names.is_empty(), "chest < 0 wrote nothing");
+        assert!(
+            app.world_chests.iter().all(|c| c.name.is_empty()),
+            "chest < 0 wrote nothing"
+        );
         assert!(app.menu.is_none(), "the single-mode invariant holds");
     }
 

@@ -53,10 +53,10 @@ pub fn get_unlock_state_by_kill_count(
     UnlockState::NotKnownAtAll
 }
 
-/// `NPCKillsTracker.POSITIVE_KILL_COUNT_CAP` (`NPCKillsTracker.cs:12`).
+/// `NPCKillsTracker.POSITIVE_KILL_COUNT_CAP` (`NPCKillsTracker.cs:14`).
 pub const POSITIVE_KILL_COUNT_CAP: i32 = 999_999_999;
 
-/// `NPCKillsTracker` (`NPCKillsTracker.cs:16-101`): the per-world
+/// `NPCKillsTracker` (`NPCKillsTracker.cs:10-101`): the per-world
 /// kill counts keyed by the NPC's bestiary credit id (`NPCID.Search.GetName`
 /// of the net id — `ContentSamples.Initialize`, `ContentSamples.cs:862-873`).
 /// The port persists the pairs in the `.trplayer` sidecar; vanilla stores the
@@ -71,14 +71,14 @@ impl KillTracker {
         Self::default()
     }
 
-    /// `RegisterKill` (`:23-32`): increment (the count was clamped on write,
+    /// `RegisterKill` (`NPCKillsTracker.cs:23-33`): increment (the count was clamped on write,
     /// so reading before incrementing cannot overflow the cap).
     pub fn register_kill(&mut self, credit_id: &str) {
         let next = self.get_kill_count(credit_id).saturating_add(1);
         self.set_kill_count_directly(credit_id, next);
     }
 
-    /// `SetKillCountDirectly` (`:44-53`) — clamped to the positive cap
+    /// `SetKillCountDirectly` (`NPCKillsTracker.cs:40-51`) — clamped to the positive cap
     /// (`Utils.Clamp`), no achievement hook (M6-ACH-1's).
     pub fn set_kill_count_directly(&mut self, credit_id: &str, kill_count: i32) {
         let clamped = kill_count.clamp(0, POSITIVE_KILL_COUNT_CAP);
@@ -102,11 +102,111 @@ impl KillTracker {
         self.counts.iter().map(|(k, v)| (k.as_str(), *v))
     }
 
-    /// `Load` (`:87-92`): the saved pairs overwrite, the rest keep.
+    /// `Load` (`:72-81`): the saved pairs overwrite, the rest keep.
     pub fn load_pairs(&mut self, pairs: impl Iterator<Item = (String, i32)>) {
         for (id, count) in pairs {
             self.set_kill_count_directly(&id, count);
         }
+    }
+}
+
+/// `BestiaryUnlocksTracker` (`BestiaryUnlocksTracker.cs:7-11, 13-39`): the three
+/// credit-id sub-trackers one world carries, as one in-memory value. The kills
+/// keep their own [`KillTracker`] (its `pairs()` half is the `.trplayer`
+/// sidecar's form too, `persist.rs:59`); the sightings and the chats are the
+/// two credit-id sets Vanilla keeps beside them.
+///
+/// Vanilla persists this tracker in **world-file section 10** (1-based)
+/// (`WorldFile.SaveBestiary:3396`), so the world-file halves live in
+/// `wld/sections/bestiary.rs::{from_wld,to_wld}` — this module stays free of
+/// the byte layout.
+///
+/// The port is **state + IO only** for the three halves (owner decision,
+/// 2026-11-08): [`KillTracker::register_kill`] is wired, but nothing records a
+/// sighting or a chat yet (`NPCWasNearPlayerTracker.ScanWorldForFinds:102-130`
+/// and the chat hook are behaviour, not state), so a world that has never seen
+/// an NPC carries an empty sightings/chats pair and reads it back empty. That
+/// is the intended state until the recording lands — recorded for
+/// `docs/ANALYSIS.md` in Phase 7's docs pass.
+///
+/// Iteration order: the C# collections are a `Dictionary` and two `HashSet`s
+/// whose enumeration order is unspecified; the port stores sorted sets instead
+/// (the same documented deviation [`KillTracker::pairs`] already carries), so
+/// a save is deterministic and differs from a Vanilla file's ordering only in
+/// order, never in content.
+#[derive(Clone, Debug, Default)]
+pub struct WorldBestiary {
+    /// `NPCKillsTracker` (`NPCKillsTracker.cs:16`).
+    pub kills: KillTracker,
+    /// `NPCWasNearPlayerTracker._wasNearPlayer` (`NPCWasNearPlayerTracker.cs:15`)
+    /// — the credit ids the player has seen near an NPC.
+    pub sights: std::collections::BTreeSet<String>,
+    /// `NPCWasChatWithTracker._chattedWithPlayer`
+    /// (`NPCWasChatWithTracker.cs:14`) — the credit ids the player has talked to.
+    pub chats: std::collections::BTreeSet<String>,
+}
+
+impl WorldBestiary {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `BestiaryUnlocksTracker.Reset` (`BestiaryUnlocksTracker.cs:34-39`): all
+    /// three sub-trackers clear together.
+    pub fn reset(&mut self) {
+        self.kills.reset();
+        self.sights.clear();
+        self.chats.clear();
+    }
+
+    /// `NPCWasNearPlayerTracker.SetWasSeenDirectly`
+    /// (`NPCWasNearPlayerTracker.cs:43-52`): a credit id already in the set
+    /// stays once (the C#'s `HashSet.Add`), so the wiring phase may call this
+    /// per frame without changing the state.
+    pub fn set_was_seen_directly(&mut self, credit_id: &str) {
+        self.sights.insert(credit_id.to_string());
+    }
+
+    /// `NPCWasNearPlayerTracker.GetWasNearbyBefore(string)`
+    /// (`NPCWasNearPlayerTracker.cs:59-62`).
+    pub fn was_seen_near_player(&self, credit_id: &str) -> bool {
+        self.sights.contains(credit_id)
+    }
+
+    /// `NPCWasChatWithTracker.SetWasChatWithDirectly`
+    /// (`NPCWasChatWithTracker.cs:32-41`).
+    pub fn set_was_chat_with_directly(&mut self, credit_id: &str) {
+        self.chats.insert(credit_id.to_string());
+    }
+
+    /// `NPCWasChatWithTracker.GetWasChatWith(string)`
+    /// (`NPCWasChatWithTracker.cs:49-52`).
+    pub fn was_chat_with(&self, credit_id: &str) -> bool {
+        self.chats.contains(credit_id)
+    }
+
+    /// The sighted credit ids in the order `NPCWasNearPlayerTracker.Save`
+    /// (`:64-74`, the write loop at `:69-72`) walks the set — the port's
+    /// sorted order, not the C#'s unspecified one.
+    pub fn sight_ids(&self) -> impl Iterator<Item = &str> {
+        self.sights.iter().map(String::as_str)
+    }
+
+    /// The chatted-with credit ids in the same deterministic order
+    /// (`NPCWasChatWithTracker.Save:54-64`, the write loop at `:59-62`).
+    pub fn chat_ids(&self) -> impl Iterator<Item = &str> {
+        self.chats.iter().map(String::as_str)
+    }
+
+    /// `NPCWasNearPlayerTracker.Load` (`:76-84`): the file's ids add, the rest
+    /// keep (`HashSet.Add`).
+    pub fn load_sights(&mut self, ids: impl Iterator<Item = String>) {
+        self.sights.extend(ids);
+    }
+
+    /// `NPCWasChatWithTracker.Load` (`:66-74`).
+    pub fn load_chats(&mut self, ids: impl Iterator<Item = String>) {
+        self.chats.extend(ids);
     }
 }
 
@@ -302,16 +402,81 @@ mod tests {
         tracker.set_kill_count_directly("Pinky", -5);
         assert_eq!(tracker.get_kill_count("Pinky"), 0);
         // The save/load round-trip.
-        let pairs: Vec<(String, i32)> = tracker
-            .pairs()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
+        let pairs: Vec<(String, i32)> = tracker.pairs().map(|(k, v)| (k.to_string(), v)).collect();
         let mut loaded = KillTracker::new();
         loaded.load_pairs(pairs.into_iter());
         assert_eq!(loaded.get_kill_count("BlueSlime"), 3);
         assert_eq!(loaded.get_kill_count("Pinky"), 0);
         loaded.reset();
         assert_eq!(loaded.get_kill_count("BlueSlime"), 0);
+    }
+
+    #[test]
+    fn the_world_bestiary_holds_the_three_credit_id_trackers() {
+        // `BestiaryUnlocksTracker`'s three halves: the kills keep their
+        // `KillTracker`, the sightings and chats are the credit-id sets.
+        let mut b = WorldBestiary::new();
+        b.kills.register_kill("BlueSlime");
+        b.kills.register_kill("Pinky");
+        assert_eq!(b.kills.pairs().count(), 2);
+        assert!(!b.was_seen_near_player("BlueSlime"));
+        assert!(!b.was_chat_with("BlueSlime"));
+        b.set_was_seen_directly("BlueSlime");
+        b.set_was_chat_with_directly("BlueSlime");
+        assert!(b.was_seen_near_player("BlueSlime"));
+        assert!(b.was_chat_with("BlueSlime"));
+        // The set semantics: a second registration of the same id is a no-op
+        // (`HashSet.Add`), an unknown id reads false.
+        b.set_was_seen_directly("BlueSlime");
+        assert_eq!(b.sight_ids().count(), 1);
+        assert!(!b.was_seen_near_player("Zombie"));
+        assert!(!b.was_chat_with("Zombie"));
+    }
+
+    #[test]
+    fn the_world_bestiary_resets_all_three_trackers() {
+        // `BestiaryUnlocksTracker.Reset:34-39`.
+        let mut b = WorldBestiary::new();
+        b.kills.set_kill_count_directly("BlueSlime", 7);
+        b.set_was_seen_directly("GreenSlime");
+        b.set_was_chat_with_directly("Pinky");
+        b.reset();
+        assert_eq!(b.kills.get_kill_count("BlueSlime"), 0);
+        assert_eq!(b.sight_ids().count(), 0);
+        assert_eq!(b.chat_ids().count(), 0);
+        assert_eq!(b.kills.pairs().count(), 0);
+    }
+
+    #[test]
+    fn the_world_bestiary_iterates_deterministically() {
+        // The save order is the sorted order (the C# collection order is
+        // unspecified), so a save is reproducible byte for byte.
+        let mut b = WorldBestiary::new();
+        for id in ["Pinky", "BlueSlime", "GreenSlime"] {
+            b.kills.set_kill_count_directly(id, 1);
+            b.set_was_seen_directly(id);
+            b.set_was_chat_with_directly(id);
+        }
+        let kills: Vec<(String, i32)> = b.kills.pairs().map(|(k, v)| (k.into(), v)).collect();
+        let sights: Vec<&str> = b.sight_ids().collect();
+        let chats: Vec<&str> = b.chat_ids().collect();
+        assert_eq!(
+            kills.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["BlueSlime", "GreenSlime", "Pinky"],
+            "sorted, whatever the insertion order was"
+        );
+        assert_eq!(sights, ["BlueSlime", "GreenSlime", "Pinky"]);
+        assert_eq!(chats, ["BlueSlime", "GreenSlime", "Pinky"]);
+        // …and the load halves add rather than replace.
+        b.load_sights(["Zombie".to_string()].into_iter());
+        b.load_chats(["Zombie".to_string()].into_iter());
+        assert!(b.was_seen_near_player("Zombie") && b.was_chat_with("Zombie"));
+        assert_eq!(b.sight_ids().count(), 4);
+        assert_eq!(
+            b.kills.pairs().count(),
+            3,
+            "the kills load half is separate"
+        );
     }
 
     #[test]
