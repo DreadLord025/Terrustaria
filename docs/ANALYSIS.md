@@ -5492,6 +5492,21 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   through these arms), so the report's "collapse the whole trunk" item was
   dropped against the golden rule rather than ported.
 
+- **Bug 17 — front-end sounds** (the `FadedMouseOver`/activation cues):
+  `handle_front_click` plays the flow's cue after the click table resolves —
+  `Menu_Close` (11) for the Back-family clicks (`UICharacterSelect.cs:118`,
+  `UIWorldSelect.cs`'s `GoBackClick`), `Menu_Open` (10) for the activations
+  (`UICharacterListItem.cs:198/:248`, `UIWorldListItem.cs:365`,
+  `UICharacterSelect.cs:110`). The hover edge — the front screens' framework
+  element enter (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`) and the
+  legacy menu's row enter (`Main.DoStatefulTickSound`, `Main.cs:3244`) — plays
+  one `Menu_Tick` per enter, tracked by the App's `front_hover_hit` (the
+  framework element id) and the menu's own `hover` field. `Audio` gained a
+  `played` counter (`played_count()`) as the test seam — the headless Apps have
+  no output device. Deviation from the report's plan: the menu activation cue is
+  `Menu_Tick` (12), not `Grab` (7) — the vanilla's Grab is the chest/inventory
+  slot-movement cue (`ItemSlot.cs:759-769`).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
