@@ -9275,3 +9275,54 @@ the `FishingLine` sheet's 12-px slice as the source rectangle
 - The drawn shots' frame/sound arms and the counterweight's own string are
   the render rows' scope; `ApplicationItemPositionOffsetFromMount` is a
   mount row's input (the port has no mounts yet).
+
+## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
+
+The M5-SPREAD-2 row's deferred "next slice".
+
+### The thorns
+
+`TileID.Sets.SpreadOverground` (`TileID.cs:621`) is the gate the port's
+overground arm reads; it was missing the thorn tiles 32/352 and the
+golf-grass 477/492, so the arm the C# triggers on the *thorn* itself was
+unreachable. With the set fixed, `:72362-72370`'s arms land: the corruption
+thorn (32) grows into the corrupt grass 23 and the crimson thorn (352) into
+the crimson grass 199, each at `genRand.Next(3)` — drawn only for a 32/352
+cell — plus the jungle `:73658-73661`'s thorn-69 arm (no roll). The
+underground twin (`:73280-73294`) stays dead code in both the C# and the
+port (`Sets.SpreadUnderground` excludes 32/352).
+
+`grow_spike` carried two deviations, both fixed:
+
+- the "converted grass" map's sentinel was `0` (the C# `-1`); it is now
+  `u16::MAX`, which is what the knife-edge `t.kind != converted` compare
+  needs;
+- the write replaced the whole `Tile`, zeroing the frames and the liquid;
+  the C# (`:45476-45481`) sets the kind and the active bit on the existing
+  tile, `CopyPaintAndCoating`s from the seed tile and runs
+  `SquareTileFrame` — the port now does all three.
+
+### The wall chains
+
+`convert_wall_by_case` (growth.rs) was the three evil types' flat
+Grass/Stone/HardenedSand/Sandstone/NewWall ladder. It now carries every
+conversion type's wall arm in the C#'s order: the missing `Dirt`/`Snow`/`Ice`
+sets (`WallID.cs:39-41`), the glowing-mushroom set (`WallID.cs:88`), and the
+0/3/5/6/7/11/12 arms — cleanse's grass-family `Next(10)` surface roll and
+262/274/292-295 switch, desert's two set unions (187/216), snow's (71/40),
+purify's natural-wall 349 plus its dirt/NewWall arms, jungle-mud's variant
+of the same, and corruption-II's four separate NewWall guards followed by
+the ebonstone fallback. `spread::convert_wall` routes through it, so the
+evil callers now get the C#'s chain: the stone wall 1 converts to 3/83 (the
+port's old natural-slice 3/192 was the deviation) and the dirt wall's arm
+lands on the cleanse types.
+
+### Deviations
+
+- The torch arms (`TileID.Sets.Conversion.Torch`) of every conversion type
+  are still deferred: one shared helper would cover them but they need the
+  frame-x/y predicate.
+- `SpecialSeedFeatures.RainbowSandAndBlackSandWalls` (the paint reset inside
+  `Convert_ActuallyConvertWall`, `:56329-56343`) is not modelled — it is a
+  secret-seed runtime flag.
+- The `NetMessage.SendTileSquare` broadcast is not ported (single-player).
