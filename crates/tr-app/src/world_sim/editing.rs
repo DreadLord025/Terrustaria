@@ -491,6 +491,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.shot_fired = false;
             app.world_key = None;
         }
+        // M4-PROJ-8 Phase 6 — `ItemCheck_MinionAltFeatureUse`
+        // (`Player.cs:49773-49780`): the summon staff's right-click picks the
+        // minions' target. The port's right-button press edge stands for the
+        // C#'s `altFunctionUse == 2`; the feature set gates which staves.
+        let targeting_staff = registry::projectile(held.kind)
+            .is_some_and(|proj| crate::projectile::MINION_TARGETING_FEATURE.contains(&proj));
+        if targeting_staff
+            && app.place_down
+            && !app.place_prev_down
+            && app.attack_cd <= 0.0
+            && app.reuse_delay <= 0.0
+        {
+            app.swing_max = shooter_swing_secs(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            // `MinionNPCTargetAim` (`Player.cs:56913-56931`): the nearest
+            // chaseable NPC to the mouse world point; the same target clears.
+            let (sw, sh) = app.screen_size();
+            let mouse_world = Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            );
+            if let Some(p) = app.player.as_mut() {
+                p.minion_npc_target_aim(&app.npcs, mouse_world);
+            }
+        }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
             // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
             // `item.mana * manaCost` (the multiplier is the 1f base — the
@@ -522,6 +549,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
+                // `Player.FreeUpPetsAndMinions` frees the budget at the use
+                // tick (`Player.cs:42780`) BEFORE the spawn, and the
+                // `item.buffType > 0` grant rides the same use
+                // (`Player.cs:42879-42884`, the 90/27 exclusions).
+                if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
+                    p.buffs.add_buff(def.buff_type, def.buff_time);
+                }
+                if proj > 0 {
+                    app.projectiles.free_up_pets_and_minions(p, held.kind, app.local_id as u8);
+                }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
@@ -6502,4 +6540,90 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.swing = app.swing_max;
     app.attack_cd = app.swing_max;
     true
+}
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot.
+#[cfg(test)]
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot, and the player tick's arm keeps the buff alive.
+#[cfg(test)]
+mod use_loop_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use glam::Vec2;
+
+    fn app_with_staff(kind: u16) -> crate::app::App {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Single-player: the local player's id is 0 (the recount's owner).
+        app.local_id = 0;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // The cursor at the screen centre — the reach gate
+        // (`Player.cs`'s 6-tile arm) needs the aim tile near the player.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        let mut p = app.player.as_mut().unwrap();
+        p.max_minions = 5;
+        p.max_turrets = 5;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        };
+        app
+    }
+
+    #[test]
+    fn the_slime_staff_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(1309); // the Slime Staff — shoot 266, buff 64
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        // One editing tick: the use fires (the swing starts, the free-up runs
+        // and the projectile spawns), and the verbatim `item.buffType > 0`
+        // grant lands (`Player.cs:42879`).
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && s.kind == 266)
+                .count(),
+            1,
+            "the Slime minion spawned"
+        );
+        // The staff's row carries `buffTime = 0` and the C#'s arm guard skips
+        // 0-time slots, so the grant alone is a ghost the sweep removes
+        // (verbatim, ANALYSIS); the keep-alive loop is asserted with a live
+        // buff: the arm refreshes it while the minion lives.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.buffs.add_buff(64, 600);
+        }
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(64).expect("buff 64 held");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the arm's refresh");
+        assert!(p.slime, "the arm's flag");
+        // The pool's next tick books the minion against the budget.
+        app.mine_down = false;
+        let mut npcs = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let local = app.local_id as u8;
+        let host = !app.is_client();
+        app.projectiles.update(
+            &mut app.world,
+            &mut npcs,
+            None,
+            app.player.as_mut(),
+            crate::projectile::YoyoInputs::default(),
+            &mut rng,
+            local,
+            host,
+        );
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.num_minions, 1, "the slot booked");
+        assert_eq!(p.slots_minions, 1.0);
+    }
 }

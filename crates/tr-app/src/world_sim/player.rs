@@ -403,9 +403,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.update_with_grapple(&app.world, input, grapple_for_tick, item_in_use, false);
             // M4-PROJ-8 phase 2 — the summon seam (the ported-order block on
             // `Player::update_summon_buff_arms`): the recount
-            // (`Player.cs:25565`) then the buff arms (`:10483-10947`) then
-            // the `:28279-28280` counter reset, all inside the fixed step —
-            // `UpdateBuffs` before `UpdateEquips`, like the C#.
+            // (`Player.cs:25565`) then the buff arms (`:10483-10947`), inside
+            // the fixed step. The C#'s `UpdateBuffs` runs the arms between its
+            // reset and its expired-buff sweep; the port's `remove_expired_buffs`
+            // runs inside `update_with_grapple`, so the arms sit after it —
+            // the cap effects (110/150/348) then land after `ResetEffects`
+            // zeroed the budgets (`Player.cs:18448`), the order that keeps
+            // them. A 0-time grant (the summon staves' `buffTime = 0` rows) is
+            // a ghost the sweep removes — verbatim, recorded in ANALYSIS.
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
@@ -431,6 +436,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.max_turrets_old = p.max_turrets;
             }
             p.ammo_cycling.tick();
+            // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
+            // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
+            // target drops every tick.
+            p.invalidate_minion_target(&app.npcs);
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of

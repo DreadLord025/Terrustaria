@@ -14,6 +14,7 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
+use crate::npc::Npc;
 use crate::dye;
 use crate::item::{INV, ItemSlot};
 use crate::luck::LuckState;
@@ -4600,6 +4601,51 @@ impl Player {
         crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
+
+    /// `Player.MinionNPCTargetAim` (`Player.cs:56913-56931`): the summon
+    /// staff's right-click picks the nearest chaseable NPC to the mouse world
+    /// point; a second click on the same target clears it.
+    pub fn minion_npc_target_aim(&mut self, npcs: &[Npc], mouse_world: Vec2) {
+        let mut best: i32 = -1;
+        let mut best_d = f32::MAX;
+        for (i, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let (w, h) = n.size();
+            let d = (Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5 - mouse_world).length();
+            if best == -1 || d < best_d {
+                best = i as i32;
+                best_d = d;
+            }
+        }
+        if self.minion_attack_target_npc == best {
+            self.minion_attack_target_npc = -1;
+        } else {
+            self.minion_attack_target_npc = best;
+        }
+    }
+
+    /// `Player.MinionRestTargetAim`'s invalidation half (`Player.cs:57009-57011`):
+    /// a target that is no longer chaseable or drifted past 3000 px drops.
+    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        if self.minion_attack_target_npc == -1 {
+            return;
+        }
+        let ok = npcs
+            .get(self.minion_attack_target_npc as usize)
+            .is_some_and(|n| {
+                if !n.can_be_chased_by() {
+                    return false;
+                }
+                let (w, h) = n.size();
+                let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                (aim - Vec2::new(self.x, self.y)).length() <= 3000.0
+            });
+        if !ok {
+            self.minion_attack_target_npc = -1;
+        }
+    }
     fn update_survival(&mut self) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`

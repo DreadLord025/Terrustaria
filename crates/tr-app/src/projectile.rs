@@ -500,6 +500,7 @@ pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
+pub const SLIME_MINION: u16 = 266;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
@@ -899,6 +900,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (Phase 2's arm), aiStyle 158; the `friendly`/`drawLayer` lines
             // have no port consumer (the module doc).
             BABY_BIRD => (10.0, 10.0, 158, -1, 18000, 0, true, false, false),
+            // `Projectile.cs:3516-3525` (266) — the Slime Staff's minion,
+            // aiStyle 26 (the hop family, unported — the dispatch no-ops like
+            // the other unported styles), 24x16, `penetrate = -1`,
+            // `timeLeft *= 5` and the idStatic-12 pair.
+            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -949,6 +955,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 => (true, 10),
         ABIGAIL => (true, 20),
         BABY_BIRD => (true, 15),
+        SLIME_MINION => (true, 12),
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
@@ -957,7 +964,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
     // the stock `minion = false` / `minionSlots = 0f`
     // (`Projectile.cs:775-776`).
     let (minion, sentry, minion_slots) = match kind {
-        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD => {
+        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD
+        | SLIME_MINION => {
             (true, false, 1.0)
         }
         RETANIMINI | SPAZMAMINI => (true, false, 0.5),
@@ -2702,7 +2710,91 @@ pub(crate) struct MinionShot {
     pub target: i32,
 }
 
+    /// `ProjectileID.Sets.MinionTargetingFeature` (`ID/ProjectileID.cs:528`) —
+    /// the summon staffs whose right-click picks the minions' target
+    /// (`ItemCheck_MinionAltFeatureUse`, `Player.cs:49773-49780`). Verbatim
+    /// C# list order.
+    pub const MINION_TARGETING_FEATURE: &[u16] = &[
+        191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 625, 755,
+        758, 759, 831, 833, 834, 835, 864, 946, 951, 963, 970, 1022, 1093, 1094, 1112, 1113, 1118,
+        1119, 377, 308, 643, 641, 663, 665, 667, 677, 678, 679, 688, 689, 690, 691, 692, 693, 966,
+        1025,
+    ];
+
 impl ProjectilePool {
+
+
+    /// `Player.FreeUpPetsAndMinions` (`Player.cs:51701-51830`): the summon-staff
+    /// use frees budget before the spawn. The pet pairs (1093/1112 and
+    /// 1094/1113) die outright; the `MinionSacrificable` minions sort by
+    /// `minionSlots` descending and die while the freed slots stay below
+    /// `maxMinions - StaffMinionSlotsRequired[staff]` (the const 1,
+    /// `ItemID.cs:1322`). The Stardust Dragon kinds drop out of the list and
+    /// the relink arms are stubbed per the exclusion.
+    pub fn free_up_pets_and_minions(&mut self, p: &crate::player::Player, staff: u16, owner: u8) {
+        // `:51704-51727` — the two pet pairs die outright when their staff is
+        // re-used.
+        for pair in [(1093u16, 1112u16), (1094, 1113)] {
+            if staff != pair.0 && staff != pair.1 {
+                continue;
+            }
+            let target = if staff == pair.0 { pair.0 } else { pair.1 };
+            for s in self.slots.iter_mut() {
+                if s.active && s.owner == owner && s.minion && s.kind == target {
+                    s.active = false;
+                    s.time_left = 0;
+                }
+            }
+        }
+        if !MINION_SACRIFICABLE.contains(&staff) {
+            return;
+        }
+        // `:51731-51792` — the descending `minionSlots` sort over this owner's
+        // minions; the dragon-chain kinds leave the list (the relink arms are
+        // stubbed with the chain).
+        let mut order: Vec<usize> = (0..self.slots.len())
+            .filter(|&i| {
+                let s = &self.slots[i];
+                s.active
+                    && s.owner == owner
+                    && s.minion
+                    && MINION_SACRIFICABLE.contains(&s.kind)
+                    && !matches!(s.kind, 626 | 627)
+            })
+            .collect();
+        order.sort_by(|&a, &b| {
+            self.slots[b]
+                .minion_slots
+                .partial_cmp(&self.slots[a].minion_slots)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let total: f32 = order.iter().map(|&i| self.slots[i].minion_slots).sum();
+        let mut freed = 0.0f32;
+        let budget = p.max_minions as f32 - 1.0;
+        // `num4` — the 387/388 pair boundary: the pirate pair sacrifices one at
+        // a time.
+        let mut boundary = 388u16;
+        for &i in &order {
+            if !(total - freed > budget) {
+                break;
+            }
+            let kind = self.slots[i].kind;
+            if kind == boundary || matches!(kind, 625 | 628 | 623) {
+                continue;
+            }
+            if kind == 388 && boundary == 387 {
+                boundary = 388;
+            }
+            if kind == 387 && boundary == 388 {
+                boundary = 387;
+            }
+            freed += self.slots[i].minion_slots;
+            let s = &mut self.slots[i];
+            s.active = false;
+            s.time_left = 0;
+        }
+    }
+
     /// `Player.UpdateMaxTurrets` (`Player.cs:53061-53090`): while the wipable
     /// sentries exceed `max_turrets`, the one with the LOWEST `timeLeft` dies
     /// (scan order, ≤1000 iterations). Run after the summon arms — the C#'s
@@ -7191,5 +7283,174 @@ mod sentry_tests {
             !pool.slots[hydra].active,
             "the lowest timeLeft wipable dies"
         );
+    }
+}
+
+/// The summon use-path's tests — the buff grant + `FreeUpPetsAndMinions`
+/// (`Player.cs:42879-42884`/`:51701-51830`) and the right-click aim
+/// (`Player.cs:49773-49780`/`:56913-56931`).
+#[cfg(test)]
+mod use_path_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn live_minions(pool: &ProjectilePool) -> usize {
+        pool.slots.iter().filter(|s| s.active && s.minion).count()
+    }
+
+    /// DW-6.1 — the sacrifice: over the budget, the *lowest-slot* full minion
+    /// dies first (the descending `minionSlots` sort,
+    /// `Projectile.cs:51738-51746`) and the newest spawn survives.
+    #[test]
+    fn test_DW_6_1_the_sacrifice_frees_the_budget() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 2;
+        let a = spawn_minion(&mut pool, HORNET, 100.0);
+        let b = spawn_minion(&mut pool, HORNET, 200.0);
+        assert_eq!(live_minions(&pool), 2);
+        // The third staff use over the cap: the free-up kills one Hornet
+        // before the spawn lands.
+        pool.free_up_pets_and_minions(&p, 373, 0);
+        assert_eq!(live_minions(&pool), 1, "one sacrificed");
+        assert!(
+            !pool.slots[a].active || !pool.slots[b].active,
+            "an existing Hornet died"
+        );
+        // At the base cap of 1 the free-up empties the budget so the new
+        // spawn fits: `total(1.0) > maxMinions(1) - 1 = 0` still holds.
+        p.max_minions = 1;
+        pool.free_up_pets_and_minions(&p, 373, 0);
+        assert_eq!(live_minions(&pool), 0, "the old minion makes room");
+    }
+
+    /// DW-6.2 — the ordering: the half-slot spiders sort after the full-slot
+    /// minions (they die first only once the full ones are gone), and the
+    /// protected kinds (623) never die.
+    #[test]
+    fn test_DW_6_2_the_sacrifice_order_and_protected_kinds() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 1;
+        let spider = spawn_minion(&mut pool, RETANIMINI, 100.0); // 0.5 slots
+        let guardian = spawn_minion(&mut pool, STARDUST_GUARDIAN, 200.0); // 0 slots — never counted
+        let hornet = spawn_minion(&mut pool, HORNET, 300.0); // 1.0 slot
+        let _ = guardian;
+        pool.free_up_pets_and_minions(&p, 373, 0);
+        // `total(1.5) > maxMinions(1) - 1 = 0` holds twice: the descending
+        // sort takes the full-slot Hornet first, then the half slot.
+        assert!(!pool.slots[hornet].active, "the full-slot minion dies first");
+        assert!(!pool.slots[spider].active, "the half slot follows");
+        assert!(pool.slots[guardian].active, "the protected kind survives");
+        // At cap 2 the same set keeps the half slot: `1.5 - 1.0 = 0.5 <= 1`.
+        let mut pool = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.max_minions = 2;
+        let spider2 = spawn_minion(&mut pool, RETANIMINI, 100.0);
+        let hornet2 = spawn_minion(&mut pool, HORNET, 300.0);
+        pool.free_up_pets_and_minions(&p2, 373, 0);
+        assert!(!pool.slots[hornet2].active, "the full slot dies");
+        assert!(pool.slots[spider2].active, "the half slot survives at cap 2");
+        let _ = spider;
+    }
+
+    /// DW-6.3 — the right-click aim: the nearest chaseable NPC to the mouse
+    /// wins, a second click on the same target clears it, no NPC → −1; the
+    /// per-tick invalidation drops an unchaseable or far target.
+    #[test]
+    fn test_DW_6_3_the_right_click_aim_and_invalidation() {
+        let w = world();
+        let mut p = player(&w);
+        let npcs = vec![
+            npc_at(NpcKind::Zombie, 900.0, 300.0),
+            npc_at(NpcKind::DemonEye, 500.0, 300.0),
+        ];
+        // Mouse near the DemonEye.
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        assert_eq!(p.minion_attack_target_npc, 1, "the nearest NPC to the mouse");
+        // The same target again clears it.
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        assert_eq!(p.minion_attack_target_npc, -1, "the toggle-off");
+        // No chaseable NPC → −1.
+        p.minion_attack_target_npc = 0;
+        let mut cold = npc_at(NpcKind::Zombie, 900.0, 300.0);
+        cold.chaseable = false;
+        p.invalidate_minion_target(&[cold.clone()]);
+        assert_eq!(p.minion_attack_target_npc, -1, "the unchaseable drops");
+        // The far target (> 3000 px) drops too.
+        p.minion_attack_target_npc = 0;
+        let far = npc_at(NpcKind::Zombie, p.x + 4000.0, p.y);
+        p.invalidate_minion_target(&[far]);
+        assert_eq!(p.minion_attack_target_npc, -1, "the far target drops");
+        // A chaseable, near target survives.
+        p.minion_attack_target_npc = 0;
+        let near = npc_at(NpcKind::Zombie, p.x + 100.0, p.y);
+        p.invalidate_minion_target(&[near]);
+        assert_eq!(p.minion_attack_target_npc, 0, "the valid target holds");
+    }
+
+    /// DW-6.4 — the sentry staff: no buff (the itemdata carries buffType 0)
+    /// and the 377 spawn holds `SentryLifeTime` 36000 with the Summon damage
+    /// class multiplier.
+    #[test]
+    fn test_DW_6_4_the_sentry_staff_grants_no_buff() {
+        // The itemdata rows: the Queen Spider Staff (2366) has no buffType —
+        // verified against the generated table, so the use-path grant never
+        // fires for it.
+        let def = crate::registry::get(2366).expect("the Queen Spider Staff row");
+        assert_eq!(def.buff_type, 0, "the sentry staves carry no minion buff");
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_turrets = 1;
+        p.minion_damage = 1.0;
+        let slot = pool
+            .spawn_with_data_ai_owned(QUEEN_SPIDER, 0, 200.0, 300.0, 0.0, 0.0, 26, 7.5, 0.0, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots[slot].time_left, 36000, "SentryLifeTime");
+        assert!(!pool.slots[slot].minion && pool.slots[slot].sentry);
+        // The recompute rides the same block as the minions'.
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut world(),
+            &mut npcs,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[slot].damage, 26, "26 x 1.0 + epsilon");
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
     }
 }
