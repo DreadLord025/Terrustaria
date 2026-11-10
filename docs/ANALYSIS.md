@@ -9123,3 +9123,60 @@ per-wave `switch` with its own caps and rolls.
   archers, the drakes, the mystics, the ogres, the hounds, the sapper and
   the glider have no kind yet, so those picks drop out until they land
   (`nid_of`/`dd2_pool_id`).
+
+## Yoyo string + sprite (M4-PROJ-4c)
+
+The row's pure half is `crates/tr-app/src/yoyo_string.rs`; the draw call is
+`Projectile::draw_with_hand` (frame.rs hands it the player's centre).
+
+### The colour chain
+
+`Main.TryApplyingPlayerStringColor` (`Main.cs:35474-35519`) is ported as
+`string_color(string_color_id, disco, rainbow)` → RGBA 0..1:
+
+- the paint path (`WorldGen.paintColor` — the port's
+  `tr_core::tile_light::paint_color`) with the **75-per-channel floor**
+  (`:35479-35490`), which also lifts the explicit dark rows;
+- the special ids 13 (20,20,20), 0/14 (200,200,200), 28 (163,116,91),
+  30 (226,228,142), 27 (the animated `Main.DiscoR/G/B` — the caller's
+  per-frame triple) and 29 (the rainbow: the `(mouseTextColor-190)/65` lerp
+  with the `±40` channel jitter, `:35511-35516`);
+- the 0.4 alpha (`:35410`); the id-0 path's alpha comes from the caller's
+  `:28038` instead, so both end at 102/255.
+
+The item→colour table is `Item.cs:30220-30255` (3293→1 … 3304→12, 3305→28,
+3306→14, 3307→27, 3308→13) plus `Item.cs:43716`'s 30 — `string_color_for_item`.
+
+### The walk
+
+`string_segments(hand, target, sag_factor)` is the 12-px walk of
+`Main.cs:27966-28046`: the remaining-length step (with the partial final
+step), the rotation `Atan2(dy,dx) - π/2` (`:28036`), the sag bow scaled by
+the remaining distance (`:27995-28035` — the speed curvature is an input
+the caller folds in), and the per-segment light tint (`segment_color`'s
+0.5 light multiply + the `num10` half dim, `:28043`/`:28045`).
+
+The draw path emits one `push_sprite_origin_rot` per segment
+(`render/sprite.rs`'s `origin`-anchor analogue of
+`EntitySpriteDraw(origin: (W*0.5, 0))`, `:28042-28045`) and then the yoyo
+sprite quad centred and rotated by the slot's `rot`/`scale`/`alpha`, with
+the `FishingLine` sheet's 12-px slice as the source rectangle
+(`new Rectangle(0, 0, Width, (int)num5)`).
+
+### Deviations
+
+- `player.stringColor` rides M3-EQUIP-3 (the accessory system): the row
+  ships the id-0 white path (`A=102`) with the table ready, exactly as the
+  AI row shipped `meleeSpeed = 1.0`.
+- `drawLayer` 7's player-pass interleave (`Main.CacheProjDraws` +
+  `PlayerDrawLayers.DrawHeldProj`, `Main.cs:22196-22202`,
+  `PlayerDrawLayers.cs:4185-4235`) has no port analogue — the port has one
+  projectile loop; the counterweight-before-yoyo order is encoded by the
+  loop's push order, and the layer-8 counterweight-over-arm case is not
+  modelled.
+- `Lighting.GetColor`'s alpha behaviour (the XNA `Color(Vector3)` drops to
+  255) is not reproduced: the port's `LightMap` is RGB-only and the row's
+  alpha chain is explicit (documented in the module doc).
+- The drawn shots' frame/sound arms and the counterweight's own string are
+  the render rows' scope; `ApplicationItemPositionOffsetFromMount` is a
+  mount row's input (the port has no mounts yet).

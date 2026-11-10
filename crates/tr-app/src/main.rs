@@ -24,6 +24,7 @@ mod env;
 mod inv;
 mod luck;
 mod wiring_stub;
+mod yoyo_string;
 mod item;
 mod itemdata;
 mod lang;

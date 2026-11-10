@@ -434,6 +434,39 @@ pub fn load_world_images(
         "Rain",
         "Dust",
         "Projectile_3",
+        // The yoyo string (`Main.DrawProjDirect`'s FishingLine slice,
+        // `Main.cs:28044`) and the yoyo/counterweight sprites
+        // (`DefaultToYoyo` rows 534/541-555/562-564/603/999 + the
+        // counterweights 556-561/1079) — the M4-PROJ-4c draw path.
+        "FishingLine",
+        "Projectile_534",
+        "Projectile_541",
+        "Projectile_542",
+        "Projectile_543",
+        "Projectile_544",
+        "Projectile_545",
+        "Projectile_546",
+        "Projectile_547",
+        "Projectile_548",
+        "Projectile_549",
+        "Projectile_550",
+        "Projectile_551",
+        "Projectile_552",
+        "Projectile_553",
+        "Projectile_554",
+        "Projectile_555",
+        "Projectile_562",
+        "Projectile_563",
+        "Projectile_564",
+        "Projectile_603",
+        "Projectile_999",
+        "Projectile_556",
+        "Projectile_557",
+        "Projectile_558",
+        "Projectile_559",
+        "Projectile_560",
+        "Projectile_561",
+        "Projectile_1079",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -1204,6 +1237,13 @@ pub struct Lookups {
     pub dust: Option<tr_render::SheetRect>,
     /// `Projectile_3.png`: the 22x22 shuriken frame.
     pub shuriken: Option<tr_render::SheetRect>,
+    /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
+    /// (`Main.DrawProjDirect`, `Main.cs:28044`).
+    pub fishing_line: Option<tr_render::SheetRect>,
+    /// M4-PROJ-4c: the yoyo and counterweight sprite sheets, keyed by the
+    /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
+    /// convention the `item_icons` scan uses).
+    pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// The ambient leaf gores the world's trees can shed: `Gore_910`
     /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
     /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
@@ -1495,6 +1535,21 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            fishing_line: atlas.sheet("FishingLine").copied(),
+            // The same prefix scan as `item_icons` — an id whose texture
+            // file never made the atlas simply stays absent.
+            yoyo_sprites: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    let id = name.strip_prefix("Projectile_")?.parse::<u16>().ok()?;
+                    if crate::yoyo_string::is_yoyo_sprite(id) {
+                        Some((id, *rect))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
@@ -2327,7 +2382,7 @@ fn uv_of_size(
     ]
 }
 
-fn uv_rect(
+pub(crate) fn uv_rect(
     rect: &tr_render::SheetRect,
     atlas_size: (u32, u32),
     sx: i32,
