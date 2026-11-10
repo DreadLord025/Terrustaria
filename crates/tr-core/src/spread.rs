@@ -105,26 +105,12 @@ pub(crate) fn convert_tile(kind: u16, corruption: bool) -> Option<u16> {
 
 /// The natural-wall slice of `WallID.Sets.Conversion` (`:55090-55135`): the
 /// stone wall 1 → 192/3, the dirt wall 2 → 193/69.
+/// M5-SPREAD-2c: the natural-wall slice is the C#'s full wall chains, so the
+/// fn routes through `growth::convert_wall_by_case` (every conversion type's
+/// `Convert_ActuallyConvertWall` ladder, `WorldGen.cs:55100+`). The bool
+/// keeps the two evil types (1 corruption / 4 crimson) the evil callers use.
 pub(crate) fn convert_wall(wall: u16, corruption: bool) -> Option<u16> {
-    Some(match (wall, corruption) {
-        // The stone wall: the ebonstone 3 / the crimson 192.
-        (1, c) => {
-            if c {
-                3
-            } else {
-                192
-            }
-        }
-        // The dirt wall: the corrupt grass 69 / the crimson grass 193.
-        (2, c) => {
-            if c {
-                69
-            } else {
-                193
-            }
-        }
-        _ => return None,
-    })
+    crate::growth::convert_wall_by_case(wall, if corruption { 1 } else { 4 }, 0, 0.0, None)
 }
 
 /// `Convert`'s single-tile overload (`:55085-55673`). `chlorophyte` = the
@@ -717,12 +703,56 @@ mod tests {
         assert_eq!(convert_tile(161, false), Some(200));
         assert_eq!(convert_tile(396, false), Some(401));
         assert_eq!(convert_tile(399, false), None, "the already-corrupt tile");
-        // The walls: the stone 1 → 3 (corruption) / 192 (crimson), the
-        // dirt 2 → 69/193.
+        // The walls (`:55261-55296` corruption / `:55100-55135` crimson): the
+        // stone 1 → 3 / 83 — the C#'s chain has no dirt-wall row, so the old
+        // natural-slice 2 → 69/193 pair was the deviation M5-SPREAD-2c
+        // replaces (the dirt-wall arm lands on conversion types 0/7/11).
         assert_eq!(convert_wall(1, true), Some(3));
-        assert_eq!(convert_wall(1, false), Some(192));
-        assert_eq!(convert_wall(2, true), Some(69));
-        assert_eq!(convert_wall(2, false), Some(193));
+        assert_eq!(convert_wall(1, false), Some(83));
+        assert_eq!(convert_wall(2, true), None);
+        assert_eq!(convert_wall(2, false), None);
+    }
+
+    /// M5-SPREAD-2c: the extended conversion types' wall chains are the C#
+    /// verbatim (`:55446+` purify, `:55409+` snow, `:55363+` desert,
+    /// `:55337+` glowing mushroom, `:55883+` corruption-II).
+    #[test]
+    fn m5_spread_2c_the_wall_chains_are_verbatim_across_the_types() {
+        // Purify (7): the natural walls → 349, the sand/dirt family → 2, the
+        // NewWall family → 212-215, the 262/274 switch.
+        assert_eq!(growth_wall(1, 7), Some(349));
+        // Wall 2 is the Dirt set's own target (`wall != 2` guard, `:55465`) —
+        // the second dirt wall 16 converts.
+        assert_eq!(growth_wall(2, 7), None);
+        assert_eq!(growth_wall(16, 7), Some(2));
+        assert_eq!(growth_wall(188, 7), Some(212));
+        assert_eq!(growth_wall(262, 7), Some(61));
+        assert_eq!(growth_wall(274, 7), Some(185));
+        // Snow (6): the stone side → 71, the sand/dirt side → 40.
+        assert_eq!(growth_wall(1, 6), Some(71));
+        assert_eq!(growth_wall(2, 6), Some(40));
+        // Desert (5): 187 / 216.
+        assert_eq!(growth_wall(1, 5), Some(187));
+        assert_eq!(growth_wall(2, 5), Some(216));
+        // Glowing mushroom (3): the four mushroom-safe walls → 80.
+        assert_eq!(growth_wall(15, 3), Some(80));
+        assert_eq!(growth_wall(2, 3), None);
+        // Corruption-II (12): the NewWall family → the corruption analog, else
+        // any live non-ebonstone wall → 3.
+        // The guards make the set's own members fall through to the ebonstone
+        // arm (188 ∈ NewWall1, so `wall != 188` fails and 3 wins).
+        assert_eq!(growth_wall(192, 12), Some(188));
+        assert_eq!(growth_wall(188, 12), Some(3));
+        assert_eq!(growth_wall(187, 12), Some(3));
+        // Cleanse (0): the grass family → 64, the 262/274/292-295 switch.
+        assert_eq!(growth_wall(69, 0), Some(64));
+        assert_eq!(growth_wall(292, 0), Some(204));
+        assert_eq!(growth_wall(2, 0), None, "the dirt wall has no type-0 arm");
+    }
+
+    /// The growth module's wall-chain entry, straight from the test.
+    fn growth_wall(wall: u16, conversion_type: u8) -> Option<u16> {
+        crate::growth::convert_wall_by_case(wall, conversion_type, 0, 1.0e9, None)
     }
 
     #[test]

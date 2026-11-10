@@ -1410,10 +1410,13 @@ pub fn grow_spike(
     land_type: u16,
     rng: &mut FastRandom,
 ) {
-    let converted = match land_type {
+    // The "converted grass" map (`:45484-45491`): 23 ↔ 661 and 199 ↔ 662;
+    // any other `landType` leaves the C# `-1` — no second id matches. The
+    // port carries `u16::MAX` as that sentinel (0 would collide with dirt).
+    let converted: u16 = match land_type {
         23 => 661,
         199 => 662,
-        _ => 0,
+        _ => u16::MAX,
     };
     let spike_neighbours = |x: i32, y: i32| -> i32 {
         [(1i32, 0), (-1, 0), (0, 1), (0, -1)]
@@ -1464,12 +1467,26 @@ pub fn grow_spike(
     if !flag {
         return;
     }
-    let idx = world.index(num2, num3);
-    world.tiles[idx] = crate::tile::Tile {
-        kind: spike_type,
-        flags: FLAG_ACTIVE,
-        ..Default::default()
+    // `Main.tile[..].type = spikeType; active(active: true)` (`:45476-45480`)
+    // — the C# writes the kind and the active bit on the EXISTING tile, so
+    // the frame/liquid survive; the port's whole-Tile replacement zeroed
+    // them (M5-SPREAD-2c).
+    if let Some(t) = world.tile_mut(num2, num3) {
+        t.kind = spike_type;
+        t.flags |= FLAG_ACTIVE;
+    }
+    // `CopyPaintAndCoating(Main.tile[i, j])` (`:45481`) — the paint/coating
+    // rides from the seed tile (the port's `Tile` carries paint in `meta` and
+    // the coatings in `extras`).
+    let (src_meta, src_extras) = {
+        let si = world.index(i, j);
+        (world.tiles[si].meta, world.extras_at(si))
     };
+    let di = world.index(num2, num3);
+    world.tiles[di].meta = src_meta;
+    world.set_extras_at(di, src_extras);
+    // `WorldGen.SquareTileFrame` (`:45482`).
+    crate::edit::square_tile_frame_gen(world, num2, num3);
     if world.frame_important.len() <= spike_type as usize {
         world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
     }
@@ -1559,9 +1576,13 @@ pub fn update_world_overground_tile(
     // The grass-growth pass (:72357 + :73282): the spread-overground grasses
     // with the plant windows (minI/maxI = i±1, minJ/maxJ = j±1 per :72350-
     // 72356's window).
+    // `TileID.Sets.SpreadOverground` (`TileID.cs:621`) = 2/23/661/32/60/70/
+    // 109/199/662/352/477/492/633/226 — the 32/352 thorns and the golf-grass
+    // 477/492 were missing, which left the thorn arm below unreachable for
+    // the tiles it actually grows on (M5-SPREAD-2c).
     let grass_pass = matches!(
         kind,
-        2 | 23 | 199 | 60 | 70 | 109 | 226 | 633 | 661 | 662
+        2 | 23 | 199 | 60 | 70 | 109 | 226 | 633 | 661 | 662 | 32 | 352 | 477 | 492
     );
     if grass_pass {
         update_world_grass_growth(
@@ -1575,13 +1596,21 @@ pub fn update_world_overground_tile(
             true,
             rng,
         );
-        // The thorn arms (:72362-72370): the jungle 32 at Next(3), the evil
-        // 352 at Next(3), on their grass types.
-        if (kind == 23 && rng.next(3) == 0) || (kind == 60 && rng.next(3) == 0) {
-            grow_spike(world, x, y, 32, 23, rng);
+        // The thorn arms (:72362-72370): the corruption thorn 32 grows into
+        // the corrupt grass 23 and the crimson thorn 352 into the crimson
+        // grass 199, both at `Next(3)` — the C# triggers on the THORN tile,
+        // not the grass (the grass keys are `landType`'s density map).
+        if (kind == 32 || kind == 352) && rng.next(3) == 0 {
+            if kind == 32 {
+                grow_spike(world, x, y, 32, 23, rng);
+            } else {
+                grow_spike(world, x, y, 352, 199, rng);
+            }
         }
-        if kind == 199 && rng.next(3) == 0 {
-            grow_spike(world, x, y, 352, 199, rng);
+        // The jungle thorn arm (:73658-73661): the 69 tile grows the same
+        // walk with no roll.
+        if kind == 69 {
+            grow_spike(world, x, y, 69, 60, rng);
         }
     }
 }
@@ -2927,33 +2956,34 @@ mod tests {
             w.tile(101, 200).is_some_and(|t| t.kind == 2),
             "the dirt converted to grass"
         );
-        // The spike: the evil grass grows a 352 thorn onto the empty cell.
+        // The spike: the THORN tile itself is the updated cell (the C#
+        // `:72362-72370` arm triggers on 32/352, not on the grass) — the
+        // diamond needs the land grass with a standing thorn above it.
         let mut w = world();
         w.world_surface = 250.0; // the surface below the cells
-        put(&mut w, 100, 200, 199, 0);
-        put(&mut w, 101, 200, 199, 0);
-        put(&mut w, 100, 199, 352, 0); // a spike on the land type
+        put(&mut w, 100, 201, 199, 0); // the land type below the thorn
+        put(&mut w, 101, 201, 199, 0);
+        put(&mut w, 100, 200, 352, 0); // the thorn being updated
+        put(&mut w, 100, 199, 352, 0); // the standing thorn over the land
         let mut rng = FastRandom::new(7);
         let mut grew = false;
         for tick in 0..200 {
             update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
-            let grew_cell = [
-                (99i32, 199),
-                (100, 198),
-                (101, 199),
-                (100, 201), // the down walk lands too (the diamond covers it)
-            ]
-            .iter()
-            .any(|&(cx, cy)| {
-                w.tile(cx, cy).is_some_and(|t| t.active() && t.kind == 352)
-            });
-            if grew_cell {
+            // The walk lands at a free neighbour of the thorn; the world's
+            // 352 count is the observable.
+            let n352 = w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 352)
+                .count();
+            if n352 > 2 {
                 grew = true;
                 break;
             }
         }
         assert!(grew, "the thorn grew eventually");
     }
+
 
     #[test]
     fn the_driver_picks_at_the_verbatim_rates() {
@@ -3460,6 +3490,14 @@ const SPREADS_HALLOW_WALLS: [u16; 4] = [70, 219, 222, 28];
 const CONVERSION_GRASS_WALLS: [u16; 12] = [63, 64, 65, 66, 67, 68, 69, 70, 81, 264, 265, 268];
 /// `WallID.Sets.Conversion.Stone` (`WallID.cs:38`).
 const CONVERSION_STONE_WALLS: [u16; 12] = [1, 61, 185, 3, 28, 83, 262, 274, 246, 248, 269, 349];
+/// `WallID.Sets.Conversion.Dirt` (`WallID.cs:39`).
+const CONVERSION_DIRT_WALLS: [u16; 2] = [2, 16];
+/// `WallID.Sets.Conversion.Snow` (`WallID.cs:40`).
+const CONVERSION_SNOW_WALLS: [u16; 2] = [40, 249];
+/// `WallID.Sets.Conversion.Ice` (`WallID.cs:41`).
+const CONVERSION_ICE_WALLS: [u16; 2] = [71, 266];
+/// `WallID.Sets.CanBeConvertedToGlowingMushroom` (`WallID.cs:88`).
+const CAN_BECOME_GLOWING_MUSHROOM_WALLS: [u16; 4] = [64, 67, 15, 247];
 /// `WallID.Sets.Conversion.HardenedSand` (`WallID.cs:43`).
 const CONVERSION_HARDENED_SAND_WALLS: [u16; 8] = [216, 217, 219, 218, 304, 305, 307, 306];
 /// `WallID.Sets.Conversion.Sandstone` (`WallID.cs:42`).
@@ -3479,11 +3517,23 @@ const SPREADS_HALLOW: [u16; 10] = [109, 492, 117, 116, 402, 403, 164, 115, 110, 
 /// the growth pass runs the grass arm over.
 const SPREAD_UNDERGROUND: [u16; 9] = [23, 661, 109, 199, 662, 60, 70, 633, 226];
 
-/// `WorldGen.Convert`'s wall chains for the three conversion types the wall
-/// arms use (`WorldGen.cs:55261+` corruption, `:55176+` hallow, `:55100+`
-/// crimson): the cell's wall set picks the new wall and the chain skips a cell
-/// that already carries it.
-fn convert_wall_by_case(wall: u16, conversion_type: u8) -> Option<u16> {
+/// `WorldGen.Convert`'s wall chains — every conversion type's wall arm
+/// (`WorldGen.cs:55100+` crimson, `:55176+` hallow, `:55261+` corruption,
+/// `:55337+` glowing mushroom, `:55363+` desert, `:55409+` snow, `:55446+`
+/// purify, `:55527+` cleanse, `:55764+` jungle-mud, `:55883+` corruption-II):
+/// the cell's wall set picks the new wall and the chain skips a cell that
+/// already carries it. M5-SPREAD-2c extends the three evil types with the
+/// 0/3/5/6/7/11/12 arms.
+///
+/// `y`/`world_surface`/`rng` carry the 0-case's `Next(10)` surface roll
+/// (`:55529-55537`); the pure types pass `None`.
+pub(crate) fn convert_wall_by_case(
+    wall: u16,
+    conversion_type: u8,
+    y: i32,
+    world_surface: f64,
+    mut rng: Option<&mut FastRandom>,
+) -> Option<u16> {
     // `(guard set, target)` in the C#'s else-if order.
     let cases: [(usize, u16); 8] = match conversion_type {
         1 => [
@@ -3518,6 +3568,155 @@ fn convert_wall_by_case(wall: u16, conversion_type: u8) -> Option<u16> {
             (7, 195),
         ],
     };
+    // The 0/3/5/6/7/11/12 arms (`:55527+`, `:55764+`, `:55883+`) are not the
+    // flat Grass/Stone/HardenedSand/Sandstone/NewWall ladder — each is its own
+    // set union and switch arms.
+    match conversion_type {
+        // Glowing mushroom: `CanBeConvertedToGlowingMushroom` -> 80.
+        3 => {
+            if CAN_BECOME_GLOWING_MUSHROOM_WALLS.contains(&wall) && wall != 80 {
+                return Some(80);
+            }
+            return None;
+        }
+        // Desert: (Stone | NewWall1-4 | Ice | Sandstone) -> 187, else
+        // (HardenedSand | Dirt | Snow) -> 216 (`:55364-55374`).
+        5 => {
+            let stone_side = CONVERSION_STONE_WALLS.contains(&wall)
+                || CONVERSION_SANDSTONE_WALLS.contains(&wall)
+                || CONVERSION_ICE_WALLS.contains(&wall)
+                || CONVERSION_NEW_WALLS[0].contains(&wall)
+                || CONVERSION_NEW_WALLS[1].contains(&wall)
+                || CONVERSION_NEW_WALLS[2].contains(&wall)
+                || CONVERSION_NEW_WALLS[3].contains(&wall);
+            if stone_side && wall != 187 {
+                return Some(187);
+            }
+            if (CONVERSION_HARDENED_SAND_WALLS.contains(&wall)
+                || CONVERSION_DIRT_WALLS.contains(&wall)
+                || CONVERSION_SNOW_WALLS.contains(&wall))
+                && wall != 216
+            {
+                return Some(216);
+            }
+            return None;
+        }
+        // Snow: the same two unions at 71 / 40 (`:55410-55420`).
+        6 => {
+            let stone_side = CONVERSION_STONE_WALLS.contains(&wall)
+                || CONVERSION_SANDSTONE_WALLS.contains(&wall)
+                || CONVERSION_ICE_WALLS.contains(&wall)
+                || CONVERSION_NEW_WALLS[0].contains(&wall)
+                || CONVERSION_NEW_WALLS[1].contains(&wall)
+                || CONVERSION_NEW_WALLS[2].contains(&wall)
+                || CONVERSION_NEW_WALLS[3].contains(&wall);
+            if stone_side && wall != 71 {
+                return Some(71);
+            }
+            if (CONVERSION_HARDENED_SAND_WALLS.contains(&wall)
+                || CONVERSION_DIRT_WALLS.contains(&wall)
+                || CONVERSION_SNOW_WALLS.contains(&wall))
+                && wall != 40
+            {
+                return Some(40);
+            }
+            return None;
+        }
+        // Purify (7) / jungle-mud (11) / cleanse (0) (`:55446-55488`,
+        // `:55764-55842`, `:55527-55609`) — the three share the switch and
+        // the NewWall ladder; the natural-wall and sand-family arms differ.
+        0 | 7 | 11 => {
+            // Type 7's natural arm (the C#'s first branch, `:55449-55456`);
+            // types 0/11 carry it in their default chain after the switch.
+            let natural = conversion_type == 7
+                && (CONVERSION_STONE_WALLS.contains(&wall)
+                    || CONVERSION_ICE_WALLS.contains(&wall)
+                    || CONVERSION_SANDSTONE_WALLS.contains(&wall));
+            let flag = matches!(wall, 61 | 185 | 262 | 274);
+            if natural && wall != 349 && !flag {
+                return Some(349);
+            }
+            // The switch is the flag ids' own arm (`:55456-55463`) — it runs
+            // exactly when the natural arm did not, so no flag gate here.
+            match wall {
+                262 => return Some(61),
+                274 => return Some(185),
+                _ => {}
+            }
+            // Cleanse's 292-295 -> 204-207 (`:55551-55590`).
+            if matches!(conversion_type, 0 | 11) {
+                if let Some(off) = [292u16, 293, 294, 295]
+                    .iter()
+                    .position(|&w| w == wall)
+                {
+                    return Some(204 + off as u16);
+                }
+                // The 69/70/81 grass family -> 64 (63/65 at the surface roll).
+                if matches!(wall, 69 | 70 | 81) {
+                    if (y as f64) < world_surface {
+                        if let Some(r) = rng.as_deref_mut() {
+                            return Some(if r.next(10) != 0 { 63 } else { 65 });
+                        }
+                    }
+                    return Some(64);
+                }
+            }
+            // Type 7/11's dirt arm (`:55465`, `:55807`); type 0 has none.
+            if conversion_type != 0 && CONVERSION_DIRT_WALLS.contains(&wall) && wall != 2 {
+                return Some(2);
+            }
+            if let Some(off) = CONVERSION_NEW_WALLS
+                .iter()
+                .position(|set| set.contains(&wall))
+            {
+                let target = 212 + off as u16;
+                if wall != target {
+                    return Some(target);
+                }
+            }
+            // The default chain's tail (`:55789-55818` jungle-mud,
+            // `:55624-55658` cleanse): the NewWall family → 212-215, the
+            // HardenedSand → 216, the Sandstone → 187. Type 7's dirt arm
+            // replaces it (`:55465`).
+            if conversion_type != 7 && CONVERSION_STONE_WALLS.contains(&wall) && wall != 349 {
+                return Some(349);
+            }
+            if CONVERSION_HARDENED_SAND_WALLS.contains(&wall) && wall != 216 {
+                return Some(216);
+            }
+            if CONVERSION_SANDSTONE_WALLS.contains(&wall) && wall != 187 {
+                return Some(187);
+            }
+            return None;
+        }
+        // Corruption-II (`:55886-55906`): the NewWall family -> the corruption
+        // analog, else any non-zero non-ebonstone wall -> 3.
+        12 => {
+            if CONVERSION_NEW_WALLS[0].contains(&wall) && wall != 188 {
+                return Some(188);
+            }
+            if CONVERSION_NEW_WALLS[1].contains(&wall) && wall != 189 {
+                return Some(189);
+            }
+            if CONVERSION_NEW_WALLS[2].contains(&wall) && wall != 190 {
+                return Some(190);
+            }
+            if CONVERSION_NEW_WALLS[3].contains(&wall) && wall != 191 {
+                return Some(191);
+            }
+            if wall != 0 && wall != 3 {
+                return Some(3);
+            }
+            return None;
+        }
+        _ => {}
+    }
+    // The flat ladder is the three evil types only — the 0/3/5/6/7/11/12 arms
+    // all returned above, and the C#'s switch would otherwise fall into the
+    // crimson arm.
+    if !matches!(conversion_type, 1 | 2 | 4) {
+        return None;
+    }
     for (set, target) in cases {
         let in_set = match set {
             0 => CONVERSION_GRASS_WALLS.contains(&wall),
@@ -3623,7 +3822,8 @@ pub fn spread_grass_walls(
     if !box_has_source(world, wall_dist, i, j, source) {
         return;
     }
-    let Some(new) = convert_wall_by_case(neighbour, conversion_type) else {
+    let Some(new) =
+        convert_wall_by_case(neighbour, conversion_type, y, world.world_surface, None) else {
         return;
     };
     let idx = world.index(x, y);
@@ -3692,7 +3892,9 @@ pub fn spread_desert_walls(
     if !box_has_source(world, wall_dist, i, j, source) {
         return;
     }
-    let Some(new) = convert_wall_by_case(neighbour.wall, conversion_type) else {
+    let Some(new) =
+        convert_wall_by_case(neighbour.wall, conversion_type, y, world.world_surface, None)
+    else {
         return;
     };
     let idx = world.index(x, y);

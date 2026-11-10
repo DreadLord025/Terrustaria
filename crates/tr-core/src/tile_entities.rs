@@ -23,13 +23,20 @@
 //!   (`TileEntity.cs:173-197`) — the type byte, the StoredID, the position,
 //!   then the TE's `WriteExtraData` — and the world-file section
 //!   `SaveTileEntities`/`LoadTileEntities` (`WorldFile.cs:3302-3357`)
+//! - the save/load halves: the books' `ByID`-order iteration and the
+//!   one-record insert (`SaveTileEntities:3306-3310` /
+//!   `LoadTileEntities:3316-3358`), with the entity-level wire format itself in
+//!   `crate::wld::sections::tile_entities`.
 //!
 //! Deviations (ANALYSIS "Tile entities (M7-TE-1)"): the behaviour halves —
 //! the dummy hit tracking, the logic sensors, the pylon network, the display
 //! doll rendering and the leashed anchors — are M7-TE-2; the food gate
 //! (`ItemID.Sets.IsFood`) is applied by the caller; items here are the
 //! `(type, prefix, stack)` triples the wire/save format carries, mapped to
-//! the app's `ItemSlot`s at the UI layer.
+//! the app's `ItemSlot`s at the UI layer. Two kinds ride the `.wld` without a
+//! behaviour half: the display doll's payload is read and discarded (it has no
+//! home in `TeData`, so its entity is not kept), and the kite/critter
+//! anchors' `short itemType` is kept as `TeData::Anchor`.
 
 use std::collections::HashMap;
 
@@ -60,7 +67,11 @@ impl TeItem {
         let kind = r.i16()? as u16;
         let prefix = r.u8()?;
         let stack = r.i16()? as u16;
-        Some(Self { kind, prefix, stack })
+        Some(Self {
+            kind,
+            prefix,
+            stack,
+        })
     }
 }
 
@@ -116,9 +127,10 @@ impl TeKind {
             TeKind::TeleportationPylon => 597,
             TeKind::DeadCellsDisplayJar => 698,
             TeKind::KiteAnchor => 723,
-            // The critter anchor is placed by the released critters, not by
-            // a tile (`TECritterAnchor` has no ValidTile).
-            TeKind::CritterAnchor => 0,
+            // `TECritterAnchor.IsTileValidForEntity`'s `tile.type == 724`
+            // (`TECritterAnchor.cs:24-32`, the check at `:26`) — the released
+            // critters place the anchor on a Lady Bug tile.
+            TeKind::CritterAnchor => 724,
         }
     }
 
@@ -150,11 +162,17 @@ impl TeKind {
             // `frameY != 0 || frameX % 54 != 0` (`TETeleportationPylon.cs:
             // 135-139`).
             TeKind::TeleportationPylon => t.frame_y == 0 && t.frame_x % 54 == 0,
-            // The doll/pylon/anchors: the frame checks are the multi-tile
-            // registries (the doll = the 3×4 rack, the pylon = the 3×4
-            // network side); the anchor-tile checks land with their
-            // follow-ups.
-            _ => true,
+            // `frameY != 0 || frameX % 36 != 0` (`TEDisplayDoll.cs:851-858`,
+            // `IsTileValidForEntity`).
+            TeKind::DisplayDoll => t.frame_y == 0 && t.frame_x % 36 == 0,
+            // The kite anchor's `IsTileValidForEntity` is the anchor kind
+            // alone (`TEKiteAnchor.cs:24-30`: `tile.active() && tile.type ==
+            // 723`), which the head check above already settles.
+            TeKind::KiteAnchor => true,
+            // The critter anchor's is the kind 724 alone
+            // (`TECritterAnchor.cs:24-32`), likewise settled above — the
+            // recreation-release behaviour is M7-TE-2.
+            TeKind::CritterAnchor => true,
         }
     }
 
@@ -187,6 +205,11 @@ pub enum TeData {
         on: bool,
         counted: i32,
     },
+    /// `TELeashedEntityAnchorWithItem.itemType`
+    /// (`TELeashedEntityAnchorWithItem.cs:12`): the kite/critter anchor's held
+    /// item type (0 = none). The anchor behaviour halves are M7-TE-2; the
+    /// field rides the `.wld` so a file round-trips byte-exactly.
+    Anchor(i32),
 }
 
 impl TeData {
@@ -220,8 +243,12 @@ impl TeData {
                 w.boolean(*on);
                 w.i32(*counted);
             }
-            // `TileEntity.cs:209-211`: the pylon, the Dead Cells jar and the
-            // anchors carry no extra data.
+            // `TELeashedEntityAnchorWithItem.cs:12-20` writes `short itemType`
+            // (`TEItemFrame`'s item type without the prefix/stack); the port
+            // widens the field to `i32` like the Dummy's NPC slot.
+            TeData::Anchor(item) => w.i16(*item as i16),
+            // `TileEntity.cs:209-211`: the pylon and the Dead Cells jar
+            // carry no extra data.
             TeData::None => {}
         }
     }
@@ -254,10 +281,16 @@ impl TeData {
                 on: r.boolean()?,
                 counted: r.i32()?,
             },
-            // `TileEntity.cs:209-211`: DisplayDoll 3, TeleportationPylon 7,
-            // DeadCellsDisplayJar 8, KiteAnchor 9 and CritterAnchor 10 write
-            // no extra data (`TileEntitiesManager.cs:27-40`'s ids run
-            // 0..=10; `TeKind::from_id` refuses anything past them).
+            // `TELeashedEntityAnchorWithItem.cs:12-20` writes `short itemType`
+            // — the kite (9) and critter (10) anchors carry it; the write arm
+            // in `TeData::write` is the twin of this one.
+            TeKind::KiteAnchor | TeKind::CritterAnchor => {
+                TeData::Anchor(r.i16()? as i32)
+            }
+            // `TileEntity.cs:209-211`: DisplayDoll 3, TeleportationPylon 7 and
+            // DeadCellsDisplayJar 8 write no extra data
+            // (`TileEntitiesManager.cs:27-40`'s ids run 0..=10;
+            // `TeKind::from_id` refuses anything past them).
             _ => TeData::None,
         })
     }
@@ -328,7 +361,9 @@ impl TileEntities {
     }
 
     pub fn get_at(&self, x: i16, y: i16) -> Option<&TileEntity> {
-        self.by_position.get(&(x, y)).map(|&id| &self.by_id[id as usize])
+        self.by_position
+            .get(&(x, y))
+            .map(|&id| &self.by_id[id as usize])
     }
 
     /// The mutable entity at a position (the dummy's npc poke).
@@ -349,6 +384,8 @@ impl TileEntities {
                 on: false,
                 counted: 0,
             },
+            // `TELeashedEntityAnchorWithItem`'s ctor: no item held.
+            TeKind::KiteAnchor | TeKind::CritterAnchor => TeData::Anchor(0),
             _ => TeData::None,
         };
         let id = self.next_id;
@@ -364,18 +401,58 @@ impl TileEntities {
         id
     }
 
+    /// The live entities in `TileEntity.ByID` order — the insertion order of
+    /// the id book, exactly the order `SaveTileEntities:3306-3310`'s
+    /// `foreach (KeyValuePair<int, TileEntity> item in TileEntity.ByID)`
+    /// iterates. An id slot whose position book no longer points at it is a
+    /// tombstone (`remove_at`), which the C# `Remove` also drops from `ByID`;
+    /// the filter is what keeps the two books' membership identical, so the
+    /// writer's count and record set never claim an entity that is not placed.
+    pub fn live_entities(&self) -> impl Iterator<Item = &TileEntity> {
+        self.by_id
+            .iter()
+            .filter(|e| matches!(self.by_position.get(&(e.x, e.y)), Some(&id) if id == e.id))
+    }
 
+    /// `TileEntity.ByID.Count` — the live entities the writer counts.
+    pub fn next_id(&self) -> u32 {
+        self.next_id
+    }
+
+    /// One record landing in the books — `LoadTileEntities:3322-3330`: the
+    /// stored id is discarded, the record takes the next sequential slot, and
+    /// an entity already at the position is removed first
+    /// (`TryGetAt` → `TileEntity.Remove`), which leaves the replaced slot as a
+    /// tombstone so the id book stays dense.
+    pub fn load_entity(&mut self, kind: TeKind, x: i16, y: i16, data: TeData) -> u32 {
+        if self.by_position.contains_key(&(x, y)) {
+            self.remove_at(x, y);
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        self.by_id.push(TileEntity {
+            id,
+            x,
+            y,
+            kind,
+            data,
+        });
+        self.by_position.insert((x, y), id);
+        id
+    }
+
+    /// `TileEntity.OnWorldLoaded` (`TileEntity.cs:333`), walked over the
+    /// survivors in `ByID` order (`LoadTileEntities:3355-3358`). The ported
+    /// kinds have no load hook; the leashed anchors' `FitsItem` re-check
+    /// (`TELeashedEntityAnchorWithItem.cs:38-43`) lands with M7-TE-2, so this
+    /// is the seam that hook takes over — kept explicit so the load path reads
+    /// as the C# does.
+    pub fn on_world_loaded(_world: &mut World) {}
 
     /// `TileEntitiesManager.CheckValidTile` + `Place` (`:51-60`): the
     /// entity's `ValidTile` must pass and the position must be free.
     /// `kind` selects the entity; the returned id is the `ByID` slot.
-    pub fn place(
-        &mut self,
-        world: &World,
-        kind: TeKind,
-        x: i16,
-        y: i16,
-    ) -> Option<u32> {
+    pub fn place(&mut self, world: &World, kind: TeKind, x: i16, y: i16) -> Option<u32> {
         if self.by_position.contains_key(&(x, y)) {
             return None;
         }
@@ -383,9 +460,7 @@ impl TileEntities {
             return None;
         }
         let data = match kind {
-            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter => {
-                TeData::Item(None)
-            }
+            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter => TeData::Item(None),
             TeKind::HatRack => TeData::HatRack([None, None], [None, None]),
             // `TETrainingDummy`'s ctor: `npc = -1`.
             TeKind::TrainingDummy => TeData::Dummy(-1),
@@ -395,6 +470,8 @@ impl TileEntities {
                 on: false,
                 counted: 0,
             },
+            // `TELeashedEntityAnchorWithItem`'s ctor: no item held.
+            TeKind::KiteAnchor | TeKind::CritterAnchor => TeData::Anchor(0),
             _ => TeData::None,
         };
         let id = self.next_id;
@@ -596,9 +673,9 @@ fn sensor_state(
             // player hitboxes.
             let (bx, by) = (x * 16 - 32 - 1, y * 16 - 160 - 1);
             let (bw, bh) = (82, 162);
-            player_boxes
-                .iter()
-                .any(|&(px, py, pw, ph)| bx < px + pw && bx + bw > px && by < py + ph && by + bh > py)
+            player_boxes.iter().any(|&(px, py, pw, ph)| {
+                bx < px + pw && bx + bw > px && by < py + ph && by + bh > py
+            })
         }
         SENSOR_WATER | SENSOR_LAVA | SENSOR_HONEY | SENSOR_LIQUID => {
             let mut flag = false;
@@ -682,7 +759,10 @@ pub fn update_logic_sensors(
             }
         }
         if let Some(e) = world.tile_entities.by_id_mut(id) {
-            if let TeData::Logic { on: o, counted: c, .. } = &mut e.data {
+            if let TeData::Logic {
+                on: o, counted: c, ..
+            } = &mut e.data
+            {
                 *o = state;
                 *c = counted;
             }
@@ -802,11 +882,7 @@ pub fn set_dummy_npc(world: &mut World, x: i16, y: i16, npc: i32) -> bool {
 /// `WriteExtraData`/`ReadExtraData` round-trip for the HatRack payload:
 /// a bitsByte of the four slot-presence flags, then each present slot as the
 /// item triple (`TEHatRack.cs:59-80`).
-pub fn hat_rack_write(
-    items: &[Option<TeItem>; 2],
-    dyes: &[Option<TeItem>; 2],
-    w: &mut Writer,
-) {
+pub fn hat_rack_write(items: &[Option<TeItem>; 2], dyes: &[Option<TeItem>; 2], w: &mut Writer) {
     let mut bits = 0u8;
     for (bit, item) in items.iter().chain(dyes.iter()).enumerate() {
         if item.is_some() {
@@ -836,7 +912,7 @@ pub fn hat_rack_read(r: &mut Reader<'_>) -> Option<([Option<TeItem>; 2], [Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, Tile};
+    use crate::tile::{Tile, FLAG_ACTIVE};
 
     fn world_with_frame() -> World {
         let mut w = World::new("t".into(), 32, 32);
@@ -875,9 +951,11 @@ mod tests {
     fn item_frame_validity_checks_the_frames() {
         let mut w = world_with_frame();
         let tes = TileEntities::default();
-        assert!(TeKind::ItemFrame.is_tile_valid(&w, 10, 10) || {
-            TeKind::ItemFrame.is_tile_valid(&w, 10, 10)
-        });
+        assert!(
+            TeKind::ItemFrame.is_tile_valid(&w, 10, 10) || {
+                TeKind::ItemFrame.is_tile_valid(&w, 10, 10)
+            }
+        );
         // frameX 36 (the second frame column) is valid too.
         w.tile_mut(10, 10).unwrap().frame_x = 36;
         assert!(TeKind::ItemFrame.is_tile_valid(&w, 10, 10));
@@ -888,6 +966,62 @@ mod tests {
         // frameY 18 → invalid.
         w.tile_mut(10, 10).unwrap().frame_y = 18;
         assert!(!TeKind::ItemFrame.is_tile_valid(&w, 10, 10));
+    }
+
+    /// A world whose anchor cell (10,10) holds `kind` at the given frames.
+    fn world_with_anchor(kind: u16, frame_x: i16, frame_y: i16) -> World {
+        let mut w = World::new("t".into(), 32, 32);
+        let i = w.index(10, 10);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    #[test]
+    fn the_critter_anchor_requires_the_lady_bug_tile() {
+        // F1 (Phase-5 review N1): `TECritterAnchor.IsTileValidForEntity`
+        // (`TECritterAnchor.cs:24-32`) returns `tile.type == 724` — an
+        // anchor on any other active tile is dropped by
+        // `LoadTileEntities`'s removal pass, so it must not survive here.
+        let on_anchor = world_with_anchor(724, 0, 0);
+        assert!(TeKind::CritterAnchor.is_tile_valid(&on_anchor, 10, 10));
+        let on_dirt = world_with_anchor(0, 0, 0);
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&on_dirt, 10, 10));
+        let on_item_frame = world_with_anchor(395, 0, 0);
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&on_item_frame, 10, 10));
+        // The kind alone decides — frames are not part of the check.
+        let off_frame = world_with_anchor(724, 18, 18);
+        assert!(TeKind::CritterAnchor.is_tile_valid(&off_frame, 10, 10));
+        // An inactive cell has no anchor (`tile.active()`'s head check).
+        let mut cleared = world_with_anchor(724, 0, 0);
+        cleared.tile_mut(10, 10).unwrap().flags &= !FLAG_ACTIVE;
+        assert!(!TeKind::CritterAnchor.is_tile_valid(&cleared, 10, 10));
+        // The tile id the port now reports is the C# anchor tile.
+        assert_eq!(TeKind::CritterAnchor.tile(), 724);
+        // The kite anchor keeps its own kind (723) and is likewise kind-only.
+        let on_kite = world_with_anchor(723, 18, 0);
+        assert!(TeKind::KiteAnchor.is_tile_valid(&on_kite, 10, 10));
+        assert!(!TeKind::KiteAnchor.is_tile_valid(&on_kite, 11, 10));
+    }
+
+    #[test]
+    fn the_display_doll_validity_checks_the_frames() {
+        // The same check the load path runs, asserted directly: the doll
+        // needs the 470 anchor at frameY 0 / frameX % 36 == 0
+        // (`TEDisplayDoll.cs:851-858`).
+        let mut w = world_with_anchor(470, 0, 0);
+        assert!(TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_x = 18;
+        assert!(!TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_x = 36;
+        assert!(TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
+        w.tile_mut(10, 10).unwrap().frame_y = 36;
+        assert!(!TeKind::DisplayDoll.is_tile_valid(&w, 10, 10));
     }
 
     #[test]
@@ -903,10 +1037,24 @@ mod tests {
         // The invalid frame is rejected (ValidTile).
         assert!(tes.place(&w, TeKind::ItemFrame, 12, 12).is_none());
         // Removal returns the payload and clears both books.
-        assert!(tes.set_item(id, Some(TeItem { kind: 50, prefix: 0, stack: 1 })));
+        assert!(tes.set_item(
+            id,
+            Some(TeItem {
+                kind: 50,
+                prefix: 0,
+                stack: 1
+            })
+        ));
         let (kind, data) = tes.remove_at(10, 10).unwrap();
         assert_eq!(kind, TeKind::ItemFrame);
-        assert_eq!(data, TeData::Item(Some(TeItem { kind: 50, prefix: 0, stack: 1 })));
+        assert_eq!(
+            data,
+            TeData::Item(Some(TeItem {
+                kind: 50,
+                prefix: 0,
+                stack: 1
+            }))
+        );
         assert!(tes.get_at(10, 10).is_none());
     }
 
@@ -954,10 +1102,21 @@ mod tests {
     #[test]
     fn the_hat_rack_presence_bits_round_trip() {
         let items = [
-            Some(TeItem { kind: 100, prefix: 1, stack: 1 }),
+            Some(TeItem {
+                kind: 100,
+                prefix: 1,
+                stack: 1,
+            }),
             None,
         ];
-        let dyes = [None, Some(TeItem { kind: 3454, prefix: 0, stack: 1 })];
+        let dyes = [
+            None,
+            Some(TeItem {
+                kind: 3454,
+                prefix: 0,
+                stack: 1,
+            }),
+        ];
         let mut w = Writer::new();
         hat_rack_write(&items, &dyes, &mut w);
         let buf = w.into_inner();
@@ -1268,7 +1427,7 @@ mod behaviour_tests {
     //! (`TETrainingDummy.cs`) — the M7-TE-2 halves.
 
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, FLAG_LIQUID_LAVA, Tile};
+    use crate::tile::{Tile, FLAG_ACTIVE, FLAG_LIQUID_LAVA};
     use crate::wiring::WireColor;
 
     fn world_with_sensor(check: u8) -> World {
@@ -1351,7 +1510,11 @@ mod behaviour_tests {
         assert_eq!(w.tile(10, 22).unwrap().kind, 422, "no trip happened");
         // The dawn trips the wire: the lamp flips.
         update_logic_sensors(&mut w, &mut wiring, true, &[]);
-        assert_eq!(w.tile(10, 22).unwrap().kind, 421, "the dawn tripped the wire");
+        assert_eq!(
+            w.tile(10, 22).unwrap().kind,
+            421,
+            "the dawn tripped the wire"
+        );
     }
 
     #[test]
@@ -1446,7 +1609,8 @@ mod behaviour_tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
-        w.tile_entities.place_unchecked(TeKind::TrainingDummy, 20, 30);
+        w.tile_entities
+            .place_unchecked(TeKind::TrainingDummy, 20, 30);
         // No player nearby: no spawn.
         let spawns = update_training_dummies(&mut w, &[], |_| false);
         assert!(spawns.is_empty());
@@ -1464,5 +1628,136 @@ mod behaviour_tests {
             w.tile_entities.get_at(20, 30).unwrap().data,
             TeData::Dummy(-1)
         ));
+    }
+}
+
+#[cfg(test)]
+mod save_load_tests {
+    //! The `.wld` book helpers (`TileEntities::live_entities`/`load_entity`/
+    //! `next_id`/`on_world_loaded`) — the halves `SaveTileEntities:3306-3310`
+    //! and `LoadTileEntities:3316-3358` stand on. The entity-level wire format
+    //! itself is tested in `crate::wld::sections::tile_entities`.
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    /// A world with an item frame tile (395) at (10, 10) and a hat rack tile
+    /// (475) at (5, 5), both on anchor frames.
+    fn two_anchors() -> World {
+        let mut w = World::new("t".into(), 32, 32);
+        for (x, y, kind, frame_x) in [(10, 10, 395, 0), (5, 5, 475, 0)] {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile {
+                kind,
+                frame_x,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w
+    }
+
+    #[test]
+    fn the_live_entities_walk_the_id_book_and_skip_tombstones() {
+        // `remove_at` leaves the id book's slot behind (`TileEntity.Remove`
+        // drops it from both C# dictionaries), so the save-side iterator is the
+        // place the two books' membership is reconciled.
+        let mut books = TileEntities::default();
+        books.place_unchecked(TeKind::ItemFrame, 10, 10);
+        books.place_unchecked(TeKind::HatRack, 5, 5);
+        books.place_unchecked(TeKind::FoodPlatter, 20, 20);
+        let ids: Vec<u32> = books.live_entities().map(|e| e.id).collect();
+        assert_eq!(ids, vec![0, 1, 2], "the id book is walked in order");
+        assert_eq!(books.live_entities().count(), 3);
+
+        books.remove_at(5, 5);
+        let ids: Vec<u32> = books.live_entities().map(|e| e.id).collect();
+        assert_eq!(ids, vec![0, 2], "the tombstoned slot drops out");
+        assert_eq!(books.next_id(), 3, "the counter keeps its place");
+    }
+
+    #[test]
+    fn load_entity_replaces_a_same_position_record() {
+        // `LoadTileEntities:3326-3328`: the record lands in the next slot and
+        // an entity already at the position is removed first.
+        let world = two_anchors();
+        let mut books = TileEntities::default();
+        let first = books.load_entity(
+            TeKind::ItemFrame,
+            10,
+            10,
+            TeData::Item(Some(TeItem {
+                kind: 75,
+                prefix: 0,
+                stack: 1,
+            })),
+        );
+        let second = books.load_entity(
+            TeKind::ItemFrame,
+            10,
+            10,
+            TeData::Item(Some(TeItem {
+                kind: 200,
+                prefix: 3,
+                stack: 4,
+            })),
+        );
+        assert_eq!((first, second), (0, 1), "the slots are sequential");
+        assert_eq!(books.live_entities().count(), 1, "one entity per position");
+        assert_eq!(books.next_id(), 2, "both records consumed a slot");
+        let kept = books.get_at(10, 10).expect("kept");
+        assert_eq!(
+            kept.data,
+            TeData::Item(Some(TeItem {
+                kind: 200,
+                prefix: 3,
+                stack: 4
+            })),
+            "the later record wins"
+        );
+        // The validity check is the caller's pass, not `load_entity`'s.
+        assert!(TeKind::ItemFrame.is_tile_valid(&world, 10, 10));
+    }
+
+    #[test]
+    fn the_id_book_is_dense_across_a_load_sequence() {
+        // `tileEntity.ID = num2++` (`LoadTileEntities:3323-3324`): every record
+        // read takes a slot, so the ids are 0..count-1 even when a later one
+        // replaces an earlier position.
+        let mut books = TileEntities::default();
+        for (kind, x, y) in [
+            (TeKind::ItemFrame, 10, 10),
+            (TeKind::HatRack, 5, 5),
+            (TeKind::ItemFrame, 10, 10),
+            (TeKind::HatRack, 5, 5),
+        ] {
+            books.load_entity(kind, x, y, TeData::None);
+        }
+        assert_eq!(books.next_id(), 4, "the counter ends at the record count");
+        assert_eq!(
+            books.live_entities().map(|e| e.id).collect::<Vec<_>>(),
+            vec![2, 3],
+            "only the two surviving records are live"
+        );
+    }
+
+    #[test]
+    fn the_world_loaded_hook_leaves_the_books_alone() {
+        // `LoadTileEntities:3355-3358` walks `OnWorldLoaded` over the
+        // survivors. The ported kinds have no load hook (the leashed anchors'
+        // `FitsItem` re-check is M7-TE-2), so the walk is a seam: it must not
+        // disturb the books it walks.
+        let mut world = two_anchors();
+        let mut books = TileEntities::default();
+        books.load_entity(TeKind::ItemFrame, 10, 10, TeData::Item(None));
+        let before = books.clone();
+        TileEntities::on_world_loaded(&mut world);
+        assert_eq!(
+            books.live_entities().count(),
+            before.live_entities().count()
+        );
+        for (after, want) in books.live_entities().zip(before.live_entities()) {
+            assert_eq!(after, want);
+        }
     }
 }

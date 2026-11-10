@@ -1436,6 +1436,35 @@ NpcKind::SolarSelenian => 140,
         }
     }
 
+    /// `NPC.townNPC` — the types `SetDefaults` marks as town NPCs
+    /// (`NPC.cs:8979-11943`, the `this.townNPC = true` arms: 17/18/19/20/22/
+    /// 38/54/107/227/228 here, and 37/368/441/… with no ported kind). The
+    /// world-file section filters on it (`SaveNPCs:1717`, `FixAgainstExploits:
+    /// 1881`), and `town::quick_find_home`'s evaluation is the same set.
+    pub fn is_town_npc(self) -> bool {
+        matches!(
+            self,
+            NpcKind::Merchant
+                | NpcKind::Nurse
+                | NpcKind::ArmsDealer
+                | NpcKind::Dryad
+                | NpcKind::Guide
+                | NpcKind::Demolitionist
+                | NpcKind::Clothier
+                | NpcKind::GoblinTinkerer
+                | NpcKind::Painter
+                | NpcKind::WitchDoctor
+        )
+    }
+
+    /// `NPC.netID` as the `.wld` section writes it (`SaveNPCs:1718`): the
+    /// vanilla id, which `crate::bestiary::ENTRIES` carries per kind.
+    /// **Not** [`NpcKind::to_u16`] — that is the port's internal protocol id
+    /// space; the wire needs the real one.
+    pub fn net_id(self) -> i32 {
+        crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
+    }
+
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
     /// and Wandering Eye 30x32 (`NPC.cs` cases 2/133), zombie 18x40.
     pub fn size(self) -> (f32, f32) {
@@ -2402,11 +2431,17 @@ pub struct Npc {
     /// world-file persistence lands with M6-SAVE-1's NPC sections
     /// (M6-SAVE-1e).
     pub home: Option<(i32, i32)>,
-    /// `NPC.GivenName` (`NPC.cs:6497`): the town NPC's display name —
-    /// empty carries the kind's static name, exactly the vanilla's
-    /// "give it a name at the first world-file save" convention. The
-    /// world-file persistence rides M6-SAVE-1's NPC section.
+    /// `NPC.GivenName` (`NPC.cs:6497`, `SaveNPCs:1719`): the town NPC's
+    /// display name — empty carries the kind's static name, exactly the
+    /// vanilla's "give it a name at the first world-file save" convention.
     pub given_name: String,
+    /// `NPC.townNpcVariationIndex` (`SaveNPCs:1731`): the selected variation
+    /// of the town NPC's looks — 0 the default, 1 the shimmer variant
+    /// (`NPC.cs:80850`), rolled from the profile otherwise.
+    pub variation_index: i32,
+    /// `NPC.homelessDespawn` (`LoadNPCs:2917-2920`, `SaveNPCs:1734`): a
+    /// homeless town NPC this far from any room is on the despawn path.
+    pub homeless_despawn: bool,
     /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
     /// 100/200/300 shot triggers, the 650 teleport threshold).
     pub caster_counter: i32,
@@ -2965,6 +3000,8 @@ impl Npc {
             wants_minion: false,
             wants_minion_batch: 0,
             home: None,
+            variation_index: 0,
+            homeless_despawn: false,
             caster_counter: 0,
             cast_windup: 0,
             wants_sphere: Vec::new(),
@@ -12322,6 +12359,134 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
 
 }
 
+// --- The world-file section 6 (pointer 5): `SaveNPCs:1703` / `LoadNPCs:2884`
+//
+// The codec that produces/consumes [`WldNpcs`] is `tr_core::wld::sections::npcs`;
+// this half turns the town records into live `Npc`s (and back), which is where
+// the vanilla net-id resolution and the record-discarding live — the plain
+// wire structs carry no bestiary table.
+
+/// `NPC.SetDefaults(int netID)`'s resolution of a modern record
+/// (`LoadNPCs:2896`): the vanilla net id maps to the kind through the same
+/// table the bestiary credits from. `None` for an id the port does not model.
+pub fn kind_from_net_id(net_id: i32) -> Option<(NpcKind, SlimeVariant)> {
+    crate::bestiary::ENTRIES
+        .iter()
+        .find(|e| e.net_id == net_id)
+        .map(|e| (e.kind, e.variant.unwrap_or(SlimeVariant::Blue)))
+}
+
+/// `NPCID.FromLegacyName` (`LoadNPCs:2900`) narrowed to the port's family: the
+/// legacy name is the English base name (`NPCID.cs:12085+`'s
+/// `LegacyNameToIdMap`), which the port's bestiary rows already carry. The
+/// "Little/Big <name>" sub-variant names and the unported NPCs map to nothing
+/// here — those records are parsed and discarded (recorded deviation).
+pub fn kind_from_legacy_name(name: &str) -> Option<(NpcKind, SlimeVariant)> {
+    crate::bestiary::ENTRIES
+        .iter()
+        .find(|e| e.name == name)
+        .map(|e| (e.kind, e.variant.unwrap_or(SlimeVariant::Blue)))
+}
+
+/// The record's kind: the modern net id, or the legacy name's.
+fn record_kind(record: &tr_core::wld::sections::WldTownNpc) -> Option<(NpcKind, SlimeVariant)> {
+    match &record.legacy_name {
+        Some(name) => kind_from_legacy_name(name),
+        None => kind_from_net_id(record.net_id),
+    }
+}
+
+/// `LoadNPCs:2894-2922`: one live `Npc` per town record, in file order
+/// (`Main.npc[num2++]`). The `SavesAndLoads` tower records that share the slot
+/// cursor are discarded — no ported kind is a lunar tower (DW-4.4's recorded
+/// deviation). The world-dependent `FixAgainstExploits` re-validation runs
+/// after the town rooms are loaded — `town::fix_town_npc_homes`.
+///
+/// A record whose net id (or legacy name) has no ported `NpcKind` is parsed
+/// and discarded rather than guessed at: the codec has already consumed its
+/// bytes, so the stream stays in step and the rest of the file loads.
+pub fn from_wld(section: &tr_core::wld::sections::WldNpcs) -> Vec<Npc> {
+    let mut npcs = Vec::new();
+    for record in &section.town {
+        let Some((kind, slime)) = record_kind(record) else {
+            continue;
+        };
+        // `SetDefaults` resets the whole NPC; the port's ctor is the same
+        // shell (`NPC.cs:8513`'s `active = true` is what the list's leading
+        // bool already says).
+        let mut npc = Npc::new(kind, record.x, record.y, 1, 0.0);
+        npc.slime = slime;
+        npc.given_name = record.given_name.clone();
+        npc.variation_index = record.variation_index;
+        npc.homeless_despawn = record.homeless_despawn;
+        // `homeTileX/homeTileY + homeless`: the port models the pair as one
+        // `Option` (a homeless NPC keeps no home — `happiness.rs:228` and
+        // `world_sim/npcs.rs:1287` read it that way), so a homeless record's
+        // stale coordinates are not carried into live state.
+        npc.home = if record.homeless {
+            None
+        } else {
+            Some((record.home_x, record.home_y))
+        };
+        npcs.push(npc);
+    }
+    for tower in &section.towers {
+        // `LoadNPCs:2921-2954`'s second list: the `SavesAndLoads` passives
+        // land in the same `Main.npc` slots in file order. The lunar-tower
+        // kinds (422/507/493/517) are ported on this branch (M4-NPC), so the
+        // record instantiates a live NPC rather than being discarded.
+        let Some((kind, slime)) = kind_from_net_id(tower.net_id) else {
+            continue;
+        };
+        let mut tower_npc = Npc::new(kind, tower.x, tower.y, 1, 0.0);
+        tower_npc.slime = slime;
+        npcs.push(tower_npc);
+    }
+    npcs
+}
+
+/// `SaveNPCs:1714-1748` over the live NPCs: the town records in `Main.npc`
+/// order (the `active && townNPC && type != 368` filter, of which the
+/// `TravellingMerchant` arm has no ported kind), then the `SavesAndLoads`
+/// towers. `SectionData::npcs` is the plan's save shape; callers run any
+/// pre-pass first (the section has none at NPC level).
+pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
+    let mut out = tr_core::wld::sections::WldNpcs::default();
+    for npc in npcs {
+        let net_id = npc.kind.net_id();
+        if npc.kind.is_town_npc() {
+            // `SaveNPCs:1727`'s bit 0 is `townNPC`, which is what the filter
+            // above has already established — always set on the write side.
+            let (home_x, home_y) = npc.home.unwrap_or((0, 0));
+            out.town.push(tr_core::wld::sections::WldTownNpc {
+                net_id,
+                legacy_name: None,
+                given_name: npc.given_name.clone(),
+                x: npc.x,
+                y: npc.y,
+                homeless: npc.home.is_none(),
+                home_x,
+                home_y,
+                town_npc: true,
+                variation_index: npc.variation_index,
+                homeless_despawn: npc.homeless_despawn,
+            });
+        } else if tr_core::wld::sections::npcs::SAVES_AND_LOADS.contains(&net_id) {
+            // `SaveNPCs:1738-1747`: the `SavesAndLoads` passives — the
+            // lunar towers 422/507/493/517 (`NPCID.cs:10449`), whose kinds
+            // this branch ports (M4-NPC), so the arm is live and the towers
+            // round-trip through the live state (DW-4.4).
+            out.towers.push(tr_core::wld::sections::WldTower {
+                net_id,
+                legacy_name: None,
+                x: npc.x,
+                y: npc.y,
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -15731,6 +15896,351 @@ mod tests {
         a2.update_archer(&w, &mut player, &mut rng);
         assert_eq!(a2.ai[2], 0.0, "the hit staggers");
         assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
+    }
+
+    // --- the world-file section 6 glue (`SaveNPCs:1703`/`LoadNPCs:2884`) ----
+
+    /// The section glue tests: the records, the kind resolution and the
+    /// round-trip between live state and the plain wire structs.
+    mod wld_tests {
+        use crate::npc::{
+            from_wld, kind_from_legacy_name, kind_from_net_id, to_wld, Npc, NpcKind,
+        };
+        use tr_core::wld::sections::npcs::SAVES_AND_LOADS;
+        use tr_core::wld::sections::{SectionData, WldNpcs, WldTower, WldTownNpc};
+
+        /// A modern town record at the writer's own defaults.
+        fn record(net_id: i32, home: Option<(i32, i32)>) -> WldTownNpc {
+            WldTownNpc {
+                net_id,
+                given_name: "Test".into(),
+                x: 100.0,
+                y: 200.0,
+                homeless: home.is_none(),
+                home_x: home.map_or(0, |h| h.0),
+                home_y: home.map_or(0, |h| h.1),
+                town_npc: true,
+                variation_index: 2,
+                homeless_despawn: false,
+                ..Default::default()
+            }
+        }
+
+        fn live_npc(kind: NpcKind, home: Option<(i32, i32)>) -> Npc {
+            let mut npc = Npc::new(kind, 100.0, 200.0, 1, 0.0);
+            npc.home = home;
+            npc.given_name = "Test".into();
+            npc.variation_index = 2;
+            npc
+        }
+
+        fn section_data(npcs: WldNpcs) -> SectionData {
+            SectionData {
+                npcs,
+                ..Default::default()
+            }
+        }
+
+        #[test]
+        fn test_DW_4_1_from_wld_to_wld_round_trips_the_town_records() {
+            // `LoadNPCs:2896-2921` into live state, then `SaveNPCs:1714-1735`
+            // back out: names, homes, homeless, variation and the despawn flag
+            // all survive the round-trip.
+            let section = WldNpcs {
+                town: vec![
+                    record(17, Some((65, 105))), // the Merchant, homed
+                    record(22, None),             // the Guide, homeless
+                    record(228, Some((61, 101))), // the Witch Doctor
+                ],
+                towers: vec![WldTower {
+                    net_id: 507,
+                    ..Default::default()
+                }],
+                shimmered: vec![17, 22],
+            };
+            let npcs = from_wld(&section);
+            assert_eq!(npcs.len(), 4, "one live NPC per town record plus the tower");
+            assert_eq!(npcs[3].kind, NpcKind::NebulaTower, "the tower record instantiates");
+            assert_eq!(npcs[0].kind, NpcKind::Merchant);
+            assert_eq!(npcs[0].home, Some((65, 105)));
+            assert_eq!(npcs[1].home, None, "homeless");
+            assert_eq!(npcs[2].kind, NpcKind::WitchDoctor);
+            assert_eq!(npcs[0].given_name, "Test");
+            assert_eq!(npcs[0].variation_index, 2);
+
+            let written = to_wld(&npcs);
+            assert_eq!(written.town.len(), 3);
+            for (before, after) in section.town.iter().zip(&written.town) {
+                assert_eq!(before.net_id, after.net_id);
+                assert_eq!(before.given_name, after.given_name);
+                assert_eq!((before.x, before.y), (after.x, after.y));
+                assert_eq!(before.homeless, after.homeless);
+                assert_eq!((before.home_x, before.home_y), (after.home_x, after.home_y));
+                assert_eq!(before.variation_index, after.variation_index);
+                assert_eq!(before.homeless_despawn, after.homeless_despawn);
+                assert!(after.town_npc, "bit 0 is set on the write side");
+            }
+        }
+
+        #[test]
+        fn test_DW_4_4_no_ported_kind_saves_and_loads() {
+            // The section's three-list shape: the app side writes the town
+            // records and the `SavesAndLoads` passives — the lunar towers
+            // (`SaveNPCs:1738`'s set = 422/507/493/517, `NPCID.cs:10449`),
+            // whose kinds this branch ports (M4-NPC), so a vanilla file's
+            // towers instantiate live NPCs rather than being discarded.
+            for net_id in SAVES_AND_LOADS {
+                assert!(
+                    kind_from_net_id(net_id).is_some(),
+                    "the ported tower kind resolves for {net_id}"
+                );
+            }
+            let towers: Vec<WldTower> = SAVES_AND_LOADS
+                .iter()
+                .map(|&net_id| WldTower {
+                    net_id,
+                    ..Default::default()
+                })
+                .collect();
+            let npcs = from_wld(&WldNpcs {
+                towers,
+                ..Default::default()
+            });
+            assert_eq!(npcs.len(), 4, "the tower records instantiate live NPCs");
+            // And the writer never invents one from live state.
+            let zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+            assert!(to_wld(&[zombie]).towers.is_empty());
+            assert!(to_wld(&[Npc::new(NpcKind::Merchant, 0.0, 0.0, 1, 0.0)]).towers.is_empty());
+        }
+
+        #[test]
+        fn test_DW_4_4_a_record_without_a_kind_is_discarded() {
+            // A record whose net id has no ported kind is parsed and skipped:
+            // the codec has consumed its bytes, so the neighbours survive.
+            let section = WldNpcs {
+                town: vec![record(9_999_999, Some((10, 10))), record(17, None)],
+                ..Default::default()
+            };
+            let npcs = from_wld(&section);
+            assert_eq!(npcs.len(), 1, "the unmapped record is discarded");
+            assert_eq!(npcs[0].kind, NpcKind::Merchant);
+            // The same section round-trips through the codec, so the cursor
+            // never desynchronised: both records are read back.
+            let mut w = tr_core::binio::Writer::new();
+            tr_core::wld::sections::npcs::write(&mut w, &section_data(section), 326);
+            let bytes = w.into_inner();
+            let mut r = tr_core::binio::Reader::new(&bytes);
+            let read_back = tr_core::wld::sections::npcs::read(&mut r, 326).expect("reads");
+            assert_eq!(read_back.town.len(), 2);
+            assert_eq!(read_back.town[0].net_id, 9_999_999);
+            assert_eq!(r.pos(), bytes.len());
+        }
+
+        #[test]
+        fn test_DW_4_2_the_legacy_name_resolves_to_a_kind() {
+            // `LoadNPCs:2900` below 190: the name is the wire id, and the
+            // port's family resolves through the bestiary rows' English names.
+            assert_eq!(
+                kind_from_legacy_name("Arms Dealer").map(|(k, _)| k),
+                Some(NpcKind::ArmsDealer)
+            );
+            assert_eq!(
+                kind_from_legacy_name("Merchant").map(|(k, _)| k),
+                Some(NpcKind::Merchant)
+            );
+            assert_eq!(
+                kind_from_legacy_name("Clothier").map(|(k, _)| k),
+                Some(NpcKind::Clothier)
+            );
+            assert_eq!(
+                kind_from_legacy_name("Witch Doctor").map(|(k, _)| k),
+                Some(NpcKind::WitchDoctor)
+            );
+            assert_eq!(
+                kind_from_legacy_name("Zombie").map(|(k, _)| k),
+                Some(NpcKind::Zombie)
+            );
+            // The slime variants carry their own negative names.
+            assert_eq!(
+                kind_from_legacy_name("Green Slime").map(|(_, v)| v),
+                Some(crate::npc::SlimeVariant::Green)
+            );
+            assert_eq!(
+                kind_from_legacy_name("Pinky").map(|(_, v)| v),
+                Some(crate::npc::SlimeVariant::Pinky)
+            );
+            // A "Little/Big X" sub-variant, an unported NPC or an empty name
+            // maps to nothing: the record is parsed and discarded (recorded
+            // deviation). (The Party Girl used to sit here until M4-TOWN
+            // ported her; the town kinds keep growing.)
+            assert!(kind_from_legacy_name("Big Zombie").is_none());
+            assert!(kind_from_legacy_name("Party Girl").is_some());
+            assert!(kind_from_legacy_name("").is_none());
+            // And the legacy record lands as that kind through `from_wld`.
+            let npcs = from_wld(&WldNpcs {
+                town: vec![WldTownNpc {
+                    legacy_name: Some("Arms Dealer".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+            assert_eq!(npcs.len(), 1);
+            assert_eq!(npcs[0].kind, NpcKind::ArmsDealer);
+        }
+
+        #[test]
+        fn the_net_ids_are_the_vanilla_ones() {
+            // The wire is `NPC.netID` (`SaveNPCs:1718`), NOT the port's
+            // internal `to_u16` id space: every town NPC's real id.
+            for (kind, net_id) in [
+                (NpcKind::Guide, 22),
+                (NpcKind::Merchant, 17),
+                (NpcKind::Nurse, 18),
+                (NpcKind::ArmsDealer, 19),
+                (NpcKind::Dryad, 20),
+                (NpcKind::Demolitionist, 38),
+                (NpcKind::Clothier, 54),
+                (NpcKind::GoblinTinkerer, 107),
+                (NpcKind::Painter, 227),
+                (NpcKind::WitchDoctor, 228),
+            ] {
+                assert_eq!(kind.net_id(), net_id, "{kind:?}");
+                assert_eq!(kind_from_net_id(net_id).map(|(k, _)| k), Some(kind));
+            }
+            // The hostile kinds resolve too (they are ported, just not town).
+            assert_eq!(NpcKind::Zombie.net_id(), 3);
+            assert_eq!(kind_from_net_id(3).map(|(k, _)| k), Some(NpcKind::Zombie));
+            // The slime variants ride their negative net ids.
+            assert_eq!(
+                kind_from_net_id(crate::loot_db::GREEN_SLIME).map(|(_, v)| v),
+                Some(crate::npc::SlimeVariant::Green)
+            );
+            assert!(kind_from_net_id(0).is_none(), "net id 0 is not a ported kind");
+        }
+
+        #[test]
+        fn the_town_set_matches_the_source() {
+            // `NPC.SetDefaults`'s `townNPC = true` arms (`NPC.cs:8979-11943`),
+            // restricted to the ported family.
+            for kind in [
+                NpcKind::Guide,
+                NpcKind::Merchant,
+                NpcKind::Nurse,
+                NpcKind::ArmsDealer,
+                NpcKind::Dryad,
+                NpcKind::Demolitionist,
+                NpcKind::Clothier,
+                NpcKind::GoblinTinkerer,
+                NpcKind::Painter,
+                NpcKind::WitchDoctor,
+            ] {
+                assert!(kind.is_town_npc(), "{kind:?} is a town NPC");
+                let loaded = from_wld(&WldNpcs {
+                    town: vec![record(kind.net_id(), None)],
+                    ..Default::default()
+                });
+                assert_eq!(loaded.len(), 1, "{kind:?} instantiates");
+            }
+            // Not town NPCs (the bound goblin is the 63 case the C# leaves out).
+            for kind in [NpcKind::Slime, NpcKind::Zombie, NpcKind::BoundGoblin] {
+                assert!(!kind.is_town_npc(), "{kind:?} is not a town NPC");
+            }
+        }
+
+        #[test]
+        fn to_wld_filters_to_town_npcs_and_keeps_order() {
+            // `SaveNPCs`'s filters over `Main.npc` order: the town NPCs in
+            // live order, the wandering hostiles are not persisted at all.
+            let npcs = vec![
+                live_npc(NpcKind::Merchant, Some((65, 105))),
+                Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0),
+                live_npc(NpcKind::Guide, None),
+            ];
+            let written = to_wld(&npcs);
+            assert_eq!(written.town.len(), 2);
+            assert_eq!(written.town[0].net_id, 17, "file order = live order");
+            assert_eq!(written.town[1].net_id, 22);
+            assert_eq!(written.town[0].home_x, 65);
+            assert_eq!(written.town[0].given_name, "Test");
+        }
+
+        #[test]
+        fn a_homeless_npc_writes_no_home() {
+            // `homeless = true` with the zeroed home pair
+            // (`SaveNPCs:1724-1726`): the port keeps no home for a homeless
+            // NPC, so nothing stale is written back.
+            let written = to_wld(&[live_npc(NpcKind::Nurse, None)]);
+            let npc = &written.town[0];
+            assert!(npc.homeless);
+            assert_eq!((npc.home_x, npc.home_y), (0, 0));
+        }
+
+        #[test]
+        fn a_homeless_record_with_a_stale_home_keeps_its_bytes() {
+            // The C# file can carry `homeless = true` next to a (now stale)
+            // home pair — `FixAgainstExploits` leaves both alone. The codec
+            // round-trips the raw pair; the glue keeps only the flag, because
+            // the port models homeless as "no home" (`happiness.rs:228`).
+            let stale = WldNpcs {
+                town: vec![WldTownNpc {
+                    homeless: true,
+                    home_x: 65,
+                    home_y: 105,
+                    ..record(22, None)
+                }],
+                ..Default::default()
+            };
+            let npcs = from_wld(&stale);
+            assert_eq!(npcs[0].home, None, "the stale pair is not carried");
+            // Byte-exact through the codec (`SaveNPCs:1724-1726`'s raw write).
+            let mut w = tr_core::binio::Writer::new();
+            tr_core::wld::sections::npcs::write(&mut w, &section_data(stale), 326);
+            let bytes = w.into_inner();
+            let mut r = tr_core::binio::Reader::new(&bytes);
+            let back = tr_core::wld::sections::npcs::read(&mut r, 326).expect("reads");
+            let rec = &back.town[0];
+            assert!(rec.homeless);
+            assert_eq!((rec.home_x, rec.home_y), (65, 105));
+        }
+
+        #[test]
+        fn an_unnamed_npc_writes_an_empty_given_name() {
+            // The wire's `GivenName` is never null (`SaveNPCs:1719`).
+            let mut npc = live_npc(NpcKind::Dryad, Some((10, 10)));
+            npc.given_name = String::new();
+            assert_eq!(to_wld(&[npc]).town[0].given_name, "");
+        }
+
+        #[test]
+        fn the_homeless_and_despawn_flags_survive() {
+            // `homelessDespawn` rides its own field (`SaveNPCs:1734`) and does
+            // not affect homelessness.
+            let mut npc = live_npc(NpcKind::GoblinTinkerer, None);
+            npc.homeless_despawn = true;
+            let written = to_wld(&[npc]);
+            assert!(written.town[0].homeless && written.town[0].homeless_despawn);
+        }
+
+        /// The house rule's citation probe for the glue half.
+        #[test]
+        fn test_DW_4_5_the_citations_are_present() {
+            let here = include_str!("npc.rs");
+            for anchor in [
+                "SaveNPCs:1714-1748` over the live NPCs",
+                "`NPC.cs:8979-11943`, the `this.townNPC = true` arms",
+                "`SaveNPCs:1731`): the selected variation",
+                "`LoadNPCs:2896`): the vanilla net id maps to the kind",
+                "`SaveNPCs:1737`, no ported kind is a lunar tower",
+            ] {
+                assert!(here.contains(anchor), "missing {anchor}");
+            }
+            // The codec it glues, and the re-validation's owner.
+            let codec = include_str!("../../tr-core/src/wld/sections/npcs.rs");
+            assert!(codec.contains("WorldFile.SaveNPCs:1703"), "codec write anchor");
+            assert!(codec.contains("WorldFile.LoadNPCs:2884"), "codec read anchor");
+            let town = include_str!("town.rs");
+            assert!(town.contains("WorldFile.FixAgainstExploits:1864"), "re-validation anchor");
+        }
     }
     // ───────────────────────────────────────────────────────────────
     // The martians' display (`NPC.cs:71578-71921`): M4-NPC-3i ports the

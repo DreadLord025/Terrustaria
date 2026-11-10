@@ -90,8 +90,14 @@ pub(crate) struct PanelState<'a> {
     /// port's shape: the chest-rename keyboard session is open).
     pub(crate) editing: bool,
     /// `Main.chest[chest].name` while a world chest is open (`ChestUI.cs:
-    /// 115-122`) — the rename store (`App.chest_names`), "" until renamed.
+    /// 115-122`) — the `WorldChest` entity's own name (the M6-SAVE-1 phase-3
+    /// fold retired the `App.chest_names` side map), "" until renamed. A
+    /// `.wld` load restores it from the file.
     pub(crate) name: &'a str,
+    /// `Main.chest[chest].maxItems` (`Chest.cs:78`) — the per-chest slot count
+    /// the grid window and the scroll clamp measure (`ChestUI.cs:376-377`):
+    /// the file's own value for a loaded chest, the default 40 otherwise.
+    pub(crate) max_items: u32,
     /// `Main.npcChatText` while the editor is live (`ChestUI.cs:113` — the
     /// keyboard's live text, `UIVirtualKeyboard.cs:1061-1067`'s sync).
     pub(crate) edit_text: &'a str,
@@ -321,13 +327,14 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
         return;
     };
     // `ChestUI.cs:368-370`: the per-frame window clamp.
-    *p.scroll_row = clamp_scroll_row(*p.scroll_row, DEFAULT_MAX_ITEMS);
+    *p.scroll_row = clamp_scroll_row(*p.scroll_row, p.max_items);
     for i in 0..COLS {
         for j in 0..VISIBLE_ROWS {
             // `ChestUI.cs:376-377`: the absolute chest slot; `item.Length` is
-            // the 40-slot array (`DEFAULT_MAX_ITEMS`, decision #3).
+            // the chest's own `maxItems` (`p.max_items`) — the 40-slot default
+            // until a `.wld` record resizes it.
             let abs = i + j * COLS + *p.scroll_row as usize * COLS;
-            if abs >= DEFAULT_MAX_ITEMS as usize {
+            if abs >= p.max_items as usize {
                 continue;
             }
             let pos = slot_pos(i, j);
@@ -380,13 +387,14 @@ fn update_hover(p: &mut PanelState<'_>, id: usize, hovering: bool) -> u32 {
 /// 12 (`:325`). Returns whether the wheel was consumed — the C# `flag = false`
 /// that stops the crafting-list scroll (`Main.cs:17443`).
 pub(crate) fn scroll(app: &mut crate::app::App, notches: i32, mouse: Vec2) -> bool {
-    // `Main.cs:17436` — `chest != -1 && ChestUI.LastHighestChestRow > 0`
-    // (the row count is a pure function of the default maxItems until
-    // M6-SAVE-2's `Resize` — with the default 40 the gate is dead, exactly
-    // like the C#'s for a full-size chest). The port's scrollable grid is
-    // the world-chest panel's — bank values refuse (the STORE-1 two-panel
-    // shape, `ui::chest::draw`'s gate).
-    if app.open_container() < 0 || highest_scroll_row(DEFAULT_MAX_ITEMS) <= 0 {
+    // `Main.cs:17436` — `chest != -1 && ChestUI.LastHighestChestRow > 0`. The
+    // row count is a pure function of the open chest's `maxItems`
+    // (`ChestUI.cs:301-302`'s `Main.chest[chest].maxItems`) — the default 40
+    // makes the gate dead, exactly like the C#'s for a full-size chest. The
+    // port's scrollable grid is the world-chest panel's — bank values refuse
+    // (the STORE-1 two-panel shape, `ui::chest::draw`'s gate).
+    let max_items = crate::chest::chest_max_items(&app.world_chests, app.open_container());
+    if app.open_container() < 0 || highest_scroll_row(max_items) <= 0 {
         return false;
     }
     // `Main.cs:17442` — `LastChestDisplayRectangle.Contains(MouseScreen)`.
@@ -397,7 +405,7 @@ pub(crate) fn scroll(app: &mut crate::app::App, notches: i32, mouse: Vec2) -> bo
     // `while num != 0 { Scroll(num); num -= sign }` loop — only the sign
     // reaches `Scroll`).
     for _ in 0..notches.unsigned_abs() {
-        if scroll_notch(&mut app.chest_scroll_row, notches > 0, DEFAULT_MAX_ITEMS) {
+        if scroll_notch(&mut app.chest_scroll_row, notches > 0, max_items) {
             // `ChestUI.cs:325` — `SoundEngine.PlaySound(12)`.
             app.audio.play("Menu_Tick");
         }
@@ -819,6 +827,7 @@ mod tests {
             crafting_open: false,
             editing: false,
             name: "",
+            max_items: DEFAULT_MAX_ITEMS,
             edit_text: "",
             blinker: &mut app.text_blinker,
             scroll_row: &mut app.chest_scroll_row,

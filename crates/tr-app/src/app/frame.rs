@@ -95,6 +95,14 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
+        // `UserInterface.Update`'s lockout countdown
+        // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+        // state-change gate decays with the frame step, deterministic under
+        // `TR_SHOT` (dt pinned to 1/60 above). `Main.UpdateUIStates`
+        // (`Main.cs:17487-17491`) runs this whichever UI side is live, so it
+        // must not sit inside the in-game branch below — see
+        // [`App::tick_pointer_clock`].
+        self.tick_pointer_clock(dt);
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -243,12 +251,6 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
-            // `UserInterface.Update`'s lockout countdown
-            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
-            // state-change gate decays with the frame step, deterministic under
-            // `TR_SHOT` (dt pinned to 1/60 above).
-            self.pointer_ms = self.anim_time as f64 * 1000.0;
-            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
@@ -529,20 +531,18 @@ impl App {
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
-        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // (`ChestUI.cs:115-122`, the `WorldChest` entity's own field since the
+        // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
-        // reads the map field directly so the borrow stays field-scoped).
+        // reads the entity directly so the borrow stays field-scoped).
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
-        let chest_stored_name = if chest_open > -1 {
-            self.chest_names
-                .get(&(chest_open as usize))
-                .map(String::as_str)
-                .unwrap_or("")
-        } else {
-            ""
-        };
+        let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+        // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
+        // per-chest slot count from the file (`Chest.maxItems`), the default
+        // 40 for every port-created chest.
+        let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
 
         {
             let App {
@@ -1122,7 +1122,14 @@ impl App {
                     renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
-                    p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                    // The yoyo family's string anchors on the player's
+                    // centre (`Main.cs:27943-27945`'s mountedCenter +
+                    // gfxOffY) — the frame's rendered player carries both.
+                    let hand = render_player.as_ref().map(|pl| {
+                        let (cx, cy) = pl.center();
+                        (cx, cy + pl.gfx_off_y)
+                    });
+                    p.draw_with_hand(renderer, lookups, light, draw_cam, *zoom, screen, hand);
                 }
 
                 let boss = npcs
@@ -1308,7 +1315,7 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        &self.kill_tracker,
+                        &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
                         self.shop_npc
@@ -1339,6 +1346,7 @@ impl App {
                                 .flatten(),
                             editing: chest_editing,
                             name: chest_stored_name,
+                            max_items: chest_max_items,
                             edit_text: &chest_edit_text,
                             blinker: &mut self.text_blinker,
                             scroll_row: &mut self.chest_scroll_row,

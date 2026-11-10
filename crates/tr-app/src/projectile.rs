@@ -2607,6 +2607,110 @@ impl Projectile {
     }
 
     /// The per-slot draw (unchanged from the first pass).
+
+    /// `Main.cs:27941`'s `proj.aiStyle == 99` gate — the string's own
+    /// condition (the counterweights share it; only the dropped twin
+    /// `ai[0] == -2` excludes).
+    pub fn ai_style_is_yoyo(&self) -> bool {
+        proj_data(self.kind).is_some_and(|d| d.ai_style == 99)
+    }
+
+    /// The M4-PROJ-4c yoyo path: the string segments from the owner's hand
+    /// to the projectile (`Main.DrawProjDirect`, `Main.cs:27941-28046`) then
+    /// the sprite quad. `owner_hand` is the player's centre + `gfxOffY` the
+    /// C# anchors the walk on (`:27943-27945`).
+    fn draw_yoyo(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        owner_hand: Option<(f32, f32)>,
+    ) {
+        let world_light = |x: f32, y: f32| -> [f32; 3] {
+            let tx = (x / TILE_PX) as i32;
+            let ty = (y / TILE_PX) as i32;
+            if light.w > 0 && light.h > 0 {
+                light.get(
+                    tx.clamp(light.x0, light.x0 + light.w - 1),
+                    ty.clamp(light.y0, light.y0 + light.h - 1),
+                )
+            } else {
+                [1.0; 3]
+            }
+        };
+        // The string (`:27941`'s gate: aiStyle 99 and not the dropped twin).
+        if self.ai_style_is_yoyo() && self.ai[0] != -2.0 {
+            if let (Some(line), Some(hand)) = (lookups.fishing_line, owner_hand) {
+                let atlas = (1u32.max(line.width), 1u32.max(line.height));
+                let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let sag = 0.0; // the speed curvature rides the follow-up row
+                for seg in crate::yoyo_string::string_segments(hand, (cx, cy), sag) {
+                    let uv = assets::uv_rect(
+                        &line,
+                        atlas,
+                        0,
+                        0,
+                        crate::yoyo_string::FISHING_LINE_WIDTH as u32,
+                        seg.len as u32,
+                    );
+                    let pos = [
+                        seg.x - crate::yoyo_string::line_x_offset(),
+                        seg.y,
+                    ];
+                    let snapped = crate::render::entities::snap_to_screen_pub(
+                        pos, camera, zoom, screen,
+                    );
+                    r.push_sprite_origin_rot(
+                        snapped,
+                        [
+                            crate::yoyo_string::FISHING_LINE_WIDTH * zoom,
+                            seg.len * zoom,
+                        ],
+                        uv,
+                        crate::yoyo_string::segment_color(0, [0.0; 3], [0.0; 3], world_light(seg.x, seg.y)),
+                        seg.rot,
+                        [
+                            crate::yoyo_string::FISHING_LINE_WIDTH * 0.5 * zoom,
+                            0.0,
+                        ],
+                    );
+                }
+            }
+        }
+        // The sprite (`drawLayer` 0 for the counterweights — they draw in the
+        // plain pass, ahead of the yoyo the loop emits them before).
+        let Some(sheet) = lookups.yoyo_sprites.get(&self.kind).copied() else {
+            return;
+        };
+        let atlas = (sheet.width.max(1), sheet.height.max(1));
+        let uv = assets::uv_rect(&sheet, atlas, 0, 0, sheet.width, sheet.height);
+        let c = world_light(self.pos.x, self.pos.y);
+        let alpha = (self.alpha as f32 / 255.0).clamp(0.0, 1.0);
+        let pos = [
+            self.pos.x + self.w * 0.5,
+            self.pos.y + self.h * 0.5,
+        ];
+        let snapped =
+            crate::render::entities::snap_to_screen_pub(pos, camera, zoom, screen);
+        r.push_sprite_origin_rot(
+            snapped,
+            [
+                self.w.max(self.h) * self.scale * zoom,
+                self.w.max(self.h) * self.scale * zoom,
+            ],
+            uv,
+            [c[0], c[1], c[2], alpha],
+            self.rot,
+            [
+                self.w.max(self.h) * self.scale * zoom * 0.5,
+                self.w.max(self.h) * self.scale * zoom * 0.5,
+            ],
+        );
+    }
+
     pub fn draw(
         &self,
         r: &mut SpriteRenderer,
@@ -2616,6 +2720,26 @@ impl Projectile {
         zoom: f32,
         screen: Vec2,
     ) {
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None);
+    }
+
+    /// The draw entry the frame calls with the player in scope: the yoyo
+    /// family takes the string path (`Main.DrawProjDirect`'s aiStyle-99 arm),
+    /// everything else keeps the shuriken stub.
+    pub fn draw_with_hand(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        owner_hand: Option<(f32, f32)>,
+    ) {
+        if crate::yoyo_string::is_yoyo_sprite(self.kind) {
+            self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
+            return;
+        }
         let Some(uv) = lookups.shuriken_uv() else {
             return;
         };

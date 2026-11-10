@@ -766,6 +766,12 @@ fn uses_generic_anchor(kind: NpcKind) -> bool {
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
 /// the same source texels while the camera moves (no crawling pixel grid).
 #[inline]
+/// The `snap_to_screen` seam the projectile draw path uses (M4-PROJ-4c) —
+/// the same world-pixel → screen snapping the entity draws run.
+pub fn snap_to_screen_pub(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32; 2] {
+    snap_to_screen(pos, camera, zoom, screen)
+}
+
 fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32; 2] {
     let sx = (pos[0] - camera.x) * zoom + screen.x * 0.5;
     let sy = (pos[1] - camera.y) * zoom + screen.y * 0.5;

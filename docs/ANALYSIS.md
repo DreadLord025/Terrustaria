@@ -63,7 +63,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 
 | System | Original location | Size | Status | Notes |
 | --- | --- | --- | --- | --- |
-| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | `.wld` header + section table + RLE tile stream parsed; chests/signs/NPCs skipped. Native `.trwld` writer/reader for generated worlds. `Tile` is 12 bytes (slope/paint and wall cell packed); 5.04 M-tile world = 60.5 MB |
+| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | `.wld` read + written for all 11 sections (header/flags/tiles + chests/signs/NPCs/TEs/plates/TownManager/Bestiary/CreativePowers, every load fix-up ported), the app's load/save dispatch wired. Native `.trwld` writer/reader for generated worlds (no TE/chest sections — the M6-SAVE-1b follow-up). `Tile` is 12 bytes (slope/paint and wall cell packed); 5.04 M-tile world = 60.5 MB |
 | Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Generic block chain + merge families ported; slopes/half-bricks framed; per-type grass edge/moss/vines/weird branches approximated |
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
@@ -113,6 +113,98 @@ for x in 0..maxTilesX:                 column-major, RLE per column
 Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): active,
 half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
 plus the computed wall autotile cell (`wall_col`, `wall_row`).
+
+### The eleven sections (all eleven ported, both directions — M6-SAVE-1, 2026-11-09)
+
+`SaveWorld_Version2:1150-1165` / `LoadWorld_Version2:1760-1851`: a 70-byte prologue
+(`i32 326` + the 20-byte `FileMetadata` + `i16 11` + the eleven `i32` section **end**
+offsets), then the sections in this order, then the footer triple
+`(true, worldName, worldId)`. `wld/mod.rs` assembles/backfills the table;
+`wld/sections/<name>.rs` is each codec; the reader's end-offset assertions are
+reproduced (`bad section pointer N`).
+
+| # | Section | Wire shape | Rust |
+| --- | --- | --- | --- |
+| 0 | file-format header | `u16 TileID.Count` + the 95-byte importance bitmap | `sections/header.rs` |
+| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` |
+| 2 | tiles | column-major RLE (see above) | `sections/tiles.rs` |
+| 3 | chests | `i16 count` (+ the shared `i16` slot count below 294), then per chest `(i32 x, i32 y, string name, i32 maxItems, maxItems × i16/i16/i32/u8)`; the duplicate-position and tail passes, the `<115` dresser pass, `Chest.FixLoadedData`, and the save-side dead-anchor pre-pass | `sections/chests.rs` + `tr-app/chest.rs::{from_wld,to_wld,fix_dresser_chests,destroy_invalid_anchors}` |
+| 4 | signs | `i16 count`, then `(string text, i32 x, i32 y)` per sign over `Main.sign[0..31999]`; the tile check + dup + tail passes on load | `sections/signs.rs` (the store lives on `World.signs`) |
+| 5 | NPCs | the shimmer bitmap's truth indices (`>= 268`), the terminator-delimited town list (`i32 netID` or the `<190` name, `string GivenName`, `Vector2`, `bool homeless`, the home pair, a `BitsByte` gating `townNpcVariationIndex` `>= 213` and `homelessDespawn` `>= 315`), then the four-tower list (`>= 140`) | `sections/npcs.rs` + `tr-app/npc.rs::{from_wld,to_wld}` |
+| 6 | tile entities | `i32 count`, then per entity `(u8 ty, i16 x, i16 y)` + the type's `ReadExtraData`; the id reassignment, the `InWorld`/`CheckValidTile` drop pass, `OnWorldLoaded`, and the display doll's payload skip-reads | `sections/tile_entities.rs` |
+| 7 | pressure plates | `i32 count`, then `(i32 x, i32 y)` per pressed point (the `bool[255]` weights are runtime state) | `sections/pressure_plates.rs` (`World.pressure_plates`) |
+| 8 | TownManager rooms | `i32 count`, then `(i32 npcID, i32 x, i32 y)` pairs | `sections/town_rooms.rs` + `tr-app/town.rs::TownRooms` |
+| 9 | Bestiary | three sub-lists: kills (`i32 count` + `(string creditId, i32 count)`), sights and chats (`i32 count` + one credit id each) | `sections/bestiary.rs` + `tr-core/bestiary.rs::WorldBestiary` (`App.bestiary`) |
+| 10 | CreativePowers | **terminator-delimited**: `{ bool true; ushort id; payload }` repeated until `bool false`; toggles write `bool Enabled`, the two sliders write the `[0,1]` `_sliderCurrentValueCache` | `sections/creative_powers.rs` + `tr-app/creative.rs` |
+
+The C#'s own section numbering is 0-based in `positions[]` and 1-based in the prose;
+`WorldFile.SaveBestiary:3396` is the **1-based 10th** section (pointer 9), and
+`SaveCreativePowers:3412` is the 11th (pointer 10).
+
+The app glue (M6-SAVE-1 phase 7): `app/mod.rs::load_world` calls
+`wld::load_with_sections` (one read: world + sections) and applies the world-state
+halves in the C#'s order — signs, tile entities, pressure plates — before the framing
+passes; `App::new` applies the App-owned halves — chests (the file's store displaces the
+load-time re-roll, the `<115` dresser fix-up gated on the file version), the NPC list
+(replacing the startup spawns, then `FixAgainstExploits:1861`'s home re-validation with
+the town rooms), the shimmer bitmap, the bestiary tracker and the creative powers.
+`saveglue::save_world` dispatches on the extension: `.trwld` → the native writer plus the
+sidecars (unchanged), `.wld` → `wld::save` with every section built from the live state
+(the chests' dead-anchor pre-pass first, as the C# runs it). The autosave, F9, close and
+quit paths all funnel through `save_world`.
+
+### Deviations (every deliberate departure from the C#, phases 2-7)
+
+- **Unowned flag fields** are written with the C# defaults derived from
+  `LoadWorldFlags:1981`'s `< gate` branches rather than being modelled (assumption-1's
+  fallback); the reader keeps its own width.
+- **`LastPlayed` is 0** and the creation-time pair is zero-filled — the port has no
+  play-time accounting; `FileMetadata`'s revision increments per save, as vanilla
+  (`IncrementAndWrite`), and is the file's only clock-adjacent value.
+- **Wires are not written**: no section carries the wiring state.
+- **GUID and worldId are 0** — the port keeps neither (the footer's worldId likewise).
+- **Seed text**: the port's `u64` seed is persisted as its decimal text; a non-numeric
+  seed reads as 0 (`SeedText` is `WorldFileData.cs:355`'s own convention).
+- **Non-important tiles and kind 144**: a non-important kind reads back with
+  `frameX/frameY = -1` (`LoadWorldTiles:2605`) and kind 144's `frameY` is forced to 0 on
+  write (`SaveWorldTiles`) — an asymmetry preserved verbatim.
+- **Chests**: a banned item's `(type, prefix, stack)` triple is not written at all
+  (unreachable through the app — the fix-up turns it to air first); the latent
+  `> 8000`-chest count asymmetry between the writer's `i16` count and the displacement
+  pass; a non-40 `maxItems` chest is not threaded into the click hit-test.
+- **NPCs**: a `SavesAndLoads` tower record (422/507/493/517) is parsed, its bytes
+  consumed and the entity discarded (no ported kind is a tower); the `version < 251`
+  recompute of the eight `unlocked*Spawn` flags is not ported (live spawning state); a
+  homeless record's stale home coordinates are not carried into live state.
+- **Tile entities**: the dummy's and the logic sensor's payloads are carried from the
+  file even though nothing reads their runtime halves; the display doll's payload is
+  read and **dropped** (`is_storable`) because its `WriteExtraData` shape (three
+  bitsBytes, a pose byte, up to nineteen triples) has no home in `TeData` and a hollow
+  record would desynchronise a vanilla reader — so a `.wld` round-trip is not byte-exact
+  for a world with dolls; the kite/critter anchors' `IsTileValidForEntity` is the anchor
+  kind alone (`TEKiteAnchor.cs`/`TECritterAnchor.cs`), which the shared head check
+  settles.
+- **Signs and plates**: the store is the positional `Vec<WldSign>` (exactly the non-null
+  signs in slot order), not the C#'s 32 000-slot array; a duplicate plate point is
+  refused rather than overwritten (`LoadWeightedPressurePlates`' dictionary key).
+- **Collections**: the C#'s `Dictionary`/`HashSet` enumeration order is unspecified; the
+  port stores sorted maps/sets, so a save is deterministic and differs from a vanilla
+  file only in order, never in content.
+- **Bestiary**: the sightings/chats stay empty until the recording behaviour lands
+  (owner decision, state + IO only); the kill clamp is one-sided (the file keeps the raw
+  value, the in-memory tracker clamps it).
+- **Creative powers**: the id-8 slider is a `[0,1]` cache on the wire and the ported rate
+  1..24 in memory — the codec remaps both directions
+  (`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880`); the three ids the port has
+  not ported (freeze rain 9, freeze wind 10, difficulty 12) are never written.
+- **Save/load asymmetry**: the C#'s `SaveChests:1609-1642` dead-anchor pre-pass mutates
+  `Main.chest`; the port does the same to its live store (through `&mut self`), so the
+  file and the store agree.
+- **A `.wld` load carries no player or map sidecar**: the kills ride the world file
+  (owner decision), the `.trplayer`/`.map` sidecars stay the `.trwld` path's — a vanilla
+  player file has no port format yet (the follow-up row).
+- **`.trwld` TE/chest parity** is not done: the port's own format carries neither, so a
+  `.trwld` world loses its tile entities and chests on reload (M6-SAVE-1b).
 
 ## Autotiling
 
@@ -2031,7 +2123,44 @@ selection state and its play path closes the front flow rather than loading the
 entry (spec §9.4), so a double-click resolves to the same flow a Play button
 click does.
 
-Corrected deviations (both were geometry the layout pass would have got right):
+Corrected deviations (both were geometry the layout pass would have got right,
+and a third was the click gate the geometry feeds):
+
+* **The state-change click lockout never expired (fix-world-select-clicks).**
+  `App::enter_front` arms `UserInterface`'s 200 ms post-`SetState` disable
+  (`ResetState`, `:178`, ported at `ui/pointer.rs:141`), but the *only* countdown
+  site sat inside `frame()`'s `if self.menu.is_none() && self.front.is_none()`
+  branch — the in-game regime — so `PointerState::tick` never ran while a front
+  screen (`Main.menuMode == 888`) was live. `click_disabled_ms` therefore stayed
+  at 200.0 and `clicks_disabled()` was permanently true, which dropped every
+  press twice: once at `app/loop.rs:422` (no `PointerEvent` produced) and again
+  at `handle_front_click` (`UserInterface.cs:214-218`, the gate the click tables
+  run behind). **Every** row of **every** front screen — world select's cards,
+  New/Back/Favorite/Rename/Delete, and the character-select twins — was dead
+  until the app was restarted. The C# decrements unconditionally:
+  `Main.UpdateUIStates` (`Main.cs:17039`/`:17487-17492`) reaches
+  `MenuUI.Update` on every frame, and `UserInterface.cs:203-204` clears the
+  countdown before reading the gate. The port now calls
+  `App::tick_pointer_clock` from `frame()` on every frame, outside the
+  in-game branch, with a citation naming the C# reach. This replaces the older
+  note here that the 200 ms disable "is armed on the enter direction only
+  (`enter_front`), not on the leave direction the C#'s `SetState(null)` also
+  resets" — neither direction decayed.
+  The existing double-click test had masked it by hand-ticking the lockout away
+  (`app.pointer.tick(300.0)`); it now advances the real `frame()` seam.
+  The screen geometry itself was never implicated: `world_select::card_hit`
+  (`ui/world_select.rs:506`), the layout shared with char_select (`:42`, `:185`)
+  and the framework's `get_element_at` (`ui/framework.rs:64`) are all 1:1 with
+  `UIWorldListItem.cs:94-158` and `UIElement.cs:324-352`.
+  **Re-landed 2026-11-10 (fix-world-select-clicks-2):** the M6-ACH-2 merge
+  (a75dd14) silently reverted this fix - its auto-resolution restored the
+  pre-fix frame() branch (the decay back inside menu.is_none() &&
+  front.is_none()) and dropped the six regression tests, so both select
+  screens locked out again (AGENTS.md 2026-11-08 incident class: a lossy
+  merge dropping merged work). Cherry-pick of 7351e6c onto the ACH-2 tree;
+  the tests ride along and now guard the regression; the ACH-2 draw arm in
+  the same frame() region survives by construction (the cherry-pick touched
+  only the lockout lines).
 
 * **The bestiary panel was 180 px short.** `bestiary::panel_rect` hand-wrote
   `screenH − 220 − 180` (= `screenH − 400`) with a 560 width floor, while
@@ -2073,9 +2202,12 @@ Open gaps (deliberately out, each with its reason):
   `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
   `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
   `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
-  exit sites have no `leave_front` seam, so the 200 ms disable is armed on the
-  enter direction only (`enter_front`), not on the leave direction the C#'s
-  `SetState(null)` also resets.
+  exit sites have no `leave_front` seam, so the 200 ms disable is never re-armed
+  on the leave direction the C#'s `SetState(null)` also resets
+  (`open_keyboard_with_tail` at `app/mod.rs:1159` and the mode-40 `No` restore at
+  `app/clicks.rs:990` set `front` without going through `enter_front`) — the
+  inverse of the latch fixed in the corrected-deviations list above, and
+  harmless because the countdown now always expires.
 * **Snap points / gamepad** (already recorded as out of scope) and
   `PassThroughMouseInteraction` (declared but never set in 1.4.5.8).
 
@@ -4277,8 +4409,11 @@ Deviations:
 - **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
   the UI layer maps between them; the triples are exactly what
   `WriteExtraData`/`ReadExtraData` and msg 121 carry.
-- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
-  in the world-file section 7 (`WorldFile.cs`).
+- **Persistence** for `.wld` landed with M6-SAVE-1 (world-file section 7,
+  `SaveTileEntities:3302`/`LoadTileEntities:3315`, with the id reassignment, the
+  `CheckValidTile`/`InWorld` drop pass and `OnWorldLoaded`); the port's own `.trwld`
+  still carries no TE section, so its worlds lose the entities on reload — the
+  M6-SAVE-1b follow-up.
 - **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
   per-chunk cap exists for the C#'s save-section packing; the port's books
   are unbounded maps.
@@ -9084,6 +9219,113 @@ per-wave `switch` with its own caps and rolls.
   the glider have no kind yet, so those picks drop out until they land
   (`nid_of`/`dd2_pool_id`).
 
+## Yoyo string + sprite (M4-PROJ-4c)
+
+The row's pure half is `crates/tr-app/src/yoyo_string.rs`; the draw call is
+`Projectile::draw_with_hand` (frame.rs hands it the player's centre).
+
+### The colour chain
+
+`Main.TryApplyingPlayerStringColor` (`Main.cs:35474-35519`) is ported as
+`string_color(string_color_id, disco, rainbow)` → RGBA 0..1:
+
+- the paint path (`WorldGen.paintColor` — the port's
+  `tr_core::tile_light::paint_color`) with the **75-per-channel floor**
+  (`:35479-35490`), which also lifts the explicit dark rows;
+- the special ids 13 (20,20,20), 0/14 (200,200,200), 28 (163,116,91),
+  30 (226,228,142), 27 (the animated `Main.DiscoR/G/B` — the caller's
+  per-frame triple) and 29 (the rainbow: the `(mouseTextColor-190)/65` lerp
+  with the `±40` channel jitter, `:35511-35516`);
+- the 0.4 alpha (`:35410`); the id-0 path's alpha comes from the caller's
+  `:28038` instead, so both end at 102/255.
+
+The item→colour table is `Item.cs:30220-30255` (3293→1 … 3304→12, 3305→28,
+3306→14, 3307→27, 3308→13) plus `Item.cs:43716`'s 30 — `string_color_for_item`.
+
+### The walk
+
+`string_segments(hand, target, sag_factor)` is the 12-px walk of
+`Main.cs:27966-28046`: the remaining-length step (with the partial final
+step), the rotation `Atan2(dy,dx) - π/2` (`:28036`), the sag bow scaled by
+the remaining distance (`:27995-28035` — the speed curvature is an input
+the caller folds in), and the per-segment light tint (`segment_color`'s
+0.5 light multiply + the `num10` half dim, `:28043`/`:28045`).
+
+The draw path emits one `push_sprite_origin_rot` per segment
+(`render/sprite.rs`'s `origin`-anchor analogue of
+`EntitySpriteDraw(origin: (W*0.5, 0))`, `:28042-28045`) and then the yoyo
+sprite quad centred and rotated by the slot's `rot`/`scale`/`alpha`, with
+the `FishingLine` sheet's 12-px slice as the source rectangle
+(`new Rectangle(0, 0, Width, (int)num5)`).
+
+### Deviations
+
+- `player.stringColor` rides M3-EQUIP-3 (the accessory system): the row
+  ships the id-0 white path (`A=102`) with the table ready, exactly as the
+  AI row shipped `meleeSpeed = 1.0`.
+- `drawLayer` 7's player-pass interleave (`Main.CacheProjDraws` +
+  `PlayerDrawLayers.DrawHeldProj`, `Main.cs:22196-22202`,
+  `PlayerDrawLayers.cs:4185-4235`) has no port analogue — the port has one
+  projectile loop; the counterweight-before-yoyo order is encoded by the
+  loop's push order, and the layer-8 counterweight-over-arm case is not
+  modelled.
+- `Lighting.GetColor`'s alpha behaviour (the XNA `Color(Vector3)` drops to
+  255) is not reproduced: the port's `LightMap` is RGB-only and the row's
+  alpha chain is explicit (documented in the module doc).
+- The drawn shots' frame/sound arms and the counterweight's own string are
+  the render rows' scope; `ApplicationItemPositionOffsetFromMount` is a
+  mount row's input (the port has no mounts yet).
+
+## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
+
+The M5-SPREAD-2 row's deferred "next slice".
+
+### The thorns
+
+`TileID.Sets.SpreadOverground` (`TileID.cs:621`) is the gate the port's
+overground arm reads; it was missing the thorn tiles 32/352 and the
+golf-grass 477/492, so the arm the C# triggers on the *thorn* itself was
+unreachable. With the set fixed, `:72362-72370`'s arms land: the corruption
+thorn (32) grows into the corrupt grass 23 and the crimson thorn (352) into
+the crimson grass 199, each at `genRand.Next(3)` — drawn only for a 32/352
+cell — plus the jungle `:73658-73661`'s thorn-69 arm (no roll). The
+underground twin (`:73280-73294`) stays dead code in both the C# and the
+port (`Sets.SpreadUnderground` excludes 32/352).
+
+`grow_spike` carried two deviations, both fixed:
+
+- the "converted grass" map's sentinel was `0` (the C# `-1`); it is now
+  `u16::MAX`, which is what the knife-edge `t.kind != converted` compare
+  needs;
+- the write replaced the whole `Tile`, zeroing the frames and the liquid;
+  the C# (`:45476-45481`) sets the kind and the active bit on the existing
+  tile, `CopyPaintAndCoating`s from the seed tile and runs
+  `SquareTileFrame` — the port now does all three.
+
+### The wall chains
+
+`convert_wall_by_case` (growth.rs) was the three evil types' flat
+Grass/Stone/HardenedSand/Sandstone/NewWall ladder. It now carries every
+conversion type's wall arm in the C#'s order: the missing `Dirt`/`Snow`/`Ice`
+sets (`WallID.cs:39-41`), the glowing-mushroom set (`WallID.cs:88`), and the
+0/3/5/6/7/11/12 arms — cleanse's grass-family `Next(10)` surface roll and
+262/274/292-295 switch, desert's two set unions (187/216), snow's (71/40),
+purify's natural-wall 349 plus its dirt/NewWall arms, jungle-mud's variant
+of the same, and corruption-II's four separate NewWall guards followed by
+the ebonstone fallback. `spread::convert_wall` routes through it, so the
+evil callers now get the C#'s chain: the stone wall 1 converts to 3/83 (the
+port's old natural-slice 3/192 was the deviation) and the dirt wall's arm
+lands on the cleanse types.
+
+### Deviations
+
+- The torch arms (`TileID.Sets.Conversion.Torch`) of every conversion type
+  are still deferred: one shared helper would cover them but they need the
+  frame-x/y predicate.
+- `SpecialSeedFeatures.RainbowSandAndBlackSandWalls` (the paint reset inside
+  `Convert_ActuallyConvertWall`, `:56329-56343`) is not modelled — it is a
+  secret-seed runtime flag.
+- The `NetMessage.SendTileSquare` broadcast is not ported (single-player).
 ## The Old One's Army's tier-2/3 families (M4-EVENT-19)
 
 The lane spawn table's unported members landed: the 13 kinds the D2/D3
