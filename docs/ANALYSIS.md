@@ -5507,6 +5507,28 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   `Menu_Tick` (12), not `Grab` (7) — the vanilla's Grab is the chest/inventory
   slot-movement cue (`ItemSlot.cs:759-769`).
 
+- **Bug 18 — the emote Back label** (`UIEmotesMenu.cs:78`'s
+  `UITextPanel(Language.GetText("UI.Back"), 0.7f, large: true)`): the shared
+  `ui::bestiary::back_label()` accessor now feeds the emote wheel's Back panel
+  (`ui/emotes.rs`) and the bestiary's own (which carried the same hardcoded
+  literal), measured and drawn as one string through the existing
+  `text::hud_text_width` + `uistate::draw_text_panel` path — the C#'s
+  `TextHAlign 0.5` centring against the localized `_textSize.X`. Two source
+  corrections: the key is `UI.Back` (not a `Lang.menu` row) and the manager's
+  missing-resource fallback answers the key itself, so a locale without the
+  bundled content jsons reads the key (documented; the resource loading is
+  `lang.rs`'s existing path).
+
+- **Bug 19 — the biome-cactus frame** (`DrawSingleTile`'s case 80,
+  `TileDrawing.cs:1132-1147`): the port folded the `rectangle.Y += 54/108/162`
+  shift into the shared `add_fr_y`, which the FLAT build path also consumes
+  (`render/tiles.rs`'s source rect `fy + add_fr_y`) — so every cactus on any
+  ground shifted, while the C# mutates only the local `rectangle` (`:1007`)
+  whose single consumer is the half-brick arm (`:1298`). `TileDrawData` now
+  carries `half_brick_src_y` for that rect's shift; the half-brick draw
+  (`push_half_shifted`) applies it and the flat path stays unshifted. The
+  `cactus_source_y_offset` helper stays as the data layer.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^

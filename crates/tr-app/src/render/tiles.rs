@@ -806,7 +806,25 @@ pub(crate) fn draw_tiles(
                     stats.quads +=
                         push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope());
                 } else if tile.half_brick() {
-                    push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
+                    // The C#'s half-brick arm draws the local `rectangle`
+                    // (`TileDrawing.cs:1298`) — the one rect case 80's biome
+                    // shift touches — while the flat path above rebuilds its
+                    // own unshifted rect.
+                    if dd.half_brick_src_y != 0 {
+                        push_half_shifted(
+                            r,
+                            pos,
+                            tf.uv,
+                            l,
+                            style,
+                            tx,
+                            ty,
+                            anim_time,
+                            dd.half_brick_src_y,
+                        );
+                    } else {
+                        push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
+                    }
                     stats.quads += 1;
                 } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
                     stats.quads +=
@@ -1259,6 +1277,29 @@ fn push_half(
         [pos[0], pos[1] + 8.0],
         [16.0, 8.0],
         sub_uv(uv, 0.0, 0.0, 16.0, 8.0),
+        [c[0], c[1], c[2], 1.0],
+    );
+}
+
+/// Bug 19: the half-brick arm with `DrawSingleTile`'s local rectangle Y shift
+/// (`TileDrawing.cs:1298` draws `rectangle`, which case 80 mutated) — the
+/// source row moves by `src_y`, the draw box stays the top 8 rows.
+fn push_half_shifted(
+    r: &mut SpriteRenderer,
+    pos: [f32; 2],
+    uv: [f32; 4],
+    light: [f32; 3],
+    style: &LightStyle,
+    tx: i32,
+    ty: i32,
+    time: f32,
+    src_y: i16,
+) {
+    let c = style.shade(light, tx, ty, time);
+    r.push_sprite(
+        [pos[0], pos[1] + 8.0],
+        [16.0, 8.0],
+        sub_uv(uv, 0.0, src_y as f32, 16.0, 8.0),
         [c[0], c[1], c[2], 1.0],
     );
 }
