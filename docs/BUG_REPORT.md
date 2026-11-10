@@ -723,16 +723,23 @@ when a chest/shop is open (it overlaps the chest UI).
 **Root cause.** The trash was implemented as a plain 60-slot-style swap slot, not as
 the destroy-on-quick-trash + cleared-on-death container the vanilla uses.
 
-**Fix plan.**
-1. Add the `cursorOverride == 6` arm in `evaluate_cursor_override`
-   (`app/clicks.rs`): on the alternate-click of the hovered slot, deep-clone the
-   stack into `trash` (replacing it), destroy the hovered stack, play the
-   `TrashItem` + `Grab` cues, and honour the research/sacrifice exception
-   (`ItemSlot.cs:762`).
-2. Clear the trash on death (`on_player_death`) and on the event-item purge.
-3. Offset the trash rect when the chest/shop panel is open.
-4. Test: quick-trash moves the stack and leaves the slot empty; death clears;
-   chest-open draws the trash at `(453, 426)`.
+**Status: FIXED 2026-11-10** (`fix-trash-slot-behavior`).
+
+What landed: (1) the quick-trash — `evaluate_cursor_override` lights
+`AlternateClickAction.Trash`'s cursor 6 on a Shift-held hover over a
+non-favorited, non-air inventory slot when no crafting/reforge/chest arm
+matches (the C#'s `GetAlternateClickAction` else-chain tail,
+`ItemSlot.cs:679-682`), and the click arm replaces the trash with the
+stack, empties the slot and plays the cues — the `TrashItem` cue has no
+port asset (the recorded gap; the call is a no-op) and `Grab` plays; the
+research exception (`:762`) rides the unported Journey research,
+documented. (2) `on_player_death` clears the trash
+(`Player.DropItems`' first line, `:54304`); the event-item purge
+(`:24729-24736`) rides the unported event items and is covered by the
+wholesale clear. (3) The trash rect shifts to (453, 426) at scale 0.755
+while `ChestOrShopUIVisible` (`Main.cs:42349-42366`), threaded through
+`inventory::draw`/`trash_slot_at` — the draw and the hit test share one
+rect helper. 3 tests.
 
 ---
 

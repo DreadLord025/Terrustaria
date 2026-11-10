@@ -287,6 +287,11 @@ pub fn slain_message(player_name: &str) -> String {
 /// already carries the player name inside — `"{0} was slain..."`), so no name
 /// is prepended here.
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
+    // `Player.DropItems`'s first line (`Player.cs:54304`): the trash is
+    // emptied on death. (The event-item purge `:24729-24736`/`:31446-31451`
+    // — the 1522-1527/3643 clears — rides the event-item model, unported;
+    // the wholesale clear covers it.)
+    app.equip.trash = crate::item::EMPTY_SLOT;
     drop_gems(app, x, y);
     // `KillMe`'s softcore arm (`Player.cs:38931-38936`): `lostCoins =
     // DropCoins()` and `lostCoinString = Main.ValueToCoins(lostCoins)` —

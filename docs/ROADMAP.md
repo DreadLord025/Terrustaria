@@ -73,7 +73,7 @@ truth for what a row deliberately left behind.
 | NPC families, town, bosses, events | ✅ | 124 M4 rows through `M4-EVENT-19` (2026-11-10); 🟡 the display rows M4-NPC-3c/3h..3r |
 | Projectiles | 🟡 | engine + M4-PROJ-1..7 landed; 🟡 M4-PROJ-3b, M4-PROJ-5, M4-PROJ-6, M4-PROJ-8 |
 | Wiring, TEs, shimmer, fishing, pylons, growth, interactables | ✅ | M7-WIRE-1..5, TE-1/2, SHIMMER-1, FISH-1, PYLON-1, GROWTH-1, M1.4-WGEN-1..10 |
-| UI framework & screens | 🟡 | M7-UI-1 framework + bestiary/emotes/achievements/chat/creative screens; M7-UI-2..6 now carry their own rows; BUG-11/12/14 open |
+| UI framework & screens | 🟡 | M7-UI-1 framework + bestiary/emotes/achievements/chat/creative screens; M7-UI-2..6 now carry their own rows; BUG-11/12/13/14/15 closed 2026-11-10 |
 | Localization | 🟡 | menus + tooltips (M6-LOCALIZE-wire); sub-screen strings remain (BUG-18) |
 | Audio | 🟡 | M6-MUSIC-1 ladder + M6-AUDIO-1 ambience + the 8-cue bank; front-end music and UI sounds missing (BUG-01/17) |
 | Networking | ✅ | M6-NET-1..5 (handshake, entity sync + smoothing, tile sections, netmodules, back-targets) |
@@ -1657,11 +1657,11 @@ or narrow · **S4** polish.
 | BUG-08 | S2 | `BUG-08-invasion-progress-gate` | invasion bar always drawn: add `invasion_progress_alpha`, gate the call on alpha + `invasionProgressMode`, tint the panel by alpha [18][23] |
 | BUG-09 | S1 | `BUG-09-melee-damage` | melee unreachable (`held_use_ammo == 0` early return) and tools hit for a fixed 15: restore the `ItemCheck` order and use the item's real damage/knockback [9] |
 | BUG-10 | S2 | `BUG-10-friendly-fire-gate` | melee hurts town NPCs: add the `friendly`/`dont_take_damage` gates with the explicit Guide-doll/Clothier exceptions [9][15] |
-| BUG-11 | S2 | `BUG-11-ingame-settings` | no in-game Settings screen: add `Page::IngameOptions` + the pause-menu row over the existing widgets in `menu/mod.rs` [23] |
-| BUG-12 | S3 | `BUG-12-esc-map` | Escape does not close the map: add the map arm ahead of the inventory arm in `app/loop.rs` [23] |
-| BUG-13 | S2 | `BUG-13-smart-cursor-toggle` | Smart Cursor always on: split the runtime `used` from the persisted toggle, wire the Shift edge, default off [31] |
-| BUG-14 | S2 | `BUG-14-hud-buttons` | Bestiary/Emote buttons: draw the missing Emote button, fix the 2-frame strip slicing, assert the 30-px gap [23] |
-| BUG-15 | S1 | `BUG-15-bestiary-sheet-index` | Solar Selenian bestiary panics: `bestiary_npc_sheets[174]` on a 174-entry table — use `bestiary_sheet_index`, audit the other literals [16] |
+| тЬЕ BUG-11 | S2 | `BUG-11-ingame-settings` | no in-game Settings screen — done 2026-11-10: the inventory's Settings button (`ui/ingame_options.rs`'s `draw_settings_button` + `button_hit`, `Main.RefreshSettingsButtonStatus`'s fixed 850/580 rect) opens `App.ingame_options`; the window draws over the inventory (`ui/mod.rs`'s HUD tail) with the three volume bars over `sliders::value_bar_rects`, the map-scale/auto-pause/auto-save toggles, and Escape closes it first in the chain (`IngameOptions.Close` + `Settings::save`); 9 tests (rect, edges, panel/rows, toggle/reset, Escape order). `M7-UI-4`'s field parity (UI scale, capture mode, the control-mode row) still rides its row |
+| тЬЕ BUG-12 | S3 | `BUG-12-esc-map` | Escape does not close the map — done 2026-11-10: the world-key chain (`App::world_key`, extracted from the winit arm so it is headlessly testable) gains the map arm between the emotes and the inventory, matching `Player.ToggleInv`'s order (`Player.cs:4973-4978`); 4 tests (the close, the fall-through, the KeyM regression, the Shift edge) |
+| тЬЕ BUG-13 | S2 | `BUG-13-smart-cursor-toggle` | Smart Cursor always on — done 2026-11-10: `App.smart_cursor_used` is the runtime state (`Main.SmartCursorWanted_Mouse`, default off) flipped on the `KeyCode::ShiftLeft` press edge with the `Menu_Tick` cue; the persisted `smart_cursor_toggle` stays a saved key and no longer serves as the runtime gate; 2 tests |
+| тЬЕ BUG-14 | S2 | `BUG-14-hud-buttons` | Bestiary/Emote buttons — done 2026-11-10: `draw_sheet_frame` takes `(frames_x, frames_y, frame)` and slices `w/frames_x` like `Utils.Frame` (`Utils.cs:1344-1349`) over the pure `sheet_frame_uv`; the emote button now draws (its sheet `UI/Emotes` was never packed — the root cause of the invisible button); 6 tests |
+| тЬЕ BUG-15 | S1 | `BUG-15-bestiary-sheet-index` | Solar Selenian bestiary panics — done 2026-11-10: the entry resolves through `Lookups::bestiary_sheet_index` (NPC id 419 — `NPCID.cs:11515`'s `SolarSolenian`, slot 135 of the 174-row table; 625 is `SeaTurtle`); sheet resolution is single-sourced through the bounds-checked `entry_sheet` and no literal `bestiary_npc_sheets[N]` read remains in code |
 | BUG-16 | S2 | `BUG-16-tree-collapse` | felled tree leaves the trunk: port `KillTile_GetTreeDrops` + the whole-tree cascade and its RNG order [2][6] |
 | BUG-17 | S3 | `BUG-17-front-ui-sounds` | front-end clicks are silent: add the `Menu_Tick`/`Grab` cues to `menu/*.rs` and the front-click path [26] |
 | BUG-18 | S4 | `BUG-18-emote-back-lang` | emote-wheel "Back" hardcoded and hand-centred: use the shared lang accessor + text helper [24][25] |
@@ -1686,8 +1686,9 @@ separately.
 
 ## Recommended order of attack (updated 2026-11-10)
 
-1. **Player-audit fixes first** — the "Known bugs" table: S1 BUG-04/05/09/15, then the
-   S2s (BUG-02/03/06/07/08/10/11/13/14/16/20), then S3/S4. All are parity fixes on
+1. **Player-audit fixes first** — the "Known bugs" table: S1 BUG-04/05/09 (BUG-15 done
+   2026-11-10), then the S2s (BUG-02/03/06/07/08/10/16/20; BUG-11/13/14 done), then
+   S3/S4 (BUG-12 done). All are parity fixes on
    systems that already landed; they gate any real play-test.
 2. **M7-UI-2..6** — inventory UX, equipment/dye page, settings parity, keybinding UI,
    tooltips; they share the `ui/` machinery with BUG-11/14/18/20.

@@ -5529,6 +5529,23 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   (`push_half_shifted`) applies it and the flat path stays unshifted. The
   `cactus_source_y_offset` helper stays as the data layer.
 
+- **Bug 20 — the trash slot** (the vanilla's destroy-on-quick-trash
+  container): the quick-trash — `GetAlternateClickAction`'s else-chain tail
+  (`ItemSlot.cs:679-682`) lights `AlternateClickAction.Trash`'s cursor 6 on a
+  Shift-held hover over a non-favorited, non-air inventory slot when no
+  crafting/reforge/chest arm matched (the chain tail sits after the chest
+  arm — an earlier placement stole the chest's shift-click), and the click arm
+  (`OverrideLeftClick`'s cursor-6 arm `:759-775`) replaces the trash with the
+  stack and empties the slot; the cues are `TrashItem` (no port asset — the
+  recorded gap) and `Grab`. `on_player_death` clears the trash
+  (`Player.DropItems`' first line, `Player.cs:54304`); the event-item purge
+  (`:24729-24736`) rides the unported event items and the wholesale clear
+  covers it. The slot's rect shifts to (453, 426) at 0.755 while
+  `Main.ChestOrShopUIVisible` (`Main.cs:42349-42366`) through one
+  `trash_rect` helper shared by the draw and the hit test. Deviations: the
+  Journey research exception (`:762`) and the shop's sell cursor wait for
+  their models.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -9580,3 +9597,42 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 hold→throw→bounce→reel lifecycle.
+## The player-audit fixes 11-15 (2026-11-10)
+
+The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
+the branch mechanics below; every C# site is in the report itself.
+
+- **BUG-11** — the in-game options window. `ui/ingame_options.rs` ports
+  `Main.DrawSettingButton`'s button (`RefreshSettingsButtonStatus`'s fixed
+  `UIScreenWidth - 110` / `UIScreenHeight - 20` rect on the port's fixed
+  960×600 UI canvas — the same space the bestiary icon and the emote button
+  ride) and the `IngameOptions` panel: the 670×480 origin at `screen/2 -
+  size/2` with the 20-px hover padding, the `num5 = 70` row pitch, the three
+  volume bars over `sliders::value_bar_rects` (music/sound/ambient with the
+  `rightLock` drag), the map-scale/auto-pause/auto-save toggles, and the
+  `IngameOptions.Close` close (Escape's first arm, persisting through
+  `Settings::save`). Deviations: the vanilla two-column navigation (the left
+  column's general/interface/video/controls/language rows) is not mounted —
+  the port carries those rows in the front-end `Menu` (M7-UI-4's field
+  parity); the volume bars' click-to-set is the slider's drag only.
+- **BUG-12** — the Escape chain's map arm. The vanilla order is
+  options → bestiary → emotes → map → inventory (`Player.ToggleInv`,
+  `Player.cs:4973-4978`). The chain was extracted into
+  `App::world_key(KeyCode)` so the winit event path and the tests share one
+  body.
+- **BUG-13** — the Smart Cursor split. `App.smart_cursor_used` is the
+  runtime state (`Main.SmartCursorWanted_Mouse`, default off) and the
+  persisted `smart_cursor_toggle` remains the config key it has always
+  been — the bug was the setting serving as the runtime gate. The toggle is
+  the left-Shift press edge with the `Menu_Tick` cue.
+- **BUG-14** — the button strips. `draw_sheet_frame` now takes the frame
+  grid and slices `w / frames_x` like `Utils.Frame`, exposed as the pure
+  `sheet_frame_uv`; the emote button's sheet was never packed into the
+  atlas (the actual root cause of the invisible button — the hitbox and the
+  click handler existed, the sprite did not).
+- **BUG-15** — the off-by-one. The Solar Selenian is NPC 419
+  (`NPCID.cs:11515`), which resolves through `bestiary_sheet_index` to slot
+  135 of the 174-entry table; the report's suggested 625 is `SeaTurtle`.
+  All literal sheet indices are gone from the code (doc comments keep the
+  history).
+4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)

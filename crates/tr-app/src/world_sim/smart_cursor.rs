@@ -12,10 +12,16 @@
 use crate::app::App;
 use tr_core::smart_cursor::{self, Lookup};
 
-/// The smart cursor's gate — the vanilla per-player setting
-/// (`Main.SmartCursorIsUsed`): the port reads the app's toggle
-/// (`settings.smart_cursor_toggle`, `Main.cs:67178`), with the
-/// `TR_SMARTCURSOR=0` pin as the debug kill switch.
+/// The smart cursor's gate — the vanilla runtime state
+/// (`Main.SmartCursorIsUsed` → `Main.SmartCursorWanted_Mouse`,
+/// `Main.cs:2011`/`:2889`): the press-edge flag flipped by the left-Shift
+/// toggle (`Player.TryToToggleSmartCursor`, `Player.cs:28814-28820`), with
+/// the `TR_SMARTCURSOR=0` pin as the debug kill switch.
+///
+/// The persisted `settings.smart_cursor_toggle` is the toggle-mode flag
+/// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`) and is
+/// deliberately **not** read here: vanilla's wanted state defaults off
+/// (`Main.cs:67179`) and is runtime-only.
 pub(crate) fn enabled(app: &App) -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let off = OFF.get_or_init(|| {
@@ -23,7 +29,7 @@ pub(crate) fn enabled(app: &App) -> bool {
             .map(|v| v == "0" || v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("false"))
             .unwrap_or(false)
     });
-    app.settings.smart_cursor_toggle && !*off
+    app.smart_cursor_used && !*off
 }
 
 /// The held item's smart-cursor port fields — the C# reads
@@ -142,7 +148,9 @@ mod tests {
 
     /// A big world with a stone floor at y = 40, the player standing on it
     /// at tile (35, 40) and a torch in hand; the mouse at the tile below
-    /// the cursor.
+    /// the cursor. The smart cursor is in use — the vanilla default is off
+    /// (`Main.cs:67179`), so the lookup wiring is exercised with the runtime
+    /// flag on (`gates_the_lookup` covers the off half).
     fn wiring_app() -> crate::app::App {
         let mut w = tr_core::World::new("w".into(), 120, 120);
         w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
@@ -160,6 +168,7 @@ mod tests {
         player.x = 35.0 * tr_core::TILE_PX;
         player.y = 40.0 * tr_core::TILE_PX;
         app.player = Some(player);
+        app.smart_cursor_used = true;
         // The torch (item 8) in the selected slot.
         app.inventory[app.selected] = ItemSlot {
             kind: 8,
@@ -216,15 +225,55 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_toggle_gates_the_lookup() {
-        // The vanilla per-player setting (`Main.SmartCursorIsUsed`): the
-        // port's `smart_cursor_toggle` off disables the re-point.
+    fn the_runtime_flag_gates_the_lookup() {
+        // `Main.SmartCursorIsUsed` (`Main.cs:2889`) reads the runtime
+        // `SmartCursorWanted_Mouse`, whose vanilla default is **off**
+        // (`Main.cs:67179`) — a fresh app does not re-point.
+        let mut app = wiring_app();
+        app.smart_cursor_used = false;
+        assert_eq!(
+            repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
+            None,
+            "the runtime state off: no re-point"
+        );
+        // The press edge turns it on and the lookup runs.
+        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
+        assert!(app.smart_cursor_used, "the Shift press turns it on");
+        assert_eq!(
+            repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
+            Some((35, 39)),
+            "the runtime state on: the torch step re-points"
+        );
+        // The second press turns it back off and the lookup stands down.
+        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
+        assert!(!app.smart_cursor_used, "the second press turns it off");
+        assert_eq!(
+            repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
+            None,
+            "the runtime state off: no re-point"
+        );
+    }
+
+    #[test]
+    fn the_persisted_toggle_is_not_the_runtime_state() {
+        // `settings.smart_cursor_toggle` is the toggle-mode flag
+        // (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), not
+        // the wanted state: it stays a saved key that no longer gates the
+        // lookup either way.
         let mut app = wiring_app();
         app.settings.smart_cursor_toggle = false;
         assert_eq!(
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
+            Some((35, 39)),
+            "the setting off does not disable the runtime smart cursor"
+        );
+        let mut app = wiring_app();
+        app.settings.smart_cursor_toggle = true;
+        app.smart_cursor_used = false;
+        assert_eq!(
+            repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
             None,
-            "the toggle off disables the smart cursor"
+            "the setting on does not enable the runtime smart cursor"
         );
     }
 }
