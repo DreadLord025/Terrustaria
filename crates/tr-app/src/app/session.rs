@@ -78,6 +78,26 @@ impl App {
             playable: true,
             deletable: false,
             path: None,
+            // The session character's appearance: the creation draft's
+            // colours when the session came out of character creation
+            // (`Main.PendingPlayer` carries them, `UICharacterSelect.cs:110`),
+            // else `new Player()`'s initializers (`Player.cs:2554-2566`).
+            appearance: match &self.session_draft {
+                Some(d) => ui::save_list::Appearance {
+                    hair: d.hair,
+                    skin_variant: d.skin_variant,
+                    colors: [
+                        [d.hair_color[0], d.hair_color[1], d.hair_color[2]],
+                        [d.skin_color[0], d.skin_color[1], d.skin_color[2]],
+                        [d.eye_color[0], d.eye_color[1], d.eye_color[2]],
+                        [d.shirt_color[0], d.shirt_color[1], d.shirt_color[2]],
+                        [d.undershirt_color[0], d.undershirt_color[1], d.undershirt_color[2]],
+                        [d.pants_color[0], d.pants_color[1], d.pants_color[2]],
+                        [d.shoe_color[0], d.shoe_color[1], d.shoe_color[2]],
+                    ],
+                },
+                None => ui::save_list::Appearance::default(),
+            },
         }
     }
 
