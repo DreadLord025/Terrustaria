@@ -1921,13 +1921,20 @@ impl Projectile {
                     queue += 1;
                 }
                 if m == me
-                    || (self.pos.x - other.pos.x).abs() + (self.pos.y - other.pos.y).abs()
-                        >= num11
+                    || (self.pos.x - other.pos.x).abs() + (self.pos.y - other.pos.y).abs() >= num11
                 {
                     continue;
                 }
-                sep.x += if self.pos.x < other.pos.x { -num10 } else { num10 };
-                sep.y += if self.pos.y < other.pos.y { -num10 } else { num10 };
+                sep.x += if self.pos.x < other.pos.x {
+                    -num10
+                } else {
+                    num10
+                };
+                sep.y += if self.pos.y < other.pos.y {
+                    -num10
+                } else {
+                    num10
+                };
             }
         }
         (sep, queue)
@@ -1959,7 +1966,8 @@ impl Projectile {
         npcs: &[Npc],
     ) -> Option<MinionShot> {
         // `:65039-65045` — the parameter block.
-        let (mut num, mut num2, mut num3, mut num4, mut num5) = (0.0f32, 0.0f32, 20.0f32, 40.0f32, 0.69f32);
+        let (mut num, mut num2, mut num3, mut num4, mut num5) =
+            (0.0f32, 0.0f32, 20.0f32, 40.0f32, 0.69f32);
         // `:65046-65060` — Abigail's parameter scaling and the originalDamage
         // write from the owner's Abigail max.
         if self.kind == ABIGAIL {
@@ -2291,7 +2299,10 @@ impl Projectile {
                 v2 += Vec2::new(0.0, 40.0);
             }
             if self.kind == ABIGAIL {
-                v2 += Vec2::new(-40.0 * owner.as_ref().map_or(1.0, |p| p.facing as f32), 40.0);
+                v2 += Vec2::new(
+                    -40.0 * owner.as_ref().map_or(1.0, |p| p.facing as f32),
+                    40.0,
+                );
             }
             if self.kind == FLYING_IMP {
                 // `:65684-65700` — the whoAmI-ordered queue offset: the nth Imp
@@ -2461,7 +2472,8 @@ impl Projectile {
         }
         if self.kind == UFO_MINION {
             // `:66067-66077` — the aim-aligned beam and the shot.
-            let aim_rot = (vector - center).y.atan2((vector - center).x) - std::f32::consts::FRAC_PI_2;
+            let aim_rot =
+                (vector - center).y.atan2((vector - center).x) - std::f32::consts::FRAC_PI_2;
             if aim_rot.abs() > std::f32::consts::FRAC_PI_4 {
                 let dir = (vector - center - Vec2::new(0.0, 80.0)).normalize_or_zero();
                 self.vel += dir;
@@ -2506,6 +2518,91 @@ impl Projectile {
         } else {
             None
         }
+    }
+
+    /// `AI_053_HandleSentryNPCTargeting` (`Projectile.cs:40194-40254`) — the
+    /// shared sentry target search: the owner's whip target first (when it is
+    /// chaseable, inside the `maxDistance` manhattan reach and behind line of
+    /// sight), otherwise the nearest-eligible NPC scan. `straight_line`
+    /// selects the C#'s `CanHitLine` over `CanHit`; the port routes both to the
+    /// shared tile walk (`can_hit_line`, the `Collision.CanHitLine`
+    /// stand-in — ANALYSIS). Returns the target slot with the aim point.
+    pub fn sentry_npc_targeting(
+        &self,
+        world: &World,
+        firing_offset: Vec2,
+        straight_line: bool,
+        max_distance: f32,
+        player_target: i32,
+        npcs: &[Npc],
+    ) -> Option<(usize, f32, f32)> {
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let origin = center + firing_offset;
+        let _ = straight_line;
+        let mut best: Option<(usize, f32, f32)> = None;
+        let mut reach = max_distance;
+        // `:40201-40219` — the whip target arm.
+        if player_target >= 0 {
+            if let Some(n) = npcs.get(player_target as usize) {
+                if n.can_be_chased_by() {
+                    let (w, h) = n.size();
+                    let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                    let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
+                    if d < reach && can_hit_line(world, origin.x, origin.y, aim.x, aim.y) {
+                        reach = d;
+                        best = Some((player_target as usize, aim.x, aim.y));
+                    }
+                }
+            }
+        }
+        // `:40220-40251` — the full scan, ONLY when the whip target did not
+        // supply one (`if (!flag)`).
+        if best.is_some() {
+            return best;
+        }
+        for (idx, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let (w, h) = n.size();
+            let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+            let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
+            if d < reach && can_hit_line(world, origin.x, origin.y, aim.x, aim.y) {
+                reach = d;
+                best = Some((idx, aim.x, aim.y));
+            }
+        }
+        best
+    }
+
+    /// `Projectile.WipableTurret` (`Projectile.cs:528-537`): this machine's own
+    /// sentry that `TurretShouldPersist` does not hold — the eviction
+    /// candidate of `UpdateMaxTurrets`.
+    pub fn wipable_turret(&self, local_owner: u8, dd2_ongoing: bool) -> bool {
+        self.owner == local_owner && self.sentry && !self.sentry_should_persist(dd2_ongoing)
+    }
+
+    /// `Projectile.TurretShouldPersist` (`Projectile.cs:670-690`): the O'A tower
+    /// families (663/665/667, 677-679, 688-690, 691-693) persist only while
+    /// `DD2Event.Ongoing` holds — the port's stub reports false until
+    /// M4-EVENT-5, so they are wipable like the rest (ANALYSIS).
+    fn sentry_should_persist(&self, dd2_ongoing: bool) -> bool {
+        dd2_ongoing
+            && matches!(
+                self.kind,
+                FLAME_BURST_TOWER_1
+                    | FLAME_BURST_TOWER_2
+                    | FLAME_BURST_TOWER_3
+                    | BALLISTRA_TOWER_1
+                    | BALLISTRA_TOWER_2
+                    | BALLISTRA_TOWER_3
+                    | LIGHTNING_AURA_1
+                    | LIGHTNING_AURA_2
+                    | LIGHTNING_AURA_3
+                    | EXPLOSIVE_TRAP_1
+                    | EXPLOSIVE_TRAP_2
+                    | EXPLOSIVE_TRAP_3
+            )
     }
 }
 
@@ -2606,6 +2703,41 @@ pub(crate) struct MinionShot {
 }
 
 impl ProjectilePool {
+    /// `Player.UpdateMaxTurrets` (`Player.cs:53061-53090`): while the wipable
+    /// sentries exceed `max_turrets`, the one with the LOWEST `timeLeft` dies
+    /// (scan order, ≤1000 iterations). Run after the summon arms — the C#'s
+    /// three call sites sit behind buff changes (`:25711`/`:48210`/`:49092`),
+    /// so the port runs it at the head of the player's fixed step.
+    pub fn update_max_turrets(&mut self, max_turrets: i32, local_owner: u8, dd2_ongoing: bool) {
+        let mut count = 0usize;
+        for p in self.slots.iter() {
+            if p.active && p.wipable_turret(local_owner, dd2_ongoing) {
+                count += 1;
+            }
+        }
+        let mut guard = 0;
+        while count > max_turrets.max(0) as usize && {
+            guard += 1;
+            guard < 1000
+        } {
+            let mut victim: Option<usize> = None;
+            for (i, p) in self.slots.iter().enumerate() {
+                if !p.active || !p.wipable_turret(local_owner, dd2_ongoing) {
+                    continue;
+                }
+                match victim {
+                    Some(v) if self.slots[v].time_left <= p.time_left => {}
+                    _ => victim = Some(i),
+                }
+            }
+            let Some(v) = victim else { break };
+            let p = &mut self.slots[v];
+            p.active = false;
+            p.time_left = 0;
+            count -= 1;
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             slots: vec![Projectile::default(); MAX_PROJECTILES],
@@ -3159,6 +3291,44 @@ impl ProjectilePool {
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
+                        53 | 197 => {
+                            // The whip target rides the threaded player (the
+                            // C# reads `Main.player[owner]` inside the arm).
+                            let player_target =
+                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                            // `AI_053_FrostHydra`'s targeting call
+                            // (`Projectile.cs:37353`) and `AI_197`'s
+                            // (`:40449`) — the shared
+                            // `AI_053_HandleSentryNPCTargeting` runs on the
+                            // slot; the per-kind shot machines (the Hydra's
+                            // breath, the barnacle's shots) are the unported
+                            // half (ANALYSIS), so the aim rides `local_ai` as
+                            // the ported seam: [aim_x, aim_y, target_slot].
+                            let aim = {
+                                let p = &self.slots[i];
+                                p.sentry_npc_targeting(
+                                    world,
+                                    Vec2::new(0.0, -12.0),
+                                    false,
+                                    1000.0,
+                                    player_target,
+                                    npcs,
+                                )
+                            };
+                            let p = &mut self.slots[i];
+                            match aim {
+                                Some((t, x, y)) => {
+                                    p.local_ai[0] = x;
+                                    p.local_ai[1] = y;
+                                    p.local_ai[2] = t as f32;
+                                }
+                                None => {
+                                    p.local_ai[0] = p.pos.x + p.w * 0.5;
+                                    p.local_ai[1] = p.pos.y + p.h * 0.5;
+                                    p.local_ai[2] = -1.0;
+                                }
+                            }
+                        }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
                             // `AI_062` (`Projectile.cs:29314-29316`'s
@@ -3170,9 +3340,13 @@ impl ProjectilePool {
                             // (the `YoyoBeamRequest` pattern) — the spawn drops
                             // until the shot families land.
                             let (sep, queue) = self.slots[i].minion_separation(&self.slots, i);
-                            let shot = self
-                                .slots[i]
-                                .ai_flying_minion(world, sep, queue, player.as_deref_mut(), npcs);
+                            let shot = self.slots[i].ai_flying_minion(
+                                world,
+                                sep,
+                                queue,
+                                player.as_deref_mut(),
+                                npcs,
+                            );
                             // `HandleMovement`'s `UpdatePosition`
                             // (`Projectile.cs:19858`/`:20433-20442`): the shared
                             // `position += velocity` runs OUTSIDE the AI, once
@@ -3196,7 +3370,15 @@ impl ProjectilePool {
                                     )
                                 };
                                 if let Some(slot) = self.spawn_with_data_ai_owned(
-                                    s.kind, owner, x, y, s.vx, s.vy, damage, kb, s.target as f32,
+                                    s.kind,
+                                    owner,
+                                    x,
+                                    y,
+                                    s.vx,
+                                    s.vy,
+                                    damage,
+                                    kb,
+                                    s.target as f32,
                                     0.0,
                                 ) {
                                     // `Projectile.cs:66124` — the generic fire
@@ -3504,7 +3686,7 @@ impl ProjectilePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -3862,7 +4044,7 @@ mod falling_tests {
     // build the world, then pass it mutably.
 
     fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
-        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
         let i = w.index(x, y);
         w.tiles[i] = Tile {
             kind: 1,
@@ -3932,7 +4114,7 @@ mod falling_tests {
         let mut pool = ProjectilePool::new();
         let mut w = world();
         put_solid(&mut w, 10, 24);
-        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
         for y in [21, 22] {
             let i = w.index(10, y);
             w.tiles[i] = Tile {
@@ -3977,7 +4159,7 @@ mod falling_tests {
 #[cfg(test)]
 mod arrow_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -4195,7 +4377,7 @@ mod arrow_tests {
 #[cfg(test)]
 mod boomerang_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -4399,7 +4581,7 @@ mod boomerang_tests {
 #[cfg(test)]
 mod bomb_tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -4713,7 +4895,7 @@ mod bomb_tests {
 mod yoyo_tests {
     use super::*;
     use crate::npc::{Npc, NpcKind};
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
         tr_core::World::new("t".into(), 64, 64)
@@ -6779,8 +6961,7 @@ mod minion_ai_tests {
         }
         assert_eq!(pool.slots[ufo].ai[0], 0.0, "the 5-tick counter (num4 = 5)");
         assert_eq!(
-            pool.slots[ufo].ai[1],
-            31.0,
+            pool.slots[ufo].ai[1], 31.0,
             "the reset cooldown 30 plus the cooldown machine's increment (`:65985`)"
         );
     }
@@ -6823,6 +7004,192 @@ mod minion_ai_tests {
         assert!(
             pool2.slots[b].minion_pos > pool2.slots[a].minion_pos,
             "the queue order follows the slot order"
+        );
+    }
+}
+
+/// The sentry harness's tests — `AI_053_HandleSentryNPCTargeting`
+/// (`Projectile.cs:40194-40254`) and `Player.UpdateMaxTurrets`
+/// (`Player.cs:53061-53090`).
+#[cfg(test)]
+mod sentry_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_turrets = 1;
+        p.max_turrets_old = 1;
+        p
+    }
+
+    fn spawn_sentry(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32, life: i32) -> usize {
+        let slot = pool
+            .spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].time_left = life;
+        slot
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// DW-5.1 — `UpdateMaxTurrets`: three Frost Hydras over `max_turrets = 2`
+    /// — the lowest-`timeLeft` wipable sentry dies, the counters settle at 2.
+    #[test]
+    fn test_DW_5_1_the_lowest_life_sentry_is_evicted() {
+        let mut pool = ProjectilePool::new();
+        let mut p = player(&world());
+        let a = spawn_sentry(&mut pool, FROST_HYDRA, 200.0, 300.0, 35000);
+        let b = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let c = spawn_sentry(&mut pool, FROST_HYDRA, 400.0, 300.0, 34000);
+        assert_eq!(a + b + c > 0, true);
+        p.max_turrets = 2;
+        pool.update_max_turrets(p.max_turrets, 0, false);
+        let live = [
+            pool.slots[a].active,
+            pool.slots[b].active,
+            pool.slots[c].active,
+        ]
+        .into_iter()
+        .filter(|&on| on)
+        .count();
+        assert_eq!(live, 2, "one evicted");
+        assert!(!pool.slots[c].active, "the lowest timeLeft (34000) dies");
+        assert!(pool.slots[a].active && pool.slots[b].active);
+        // The cap drop path: at `max_turrets = 1` the next-lowest goes too.
+        p.max_turrets = 1;
+        pool.update_max_turrets(p.max_turrets, 0, false);
+        assert_eq!(
+            pool.slots.iter().filter(|s| s.active && s.sentry).count(),
+            1,
+            "the cap drop evicts the next"
+        );
+        assert!(!pool.slots[a].active, "the 35000 sentry dies at cap 1");
+    }
+
+    /// DW-5.2 — `sentry_npc_targeting`: the whip target leads when chaseable,
+    /// in the 1000-px manhattan reach and behind LOS; otherwise the scan picks
+    /// the nearest eligible NPC; nothing eligible → None.
+    #[test]
+    fn test_DW_5_2_the_targeting_prefers_the_whip_target() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let npcs = vec![
+            npc_at(NpcKind::Zombie, 900.0, 300.0),
+            npc_at(NpcKind::DemonEye, 700.0, 400.0),
+        ];
+        let p = &pool.slots[hydra];
+        // The whip target (index 0) leads over the nearer scan candidate.
+        let aim = p.sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, 0, &npcs);
+        let (t, x, y) = aim.expect("the whip target is eligible");
+        assert_eq!(t, 0);
+        let (zw, zh) = npcs[0].size();
+        assert!((x - (900.0 + zw * 0.5)).abs() < 1e-3, "the aim x {x}");
+        assert!((y - (300.0 + zh * 0.5)).abs() < 1e-3, "the aim y {y}");
+        // No whip target: the nearest scan candidate (the DemonEye at
+        // manhattan ~437 vs the Zombie's ~615) wins.
+        let aim = p.sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, -1, &npcs);
+        assert_eq!(aim.expect("a target").0, 1);
+        // Nothing eligible (all unchaseable): None.
+        let mut cold = npc_at(NpcKind::Zombie, 900.0, 300.0);
+        cold.chaseable = false;
+        assert!(p
+            .sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, -1, &[cold])
+            .is_none());
+        // Out of reach (a tight maxDistance): None.
+        assert!(p
+            .sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 100.0, -1, &npcs)
+            .is_none());
+        let _ = &mut w;
+    }
+
+    /// DW-5.3 — the lifetime: a sentry dies exactly at `SentryLifeTime` 36000
+    /// (35999 alive, 36000 dead) and its damage rides the pool's recompute.
+    #[test]
+    fn test_DW_5_3_the_sentry_lifetime_and_damage() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 1.5;
+        let slot = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[slot].original_damage = 100;
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..35999 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        assert!(pool.slots[slot].active, "alive at 35999 ticks");
+        assert_eq!(pool.slots[slot].damage, 150, "the recompute rides Phase 3");
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        assert!(!pool.slots[slot].active, "dead at 36000 ticks");
+    }
+
+    /// DW-5.4 — the DD2 persistence: with `dd2_ongoing` true the O'A towers
+    /// are not wipable (they survive the sweep), and they are evicted once the
+    /// flag is false (the port's stub reports false until M4-EVENT-5).
+    #[test]
+    fn test_DW_5_4_the_dd2_towers_persist_while_ongoing() {
+        let mut pool = ProjectilePool::new();
+        let ballista = spawn_sentry(&mut pool, BALLISTRA_TOWER_1, 200.0, 300.0, 35000);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 34000);
+        assert!(
+            pool.slots[ballista].wipable_turret(0, false),
+            "wipable when offline"
+        );
+        assert!(
+            !pool.slots[ballista].wipable_turret(0, true),
+            "persistent while ongoing"
+        );
+        assert!(
+            pool.slots[hydra].wipable_turret(0, true),
+            "the vanilla sentries always wipe"
+        );
+        // At cap 1 with the event ongoing: the tower is not a wipable
+        // candidate at all, so the wipable count (1 — just the Hydra) fits the
+        // budget and both survive. Once the event is over the tower counts,
+        // and the lowest-`timeLeft` wipable (the Hydra, 34000) dies.
+        pool.update_max_turrets(1, 0, true);
+        assert!(pool.slots[ballista].active, "the tower persists");
+        assert!(pool.slots[hydra].active, "the only wipable fits the budget");
+        pool.update_max_turrets(1, 0, false);
+        assert!(pool.slots[ballista].active, "the tower outlives the Hydra");
+        assert!(
+            !pool.slots[hydra].active,
+            "the lowest timeLeft wipable dies"
         );
     }
 }

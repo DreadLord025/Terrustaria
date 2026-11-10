@@ -217,6 +217,10 @@ pub struct Player {
     /// `Player.maxTurrets = 1` (`Player.cs:2848`) — the sentry budget, raised
     /// by buff 348 and reset by `ResetEffects` (`:18449`).
     pub max_turrets: i32,
+    /// `Player.maxTurretsOld` (`Player.cs:2850`) — the last observed
+    /// `max_turrets`; a change drives the `UpdateMaxTurrets` sweep
+    /// (`:25709-25712`, Phase 5).
+    pub max_turrets_old: i32,
     /// `Player.MinionAttackTargetNPC = -1` (`Player.cs:3008`) — the
     /// right-click aim target; written by the use path (Phase 6).
     pub minion_attack_target_npc: i32,
@@ -1029,6 +1033,7 @@ impl Player {
             num_minions: 0,
             slots_minions: 0.0,
             max_turrets: 1,
+            max_turrets_old: 1,
             minion_attack_target_npc: -1,
             owned_projectile_counts: [0; PROJ_COUNT],
             highest_storm_tiger_gem_original_damage: 0,

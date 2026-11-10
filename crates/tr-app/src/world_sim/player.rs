@@ -419,6 +419,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
+            // `Player.cs:25709-25712` — a `maxTurrets` change drives the
+            // `UpdateMaxTurrets` sweep (the lowest-`timeLeft` wipable sentry
+            // dies while the budget holds); Phase 5's pool method runs it.
+            if p.max_turrets_old != p.max_turrets {
+                app.projectiles.update_max_turrets(
+                    p.max_turrets,
+                    app.local_id as u8,
+                    tr_core::dd2::event_ongoing(),
+                );
+                p.max_turrets_old = p.max_turrets;
+            }
             p.ammo_cycling.tick();
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires

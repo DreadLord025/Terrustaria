@@ -9,6 +9,15 @@
 
 /// `DD2Event._timeLeftUntilSpawningBegins` — the spawn hold's ticks; its
 /// being non-zero is `EnemySpawningIsOnHold` (`:113`).
+/// `DD2Event.Ongoing` — the Old One's Army event's live flag (the
+/// `Projectile.TurretShouldPersist` gate, `Projectile.cs:670-690`: the
+/// O'A sentries persist only while the event runs). The event itself is
+/// M4-EVENT-5's scope; until it lands the stub reports false — which makes the
+/// O'A sentries wipable like the rest (recorded in ANALYSIS).
+pub fn event_ongoing() -> bool {
+    false
+}
+
 pub const SPAWN_HOLD_WAVE_BREAK: i32 = 1800;
 /// `DD2Event.SetEnemySpawningOnHold(300)` at `StartInvasion` (`:299`).
 pub const SPAWN_HOLD_START: i32 = 300;
