@@ -420,6 +420,12 @@ impl ApplicationHandler for App {
                                 }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
+                                // Bug 17: the legacy menu's click tick —
+                                // `Main.DoStatefulTickSound` (`Main.cs:3244`,
+                                // `:3256`) / the settings rows' activation.
+                                if !matches!(action, menu::Action::None) {
+                                    self.audio.play("Menu_Tick");
+                                }
                                 self.apply_menu_action(action, event_loop);
                             }
                             return;
@@ -497,7 +503,26 @@ impl ApplicationHandler for App {
                 // its hover and value-bar drags stay deterministic.
                 let pointer = self.mouse_pos;
                 if let Some(m) = self.menu.as_mut() {
+                    let before = m.hover;
                     m.update_hover(pointer);
+                    // Bug 17: the legacy menu's hover tick (`DoStatefulTickSound`).
+                    if m.hover != before && m.hover.is_some() {
+                        self.audio.play("Menu_Tick");
+                    }
+                }
+                // Bug 17: the front-end hover edge — `FadedMouseOver`'s
+                // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)
+                // fires once when the pointer enters an element.
+                if self.front.is_some() {
+                    let hit = self.front_hit();
+                    if hit != self.front_hover_hit {
+                        if hit.is_some() {
+                            self.audio.play("Menu_Tick");
+                        }
+                        self.front_hover_hit = hit;
+                    }
+                } else {
+                    self.front_hover_hit = None;
                 }
                 // The middle-button world-camera drag is suppressed while the map is
                 // fullscreen, like the other world controls (`Player.cs:24798`).

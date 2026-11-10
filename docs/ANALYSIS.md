@@ -5475,6 +5475,38 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
   keeps the worldgen stream).
 
+- **Bug 16 — tree drops** (`KillTile`'s case 5/596/616/634 →
+  `KillTile_GetTreeDrops`, `WorldGen.cs:65214-65231`/`:66189-66261`):
+  `growth.rs::tree_drops` ports the whole drop arm — `tree_bottom`
+  (`GetTreeBottom`'s frame-column decode `:63451-63473` + the trunk walk
+  `:63474-63480`), `tree_type` (the ground-family map `:63080-63111`),
+  `TreeTypeDropsAcorns` (`:63112-63119`), the canopy acorn roll and the
+  per-family wood variants (ash 5215 / ebonwood 619 / shadewood 911 / jungle
+  620 / pearlwood 621 / mushroom 183 at 1/2 / boreal 2503). The app's
+  `cell_drops` gained the tree kinds (the `genRand` stream rides the seeded
+  FastRandom, the pot-event convention). Deviation: the `bonusWood` roll
+  (the closest player's axe + `Main.rand.Next(3) == 0`, `:66250-66256`) parks
+  with the player seam. A second deviation, recorded because the audit's fix
+  plan assumed it: vanilla `KillTile` has **no whole-tree collapse** — the
+  trunk above a felled base stands until struck (each struck cell dropping
+  through these arms), so the report's "collapse the whole trunk" item was
+  dropped against the golden rule rather than ported.
+
+- **Bug 17 — front-end sounds** (the `FadedMouseOver`/activation cues):
+  `handle_front_click` plays the flow's cue after the click table resolves —
+  `Menu_Close` (11) for the Back-family clicks (`UICharacterSelect.cs:118`,
+  `UIWorldSelect.cs`'s `GoBackClick`), `Menu_Open` (10) for the activations
+  (`UICharacterListItem.cs:198/:248`, `UIWorldListItem.cs:365`,
+  `UICharacterSelect.cs:110`). The hover edge — the front screens' framework
+  element enter (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`) and the
+  legacy menu's row enter (`Main.DoStatefulTickSound`, `Main.cs:3244`) — plays
+  one `Menu_Tick` per enter, tracked by the App's `front_hover_hit` (the
+  framework element id) and the menu's own `hover` field. `Audio` gained a
+  `played` counter (`played_count()`) as the test seam — the headless Apps have
+  no output device. Deviation from the report's plan: the menu activation cue is
+  `Menu_Tick` (12), not `Grab` (7) — the vanilla's Grab is the chest/inventory
+  slot-movement cue (`ItemSlot.cs:759-769`).
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
