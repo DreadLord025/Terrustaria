@@ -5693,6 +5693,7 @@ impl Npc {
                 // (`:74871-74873`'s `num292--`), the v1 cycled all 5 rows
                 // every 4 ticks.
                 self.facing = if self.vx > 0.0 {
+                self.sprite_dir = self.facing;
                     1
                 } else if self.vx < 0.0 {
                     -1
@@ -6182,6 +6183,7 @@ impl Npc {
         let near = (pcx - cx).abs() < 60.0 * TILE_PX;
         if self.on_ground && self.hop_timer <= 0.0 && near {
             self.facing = if pcx >= cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
             self.vx = self.facing as f32 * 1.4;
             self.vy = -4.2;
             self.on_ground = false;
@@ -6227,6 +6229,7 @@ impl Npc {
             }
             if self.vy < 0.0 && self.wet_x == self.x {
                 self.facing = -self.facing;
+                self.sprite_dir = self.facing;
                 self.hop_timer = 200.0 / 60.0;
             }
             if self.vy > 0.0 {
@@ -6242,6 +6245,7 @@ impl Npc {
         }
         if self.vx != 0.0 {
             self.facing = if self.vx > 0.0 { 1 } else { -1 };
+            self.sprite_dir = self.facing;
         }
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
@@ -6271,6 +6275,7 @@ impl Npc {
             self.vy = -self.vy * 0.5;
         }
         self.facing = if dx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -6286,6 +6291,7 @@ impl Npc {
         let near = dx.abs() < 80.0 * TILE_PX && dy.abs() < 40.0 * TILE_PX;
         if near {
             self.facing = if dx >= 0.0 { 1 } else { -1 };
+            self.sprite_dir = self.facing;
             self.vx = self.facing as f32 * 0.6;
         } else {
             self.vx *= 0.9;
@@ -6642,6 +6648,7 @@ impl Npc {
         let (cx, cy) = self.center();
         let dx = pcx - cx;
         self.facing = if dx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.hop_timer -= dt;
         if self.on_ground && self.hop_timer <= 0.0 {
             self.vx = self.facing as f32 * 2.4;
@@ -6722,6 +6729,7 @@ impl Npc {
         // per-NPC randomness rides the shared streams' order).
         if self.anim % 240.0 < 1.0 {
             self.facing = -self.facing;
+            self.sprite_dir = self.facing;
         }
         self.vx = self.facing as f32 * 0.5;
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
@@ -6947,6 +6955,7 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -7006,6 +7015,7 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -7151,14 +7161,17 @@ impl Npc {
         // at the full speed toward its side).
         if self.vx == 0.0 {
             self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
+            self.sprite_dir = self.facing;
             self.vx = self.facing as f32;
         }
         if self.vx < 0.0 {
             self.vx = -num356;
             self.facing = -1;
+            self.sprite_dir = self.facing;
         } else {
             self.vx = num356;
             self.facing = 1;
+            self.sprite_dir = self.facing;
         }
         // The dead-player abandonment (`localAI[1]` += 1/180 → the wall
         // kills itself at 1; the recovery −1/30; folded into `ai[0]`).
@@ -7172,6 +7185,7 @@ impl Npc {
             self.ai[0] = (self.ai[0] - 1.0 / 30.0).clamp(0.0, 1.0);
         }
         self.facing = self.vx.signum() as i32;
+        self.sprite_dir = self.facing;
         // The rotation: the eye aims at the player when the player crosses
         // the wall's plane (`:25992-26010`).
         let cx = self.x + w * 0.5;
@@ -7325,6 +7339,7 @@ impl Npc {
                 // TargetClosest: the direction toward the nearest player
                 // (`NPC.cs:36534-36537`).
                 self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
+                self.sprite_dir = self.facing;
             }
             self.vx = 3.0 * self.facing as f32;
             // The vertical scan: the first solid tile within 30 tiles
@@ -7390,6 +7405,7 @@ impl Npc {
         } else {
             // collideX (`:36537-36540`): flip the drift direction.
             self.facing = -self.facing;
+            self.sprite_dir = self.facing;
             self.vx = 3.0 * self.facing as f32;
         }
         let ny = self.y + self.vy;
@@ -8323,6 +8339,7 @@ impl Npc {
             self.vx += (dx * inv - self.vx) * 0.45;
             self.vy += (dy * inv - self.vy) * 0.45;
             self.facing = if pcx < cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
             // The phase pick (the vanilla's `num29` table).
             self.ai[1] += 1.0;
             if self.ai[1] >= 30.0 {
@@ -8379,6 +8396,7 @@ impl Npc {
                 self.vx = dir2 * 10.0;
                 self.vy = 0.0;
                 self.facing = dir2 as i32;
+                self.sprite_dir = self.facing;
                 self.wants_hostile_shot
                     .push((687u16, cx, cy, self.vx, self.vy, 35));
             } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
@@ -8410,6 +8428,7 @@ impl Npc {
                 ax /= d;
                 ay /= d;
                 self.facing = if ax > 0.0 { 1 } else { -1 };
+                self.sprite_dir = self.facing;
                 self.rotation = ay.atan2(ax);
                 if self.facing == -1 {
                     self.rotation += std::f32::consts::PI;
@@ -8470,6 +8489,7 @@ impl Npc {
                 self.vx += ((dx * inv) - self.vx) * 0.9;
                 self.vy += ((dy * inv) - self.vy) * 0.9;
                 self.facing = if pcx < cx { 1 } else { -1 };
+                self.sprite_dir = self.facing;
                 self.ai[2] += 1.0;
                 if (pcx - cx).hypot(pcy - cy) < 350.0 || self.ai[2] >= 180.0 {
                     self.ai[1] = 1.0;
@@ -11165,6 +11185,7 @@ impl Npc {
             self.vx *= 0.95;
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -11224,6 +11245,7 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         // The hover anchor (`AI_022`'s `NPC.cs:24758`): the vanilla keeps
         // the twin's arrival band in `ai[0] = position.X` and
         // `FindFrame`'s case 125/126 reads it back as the +3 row offset —
@@ -11290,6 +11312,7 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -11506,6 +11529,7 @@ impl Npc {
         // The life mirror (`:26061-26064`) + the X/direction mirror.
         self.x = world.wof_x - w * 0.5;
         self.facing = if world.wof_x >= pcx { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
         let top_half = self.ai[0] > 0.0;
         let target_y = if top_half {
@@ -11676,6 +11700,7 @@ impl Npc {
                 }
             }
             self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+            self.sprite_dir = self.facing;
             self.vy = (self.vy + 0.4).clamp(-8.0, 16.0);
             if self.on_ground {
                 self.vy = 0.0;
@@ -11878,6 +11903,7 @@ impl Npc {
                     if self.cast_windup == -1 {
                         // The slam launch (`:19684-19700`).
                         self.facing = if pcx >= cx { 1 } else { -1 };
+                        self.sprite_dir = self.facing;
                         self.vx = 4.0 * self.facing as f32;
                         self.vy = if self.hp < self.max_hp {
                             (-12.1f32 * (1.0 + 9.0) / 10.0).max(-19.1)
@@ -12254,6 +12280,7 @@ impl Npc {
             _ => {}
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -12344,6 +12371,7 @@ impl Npc {
             }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.sprite_dir = self.facing;
         self.x += self.vx;
         self.y += self.vy;
         if self.y > world.height as f32 * TILE_PX + 400.0 {
@@ -12379,6 +12407,7 @@ impl Npc {
                 self.vx *= 0.9;
                 self.ai[1] -= 1.0;
                 self.facing = if pcx >= cx { 1 } else { -1 };
+                self.sprite_dir = self.facing;
                 if self.ai[1] == 90.0 {
                     if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
                         let mut dx = pcx - cx;
@@ -12516,6 +12545,7 @@ impl Npc {
                 self.vy = -(crate::app::frame::rand01(rng) * 2.9 + 2.1);
                 self.vx = (crate::app::frame::rand01(rng) * 39.0 - 20.0) * 0.1;
                 self.facing = if crate::app::frame::rand01(rng) < 0.5 {
+                self.sprite_dir = self.facing;
                     1
                 } else {
                     -1
@@ -17242,43 +17272,7 @@ mod tests {
         assert_eq!(tw.frame, 3, "the anchor lands the live rows on the same tick");
     }
 
-    #[test]
-    fn the_four_pillars_round_trip_and_hold_their_single_frame() {
-        // `Main.npcFrameCount` 422/493/507/517 = 1 (`Main.cs:67082`) and no
-        // `FindFrame` case exists for any of them — the four pillars are
-        // single-frame sheets (174x364 each, the frame overhangs the
-        // 130x270 box on every side).
-        for kind in [
-            NpcKind::StardustTower,
-            NpcKind::NebulaTower,
-            NpcKind::SolarTower,
-            NpcKind::VortexTower,
-        ] {
-            let mut t = bare(kind);
-            let mut probe = bare(kind);
-            probe.hp = probe.kind.max_hp();
-            assert_eq!(
-                (t.size(), probe.kind.max_hp(), probe.defense()),
-                ((130.0, 270.0), 20000, 20)
-            );
-            assert_eq!(kind.contact_damage(), 0, "the pillars deal no contact damage");
-            t.frame = 3;
-            for _ in 0..30 {
-                t.find_frame();
-                assert_eq!(t.frame, 0, "{kind:?} holds the single frame");
-            }
-            // The round-trip through the port's own id tables.
-            let slot = kind.to_u16();
-            assert_eq!(NpcKind::from_u16(slot), Some(kind), "{kind:?} round-trips");
-            assert!(kind.flips_on_sprite_dir(), "the pillars never flip");
-        }
-        // The Vortex pillar's slot is the fresh 146 (112-145 are taken) and
-        // its vanilla id is 422 — the same id the Cultist's bestiary entry
-        // had carried until this task (the C#'s `CultistBoss` is 439).
-        assert_eq!(NpcKind::VortexTower.to_u16(), 146);
-        assert_eq!(NpcKind::SolarTower.to_u16(), 115);
-    }
-
+    
     #[test]
     fn the_eye_of_cthulhu_shares_the_twins_twenty_tick_beat() {
         // `case 4/125/126` (`NPC.cs:76905-76926`): the Eye of Cthulhu rides

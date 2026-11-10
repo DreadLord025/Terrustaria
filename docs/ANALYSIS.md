@@ -5497,6 +5497,77 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
   keeps the worldgen stream).
 
+- **Bug 16 — tree drops** (`KillTile`'s case 5/596/616/634 →
+  `KillTile_GetTreeDrops`, `WorldGen.cs:65214-65231`/`:66189-66261`):
+  `growth.rs::tree_drops` ports the whole drop arm — `tree_bottom`
+  (`GetTreeBottom`'s frame-column decode `:63451-63473` + the trunk walk
+  `:63474-63480`), `tree_type` (the ground-family map `:63080-63111`),
+  `TreeTypeDropsAcorns` (`:63112-63119`), the canopy acorn roll and the
+  per-family wood variants (ash 5215 / ebonwood 619 / shadewood 911 / jungle
+  620 / pearlwood 621 / mushroom 183 at 1/2 / boreal 2503). The app's
+  `cell_drops` gained the tree kinds (the `genRand` stream rides the seeded
+  FastRandom, the pot-event convention). Deviation: the `bonusWood` roll
+  (the closest player's axe + `Main.rand.Next(3) == 0`, `:66250-66256`) parks
+  with the player seam. A second deviation, recorded because the audit's fix
+  plan assumed it: vanilla `KillTile` has **no whole-tree collapse** — the
+  trunk above a felled base stands until struck (each struck cell dropping
+  through these arms), so the report's "collapse the whole trunk" item was
+  dropped against the golden rule rather than ported.
+
+- **Bug 17 — front-end sounds** (the `FadedMouseOver`/activation cues):
+  `handle_front_click` plays the flow's cue after the click table resolves —
+  `Menu_Close` (11) for the Back-family clicks (`UICharacterSelect.cs:118`,
+  `UIWorldSelect.cs`'s `GoBackClick`), `Menu_Open` (10) for the activations
+  (`UICharacterListItem.cs:198/:248`, `UIWorldListItem.cs:365`,
+  `UICharacterSelect.cs:110`). The hover edge — the front screens' framework
+  element enter (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`) and the
+  legacy menu's row enter (`Main.DoStatefulTickSound`, `Main.cs:3244`) — plays
+  one `Menu_Tick` per enter, tracked by the App's `front_hover_hit` (the
+  framework element id) and the menu's own `hover` field. `Audio` gained a
+  `played` counter (`played_count()`) as the test seam — the headless Apps have
+  no output device. Deviation from the report's plan: the menu activation cue is
+  `Menu_Tick` (12), not `Grab` (7) — the vanilla's Grab is the chest/inventory
+  slot-movement cue (`ItemSlot.cs:759-769`).
+
+- **Bug 18 — the emote Back label** (`UIEmotesMenu.cs:78`'s
+  `UITextPanel(Language.GetText("UI.Back"), 0.7f, large: true)`): the shared
+  `ui::bestiary::back_label()` accessor now feeds the emote wheel's Back panel
+  (`ui/emotes.rs`) and the bestiary's own (which carried the same hardcoded
+  literal), measured and drawn as one string through the existing
+  `text::hud_text_width` + `uistate::draw_text_panel` path — the C#'s
+  `TextHAlign 0.5` centring against the localized `_textSize.X`. Two source
+  corrections: the key is `UI.Back` (not a `Lang.menu` row) and the manager's
+  missing-resource fallback answers the key itself, so a locale without the
+  bundled content jsons reads the key (documented; the resource loading is
+  `lang.rs`'s existing path).
+
+- **Bug 19 — the biome-cactus frame** (`DrawSingleTile`'s case 80,
+  `TileDrawing.cs:1132-1147`): the port folded the `rectangle.Y += 54/108/162`
+  shift into the shared `add_fr_y`, which the FLAT build path also consumes
+  (`render/tiles.rs`'s source rect `fy + add_fr_y`) — so every cactus on any
+  ground shifted, while the C# mutates only the local `rectangle` (`:1007`)
+  whose single consumer is the half-brick arm (`:1298`). `TileDrawData` now
+  carries `half_brick_src_y` for that rect's shift; the half-brick draw
+  (`push_half_shifted`) applies it and the flat path stays unshifted. The
+  `cactus_source_y_offset` helper stays as the data layer.
+
+- **Bug 20 — the trash slot** (the vanilla's destroy-on-quick-trash
+  container): the quick-trash — `GetAlternateClickAction`'s else-chain tail
+  (`ItemSlot.cs:679-682`) lights `AlternateClickAction.Trash`'s cursor 6 on a
+  Shift-held hover over a non-favorited, non-air inventory slot when no
+  crafting/reforge/chest arm matched (the chain tail sits after the chest
+  arm — an earlier placement stole the chest's shift-click), and the click arm
+  (`OverrideLeftClick`'s cursor-6 arm `:759-775`) replaces the trash with the
+  stack and empties the slot; the cues are `TrashItem` (no port asset — the
+  recorded gap) and `Grab`. `on_player_death` clears the trash
+  (`Player.DropItems`' first line, `Player.cs:54304`); the event-item purge
+  (`:24729-24736`) rides the unported event items and the wholesale clear
+  covers it. The slot's rect shifts to (453, 426) at 0.755 while
+  `Main.ChestOrShopUIVisible` (`Main.cs:42349-42366`) through one
+  `trash_rect` helper shared by the draw and the hit test. Deviations: the
+  Journey research exception (`:762`) and the shop's sell cursor wait for
+  their models.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -9548,3 +9619,42 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 hold→throw→bounce→reel lifecycle.
+## The player-audit fixes 11-15 (2026-11-10)
+
+The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
+the branch mechanics below; every C# site is in the report itself.
+
+- **BUG-11** — the in-game options window. `ui/ingame_options.rs` ports
+  `Main.DrawSettingButton`'s button (`RefreshSettingsButtonStatus`'s fixed
+  `UIScreenWidth - 110` / `UIScreenHeight - 20` rect on the port's fixed
+  960×600 UI canvas — the same space the bestiary icon and the emote button
+  ride) and the `IngameOptions` panel: the 670×480 origin at `screen/2 -
+  size/2` with the 20-px hover padding, the `num5 = 70` row pitch, the three
+  volume bars over `sliders::value_bar_rects` (music/sound/ambient with the
+  `rightLock` drag), the map-scale/auto-pause/auto-save toggles, and the
+  `IngameOptions.Close` close (Escape's first arm, persisting through
+  `Settings::save`). Deviations: the vanilla two-column navigation (the left
+  column's general/interface/video/controls/language rows) is not mounted —
+  the port carries those rows in the front-end `Menu` (M7-UI-4's field
+  parity); the volume bars' click-to-set is the slider's drag only.
+- **BUG-12** — the Escape chain's map arm. The vanilla order is
+  options → bestiary → emotes → map → inventory (`Player.ToggleInv`,
+  `Player.cs:4973-4978`). The chain was extracted into
+  `App::world_key(KeyCode)` so the winit event path and the tests share one
+  body.
+- **BUG-13** — the Smart Cursor split. `App.smart_cursor_used` is the
+  runtime state (`Main.SmartCursorWanted_Mouse`, default off) and the
+  persisted `smart_cursor_toggle` remains the config key it has always
+  been — the bug was the setting serving as the runtime gate. The toggle is
+  the left-Shift press edge with the `Menu_Tick` cue.
+- **BUG-14** — the button strips. `draw_sheet_frame` now takes the frame
+  grid and slices `w / frames_x` like `Utils.Frame`, exposed as the pure
+  `sheet_frame_uv`; the emote button's sheet was never packed into the
+  atlas (the actual root cause of the invisible button — the hitbox and the
+  click handler existed, the sprite did not).
+- **BUG-15** — the off-by-one. The Solar Selenian is NPC 419
+  (`NPCID.cs:11515`), which resolves through `bestiary_sheet_index` to slot
+  135 of the 174-entry table; the report's suggested 625 is `SeaTurtle`.
+  All literal sheet indices are gone from the code (doc comments keep the
+  history).
+4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)

@@ -559,7 +559,11 @@ pub fn load_world_images(
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
         "Extra_48",
+        // The two inventory button sheets (`Main.DrawInventory`'s
+        // `DrawBestiaryIcon`/`DrawEmoteBubblesButton`, `Main.cs:41012-41013`),
+        // both horizontal 2-frame strips.
         "UI/Bestiary",
+        "UI/Emotes",
         "UI/Bestiary/Slot_Back",
         "UI/Bestiary/Slot_Front",
         "UI/Bestiary/Slot_Overlay",
@@ -1374,6 +1378,12 @@ pub struct Lookups {
     /// `Images/UI/Bestiary`: the 2-frame inventory button
     /// (`DrawBestiaryIcon`, `Main.cs:42464`).
     pub ui_bestiary_button: Option<tr_render::SheetRect>,
+    /// `Images/UI/Emotes` (`TextureAssets.EmoteMenuButton`,
+    /// `AssetInitializer.cs:313`): the emote bubbles button's 2-frame sheet
+    /// (`DrawEmoteBubblesButton`, `Main.cs:42408`). The button had a hitbox
+    /// and a click handler but no sprite until §14 because the sheet was
+    /// never packed.
+    pub ui_emote_button: Option<tr_render::SheetRect>,
     /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
     /// back, the hover frame, the 60 %-white overlay, the front border and
     /// the locked portrait.
@@ -1647,6 +1657,7 @@ impl Lookups {
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
+            ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
             ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
@@ -2617,6 +2628,41 @@ mod tests {
         // their sheets now arrive through the enumeration instead of the list.
         assert!(lookups.coin_uv(0).is_some());
         assert!(lookups.shuriken_uv().is_some());
+    }
+
+    #[test]
+    fn the_two_inventory_button_sheets_pack_as_two_frame_strips() {
+        // §14: both button sheets must reach the atlas (the emote bubbles
+        // button was invisible because `Images/UI/Emotes` was never packed)
+        // and both are horizontal 2-frame strips — `DrawBestiaryIcon` and
+        // `DrawEmoteBubblesButton` slice them with
+        // `value.Frame(2, 1, flag ? 1 : 0)` (`Main.cs:42464`, `:42408`).
+        let (_, lookups) = content_lookups();
+        let bestiary = lookups
+            .ui_bestiary_button
+            .expect("UI/Bestiary must pack for the bestiary button");
+        let emote = lookups
+            .ui_emote_button
+            .expect("UI/Emotes must pack for the emote button");
+        // Both are horizontal 2-frame strips: `value.Frame(2, 1, …)`
+        // (`Main.cs:42464`, `:42408`) halves the width, so the bundled
+        // sheets are two equal columns (the retail 64-wide art; each frame
+        // then loses the 2 px inset, `rectangle2.Width -= 2`).
+        for (name, sheet) in [("UI/Bestiary", bestiary), ("UI/Emotes", emote)] {
+            assert!(sheet.width > 0 && sheet.height > 0, "{name} has a size");
+            assert_eq!(
+                sheet.width % 2,
+                0,
+                "{name} ({}x{}) is an even-width 2-column strip",
+                sheet.width,
+                sheet.height
+            );
+            assert_eq!(
+                (sheet.width, sheet.height),
+                if name == "UI/Bestiary" { (64, 30) } else { (64, 32) },
+                "{name} is the retail strip"
+            );
+        }
     }
 
     #[test]

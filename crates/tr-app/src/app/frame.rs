@@ -1329,6 +1329,10 @@ impl App {
                         &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
+                        // BUG-11: the in-game options window's state
+                        // (`Main.ingameOptionsWindow`) — the Settings button
+                        // and the panel draw over the open inventory.
+                        Some((settings, &self.ingame_options)),
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`

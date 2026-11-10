@@ -123,6 +123,26 @@ expects a world camera, light and a `Player` with live physics state).
 3. Test: a deterministic `TR_UI=charsel` screenshot contains non-background pixels
    inside the preview rect.
 
+**Fixed 2026-11-10 (`BUG-02-char-preview`).** The extraction step already
+existed for the creation screen — `render::entities::draw_player_preview` over
+`ui::char_creation::PreviewColors` — so the card reuses it instead of a second
+walk. The missing half was the data: `save_list::PlayerEntry` now carries
+`Appearance { hair, skin_variant, colors: [[u8; 3]; 7] }`, filled from
+`PlayerFile` in `list_players` (the port's `player_file.rs:238-242` block, the
+C#'s `Player.cs:55279-55285` ReadRGB order — hair, skin, eye, shirt, undershirt,
+pants, shoe) and defaulted to `new Player()`'s initializers
+(`Player.cs:2554-2566`) for the session/fake cards; the session entry carries
+the creation draft's colours when it came out of character creation. The card
+draws the sprite into the 59x58 panel at `characterScale = 1`
+(`UICharacterListItem.cs:170`) on the static animation row 0
+(`UICharacter.cs:89`) at the `GetPlayerPosition` anchor
+(`UICharacter.cs:122-130`), the `PlayerBackground` sheet still underneath.
+Documented deviation (unchanged): the preview decodes only the base body
+sheets, so every skin variant / hair id renders the base frame — the port has
+no per-variant player sets. 4 tests: the vanilla default colours, the seven-
+triplet → RGBA mapping, the disk card's `.plr` round-trip, and the existing
+charsel layout suite.
+
 ---
 
 ## 3. Inventory favourites are lost on reload — S2 / High
@@ -151,6 +171,23 @@ the `.plr` writer was stubbed with a zero.
 2. Wire the existing `toggle_favorite` (`app/mod.rs:987`) to mark the save dirty.
 3. Test: toggle two slots → save → load → the same two slots are starred; and the
    vanilla round-trip test (`M6-SAVE-2`) still passes.
+
+**Fixed 2026-11-10 (`BUG-03-favorites-persist`).** `PlayerFile`/`PlayerFileWrite`
+carry `inv_favorites: u64` — bit `i` is `inventory[i].favorited`, the exact
+`Player.cs:54820-54824` layout (type, stack, prefix, favorited) the reader had
+already been consuming at `:55340-55362` for release ≥ 114. The writer emitted a
+hardcoded `false` per slot and the reader dropped the byte; both halves carry the
+real value now. `save_list::PlayerEntry` gains the field (filled from the `.plr`),
+`App::hydrate_favorites`/`App::favorite_bits` convert between the live
+`favorite_slots` and the bitfield, and the creation save writes the live stars.
+**Found on the way:** the port's reader skipped the armour/dye `favorited` byte
+at release ≥ 322 (`Player.cs:55315`/`:55336`), so a real vanilla 326 file
+desynced the section walk from the armour block onward — now gated and consumed.
+Parked: the armour/dye favourites have no port UI (kept consumed-and-dropped)
+and the in-game re-save of a loaded character rides BUG-05's `WorldPlay`, since
+the port's only player-file writer today is the creation path. 5 tests: the
+sample's bits, the save/load round trip, the version gate, the App-side toggle
+pair through the bitfield, and the disk card's stars.
 
 ---
 
@@ -555,12 +592,22 @@ calls `audio.play("Menu_Tick")`/`("Grab")` from the in-game click handlers
 **Root cause.** The front-end click/activate path never got the sound wiring the
 in-game path has.
 
-**Fix plan.**
-1. Call `audio.play("Menu_Tick")` on row hover/selection and `("Grab")` on
-   activation in `menu/mod.rs`'s click dispatch (the same helper the in-game path
-   uses).
-2. Cover char select / world select (`apply_front_flow`) and the Back buttons.
-3. Test: a scripted front click increments the audio cue counter.
+**Status: FIXED 2026-11-10** (`fix-front-end-click-sounds`).
+
+What landed: the front-end activation cue in `handle_front_click`
+(`UICharacterSelect.cs:110/:118`, `UIWorldListItem.cs:365`) — the Back-family
+clicks play `Menu_Close` (11), the rest `Menu_Open` (10); the legacy menu's
+click plays `Menu_Tick` (`DoStatefulTickSound`, `Main.cs:3244`); the hover
+edge — the front screens' element enter (`FadedMouseOver`,
+`UICharacterSelect.cs:124` / `UIWorldSelect.cs:126`) and the legacy menu's row
+enter — plays one `Menu_Tick` per enter. `Audio` gained a `played` counter
+(the test seam the headless flows assert through — `played_count()`). 2 tests
+(the activation cue, the single hover tick).
+
+Note on the report's item 1: the front-end paths call the same `audio.play`
+helper the in-game path uses, but the legacy menu's activation cue is
+`Menu_Tick` (the C#'s stateful tick), not `Grab` (7) — the `Grab` cue is the
+chest/inventory slot movement's cue, not the menu's.
 
 ---
 
@@ -612,14 +659,20 @@ shift applies on every cactus, including the ones that should not shift.
 **Root cause.** The port folded a `DrawSingleTile`-local rectangle adjustment into
 the shared `DrawData`, which is also consumed by the flat path.
 
-**Fix plan.**
-1. Keep `cactus_type` as data, but apply the `54/108/162` offset only in the draw
-   branch that corresponds to the C# `rectangle` path (the half-brick arm), or
-   rewrite the flat path to use `rectangle` exactly as the C# does.
-2. Prove with a screenshot pair (`TR_CAM` on a corrupt-sand cactus, seed 1) that the
-   flat and half-brick cases match the vanilla sheet rows.
-3. Confidence note: the C# `rectangle` is also passed to the half-brick draw; the
-   exact set of branches consuming it is the point to re-verify before coding.
+**Status: FIXED 2026-11-10** (`fix-cactus-biome-frame`).
+
+The re-verification the report asked for (item 3) confirms the shape: the
+mutated `rectangle` (`TileDrawing.cs:1007`) has exactly ONE consumer — the
+half-brick arm (`:1298`); every other arm (the flat, `:1295`, the slope and
+sliced paths) rebuilds its own rect from `tileFrameY + addFrY` unshifted.
+So the fix takes item 1's first arm: `TileDrawData` carries a
+`half_brick_src_y` field, `apply_world_corrections`' kind-80 arm writes the
+`54/108/162` offset there instead of `add_fr_y`, and the renderer's
+half-brick draw (`push_half_shifted`) applies the shift to its source row
+while the flat path draws unshifted — the pre-fix behaviour (the shift
+folded into the shared `add_fr_y`, which the flat path also consumes) is
+gone. 1 new test + 1 updated expectation; the item-2 screenshot pair stays
+available via the deterministic `TR_CAM` harness.
 
 ---
 
@@ -651,16 +704,23 @@ when a chest/shop is open (it overlaps the chest UI).
 **Root cause.** The trash was implemented as a plain 60-slot-style swap slot, not as
 the destroy-on-quick-trash + cleared-on-death container the vanilla uses.
 
-**Fix plan.**
-1. Add the `cursorOverride == 6` arm in `evaluate_cursor_override`
-   (`app/clicks.rs`): on the alternate-click of the hovered slot, deep-clone the
-   stack into `trash` (replacing it), destroy the hovered stack, play the
-   `TrashItem` + `Grab` cues, and honour the research/sacrifice exception
-   (`ItemSlot.cs:762`).
-2. Clear the trash on death (`on_player_death`) and on the event-item purge.
-3. Offset the trash rect when the chest/shop panel is open.
-4. Test: quick-trash moves the stack and leaves the slot empty; death clears;
-   chest-open draws the trash at `(453, 426)`.
+**Status: FIXED 2026-11-10** (`fix-trash-slot-behavior`).
+
+What landed: (1) the quick-trash — `evaluate_cursor_override` lights
+`AlternateClickAction.Trash`'s cursor 6 on a Shift-held hover over a
+non-favorited, non-air inventory slot when no crafting/reforge/chest arm
+matches (the C#'s `GetAlternateClickAction` else-chain tail,
+`ItemSlot.cs:679-682`), and the click arm replaces the trash with the
+stack, empties the slot and plays the cues — the `TrashItem` cue has no
+port asset (the recorded gap; the call is a no-op) and `Grab` plays; the
+research exception (`:762`) rides the unported Journey research,
+documented. (2) `on_player_death` clears the trash
+(`Player.DropItems`' first line, `:54304`); the event-item purge
+(`:24729-24736`) rides the unported event items and is covered by the
+wholesale clear. (3) The trash rect shifts to (453, 426) at scale 0.755
+while `ChestOrShopUIVisible` (`Main.cs:42349-42366`), threaded through
+`inventory::draw`/`trash_slot_at` — the draw and the hit test share one
+rect helper. 3 tests.
 
 ---
 
