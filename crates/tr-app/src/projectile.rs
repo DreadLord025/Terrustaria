@@ -1899,6 +1899,614 @@ impl Projectile {
             self.rot,
         );
     }
+    /// `AI_062`'s same-type separation loop (`Projectile.cs:65265-65290`): every
+    /// live slot with the same owner and kind, manhattan-closer than `width`
+    /// (the Tempest's doubled), pushes this slot away by `num10` per axis
+    /// (0.05, the Tempest's 0.1). The second return is this slot's index among
+    /// the owner's same-kind minions (the Imp's queue offset,
+    /// `Projectile.cs:65685-65695`). The pool computes both before the AI call —
+    /// the loop reads the sibling slots.
+    pub fn minion_separation(&self, all: &[Projectile], me: usize) -> (Vec2, u32) {
+        let mut sep = Vec2::ZERO;
+        let mut queue: u32 = 0;
+        let num10 = if self.kind == TEMPEST { 0.1 } else { 0.05 };
+        let num11 = if self.kind == TEMPEST {
+            self.w * 2.0
+        } else {
+            self.w
+        };
+        for (m, other) in all.iter().enumerate() {
+            if other.active && other.owner == self.owner && other.kind == self.kind {
+                if m < me {
+                    queue += 1;
+                }
+                if m == me
+                    || (self.pos.x - other.pos.x).abs() + (self.pos.y - other.pos.y).abs()
+                        >= num11
+                {
+                    continue;
+                }
+                sep.x += if self.pos.x < other.pos.x { -num10 } else { num10 };
+                sep.y += if self.pos.y < other.pos.y { -num10 } else { num10 };
+            }
+        }
+        (sep, queue)
+    }
+
+    /// `AI_062` (`Projectile.cs:65038-66128`) — the flying-minion AI over its
+    /// six kinds (373 Hornet, 375 Imp, 407 Tempest, 423 UFO, 613 Stardust Cell,
+    /// 963 Abigail): the keep-alive pin against the summon flag (the buff-loss
+    /// despawn), the same-type separation, the whip-target-then-scan target
+    /// search, the attack/follow/return state machine and the per-kind fire
+    /// cooldowns. The attack-shot spawn rides back to the pool as
+    /// [`MinionShot`] (the AI runs on one slot and cannot reach the pool).
+    ///
+    /// Not ported (recorded in ANALYSIS): the dust spawns and their `Main.rand`
+    /// rolls (no general `Main.dust` pool here), the sound gates (963's
+    /// cry/attack cues), `Lighting.AddLight` (613's glow), the frame machines
+    /// (cosmetic — the slot carries no frame fields) and `strongBees` (373's
+    /// bee cooldown cap keeps the C# default 90). The `Main.rand` rolls inside
+    /// the cooldown machines (`rand(1,4)`/`rand(3)` extra increments) stand at
+    /// their deterministic minimum, and the LOS check rides the shared
+    /// `can_hit_line` walk (`yoyo_can_hit`, the `Collision.CanHitLine`
+    /// stand-in) instead of the C#'s exact Bresenham — both recorded.
+    fn ai_flying_minion(
+        &mut self,
+        world: &World,
+        sep: Vec2,
+        queue: u32,
+        mut owner: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+    ) -> Option<MinionShot> {
+        // `:65039-65045` — the parameter block.
+        let (mut num, mut num2, mut num3, mut num4, mut num5) = (0.0f32, 0.0f32, 20.0f32, 40.0f32, 0.69f32);
+        // `:65046-65060` — Abigail's parameter scaling and the originalDamage
+        // write from the owner's Abigail max.
+        if self.kind == ABIGAIL {
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = owner.as_ref().is_some_and(|p| p.abigail_minion);
+            let abigail_dmg = owner
+                .as_ref()
+                .map_or(0, |p| p.highest_abigail_counter_original_damage);
+            let abigail_count = owner
+                .as_ref()
+                .map_or(-1.0, |p| p.owned_projectile_counts[970] as f32);
+            if dead {
+                if let Some(p) = owner.as_deref_mut() {
+                    p.abigail_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            self.original_damage = abigail_dmg;
+            num2 = abigail_count - 1.0;
+            num3 = 4.0f32.max(18.0 - num2 * 1.75);
+            num = 1.4;
+            num4 = 5.0f32.max(num4 - num2 * 4.0);
+            num5 = (num5 + num2 * 0.03).min(1.0);
+        }
+        if self.kind == UFO_MINION {
+            // `:65061-65064` — the UFO's short attack counter.
+            num4 = 5.0;
+        }
+        // `:65062-65132` — the per-kind keep-alive flags: death clears the
+        // flag (no pin — the 2-tick despawn counts), the live flag pins
+        // `timeLeft = 2`.
+        if self.kind != ABIGAIL {
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = match self.kind {
+                HORNET => owner.as_ref().is_some_and(|p| p.hornet_minion),
+                FLYING_IMP => owner.as_ref().is_some_and(|p| p.imp_minion),
+                TEMPEST => owner.as_ref().is_some_and(|p| p.sharknado_minion),
+                UFO_MINION => owner.as_ref().is_some_and(|p| p.ufo_minion),
+                STARDUST_CELL => owner.as_ref().is_some_and(|p| p.stardust_minion),
+                _ => false,
+            };
+            if dead {
+                match self.kind {
+                    HORNET => owner.as_deref_mut().map(|p| p.hornet_minion = false),
+                    FLYING_IMP => owner.as_deref_mut().map(|p| p.imp_minion = false),
+                    TEMPEST => owner.as_deref_mut().map(|p| p.sharknado_minion = false),
+                    UFO_MINION => owner.as_deref_mut().map(|p| p.ufo_minion = false),
+                    STARDUST_CELL => owner.as_deref_mut().map(|p| p.stardust_minion = false),
+                    _ => None,
+                };
+            } else if held {
+                self.time_left = 2;
+            }
+        }
+        // `:65133-65262` — the UFO/Stardust Cell dash state (`ai[0] == 2`): the
+        // cooldown counts down and the return to idle damps the velocity. The
+        // dust bodies and their rolls are unported (ANALYSIS).
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.ai[0] == 2.0 {
+            self.ai[1] -= 1.0;
+            self.tile_collide = false;
+            if self.ai[1] != 0.0 {
+                return None;
+            }
+            self.ai[1] = 30.0;
+            self.ai[0] = 0.0;
+            self.vel /= 5.0;
+            self.vel.y = 0.0;
+            self.extra_updates = 0;
+        }
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.extra_updates > 1 {
+            self.extra_updates = 0;
+        }
+        // `:65254-65263` — the dash cooldown windows decay per tick.
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.local_ai[0] > 0.0 {
+            self.local_ai[0] -= 1.0;
+        }
+        // `:65265-65290` — the same-type separation, from the caller.
+        self.vel += sep;
+        // `:65291-65317` — the target search: the whip target first, then the
+        // full scan. `num12` is the reach (2000, Abigail's 700).
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mut vector = self.pos;
+        let mut num12 = 2000.0f32;
+        if self.kind == ABIGAIL {
+            num12 = 700.0;
+        }
+        let mut flag_target = false;
+        let mut num13: i32 = -1;
+        self.tile_collide = true;
+        if matches!(self.kind, ABIGAIL | TEMPEST) {
+            self.tile_collide = false;
+            if self.kind == TEMPEST {
+                // `:65314-65319` — the Tempest's solid-collision alpha ramp.
+                if box_solid(world, self.pos, self.w, self.h) {
+                    self.alpha = (self.alpha + 20).min(150);
+                } else {
+                    self.alpha = (self.alpha - 50).max(60);
+                }
+            }
+        }
+        // The NPC aim point: `position + Size * 0.5`.
+        let npc_aim = |n: &Npc| {
+            let (w, h) = n.size();
+            Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5
+        };
+        let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
+        let owner_center = Vec2::new(ocx, ocy);
+        // `:65322-65360` — the Tempest/UFO/Cell branch centres the distances on
+        // the OWNER; the generic branch (`:65362-65420`) on the minion itself.
+        let whip = owner.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
+        if whip >= 0 {
+            if let Some(n) = npcs.get(whip as usize) {
+                if n.can_be_chased_by() {
+                    let aim = npc_aim(n);
+                    let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
+                        owner_center
+                    } else {
+                        center
+                    };
+                    let d = (aim - anchor).length();
+                    if d < num12 * 3.0 && can_hit_line(world, center.x, center.y, aim.x, aim.y) {
+                        num12 = d;
+                        vector = aim;
+                        flag_target = true;
+                        num13 = whip;
+                    }
+                }
+            }
+        }
+        if !flag_target {
+            for (idx, n) in npcs.iter().enumerate() {
+                if !n.can_be_chased_by() {
+                    continue;
+                }
+                let aim = npc_aim(n);
+                let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
+                    owner_center
+                } else {
+                    center
+                };
+                let d = (aim - anchor).length();
+                if d < num12 && can_hit_line(world, center.x, center.y, aim.x, aim.y) {
+                    num12 = d;
+                    vector = aim;
+                    flag_target = true;
+                    num13 = idx as i32;
+                }
+            }
+        }
+        // `:65437-65453` — the owner-distance ladder.
+        let flag5 = matches!(self.kind, UFO_MINION | TEMPEST);
+        let mut num20 = match self.kind {
+            ABIGAIL => 800.0f32,
+            _ => 500.0,
+        };
+        if flag_target {
+            num20 = 1000.0;
+        }
+        if flag_target && self.kind == UFO_MINION {
+            num20 = 1200.0;
+        }
+        if flag_target && self.kind == STARDUST_CELL {
+            num20 = 1350.0;
+        }
+        let num21 = (owner_center - center).length();
+        if self.ai[0] != 1.0 && num21 > num20 {
+            self.ai[0] = 1.0;
+        }
+        if self.ai[0] == 1.0 {
+            self.tile_collide = false;
+        }
+        // `:65463-65488` — the attack state (`ai[0] >= 2`) with Abigail's
+        // `localAI[1]` ramp.
+        let flag4 = self.kind == ABIGAIL;
+        if flag4 {
+            if self.ai[0] <= 1.0 && self.local_ai[1] <= 0.0 {
+                self.local_ai[1] = -1.0;
+            } else {
+                self.local_ai[1] = (self.local_ai[1] + 0.05).clamp(0.0, 1.0);
+                if self.local_ai[1] == 1.0 {
+                    self.local_ai[1] = -1.0;
+                }
+            }
+        }
+        if self.ai[0] >= 2.0 {
+            self.ai[0] += 1.0;
+            if flag4 {
+                self.local_ai[1] = self.ai[0] / num4;
+            }
+            if !flag_target {
+                self.ai[0] += 1.0;
+            }
+            if self.ai[0] > num4 {
+                self.ai[0] = 0.0;
+                if flag_target && self.kind == ABIGAIL && (vector - center).length() < 50.0 {
+                    self.ai[0] = 2.0;
+                }
+            }
+            self.vel *= num5;
+        } else if flag_target && (flag5 || self.ai[0] == 0.0) {
+            // `:65489-65602` — the pursue branch.
+            let mut v = vector - center;
+            let mut num22 = v.length();
+            v = v.normalize_or_zero();
+            if self.kind == UFO_MINION {
+                // `:65527-65545` — the dash trigger over the aim point lifted
+                // 80 px, with the solid-tile lift (two 16-px steps).
+                let mut lifted = vector - Vec2::new(0.0, 80.0);
+                let ty = (lifted.y / 16.0) as i32;
+                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                    lifted += Vec2::new(0.0, 16.0);
+                    let ty2 = (lifted.y / 16.0) as i32;
+                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                        lifted += Vec2::new(0.0, 16.0);
+                    }
+                }
+                lifted -= center;
+                num22 = lifted.length();
+                v = lifted.normalize_or_zero();
+                if num22 > 300.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = (num22 / 10.0) as f32;
+                    self.extra_updates = self.ai[1] as u32;
+                    self.vel = v * 10.0;
+                    self.local_ai[0] = 60.0;
+                    return None;
+                }
+            }
+            if self.kind == STARDUST_CELL {
+                // `:65552-65590` — the Cell's dash trigger: the back-off of
+                // 60 px from the aim, the same solid lift.
+                let mut lifted = vector;
+                let mut back = center - lifted;
+                back = if back == Vec2::ZERO {
+                    -Vec2::Y
+                } else {
+                    back.normalize()
+                };
+                lifted += back * 60.0;
+                let ty = (lifted.y / 16.0) as i32;
+                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                    lifted += Vec2::new(0.0, 16.0);
+                    let ty2 = (lifted.y / 16.0) as i32;
+                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                        lifted += Vec2::new(0.0, 16.0);
+                    }
+                }
+                lifted -= center;
+                num22 = lifted.length();
+                v = lifted.normalize_or_zero();
+                if num22 > 400.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = (num22 / 10.0) as f32;
+                    self.extra_updates = self.ai[1] as u32;
+                    self.vel = v * 10.0;
+                    self.local_ai[0] = 60.0;
+                    return None;
+                }
+            }
+            if self.kind == TEMPEST {
+                // `:65592-65599`.
+                if num22 > 400.0 {
+                    v *= 3.0;
+                    self.vel = (self.vel * 20.0 + v) / 21.0;
+                } else {
+                    self.vel *= 0.96;
+                }
+            }
+            if num22 > 200.0 {
+                // `:65601-65606` — the shared speed-up.
+                v *= 6.0 + num2 * num;
+                let smooth = num3 * 2.0;
+                self.vel.x = (self.vel.x * smooth + v.x) / (smooth + 1.0);
+                self.vel.y = (self.vel.y * smooth + v.y) / (smooth + 1.0);
+            } else if self.kind == ABIGAIL {
+                // `:65607-65618`.
+                if num22 < 50.0 {
+                    self.vel *= 0.5;
+                    self.ai[0] = 2.0;
+                } else {
+                    v *= 4.0 + num2 * num;
+                    self.vel = (self.vel * num3 + v) / (num3 + 1.0);
+                }
+            } else if matches!(self.kind, UFO_MINION | STARDUST_CELL) {
+                // `:65620-65636` — the orbit band.
+                if num22 > 70.0 && num22 < 130.0 {
+                    let f = if num22 < 100.0 { -3.0 } else { 7.0 };
+                    v *= f;
+                    self.vel = (self.vel * 20.0 + v) / 21.0;
+                    if v.x.abs() > v.y.abs() {
+                        self.vel.x = (self.vel.x * 10.0 + v.x) / 11.0;
+                    }
+                } else {
+                    self.vel *= 0.97;
+                }
+            } else if self.kind == FLYING_IMP {
+                // `:65638-65648`.
+                if num22 < 150.0 {
+                    v *= -4.0;
+                    self.vel.x = (self.vel.x * 40.0 + v.x) / 41.0;
+                    self.vel.y = (self.vel.y * 40.0 + v.y) / 41.0;
+                } else {
+                    self.vel *= 0.97;
+                }
+            } else if self.vel.y > -1.0 {
+                self.vel.y -= 0.1;
+            }
+        } else {
+            // `:65662-65700` — the return branch.
+            if self.ai[0] != 1.0
+                && self.kind != ABIGAIL
+                && !can_hit_line(world, center.x, center.y, owner_center.x, owner_center.y)
+            {
+                self.ai[0] = 1.0;
+            }
+            let mut num27 = 6.0f32;
+            if self.ai[0] == 1.0 {
+                num27 = 15.0;
+            }
+            if self.kind == TEMPEST {
+                num27 = 9.0;
+            }
+            if self.kind == ABIGAIL {
+                num27 *= 0.8;
+            }
+            let mut v2 = owner_center - center + Vec2::new(0.0, -60.0);
+            if self.kind == TEMPEST {
+                v2 += Vec2::new(0.0, 40.0);
+            }
+            if self.kind == ABIGAIL {
+                v2 += Vec2::new(-40.0 * owner.as_ref().map_or(1.0, |p| p.facing as f32), 40.0);
+            }
+            if self.kind == FLYING_IMP {
+                // `:65684-65700` — the whoAmI-ordered queue offset: the nth Imp
+                // of the owner stands 40*n px to the owner's back.
+                v2 = owner_center - center;
+                let dir = owner.as_ref().map_or(1.0, |p| p.facing as f32);
+                v2.x -= 10.0 * dir;
+                v2.x -= queue as f32 * 40.0 * dir;
+                v2.y -= 10.0;
+            }
+            let num30 = v2.length();
+            if num30 > 200.0 && num27 < 9.0 {
+                num27 = 9.0;
+            }
+            if matches!(self.kind, UFO_MINION | TEMPEST) && num30 > 300.0 && num27 < 12.0 {
+                num27 = 12.0;
+            }
+            if self.kind == FLYING_IMP {
+                // `:65699` — the int cast before the float store.
+                num27 = (num27 * 0.75) as i32 as f32;
+            }
+            if num30 < 100.0 && self.ai[0] == 1.0 {
+                // `:65702-65707` — close enough: back to the follow state.
+                self.ai[0] = 0.0;
+            }
+            if num30 > 2000.0 {
+                // `:65709-65713` — the far snap onto the owner.
+                self.pos.x = owner_center.x - self.w * 0.5;
+                self.pos.y = owner_center.y - self.w * 0.5;
+            }
+            if matches!(self.kind, FLYING_IMP | ABIGAIL) {
+                // `:65715-65729`.
+                if num30 > 10.0 {
+                    let mut v2n = v2.normalize_or_zero();
+                    if num30 < 50.0 {
+                        num27 /= 2.0;
+                    }
+                    v2n *= num27;
+                    self.vel = (self.vel * 20.0 + v2n) / 21.0;
+                } else {
+                    self.direction = owner.as_ref().map_or(1, |p| p.facing);
+                    self.vel *= 0.9;
+                }
+            } else if self.kind == TEMPEST {
+                // `:65731-65751`.
+                if v2.x.abs() > 40.0 || v2.y.abs() > 10.0 {
+                    let mut v2n = v2.normalize_or_zero();
+                    v2n *= num27;
+                    v2n *= Vec2::new(1.25, 0.65);
+                    self.vel = (self.vel * 20.0 + v2n) / 21.0;
+                } else {
+                    if self.vel == Vec2::ZERO {
+                        self.vel = Vec2::new(-0.15, -0.05);
+                    }
+                    self.vel *= 1.01;
+                }
+            } else if num30 > 70.0 {
+                // `:65753-65758`.
+                let mut v2n = v2.normalize_or_zero();
+                v2n *= num27;
+                self.vel = (self.vel * 20.0 + v2n) / 21.0;
+            } else {
+                if self.vel == Vec2::ZERO {
+                    self.vel = Vec2::new(-0.15, -0.05);
+                }
+                self.vel *= 1.01;
+            }
+            if num30 > 250.0 && matches!(self.kind, UFO_MINION | TEMPEST) {
+                // `:65778-65789` — the owner-velocity matching.
+                let (px, py) = owner.as_ref().map_or((0.0, 0.0), |p| (p.vx, p.vy));
+                if (self.vel.x < 0.0 && px >= 0.0) || (self.vel.x >= 0.0 && px < 0.0) {
+                    self.vel.x *= 0.95;
+                } else {
+                    self.vel.x += px * 0.125;
+                }
+                if (self.vel.y < 0.0 && py >= 0.0) || (self.vel.y >= 0.0 && py < 0.0) {
+                    self.vel.y *= 0.95;
+                } else {
+                    self.vel.y += py * 0.125;
+                }
+                if self.vel.length() > num27 {
+                    self.vel = self.vel.normalize_or_zero() * num27;
+                }
+            }
+        }
+        // `:65791-65792` — the facing from the velocity (the C# sets
+        // `spriteDirection` beside it — the port's render reads `direction`).
+        // The frame machines (`:65794-65914`) are cosmetic and unported.
+        self.rot = self.vel.x * 0.05;
+        if self.vel.x > 0.0 {
+            self.direction = -1;
+        } else if self.vel.x < 0.0 {
+            self.direction = 1;
+        }
+        if self.kind == ABIGAIL {
+            // `:65916-65922` — the inversion and the idle face-to-owner.
+            self.direction *= -1;
+            if !flag_target && self.vel.x.abs() < 0.1 {
+                self.direction = if owner_center.x > center.x { 1 } else { -1 };
+            }
+        }
+        // `:65941-66008` — the per-kind fire cooldowns; the `Main.rand` rolls
+        // inside are dust-only and unported, the counters are 1:1.
+        match self.kind {
+            HORNET | FLYING_IMP => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 90.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            TEMPEST => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 50.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            UFO_MINION => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 45.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            STARDUST_CELL => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 60.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            _ => {}
+        }
+        if !flag5 && self.ai[0] != 0.0 {
+            return None;
+        }
+        // `:66010-66059` — the attack shot: the per-type speed/kind and the
+        // fire arms. The shot families (374/376/408/433/614) are unported
+        // `proj_data` rows, so the pool's spawn drops until those land — the
+        // state machine above runs either way.
+        let (num41, num42) = match self.kind {
+            HORNET => (10.0, 374u16),
+            FLYING_IMP => (11.0, 376),
+            TEMPEST => (20.0, 408),
+            UFO_MINION => (4.0, 433),
+            STARDUST_CELL => (14.0, 614),
+            _ => (0.0, 0),
+        };
+        if !flag_target {
+            return None;
+        }
+        if self.kind == FLYING_IMP {
+            // `:66060-66066` — the Imp's facing against the target.
+            if vector.x - center.x > 0.0 {
+                self.direction = -1;
+            } else if vector.x - center.x < 0.0 {
+                self.direction = 1;
+            }
+        }
+        if self.kind == TEMPEST && box_solid(world, self.pos, self.w, self.h) {
+            return None;
+        }
+        if self.kind == UFO_MINION {
+            // `:66067-66077` — the aim-aligned beam and the shot.
+            let aim_rot = (vector - center).y.atan2((vector - center).x) - std::f32::consts::FRAC_PI_2;
+            if aim_rot.abs() > std::f32::consts::FRAC_PI_4 {
+                let dir = (vector - center - Vec2::new(0.0, 80.0)).normalize_or_zero();
+                self.vel += dir;
+            }
+            if (vector - center).length() <= 400.0 && self.ai[1] == 0.0 {
+                self.ai[1] += 1.0;
+                let mut v = (vector - center).normalize_or_zero();
+                v *= num41;
+                return Some(MinionShot {
+                    kind: num42,
+                    vx: v.x,
+                    vy: v.y,
+                    target: num13,
+                });
+            }
+            None
+        } else if self.ai[1] == 0.0 && self.kind == STARDUST_CELL {
+            // `:66078-66118` — the Cell's shot with the recoil (dust unported).
+            if (vector - center).length() > 500.0 {
+                return None;
+            }
+            self.ai[1] += 1.0;
+            let mut v = (vector - center).normalize_or_zero();
+            v *= num41;
+            self.vel -= v / 3.0;
+            Some(MinionShot {
+                kind: num42,
+                vx: v.x,
+                vy: v.y,
+                target: num13,
+            })
+        } else if self.ai[1] == 0.0 {
+            // `:66119-66128` — the generic fire.
+            let mut v = (vector - center).normalize_or_zero();
+            v *= num41;
+            Some(MinionShot {
+                kind: num42,
+                vx: v.x,
+                vy: v.y,
+                target: num13,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// The 1000-slot pool with the shared immunity state.
@@ -1940,6 +2548,61 @@ pub struct YoyoInputs {
     pub channel: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
+}
+
+/// `Collision.CanHitLine`'s point-to-point stand-in — the tile walk the yoyo
+/// flight already used (`yoyo_can_hit`); renamed now that the minion target
+/// searches and the return-state LOS read it too (`AI_062`'s
+/// `Collision.CanHitLine`/`CanHit` calls). The C#'s exact Bresenham+rect
+/// semantics differ at the sub-tile margins — recorded in ANALYSIS.
+fn can_hit_line(world: &World, x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+    yoyo_can_hit(world, x1, y1, x2, y2)
+}
+
+/// `AI_062`'s tile-solid read for the UFO/Cell dash lifts
+/// (`Main.tileSolid[...]`/`Main.tileSolidTop` at `Projectile.cs:65533-65545`
+/// and `:65565-65590`): the tile at (x, y) is an active non-top solid.
+fn tile_solid_at(world: &World, x: f32, y: i32) -> bool {
+    let Some(tile) = world.tile((x / TILE_PX) as i32, y) else {
+        return false;
+    };
+    tile.active()
+        && tr_core::tiledata::TILE_SOLID.has(tile.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(tile.kind)
+}
+
+/// `Collision.SolidCollision(position, width, height)` — the Tempest's alpha
+/// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
+/// its centre over active non-top solids. The C#'s exact point cloud is a
+/// margin-level difference — recorded in ANALYSIS.
+fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+    let pts = [
+        (pos.x, pos.y),
+        (pos.x + w, pos.y),
+        (pos.x, pos.y + h),
+        (pos.x + w, pos.y + h),
+        (pos.x + w * 0.5, pos.y + h * 0.5),
+    ];
+    pts.iter().any(|&(px, py)| {
+        world
+            .tile((px / TILE_PX) as i32, (py / TILE_PX) as i32)
+            .is_some_and(|t| {
+                t.active()
+                    && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            })
+    })
+}
+
+/// `AI_062`'s attack-shot request — the shot rides back to the pool (the AI
+/// runs on one slot and cannot reach the pool's array, the `YoyoBeamRequest`
+/// pattern). The spawn drops when the shot family (374/376/408/433/614) has no
+/// `proj_data` row yet; `target` is the scan's NPC index (the Cell's `ai1`).
+pub(crate) struct MinionShot {
+    pub kind: u16,
+    pub vx: f32,
+    pub vy: f32,
+    pub target: i32,
 }
 
 impl ProjectilePool {
@@ -2497,6 +3160,51 @@ impl ProjectilePool {
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
                         115 => self.slots[i].ai_yoyo_beam(world),
+                        62 => {
+                            // `AI_062` (`Projectile.cs:29314-29316`'s
+                            // `else if (this.aiStyle == 62) this.AI_062();`):
+                            // the same-type separation is pre-computed from the
+                            // sibling slots (that loop reads them), the AI runs
+                            // on the slot with the owner threaded, and its
+                            // attack-shot request rides back through the pool
+                            // (the `YoyoBeamRequest` pattern) — the spawn drops
+                            // until the shot families land.
+                            let (sep, queue) = self.slots[i].minion_separation(&self.slots, i);
+                            let shot = self
+                                .slots[i]
+                                .ai_flying_minion(world, sep, queue, player.as_deref_mut(), npcs);
+                            // `HandleMovement`'s `UpdatePosition`
+                            // (`Projectile.cs:19858`/`:20433-20442`): the shared
+                            // `position += velocity` runs OUTSIDE the AI, once
+                            // per update — aiStyle 62 is not in the skip list, so
+                            // the minion integrates even when the AI arm
+                            // returned early (the dash). The wet-velocity branch
+                            // and the slope-correction block (`:20444+`, the
+                            // `aiStyle == 62` fall case included) stay unported —
+                            // ANALYSIS.
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                            if let Some(s) = shot {
+                                let (x, y, damage, kb, owner) = {
+                                    let p = &self.slots[i];
+                                    (
+                                        p.pos.x + p.w * 0.5,
+                                        p.pos.y + p.h * 0.5,
+                                        p.damage,
+                                        p.knock_back,
+                                        p.owner,
+                                    )
+                                };
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    s.kind, owner, x, y, s.vx, s.vy, damage, kb, s.target as f32,
+                                    0.0,
+                                ) {
+                                    // `Projectile.cs:66124` — the generic fire
+                                    // arms set the shot's `timeLeft = 300`.
+                                    self.slots[slot].time_left = 300;
+                                }
+                            }
+                        }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
                             // active slot below this index, same owner and
@@ -5473,15 +6181,17 @@ mod summon_tests {
 
     /// DW-1.2's dirty variant (the plan's edge case): a summon row whose
     /// aiStyle has no ported arm dispatches nothing — the slot holds
-    /// position while its `timeLeft` runs down (the Hornet's aiStyle 62 and
-    /// the Guardian's 120 are Phase 4/5 work).
+    /// position while its `timeLeft` runs down. The Hornet's aiStyle 62 is
+    /// ported since Phase 4 (`ai_flying_minion` + the shared integration), so
+    /// the still-unported aiStyles carry the check: the Spider's 66 and the
+    /// Guardian's 120.
     #[test]
     fn test_edge_unported_ai_style_holds_position() {
         let mut pool = ProjectilePool::new();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        let hornet = pool
-            .spawn_with_data_ai_owned(HORNET, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
+        let spider = pool
+            .spawn_with_data_ai_owned(RETANIMINI, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
             .unwrap();
         let guardian = pool
             .spawn_with_data_ai_owned(
@@ -5509,7 +6219,7 @@ mod summon_tests {
                 true,
             );
         }
-        let p = &pool.slots[hornet];
+        let p = &pool.slots[spider];
         assert!(p.active, "the minion outlives the 5 ticks");
         assert_eq!(
             (p.pos.x, p.pos.y),
@@ -5854,5 +6564,265 @@ mod minion_tick_tests {
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots[slot].active, "deactivated");
         assert_eq!(p.num_minions, 0, "no accumulation for a dead escape");
+    }
+}
+
+/// `AI_062`'s per-kind tests — the ported harness of `Projectile.cs:65038-66128`.
+#[cfg(test)]
+
+/// `AI_062`'s per-kind tests — the ported harness of `Projectile.cs:65038-66128`.
+#[cfg(test)]
+
+/// `AI_062`'s per-kind tests — the ported harness of `Projectile.cs:65038-66128`.
+#[cfg(test)]
+
+/// `AI_062`'s per-kind tests — the ported harness of `Projectile.cs:65038-66128`.
+#[cfg(test)]
+mod minion_ai_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    /// One pool tick with the C#'s per-tick counter reset (`Player.cs:28279`).
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, slot_x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, slot_x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// The minion spawned near the owner (150 px to the left of their centre):
+    /// the C#'s far snap (> 2000 px, `Projectile.cs:65709-65713`) would
+    /// teleport a world-far spawn home and mask the state under test.
+    fn spawn_near(pool: &mut ProjectilePool, kind: u16, p: &Player) -> usize {
+        let (cx, cy) = p.center();
+        spawn_at(pool, kind, cx - 150.0, cy)
+    }
+
+    fn spawn_at(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// A chaseable NPC at (x, y) — `Npc::new` with the port's defaults.
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// DW-4.1 — the follow: a Hornet beyond the 200-px pursuit threshold
+    /// accelerates toward the owner's hover offset at the shared ladder
+    /// (`v *= 6 + num2*num`, `Projectile.cs:65601-65606`), and its timer is
+    /// pinned by the summon flag (the keep-alive arm).
+    #[test]
+    fn test_DW_4_1_the_minion_follows_the_owner() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.hornet_minion = true;
+        let slot = spawn_minion(&mut pool, HORNET, 100.0);
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        let after = pool.slots[slot].pos.x;
+        assert!(after > 100.0, "the minion moves toward the owner: {after}");
+        assert_eq!(
+            pool.slots[slot].time_left, 1,
+            "the pin of 2 minus the tail's per-tick decrement (`:17201`)"
+        );
+    }
+
+    /// DW-4.2 — the whip target: with `minion_attack_target_npc` set on a
+    /// chaseable NPC the minion pursues that NPC; an unchaseable target falls
+    /// back to the owner-hover scan.
+    #[test]
+    fn test_DW_4_2_the_whip_target_leads_the_pursuit() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let (cx, cy) = p.center();
+        let slot = spawn_at(&mut pool, HORNET, cx - 200.0, cy);
+        let mut npcs = vec![npc_at(NpcKind::Zombie, cx + 250.0, cy)];
+        p.minion_attack_target_npc = 0;
+        for _ in 0..4 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let vx = pool.slots[slot].vel.x;
+        let dx = pool.slots[slot].pos.x - 200.0;
+        assert!(
+            dx > 0.0 && vx > 0.0,
+            "pursues the whip target to the right: dx={dx} vx={vx}"
+        );
+        // A friendly town NPC is unchaseable: the whip target is ignored and
+        // the minion converges back on the owner's hover instead.
+        let mut town = npc_at(NpcKind::Guide, cx + 250.0, cy);
+        town.max_hp = 250;
+        town.hp = 250;
+        npcs.push(town);
+        p.minion_attack_target_npc = 1;
+        for _ in 0..4 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let after_far = pool.slots[slot].pos.x;
+        assert!(
+            after_far < 380.0,
+            "the unchaseable whip target is ignored: {after_far}"
+        );
+    }
+
+    /// DW-4.3 — the despawn: clearing the summon flag stops the pin and the
+    /// minion dies on `timeLeft`'s tail.
+    #[test]
+    fn test_DW_4_3_the_buff_loss_despawns() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let slot = spawn_minion(&mut pool, HORNET, 100.0);
+        for _ in 0..2 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        assert!(pool.slots[slot].active, "the flag keeps it alive");
+        p.hornet_minion = false;
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        assert!(
+            !pool.slots[slot].active,
+            "dead within a few ticks of the loss"
+        );
+    }
+
+    /// DW-4.4 — the per-type parameters: Abigail's `originalDamage` write and
+    /// scaling off `ownedProjectileCounts[970]`, and the UFO's `num4 = 5`
+    /// attack counter.
+    #[test]
+    fn test_DW_4_4_the_per_type_params_are_verbatim() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.abigail_minion = true;
+        p.owned_projectile_counts[970] = 2;
+        p.highest_abigail_counter_original_damage = 60;
+        let slot = spawn_minion(&mut pool, ABIGAIL, 100.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(pool.slots[slot].original_damage, 60, "the max carries");
+        // The UFO's short attack counter: from `ai[0] = 2` the state returns
+        // to idle in 5 increments (the Hornet's 40 takes far longer).
+        let mut pool = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.max_minions = 5;
+        p2.ufo_minion = true;
+        let (cx, cy) = p2.center();
+        let ufo = spawn_at(&mut pool, UFO_MINION, cx - 100.0, cy);
+        pool.slots[ufo].ai[0] = 2.0;
+        pool.slots[ufo].ai[1] = 3.0;
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p2);
+        }
+        assert_eq!(pool.slots[ufo].ai[0], 0.0, "the 5-tick counter (num4 = 5)");
+        assert_eq!(
+            pool.slots[ufo].ai[1],
+            31.0,
+            "the reset cooldown 30 plus the cooldown machine's increment (`:65985`)"
+        );
+    }
+
+    /// DW-4.5 — the return state: `ai[0] = 1` disables the tile collision and
+    /// the slot converges on the owner's hover offset (the −60 Y lift).
+    #[test]
+    fn test_DW_4_5_the_return_state_converges() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let slot = spawn_near(&mut pool, HORNET, &p);
+        pool.slots[slot].ai[0] = 1.0;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(
+            !pool.slots[slot].tile_collide,
+            "the return state drops the tile collision (`:65455-65457`)"
+        );
+        let (pcx, pcy) = p.center();
+        let hover = |p: &Projectile| {
+            (p.pos + Vec2::new(p.w * 0.5, p.h * 0.5) - Vec2::new(pcx, pcy - 60.0)).length()
+        };
+        let d0 = hover(&pool.slots[slot]);
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        let d1 = hover(&pool.slots[slot]);
+        assert!(d1 < d0, "converges on the hover offset: {d0} → {d1}");
+        // The Imp queue: the second Imp books a higher `minion_pos` than the
+        // first (the slot-ordered queue, `:65685-65695`).
+        let mut pool2 = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.max_minions = 5;
+        p2.imp_minion = true;
+        let a = spawn_minion(&mut pool2, FLYING_IMP, 100.0);
+        let b = spawn_minion(&mut pool2, FLYING_IMP, 100.0);
+        tick(&mut pool2, &mut w, &mut p2);
+        assert!(
+            pool2.slots[b].minion_pos > pool2.slots[a].minion_pos,
+            "the queue order follows the slot order"
+        );
     }
 }

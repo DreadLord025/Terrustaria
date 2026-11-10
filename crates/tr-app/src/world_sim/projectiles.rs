@@ -181,19 +181,25 @@ mod summon_fixture_tests {
             app.world.width as f32 * 16.0,
             app.world.height as f32 * 16.0,
         );
+        // The sentry (aiStyle 53, no arm yet) holds its anchor exactly; the
+        // Hornet is AI-driven since Phase 4 and drifts toward the owner on the
+        // same tick — it stays anchored to within one tick's step.
         assert_eq!(
-            (hornet, hydra),
-            (
-                Some((
-                    (cx - 24.0).clamp(0.0, ww - 24.0 - 1.0),
-                    (cy - 48.0).clamp(0.0, wh - 26.0 - 1.0),
-                )),
-                Some((
-                    (cx + 24.0).clamp(0.0, ww - 80.0 - 1.0),
-                    (cy - 48.0).clamp(0.0, wh - 74.0 - 1.0),
-                )),
-            ),
-            "the pair anchored on the player's center (world-clamped)"
+            hydra,
+            Some((
+                (cx + 24.0).clamp(0.0, ww - 80.0 - 1.0),
+                (cy - 48.0).clamp(0.0, wh - 74.0 - 1.0),
+            )),
+            "the sentry anchored on the player's center (world-clamped)"
+        );
+        let (hx, hy) = hornet.expect("the Hornet renders");
+        let anchor = (
+            (cx - 24.0).clamp(0.0, ww - 24.0 - 1.0),
+            (cy - 48.0).clamp(0.0, wh - 26.0 - 1.0),
+        );
+        assert!(
+            (hx - anchor.0).abs() < 8.0 && (hy - anchor.1).abs() < 8.0,
+            "the Hornet anchored within one tick's drift: {hx},{hy} vs {anchor:?}"
         );
         assert_eq!(app.projectiles.active_count(), 2, "exactly the pair");
         // The flag stays down: further ticks spawn nothing new.
