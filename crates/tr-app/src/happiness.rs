@@ -85,6 +85,100 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Hallow,
             },
         ],
+        // `Register(124)` (`PersonalityDatabasePopulator.cs:52-56`):
+        // the Mechanic likes the Snow, dislikes the Underground.
+        NpcKind::Mechanic => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Snow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Underground,
+            },
+        ],
+        // `Register(353)` (`PersonalityDatabasePopulator.cs:107-111`):
+        // the Stylist likes the Ocean, dislikes the Snow.
+        NpcKind::Stylist => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Ocean,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Snow,
+            },
+        ],
+        // `Register(207)` (`PersonalityDatabasePopulator.cs:67-71`):
+        // the Dye Trader likes the Desert, dislikes the Forest.
+        NpcKind::DyeTrader => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Desert,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Forest,
+            },
+        ],
+        // `Register(208)` (`PersonalityDatabasePopulator.cs:137-141`):
+        // the Party Girl likes the Hallow, dislikes the Underground.
+        NpcKind::PartyGirl => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Hallow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Underground,
+            },
+        ],
+        // `Register(633)` (`PersonalityDatabasePopulator.cs:42-46`):
+        // the Zoologist likes the Forest, dislikes the Desert.
+        NpcKind::Zoologist => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Forest,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Desert,
+            },
+        ],
+        // `Register(588)` (`PersonalityDatabasePopulator.cs:37-41`):
+        NpcKind::Golfer => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Forest,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Underground,
+            },
+        ],
+        // `Register(441)` (`PersonalityDatabasePopulator.cs:47-51`):
+        // the Tax Collector likes the Snow, dislikes the Hallow.
+        NpcKind::TaxCollector => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Snow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Hallow,
+            },
+        ],
+        // `Register(108)` (`PersonalityDatabasePopulator.cs:127-131`):
+        NpcKind::Wizard => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Hallow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Ocean,
+            },
+        ],
         // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`):
         // the Tinkerer likes the Underground, dislikes the Jungle.
         NpcKind::GoblinTinkerer => &[

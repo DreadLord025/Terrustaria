@@ -23,6 +23,8 @@ use std::collections::HashMap;
 // keeps the existing `craft::WorldChest` paths valid — the `world_sim/
 // editing.rs` stocked-chest test constructs the type through this path.
 pub(crate) use crate::chest::WorldChest;
+#[cfg(test)]
+use crate::chest::DEFAULT_MAX_ITEMS;
 use crate::item::{ItemSlot, INV};
 use crate::player::{self, Player};
 use crate::registry;
@@ -953,8 +955,8 @@ mod tests {
             w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         }
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)] },
-            WorldChest { tile: (42, 40), slots: Vec::new() },
+            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
+            WorldChest { tile: (42, 40), slots: Vec::new(), name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
         assert_eq!(found.len(), 2, "the far chest (80,80) is out of 600 px");
@@ -973,7 +975,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6), chest_slot(619, 4)] }];
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6), chest_slot(619, 4)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
         let mut inv = inv_with(&[(9, 4)]);
@@ -1004,7 +1006,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6)] }];
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 from the inventory drain the chest
         // fully.
@@ -1038,8 +1040,8 @@ mod tests {
         w.tiles[i].kind = 21;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)] },
-            WorldChest { tile: (60, 60), slots: Vec::new() },
+            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
+            WorldChest { tile: (60, 60), slots: Vec::new(), name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
         assert_eq!(found.len(), 1, "the stale entry is filtered");
@@ -1054,7 +1056,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 20)] }];
+        let chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
         let inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();

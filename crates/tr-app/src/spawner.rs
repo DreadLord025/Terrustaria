@@ -112,6 +112,15 @@ pub struct SpawnContext<'a> {
     /// The bound-Tinkerer roll gate: `downedGoblins && !savedGoblin &&
     /// !AnyNPCs(105/107)` — the world_sim pass computes it.
     pub bound_goblin_ok: bool,
+    /// `NPC.cs:2088`'s guards for the tied Wizard: hardmode, the rescue
+    /// not yet raised, nobody bound/freed on the map.
+    pub bound_wizard_ok: bool,
+    /// `NPC.cs:2653`'s guards for the tied Mechanic: Skeletron downed, the
+    /// rescue not yet raised, nobody bound/freed on the map.
+    pub bound_mech_ok: bool,
+    /// `spawnTileY > (worldSurface * 4 + rockLayer) / 5` — the Mechanic's
+    /// deep-dungeon depth band (`NPC.cs:2653`).
+    pub below_deep_dungeon: bool,
     /// `Spawner.invaders` (`NPC.cs:395`'s `ShouldSpawnInvasionEnemies`) —
     /// gates the skyMob detection (`FindSpawnTile`'s `!this.invaders`).
     pub invaders: bool,
@@ -550,6 +559,32 @@ pub fn spawn_allowed_clothier(downed_skeletron: bool) -> bool {
     downed_skeletron
 }
 
+/// M5-SEED-2: the `vampirism` town-NPC pick — the `AddPasses` town pass's
+/// `else if (Main.vampireSeed)` arm (`WorldGen.cs:19836-19844`) places the
+/// **Zoologist** (633, `NPCID.cs`) at `Main.spawnTileX/Y` as the world's
+/// starting town NPC instead of the vanilla Guide (22, the ladder's `else`
+/// tail `:19886-19895`). `Main.vampireSeed` is `InitializeSecretSeeds`'s
+/// write for the micro seed (`WorldGen.cs:555-558`), so the port reads the
+/// world's own bit.
+///
+/// Seam (documented): the port's worldgen places NO town NPCs yet — the
+/// whole `AddPasses` town pass (`WorldGen.cs:~19760-19896`, including its
+/// birthday-party/notTheBees arms) is unported, and `NpcKind` carries no
+/// Zoologist — so this is the pure DECISION the pass will make when it
+/// lands, in the C#'s precedence order for the flags the port models
+/// (`SecretSeed.worldIsInfected` 19821-19835 → the Nurse 20 outranks
+/// `vampirism`; the remix/drunk/getGood arms between them stay unmodelled):
+/// a classic world returns the Guide, so nothing changes until the pass does.
+pub fn town_npc_at_spawn(micro_seeds: tr_core::seeds::MicroSeedFlags) -> u16 {
+    if micro_seeds.contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED) {
+        20 // the Nurse (`WorldGen.cs:19821-19835`)
+    } else if micro_seeds.contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM) {
+        633 // the Zoologist (`WorldGen.cs:19836-19844`)
+    } else {
+        22 // the Guide (`WorldGen.cs:19886-19895`)
+    }
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
@@ -644,10 +679,14 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
 /// source makes consumes the stream exactly where it does, including the
 /// unmodelled outcomes (they map to the port's closest kind: the night
 /// surface defaults to the zombie arm, the underground to the slime arm);
-/// the flag-gated specials whose flags do not exist yet (graveyard,
-/// halloween/xmas, rain, wind, remix, skyblock, expert armed zombies) sit
-/// behind constants-off checks and consume nothing, exactly as the C#'s
-/// short-circuit skips them.
+/// the flag-gated specials whose flags do not exist yet (graveyard, rain,
+/// wind, remix, skyblock, expert armed zombies) sit behind constants-off
+/// checks and consume nothing, exactly as the C#'s short-circuit skips them.
+/// M5-SEED-2 replaces the halloween/xmas placeholders with the real
+/// `endlessHalloween`/`endlessChristmas` gates (`Main.forceHalloweenForever`
+/// /`forceXMasForever` ← `WorldGen.cs:572-578`) in the night zombie ladder
+/// (`spawn_npc_at`, `NPC.cs:4728-4735`) and in `GetBasicSlimeToSpawn`'s
+/// holiday arm (`spawn_basic_slime`, `NPC.cs:5643-5651`).
 ///
 /// Deviations (documented):
 /// - the ladders stop at `underGround` — the `deeperThanRockLayer` and
@@ -902,7 +941,40 @@ fn spawn_npc_at(
         if rng.next(torch_zombie_chance) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
-        // `:4723-4762`: halloween/xmas/expert-armed — constants-off.
+        // M5-SEED-2: `:4728-4731`'s halloween arm — `Main.halloween &&
+        // Main.rand.Next(2) == 0` → `Next(319, 322)` = the ZombieDoctor/
+        // Superman/Pixie (319-321, `NPCID.cs`). `Main.halloween` is
+        // `Main.forceHalloweenForever`'s write (`Main.cs:13168`, set for the
+        // `endlessHalloween` micro seed by `InitializeSecretSeeds`
+        // `WorldGen.cs:572-574`), so the roll — and only the roll — runs
+        // under the flag: the C# `&&` short-circuits it on a classic world.
+        // The three holiday zombie types have no `NpcKind` of their own, so
+        // every hit lands on the port's single zombie kind (the clothing
+        // variants are a draw-layer concern).
+        if ctx
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
+            && rng.next(2) == 0
+        {
+            let _ = rng.next(3); // `Next(319, 322)` — the type pick.
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4732-4735`'s xmas arm — `Main.xMas && Next(2) == 0` →
+        // `Next(331, 333)` = ZombieXmas/ZombieSweater (331/332), the same
+        // `forceXMasForever` source (`Main.cs:13135`,
+        // `WorldGen.cs:576-578`).
+        if ctx
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
+            && rng.next(2) == 0
+        {
+            let _ = rng.next(2); // `Next(331, 333)` — the type pick.
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4736-4758`: the armed-expert zombie styles — still constants-off
+        // (the armed variants are unmodelled).
         // `:4764-4810`: the zombie style table (7 biome styles) with the
         // 1/3 big/small variant roll — every outcome is the port's zombie.
         let _ = rng.next(3);
@@ -945,6 +1017,24 @@ fn spawn_npc_at(
         && rng.next(20) == 0
     {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::BoundGoblin);
+    }
+    // The bound Wizard (`NPC.cs:2088-2091`'s ladder arm): hardmode, the
+    // same `RollLuck(20) == 0` cadence as the goblin, one per save (the
+    // talk raises `savedWizard`). The C#'s arm is the FIRST `else if`
+    // after the goblin's, so it consumes the stream only where the
+    // goblin arm's guards fail.
+    if ctx.bound_wizard_ok
+        && !underworld_depth
+        && (y as f64 / 16.0) > ctx.world.rock_layer
+        && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
+        && rng.next(20) == 0
+    {
+        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundWizard);
+    }
+    // The bound Mechanic (`NPC.cs:2653-2657`'s Dungeon arm): the
+    // Skeletron downed, `Main.rand.Next(5) == 0`, one per save.
+    if ctx.bound_mech_ok && ctx.below_deep_dungeon && rng.next(5) == 0 {
+        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundMechanic);
     }
     // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
     // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
@@ -1089,6 +1179,40 @@ fn spawn_basic_slime(
     x: i32,
     surface: bool,
 ) -> Option<Npc> {
+    // M5-SEED-2: `GetBasicSlimeToSpawn`'s `default:` arm opens with the two
+    // holiday slimes (`NPC.cs:5643-5651`) — `Main.halloween &&
+    // GetBasicSlimeToSpawn_ChanceToBeHolidaySlime()` → the Ice Slime 302 and
+    // `Main.xMas && ...` → `Next(333, 337)` = the ribbon slimes (333-336).
+    // The helper is `Main.rand.Next(3) != 0` outside skyblock
+    // (`:5666-5672`), and the miss (1/3) falls through to the forest ladder
+    // below, so the arm consumes exactly one draw and returns. The flags are
+    // the `endlessHalloween` / `endlessChristmas` micro seeds again
+    // (`Main.forceHalloweenForever`/`forceXMasForever`, `Main.cs:13168`/
+    // `:13135` ← `WorldGen.cs:572-578`).
+    //
+    // Neither holiday type has a `SlimeVariant` of its own, so — like the
+    // ladder's other unmodelled outcomes — the hit lands on the port's base
+    // slime (the vanilla's own `-1` fallback of the same arm), and the
+    // Pinky `RollLuck(180)` promotion never runs (the C# promotes the
+    // `-1` result only, `NPC.cs:5238-5246`).
+    if surface {
+        if ctx
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
+            && rng.next(3) != 0
+        {
+            return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
+        }
+        if ctx
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
+            && rng.next(3) != 0
+        {
+            return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
+        }
+    }
     let dist = (x - ctx.world.spawn_x).abs();
     let variant = if surface {
         if rng.next(3) == 0 || dist < 200 {
@@ -1131,6 +1255,9 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1278,11 +1405,87 @@ mod tests {
         w
     }
 
-    fn night_ctx_at<'a>(w: &'a World) -> SpawnContext<'a> {
+    // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
+    // (`Main.forceHalloweenForever`/`forceXMasForever`, `Main.cs:13168`/
+    // `:13135` ← `WorldGen.cs:572-578`) gate the night zombie ladder's
+    // holiday arms (`NPC.cs:4728-4735`) and `GetBasicSlimeToSpawn`'s holiday
+    // slimes (`NPC.cs:5643-5651`). Both C# arms sit behind `Main.halloween`/
+    // `Main.xMas &&` short-circuits, so the flag's ONLY effect on a classic
+    // world is nothing — and on a seeded world it spends the arm's own draw
+    // exactly where vanilla does.
+    #[test]
+    fn the_endless_holiday_flags_gate_the_spawner_holiday_arms() {
+        let mut classic = ground_tall();
+        let mut seeded = ground_tall();
+        seeded
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        let night = night_ctx_flags(&classic, false, false);
+        let holiday = night_ctx_flags(&seeded, false, false);
+        // The stream fingerprint per seed (the `FastRandom` state after one
+        // surface-spawn call): identical everywhere the holiday arm's
+        // short-circuit skips its draw, shifted where it fires.
+        let fingerprint = |c: &SpawnContext<'_>, seed: u64| -> (u64, Option<NpcKind>) {
+            let mut rng = FastRandom::new(seed);
+            let n = spawn_npc_at(c, &mut rng, 210, 295 * 16, false).map(|n| n.kind);
+            (rng.0, n)
+        };
+        let mut shifted = 0usize;
+        let mut compared = 0usize;
+        for seed in 1..4000u64 {
+            let a = fingerprint(&night, seed);
+            let b = fingerprint(&holiday, seed);
+            if a != b {
+                shifted += 1;
+                // The holiday arms return the port's own zombie kind — the
+                // 319-321/331-332 C# types have no `NpcKind` of their own —
+                // so a spawn is never LOST by the early return.
+                assert_eq!(b.1, Some(NpcKind::Zombie), "the holiday zombie kind");
+            } else {
+                compared += 1;
+                assert_eq!(a.1, b.1, "the classic outcome is unchanged");
+            }
+        }
+        assert!(shifted > 0, "no seed took the holiday arm");
+        assert!(compared > 0, "the classic short-circuit path never ran");
+        // The classic world itself: no flag, no draw, byte-identical ladder.
+        let mut again = ground_tall();
+        again.compute_column_surface();
+        let plain = night_ctx_flags(&again, false, false);
+        for seed in 1..500u64 {
+            let mut a = FastRandom::new(seed);
+            let mut b = FastRandom::new(seed);
+            let _ = spawn_npc_at(&plain, &mut a, 210, 295 * 16, false);
+            let _ = spawn_npc_at(&plain, &mut b, 210, 295 * 16, false);
+            assert_eq!(a.0, b.0, "the classic ladder replays per seed");
+        }
+    }
+
+    // M5-SEED-2: the `vampirism` town-NPC pick (`WorldGen.cs:19836-19844`) —
+    // the Zoologist (633) at the world spawn instead of the Guide (22),
+    // outranked by the `worldIsInfected` Nurse (20, `:19821-19835`).
+    #[test]
+    fn the_vampirism_pick_places_the_zoologist_at_the_spawn() {
+        use tr_core::seeds::MicroSeedFlags;
+        assert_eq!(town_npc_at_spawn(MicroSeedFlags::default()), 22, "the Guide");
+        assert_eq!(
+            town_npc_at_spawn(MicroSeedFlags::from_sum(MicroSeedFlags::VAMPIRISM)),
+            633,
+            "the Zoologist"
+        );
+        // `worldIsInfected` outranks `vampirism` in the C#'s else-if ladder.
+        let both = MicroSeedFlags::from_sum(
+            MicroSeedFlags::VAMPIRISM | MicroSeedFlags::WORLD_IS_INFECTED,
+        );
+        assert_eq!(town_npc_at_spawn(both), 20, "the Nurse");
+    }
+
+    fn night_ctx_at<'a>(w: &'a World) -> SpawnContext<'_> {
         let mut c = ctx(w, 295.0 * 16.0, false);
         c.player_center.1 = 295.0 * 16.0;
         c
     }
+
 
     fn night_ctx_flags<'a>(w: &'a World, hard: bool, blood: bool) -> SpawnContext<'a> {
         let mut c = night_ctx_at(w);
@@ -1491,6 +1694,9 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1676,6 +1882,9 @@ mod tests {
                         ..SpawnFlags::default()
                     },
                     bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
                     invaders: false,
                     downed_golem: false,
                     downed_martians: false,
@@ -1927,6 +2136,9 @@ mod tests {
                 ..SpawnFlags::default()
             },
             bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
             invaders: false,
             downed_golem: true,
             downed_martians: false,

@@ -540,9 +540,10 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 * The world behind the menu is our own surface render (the original draws the world at the
   surface with `Main.DrawMenu`'s camera); the logo, items, font and colours are the
   original's.
-* Not ported yet, shown as a notice when clicked: Achievements, Resource Packs,
-  Credits, and the backing systems behind rows that now render at the original
-  geometry — window resolution / borderless / fullscreen (menuMode 111), language
+* Not ported yet, shown as a notice when clicked: Resource Packs, Credits, and the
+  backing systems behind rows that now render at the original geometry. The
+  Achievements row opens the `UIAchievementsMenu` overlay (M6-ACH-2: the 137-row
+  registry, the category filters, `TR_ACHIEVEMENTS`/`TR_ACHIEVEMENTS_CATS`). — window resolution / borderless / fullscreen (menuMode 111), language
   switching (1213/1212), and the menuMode-888 `ManageControlsMenu` UIState (the
   1127 "Keybindings" row). The P5 sub-screens themselves are ported (see
   "Menu sub-screens (P5)"); their remaining gaps are collected in

@@ -232,6 +232,15 @@ impl ApplicationHandler for App {
                             self.chat.open = true;
                             return;
                         }
+                        // `UIAchievementsMenu`'s Back (`GoBackClick` sets
+                        // `Main.menuMode = 0`): Escape closes the overlay
+                        // before the legacy menu sees the key (M6-ACH-2).
+                        if self.achievements_open && matches!(code, KeyCode::Escape) {
+                            self.achievements_open = false;
+                            self.achievements_categories = [true; 4];
+                            self.achievements_scroll = 0.0;
+                            return;
+                        }
                         if self.menu.is_some() {
                             if let Some(text) = event.text.as_ref() {
                                 if let Some(m) = self.menu.as_mut() {
@@ -328,6 +337,13 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
                 };
+                // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel
+                // moves the overlay's rows while it is open, before the
+                // hotbar's `HotbarPlus`/`HotbarMinus` cycle claims it.
+                if self.achievements_open {
+                    self.scroll_achievements(d);
+                    return;
+                }
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `Player.cs:25190-25197`: while the map is fullscreen the wheel
                     // zooms it instead of cycling the hotbar.
@@ -394,6 +410,14 @@ impl ApplicationHandler for App {
                             // held between the press and release events.
                             m.mouse_down = pressed;
                             if pressed {
+                                // `UIAchievementsMenu` rides over the legacy menu
+                                // (`Main.MenuUI.SetState`), so its Back and filter
+                                // toggles take the press first (M6-ACH-2).
+                                if pressed && self.achievements_open {
+                                    self.ui_left_press = true;
+                                    self.handle_achievements_clicks();
+                                    return;
+                                }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 self.apply_menu_action(action, event_loop);

@@ -421,6 +421,78 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Angler",
     },
     BestiaryEntryDef {
+        credit_id: "Wizard",
+        net_id: 108,
+        kind: NpcKind::Wizard,
+        variant: None,
+        quick_unlock: false,
+        name: "Wizard",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mechanic",
+        net_id: 124,
+        kind: NpcKind::Mechanic,
+        variant: None,
+        quick_unlock: false,
+        name: "Mechanic",
+    },
+    BestiaryEntryDef {
+        credit_id: "Stylist",
+        net_id: 353,
+        kind: NpcKind::Stylist,
+        variant: None,
+        quick_unlock: false,
+        name: "Stylist",
+    },
+    BestiaryEntryDef {
+        credit_id: "TaxCollector",
+        net_id: 441,
+        kind: NpcKind::TaxCollector,
+        variant: None,
+        quick_unlock: false,
+        name: "Tax Collector",
+    },
+    BestiaryEntryDef {
+        credit_id: "Golfer",
+        net_id: 588,
+        kind: NpcKind::Golfer,
+        variant: None,
+        quick_unlock: false,
+        name: "Golfer",
+    },
+    BestiaryEntryDef {
+        credit_id: "BestiaryGirl",
+        net_id: 633,
+        kind: NpcKind::Zoologist,
+        variant: None,
+        quick_unlock: false,
+        name: "Zoologist",
+    },
+    BestiaryEntryDef {
+        credit_id: "Princess",
+        net_id: 663,
+        kind: NpcKind::Princess,
+        variant: None,
+        quick_unlock: false,
+        name: "Princess",
+    },
+    BestiaryEntryDef {
+        credit_id: "DyeTrader",
+        net_id: 207,
+        kind: NpcKind::DyeTrader,
+        variant: None,
+        quick_unlock: false,
+        name: "Dye Trader",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyGirl",
+        net_id: 208,
+        kind: NpcKind::PartyGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Party Girl",
+    },
+    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -829,8 +901,125 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Eternia Crystal",
     },
     BestiaryEntryDef {
+        credit_id: "DD2LanePortal",
+        net_id: 549,
+        kind: NpcKind::DD2LanePortal,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Portal",
+    },
+    // The Old One's Army's tier-2/3 families (M4-EVENT-19): the
+    // lane spawn table's unported members, in net-id order.
+    BestiaryEntryDef {
+        credit_id: "DD2WyvernT1",
+        net_id: 558,
+        kind: NpcKind::DD2WyvernT1,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Wyvern",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2WyvernT2",
+        net_id: 559,
+        kind: NpcKind::DD2WyvernT2,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Wyvern",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2WyvernT3",
+        net_id: 560,
+        kind: NpcKind::DD2WyvernT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Wyvern",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2DarkMageT3",
+        net_id: 565,
+        kind: NpcKind::DD2DarkMageT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mage",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2WitherBeastT3",
+        net_id: 569,
+        kind: NpcKind::DD2WitherBeastT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Wither Beast",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2DrakinT2",
+        net_id: 570,
+        kind: NpcKind::DD2DrakinT2,
+        variant: None,
+        quick_unlock: false,
+        name: "Drakin",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2DrakinT3",
+        net_id: 571,
+        kind: NpcKind::DD2DrakinT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Drakin",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2KoboldWalkerT2",
+        net_id: 572,
+        kind: NpcKind::DD2KoboldWalkerT2,
+        variant: None,
+        quick_unlock: false,
+        name: "Kobold",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2KoboldWalkerT3",
+        net_id: 573,
+        kind: NpcKind::DD2KoboldWalkerT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Kobold",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2KoboldFlyerT2",
+        net_id: 574,
+        kind: NpcKind::DD2KoboldFlyerT2,
+        variant: None,
+        quick_unlock: false,
+        name: "Kobold Glider",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2KoboldFlyerT3",
+        net_id: 575,
+        kind: NpcKind::DD2KoboldFlyerT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Kobold Glider",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2OgreT2",
+        net_id: 576,
+        kind: NpcKind::DD2OgreT2,
+        variant: None,
+        quick_unlock: false,
+        name: "Ogre",
+    },
+    BestiaryEntryDef {
+        credit_id: "DD2OgreT3",
+        net_id: 577,
+        kind: NpcKind::DD2OgreT3,
+        variant: None,
+        quick_unlock: false,
+        name: "Ogre",
+    },
+    BestiaryEntryDef {
         credit_id: "AncientCultist",
-        net_id: 422,
+        net_id: 439, // `NPCID.CultistBoss` (439) — 422 is the Vortex PILLAR's
+        // id (`NPCID.LunarTowerVortex`); the entry carried the pillar's id
+        // until M4-NPC-3l. The port ships no NPC_439 sheet, so the draw
+        // stands on NPC_422's art (the documented stand-in).
         kind: NpcKind::AncientCultist,
         variant: None,
         quick_unlock: false,
@@ -859,6 +1048,16 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Solar Pillar",
+    },
+    BestiaryEntryDef {
+        credit_id: "VortexTower",
+        net_id: 422, // `NPCID.LunarTowerVortex` (422) — the fourth pillar of
+        // `WorldGen.TriggerLunarApocalypse`'s `{517, 422, 507, 493}` shuffle
+        // (`WorldGen.cs:86628`), missing from the port until M4-NPC-3l.
+        kind: NpcKind::VortexTower,
+        variant: None,
+        quick_unlock: false,
+        name: "Vortex Pillar",
     },
     BestiaryEntryDef {
         credit_id: "StardustCellBig",
@@ -1234,6 +1433,49 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
     )
 }
 
+/// `Main.GetBestiaryProgressReport()`'s completion fraction (the
+/// `BestiaryUI` report): the ported entries past the portrait-only tier
+/// over the whole roster. The Zoologist's shop gates read it
+/// (`Chest.cs:3265`).
+pub fn completion_percent(kills: &KillTracker) -> f32 {
+    let seen = ENTRIES
+        .iter()
+        .filter(|e| unlock_state(e, kills).known())
+        .count();
+    seen as f32 / ENTRIES.len() as f32
+}
+
+/// `Main.cs:65944`'s flag9: every other town NPC present — the C#'s 24
+/// counters; the port folds them to its own town roster (the kinds the
+/// port lacks sit in their own tasks), and the debug override
+/// (`NPC.unlockedPrincessSpawn`) opens it without the roster.
+pub(crate) fn all_town_kinds_present(npcs: &[crate::npc::Npc]) -> bool {
+    let alive = |kind: crate::npc::NpcKind| npcs.iter().any(|n| n.kind == kind && n.hp > 0);
+    use crate::npc::NpcKind as K;
+    [
+        K::Guide,
+        K::Merchant,
+        K::Nurse,
+        K::Dryad,
+        K::ArmsDealer,
+        K::Demolitionist,
+        K::Clothier,
+        K::GoblinTinkerer,
+        K::TravellingMerchant,
+        K::Wizard,
+        K::Mechanic,
+        K::Stylist,
+        K::TaxCollector,
+        K::Golfer,
+        K::Zoologist,
+        K::Angler,
+        K::Painter,
+        K::WitchDoctor,
+    ]
+    .iter()
+    .all(|kind| alive(*kind))
+}
+
 /// The entry an NPC death credits — the death hook's
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
@@ -1254,6 +1496,20 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
         // never has an entry of its own.
         NpcKind::SleepingAngler => NpcKind::Angler,
+        // The bound Wizard/Mechanic ride their freed rows (the C#'s
+        // bestiary ids 106/123 have no entries of their own — the bound
+        // Goblin 105 has none either).
+        NpcKind::BoundWizard => NpcKind::Wizard,
+        NpcKind::BoundMechanic => NpcKind::Mechanic,
+        // The webbed Stylist rides the Stylist's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:3557-3561`), so it
+        // never has an entry of its own.
+        NpcKind::WebbedStylist => NpcKind::Stylist,
+        // The sleeping Golfer rides the Golfer's row — the vanilla's
+        // bestiary draw modifiers hide it (`NPCID.cs:6072-6075`), so it
+        // never has an entry of its own.
+        NpcKind::SleepingGolfer => NpcKind::Golfer,
+        NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
         other => other,
     };
     ENTRIES

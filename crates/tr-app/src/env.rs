@@ -638,6 +638,22 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_ACHIEVEMENTS`: opens the achievements menu on start.
+    achievements_open,
+    "TR_ACHIEVEMENTS"
+}
+
+pin_num! {
+    /// `TR_ACHIEVEMENTS_CATS=<bitmask>`: the category filter bits of the
+    /// opened achievements menu, Slayer = 1, Collector = 2, Explorer = 4,
+    /// Challenger = 8 (all on by default, `InitializePage`'s
+    /// `SetState(value: true)`).
+    achievements_categories,
+    "TR_ACHIEVEMENTS_CATS",
+    u32
+}
+
+pin_bool! {
     /// `TR_NOCRAFT=1` turns the crafting panel off (`TR_CRAFT=1` forces it back on).
     no_craft,
     "TR_NOCRAFT"

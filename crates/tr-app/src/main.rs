@@ -6,6 +6,7 @@ mod angler;
 mod app;
 mod assets;
 mod achievements;
+mod achievements_data;
 mod audio;
 mod bank;
 mod banners;
@@ -23,6 +24,7 @@ mod env;
 mod inv;
 mod luck;
 mod wiring_stub;
+mod yoyo_string;
 mod item;
 mod itemdata;
 mod lang;
@@ -58,6 +60,7 @@ mod registry;
 mod variants;
 mod render;
 mod spawner;
+mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
@@ -105,9 +108,10 @@ fn main() -> Result<()> {
     };
 
     log::info!("world: {}", world_path.display());
-    // The world plus its v7 chest records (M6-SAVE-1b) — the seed store the
-    // `App` merges ahead of the load-time loot roll.
-    let (world, chests) = app::load_world(&world_path)?;
+    // The world plus its side sections — the `.wld`'s section payloads
+    // (M6-SAVE-1) or the native `.trwld`'s v7-v10 records (M6-SAVE-1b/c/d) —
+    // the loaded stores the `App` merges ahead of the load-time loot roll.
+    let (world, sections) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
         "assets/Content not found: copy the retail Content directory next to the executable",
@@ -140,7 +144,7 @@ fn main() -> Result<()> {
     let mut app = app::App::new(
         settings,
         world,
-        chests,
+        sections,
         world_path,
         atlas,
         font_atlas,
