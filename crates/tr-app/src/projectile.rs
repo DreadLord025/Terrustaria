@@ -1882,7 +1882,8 @@ impl Projectile {
                     -1
                 };
                 if !inputs.channel {
-                    // `:43873-43885` — the release throws.
+                    // `:43872-43885` — the release throws; the C# `break`s
+                    // out of the switch here.
                     self.ai[0] = 1.0;
                     self.ai[1] = 0.0;
                     self.vel = aim * num2 + Vec2::from(inputs.player_vel);
@@ -1892,21 +1893,22 @@ impl Projectile {
                     self.pos = mounted - Vec2::new(self.w * 0.5, self.h * 0.5);
                     self.local_ai[1] = 0.0; // `ResetLocalNPCHitImmunity`
                     self.local_hit_cooldown = num13 as i32;
-                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                } else {
+                    // `:43888-43897` — the charge orbit.
+                    self.local_ai[1] += 1.0;
+                    let angle = std::f32::consts::PI * 10.0 * (self.local_ai[1] / 60.0)
+                        * eff_dir as f32;
+                    let mut orbit =
+                        Vec2::new(eff_dir as f32, 0.0).rotate(Vec2::from_angle(angle));
+                    orbit.y *= 0.8;
+                    if orbit.y > 0.0 {
+                        orbit.y *= 0.5; // gravDir 1 (no flipped gravity ported)
+                    }
+                    self.pos =
+                        mounted + orbit * num15 - Vec2::new(self.w * 0.5, self.h * 0.5);
+                    self.vel = Vec2::ZERO;
+                    self.local_hit_cooldown = num12 as i32;
                 }
-                // `:43888-43897` — the charge orbit.
-                self.local_ai[1] += 1.0;
-                let angle =
-                    std::f32::consts::PI * 10.0 * (self.local_ai[1] / 60.0) * eff_dir as f32;
-                let mut orbit = Vec2::new(eff_dir as f32, 0.0).rotate(Vec2::from_angle(angle));
-                orbit.y *= 0.8;
-                if orbit.y > 0.0 {
-                    orbit.y *= 0.5; // gravDir 1 (no flipped gravity ported)
-                }
-                self.pos =
-                    mounted + orbit * num15 - Vec2::new(self.w * 0.5, self.h * 0.5);
-                self.vel = Vec2::ZERO;
-                self.local_hit_cooldown = num12 as i32;
             }
             1 => {
                 // The fly-out (`:43900-43932`).
@@ -1953,7 +1955,8 @@ impl Projectile {
                 if !inputs.channel {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                    // `break` — the C# falls out of the state switch into
+                    // the shared tail below, then HandleMovement's move.
                 }
                 let dist = (head - mounted).length();
                 let want_collide = self.ai[1] == 1.0;
@@ -2019,7 +2022,8 @@ impl Projectile {
                 if !inputs.channel || (head - mounted).length() > num18 {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                    // `break` — the C# falls out of the state switch into
+                    // the shared tail below, then HandleMovement's move.
                 }
                 // `!shimmerWet` — no shimmer in the port, so the arm always
                 // adds gravity.
@@ -2029,7 +2033,115 @@ impl Projectile {
             }
             _ => {}
         }
-        self.flail_tail(world, eff_dir, tick, inputs, npcs, rng)
+        let mut tick = self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+        // `HandleMovement` (`Projectile.cs:17015`) with the aiStyle-15 arm
+        // (`:19321`): the C# runs the sub-step move and the bounce handler
+        // AFTER the AI returns — the port's per-AI move idiom keeps both
+        // inside the flail so the slot never integrates twice.
+        self.flail_move(world);
+        tick
+    }
+
+    /// The flail's `HandleMovement` half (`Projectile.cs:17469-17760`): the
+    /// axis-separated probe — the blocked axis zeroes that velocity
+    /// component (the `Collision.Move` sub-step shape, the same idiom
+    /// `ai_arrow` uses) — followed by the aiStyle-15 bounce handler
+    /// (`AI_015_HandleMovementCollision` `:43655-43717`), which sees the
+    /// pre-move velocity as its `lastVelocity`.
+    fn flail_move(&mut self, world: &World) {
+        let pos_before = self.pos;
+        let last_velocity = self.vel;
+        if self.tile_collide {
+            // `Collision.Move`'s per-axis advance clamped to the blocked
+            // face, then the blocked component zeroed — the port steps the
+            // axis 1 px at a time (the C# sub-steps the box by
+            // `clamp(min(w,h),3,16)`; the result agrees to the sub-pixel and
+            // the approximation is recorded in ANALYSIS).
+            for axis in 0..2 {
+                let v = if axis == 0 { self.vel.x } else { self.vel.y };
+                if v == 0.0 {
+                    continue;
+                }
+                let step = v.signum();
+                let mut moved = 0.0f32;
+                while moved.abs() < v.abs() {
+                    let nx = if axis == 0 { self.pos.x + step } else { self.pos.x };
+                    let ny = if axis == 0 { self.pos.y } else { self.pos.y + step };
+                    if crate::player::collides_rect(world, nx, ny, self.w, self.h) {
+                        break;
+                    }
+                    self.pos.x = nx;
+                    self.pos.y = ny;
+                    moved += step;
+                }
+                if moved.abs() < v.abs() {
+                    if axis == 0 {
+                        self.vel.x = 0.0;
+                    } else {
+                        self.vel.y = 0.0;
+                    }
+                }
+            }
+        } else {
+            self.pos += self.vel;
+        }
+        // `HandleMovement`'s `flag` (`:17896-17899`, the arm at `:17904`):
+        // the per-aiStyle velocity chain — the flail's bounce handler — runs
+        // only when the move CHANGED the velocity (a blocked axis). Without
+        // the gate the handler's unconditional state-1 arm would stagger
+        // every fly-out tick.
+        if last_velocity != self.vel {
+            self.ai_flail_bounce(last_velocity, pos_before);
+        }
+    }
+
+    /// `AI_015_HandleMovementCollision` (`Projectile.cs:43655-43717`) — runs
+    /// after the move, gated on the velocity change above; the pre-move
+    /// velocity is the C# `lastVelocity`.
+    fn ai_flail_bounce(&mut self, last_velocity: Vec2, pos_before: Vec2) {
+        let mut num3 = 0.2;
+        if self.ai[0] == 1.0 || self.ai[0] == 5.0 {
+            num3 = 0.4;
+        }
+        if self.ai[0] == 6.0 {
+            num3 = 0.0;
+        }
+        let mut loud = false;
+        if last_velocity.x != self.vel.x {
+            if last_velocity.x.abs() > 4.0 {
+                loud = true;
+            }
+            self.vel.x = -last_velocity.x * num3;
+            self.local_ai[0] += 1.0;
+        }
+        if last_velocity.y != self.vel.y {
+            if last_velocity.y.abs() > 4.0 {
+                loud = true;
+            }
+            self.vel.y = -last_velocity.y * num3;
+            self.local_ai[0] += 1.0;
+        }
+        if self.ai[0] == 1.0 {
+            // `:43687-43698` — the fly-out bounce drops into the stagger.
+            self.ai[0] = 5.0;
+            self.local_hit_cooldown = 10;
+            loud = true;
+            // `CreateImpactExplosion` + `CreateImpactExplosion2_
+            // FlailTileCollision` are dust-only (no port seam); the
+            // `position -= vector` rollback undoes the whole move
+            // (`Collision.Move`'s advance included) — the C# subtracts the
+            // full pre-move velocity from the post-move position.
+            self.pos = pos_before - last_velocity;
+        }
+        // `:43708-43712` — the repeated-bounce bail-out.
+        if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
+            self.ai[0] = 4.0;
+        }
+        // `:43702-43706` — `Collision.HitTiles` ×count (the tile damage — no
+        // generic projectile→tile seam in the port) and
+        // `SoundEngine.PlaySound(0, …)` (the AI has no audio access): both
+        // deferred to the decor follow-up, recorded in ANALYSIS.
+        let _ = loud;
     }
 
     /// One helper spawn request from the head's center — the Drippler's extra
@@ -3980,6 +4092,401 @@ mod boomerang_tests {
 }
 
 #[cfg(test)]
+mod flail_tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A wall at `x` (full column) for the bounce tests.
+    fn wall_at(w: &mut tr_core::World, tx: i32) {
+        for y in 0..64 {
+            put_solid(w, tx, y);
+        }
+    }
+
+    fn inputs(
+        aim: Option<(f32, f32)>,
+        channel: bool,
+        mounted: (f32, f32),
+        center: (f32, f32),
+    ) -> FlailInputs {
+        FlailInputs {
+            aim,
+            channel,
+            player_dead: false,
+            player_cced: false,
+            mounted_center: Some(mounted),
+            center: Some(center),
+            player_vel: (0.0, 0.0),
+            player_dir: 1,
+            melee_speed: 1.0,
+            local_owner: 0,
+        }
+    }
+
+    /// One tick of the pool with the shared snapshot — the yoyo test shape.
+    fn tick(
+        world: &mut tr_core::World,
+        pool: &mut ProjectilePool,
+        inputs: FlailInputs,
+    ) {
+        pool.update(
+            world,
+            &mut [],
+            inputs.center,
+            None,
+            YoyoInputs::default(),
+            inputs,
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    fn spawn(kind: u16, x: f32, y: f32) -> (ProjectilePool, usize) {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(kind, x, y, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        (pool, slot)
+    }
+
+    #[test]
+    fn DW_3_2_the_hold_orbit_spins_num15_px_around_the_mounted_center() {
+        // `Projectile.cs:43888-43897`: the charge orbit. First tick:
+        // angle = π*10*(1/60)*1, so the head sits at mounted + orbit*30.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 100.0, 100.0);
+        let inputs = inputs(Some((600.0, 100.0)), true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, inputs);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 0.0, "still the held state");
+        assert_eq!(p.vel, Vec2::ZERO, "the hold zeroes the velocity");
+        let angle = std::f32::consts::PI * 10.0 * (1.0 / 60.0);
+        let mut orbit = Vec2::new(1.0, 0.0).rotate(Vec2::from_angle(angle));
+        orbit.y *= 0.8 * 0.5; // pointing with gravity → the halving arm
+        let want = Vec2::new(500.0, 500.0) + orbit * 30.0;
+        assert!(
+            (p.pos + Vec2::new(p.w * 0.5, p.h * 0.5) - want).length() < 1e-3,
+            "the head orbits the mounted center at num15 (pos {:?}, want {:?})",
+            p.pos + Vec2::new(p.w * 0.5, p.h * 0.5),
+            want
+        );
+        assert_eq!(p.local_hit_cooldown, 15, "num12 in the hold");
+    }
+
+    #[test]
+    fn DW_3_2_the_release_throws_at_aim_times_num2() {
+        // `:43872-43885`: on the release the fly-out arms with
+        // `velocity = aim * num2 + player.velocity`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 100.0, 100.0);
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.player_vel = (1.0, 0.0);
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 1.0, "released into the fly-out");
+        // aim = (100, 0) normalized; num2 = 14 (the Ball O' Hurt's row).
+        assert!((p.vel - Vec2::new(15.0, 0.0)).length() < 1e-3, "vel {:?}", p.vel);
+        // The release snaps the head to the mounted center (`:43881`), then
+        // HandleMovement integrates the throw — one tick lands at
+        // mounted + velocity.
+        let c = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+        assert!((c - (Vec2::new(500.0, 500.0) + p.vel)).length() < 1e-3,
+            "centered on the mount then thrown (c {:?}, vel {:?})", c, p.vel);
+        assert_eq!(p.local_hit_cooldown, 10, "num13 in flight");
+    }
+
+    #[test]
+    fn DW_3_6_the_dual_flail_inverts_the_throw() {
+        // `:43847-43862` + `:43877-43880`: the Blue Moon/Sunfury sibling
+        // flag flips the throw X and the forced facing.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[moon];
+        // aim is +x but flag5 mirrors the throw.
+        assert!(p.vel.x < 0.0, "the sibling flag flips the throw: {:?}", p.vel);
+        assert_eq!(p.ai[0], 1.0);
+    }
+
+    #[test]
+    fn DW_3_3_the_flight_ends_on_the_tick_count_or_the_distance() {
+        // `:43903`: `ai[1]++ >= num | Distance(mounted) >= num3` (800).
+        let mut w = world();
+        // The tick-count arm: the Ball O' Hurt's num = 15.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].ai[1] = 15.0; // the C# `ai[1]++ >= num` reads the pre-increment value
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "the 16th tick retracts");
+        // The distance arm: past 800 px but inside the 900-px leash.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 1350.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "past 800 px retracts");
+    }
+
+    #[test]
+    fn DW_3_3_the_retract_kills_at_num5() {
+        // `:43937-43940`: `Distance(mounted) <= num5` → Kill.
+        let mut w = world();
+        // the head's box center sits on the mounted center
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 2.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the catch kills the slot");
+    }
+
+    #[test]
+    fn DW_3_4_the_wall_bounce_reflects_at_the_state_factor() {
+        // `:43661-43698`: state 1 reflects at 0.4, drops into the stagger and
+        // rolls the blocked move back (`position -= lastVelocity`).
+        let mut w = world();
+        wall_at(&mut w, 40);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 632.0, 100.0);
+        pool.slots[slot].ai[0] = 1.0;
+        // 20 px/tick into the wall face at x = 640.
+        pool.slots[slot].vel = Vec2::new(20.0, 0.0);
+        let before = pool.slots[slot].pos; // the top-left, not the box center
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 5.0, "the fly-out bounce staggers");
+        assert!((p.vel - Vec2::new(-8.0, 0.0)).length() < 1e-3, "vel {:?}", p.vel);
+        // `position -= vector` undoes the whole move from the top-left.
+        assert_eq!(p.pos, before - Vec2::new(20.0, 0.0), "the whole move rolls back");
+        assert_eq!(p.local_hit_cooldown, 10);
+    }
+
+    #[test]
+    fn DW_3_4_the_spin_bounce_and_the_reel_in_bail_outs() {
+        // `:44020-44024` (state 5 → 6 after num+5 ticks) and `:43962-43963`
+        // (state 3 → 4 on the release) and `:44035-44040` (state 6 → 4 past
+        // num18 or without the channel).
+        let mut w = world();
+        // State 5's stagger: num = 15 for the Ball O' Hurt, so num14 = 20.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 5.0;
+        pool.slots[slot].ai[1] = 20.0;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 6.0, "the stagger graduates");
+        // State 3's release → 4.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 3.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "the spin bails on the release");
+        // State 6 past num18 (= num2*num + 160 = 14*15 + 160 = 370) → 4.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 900.0, 500.0);
+        pool.slots[slot].ai[0] = 6.0;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "the held-out spin bails past 370");
+    }
+
+    #[test]
+    fn DW_3_4_the_reel_in_kills_at_num7_or_the_overshoot() {
+        // `:44004-44015`: the catch kill and the Dot < 0 overshoot kill.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 4.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the reel-in catch kills");
+        // The overshoot: the head moving away from the player while already
+        // inside the kill distance is killed by the Dot test on the next
+        // tick's velocity.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0, 500.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(30.0, 0.0); // away from the player
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the overshoot kills");
+    }
+
+    #[test]
+    fn DW_3_1_the_kill_gates_fire_on_death_cc_and_the_leash() {
+        // `:43726-43731`: dead / CCed / `> 900 / meleeSpeed` — plus the
+        // orphan-slot dirty path (no player snapshot).
+        let mut w = world();
+        // Dead.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.player_dead = true;
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the dead owner kills");
+        // CCed.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.player_cced = true;
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the CCed owner kills");
+        // The leash: 900 px at meleeSpeed 1.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 1500.0, 500.0);
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "past the leash kills");
+        // Dirty: no player snapshot at all (the C# inactive-player read).
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        tick(&mut w, &mut pool, FlailInputs::default());
+        assert!(!pool.slots[slot].active, "the orphan slot dies cleanly");
+    }
+
+    #[test]
+    fn DW_3_7_the_flaming_mace_morphs_to_the_mace_in_liquid() {
+        // `:43737-43741`: 948 wet && !lavaWet → 947.
+        let mut w = world();
+        // Water at the head's tile (30, 6) — the mid-tile liquid read.
+        let i = w.index(30, 6);
+        w.tiles[i].liquid = 200;
+        let (mut pool, slot) = spawn(FLAMING_MACE, 480.0, 100.0);
+        let ins = inputs(None, true, (480.0, 100.0), (480.0, 100.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].kind, MACE, "the water morph lands");
+        // Lava does not morph.
+        let mut w = world();
+        let i = w.index(30, 6);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let (mut pool, slot) = spawn(FLAMING_MACE, 480.0, 100.0);
+        let ins = inputs(None, true, (480.0, 100.0), (480.0, 100.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].kind, FLAMING_MACE, "lava keeps the flame");
+    }
+
+    #[test]
+    fn DW_3_5_the_tail_pins_time_left_and_the_direction() {
+        // `:44142-44159`: timeLeft = 2 every tick, the direction from the
+        // velocity X (non-1058), the rotation from the velocity.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.time_left, 1, "re-pinned to 2 then decremented");
+        assert_eq!(p.direction, 1, "the sprite direction follows +x");
+        assert!((p.rot - (0.0f32.atan2(8.0) + 0.8)).abs() < 1e-4, "rot {}", p.rot);
+    }
+
+    #[test]
+    fn DW_4_1_the_flairons_alpha_fades_and_the_bubble_cadence_fires() {
+        // `:44053-44062` (alpha −50/tick, floor 0) and `:44077-44095`
+        // (cadence 3-5 held / 6 in states 3·6 / 4 else, kb ×0.5 held).
+        let mut w = world();
+        let (mut pool, slot) = spawn(FLAIRON, 560.0, 500.0);
+        pool.slots[slot].alpha = 255;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].alpha, 205, "the alpha fades in by 50");
+        // The held-state cadence (3-5 ticks) spawns a bubble; the count is
+        // seeded, so just let the timer run and expect at least one bubble.
+        let mut bubbles = 0;
+        for _ in 0..12 {
+            tick(&mut w, &mut pool, ins);
+            bubbles += pool
+                .slots
+                .iter()
+                .filter(|p| p.active && p.kind == FLAIRON_BUBBLE)
+                .count();
+            if bubbles > 0 {
+                break;
+            }
+        }
+        assert!(bubbles > 0, "the Flairon fires its bubbles while held");
+    }
+
+    #[test]
+    fn DW_4_3_the_drippler_spawns_its_extra_ball_on_the_arm_end() {
+        // `:43918-43929`: state 1's arm-end spawns 928 with `velocity * 1.3`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(DRIPPLER_FLAIL, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].ai[1] = 13.0; // num = 13 → this tick arms out
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let ball = pool
+            .slots
+            .iter()
+            .find(|p| p.active && p.kind == DRIPPLER_EXTRA_BALL);
+        assert!(ball.is_some(), "the extra ball spawns on the arm end");
+        let ball = ball.unwrap();
+        // The C# `velocity *= 0.3` then the ball rides `velocity * 1.3`.
+        assert!((ball.vel - Vec2::new(3.9, 0.0)).length() < 1e-3, "vel {:?}", ball.vel);
+    }
+
+    #[test]
+    fn the_integration_lifecycle_hold_throw_bounce_reel() {
+        // The whole machine on one wall world: hold → release → fly → wall
+        // bounce (stagger → spin) → reel-in catch, with the kill at the end.
+        let mut w = world();
+        wall_at(&mut w, 40);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 600.0, 100.0);
+        // Hold two ticks with the aim right (toward the wall).
+        let held = inputs(Some((700.0, 100.0)), true, (600.0, 100.0), (600.0, 100.0));
+        tick(&mut w, &mut pool, held);
+        assert_eq!(pool.slots[slot].ai[0], 0.0);
+        // Release toward the wall.
+        let thrown = inputs(Some((700.0, 100.0)), false, (600.0, 100.0), (600.0, 100.0));
+        tick(&mut w, &mut pool, thrown);
+        assert_eq!(pool.slots[slot].ai[0], 1.0, "released");
+        // The wall at x = 640 stops the 14-px throw in a few ticks.
+        for _ in 0..8 {
+            if !pool.slots[slot].active || pool.slots[slot].ai[0] != 1.0 {
+                break;
+            }
+            tick(&mut w, &mut pool, thrown);
+        }
+        assert!(pool.slots[slot].ai[0] == 5.0 || pool.slots[slot].ai[0] == 6.0,
+            "the wall bounce staggers (state {:?})", pool.slots[slot].ai[0]);
+        // Keep the channel held through the stagger and the spin.
+        for _ in 0..40 {
+            if !pool.slots[slot].active || pool.slots[slot].ai[0] == 4.0 {
+                break;
+            }
+            tick(&mut w, &mut pool, held);
+        }
+        // The spin eventually bails (or the reel-in catches) — the slot must
+        // end inactive through the legitimate path, never stuck.
+        for _ in 0..200 {
+            if !pool.slots[slot].active {
+                break;
+            }
+            tick(&mut w, &mut pool, held);
+        }
+        assert!(!pool.slots[slot].active, "the flail reels in and dies");
+    }
+}
+
+
+
+#[cfg(test)]
 mod bomb_tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -4412,6 +4919,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((420.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4441,6 +4949,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((620.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4468,6 +4977,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4481,6 +4991,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4502,6 +5013,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4512,6 +5024,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4537,6 +5050,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((450.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4550,6 +5064,7 @@ mod yoyo_tests {
             Some((120.0, 320.0)),
             None,
             inputs(Some((450.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4573,6 +5088,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((320.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4599,6 +5115,7 @@ mod yoyo_tests {
             Some((0.0, 320.0)),
             None,
             inputs(Some((2500.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4620,6 +5137,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4635,7 +5153,8 @@ mod yoyo_tests {
                 channel: true,
                 player_dead: true,
             },
-        &mut tr_core::tile_light::FastRandom::new(7),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
         );
@@ -4656,6 +5175,7 @@ mod yoyo_tests {
             Some((320.0, 320.0)),
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -4685,6 +5205,7 @@ mod yoyo_tests {
                 Some((416.0, 448.0)),
                 None,
                 inputs(Some((600.0, 448.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4747,6 +5268,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4802,7 +5324,7 @@ mod yoyo_tests {
         // its expiry sweeps the pair into the return, where the owner's catch
         // collects them — the assertions below read the final state.
         for _ in 0..200 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, FlailInputs::default(), &mut fast_seed(), 0, true);
         }
         assert!(
             pool.slots[second].local_ai[0] > pool.slots[first].local_ai[0],
@@ -4842,7 +5364,7 @@ mod yoyo_tests {
         let mut max_first = 0.0f32;
         let mut max_second = 0.0f32;
         for _ in 0..30 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, aim, FlailInputs::default(), &mut fast_seed(), 0, true);
             max_first = max_first.max(pool.slots[first].vel.length());
             max_second = max_second.max(pool.slots[second].vel.length());
         }
@@ -4866,6 +5388,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 inputs(Some((120.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -4901,7 +5424,7 @@ mod yoyo_tests {
         let aim = inputs(Some((400.0, 312.0)), true);
         let mut beam = None;
         for _ in 0..6 {
-            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, &mut fast_seed(), 0, true);
+            pool.update(&mut w, &mut npcs, Some((320.0, 312.0)), None, aim, FlailInputs::default(), &mut fast_seed(), 0, true);
             beam = beam.or_else(|| {
                 (0..MAX_PROJECTILES).find(|&i| {
                     pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM
