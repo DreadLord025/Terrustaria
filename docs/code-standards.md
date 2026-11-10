@@ -1,5 +1,5 @@
-<!-- base-commit: 958096d -->
-<!-- generated: 2026-11-06 -->
+<!-- base-commit: fd6a2da -->
+<!-- generated: 2026-11-09 -->
 
 # Code Standards — Terraria-Rust
 
@@ -8,166 +8,154 @@ branch-per-task, verification); this file captures the code conventions LLMs oth
 guess wrong. Authoritative maps: `docs/ARCHITECTURE.md` (modules), `docs/PORT_MAP.md`
 (C#→Rust), `docs/ANALYSIS.md` (deliberate deviations).
 
-## Forbidden Patterns
+## 1. Forbidden Patterns
 
-- **Never invent game behaviour.** Every game-logic change is read from the decompiled C#
-  first (`decompiled/Terraria/**`) and cited. Don't: adding a plausible constant. Do:
-  `// AmbientSky.cs:1319-1320` above the ported line, `SlotVector<SkyEntity>(500)`
-  → `entities: Vec<SkyEntity>` (capacity noted in a comment).
-- **Never hand-edit generated data.** `crates/tr-core/src/tiledata/{sets,emissive,merge}.rs`
-  come from `tools/GenTileData` — fix the generator and regenerate (empty diff required).
-  `itemdata.rs` is regenerated the same way — item fixes go through the generator, not the file.
-- **No god-files.** Extend the matching module (`render/sky.rs` for sky things), don't grow
-  `main.rs` or a new catch-all. A second copy of a mechanic → extract a shared helper/trait.
-  A self-contained movement subsystem is a crate-root leaf module (`grapple.rs`), not a
-  section inside `player.rs`.
-- **No ad-hoc RNG in sim code.** Don't call `rand`/`rand01` inline where the C# has a named
-  stream; route through the streams the app already owns (`item_rng`, per-consumer named
-  u64 streams, `frame.rs:1413/:1421`) or document a pinned value as an ANALYSIS deviation
-  (the `CloseDoor genRand.Next(3)` → 0 precedent).
+- **Never invent game behaviour.** Read the decompiled C# first and cite it. Don't add a
+  plausible constant; do carry the citation — it is how the port is re-verified. If the
+  C# is approximate for us, port it anyway and record the deviation in
+  `docs/ANALYSIS.md`.
+- **Never hand-edit generated data.** `crates/tr-core/src/tiledata/{sets,emissive,merge}.rs`,
+  `crates/tr-core/src/wld.rs`, `crates/tr-app/src/itemdata.rs`, `recipes_gen.rs`: fix the
+  `tools/` generator and regenerate (empty diff required). A hand-written `mod.rs` beside
+  them is fine.
+- **No god-files.** Extend the matching module (`projectile.rs` for projectile things),
+  don't grow `main.rs` or a new catch-all. A second copy of a mechanic → extract a shared
+  helper/trait. A self-contained subsystem is a crate-root leaf (`grapple.rs`), not a
+  section inside a hub file.
+- **No ad-hoc RNG in sim code.** Where the C# has a named stream, route through the stream
+  the app owns (`item_rng`, `craft_rng`, …) or a pinned value documented as an ANALYSIS
+  deviation. A pinned constant is the last resort.
 - **No behaviour drift in "refactors".** RNG streams, frame-cache keys (`WorldFrameKey`),
   fixed-step order are frozen; optimisations must be pixel/state-identical and benchmarked
   (`TR_BENCH`/`TR_STATS`).
-- **No `cargo fmt` on generated files** (`tiledata/`, `wld.rs`); rustfmt only touched files.
-- **No blanket staging** (`git add -A`/`git add .`) and no AI attribution in commits.
+- **No `cargo fmt` on generated files**; rustfmt touched files only. **No blanket staging**
+  (`git add -A`/`git add .`/`git commit -a`), no AI commit attribution, never commit secrets
+  or deps. **No task work in the primary checkout**, no `../TR-*` scratch; scratch lives in
+  the gitignored `.code-foundations/` or `target/`.
 
-## Code Examples
+## 2. Code Examples
 
-DO — port with citation + descriptive Rust name (`crates/tr-app/src/render/sky.rs:226-238`):
+DO — port with a one-line C# citation and a descriptive Rust name (the golden rule in
+miniature):
+
 ```rust
-/// `Cloud.GetParallax` (`Cloud.cs:318-338`): the per-cloud fraction of the
-/// camera's X movement, from its scale bucket.
-fn cloud_parallax(scale: f32) -> f32 {
-    let (a, b) = if scale < 1.0 { (0.07, (scale + 0.15 + 1.0) / 2.0) } ...
+// `Projectile.cs:43824-43831`: the flail's per-kind speeds scale by 1/meleeSpeed.
+let throw_speed = params.throw_speed / player.melee_speed();
 ```
 
-DON'T — copying C# identifiers verbatim or dropping the citation:
+DON'T — copying the C# identifier, dropping the citation, or a free-floating constant:
+
 ```rust
-fn GetParallax(fScale: f32) -> f32 { // no source cite, C# casing
+fn GetParallax(fScale: f32) -> f32 { /* no source cite, C# casing */ }
 ```
 
-DO — multi-tile objects are data, not code: a new object is one `TileObjectDef` entry in
-`TABLE` with the C# numbers in the doc comment (`crates/tr-core/src/tileobject.rs:516-543`):
+DO — per-type data is a table with the C# set name and default in the doc comment
+(`projectile.rs:362-441`, the yoyo ladder):
+
 ```rust
-/// `Style2x2` preset (`:3451-3460`) with the chest overrides (`:3461-3469`): ...
-const CHEST: TileObjectDef = TileObjectDef {
-    kind: 21, width: 2, height: 2, origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 18], frame_important: true, // `Main.cs:7656`
-    ..base_def()
-};
+/// `ProjectileID.Sets.YoyosTopSpeed` (`ProjectileID.cs:427`) — unlisted → 10f.
+const YOYO_TOP_SPEED: &[(u16, f32)] = &[(541, 9.0), (548, 11.0), …];
+fn yoyo_table(table: &[(u16, f32)], default: f32, kind: u16) -> f32 {
+    table.iter().find(|(k, _)| *k == kind).map_or(default, |(_, v)| *v)
+}
 ```
-`can_place`/`place` read only the table; per-type *behaviour* (kill cascade, interaction)
-is the exception and gets a named arm.
 
-DO — a deterministic stand-in is allowed, but must be documented as a deviation where it
-deviates (`sky.rs:153-164`): the cloud field is generated from the world seed with the
-deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
+DO — match the C# structure even when Rust is terser; keep the arm order verbatim where
+the C# iterates a set (the `keep the arm order` comments in `tile_light/`). Multi-tile
+objects stay data: one `TileObjectDef` entry with the C# numbers in the doc comment
+(`tr-core/src/tileobject.rs:516-543`), arms only for per-type *behaviour*.
 
-## Error Handling
+## 3. Error Handling
 
-- I/O and file parsing use `anyhow` with `bail!`/`Context` (`crates/tr-core/src/save.rs:178,182`):
-  `bail!("not a TRWLD save")`.
+- I/O and file parsing use `anyhow` with `bail!`/`Context`
+  (`tr-core/src/save.rs:178,182`: `bail!("not a TRWLD save")`).
 - `unwrap()`/`panic!` only where the invariant is local and provable (test code,
-  run-length bookkeeping in `save.rs`) — never on user/network input paths.
-- Sim/core lookups return `Option` (`world.tile(x, y)?` in `edit.rs` arms); an absent cell
-  is a normal state, not an error.
-- Render code returns plain values; `Option` guards stand in for missing sheets and an
-  empty field draws nothing (`sky.rs` `Option<BgTex>` pattern).
+  run-length bookkeeping in `save.rs`) — never on user/network/hostile-data paths.
+- Sim/core lookups return `Option`; an absent cell is a normal state, not an error —
+  `let Some(tile) = world.tile(tx, ty) else { continue; };` (`projectile.rs:466`).
+- Registry probes: `registry::get(kind).is_some_and(|d| d.channel)`. The pool's spawners
+  return `Option<usize>` — a kind without a `proj_data` row spawns nothing; callers use
+  `if let Some(slot) = …`.
 
-## Imports & Dependency Direction
+## 4. Imports & Dependency Direction
 
-- `tr-core` (world/tiles/lighting/save) never depends on `tr-app`; `tr-app` holds
-  rendering/sim/UI and depends on `tr-core` + `tr-render`. No upward imports, no cycles.
-- The seam between them: core returns *plans/requests* (`TileKill { object_drops }`,
-  `DropRequest`), the app executes them (spawn item drops, sounds). Core never spawns
-  app-side entities or reads `App` state.
-- Crates stay flat: one `lib.rs`, modules in `src/`; generated data in its own
-  `tiledata/` module behind a hand-written `mod.rs`.
+- `tr-core` (world/tiles/lighting/save/loot) never depends on `tr-app`; `tr-app` (sim +
+  render + UI) depends on `tr-core` + `tr-render`. No upward imports, no cycles.
+- The seam: core returns *plans/requests* (`TileKill`, `DropRequest`), the app executes
+  them (drops, sounds). Core never spawns app-side entities or reads `App` state.
+- Inside a file: `use crate::…` for siblings, `glam::Vec2` for world vectors, `tr_core::…`
+  for core types; crates stay flat, generated data behind a hand-written `mod.rs`.
 
-## Testing Patterns
+## 5. Testing Patterns
 
-- `#[cfg(test)] mod tests` at the bottom of the same file (`framing.rs:1243`,
-  `loot.rs:1123`, `sky.rs:1275`); no separate test crate.
-- Tests port the C# recipe and say so in the name/body: `stars_follow_the_spawn_recipe`,
-  `common_drop_gate_and_stack_range` (`sky.rs`, `loot.rs` tests).
-- Movement features are tested through the Player tick: build a world with
-  `test_world_helpers::ground()` (`crates/tr-app/src/test_world_helpers.rs:9`) or
-  `ground_world()` (`player.rs` tests), `Player::spawn(&w)`, warm up ~120 ticks, then
-  drive `p.update(&w, PlayerInput { .. })` loops and assert velocities/latches — the
-  grapple tests (`player.rs:3247+`) are the model; every test's doc comment cites the C# lines.
-- Editing/cascade tests share the fixtures in `world_sim/editing.rs`: `object_world()`
-  (40×40, stone floor), `mining_app()`, `mine_frames()`.
-- RNG-dependent logic is tested on a seeded `FastRandom` with the C# call order in the
-  comment (`loot.rs` tests — "both consume the same FastRandom stream").
-- In-development features get a deterministic `TR_<FEATURE>` env pin for screenshots and
-  tests: `TR_HOOK` parse (`world_sim/player.rs:51-56`), `TR_DASH`/`TR_BOOTS`/`TR_WINGS`
-  on Player fields (`player.rs` ~341-384), `TR_JUMPS` on the ExtraJump type.
-- Visual work is verified with deterministic env pins (`TR_SHOT`, `TR_CAM`, `TR_DAY`,
-  `TR_NOPLAYER`, `TR_NO_BG`, `TR_UI`, `TR_DEBUG=0`, `TR_STORM`, `TR_XY`) +
-  `tools/pixel_diff.py`; two identical runs must be SHA256-equal.
-- Full suite: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`;
-  judge only the `test result: ok` lines — cargo may exit 1 on success in this repo.
+- `#[cfg(test)] mod tests` at the bottom of the same file (`projectile.rs:2474+`); no
+  separate test crate. Every test's doc comment cites the C# lines it verifies.
+- Fixtures per area: `ground()`/`one_npc()`/`tick()` (`projectile.rs:2479-2556`),
+  `test_world_helpers::ground()` (`crates/tr-app/src/test_world_helpers.rs:9`),
+  `object_world()`/`mining_app()` (`world_sim/editing.rs` tests). Movement features drive
+  the Player tick; the grapple tests (`player.rs:3247+`) are the model.
+- RNG-dependent logic takes an explicit seeded stream: `FastRandom::new(seed)` in tests
+  (the exact C# `UnifiedRandom` stream), `LootRng(&mut app.item_rng)` in the app (one
+  item-stream draw per event, C# call order in the comment). Determinism-critical work
+  proves state equality across seeds, never one lucky seed.
+- In-development features get a `TR_<FEATURE>` env pin for screenshots/tests
+  (`TR_HOOK`, `TR_SHOT`, `TR_CAM`, `TR_DAY`, `TR_UI`, `TR_DEBUG=0`, …) + `tools/pixel_diff.py`;
+  two identical runs must be SHA256-equal.
+- Full suite: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids` —
+  judge only the `test result: ok` lines, cargo may exit 1 on success in this repo.
 
-## Naming Conventions
+## 6. Naming Conventions
 
 - Rust names describe behaviour, not the C# identifier: `get_rock_transition_point`,
-  `fill_terrain`, `advance_bg_alphas`; keep the mapping discoverable via the citation
-  comment instead. C#-shorthand like `num2` never survives the port.
-- Types/enums `PascalCase`, functions `snake_case`, constants `SCREAMING_SNAKE`.
-- Ported per-type check functions keep the C# verb so the cascade reads like the source:
-  `check_door_closed`, `check_chest` → new ones as `check_sunflower`, `check_pot`.
-- Modules: one concept per file under `render/` (draw passes), `world_sim/`
-  (fixed-step systems), `ui/` (screens/panels).
+  `fill_terrain`, `ai_flail`. C# shorthand (`num2`, `flag5`) never survives the port; the
+  citation comment carries the mapping and the C# symbol name
+  (`ai_boomerang` ↔ `AI_003_Boomerang`).
+- Ported per-type check functions keep the C# verb so cascades read like the source
+  (`check_door_closed`, `check_chest`). Types/enums `PascalCase`, functions `snake_case`,
+  id constants `SCREAMING_SNAKE` with the verbatim vanilla `ProjectileID`/`ItemID` value.
+- The pool mirrors C# fields minus camelCase (`time_left`, `knock_back`,
+  `uses_local_immunity`, `ai`/`local_ai`). Test names are full sentences of the expected
+  behaviour (`the_dropped_twin_passes_through_platforms`).
 
-## File Organization
+## 7. File Organization
 
-- New system → extend the module map in `docs/ARCHITECTURE.md`; a genuinely new concern
-  gets a new module file next to its peers (`render/ambience.rs` beside `render/sky.rs`,
-  `falling.rs`/`loot.rs`/`tileobject.rs` beside their tr-core peers), registered as
-  `pub(crate) mod` in the folder's `mod.rs`. New `world_sim/` systems join as a module
-  plus one `FixedStepper` tick in the original C# call order (`ARCHITECTURE.md:314`).
-- A movement subsystem that owns state + spec tables + its own AI is a crate-root leaf
-  beside its peers: `grapple.rs` (state struct, spec table, latch/pull math, app driver
-  in `world_sim/player.rs:142-167`); rain/sand show the same shape for particle systems.
-- Multi-tile tile objects: geometry/styles in `tr-core/src/tileobject.rs` (`TABLE`),
-  kill-behaviour arms in `tr-core/src/edit.rs` (`check_object`), the app-side drop map in
-  `tr-app/src/registry.rs` (`tile_drop`), hooks in `tr-app/src/world_sim/editing.rs`.
+- New system → extend the module map in `docs/ARCHITECTURE.md`; a new concern gets a module
+  file next to its peers, registered as `pub(crate) mod`. `world_sim/` systems join as a
+  module plus one fixed-step tick in the original C# call order (`ARCHITECTURE.md:314`).
+- Projectile families: pool + per-family `ai_*` + `proj_data` in
+  `crates/tr-app/src/projectile.rs`, the fixed-step pass in `world_sim/projectiles.rs`, the
+  item-use wire in `world_sim/editing.rs`.
 - App state lives as `App` fields (`crates/tr-app/src/app/mod.rs:77+`), sim state grouped
-  with its system; per-frame hooks are registered in `app/frame.rs` next to
-  `update_rain`/`update_npcs`.
-- Scratch files only under `.code-foundations/` or `target/`; never the repo root.
+  with its system; per-frame hooks register in `app/frame.rs` next to their peers.
 
-## Technology Decisions
+## 8. Technology Decisions
 
-- Rendering: one atlas, one instanced sprite pipeline (`SpriteRenderer`,
-  `push_back_sprite`/`push_front_sprite`); tiles 16 px on 18 px grid, trunks 20×20 on
-  22 px, walls 36 px cell/8 px inset — keep source rects on those grids.
-- RNG layering (order matters when choosing): (1) `FastRandom`
-  (`tr-core/tile_light/palette.rs:20`) is the **exact C# `UnifiedRandom` stream** — use it
-  when the C# stream must be replayed; (2) the drop engine (`tr-core/src/loot.rs`) is
-  RNG-generic — it takes `&mut dyn DropRng` and returns `DropRequest`s, never touching
-  world state; the app drives it from `App.item_rng`; (3) other per-consumer visual/sim
-  randomness uses named u64 streams through `next_rand`/`rand01`
-  (`crates/tr-app/src/app/frame.rs:1413/:1421`) — one stream per consumer (crafting,
-  growth, scheduler; `rain.rs` owns its own with `StreamReplay` for replay); (4) worldgen
-  and the wind walk share one xorshift core — `Xorshift64` (`tr-core/src/rng.rs`), the
-  13/7/17 triple carrying both draw conventions (worldgen's high-32-bit `next_u32` +
-  `range`/`chance`/`next_f64`, re-exported as `Rng` from `worldgen/noise.rs`; the wind
-  walk's `from_seed` + `range`), byte-exact to the pre-refactor cores; (5) a pinned
-  constant is the last resort and must be recorded in ANALYSIS. Determinism is a hard
-  invariant.
+- RNG layering (order matters when choosing): (1) `FastRandom` (`tr-core/tile_light/
+  palette.rs:20`) is the exact C# `UnifiedRandom` stream — replay C# streams with it;
+  (2) the drop engine (`tr-core/src/loot.rs`) is RNG-generic (`&mut dyn DropRng`), driven
+  from `App.item_rng`; (3) other per-consumer randomness uses named u64 streams through
+  `next_rand`/`rand01` (`app/frame.rs:1413/:1421`, one stream per consumer); (4) worldgen +
+  the wind walk share one xorshift core — `Xorshift64` (`tr-core/src/rng.rs`); (5) a pinned
+  constant is the last resort, recorded in ANALYSIS. Determinism is a hard invariant.
+- Rendering: one atlas, one instanced sprite pipeline; tiles 16 px on 18 px grid, trunks
+  20×20 on 22 px, walls 36 px cell/8 px inset — keep source rects on those grids.
 - Time: 60 Hz fixed step (`FixedStepper`), one update per draw, accumulator clamped 3×.
+- `graphify` is the navigation tool; graphs are gitignored and refreshed at every workflow
+  checkpoint (never two concurrent `graphify update` runs).
+- Data assembly is generated by `tools/` from the decompiled sources — a regen must
+  produce an empty diff, otherwise the decompile drifted.
 
-## Exemplar Files
+## 9. Exemplar Files
 
-- `crates/tr-app/src/grapple.rs` — self-contained movement subsystem: state struct, spec
-  table, latch/pull math, integration flag on Player, tests through the Player tick.
-- `crates/tr-core/src/tileobject.rs` — data-only registry (new objects = one entry),
-  `can_place`/`place` engine reading only the table, geometry tests.
-- `crates/tr-core/src/loot.rs` — RNG-generic engine, C#-ordered rolls, seeded tests;
-  the plan/request seam (`DropRequest`) done right.
-- `crates/tr-app/src/world_sim/editing.rs` — app-side hooks (`break_drop_events`,
-  `interaction_events`), fixture-driven cascade tests.
-- `crates/tr-app/src/render/sky.rs` — port style, citations, deterministic stand-ins,
-  visual test pins. `crates/tr-core/src/save.rs` — anyhow error style, binary format porting.
+- `crates/tr-app/src/projectile.rs` — the whole contract in one file: data table + citation
+  comments + per-family `ai_*` + pool engine + seeded tests. Start a projectile-family port
+  at `ai_boomerang` (`:1469`, the stateful-weapon peer) and `ai_yoyo` (`:992`, the
+  channeled-weapon peer).
+- `crates/tr-app/src/world_sim/projectiles.rs` — the fixed-step pass + inputs-snapshot
+  seam.
+- `crates/tr-app/src/grapple.rs` — self-contained movement subsystem (state struct, spec
+  table, math, tests through the Player tick).
+- `crates/tr-core/src/tileobject.rs` / `loot.rs` — data-only registry; the RNG-generic
+  plan/request seam (`DropRequest`) done right.
+- `docs/PORT_MAP.md` — what "done" looks like per system; `AGENTS.md` — the golden rule and
+  the branch-per-task loop.

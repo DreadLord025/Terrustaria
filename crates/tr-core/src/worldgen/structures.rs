@@ -413,6 +413,10 @@ pub(crate) fn pass_beehives(
     let count = 1 + rng.range(0, (5.0 * (world.width as f32 / 4200.0)) as i32 + 1)
         + rng.range(0, 3);
     let mut placed = 0u32;
+    // The honey patches ride the hive pass (`WorldGen.cs:15946-15968`):
+    // each placed hive's `Next(5)` patches share its stream, so the rects
+    // list and the rng cross the hive body.
+    let mut protected: Vec<(i32, i32, i32, i32)> = Vec::new();
     let y_lo = ((world.world_surface as i32 + rock_layer as i32) / 2).max(spans.jungle_start.min(spans.jungle_end));
     let y_hi = (world.height - 300).max(y_lo + 20);
     for _ in 0..count {
@@ -486,6 +490,9 @@ pub(crate) fn pass_beehives(
             };
             world.tiles[i].flags |= FLAG_ACTIVE;
         }
+        // The hive's honey patches (`WorldGen.cs:15946-15968`).
+        super::mini_biomes::place_honey_patches_around(world, cx, cy, &mut protected, rng);
+        protected.push((cx - r, cy - r, 2 * r, 2 * r));
         placed += 1;
     }
     placed

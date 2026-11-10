@@ -259,7 +259,39 @@ pub const EXPLOSIVES_BLAST: u16 = 108;
 /// 128×128, a ported shape with no vanilla constant name (`ProjectileID.cs`
 /// calls it simply `Mine`).
 pub const LANDMINE_BLAST: u16 = 164;
-/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
+/// The flail family (aiStyle 15 — `AI_015_Flails` `Projectile.cs:43724-44169`).
+/// Every row rides `DefaultToFlail()` (`:10753-10762`: aiStyle 15, drawLayer 7,
+/// friendly, `penetrate = -1`, melee, `usesLocalNPCImmunity` with
+/// `localNPCHitCooldown = 10`); the per-kind `SetDefaults` rows set the boxes.
+pub const BALL_O_HURT: u16 = 25;
+pub const BLUE_MOON: u16 = 26;
+pub const SUNFURY: u16 = 35;
+pub const DAO_OF_POW: u16 = 63;
+pub const THE_MEATBALL: u16 = 154;
+pub const FLOWER_POW: u16 = 247;
+pub const DRIPPLER_FLAIL: u16 = 757;
+pub const MACE: u16 = 947;
+pub const FLAMING_MACE: u16 = 948;
+pub const FLAIRON: u16 = 1058;
+/// The whole aiStyle-15 weapon set — the kinds `DefaultToFlail` covers.
+pub const FLAIL_KINDS: [u16; 10] = [
+    BALL_O_HURT,
+    BLUE_MOON,
+    SUNFURY,
+    DAO_OF_POW,
+    THE_MEATBALL,
+    FLOWER_POW,
+    DRIPPLER_FLAIL,
+    MACE,
+    FLAMING_MACE,
+    FLAIRON,
+];
+/// The flail family's helper projectiles: the Drippler's extra ball 928
+/// (`Projectile.cs:8793`), the Flower Pow petal 248 (`:3306`) and the Flairon
+/// bubble 405 (`:4857`).
+pub const DRIPPLER_EXTRA_BALL: u16 = 928;
+pub const FLOWER_POW_PETAL: u16 = 248;
+pub const FLAIRON_BUBBLE: u16 = 405;/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
 pub const CANNON_BOMB: u16 = 178;
 /// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
 /// `extraUpdates = 30`.
@@ -571,6 +603,151 @@ struct YoyoTick {
     beam: Option<YoyoBeamRequest>,
 }
 
+/// One flail helper spawn — the family's `Projectile.NewProjectile` calls
+/// (`:43914`/`:43927` the Drippler's 928, `:44137` the Flower Pow's petal
+/// 248, `:44094` the Flairon's bubble 405). The AI only sees its own slot,
+/// so the request rides out like `YoyoTick`'s beam; the dispatch arm spawns
+/// at most one per slot per tick (the vanilla never fires two in one AI
+/// pass).
+struct FlailSpawnRequest {
+    kind: u16,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+    knock_back: f32,
+    /// `NewProjectile`'s `ai0` — the Flairon seeds its bubbles with -10f.
+    ai0: f32,
+}
+
+/// One flail hit-side decision — the multipliers plus whether the
+/// state-0 ellipse stood in for the box test.
+struct FlailHit {
+    damage_mult: f32,
+    knock_mult: f32,
+    from_x: f32,
+    replaces_box: bool,
+}
+
+/// What one flail AI tick hands back to the pool: the family's helper
+/// spawn and the `player.ChangeDir` facing the C# writes mid-machine (the
+/// port's facing is run-key driven, so the value rides out and the dispatch
+/// arm applies it after the AI pass).
+#[derive(Default)]
+struct FlailTick {
+    spawn: Option<FlailSpawnRequest>,
+    facing: Option<i32>,
+}
+
+/// The shared (non-per-kind) locals of `AI_015_Flails`
+/// (`Projectile.cs:43746-43760`), with the meleeSpeed-scaled ones marked.
+const FLAIL_THROW_MAX_DISTANCE: f32 = 800.0; // num3
+const FLAIL_RETRACT_ACCEL: f32 = 3.0; // num4 (scaled)
+const FLAIL_REEL_ACCEL: f32 = 6.0; // num6 (scaled)
+const FLAIL_SPIN_SOFT_ACCEL: f32 = 1.0; // num8 (scaled)
+const FLAIL_SPIN_PULL_SPEED: f32 = 14.0; // num9 (scaled)
+const FLAIL_SPIN_INNER_RADIUS: f32 = 60.0; // num10
+const FLAIL_HELD_NPC_COOLDOWN: f32 = 10.0; // num11
+const FLAIL_FLIGHT_NPC_COOLDOWN: f32 = 10.0; // num13
+
+/// `AI_015_Flails`'s per-kind parameter locals — the switch at
+/// `Projectile.cs:43761-43823` on top of the defaults. The C# scales
+/// `num2/num4/num5/num6/num7/num8/num9` by `1f / player.meleeSpeed` at
+/// `:43824-43831`; the AI applies that to the speed/accel fields once.
+#[derive(Clone, Copy)]
+pub struct FlailParams {
+    /// `num` — the state-1 flight ticks before the retract transition.
+    pub flight_ticks: f32,
+    /// `num2` — the throw speed (px/tick).
+    pub throw_speed: f32,
+    /// `num5` — the state-2 retract speed (and its kill distance).
+    pub retract_speed: f32,
+    /// `num7` — the state-4 reel-in kill distance.
+    pub reel_kill_distance: f32,
+    /// `num12` — the held state's `localNPCHitCooldown`.
+    pub spin_npc_cooldown: f32,
+    /// `num15` — the held-orbit radius around the mounted center.
+    pub orbit_radius: f32,
+}
+
+/// The per-kind switch verbatim (`Projectile.cs:43761-43823`); an unlisted
+/// kind keeps the shared defaults (`num 10, num2 24, num5 16, num7 48, num12
+/// 15, num15 30`). `num14 = num + 5f` (`:43759`) is derived, not stored.
+const FLAIL_PARAMS: &[(u16, FlailParams)] = &[
+    // 947/948 — the Mace/Flaming Mace pair shares one row.
+    (
+        MACE,
+        FlailParams { flight_ticks: 13.0, throw_speed: 12.0, retract_speed: 8.0, reel_kill_distance: 13.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    (
+        FLAMING_MACE,
+        FlailParams { flight_ticks: 13.0, throw_speed: 12.0, retract_speed: 8.0, reel_kill_distance: 13.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 25 Ball O' Hurt.
+    (
+        BALL_O_HURT,
+        FlailParams { flight_ticks: 15.0, throw_speed: 14.0, retract_speed: 10.0, reel_kill_distance: 15.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 154 The Meatball.
+    (
+        THE_MEATBALL,
+        FlailParams { flight_ticks: 15.0, throw_speed: 15.0, retract_speed: 11.0, reel_kill_distance: 16.0, spin_npc_cooldown: 15.0, orbit_radius: 30.0 },
+    ),
+    // 26 Blue Moon.
+    (
+        BLUE_MOON,
+        FlailParams { flight_ticks: 15.0, throw_speed: 16.0, retract_speed: 13.0, reel_kill_distance: 17.0, spin_npc_cooldown: 15.0, orbit_radius: 32.0 },
+    ),
+    // 35 Sunfury.
+    (
+        SUNFURY,
+        FlailParams { flight_ticks: 15.0, throw_speed: 17.0, retract_speed: 14.0, reel_kill_distance: 18.0, spin_npc_cooldown: 15.0, orbit_radius: 37.0 },
+    ),
+    // 63 The Dao of Pow.
+    (
+        DAO_OF_POW,
+        FlailParams { flight_ticks: 13.0, throw_speed: 21.0, retract_speed: 20.0, reel_kill_distance: 24.0, spin_npc_cooldown: 12.0, orbit_radius: 30.0 },
+    ),
+    // 757 Drippler Flail.
+    (
+        DRIPPLER_FLAIL,
+        FlailParams { flight_ticks: 13.0, throw_speed: 22.0, retract_speed: 22.0, reel_kill_distance: 26.0, spin_npc_cooldown: 12.0, orbit_radius: 35.0 },
+    ),
+    // 247 Flower Pow.
+    (
+        FLOWER_POW,
+        FlailParams { flight_ticks: 13.0, throw_speed: 23.0, retract_speed: 16.0, reel_kill_distance: 48.0, spin_npc_cooldown: 12.0, orbit_radius: 40.0 },
+    ),
+    // 1058 Flairon.
+    (
+        FLAIRON,
+        FlailParams { flight_ticks: 16.0, throw_speed: 23.0, retract_speed: 16.0, reel_kill_distance: 48.0, spin_npc_cooldown: 10.0, orbit_radius: 45.0 },
+    ),
+];
+
+/// The flail family's parameters — the lookup the AI runs once per tick.
+/// `Projectile.cs:43746-43831`'s table semantics.
+pub fn flail_params(kind: u16) -> FlailParams {
+    FLAIL_PARAMS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or(
+            FlailParams {
+                flight_ticks: 10.0,
+                throw_speed: 24.0,
+                retract_speed: 16.0,
+                reel_kill_distance: 48.0,
+                spin_npc_cooldown: 15.0,
+                orbit_radius: 30.0,
+            },
+            |(_, p)| *p,
+        )
+}
+
+/// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
+/// the SetDefaults body; every other kind (and the unlisted yoyos) keeps the
+
 /// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
 /// the SetDefaults body; every other kind (and the unlisted yoyos) keeps the
 /// stock 1f.
@@ -583,10 +760,17 @@ fn set_defaults_scale(kind: u16) -> f32 {
         563 => 1.05,
         564 => 1.075,
         603 => 1.15,
+        // The flail family's per-kind `scale` (`Projectile.cs`'s SetDefaults
+        // rows; the unlisted flails keep the stock 1f).
+        25 => 0.9,
+        26 | 35 | 154 => 0.8,
         _ => 1.0,
     }
 }
 
+/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
+/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
+/// families are M4-PROJ follow-ups.
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
 /// families are M4-PROJ follow-ups.
@@ -712,7 +896,66 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
                 (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
             }
+            // The flail family (`DefaultToFlail` `:10753-10762` — aiStyle 15,
+            // `penetrate = -1`, melee, the local-immunity pair 10 via the
+            // overlay below); the boxes are the per-kind `SetDefaults` rows:
+            // 25/26/35/63/154 22×22 (`:1079`-`:2418`), 947/948 20×20 (`:8941`),
+            // 247/757 34×34 (`:3299`/`:7807`), 1058 26×26 (`:9998`).
+            BALL_O_HURT | BLUE_MOON | SUNFURY | DAO_OF_POW | THE_MEATBALL => {
+                (22.0, 22.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            MACE | FLAMING_MACE => (20.0, 20.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            FLOWER_POW | DRIPPLER_FLAIL => {
+                (34.0, 34.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            FLAIRON => (26.0, 26.0, 15, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The flail family's helpers: the Drippler's extra ball 928
+            // (`:8793` — 34×34, aiStyle 14, `penetrate = 2`, `timeLeft = 250`),
+            // the Flower Pow petal 248 (`:3306` — 18×18, aiStyle 1, melee) and
+            // the Flairon bubble 405 (`:4857` — 14×14, aiStyle 70,
+            // `penetrate = 1`, `timeLeft = 120`; its `alpha = 255` rides the
+            // spawn site). The flail AI spawns all three.
+            DRIPPLER_EXTRA_BALL => (34.0, 34.0, 14, 2, 250, 0, true, false, false),
+            FLOWER_POW_PETAL => (18.0, 18.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            FLAIRON_BUBBLE => (14.0, 14.0, 70, 1, 120, 0, true, false, false),
             // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
+            // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
+            // ticks for the bombs, 300 for the dynamite. The sticky set
+            // {37, 519} disables the plain tile collide — their hover scan
+            // stops them.
+            BOMB | BOUNCY_BOMB => (22.0, 22.0, 16, -1, 180, 0, true, false, false),
+            STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
+            BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
+            DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
+            // The yoyo family (`:6013-6093` + `:9483-9490`): 16×16, aiStyle 99
+            // (`DefaultToYoyo` `:10764-10771` — friendly, `penetrate = -1`),
+            // `extraUpdates = 0`; the C# SetDefaults sets no `timeLeft`, so the
+            // stock 3600 stands and the AI's `timeLeft = 6` re-pin keeps the
+            // slot alive in flight.
+            CODE1_YOYO
+            | WOOD_YOYO
+            | CORRUPT_YOYO
+            | CRIMSON_YOYO
+            | JUNGLE_YOYO
+            | CASCADE_YOYO
+            | CHIK_YOYO
+            | CODE2_YOYO
+            | RALLY_YOYO
+            | YELETS_YOYO
+            | REDS_YOYO
+            | VALKYRIE_YOYO
+            | AMAROK_YOYO
+            | HEL_FIRE_YOYO
+            | KRAKEN_YOYO
+            | THE_EYE_OF_CTHULHU_YOYO
+            | FORMAT_C_YOYO
+            | GRADIENT_YOYO
+            | VALOR_YOYO
+            | TERRARIAN_YOYO
+            | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false),
+            // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
+            // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
+            TERRARIAN_BEAM => (14.0, 14.0, 115, -1, TIME_LEFT_DEFAULT, 0, true, false, false),            // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
             // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
             // ticks for the bombs, 300 for the dynamite. The sticky set
             // {37, 519} disables the plain tile collide — their hover scan
@@ -1125,6 +1368,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
         85 => (true, -1),
         932 => (true, 60),
+        // `DefaultToFlail`'s pair (`:10753-10762`) — the ten flail kinds.
+        BALL_O_HURT | BLUE_MOON | SUNFURY | DAO_OF_POW | THE_MEATBALL | FLOWER_POW
+        | DRIPPLER_FLAIL | MACE | FLAMING_MACE | FLAIRON => (true, 10),
         _ => (false, -2),
     };
     Some(ProjData {
@@ -2510,7 +2756,566 @@ impl Projectile {
         None
     }
 
-    /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
+    /// The C# `Vector2` overload of `Utils.MoveTowards` (`Utils.cs:1772-1780`)
+    /// — the length-clamped step toward the target (the scalar peer lives in
+    /// `ambient_sound.rs`).
+    fn move_towards_vec(current: Vec2, target: Vec2, max_step: f32) -> Vec2 {
+        let v = target - current;
+        if v.length() < max_step {
+            return target;
+        }
+        current + v.normalize_or_zero() * max_step
+    }
+
+    /// The C# `wet && !lavaWet` read of the 948→947 morph (`:43737`):
+    /// `Collision.WetCollision`/`LavaCollision` over the slot box. The port's
+    /// Player liquid pass reads the mid-tile kind (`player.rs:1634-1643`); the
+    /// flail slot reuses that idiom — the box-scan approximation is recorded
+    /// in ANALYSIS.
+    fn flail_in_liquid(&self, world: &World) -> bool {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        world
+            .tile(cx as i32, cy as i32)
+            .filter(|t| t.liquid > 0)
+            .is_some_and(|t| t.liquid_kind() != tr_core::tile::LiquidKind::Lava)
+    }
+
+    /// `AI_015_Flails` (`Projectile.cs:43724-44169`) — the whole flail
+    /// machine: the kill gates, the per-kind parameter table
+    /// (`flail_params`), the seven `ai[0]` states, the movement, the 1058/247
+    /// per-kind tails and the common tail. The method runs BEFORE the pool's
+    /// move/tile-collision pass; `ai_flail_bounce` (the dispatcher's
+    /// `HandleMovement` peer) runs after it.
+    ///
+    /// Documented deviations (ANALYSIS): the `mapFullscreen` kill (no map
+    /// mode), the `noItems` gate (no field), `player.heldProj` /
+    /// `SetDummyItemTime` / `itemRotation` (no consumers — the held-item pose
+    /// is a render follow-up), `ownerHitCheck`/`drawLayer` (no consumers),
+    /// the dust call (no dust system) and the tile-impact/sound arms of the
+    /// bounce (a decor follow-up). The `player.ChangeDir` writes ride back in
+    /// `FlailTick.facing` (the port's facing is run-key driven), with the
+    /// same-tick reads served by the local `eff_dir`.
+    #[allow(clippy::too_many_arguments)]
+    fn ai_flail(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        inputs: FlailInputs,
+        flag5: bool,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> FlailTick {
+        let mut tick = FlailTick::default();
+        let center = match (inputs.center, owner) {
+            (Some(c), _) => Vec2::from(c),
+            // An absent player reads as the C#'s inactive `Main.player[owner]`.
+            (None, _) => {
+                self.active = false;
+                self.time_left = 0;
+                return tick;
+            }
+        };
+        let mounted = match inputs.mounted_center {
+            Some(m) => Vec2::from(m),
+            None => {
+                self.active = false;
+                self.time_left = 0;
+                return tick;
+            }
+        };
+        let head = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:43726-43731` — dead / CCed / the `900f * (1f / meleeSpeed)` leash.
+        if inputs.player_dead
+            || inputs.player_cced
+            || (head - center).length() > 900.0 / inputs.melee_speed
+        {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
+        // `:43737-43741` — the Flaming Mace's water extinguish.
+        if self.kind == FLAMING_MACE && self.flail_in_liquid(world) {
+            self.kind = MACE;
+        }
+        // `:43832-43835` — the 26/35 `drawLayer = 0` branch keys on `ai[2]`,
+        // whose only C# writer is the sentry-backpack tail (unreachable for
+        // flails); the port has no drawLayer consumer either, so the branch
+        // stays a note until the render follow-up.
+        let params = flail_params(self.kind);
+        let melee = 1.0 / inputs.melee_speed;
+        // `:43824-43831` — the meleeSpeed-scaled subset; `:43746-43760` the
+        // shared locals; `:43759`/`:43836-43837` the derived values.
+        let num = params.flight_ticks;
+        let num2 = params.throw_speed * melee;
+        let num3 = FLAIL_THROW_MAX_DISTANCE;
+        let num4 = FLAIL_RETRACT_ACCEL * melee;
+        let num5 = params.retract_speed * melee;
+        let num6 = FLAIL_REEL_ACCEL * melee;
+        let num7 = params.reel_kill_distance * melee;
+        let num8 = FLAIL_SPIN_SOFT_ACCEL * melee;
+        let num9 = FLAIL_SPIN_PULL_SPEED * melee;
+        let num10 = FLAIL_SPIN_INNER_RADIUS;
+        let num11 = FLAIL_HELD_NPC_COOLDOWN;
+        let num12 = params.spin_npc_cooldown;
+        let num13 = FLAIL_FLIGHT_NPC_COOLDOWN;
+        let num14 = num + 5.0;
+        let num15 = params.orbit_radius;
+        let num17 = num2 * num;
+        let num18 = num17 + 160.0;
+        self.local_hit_cooldown = num11 as i32;
+        // The effective player direction — the C# writes `player.ChangeDir`
+        // mid-machine and reads it back in the same pass.
+        let mut eff_dir = inputs.player_dir;
+        match self.ai[0] as i32 {
+            0 => {
+                // The held state (`:43841-43898`).
+                let mut aim = match inputs.aim {
+                    Some(a) => (Vec2::from(a) - mounted).normalize_or_zero(),
+                    None => Vec2::new(eff_dir as f32, 0.0),
+                };
+                if aim == Vec2::ZERO {
+                    // `SafeNormalize(UnitX * player.direction)` (`:43863`).
+                    aim = Vec2::new(eff_dir as f32, 0.0);
+                }
+                // `:43864-43871` — the forced facing, inverted on the dual
+                // flail (`flag5`).
+                eff_dir = if flag5 {
+                    if aim.x < 0.0 { 1 } else { -1 }
+                } else if aim.x > 0.0 {
+                    1
+                } else {
+                    -1
+                };
+                if !inputs.channel {
+                    // `:43872-43885` — the release throws; the C# `break`s
+                    // out of the switch here.
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                    self.vel = aim * num2 + Vec2::from(inputs.player_vel);
+                    if flag5 {
+                        self.vel.x *= -1.0;
+                    }
+                    self.pos = mounted - Vec2::new(self.w * 0.5, self.h * 0.5);
+                    self.local_ai[1] = 0.0; // `ResetLocalNPCHitImmunity`
+                    self.local_hit_cooldown = num13 as i32;
+                } else {
+                    // `:43888-43897` — the charge orbit.
+                    self.local_ai[1] += 1.0;
+                    let angle = std::f32::consts::PI * 10.0 * (self.local_ai[1] / 60.0)
+                        * eff_dir as f32;
+                    let mut orbit =
+                        Vec2::new(eff_dir as f32, 0.0).rotate(Vec2::from_angle(angle));
+                    orbit.y *= 0.8;
+                    if orbit.y > 0.0 {
+                        orbit.y *= 0.5; // gravDir 1 (no flipped gravity ported)
+                    }
+                    self.pos =
+                        mounted + orbit * num15 - Vec2::new(self.w * 0.5, self.h * 0.5);
+                    self.vel = Vec2::ZERO;
+                    self.local_hit_cooldown = num12 as i32;
+                }
+            }
+            1 => {
+                // The fly-out (`:43900-43932`).
+                let grown = self.ai[1] >= num;
+                self.ai[1] += 1.0;
+                let flag3 = grown || (head - mounted).length() >= num3;
+                let num19 = 1.3f32;
+                if inputs.channel {
+                    // `:43905-43916` — the mid-flight re-grab; the Drippler
+                    // spawns its extra ball on both this and the arm end.
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.2;
+                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                } else if flag3 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.3;
+                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+                self.local_hit_cooldown = num13 as i32;
+            }
+            2 => {
+                // The retract (`:43934-43955`).
+                let to_player = (mounted - head).normalize_or_zero();
+                if (head - mounted).length() <= num5 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                if inputs.channel {
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.2;
+                } else {
+                    self.vel *= 0.98;
+                    self.vel = Self::move_towards_vec(self.vel, to_player * num5, num4);
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            3 => {
+                // The spin orbit (`:43957-43998`).
+                if !inputs.channel {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                    // `break` — the C# falls out of the state switch into
+                    // the shared tail below, then HandleMovement's move.
+                }
+                let dist = (head - mounted).length();
+                let want_collide = self.ai[1] == 1.0;
+                let flag4 = dist <= num17;
+                if flag4 != want_collide {
+                    self.tile_collide = flag4;
+                    self.ai[1] = if flag4 { 1.0 } else { 0.0 };
+                }
+                let to_player = (mounted - head).normalize_or_zero();
+                if dist > num10 {
+                    if dist >= num17 {
+                        self.vel *= 0.5;
+                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
+                    }
+                    self.vel *= 0.98;
+                    self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                } else {
+                    if self.vel.length() < 6.0 {
+                        self.vel.x *= 0.96;
+                        self.vel.y += 0.2;
+                    }
+                    if inputs.player_vel.0 == 0.0 {
+                        self.vel.x *= 0.96;
+                    }
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            4 => {
+                // The final reel-in (`:44000-44017`).
+                self.tile_collide = false;
+                let to_player = (mounted - head).normalize_or_zero();
+                if (head - mounted).length() <= num7 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                self.vel *= 0.98;
+                self.vel = Self::move_towards_vec(self.vel, to_player * num7, num6);
+                let ahead = (head + self.vel - mounted).normalize_or_zero();
+                if to_player.dot(ahead) < 0.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            5 => {
+                // The bounce stagger (`:44019-44032`).
+                let grown = self.ai[1] >= num14;
+                self.ai[1] += 1.0;
+                if grown {
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                } else {
+                    self.local_hit_cooldown = num13 as i32;
+                    self.vel.y += 0.6;
+                    self.vel.x *= 0.95;
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            6 => {
+                // The post-release spin (`:44034-44047`).
+                if !inputs.channel || (head - mounted).length() > num18 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                    // `break` — the C# falls out of the state switch into
+                    // the shared tail below, then HandleMovement's move.
+                }
+                // `!shimmerWet` — no shimmer in the port, so the arm always
+                // adds gravity.
+                self.vel.y += 0.8;
+                self.vel.x *= 0.95;
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            _ => {}
+        }
+        let mut tick = self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+        // `HandleMovement` (`Projectile.cs:17015`) with the aiStyle-15 arm
+        // (`:19321`): the C# runs the sub-step move and the bounce handler
+        // AFTER the AI returns — the port's per-AI move idiom keeps both
+        // inside the flail so the slot never integrates twice.
+        self.flail_move(world);
+        tick
+    }
+
+    /// The flail's `HandleMovement` half (`Projectile.cs:17469-17760`): the
+    /// axis-separated probe — the blocked axis zeroes that velocity
+    /// component (the `Collision.Move` sub-step shape, the same idiom
+    /// `ai_arrow` uses) — followed by the aiStyle-15 bounce handler
+    /// (`AI_015_HandleMovementCollision` `:43655-43717`), which sees the
+    /// pre-move velocity as its `lastVelocity`.
+    fn flail_move(&mut self, world: &World) {
+        let pos_before = self.pos;
+        let last_velocity = self.vel;
+        if self.tile_collide {
+            // `Collision.Move`'s per-axis advance clamped to the blocked
+            // face, then the blocked component zeroed — the port steps the
+            // axis 1 px at a time (the C# sub-steps the box by
+            // `clamp(min(w,h),3,16)`; the result agrees to the sub-pixel and
+            // the approximation is recorded in ANALYSIS).
+            for axis in 0..2 {
+                let v = if axis == 0 { self.vel.x } else { self.vel.y };
+                if v == 0.0 {
+                    continue;
+                }
+                let step = v.signum();
+                let mut moved = 0.0f32;
+                while moved.abs() < v.abs() {
+                    let nx = if axis == 0 { self.pos.x + step } else { self.pos.x };
+                    let ny = if axis == 0 { self.pos.y } else { self.pos.y + step };
+                    if crate::player::collides_rect(world, nx, ny, self.w, self.h) {
+                        break;
+                    }
+                    self.pos.x = nx;
+                    self.pos.y = ny;
+                    moved += step;
+                }
+                if moved.abs() < v.abs() {
+                    if axis == 0 {
+                        self.vel.x = 0.0;
+                    } else {
+                        self.vel.y = 0.0;
+                    }
+                }
+            }
+        } else {
+            self.pos += self.vel;
+        }
+        // `HandleMovement`'s `flag` (`:17896-17899`, the arm at `:17904`):
+        // the per-aiStyle velocity chain — the flail's bounce handler — runs
+        // only when the move CHANGED the velocity (a blocked axis). Without
+        // the gate the handler's unconditional state-1 arm would stagger
+        // every fly-out tick.
+        if last_velocity != self.vel {
+            self.ai_flail_bounce(last_velocity, pos_before);
+        }
+    }
+
+    /// `AI_015_HandleMovementCollision` (`Projectile.cs:43655-43717`) — runs
+    /// after the move, gated on the velocity change above; the pre-move
+    /// velocity is the C# `lastVelocity`.
+    fn ai_flail_bounce(&mut self, last_velocity: Vec2, pos_before: Vec2) {
+        let mut num3 = 0.2;
+        if self.ai[0] == 1.0 || self.ai[0] == 5.0 {
+            num3 = 0.4;
+        }
+        if self.ai[0] == 6.0 {
+            num3 = 0.0;
+        }
+        let mut loud = false;
+        if last_velocity.x != self.vel.x {
+            if last_velocity.x.abs() > 4.0 {
+                loud = true;
+            }
+            self.vel.x = -last_velocity.x * num3;
+            self.local_ai[0] += 1.0;
+        }
+        if last_velocity.y != self.vel.y {
+            if last_velocity.y.abs() > 4.0 {
+                loud = true;
+            }
+            self.vel.y = -last_velocity.y * num3;
+            self.local_ai[0] += 1.0;
+        }
+        if self.ai[0] == 1.0 {
+            // `:43687-43698` — the fly-out bounce drops into the stagger.
+            self.ai[0] = 5.0;
+            self.local_hit_cooldown = 10;
+            loud = true;
+            // `CreateImpactExplosion` + `CreateImpactExplosion2_
+            // FlailTileCollision` are dust-only (no port seam); the
+            // `position -= vector` rollback undoes the whole move
+            // (`Collision.Move`'s advance included) — the C# subtracts the
+            // full pre-move velocity from the post-move position.
+            self.pos = pos_before - last_velocity;
+        }
+        // `:43708-43712` — the repeated-bounce bail-out.
+        if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
+            self.ai[0] = 4.0;
+        }
+        // `:43702-43706` — `Collision.HitTiles` ×count (the tile damage — no
+        // generic projectile→tile seam in the port) and
+        // `SoundEngine.PlaySound(0, …)` (the AI has no audio access): both
+        // deferred to the decor follow-up, recorded in ANALYSIS.
+        let _ = loud;
+    }
+
+    /// One helper spawn request from the head's center — the Drippler's extra
+    /// ball (`:43914`/`:43927`) and the Flairon's bubble (`:44094`). The
+    /// Flower Pow's petal (`:44137`) aims at an NPC, so it builds its own.
+    fn flail_spawn(
+        &self,
+        kind: u16,
+        v: Vec2,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+    ) -> FlailSpawnRequest {
+        let c = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        FlailSpawnRequest {
+            kind,
+            x: c.x,
+            y: c.y,
+            vx: v.x,
+            vy: v.y,
+            damage,
+            knock_back,
+            ai0,
+        }
+    }
+
+    /// The `Main.myPlayer == this.owner` gate on the family's spawns — the
+    /// local owner only (the port's single-player stand-in for the C# owner
+    /// check).
+    fn flail_helper(
+        &self,
+        tick: &mut FlailTick,
+        inputs: FlailInputs,
+        kind: u16,
+        v: Vec2,
+        ai0: f32,
+    ) {
+        if self.owner as u8 == inputs.local_owner {
+            let req = self.flail_spawn(kind, v, self.damage, self.knock_back, ai0);
+            tick.spawn = Some(req);
+        }
+    }
+
+    /// The 1058/247 per-kind tails (`Projectile.cs:44050-44141`) plus the
+    /// common tail (`:44142-44168`). Every state arm falls out of the C#
+    /// switch into this block, so `ai_flail` routes its non-kill exits
+    /// through it. The `player.heldProj`/`SetDummyItemTime`/`itemRotation`
+    /// writes have no port consumers (documented deviations).
+    fn flail_tail(
+        &mut self,
+        world: &World,
+        eff_dir: i32,
+        mut tick: FlailTick,
+        inputs: FlailInputs,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> FlailTick {
+        let center = inputs.center.map(Vec2::from).unwrap_or_default();
+        let head = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mine = inputs.local_owner == self.owner as u8;
+        let special = matches!(self.kind, FLAIRON | FLOWER_POW);
+        match self.kind {
+            FLAIRON => {
+                // `:44053-44062` — the alpha fades in, then the rotation.
+                self.alpha = (self.alpha - 50).max(0);
+                let to_player = center - head;
+                self.rot = to_player.y.atan2(to_player.x) - std::f32::consts::PI / 2.0;
+                self.direction = if to_player.x < 0.0 { 1 } else { -1 };
+                // `:44075-44095` — the bubble cadence. The C# re-rolls
+                // `Next(3, 6)` every tick in the held state (and halves the
+                // knockback there); the jitter is the item-stream roll.
+                if mine {
+                    self.local_ai[2] += 1.0;
+                    let state = self.ai[0] as i32;
+                    let mut knock = self.knock_back;
+                    let cadence = if state == 0 {
+                        let c = rng.next_range(3, 6) as f32;
+                        knock *= 0.5;
+                        c
+                    } else if state == 6 || state == 3 {
+                        6.0
+                    } else {
+                        4.0
+                    };
+                    if self.local_ai[2] >= cadence {
+                        self.local_ai[2] = 0.0;
+                        // `vector8 = ((vector7 * -1).SafeNormalize(0) *
+                        // (Next(45, 65) * 0.1)).RotatedBy(
+                        // (NextDouble() - 0.5) * (π/2))`.
+                        let back = (-to_player).normalize_or_zero();
+                        let speed = rng.next_range(45, 65) as f32 * 0.1;
+                        let jitter = (rng.next_float() - 0.5) * std::f32::consts::PI / 2.0;
+                        let v = (back * speed).rotate(Vec2::from_angle(jitter));
+                        let req = self.flail_spawn(FLAIRON_BUBBLE, v, self.damage, knock, -10.0);
+                        tick.spawn = Some(req);
+                    }
+                }
+            }
+            FLOWER_POW => {
+                // `:44101-44107` — the spin.
+                let spin = (self.vel.x.abs() + self.vel.y.abs()) * 0.01;
+                self.rot += if self.vel.x > 0.0 { spin } else { -spin };
+                if self.ai[0] == 0.0 {
+                    self.rot += std::f32::consts::PI * 2.0 / 15.0 * eff_dir as f32;
+                }
+                // `:44114-44138` — the local owner's NPC scan: the closest
+                // `CanBeChasedBy` within 600 px with tile LOS fires the petal
+                // (`damage / 1.5`, `knockBack / 2`, speed 14).
+                if mine {
+                    self.local_ai[0] += 1.0;
+                    if self.local_ai[0] >= 20.0 {
+                        self.local_ai[0] = 17.0;
+                        let mut best: Option<(usize, f32)> = None;
+                        for (idx, n) in npcs.iter().enumerate() {
+                            if n.hp <= 0 || n.dont_take_damage {
+                                continue;
+                            }
+                            let (nx, ny) = n.center();
+                            let d = (Vec2::new(nx, ny) - head).length();
+                            if d < 600.0 && yoyo_can_hit(world, head.x, head.y, nx, ny) {
+                                let closer = match best {
+                                    Some((_, bd)) => d < bd,
+                                    None => true,
+                                };
+                                if closer {
+                                    best = Some((idx, d));
+                                }
+                            }
+                        }
+                        if let Some((idx, _)) = best {
+                            let (nx, ny) = npcs[idx].center();
+                            let v = (Vec2::new(nx, ny) - head).normalize_or_zero() * 14.0;
+                            let req = FlailSpawnRequest {
+                                kind: FLOWER_POW_PETAL,
+                                x: head.x,
+                                y: head.y,
+                                vx: v.x,
+                                vy: v.y,
+                                damage: (self.damage as f32 / 1.5) as i32,
+                                knock_back: self.knock_back / 2.0,
+                                ai0: 0.0,
+                            };
+                            tick.spawn = Some(req);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        // `:44142-44145` — the direction/spriteDirection from the velocity X
+        // (the Flairon's tail set its own above).
+        if self.kind != FLAIRON {
+            self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+        }
+        // `:44148-44158` — the rotation arm; the 1058/247 tails set
+        // `flag = false` and keep their own rotation.
+        if !special {
+            if self.vel.length() > 1.0 {
+                self.rot = self.vel.y.atan2(self.vel.x) + self.vel.x * 0.1;
+            } else {
+                self.rot += self.vel.x * 0.1;
+            }
+        }
+        // `:44159` — the per-tick lifetime re-pin.
+        self.time_left = 2;
+        tick.facing = Some(eff_dir);
+        tick
+    }    /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
     /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
     /// scan sets `velocity = (0, -0.2)`); the gravity tail (`:47505-47520`)
     /// adds `velocity.Y += 0.2f` after 5 ticks with the 0.97 ground-slide
@@ -2806,6 +3611,60 @@ pub struct YoyoInputs {
     pub channel: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
+}
+
+/// What `AI_015_Flails` reads off `Main.player[owner]` each tick — the
+/// `YoyoInputs` peer, widened for the chain anchor. Built once per fixed
+/// step in `world_sim/projectiles.rs` (the slot loop cannot borrow the
+/// player) and threaded through `ProjectilePool::update` to the aiStyle-15
+/// arm. The C# reads the live `Player` fields; the port snapshots them.
+/// `Copy`: every field is a scalar/pair, and one snapshot serves every
+/// simulated slot in a tick.
+#[derive(Clone, Copy)]
+pub struct FlailInputs {
+    /// `Main.MouseWorld` (`Projectile.cs:43863`) — the hold state's aim.
+    pub aim: Option<(f32, f32)>,
+    /// `Player.channel` (`:43872`, `:43905`, `:43942`, `:43959`, `:44035`).
+    pub channel: bool,
+    /// The kill gates (`:43727`): dead / `CCed` — the port drops the
+    /// `noItems` arm (no field, documented).
+    pub player_dead: bool,
+    /// `Player.CCed` (`:43727`).
+    pub player_cced: bool,
+    /// `Player.MountedCenter` (`:3335`) — the chain anchor.
+    pub mounted_center: Option<(f32, f32)>,
+    /// `Player.Center` — the kill-gate leash and the `ChangeDir`
+    /// comparisons (`:43727`, `:43930`).
+    pub center: Option<(f32, f32)>,
+    /// `player.velocity` — the throw add and the state-3 stand-still read
+    /// (`:43876`, `:43992`).
+    pub player_vel: (f32, f32),
+    /// `player.direction` — the hold orbit's spin axis (`:43889`).
+    pub player_dir: i32,
+    /// `player.meleeSpeed` (`:43824-43831`).
+    pub melee_speed: f32,
+    /// `Main.myPlayer` — the family's spawns are local-owner only
+    /// (`:43912`, `:44075`, `:44110`).
+    pub local_owner: u8,
+}
+
+impl Default for FlailInputs {
+    /// `meleeSpeed = 1f` — the C# base; a 0 here would divide the
+    /// meleeSpeed scaling to infinity.
+    fn default() -> Self {
+        Self {
+            aim: None,
+            channel: false,
+            player_dead: false,
+            player_cced: false,
+            mounted_center: None,
+            center: None,
+            player_vel: (0.0, 0.0),
+            player_dir: 1,
+            melee_speed: 1.0,
+            local_owner: 0,
+        }
+    }
 }
 
 impl ProjectilePool {
@@ -3318,6 +4177,7 @@ impl ProjectilePool {
         aim: Option<Vec2>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
+        flail_inputs: FlailInputs,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
@@ -3462,6 +4322,53 @@ impl ProjectilePool {
                                 self.spawn_whip_arm(i, arm, owner);
                             }
                         }
+                        15 => {
+                            // `AI_015_Flails`'s `flag5` (`:43847-43862`): the
+                            // Blue Moon/Sunfury sibling scan — the 26↔35 pair,
+                            // same owner. It runs here, like the aiStyle-99
+                            // `flag` above, because the AI only sees its slot.
+                            let (slot_owner, slot_kind) = {
+                                let p = &self.slots[i];
+                                (p.owner, p.kind)
+                            };
+                            let flag5 = (slot_kind == BLUE_MOON || slot_kind == SUNFURY)
+                                && self.slots.iter().any(|p| {
+                                    p.active
+                                        && p.owner == slot_owner
+                                        && ((slot_kind == BLUE_MOON && p.kind == SUNFURY)
+                                            || (slot_kind == SUNFURY && p.kind == BLUE_MOON))
+                                });
+                            let tick =
+                                self.slots[i].ai_flail(world, npcs, owner, flail_inputs, flag5, rng);
+                            // The family's helper spawn — the yoyo beam
+                            // pattern. The 405's `alpha = 255` rides the spawn
+                            // site (`SetDefaults` `:4857`).
+                            if let Some(s) = tick.spawn {
+                                let owner_id = self.slots[i].owner;
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    s.kind,
+                                    owner_id,
+                                    s.x,
+                                    s.y,
+                                    s.vx,
+                                    s.vy,
+                                    s.damage,
+                                    s.knock_back,
+                                    s.ai0,
+                                    0.0,
+                                ) && s.kind == FLAIRON_BUBBLE
+                                {
+                                    self.slots[slot].alpha = 255;
+                                }
+                            }
+                            // The facing the C# forces with `player.ChangeDir`
+                            // mid-machine.
+                            if let Some(dir) = tick.facing {
+                                if let Some(p) = player.as_deref_mut() {
+                                    p.facing = dir;
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -3501,7 +4408,7 @@ impl ProjectilePool {
             if self.slots[i].detonated {
                 self.explode_bomb(i, world, npcs);
             }
-            self.damage_pve(i, npcs, owner, player.as_deref_mut(), rng);
+            self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
             // The hostile shots' player contact (`Projectile.Damage_PVP`'s
             // single-player stand-in): the box overlap -> `Player.hurt`
             // (the iframes gate inside), the shot dies on the hit.
@@ -3553,6 +4460,7 @@ impl ProjectilePool {
         self.damage_pve(
             slot,
             npcs,
+            None,
             None,
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
@@ -3632,6 +4540,80 @@ impl ProjectilePool {
         }
     }
 
+    /// The flail family's hit-side gates, one call per (slot, NPC):
+    /// `Damage_CanDealDamage` (`:12448`: state 0 with `localAI[1] <= 12`
+    /// deals nothing), `Colliding`'s state-0 ellipse (`:15336-15356`: the
+    /// 55-px radius around the owner's mounted center with the 0.8 Y
+    /// squash — 0.4 when the point sags with gravity, `gravDir == 1`
+    /// here), `Damage_GetProjectileSpecificDamageMultiplier` (`:14447-14465`:
+    /// ×1.2 held, the Blue Moon/Sunfury dual ×0.8) and `Damage`'s knockback
+    /// arms (`:13614-13619`: ×0.35 held, ×0.5 spinning, the hit direction
+    /// from the player's center). `None` = no hit this tick (the window or
+    /// the ellipse miss); the state-0 ellipse REPLACES the box test, so a
+    /// non-zero state must still run the caller's `contains` — the flag
+    /// rides in the first tuple slot.
+    fn flail_damage_adjust(
+        &self,
+        slot: usize,
+        inputs: FlailInputs,
+        npc: &Npc,
+        head_center: Vec2,
+    ) -> Option<FlailHit> {
+        let p = &self.slots[slot];
+        // The no-damage window first — the held head is harmless for the
+        // first 12 ticks of the charge.
+        if p.ai[0] == 0.0 && p.local_ai[1] <= 12.0 {
+            return None;
+        }
+        if p.ai[0] == 0.0 {
+            // The state-0 ellipse: the closest point of the NPC's RAW rect
+            // to the mounted center, the Y squash, the 55-px radius. The
+            // port's `Npc::contains` pads the box by 4 px; the C# uses the
+            // rect itself (`targetRect`), so the raw x/y + size×scale read
+            // is deliberate.
+            let mounted = inputs.mounted_center?;
+            let (w, h) = npc.size();
+            // ClosestPointInRect.
+            let px = mounted.0.clamp(npc.x, npc.x + w);
+            let py = mounted.1.clamp(npc.y, npc.y + h);
+            let dy_raw = py - mounted.1;
+            // `obj.gravDir > 0f && vector2.Y > 0f` — the clamped point below
+            // the player tightens the squash to 0.4.
+            let num = if dy_raw > 0.0 { 0.4 } else { 0.8 };
+            let dy = dy_raw / num;
+            let dx = px - mounted.0;
+            if (dx * dx + dy * dy).sqrt() > 55.0 {
+                return None;
+            }
+        }
+        // The damage/knockback multipliers.
+        let mut dmg_mult = if p.ai[0] == 0.0 { 1.2 } else { 1.0 };
+        if (p.kind == BLUE_MOON || p.kind == SUNFURY)
+            && self.slots.iter().any(|s| {
+                s.active
+                    && s.owner == p.owner
+                    && s.kind != p.kind
+                    && (s.kind == BLUE_MOON || s.kind == SUNFURY)
+            })
+        {
+            dmg_mult *= 0.8;
+        }
+        let kb_mult = match p.ai[0] as i32 {
+            0 => 0.35,
+            6 => 0.5,
+            _ => 1.0,
+        };
+        // The C# hit direction reads the PLAYER's center — the port's knock
+        // direction derives from `from_x`, so hand it the player's center.
+        let from_x = inputs.center.map_or_else(|| head_center.x, |c| c.0);
+        Some(FlailHit {
+            damage_mult: dmg_mult,
+            knock_mult: kb_mult,
+            from_x,
+            replaces_box: p.ai[0] == 0.0,
+        })
+    }
+
     /// `Damage_PVE` + `Damage_PVE_Inner` (`:12562-12700`) with the on-hit
     /// immunity application (`:14087-14119`). Single-hit slots bypass the
     /// per-owner gate (`flag3`, `:12620-12624`) and set no immunity
@@ -3642,6 +4624,7 @@ impl ProjectilePool {
         &mut self,
         slot: usize,
         npcs: &mut [Npc],
+        flail: Option<FlailInputs>,
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
@@ -3708,6 +4691,28 @@ impl ProjectilePool {
             if !single_hit && n.immune[owner_idx] != 0 {
                 continue;
             }
+            // The flail family's hit gates — `Colliding` (`:15336-15356`,
+            // the state-0 ellipse replaces the box test),
+            // `Damage_CanDealDamage` (`:12448`, the hold's first 12 ticks),
+            // `Damage_GetProjectileSpecificDamageMultiplier` (`:14447-14465`)
+            // and `Damage`'s knockback/hit-direction arms (`:13614-13619`).
+            let (mut damage, mut kb, mut from_x) = (damage, kb, center.x);
+            let mut skip_box_test = false;
+            if let Some(f) = flail {
+                if FLAIL_KINDS.contains(&p.kind) {
+                    match self.flail_damage_adjust(slot, f, n, center) {
+                        Some(hit) => {
+                            damage = (damage as f32 * hit.damage_mult) as i32;
+                            kb *= hit.knock_mult;
+                            from_x = hit.from_x;
+                            // `Colliding` (`:15338`): the state-0 ellipse
+                            // REPLACES the box test, not supplements it.
+                            skip_box_test = hit.replaces_box;
+                        }
+                        None => continue, // the window or the ellipse miss
+                    }
+                }
+            }
             let touches = if is_whip {
                 let (nw, nh) = n.size();
                 tr_core::whip::sweep_hits(
@@ -3717,6 +4722,9 @@ impl ProjectilePool {
                     self.slots[slot].h as i32,
                     tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32),
                 )
+            } else if skip_box_test {
+                // The flail state-0 ellipse already decided the hit.
+                true
             } else {
                 n.contains(center.x, center.y)
             };
@@ -3743,7 +4751,7 @@ impl ProjectilePool {
                     dmg = ((dmg as f32) * 2.0) as i32;
                 }
             }
-            let landed = n.hurt_from_projectile(dmg, hit.x, kb, hit_crit);
+            let landed = n.hurt_from_projectile(dmg, from_x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner_idx] = 0;
@@ -4167,6 +5175,7 @@ mod tests {
             None,
             Some(&mut player),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4193,6 +5202,7 @@ mod tests {
             None,
             Some(&mut player2),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4214,6 +5224,7 @@ mod tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4275,6 +5286,7 @@ mod tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4429,6 +5441,7 @@ mod tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4461,6 +5474,7 @@ mod tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4506,6 +5520,7 @@ mod falling_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4536,6 +5551,7 @@ mod falling_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4589,6 +5605,7 @@ mod falling_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4687,6 +5704,7 @@ mod arrow_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4703,6 +5721,7 @@ mod arrow_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4737,6 +5756,7 @@ mod arrow_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4769,6 +5789,7 @@ mod arrow_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4799,6 +5820,7 @@ mod arrow_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4812,6 +5834,7 @@ mod arrow_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4885,6 +5908,7 @@ mod boomerang_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4898,6 +5922,7 @@ mod boomerang_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -4935,6 +5960,7 @@ mod boomerang_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4983,6 +6009,7 @@ mod boomerang_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5019,6 +6046,7 @@ mod boomerang_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5031,6 +6059,554 @@ mod boomerang_tests {
         assert!(died, "the stray kills past the cut-off");
     }
 }
+
+#[cfg(test)]
+mod flail_tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    /// A floor at y = 30 — the NPC fixtures spawn on the surface (the shared
+    /// `tests::ground` shape: the surface cache must be recomputed by hand).
+    fn ground() -> tr_core::World {
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A wall at `x` (full column) for the bounce tests.
+    fn wall_at(w: &mut tr_core::World, tx: i32) {
+        for y in 0..64 {
+            put_solid(w, tx, y);
+        }
+    }
+
+    fn inputs(
+        aim: Option<(f32, f32)>,
+        channel: bool,
+        mounted: (f32, f32),
+        center: (f32, f32),
+    ) -> FlailInputs {
+        FlailInputs {
+            aim,
+            channel,
+            player_dead: false,
+            player_cced: false,
+            mounted_center: Some(mounted),
+            center: Some(center),
+            player_vel: (0.0, 0.0),
+            player_dir: 1,
+            melee_speed: 1.0,
+            local_owner: 0,
+        }
+    }
+
+    /// One tick of the pool with the shared snapshot — the yoyo test shape.
+    fn tick(
+        world: &mut tr_core::World,
+        pool: &mut ProjectilePool,
+        inputs: FlailInputs,
+    ) {
+        pool.update(
+            world,
+            &mut [],
+            inputs.center,
+            None,
+            None,
+            YoyoInputs::default(),
+            inputs,
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    fn spawn(kind: u16, x: f32, y: f32) -> (ProjectilePool, usize) {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(kind, x, y, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        (pool, slot)
+    }
+
+    #[test]
+    fn DW_3_2_the_hold_orbit_spins_num15_px_around_the_mounted_center() {
+        // `Projectile.cs:43888-43897`: the charge orbit. First tick:
+        // angle = π*10*(1/60)*1, so the head sits at mounted + orbit*30.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 100.0, 100.0);
+        let inputs = inputs(Some((600.0, 100.0)), true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, inputs);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 0.0, "still the held state");
+        assert_eq!(p.vel, Vec2::ZERO, "the hold zeroes the velocity");
+        let angle = std::f32::consts::PI * 10.0 * (1.0 / 60.0);
+        let mut orbit = Vec2::new(1.0, 0.0).rotate(Vec2::from_angle(angle));
+        orbit.y *= 0.8 * 0.5; // pointing with gravity → the halving arm
+        let want = Vec2::new(500.0, 500.0) + orbit * 30.0;
+        assert!(
+            (p.pos + Vec2::new(p.w * 0.5, p.h * 0.5) - want).length() < 1e-3,
+            "the head orbits the mounted center at num15 (pos {:?}, want {:?})",
+            p.pos + Vec2::new(p.w * 0.5, p.h * 0.5),
+            want
+        );
+        assert_eq!(p.local_hit_cooldown, 15, "num12 in the hold");
+    }
+
+    #[test]
+    fn DW_3_2_the_release_throws_at_aim_times_num2() {
+        // `:43872-43885`: on the release the fly-out arms with
+        // `velocity = aim * num2 + player.velocity`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 100.0, 100.0);
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.player_vel = (1.0, 0.0);
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 1.0, "released into the fly-out");
+        // aim = (100, 0) normalized; num2 = 14 (the Ball O' Hurt's row).
+        assert!((p.vel - Vec2::new(15.0, 0.0)).length() < 1e-3, "vel {:?}", p.vel);
+        // The release snaps the head to the mounted center (`:43881`), then
+        // HandleMovement integrates the throw — one tick lands at
+        // mounted + velocity.
+        let c = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+        assert!((c - (Vec2::new(500.0, 500.0) + p.vel)).length() < 1e-3,
+            "centered on the mount then thrown (c {:?}, vel {:?})", c, p.vel);
+        assert_eq!(p.local_hit_cooldown, 10, "num13 in flight");
+    }
+
+    #[test]
+    fn DW_3_6_the_dual_flail_inverts_the_throw() {
+        // `:43847-43862` + `:43877-43880`: the Blue Moon/Sunfury sibling
+        // flag flips the throw X and the forced facing.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[moon];
+        // aim is +x but flag5 mirrors the throw.
+        assert!(p.vel.x < 0.0, "the sibling flag flips the throw: {:?}", p.vel);
+        assert_eq!(p.ai[0], 1.0);
+    }
+
+    #[test]
+    fn DW_3_3_the_flight_ends_on_the_tick_count_or_the_distance() {
+        // `:43903`: `ai[1]++ >= num | Distance(mounted) >= num3` (800).
+        let mut w = world();
+        // The tick-count arm: the Ball O' Hurt's num = 15.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].ai[1] = 15.0; // the C# `ai[1]++ >= num` reads the pre-increment value
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "the 16th tick retracts");
+        // The distance arm: past 800 px but inside the 900-px leash.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 1350.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "past 800 px retracts");
+    }
+
+    #[test]
+    fn DW_3_3_the_retract_kills_at_num5() {
+        // `:43937-43940`: `Distance(mounted) <= num5` → Kill.
+        let mut w = world();
+        // the head's box center sits on the mounted center
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 2.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the catch kills the slot");
+    }
+
+    #[test]
+    fn DW_3_4_the_wall_bounce_reflects_at_the_state_factor() {
+        // `:43661-43698`: state 1 reflects at 0.4, drops into the stagger and
+        // rolls the blocked move back (`position -= lastVelocity`).
+        let mut w = world();
+        wall_at(&mut w, 40);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 632.0, 100.0);
+        pool.slots[slot].ai[0] = 1.0;
+        // 20 px/tick into the wall face at x = 640.
+        pool.slots[slot].vel = Vec2::new(20.0, 0.0);
+        let before = pool.slots[slot].pos; // the top-left, not the box center
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.ai[0], 5.0, "the fly-out bounce staggers");
+        assert!((p.vel - Vec2::new(-8.0, 0.0)).length() < 1e-3, "vel {:?}", p.vel);
+        // `position -= vector` undoes the whole move from the top-left.
+        assert_eq!(p.pos, before - Vec2::new(20.0, 0.0), "the whole move rolls back");
+        assert_eq!(p.local_hit_cooldown, 10);
+    }
+
+    #[test]
+    fn DW_3_4_the_spin_bounce_and_the_reel_in_bail_outs() {
+        // `:44020-44024` (state 5 → 6 after num+5 ticks) and `:43962-43963`
+        // (state 3 → 4 on the release) and `:44035-44040` (state 6 → 4 past
+        // num18 or without the channel).
+        let mut w = world();
+        // State 5's stagger: num = 15 for the Ball O' Hurt, so num14 = 20.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 5.0;
+        pool.slots[slot].ai[1] = 20.0;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 6.0, "the stagger graduates");
+        // State 3's release → 4.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 3.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "the spin bails on the release");
+        // State 6 past num18 (= num2*num + 160 = 14*15 + 160 = 370) → 4.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 900.0, 500.0);
+        pool.slots[slot].ai[0] = 6.0;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "the held-out spin bails past 370");
+    }
+
+    #[test]
+    fn DW_3_4_the_reel_in_kills_at_num7_or_the_overshoot() {
+        // `:44004-44015`: the catch kill and the Dot < 0 overshoot kill.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 4.0;
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the reel-in catch kills");
+        // The overshoot: the head moving away from the player while already
+        // inside the kill distance is killed by the Dot test on the next
+        // tick's velocity.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0, 500.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(30.0, 0.0); // away from the player
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the overshoot kills");
+    }
+
+    #[test]
+    fn DW_3_1_the_kill_gates_fire_on_death_cc_and_the_leash() {
+        // `:43726-43731`: dead / CCed / `> 900 / meleeSpeed` — plus the
+        // orphan-slot dirty path (no player snapshot).
+        let mut w = world();
+        // Dead.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.player_dead = true;
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the dead owner kills");
+        // CCed.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.player_cced = true;
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the CCed owner kills");
+        // The leash: 900 px at meleeSpeed 1.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 1500.0, 500.0);
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "past the leash kills");
+        // Dirty: no player snapshot at all (the C# inactive-player read).
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        tick(&mut w, &mut pool, FlailInputs::default());
+        assert!(!pool.slots[slot].active, "the orphan slot dies cleanly");
+    }
+
+    #[test]
+    fn DW_3_7_the_flaming_mace_morphs_to_the_mace_in_liquid() {
+        // `:43737-43741`: 948 wet && !lavaWet → 947.
+        let mut w = world();
+        // Water at the head's tile (30, 6) — the mid-tile liquid read.
+        let i = w.index(30, 6);
+        w.tiles[i].liquid = 200;
+        let (mut pool, slot) = spawn(FLAMING_MACE, 480.0, 100.0);
+        let ins = inputs(None, true, (480.0, 100.0), (480.0, 100.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].kind, MACE, "the water morph lands");
+        // Lava does not morph.
+        let mut w = world();
+        let i = w.index(30, 6);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let (mut pool, slot) = spawn(FLAMING_MACE, 480.0, 100.0);
+        let ins = inputs(None, true, (480.0, 100.0), (480.0, 100.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].kind, FLAMING_MACE, "lava keeps the flame");
+    }
+
+    #[test]
+    fn DW_3_5_the_tail_pins_time_left_and_the_direction() {
+        // `:44142-44159`: timeLeft = 2 every tick, the direction from the
+        // velocity X (non-1058), the rotation from the velocity.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let p = &pool.slots[slot];
+        assert_eq!(p.time_left, 1, "re-pinned to 2 then decremented");
+        assert_eq!(p.direction, 1, "the sprite direction follows +x");
+        assert!((p.rot - (0.0f32.atan2(8.0) + 0.8)).abs() < 1e-4, "rot {}", p.rot);
+    }
+
+    #[test]
+    fn DW_4_1_the_flairons_alpha_fades_and_the_bubble_cadence_fires() {
+        // `:44053-44062` (alpha −50/tick, floor 0) and `:44077-44095`
+        // (cadence 3-5 held / 6 in states 3·6 / 4 else, kb ×0.5 held).
+        let mut w = world();
+        let (mut pool, slot) = spawn(FLAIRON, 560.0, 500.0);
+        pool.slots[slot].alpha = 255;
+        let ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].alpha, 205, "the alpha fades in by 50");
+        // The held-state cadence (3-5 ticks) spawns a bubble; the count is
+        // seeded, so just let the timer run and expect at least one bubble.
+        let mut bubbles = 0;
+        for _ in 0..12 {
+            tick(&mut w, &mut pool, ins);
+            bubbles += pool
+                .slots
+                .iter()
+                .filter(|p| p.active && p.kind == FLAIRON_BUBBLE)
+                .count();
+            if bubbles > 0 {
+                break;
+            }
+        }
+        assert!(bubbles > 0, "the Flairon fires its bubbles while held");
+    }
+
+    #[test]
+    fn DW_4_3_the_drippler_spawns_its_extra_ball_on_the_arm_end() {
+        // `:43918-43929`: state 1's arm-end spawns 928 with `velocity * 1.3`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(DRIPPLER_FLAIL, 500.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].ai[1] = 13.0; // num = 13 → this tick arms out
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let ball = pool
+            .slots
+            .iter()
+            .find(|p| p.active && p.kind == DRIPPLER_EXTRA_BALL);
+        assert!(ball.is_some(), "the extra ball spawns on the arm end");
+        let ball = ball.unwrap();
+        // The C# `velocity *= 0.3` then the ball rides `velocity * 1.3`.
+        assert!((ball.vel - Vec2::new(3.9, 0.0)).length() < 1e-3, "vel {:?}", ball.vel);
+    }
+
+    #[test]
+    fn the_integration_lifecycle_hold_throw_bounce_reel() {
+        // The whole machine on one wall world: hold → release → fly → wall
+        // bounce (stagger → spin) → reel-in catch, with the kill at the end.
+        let mut w = world();
+        wall_at(&mut w, 40);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 600.0, 100.0);
+        // Hold two ticks with the aim right (toward the wall).
+        let held = inputs(Some((700.0, 100.0)), true, (600.0, 100.0), (600.0, 100.0));
+        tick(&mut w, &mut pool, held);
+        assert_eq!(pool.slots[slot].ai[0], 0.0);
+        // Release toward the wall.
+        let thrown = inputs(Some((700.0, 100.0)), false, (600.0, 100.0), (600.0, 100.0));
+        tick(&mut w, &mut pool, thrown);
+        assert_eq!(pool.slots[slot].ai[0], 1.0, "released");
+        // The wall at x = 640 stops the 14-px throw in a few ticks.
+        for _ in 0..8 {
+            if !pool.slots[slot].active || pool.slots[slot].ai[0] != 1.0 {
+                break;
+            }
+            tick(&mut w, &mut pool, thrown);
+        }
+        assert!(pool.slots[slot].ai[0] == 5.0 || pool.slots[slot].ai[0] == 6.0,
+            "the wall bounce staggers (state {:?})", pool.slots[slot].ai[0]);
+        // Keep the channel held through the stagger and the spin.
+        for _ in 0..40 {
+            if !pool.slots[slot].active || pool.slots[slot].ai[0] == 4.0 {
+                break;
+            }
+            tick(&mut w, &mut pool, held);
+        }
+        // The spin eventually bails (or the reel-in catches) — the slot must
+        // end inactive through the legitimate path, never stuck.
+        for _ in 0..200 {
+            if !pool.slots[slot].active {
+                break;
+            }
+            tick(&mut w, &mut pool, held);
+        }
+        assert!(!pool.slots[slot].active, "the flail reels in and dies");
+    }
+
+    #[test]
+    fn DW_5_1_the_held_head_deals_no_damage_in_the_first_12_ticks() {
+        // `:12448`: `aiStyle == 15 && ai[0] == 0 && localAI[1] <= 12` gates
+        // the whole damage out — the charge wind-up is harmless even though
+        // the ellipse already covers the target.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].local_ai[1] = 5.0; // inside the window
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        // The head sits on the mount; the slime at tile 20 (320 px) is far,
+        // so place the NPC on the mount instead.
+        npcs[0].x = 520.0;
+        npcs[0].y = 490.0;
+        let hp_before = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp_before, "the wind-up deals nothing");
+    }
+
+    #[test]
+    fn DW_5_1_the_state_0_ellipse_gates_the_hit() {
+        // `:15338-15356`: the 55-px ellipse around the mounted center
+        // replaces the box test; the Y squash is 0.8 above and 0.4 below.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].local_ai[1] = 13.0; // past the window
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        // 40 px right of the mount: the closest point is 40 px away → hit.
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        pool.update(&mut w, std::slice::from_mut(&mut npcs[0]), Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert!(npcs[0].hp < npcs[0].max_hp, "the ellipse hit lands");
+        // 80 px right: outside the radius → no hit. Refresh the NPC.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 580.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot2 = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot2].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "outside the ellipse misses");
+        // 30 px BELOW the mount: dy_raw 30 / 0.4 = 75 > 55 → miss.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 490.0;
+        npcs[0].y = 530.0;
+        let mut pool = ProjectilePool::new();
+        let slot3 = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot3].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "the sagging squash (0.4) misses at 30 px");
+    }
+
+    #[test]
+    fn DW_5_2_the_held_head_multiplies_the_damage_and_softens_the_knockback() {
+        // `:14447` (damage ×1.2 held) and `:13614-13619` (knockback ×0.35
+        // held, ×0.5 in state 6, the hit direction from the player center).
+        let mut w = ground();
+        // A held flail hits an NPC inside the ellipse; the slot's damage
+        // 200 / kb 10 read the multipliers through the took damage.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 13.0;
+        // A big HP pool so the slime survives and the damage reads clean.
+        npcs[0].hp = 10_000;
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        // 200 × 1.2 = 240.
+        assert_eq!(10_000 - npcs[0].hp, 240, "the held damage ×1.2");
+    }
+
+    #[test]
+    fn DW_5_2_the_dual_flail_discounts_the_damage() {
+        // `:14450-14460`: the Blue Moon/Sunfury pair applies ×0.8 on top of
+        // the held ×1.2 → 200 × 0.96 = 192.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[moon].local_ai[1] = 13.0;
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0 - 11.0, 520.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        npcs[0].hp = 10_000;
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(10_000 - npcs[0].hp, 192, "the dual ×0.8 on the held ×1.2");
+    }
+
+    #[test]
+    fn the_flail_gate_dirty_paths_return_no_hit() {
+        // Dirty: the gate with no mounted-center snapshot and the orphan
+        // slot must not panic and must deal nothing.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        // No player snapshot at all — the slot dies on the kill gate before
+        // the damage walk, so nothing lands.
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(),
+            FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "the orphan path deals nothing");
+    }
+}
+
+
+
+#[cfg(test)]
 
 #[cfg(test)]
 mod bomb_tests {
@@ -5090,6 +6666,7 @@ mod bomb_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5131,6 +6708,7 @@ mod bomb_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5181,6 +6759,7 @@ mod bomb_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5210,6 +6789,7 @@ mod bomb_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -5227,6 +6807,7 @@ mod bomb_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5326,6 +6907,7 @@ mod bomb_tests {
             None,
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -5419,6 +7001,7 @@ mod yoyo_tests {
             Some(aim),
             player.as_mut(),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -5642,6 +7225,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5657,6 +7241,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -5748,6 +7333,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((420.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -5785,6 +7371,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((620.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5813,6 +7400,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -5827,6 +7415,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5849,6 +7438,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5860,6 +7450,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((380.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5889,6 +7480,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((450.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -5903,6 +7495,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((450.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5927,6 +7520,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((320.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5951,6 +7545,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((2500.0, 320.0)), false),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5973,6 +7568,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -5992,6 +7588,7 @@ mod yoyo_tests {
                 channel: true,
                 player_dead: true,
             },
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -6014,6 +7611,7 @@ mod yoyo_tests {
             None,
             None,
             inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
             &mut fast_seed(),
             0,
             true,
@@ -6044,6 +7642,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((600.0, 448.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6076,6 +7675,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -6107,6 +7707,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((380.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6130,6 +7731,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -6169,6 +7771,7 @@ mod yoyo_tests {
                 None,
                 None,
                 aim,
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6219,6 +7822,7 @@ mod yoyo_tests {
                 None,
                 None,
                 aim,
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6247,6 +7851,7 @@ mod yoyo_tests {
                 None,
                 None,
                 inputs(Some((120.0, 320.0)), true),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6289,6 +7894,7 @@ mod yoyo_tests {
                 None,
                 None,
                 aim,
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6324,6 +7930,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6350,6 +7957,7 @@ mod yoyo_tests {
                 None,
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut fast_seed(),
                 0,
                 true,
@@ -6415,6 +8023,7 @@ mod whip_tests {
             Some(Vec2::new(1.0, 0.0)),
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut rng,
             0,
             true,
@@ -6564,6 +8173,7 @@ mod whip_tests {
                     Some(Vec2::new(1.0, 0.0)),
                     None,
                     YoyoInputs::default(),
+                    FlailInputs::default(),
                     &mut rng,
                     0,
                     true,
@@ -6590,6 +8200,7 @@ mod whip_tests {
             Some(Vec2::new(1.0, 0.0)),
             None,
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut rng,
             0,
             true,
@@ -6610,6 +8221,7 @@ mod whip_tests {
                 Some(Vec2::new(1.0, 0.0)),
                 None,
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut rng,
                 0,
                 true,
@@ -6656,6 +8268,7 @@ mod whip_tests {
                 Some(Vec2::new(1.0, 0.0)),
                 Some(&mut player),
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut rng,
                 0,
                 true,
@@ -6704,6 +8317,7 @@ mod whip_tests {
             None,
             Some(&mut player),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut rng,
             0,
             true,
@@ -6732,6 +8346,7 @@ mod whip_tests {
             None,
             Some(&mut player),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut rng,
             0,
             true,
@@ -6762,6 +8377,7 @@ mod whip_tests {
                 Some(Vec2::new(1.0, 0.0)),
                 Some(&mut player),
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut rng,
                 0,
                 true,
@@ -6789,6 +8405,7 @@ mod whip_tests {
                 Some(Vec2::new(1.0, 0.0)),
                 Some(&mut player),
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut rng,
                 0,
                 true,
@@ -6818,6 +8435,7 @@ mod whip_tests {
                 Some(Vec2::new(1.0, 0.0)),
                 Some(&mut player),
                 YoyoInputs::default(),
+                FlailInputs::default(),
                 &mut rng,
                 0,
                 true,

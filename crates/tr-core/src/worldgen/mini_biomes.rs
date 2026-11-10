@@ -31,6 +31,21 @@ use super::structures::place_chest;
 use crate::tile::{FLAG_ACTIVE, Tile};
 use crate::world::World;
 
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — the same fold the
+/// `evil` pass's copy carries (out-of-bounds reads as solid, no
+/// `tileSolidTop`, no half-brick, no slope).
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
 fn active_at(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_some_and(|t| t.active())
 }
@@ -389,6 +404,232 @@ pub(crate) fn pass_sword_shrines(
     placed
 }
 
+/// `HoneyPatchBiome.Place` (`HoneyPatchBiome.cs:9-58`): the honey pocket
+/// beside a hive — the 15-disc scan gate (75 % of the solids are mud/hive
+/// and 2+ hive tiles), the 8-disc solid gate (20+), the important-location
+/// scan, then the radial-dithered honey-block fill, the 3-tall honey
+/// pocket, the mud rim and the honey cap.
+///
+/// The `structures` map's `CanPlace`/`AddProtectedStructure` pair rides the
+/// caller's `protected` rect list (the port's structure-map stand-in, the
+/// same neighbour-rect idiom the other micro passes document).
+pub(crate) fn place_honey_patch(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    protected: &mut Vec<(i32, i32, i32, i32)>,
+    rng: &mut super::Rng,
+) -> bool {
+    // `:11-13`: the origin must not be an active solid tile.
+    if world.tile(ox, oy).is_some_and(|t| t.active()) && solid_tile(world, ox, oy) {
+        return false;
+    }
+    // `:14-18`: the down-80 IsSolid find, the result 2 tiles lower.
+    let mut py = oy;
+    let mut found = None;
+    for _ in 0..80 {
+        py += 1;
+        if solid_tile(world, ox, py) {
+            found = Some(py);
+            break;
+        }
+    }
+    let (mut px, mut py) = match found {
+        Some(y) => (ox, y + 2),
+        None => return false,
+    };
+    // `:19-25`: the 15-disc scan — the solids, the mud/hive count and the
+    // hive count; the gates are 75 % and 2+.
+    let (mut solid, mut mud_hive, mut hive) = (0i32, 0i32, 0i32);
+    for dx in -15..=15 {
+        for dy in -15..=15 {
+            if (dx * dx + dy * dy) as f32 > 225.0 {
+                continue;
+            }
+            if !active_at(world, px + dx, py + dy) {
+                continue;
+            }
+            solid += 1;
+            match world.tile(px + dx, py + dy).map(|t| t.kind) {
+                Some(59) | Some(60) => mud_hive += 1,
+                _ => {}
+            }
+            if world.tile(px + dx, py + dy).map(|t| t.kind) == Some(60) {
+                hive += 1;
+            }
+        }
+    }
+    // The C# gate is `obj2 / obj >= 0.75 && obj3 >= 2` — the hive count
+    // (the 60 tiles) must clear 2. A solid-mud disc without hive blocks
+    // would pass the ratio but fail the count, so the test's world seeds a
+    // 60-tile core.
+    if (mud_hive * 4) < (solid * 3) || hive < 2 {
+        return false;
+    }
+    // `:26-31`: the 8-disc solid gate (20+).
+    let mut solid8 = 0i32;
+    for dx in -8..=8 {
+        for dy in -8..=8 {
+            if (dx * dx + dy * dy) as f32 > 64.0 {
+                continue;
+            }
+            if active_at(world, px + dx, py + dy) {
+                solid8 += 1;
+            }
+        }
+    }
+    if solid8 < 20 {
+        return false;
+    }
+    // `:32-35`: the structure map's 16×16 box.
+    for &(rx, ry, rw, rh) in protected.iter() {
+        if px < rx + rw && px + 16 > rx && py < ry + rh && py + 16 > ry {
+            return false;
+        }
+    }
+    // `:60-83`'s TooCloseToImportantLocations: the underworld band
+    // (`Main.UnderworldLayer` = `maxTilesY - 200`, `Main.cs:2790`) and the
+    // 150-tile 10-step scan for the hive tile 226 and the walls 83/3/87.
+    if py >= world.height - 200 - 30 {
+        return false;
+    }
+    'scan: for sx in (px - 150..px + 150).step_by(10) {
+        if sx <= 0 || sx > world.width - 1 {
+            continue;
+        }
+        for sy in (py - 150..py + 150).step_by(10) {
+            if sy <= 0 || sy > world.height - 1 {
+                continue;
+            }
+            if let Some(t) = world.tile(sx, sy) {
+                if (t.active() && t.kind == 226) || t.wall == 83 || t.wall == 3 || t.wall == 87 {
+                    return false;
+                }
+            }
+        }
+    }
+    // `:37`: the radial-dither honey fill over the 15-disc (the inner-
+    // weighted pass — `NextDouble > dist/10` keeps the rim sparse).
+    for dx in -15..=15 {
+        for dy in -15..=15 {
+            let dist = ((dx * dx + dy * dy) as f32).sqrt();
+            if dist > 15.0 {
+                continue;
+            }
+            if !solid_tile(world, px + dx, py + dy) {
+                continue;
+            }
+            let dither = (dist as f64 / 10.0).clamp(0.0, 1.0);
+            if rng.next_f64() <= dither {
+                continue;
+            }
+            put(world, px + dx, py + dy, 229);
+        }
+    }
+    // `:38-41`: the inner pocket — the blotched 3×4 clear with the honey
+    // liquid, captured as the shape the rim and the cap read.
+    let mut pocket: Vec<(i32, i32)> = Vec::new();
+    for dx in -6..=6 {
+        for dy in 0..=3 {
+            let dist = ((dx * dx + dy * dy * 9) as f32).sqrt();
+            if dist > 4.0 {
+                continue;
+            }
+            if rng.chance(3) {
+                continue;
+            }
+            pocket.push((px + dx, py + dy));
+            clear(world, px + dx, py + dy, 0);
+            let i = world.index(px + dx, py + dy);
+            world.tiles[i].liquid = 255;
+            world.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Honey);
+        }
+    }
+    // `:42-44`: the mud rim — the pocket's inner outline one tile below.
+    for &(cx, cy) in &pocket {
+        let outline = [
+            (cx - 1, cy),
+            (cx + 1, cy),
+            (cx, cy - 1),
+            (cx, cy + 1),
+        ]
+        .iter()
+        .any(|(nx, ny)| world.tile(*nx, *ny).is_some_and(|t| !t.active()));
+        if !outline {
+            continue;
+        }
+        let py2 = cy + 1;
+        if !(1..=3).contains(&(py2 - py)) {
+            continue;
+        }
+        if world.tile(cx, py2).is_some_and(|t| !t.active()) {
+            put(world, cx, py2, 59);
+        }
+    }
+    // `:45-47`: the honey cap — the pocket expanded by 1, below the patch
+    // height, not solid and not holding honey.
+    for &(cx, cy) in &pocket {
+        for ex in -1..=1 {
+            for ey in -1..=1 {
+                let (tx, ty) = (cx + ex, cy + ey);
+                if ty > py {
+                    continue;
+                }
+                if world.tile(tx, ty).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                if world.tile(tx, ty).map(|t| t.liquid) == Some(255)
+                    && world.tile(tx, ty).map(|t| t.liquid_kind()) == Some(crate::tile::LiquidKind::Honey)
+                {
+                    continue;
+                }
+                put(world, tx, ty, 229);
+            }
+        }
+    }
+    protected.push((px - 8, py - 8, 16, 16));
+    true
+}
+
+/// The hive pass's honey patches (`WorldGen.cs:15946-15968`): each placed
+/// hive rolls `Next(5)` patches on the angle/radius ring around its centre
+/// (the 30-90 px ring, the bounds gate, the `extraLiquid` seed's zero).
+pub(crate) fn place_honey_patches_around(
+    world: &mut World,
+    cx: i32,
+    cy: i32,
+    protected: &mut Vec<(i32, i32, i32, i32)>,
+    rng: &mut super::Rng,
+) -> u32 {
+    let want = if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID)
+    {
+        0
+    } else {
+        rng.range(0, 5)
+    };
+    let mut placed = 0u32;
+    let mut guard = 10000;
+    let mut done = 0;
+    while done < want && guard > 0 {
+        guard -= 1;
+        let dist = rng.next_f64() * 60.0 + 30.0;
+        let ang = rng.next_f64() * std::f64::consts::TAU;
+        let px = cx + (ang.cos() * dist) as i32;
+        let py = cy + (ang.sin() * dist) as i32;
+        if px <= 50 || px >= world.width - 50 {
+            continue;
+        }
+        if place_honey_patch(world, px, py, protected, rng) {
+            placed += 1;
+            done += 1;
+        }
+    }
+    placed
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,4 +720,136 @@ mod tests {
         assert_eq!(a, b);
         assert!(a > 0, "the classic pass places houses");
     }
+
+    #[test]
+    fn the_honey_patch_fills_the_pocket_and_registers_the_rect() {
+        // `HoneyPatchBiome.Place` (`HoneyPatchBiome.cs:9-58`): the pocket's
+        // cells carry the honey liquid (kind 2) and the honey-block tile
+        // 229, and the 16×16 rect joins the protected list.
+        // A 600-tall world: the underworld band (`height - 200 - 30` =
+        // 370) must sit below the patch at y = 100 (`Main.cs:60`'s gate).
+        let mut w = World::new("hp".into(), 400, 600);
+        for x in 0..400 {
+            for y in 0..600 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 59,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The hive core (tile 60) the `obj3 >= 2` gate counts.
+        for x in 90..110 {
+            for y in 90..110 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 60;
+            }
+        }
+        let mut protected = Vec::new();
+        let mut rng = crate::worldgen::noise::Rng::from_seed(7);
+        let (mut solid, mut mud_hive, mut hive) = (0i32, 0i32, 0i32);
+        for dx in -15..=15 {
+            for dy in -15..=15 {
+                if (dx * dx + dy * dy) as f32 > 225.0 {
+                    continue;
+                }
+                if let Some(t) = w.tile(100 + dx, 100 + dy) {
+                    if t.active() {
+                        solid += 1;
+                        if matches!(t.kind, 59 | 60) {
+                            mud_hive += 1;
+                        }
+                        if t.kind == 60 {
+                            hive += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // The origin must not be solid (`:11-13`): the ring roll lands in
+        // the open, so the patch seeds its own air cell.
+        let i = w.index(100, 100);
+        w.tiles[i] = Tile::default();
+        let ok = super::place_honey_patch(&mut w, 100, 100, &mut protected, &mut rng);
+        assert!(
+            ok,
+            "the mud disc passes the 75 % gate (protected={protected:?} solid={solid} mud_hive={mud_hive} hive={hive})"
+        );
+        // The honey pockets hold the liquid kind 2 (`LiquidKind::Honey`).
+        let honey = w
+            .tiles
+            .iter()
+            .filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey)
+            .count();
+        assert!(honey > 0, "the pocket holds honey: {honey}");
+        let blocks = w.tiles.iter().filter(|t| t.active() && t.kind == 229).count();
+        assert!(blocks > 0, "the patch fills with the honey block 229: {blocks}");
+        assert_eq!(protected.len(), 1, "the 16x16 rect is registered");
+    }
+
+    #[test]
+    fn the_honey_patch_rejects_the_small_disc_and_the_underworld() {
+        // The 8-disc solid gate (20+) refuses a sparse world, and the
+        // underworld band (`Main.UnderworldLayer - 30`) refuses a deep
+        // origin.
+        let mut w = World::new("hp2".into(), 200, 200);
+        let mut protected = Vec::new();
+        let mut rng = crate::worldgen::noise::Rng::from_seed(9);
+        assert!(
+            !super::place_honey_patch(&mut w, 100, 100, &mut protected, &mut rng),
+            "the empty air fails the solid gate"
+        );
+        // The underworld: a full disc 30 tiles above the band's bottom.
+        let mut w2 = World::new("hp3".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w2.index(x, y);
+                w2.tiles[i] = Tile {
+                    kind: 59,
+                    ..Default::default()
+                };
+                w2.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut rng2 = crate::worldgen::noise::Rng::from_seed(3);
+        let deep = w2.height - 200 - 40;
+        assert!(
+            !super::place_honey_patch(&mut w2, 100, deep, &mut protected, &mut rng2),
+            "the underworld band refuses"
+        );
+    }
+
+    #[test]
+    fn the_hive_places_its_five_patches_on_the_ring() {
+        // `WorldGen.cs:15946-15968`: each placed hive rolls `Next(5)`
+        // patches at the 30-90 px ring; the `extraLiquid` seed zeroes the
+        // count. The jungle span lets the hive place.
+        let mut w = World::new("hp4".into(), 400, 300);
+        for x in 0..400 {
+            for y in 0..300 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 59,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 75.0;
+        w.rock_layer = 150.0;
+        let spans = super::super::biomes::BiomeSpans {
+            jungle_start: 60,
+            jungle_end: 340,
+            dungeon_x: 40,
+        };
+        let mut rng = crate::worldgen::noise::Rng::from_seed(11);
+        // One hive with the full world disc for its patches.
+        let before = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
+        let placed = super::super::structures::pass_beehives(&mut w, &spans, 150.0, &mut rng);
+        let after = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
+        assert!(placed >= 1, "the hive placed: {placed}");
+        assert!(after > before, "the hive's patches hold honey: {before} -> {after}");
+    }
+
 }

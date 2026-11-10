@@ -1402,6 +1402,7 @@ impl App {
                                 &self.death_text,
                                 self.lost_coins,
                                 &self.lost_coin_string,
+                                p.respawn_timer,
                             );
                         }
                     }
