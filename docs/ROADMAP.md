@@ -1647,7 +1647,7 @@ or narrow · **S4** polish.
 
 | Task | Severity | Branch | Scope [atlas] |
 | --- | --- | --- | --- |
-| BUG-01 | S3 | `BUG-01-menu-music` | front-end music: tick the audio/music ladder on every frame and feed the menu `MusicEnv` track [26] |
+| ✅ BUG-01 | S3 | `BUG-01-menu-music` | front-end music: tick the audio/music ladder on every frame and feed the menu `MusicEnv` track [26] | done 2026-11-10: `App::update_menu_music` (`app/mod.rs`) runs on the front-screen branch of `frame()` beside the in-world `MusicEnv` build (`Main.UpdateAudio` runs every frame, `Main.cs:17816`); `MusicEnv` grew `menu`/`menu_flags`, `decide_new_music` grew the vanilla's `if (Main.gameMenu)` arm (`Main.cs:12455-12532`) — the drunk ladder (remix 70 / not-the-bees 86 / plain 60 inside the drunk arm), remix 8, the anniversary 11 and the tail's default 51, with the world-creation screen's seed text feeding the flags (`SeedFlags::from_seed_text`); the decision half of `MusicSystem::update` now runs without an audio device so `cur_music` is observable headless; parked: the `menuMode == 3000`/credits 89, the `playOldTile`/`titleMusicStyle` 6/50 arms and the `netMode == 2` silence; 5 new tests |
 | BUG-02 | S2 | `BUG-02-char-preview` | character-select preview draws no player: extract the layer walk from `render/entities.rs` into a UI-shareable `draw_player_layers` [23] |
 | BUG-03 | S2 | `BUG-03-favorites-persist` | `.plr` favourites: write the real bitfield at `player_file.rs:325` (today a hardcoded `w.u64(0)`) and hydrate `favorite_slots` on load [29] |
 | BUG-04 | S1 | `BUG-04-world-seed` | world-creation seed ignored: route the entered text through `seeds::resolve_seed_text` into the generator instead of `TR_SEED`/1 [6][30] |
