@@ -166,8 +166,12 @@ mod tests {
     // crawler (`worldgen/dungeon.rs::generate_dungeon`), so the generated
     // worlds carry the crawler's halls/rooms instead of the corridor
     // approximation.
-    const SEED42_512: u32 = 3541994916;
-    const DEFAULT_WORLD: u32 = 602739768;
+    // Re-pinned by M5-BIOME-2's second slice: the honey patches ride the
+    // hive pass (`WorldGen.cs:15946-15968`), so every world with a hive
+    // gains its `Next(5)` pockets. The determinism half of both tests
+    // (a == b) still guards the stream.
+    const SEED42_512: u32 = 3075125982;
+    const DEFAULT_WORLD: u32 = 366022756;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
