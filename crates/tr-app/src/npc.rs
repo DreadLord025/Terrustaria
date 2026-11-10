@@ -2155,6 +2155,21 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.chaseable` (`NPC.cs:6261`, the `SetDefaults` default `true`) — the
+    /// `CanBeChasedBy` gate's inner term: false = untargetable by minions and
+    /// sentries. The C#'s only `chaseable = false` writers are the case-345
+    /// family (`NPC.cs:13854`/`:14078`/`:14193`/`:14210` — the Dungeon
+    /// Guardian's group, unported kinds) and `:8549` re-affirms true, so every
+    /// ported kind keeps the stock value.
+    pub chaseable: bool,
+    /// `NPC.immortal` (`NPC.cs:6259`, the stock `false`) — the target-dummy
+    /// "alive but unhittable" flag; no ported kind's `SetDefaults` writes it,
+    /// so it holds the field default.
+    pub immortal: bool,
+    /// `NPC.friendly` (`NPC.cs:6563`, the stock `false`) — the town NPCs'
+    /// `friendly = true` writes (`NPC.cs:8983+`); the port derives it from the
+    /// existing `is_town_resident` list.
+    pub friendly: bool,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -2335,6 +2350,23 @@ pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
 }
 
 impl Npc {
+    /// `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`): the gate every minion and
+    /// sentry target search runs. The port's liveness is `hp > 0` (the NPC
+    /// list carries no `active` field — callers filter on `hp`); the
+    /// `lifeMax > 5` term keeps critters out; `dontTakeDamage`, `friendly` and
+    /// `immortal` each block the target. The
+    /// `DebugOptions.LetProjectilesAimAtTargetDummies` debug arm (the
+    /// immortal bypass) is the default-false path and stays unported — the
+    /// target dummies are unported kinds anyway.
+    pub fn can_be_chased_by(&self) -> bool {
+        self.hp > 0
+            && self.chaseable
+            && self.max_hp > 5
+            && !self.dont_take_damage
+            && !self.friendly
+            && !self.immortal
+    }
+
     pub fn spawn_slime(world: &World, x_tile: i32) -> Option<Self> {
         Self::spawn_slime_variant(world, x_tile, SlimeVariant::Blue)
     }
@@ -2665,6 +2697,13 @@ impl Npc {
             wants_servant: None,
             defense_override: None,
             dont_take_damage: false,
+            // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
+            // `chaseable`'s stock true (the false writers are the unported
+            // case-345 family), `immortal`'s stock false, `friendly` the town
+            // residents' `friendly = true` write (`NPC.cs:8983+`).
+            chaseable: true,
+            immortal: false,
+            friendly: kind.is_town_resident(),
             swarm_done: false,
             moon_local: [0.0; 3],
             moon_core_alive: false,
@@ -11778,6 +11817,40 @@ mod tests {
 
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
+    /// truth table: alive, `chaseable`, `lifeMax > 5`, `!dontTakeDamage`,
+    /// `!friendly`, `!immortal`.
+    #[test]
+    fn test_DW_3_4_can_be_chased_by_matches_the_csharp() {
+        let mut e = bare(NpcKind::Slime);
+        e.max_hp = 30;
+        e.hp = 30;
+        assert!(e.can_be_chased_by(), "a live enemy is chaseable");
+        // `lifeMax > 5` — critters are out.
+        e.max_hp = 5;
+        assert!(!e.can_be_chased_by(), "critter (lifeMax 5)");
+        e.max_hp = 6;
+        assert!(e.can_be_chased_by(), "lifeMax 6 clears the bar");
+        // Dead.
+        e.hp = 0;
+        assert!(!e.can_be_chased_by());
+        e.hp = 30;
+        // `chaseable`, `dontTakeDamage`, `friendly`, `immortal` each block.
+        e.chaseable = false;
+        assert!(!e.can_be_chased_by());
+        e.chaseable = true;
+        e.dont_take_damage = true;
+        assert!(!e.can_be_chased_by());
+        e.dont_take_damage = false;
+        e.friendly = true;
+        assert!(!e.can_be_chased_by());
+        e.friendly = false;
+        e.immortal = true;
+        assert!(!e.can_be_chased_by());
+        e.immortal = false;
+        assert!(e.can_be_chased_by());
     }
 
     #[test]

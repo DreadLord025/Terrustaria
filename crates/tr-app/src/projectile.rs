@@ -2361,6 +2361,54 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// `Projectile.Update`'s minion/sentry block (`Projectile.cs:16704-16740`),
+    /// run on the LAST sub-step only (the C# `numUpdates == -1` iteration of
+    /// `numUpdates = extraUpdates; while (numUpdates >= 0) { numUpdates--; … }`).
+    /// Both families recompute the damage from the unscaled spawn damage; the
+    /// minion arm then books `minionPos`, runs the over-cap kill and
+    /// accumulates the budget.
+    pub fn summon_tick_block(
+        &mut self,
+        i: usize,
+        player: &mut Option<&mut crate::player::Player>,
+        local_owner: u8,
+    ) {
+        let (is_minion, is_sentry, kind) = {
+            let p = &self.slots[i];
+            (p.minion, p.sentry, p.kind)
+        };
+        if !(is_minion || is_sentry) || self.slots[i].owner != local_owner {
+            // The C# block runs for the slot's owner; a foreign owner's
+            // minion is simulated on that machine, not here.
+            return;
+        }
+        let Some(pl) = player.as_deref_mut() else {
+            return;
+        };
+        // `:16704-16707` — the recompute for minions and sentries alike: the
+        // unscaled spawn damage × the owner's multiplier, plus the 5E-06
+        // epsilon (f32 verbatim, the same cast order as the C#).
+        let recomputed = (self.slots[i].original_damage as f32 * pl.minion_damage + 5.0e-6) as i32;
+        self.slots[i].damage = recomputed;
+        // `:16709` — the dragon-chain kinds (625/628) carry no block; the
+        // relink arms of 626/627 are stubbed (the chain is excluded, plan
+        // decision #3 of the Constraints), so both kinds self-kill over cap
+        // without the link surgery.
+        if is_minion && kind != 626 && kind != 627 {
+            // `:16711` — `minionPos = Main.player[owner].numMinions`.
+            self.slots[i].minion_pos = pl.num_minions as u16;
+            // `:16712` — the over-cap check, the local owner only.
+            if pl.slots_minions + self.slots[i].minion_slots > pl.max_minions as f32 {
+                self.slots[i].active = false;
+                self.slots[i].time_left = 0;
+                return;
+            }
+            // `:16736-16737` — the accumulation.
+            pl.num_minions += 1;
+            pl.slots_minions += self.slots[i].minion_slots;
+        }
+    }
+
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
@@ -2398,7 +2446,41 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
-            for _ in 0..sub_steps {
+            for sub in 0..sub_steps {
+                // `Projectile.cs:16683-16703` — the out-of-world guard sits at
+                // the top of every sub-step, ahead of the AI, and skips the
+                // aiStyle-3 slots (the boomerang family legitimately leaves).
+                // Bounds are `WorldGen.cs:6553-6554` (`rightWorld = maxTilesX *
+                // 16`, `bottomWorld = maxTilesY * 16`; left/top are 0). A minion
+                // with a living owner is rescued onto the owner's centre
+                // (`Center = player.Center`), anything else deactivates; the C#
+                // `return`s, so the port `continue`s the outer loop.
+                if proj_data(self.slots[i].kind).map_or(255, |d| d.ai_style) != 3 {
+                    let p = &self.slots[i];
+                    let out = p.pos.x <= 0.0
+                        || p.pos.x + p.w >= world.width as f32 * 16.0
+                        || p.pos.y <= 0.0
+                        || p.pos.y + p.h >= world.height as f32 * 16.0
+                        || p.pos.x.is_nan()
+                        || p.pos.y.is_nan();
+                    if out {
+                        if p.minion && player.as_ref().is_some_and(|pl| !pl.dead) {
+                            let (cx, cy) = player.as_ref().unwrap().center();
+                            let p = &mut self.slots[i];
+                            p.pos = Vec2::new(cx - p.w * 0.5, cy - p.h * 0.5);
+                            continue;
+                        }
+                        self.slots[i].active = false;
+                        self.slots[i].time_left = 0;
+                        continue;
+                    }
+                }
+                // `Projectile.cs:16704-16740` — the minion/sentry block: on the
+                // last sub-step only, after the enchantment-visuals arm and
+                // ahead of the AI dispatch.
+                if sub + 1 == sub_steps {
+                    self.summon_tick_block(i, &mut player, local_owner);
+                }
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
                 }
@@ -5565,5 +5647,212 @@ mod summon_tests {
         assert_eq!(a.1.pos, b.1.pos);
         assert_eq!(a.2.time_left, b.2.time_left);
         assert!(a.2.active, "the sentry outlives 60 ticks");
+    }
+}
+
+#[cfg(test)]
+mod minion_tick_tests {
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    /// The player with a clean summon budget (`ResetEffects`'s 1/0/0.0 base,
+    /// `Player.cs:18448`).
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    /// One pool tick — the C#'s `UpdateWorld_Projectiles` single-player pass
+    /// with the local player threaded (owner 0 == `local_owner`). The C#
+    /// zeroes `numMinions`/`slotsMinions` at the head of every player tick
+    /// (`Player.cs:28279-28280`), so the fixture mirrors the reset before the
+    /// pool pass — without it consecutive ticks would double-count.
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, slot_x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, slot_x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn live(pool: &ProjectilePool) -> usize {
+        pool.slots.iter().filter(|p| p.active).count()
+    }
+
+    /// DW-3.1 — the over-cap self-kill (`Projectile.cs:16712-16735`): six
+    /// Hornets at cap 5 — the sixth dies on its first pool tick and the
+    /// counters return to 5/5.0.
+    #[test]
+    fn test_DW_3_1_the_sixth_minion_self_kills_over_cap() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        for n in 0..6 {
+            spawn_minion(&mut pool, HORNET, 200.0 + n as f32 * 40.0);
+        }
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 5, "the 6th self-killed");
+        assert_eq!(p.num_minions, 5);
+        assert_eq!(p.slots_minions, 5.0);
+        // The survivors keep their slot-order `minionPos` (0..4) — the C#
+        // books it before the cap check, per slot index order.
+        let active_positions: Vec<u16> = (0..6)
+            .filter(|&i| pool.slots[i].active)
+            .map(|i| pool.slots[i].minion_pos)
+            .collect();
+        assert_eq!(
+            active_positions,
+            vec![0, 1, 2, 3, 4],
+            "minionPos follows slot order"
+        );
+    }
+
+    /// DW-3.2 — the 0.5-slot spiders (`Projectile.cs:4707/:4723`): two half
+    /// slots fit in cap 1.0, the third dies. The budget stays an exact f32.
+    #[test]
+    fn test_DW_3_2_the_half_slots_share_the_budget() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 1;
+        spawn_minion(&mut pool, RETANIMINI, 200.0);
+        spawn_minion(&mut pool, SPAZMAMINI, 300.0);
+        spawn_minion(&mut pool, RETANIMINI, 400.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 2, "0.5 + 0.5 fits, the third dies");
+        assert_eq!(p.num_minions, 2);
+        assert_eq!(p.slots_minions, 1.0, "exact half-slot arithmetic");
+        // One more half-slot over the filled 1.0 dies.
+        spawn_minion(&mut pool, SPAZMAMINI, 500.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 2);
+    }
+
+    /// DW-3.3 — the damage recompute (`Projectile.cs:16704-16707`): the
+    /// unscaled spawn damage × `minionDamage` plus the 5E-06 f32 epsilon, the
+    /// C# cast order verbatim.
+    #[test]
+    fn test_DW_3_3_the_damage_recompute_matches_the_csharp() {
+        // Table: (original damage, minionDamage, expected slot damage).
+        for (orig, md, expect) in [
+            (10, 1.0, 10),
+            (10, 1.5, 15),
+            (26, 2.0, 52),
+            (7, 3.33, 23),
+            (10, 0.9, 9),
+            (100, 0.53, 53),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.minion_damage = md;
+            p.max_minions = 5;
+            let slot = spawn_minion(&mut pool, HORNET, 200.0);
+            pool.slots[slot].original_damage = orig;
+            tick(&mut pool, &mut w, &mut p);
+            assert_eq!(
+                pool.slots[slot].damage, expect,
+                "orig {orig} x {md} + epsilon",
+            );
+        }
+        // The sentry rides the same recompute (`minion || sentry`).
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 1.25;
+        let slot = pool
+            .spawn_with_data_ai_owned(FROST_HYDRA, 0, 200.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(
+            pool.slots[slot].damage, 50,
+            "the sentry recompute (40 x 1.25)"
+        );
+    }
+
+    /// DW-3.3 dirty variant — the recompute reads the owner's multiplier even
+    /// when the owner is dead (the C# reads `Main.player[owner]` regardless).
+    #[test]
+    fn test_edge_the_recompute_runs_for_a_dead_owner() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 2.0;
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, 200.0);
+        p.hp = 0;
+        p.dead = true;
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(pool.slots[slot].damage, 20);
+        assert_eq!(
+            p.num_minions, 1,
+            "the dead player still accumulates this tick"
+        );
+    }
+
+    /// DW-3.5 — the out-of-world minion rescue (`Projectile.cs:16695-16703`):
+    /// a living owner pulls the slot back to their centre (no kill, no update
+    /// that tick).
+    #[test]
+    fn test_DW_3_5_out_of_world_minion_is_rescued() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, -50.0);
+        let (pcx, pcy) = p.center();
+        tick(&mut pool, &mut w, &mut p);
+        let s = &pool.slots[slot];
+        assert!(s.active, "rescued, not killed");
+        assert!(
+            (s.pos.x + s.w * 0.5 - pcx).abs() < 1e-3,
+            "center == player.Center",
+        );
+        assert!((s.pos.y + s.h * 0.5 - pcy).abs() < 1e-3);
+        // The rescue skips the tick (the C# `return`): the summon block's
+        // accumulation has not run for this slot — the next tick books it.
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(p.num_minions, 1);
+    }
+
+    /// DW-3.5 dirty variant — the same escape with a dead owner deactivates
+    /// the slot (`active = false`, `Projectile.cs:16699`).
+    #[test]
+    fn test_edge_out_of_world_with_a_dead_owner_deactivates() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, -50.0);
+        p.dead = true;
+        p.hp = 0;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots[slot].active, "deactivated");
+        assert_eq!(p.num_minions, 0, "no accumulation for a dead escape");
     }
 }
