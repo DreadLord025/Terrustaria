@@ -2768,4 +2768,47 @@ pub(crate) mod front_flow_tests {
             "the pickaxe landed in the first free slot"
         );
     }
+
+    /// The front-end half of the audio clock (BUG-01): with a front screen
+    /// live, the per-frame `update_menu_music` decides the title track
+    /// (`Main.cs:12455-12532`'s `gameMenu` arm), so `cur_music` leaves 0
+    /// before any world is entered.
+    #[test]
+    fn the_front_screen_ticks_the_menu_music() {
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        app.front = Some(FrontScreen::WorldSelect);
+        assert_eq!(app.music.cur_music, 0, "the boot state is silent");
+        app.update_menu_music();
+        assert_eq!(
+            app.music.cur_music, 51,
+            "the world-select screen plays the title track"
+        );
+        // The menu env is the menu arm regardless of which screen is up.
+        let mut no_menu = flow_app(None, Vec::new(), Vec::new());
+        no_menu.update_menu_music();
+        assert_eq!(no_menu.music.cur_music, 51, "no front screen: the plain track");
+    }
+
+    /// The world-creation screen's seed text feeds the menu ladder — the
+    /// vanilla's `WorldGen.*WorldGen` statics (`Main.cs:12463-12494`) are the
+    /// front-end's view of the pending seed.
+    #[test]
+    fn the_creation_screens_seed_drives_the_menu_track() {
+        let draft = ui::world_creation::NewWorldDraft::new(1, 0);
+        let mut app = flow_app(
+            Some(FrontScreen::WorldCreation(draft)),
+            Vec::new(),
+            Vec::new(),
+        );
+        if let Some(FrontScreen::WorldCreation(d)) = &mut app.front {
+            d.seed = "5162020".into(); // the drunk world's seed text
+        }
+        app.update_menu_music();
+        assert_eq!(app.music.cur_music, 60, "the drunk title track");
+        if let Some(FrontScreen::WorldCreation(d)) = &mut app.front {
+            d.seed = "celebrationmk10".into(); // the anniversary seed text
+        }
+        app.update_menu_music();
+        assert_eq!(app.music.cur_music, 11, "the anniversary title track");
+    }
 }

@@ -804,6 +804,31 @@ impl App {
         world_sim::clock::advance_disco(self);
     }
 
+    /// The front-end half of `Main.UpdateAudio` (`Main.cs:17816`): the audio
+    /// clock runs on every frame, so the title/character/world screens are
+    /// not silent (BUG-01). `Main.UpdateAudio_DecideOnNewMusic`'s `gameMenu`
+    /// arm (`Main.cs:12455-12532`) picks the title track; the worldgen seed
+    /// flags it reads come from the world-creation screen's seed text (the
+    /// vanilla's `WorldGen.drunkWorldGen` and friends), and the other front
+    /// screens play the plain title track.
+    pub(crate) fn update_menu_music(&mut self) {
+        let menu_flags = match &self.front {
+            Some(FrontScreen::WorldCreation(draft)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
+            }
+            _ => tr_core::seeds::SeedFlags::default(),
+        };
+        self.music.update(audio::MusicEnv {
+            music_volume: self.settings.music_volume,
+            menu: true,
+            menu_flags,
+            // `Main.activeMusicBox = -1` — the derived default 0 is the first
+            // box's id, which would override the title track.
+            music_box: -1,
+            ..Default::default()
+        });
+    }
+
     /// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
     /// tick, matching the original 30 Hz rate.
     pub(crate) fn update_liquids(&mut self, dt: f32) {

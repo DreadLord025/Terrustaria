@@ -250,6 +250,15 @@ impl App {
             }
         }
 
+        // `Main.UpdateAudio` runs on every frame, in the menus as well as in
+        // the world (`Main.cs:17816`); the `Main.gameMenu` arm of
+        // `UpdateAudio_DecideOnNewMusic` (`:12455`) picks the title track.
+        // The port's audio clock was wired to the world step only, so the
+        // front-end screens were silent (BUG-01).
+        if self.menu.is_some() || self.front.is_some() {
+            self.update_menu_music();
+        }
+
         if self.menu.is_none() && self.front.is_none() {
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
@@ -398,6 +407,8 @@ impl App {
                 jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
                     + screen.y * 0.5,
                 quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+                menu: false,
+                menu_flags: Default::default(),
                 music_box: self.scene_metrics.active_music_box,
                 music_box_silence: self.scene_metrics.music_box_silence,
             });
@@ -1391,6 +1402,7 @@ impl App {
                                 &self.death_text,
                                 self.lost_coins,
                                 &self.lost_coin_string,
+                                p.respawn_timer,
                             );
                         }
                     }
