@@ -9451,3 +9451,62 @@ The `num10` (slot-0 main item) dispatcher of `AddBuriedChest`
   error's chest row, and `GrowLivingTreePassageRoom`'s style-12 main
   (832/4281, `:29303-29306`) — the port's living trees and pyramids place
   plain style-0 chests, so the style-gated arms have no anchor to read.
+
+## The flail family (M4-PROJ-3b)
+
+`AI_015_Flails` (`Projectile.cs:43724-44169`) ports as `ai_flail` in
+`crates/tr-app/src/projectile.rs`, driven by the `FLAIL_PARAMS` per-kind
+table (`:43761-43823`'s switch — num/num2/num5/num7/num12/num15 over the
+defaults 10/24/16/48/15/30, with `num2/4/5/6/7/8/9` scaled by
+`1/meleeSpeed`). The ten kinds (25/26/35/63/154/247/757/947/948/1058) ride
+`DefaultToFlail` (`:10753-10762`: aiStyle 15, drawLayer 7, friendly,
+`penetrate = -1`, melee, `usesLocalNPCImmunity` with cooldown 10) and the
+three helpers (928 aiStyle 14 pen 2 timeLeft 250, 248 aiStyle 1, 405
+aiStyle 70 pen 1 alpha 255 timeLeft 120) land rows beside them.
+
+The state machine (`ai[0]` 0..6) runs inside one tick per
+`ProjectilePool::update`; the C#'s `HandleMovement` peer is the port's
+`flail_move` (the face-clamped per-axis advance with the blocked
+component zeroed) followed by `ai_flail_bounce`
+(`AI_015_HandleMovementCollision` `:43655-43717`), gated on the velocity
+change exactly like the C# `flag` (`:17896-17904`) — without the gate the
+handler's unconditional state-1 arm would stagger every fly-out tick.
+The state-1 bounce's `position -= vector` undoes the whole move; the port
+steps the blocked axis 1 px at a time instead of `Collision.Move`'s
+sub-steps (agrees to the sub-pixel; the only numeric approximation in the
+family). The throw path gains `speed /= meleeSpeed` (`Player.cs:47063`,
+×1 at the port's default bonus) and the Flairon's 1 px aim offset
+(`:47239-47245`); `Player::melee_speed()` and `Player::mounted_center()`
+(`Player.cs:3335`, equal to `center()` with no mount offsets) back the
+AI's reads. The `948 → 947` water morph reads the mid-tile liquid kind
+(the port's Player liquid-pass idiom) for `wet && !lavaWet`; the map-
+fullscreen kill and the `noItems` gate have no port arms (documented).
+
+Hit side: the held state's first 12 ticks deal nothing
+(`:12448`), the state-0 hitbox is the 55-px ellipse around the owner's
+mounted center with the 0.8/0.4 Y squash (`:15336-15356`, replacing the
+box test), the held damage is ×1.2 with the Blue Moon/Sunfury dual ×0.8
+(`:14447-14465`), the knockback ×0.35 held / ×0.5 spinning with the hit
+direction from the player's center (`:13614-13619`). The atlas §17 note
+"damage ×0.35/×0.5" is wrong: those are knockback multipliers (recorded
+here so the row can be corrected).
+
+Deviations (all deferred to a decor/render follow-up, none simulated):
+`AI_015_Flails_Dust` (`:44399-44474`), `CreateImpactExplosion` +
+`CreateImpactExplosion2_FlailTileCollision` (`:69633`/`:69774`), the
+bounce's `Collision.HitTiles` ×count (no generic projectile→tile seam in
+the port) and `SoundEngine.PlaySound(0, …)` (the AI has no audio
+access), the `player.heldProj` / `SetDummyItemTime` / `itemRotation`
+writes and `ownerHitCheck` (no consumers), the drawLayer 7 vs the 26/35
+`ai[2] == 1` branch (no drawLayer consumer; `ai[2]` is only written by
+the sentry-backpack tail, unreachable for flails), and the chain/string
+render (cf. the yoyo string, M4-PROJ-4c). The `player.ChangeDir` writes
+ride back in `FlailTick.facing` with the same-tick reads served by a
+local `eff_dir` (the port's facing is run-key driven). The Flairon's
+bubble cadence and jitter (`Main.rand.Next(3, 6)`, `Next(45, 65)`,
+`NextDouble`) draw from the pool's rng stream — the item stream by the
+yoyo convention. 22 seeded tests cover the data table, the per-kind
+rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
+transitions with the per-state factors, the kill gates, the morph, the
+Flairon bubbles, the Drippler's extra ball, the damage gates and a full
+hold→throw→bounce→reel lifecycle.
