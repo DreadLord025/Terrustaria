@@ -1575,7 +1575,7 @@ fn break_drop_events(
     // the C# `tileCache` carries the frames; captured pre-kill in
     // [`break_tile`]).
     if let Some(hit) = &hit {
-        events.extend(cell_drops(world, hit, staff_of_regrowth, main_rng, ctx));
+        events.extend(cell_drops(hit, staff_of_regrowth, main_rng, ctx));
     }
     // The cascade's `Check*` records: the check's own `Item.NewItem` (the
     // sunflower's 63) or the object's item through `registry::tile_drop`.
@@ -1677,7 +1677,6 @@ fn sword_pile_roll(frame_x: i32, rng: &mut super::npcs::LootRng<'_>) -> Option<u
 /// unregistered legacy kinds keep the `registry::tile_drop` fallback (dirt →
 /// 2, stone → 3, the cactus arm).
 fn cell_drops(
-    world: &World,
     hit: &HitCell,
     staff_of_regrowth: bool,
     main_rng: &mut super::npcs::LootRng<'_>,
@@ -1687,33 +1686,6 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
-        // Bug 16: the tree family's drops (`KillTile`'s case 5/596/616/634 →
-        // `KillTile_GetTreeDrops`, `WorldGen.cs:65214-65231` / `:66189-66261`)
-        // — the wood variant from the ground family, the acorn secondary on
-        // the canopy cell. The `genRand` stream rides the seeded FastRandom
-        // (the pot-event convention), the closest-player `bonusWood` arm parks
-        // (no player on the `kill_tile` path).
-        5 | 596 | 616 | 634 => {
-            let mut gen_stream = tr_core::tile_light::FastRandom::new(
-                crate::app::next_rand(main_rng.0),
-            );
-            let (item, secondary, _bonus, _is_wood) = tr_core::growth::tree_drops(
-                world,
-                x,
-                y,
-                hit.frame_x,
-                hit.frame_y,
-                &mut gen_stream,
-            );
-            let mut rolls = Vec::new();
-            if item != 0 {
-                rolls.push((item, 1));
-            }
-            if let Some(sec) = secondary {
-                rolls.push((sec, 1));
-            }
-            rolls
-        }
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
