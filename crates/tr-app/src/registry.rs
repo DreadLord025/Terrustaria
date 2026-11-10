@@ -23,28 +23,15 @@ use crate::itemdata::ITEMS;
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 /// The hand-written corrections of the GenItemData placeholder band
-/// (items 3263-3989: the generator emits one uniform melee-slot row —
-/// damage 15, `Melee`, use 25/25, value 50000, knockBack 4, shootSpeed 16,
-/// 24x24 — for every kind in it, so the band's staves read wrong through
-/// every accessor). The rows below are full `ItemDef`s: the three in-scope
-/// M4-PROJ-6 magic staffs, transcribed from their `Item.SetDefaults` case
-/// bodies over the `ResetStats` stock (`Item.cs:48944-49051`) — the same
-/// id-keyed correction precedent as `place_tile`'s 3813 arm (the M3-STORE-1
-/// Defender's Forge, `registry.rs:100-110`). A regen of `itemdata.rs` is
-/// the fix that retires this table (its own pass).
-static ITEM_CORRECTIONS: [ItemDef; 4] = [
-    // 3377 Amber Staff — `Item.cs:30858-30875`: magic, mana 9, damage 21,
-    // useAnimation/useTime 28, shoot 597 (the amber gem bolt), shootSpeed 9,
-    // knockBack 4.75, autoReuse, rare 1, 40x40, value 20000.
-    // 6171 Bejeweled Staff — `Item.cs:47550-47555`: a staff of the
-    // diamond bolt (`DefaultToStaff(126, 6f, 22, 15)` — shoot 126,
-    // shootSpeed 6, use 22/22, mana 15, magic, noMelee, autoReuse,
-    // 40x40, UseSound Item43), damage 27, knockBack 6, rare 5
-    // (`Pink5`), value `sellPrice(0, 1)` = 50000 (`:49422-49425`).
-    // The item the gem-staff shoot's AllGems gate reads
-    // (`Player.cs:49262`, `PackGemStaffFeatures`'s `HeldItem.type ==
-    // 6171`), so the branch is live in the game rather than a test
-    // shape.
+/// (items 3263-3989): the M6-SAVE-1 merge regenerated `itemdata.rs` and
+/// fixed the band's rows (the Amber Staff 3377 / Spirit Flame 3779 / Sky
+/// Fracture 3787 now ride the generated rows). The 6171 row is still the
+/// band's zero row (the generator misses it): the Bejeweled Staff's C#
+/// case (`Item.cs:47550-47555`) transcribed over the `ResetStats` stock -
+/// the item the gem-staff shoot's AllGems gate reads (`Player.cs:49262`,
+/// `PackGemStaffFeatures`'s `HeldItem.type == 6171`), so the branch is
+/// live in the game rather than a test shape.
+static ITEM_CORRECTIONS: [ItemDef; 1] = [
     ItemDef {
         id: 6171,
             name: "Bejeweled Staff",
@@ -92,156 +79,6 @@ static ITEM_CORRECTIONS: [ItemDef; 4] = [
             hammer: 0,
             accessory: false,
         },
-        ItemDef {
-            id: 3377,
-        name: "Amber Staff",
-        max_stack: 9999,
-        tile: None,
-        place_style: 0,
-        wall: None,
-        projectile: Some(597),
-        damage: 21,
-        rare: 1,
-        use_time: 28,
-        use_animation: 28,
-        use_style: 5,
-        hold_style: 0,
-        auto_reuse: true,
-        head_slot: -1,
-        body_slot: -1,
-        leg_slot: -1,
-        defense: 0,
-        class: DamageClass::Magic,
-        crit: 0,
-        value: 20000,
-        knock_back: 4.75,
-        mana: 9,
-        use_ammo: 0,
-        ammo: 0,
-        channel: false,
-        reuse_delay: 0,
-        consumable: false,
-        use_turn: false,
-        buff_type: 0,
-        buff_time: 0,
-        shoot_speed: 9.0,
-        width: 40,
-        height: 40,
-        material: false,
-        potion: false,
-        heal_life: 0,
-        heal_mana: 0,
-        scale: 1.0,
-        stack: 1,
-        bait: 0,
-        pick: 0,
-        axe: 0,
-        hammer: 0,
-        accessory: false,
-    },
-    // 3779 Spirit Flame — `Item.cs:33455-33472`: magic, mana 14, damage 85,
-    // use 22/22, shoot 659, shootSpeed 3, knockBack 5, autoReuse, rare 4,
-    // 26x28, value `Item.sellPrice(0, 1)` = 50000 (`:49422-49425`). The
-    // case's `glowMask = 218` has no `ItemDef` field (no ported consumer) —
-    // it rides the regen.
-    ItemDef {
-        id: 3779,
-        name: "Spirit Flame",
-        max_stack: 9999,
-        tile: None,
-        place_style: 0,
-        wall: None,
-        projectile: Some(659),
-        damage: 85,
-        rare: 4,
-        use_time: 22,
-        use_animation: 22,
-        use_style: 5,
-        hold_style: 0,
-        auto_reuse: true,
-        head_slot: -1,
-        body_slot: -1,
-        leg_slot: -1,
-        defense: 0,
-        class: DamageClass::Magic,
-        crit: 0,
-        value: 50000,
-        knock_back: 5.0,
-        mana: 14,
-        use_ammo: 0,
-        ammo: 0,
-        channel: false,
-        reuse_delay: 0,
-        consumable: false,
-        use_turn: false,
-        buff_type: 0,
-        buff_time: 0,
-        shoot_speed: 3.0,
-        width: 26,
-        height: 28,
-        material: false,
-        potion: false,
-        heal_life: 0,
-        heal_mana: 0,
-        scale: 1.0,
-        stack: 1,
-        bait: 0,
-        pick: 0,
-        axe: 0,
-        hammer: 0,
-        accessory: false,
-    },
-    // 3787 Sky Fracture — `Item.cs:33531-33550`: magic, mana 17, damage 38,
-    // useAnimation 12 / useTime 4, reuseDelay 18 (`useAnimation + 6`),
-    // shoot 660, shootSpeed 8.75, knockBack 6, crit 20, rare 4, 16x16,
-    // value 300000, autoReuse.
-    ItemDef {
-        id: 3787,
-        name: "Sky Fracture",
-        max_stack: 9999,
-        tile: None,
-        place_style: 0,
-        wall: None,
-        projectile: Some(660),
-        damage: 38,
-        rare: 4,
-        use_time: 4,
-        use_animation: 12,
-        use_style: 5,
-        hold_style: 0,
-        auto_reuse: true,
-        head_slot: -1,
-        body_slot: -1,
-        leg_slot: -1,
-        defense: 0,
-        class: DamageClass::Magic,
-        crit: 20,
-        value: 300000,
-        knock_back: 6.0,
-        mana: 17,
-        use_ammo: 0,
-        ammo: 0,
-        channel: false,
-        reuse_delay: 18,
-        consumable: false,
-        use_turn: false,
-        buff_type: 0,
-        buff_time: 0,
-        shoot_speed: 8.75,
-        width: 16,
-        height: 16,
-        material: false,
-        potion: false,
-        heal_life: 0,
-        heal_mana: 0,
-        scale: 1.0,
-        stack: 1,
-        bait: 0,
-        pick: 0,
-        axe: 0,
-        hammer: 0,
-        accessory: false,
-    },
 ];
 
 /// The kind's defaults with the [`ITEM_CORRECTIONS`] overrides applied —
@@ -676,17 +513,16 @@ mod tests {
     fn test_DW_2_3_the_placeholder_band_neighbours_stay_untouched() {
         // The correction is one seam over three ids: every other row of the
         // 3263-3989 placeholder band still reads the generated row verbatim.
+        // The M6-SAVE-1 merge regenerated `itemdata.rs`, so the placeholder
+        // band reads its generated rows: the three staves answer their
+        // `Item.cs` values from the generated table (their own tests pin the
+        // values), and only 6171 rides the correction.
         for id in [3376u16, 3378, 3778, 3780, 3786, 3788] {
             let got = item(id).unwrap();
             assert!(std::ptr::eq(got, &ITEMS[id as usize]), "id {id} must not be shadowed");
-            assert_eq!(
-                (got.damage, got.class, got.use_time, got.value),
-                (15, DamageClass::Melee, 25, 50000),
-                "id {id} keeps the band's placeholder row"
-            );
         }
-        // The full-table sweep: only 3377/3779/3787 ride the corrections, and
-        // the corrected rows are not the generated ones.
+        // The full-table sweep: only 6171 rides the corrections, and the
+        // corrected row is not the generated one.
         for id in 0..ITEMS.len() as u16 {
             let got = item(id).unwrap();
             match ITEM_CORRECTIONS.iter().find(|d| d.id == id) {
@@ -697,6 +533,6 @@ mod tests {
                 ),
             }
         }
-        assert!(!std::ptr::eq(item(3377).unwrap(), &ITEMS[3377]));
+        assert!(!std::ptr::eq(item(6171).unwrap(), &ITEMS[6171]));
     }
 }

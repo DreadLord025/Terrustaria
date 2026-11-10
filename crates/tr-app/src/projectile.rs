@@ -20,6 +20,19 @@
 //!   `ai`/`localAI` zeroed (`:736-740`), `alpha = 0` (`:779`), `scale = 1f`
 //!   (`:320`/`:785`) — the aiStyle dispatch's arm-signature contract sits
 //!   over the `match data.ai_style` in [`ProjectilePool::update`]
+//! - the whip family (M4-PROJ-7): `DefaultToWhip()` `:10704-10718` (aiStyle
+//!   165), `AI_165_Whip()` `:47667-48270` (the swing machine - the curve and
+//!   the sweep live in [`tr_core::whip`]), `Projectile.Colliding`'s whip arm
+//!   `:15716-15737` (the swept-span multi-hit) and the on-hit arms
+//!   (`StatusNPC`'s `ApplyWhipDebuffs` `:11727-11750`, the per-type switch
+//!   `:13882-13956`); the tag stack itself is `tag_effects.rs`.
+//!
+//! The ammo-resolution rows (M3-ITEM-6, 2026-11-09): the `proj_data` block at
+//! the end of the match carries the kinds `Player.PickAmmo`
+//! (`Player.cs:53458-53683`) resolves, so `spawn_with_data_ai` no longer
+//! silently no-ops on them (Phase 1's deviation). The unported aiStyles
+//! 147/75/10/181 carry their vanilla value in the row and ride the documented
+//! stand-in dispatch (their AI ports are M4-PROJ's).
 //!
 //! NPC-side per-owner i-frames: `NPC.immune[256]` (decremented once per NPC
 //! update, `NPC.cs:90454-90459`), stored on [`crate::npc::Npc`].
@@ -484,6 +497,175 @@ pub struct ProjData {
 /// `:712-713`), `alpha = 0` (`:779`) and `scale = 1f` (`:785`).
 const RESET_STATE: (bool, i32, bool, i32, i32, f32) = (false, -2, false, -1, 0, 1.0);
 
+/// `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`) — the
+/// flight lifetime in **seconds** (`AI_099_2_Yoyos`'s `num2`,
+/// `Projectile.cs:67751`; `num = localAI[0] / 60f` at the default meleeSpeed).
+/// The factory default is **-1f — no timeout**: 547, 550, 551, 554, 555 and
+/// 603 are unlisted and return only on the channel release or the range cap
+/// (a verbatim source quirk, not a gap — recorded in ANALYSIS).
+const YOYO_LIFETIME: &[(u16, f32)] = &[
+    (541, 3.0),
+    (548, 5.0),
+    (542, 7.0),
+    (543, 6.0),
+    (544, 8.0),
+    (534, 9.0),
+    (564, 11.0),
+    (999, 11.0),
+    (545, 13.0),
+    (563, 30.0),
+    (562, 16.0),
+    (553, 12.0),
+    (546, 16.0),
+    (552, 15.0),
+    (549, 14.0),
+];
+
+/// `ProjectileID.Sets.YoyosMaximumRange` (`ProjectileID.cs:426`) — the string
+/// length in pixels (`AI_099_2_Yoyos`'s `num11`, `Projectile.cs:67862`); the
+/// unlisted kinds keep the factory default **200f**.
+const YOYO_MAX_RANGE: &[(u16, f32)] = &[
+    (541, 130.0),
+    (548, 170.0),
+    (542, 195.0),
+    (543, 207.0),
+    (544, 215.0),
+    (534, 220.0),
+    (564, 225.0),
+    (999, 225.0),
+    (545, 235.0),
+    (562, 320.0),
+    (563, 250.0),
+    (546, 275.0),
+    (552, 270.0),
+    (553, 330.0),
+    (547, 280.0),
+    (549, 290.0),
+    (554, 380.0),
+    (550, 370.0),
+    (551, 370.0),
+    (555, 360.0),
+    (603, 400.0),
+];
+
+/// `ProjectileID.Sets.YoyosTopSpeed` (`ProjectileID.cs:427`) — the flight's
+/// top speed in px/tick (`AI_099_2_Yoyos`'s `num9`, `Projectile.cs:67863`);
+/// the unlisted kinds keep the factory default **10f**.
+const YOYO_TOP_SPEED: &[(u16, f32)] = &[
+    (541, 9.0),
+    (548, 11.0),
+    (542, 12.5),
+    (543, 12.0),
+    (544, 13.0),
+    (534, 13.0),
+    (564, 14.0),
+    (999, 14.0),
+    (545, 14.0),
+    (562, 17.0),
+    (563, 16.0),
+    (546, 15.0),
+    (552, 14.0),
+    (553, 15.0),
+    (547, 17.0),
+    (549, 16.0),
+    (554, 22.0),
+    (550, 16.0),
+    (551, 16.0),
+    (555, 16.5),
+    (603, 17.5),
+];
+
+/// The three tables' lookups — the `CreateFloatSet(default, …)` semantics
+/// (`ProjectileID.cs:425-427`): an unlisted kind reads the factory default.
+fn yoyo_table(table: &[(u16, f32)], default: f32, kind: u16) -> f32 {
+    table
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or(default, |(_, v)| *v)
+}
+
+fn yoyo_lifetime(kind: u16) -> f32 {
+    yoyo_table(YOYO_LIFETIME, -1.0, kind)
+}
+
+fn yoyo_max_range(kind: u16) -> f32 {
+    yoyo_table(YOYO_MAX_RANGE, 200.0, kind)
+}
+
+fn yoyo_top_speed(kind: u16) -> f32 {
+    yoyo_table(YOYO_TOP_SPEED, 10.0, kind)
+}
+
+/// The Terrarian's beam scan's `Collision.CanHit` gate (`Projectile.cs:67804`,
+/// `Collision.cs:381+`): the two centers' tile walk. The C# `CanHit` is a
+/// box-vs-box LOS; the port walks the centers' segment against the solid,
+/// non-platform tiles (the same `tileSolid` shape `ai_spear`'s scan uses) —
+/// the approximation is recorded in ANALYSIS.
+fn yoyo_can_hit(world: &World, x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+    let steps = ((x2 - x1).abs().max((y2 - y1).abs()) / 8.0).ceil() as i32;
+    for s in 0..=steps.max(1) {
+        let t = s as f32 / steps.max(1) as f32;
+        let tx = (x1 + (x2 - x1) * t) / TILE_PX;
+        let ty = (y1 + (y2 - y1) * t) / TILE_PX;
+        let Some(tile) = world.tile(tx as i32, ty as i32) else {
+            continue;
+        };
+        if tile.active()
+            && tr_core::tiledata::TILE_SOLID.has(tile.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(tile.kind)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// The Terrarian's beam spawn — `AI_099_2_Yoyos`'s
+/// `Projectile.NewProjectile(…, 604, …)` (`Projectile.cs:67815`). The arm
+/// runs on one slot (it cannot reach the pool's slot array), so the spawn
+/// rides out like `Wiring`'s trap requests; the idStatic-10 slice is the
+/// beam's own `proj_data`.
+pub(crate) struct YoyoBeamRequest {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub knock_back: f32,
+}
+
+/// What one yoyo AI tick hands back to the pool: the owner-wide lifetime
+/// sweep (`Projectile.cs:67764-67771`) and the Terrarian's beam request —
+/// both write across the pool's slot array.
+#[derive(Default)]
+struct YoyoTick {
+    sweep: bool,
+    beam: Option<YoyoBeamRequest>,
+}
+
+/// `DefaultToYoyo`'s per-kind `scale` ladder (`Projectile.cs:6028-6067`) —
+/// the SetDefaults body; every other kind (and the unlisted yoyos) keeps the
+/// stock 1f.
+fn set_defaults_scale(kind: u16) -> f32 {
+    match kind {
+        547 => 1.1,
+        550 | 551 => 1.1,
+        554 => 1.2,
+        555 => 1.15,
+        563 => 1.05,
+        564 => 1.075,
+        603 => 1.15,
+        _ => 1.0,
+    }
+}
+
+/// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
+/// angle in radians.
+fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    let (s, c) = angle.sin_cos();
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
 /// families are M4-PROJ follow-ups. The magic (caster) families'
@@ -723,27 +905,27 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // penetrate -1 except the bolt) and the drama smoke 622.
             // `:6151-6160`'s StardustTowerMark (the 540): 20x20, aiStyle
             // 103, timeLeft 300, hostile.
-            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false),
+            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
             // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
             // timeLeft 600, tileCollide false.
-            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false),
+            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
             // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
             // ignoreWater, extraUpdates 2.
-            TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true),
+            TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
             // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
             VORTEX_LIGHTNING | VORTEX_PORTAL => {
-                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false)
+                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
-            VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false),
-            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false),
-            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false),
-            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false),
-            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false),
-            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true),
-            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false),
+            VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
+            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false, RESET_STATE),
+            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
+            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
+            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
+            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, RESET_STATE),
+            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
             // and the Corsair's musket ball 82 (10x10, aiStyle 1).
             PIRATE_ARROW => (
@@ -976,8 +1158,367 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the rider hook), alpha 255, `penetrate = 3`, `timeLeft =
             // 480`, `tileCollide = false`.
             BOOK_OF_SKULLS => (26.0, 26.0, 1, 3, 480, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            CODE1_YOYO
+            | WOOD_YOYO
+            | CORRUPT_YOYO
+            | CRIMSON_YOYO
+            | JUNGLE_YOYO
+            | CASCADE_YOYO
+            | CHIK_YOYO
+            | CODE2_YOYO
+            | RALLY_YOYO
+            | YELETS_YOYO
+            | REDS_YOYO
+            | VALKYRIE_YOYO
+            | AMAROK_YOYO
+            | HEL_FIRE_YOYO
+            | KRAKEN_YOYO
+            | THE_EYE_OF_CTHULHU_YOYO
+            | FORMAT_C_YOYO
+            | GRADIENT_YOYO
+            | VALOR_YOYO
+            | TERRARIAN_YOYO
+            | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The yoyo shots (M4-PROJ-4b): the four children the yoyo
+            // on-hit arms spawn — `SetDefaults` verbatim.
+            // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
+            // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
+            // `localNPCHitCooldown = -1`.
+            CASCADE_EXPLOSION => (32.0, 32.0, 189, 4, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
+            // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
+            EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // `CrystalShardMelee` (`:10636-10650`): 6×6, aiStyle 24,
+            // `penetrate = 1`, `timeLeft = 600`, idStatic-20.
+            CRYSTAL_SHARD_MELEE => (6.0, 6.0, 24, 1, 600, 0, false, false, false, RESET_STATE),
+            // `KrakenWave` (`:10656-10667`): 100×100, aiStyle 210,
+            // `timeLeft = 600`, `penetrate = -1`, idStatic-10.
+            KRAKEN_WAVE => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
+            // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
+            TERRARIAN_BEAM => (
+                14.0,
+                14.0,
+                115,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // The martian family's guns + the Dutchman's cannon — the
+            // `SetDefaults` rows packed into the data shape (the saucer
+            // family's four consts ride the origin/main set).
+            // The VortexHunter's dart (`Projectile.cs:6306-6315`): 10x10, aiStyle
+            // 1, hostile, penetrate -1 (alpha 255 = no fade).
+            VORTEX_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
+            // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
+            // timeLeft 600, tileCollide false.
+            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
+            // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
+            // ignoreWater, extraUpdates 2.
+            TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
+            // `:6282-6293`'s ritual markers (the 578 lightning + the 579
+            // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
+            VORTEX_LIGHTNING | VORTEX_PORTAL => (
+                32.0,
+                32.0,
+                108,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
+            // extraUpdates 4, ignoreWater.
+            VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
+            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false, RESET_STATE),
+            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
+            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
+            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
+            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, RESET_STATE),
+            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
+            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
+            // and the Corsair's musket ball 82 (10x10, aiStyle 1).
+            BLAND_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            SWORD_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                false,
+                false,
+                false, RESET_STATE),
+            MACE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            SCYTHE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                false,
+                false,
+                false, RESET_STATE),
+            COOL_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            FIRE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            THORN_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            RAINBOW_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            BONE_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            COB_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            CORRUPT_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            CRIMSON_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            METEOR_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            FLOWER_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            EEL_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            CONSTELLATION_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            MOON_LORD_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            SLIME_WHIP => (
+                18.0,
+                18.0,
+                165,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                false,
+                false,
+                false, RESET_STATE),
+            // The ammo-resolution rows (M3-ITEM-6 Phase 2): `friendly` is the
+            // pool default for every one of them and `ranged` has no consumer,
+            // so neither rides the tuple. The launcher rockets
+            // (`Projectile.cs:2222-2338`) — 14x14, aiStyle 16 (the bomb
+            // family), `penetrate = -1`; 133/136/139/142 add the
+            // local-immunity pair (the overlay below).
+            133..=144 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The Snowman Cannon's four rockets (`:4308-4320`) — the same row;
+            // their `scale = 0.9f` is dropped (no consumer), so the port keeps
+            // the full 14x14 box.
+            338..=341 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The 1.4.4 rocket family (`:7939-7952`) — the eight rockets each
+            // of the Grenade/Rocket/Proximity launchers resolves to (776-801)
+            // plus the Snowman Cannon's 803-810. 779/783 sit inside the C#
+            // range but no launcher's rocket resolves to them, so the guard
+            // leaves them row-less.
+            776..=801 | 803..=810 if kind != 779 && kind != 783 => (
+                14.0,
+                14.0,
+                16,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // The Celebration rockets (`:7584-7605` — both arms identical):
+            // 14x14, aiStyle 147, `penetrate = 1`, `extraUpdates = 2` and
+            // `timeLeft = 360 * MaxUpdates` = 360 × (`extraUpdates + 1`) = 1080
+            // (`MaxUpdates`'s getter, `:554-561`; `alpha = 255` dropped).
+            715..=718 => (14.0, 14.0, 147, 1, 1080, 2, true, false, false, RESET_STATE),
+            // The four gunProj rockets (`:6618-6630` 615, `:6767-6779` 630/705,
+            // `:7571-7582` 714): 22x22, aiStyle 75, `penetrate = -1`,
+            // `tileCollide = false` (the drawLayer/usesOwnerLight/ignoreWater
+            // fields have no consumer).
+            615 | 630 | 705 | 714 => (
+                22.0,
+                22.0,
+                75,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // The sand family (`:1248-1258` 42, `:1449-1462` 65, `:1470-1480`
+            // 68, `:4438-4449` 354): 10x10, aiStyle 10, `extraUpdates = 1`.
+            // The Sandgun's own 42 sets no penetrate (the stock 1), the three
+            // sand-block conversions `penetrate = -1`; their per-type
+            // knockBack (8 / 6) is dropped — the spawner's input wins.
+            42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // The arrow overrides — 117 the Bone Arrow (`:2058-2068`,
+            // `extraUpdates = 2`), 469 the Bee Arrow (`:5429-5441`,
+            // `alpha = 255` dropped), 485 the Hellwing (`:5604-5615` — 24x24,
+            // `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
+            // `penetrate = 3`) and 819 the Blood Rain arrow (`:7993-8002` —
+            // `extraUpdates = 1`, `alpha`/`hide` dropped): 10x10 aiStyle-1
+            // arrows, `timeLeft = 1200` (485's 24x24 box aside).
+            117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false, RESET_STATE),
+            469 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false, RESET_STATE),
+            495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false, RESET_STATE),
+            819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // The spray/ball ammo the not-consume windows resolve — the
+            // Flamethrower's Flames (`:1660-1670`: 6x6, aiStyle 193, pen 4,
+            // extraUpdates 2, `armorPenetration = 15` dropped; its immunity
+            // pair rides the overlay), the Clentaminator's solution spray
+            // (`:2338-2347`: 6x6, aiStyle 31, pen -1, extraUpdates 2,
+            // tileCollide false, `alpha`/`ignoreWater` dropped) and the Acorn
+            // Slingshot's acorn (`:10145-10149`: 20x20, aiStyle 16 — the port's
+            // `ai_bomb`, pen -1). Without these rows the wire would drain the
+            // ammo and then decline the spawn.
+            85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
+            145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
+            // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
+            // `ignoreWater` dropped — its local-immunity pair
+            // (`localNPCHitCooldown = 60`) rides the overlay below.
+            932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             _ => return None,
         };
+    let (state_local, state_local_cooldown) = match kind {
+        133 | 136 | 139 | 142 | 777 | 781 | 785 | 788 | 794 | 797 | 800 => (true, -1),
+        85 => (true, -1),
+        932 => (true, 60),
+        _ => (false, -2),
+    };
     let (
         uses_local_immunity,
         local_hit_cooldown,
@@ -996,12 +1537,40 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         tile_collide,
         arrow,
         trap,
-        uses_local_immunity,
-        local_hit_cooldown,
-        uses_id_static_immunity,
-        id_static_hit_cooldown,
+        // the post-hoc immunity overlay (M3-ITEM-6) adds the kinds it lists;
+        // every other row keeps its own state group.
+        uses_local_immunity: state_local || uses_local_immunity,
+        local_hit_cooldown: if state_local {
+            state_local_cooldown
+        } else {
+            local_hit_cooldown
+        },
+        // `DefaultToYoyo` sets no immunity slice (`:10764-10771`) — only the
+        // Terrarian pair carries the idStatic-10 (`:6068-6069`, `:6081-6082`);
+        // the M4-PROJ-4b yoyo shots carry their own (the shard idStatic-20,
+        // the Kraken wave idStatic-10).
+        uses_id_static_immunity: uses_id_static_immunity
+            || matches!(
+                kind,
+                TERRARIAN_YOYO | TERRARIAN_BEAM | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
+            ),
+        id_static_hit_cooldown: if uses_id_static_immunity {
+            id_static_hit_cooldown
+        } else if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM | KRAKEN_WAVE) {
+            10
+        } else if kind == CRYSTAL_SHARD_MELEE {
+            20
+        } else {
+            -1
+        },
         alpha,
-        scale,
+        // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
+        // other row carries its own scale in the state group.
+        scale: if YOYO_KINDS.contains(&kind) {
+            set_defaults_scale(kind)
+        } else {
+            scale
+        },
     })
 }
 
@@ -1186,7 +1755,7 @@ pub struct Projectile {
     pub extra_updates: u32,
     /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
     /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
-    pub ai: [f32; 3],
+    pub ai: [f32; 4],
     /// The C# `localAI[0..2]` (`Projectile.cs:336-338`, `maxAI = 3` `:79770`)
     /// — the second scratch array, reset to zero with `ai` by `SetDefaults`
     /// (`:736-740`). The magic families keep their phase counters there.
@@ -1209,13 +1778,6 @@ pub struct Projectile {
     /// the yoyo rotation spins by it (`Projectile.cs:68096`) and the pose
     /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
     pub direction: i32,
-    /// `Projectile.scale` from `SetDefaults` — the yoyo family's ladder; the
-    /// render row reads it, the AI does not.
-    pub scale: f32,
-    /// `Projectile.alpha` (the stock 0) — the render fade; the yoyo ghost sets
-    /// 255 (`:68034`) and the Terrarian beam's 115 arm fades it out
-    /// (`:34431-34436`).
-    pub alpha: i32,
     bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
@@ -1224,6 +1786,33 @@ pub struct Projectile {
     /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
     /// end-of-tick explosion pass (`Kill()`'s bomb path).
     pub detonated: bool,
+    /// The whip swing's `GetWhipSettings` cache — `itemAnimationMax *
+    /// MaxUpdates` (`Projectile.cs:48339`), written by
+    /// [`ProjectilePool::set_whip_params`] at spawn.
+    pub whip_settings: Option<tr_core::whip::WhipSettings>,
+    /// The whip's held-item `useAnimation` (`FillWhipControlPoints`'s
+    /// `ContentSamples.ItemsByType[heldItem.type].useAnimation`, `:48301`).
+    pub whip_use_animation: f32,
+    /// `Projectile.spriteDirection` (`:47679`).
+    pub sprite_direction: i32,
+    /// `WhipTagEffect.CanRunHitEffects`'s minion/sentry gate
+    /// (`GameContent/Items/WhipTagEffect.cs:81-85`): `minion || MinionShot ||
+    /// sentry || SentryShot`. Set by the minion/sentry spawns (M4-PROJ-8);
+    /// false until then — the tag damage math only fires for those shots.
+    pub is_summon_shot: bool,
+    /// `ApplyStatsFromSource`'s `tagEffectType` (`:11125`) — the whip's item
+    /// id when the firing item carries a `UniqueTagEffects` row (M4-PROJ-7).
+    pub tag_effect_type: u16,
+    /// `ApplyStatsFromSource`'s `bonusTagDamage` (`:11127`) — the item's
+    /// (or the parent's) bonus tag damage, the minion prefixes' row.
+    pub bonus_tag_damage: i32,
+    /// `AI_103`'s mark spawn (`Projectile.cs:33467-33475`'s
+    /// `NPC.NewNPC(..., localAI[0])`): the (kind, x, y, localai0, localai1) the
+    /// world_sim's projectile pass resolves into the NPC vec.
+    pub wants_mark_spawn: Option<(u16, f32, f32, f32, f32)>,
+    /// The 578's 580 spawn (`Projectile.cs:33838-33841`): the (x, y,
+    /// vx, vy, ai0) payload the world_sim resolves into the pool.
+    pub wants_ritual_bolt: Option<(f32, f32, f32, f32, f32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -1254,7 +1843,7 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
-            ai: [0.0; 3],
+            ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
             scale: 1.0,
@@ -1264,12 +1853,18 @@ impl Default for Projectile {
             arrow: false,
             trap: false,
             direction: 1,
-            scale: 1.0,
-            alpha: 0,
             bounces: 0,
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
+            whip_settings: None,
+            whip_use_animation: 0.0,
+            sprite_direction: 1,
+            is_summon_shot: false,
+            tag_effect_type: 0,
+            bonus_tag_damage: 0,
+            wants_mark_spawn: None,
+            wants_ritual_bolt: None,
         }
     }
 }
@@ -4841,7 +5436,7 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
-            ai: [1.0, 0.0, 0.0],
+            ai: [1.0, 0.0, 0.0, 0.0],
             // The sand ball's `SetDefaults` arm (`:1131-1140`) touches neither
             // `alpha` nor `scale` — the reset values (`:779`, `:785`) hold.
             local_ai: [0.0; 3],
@@ -5055,7 +5650,7 @@ impl ProjectilePool {
             uses_id_static_immunity: data.uses_id_static_immunity,
             id_static_hit_cooldown: data.id_static_hit_cooldown,
             extra_updates: data.extra_updates,
-            ai: [ai0, ai1, 0.0],
+            ai: [ai0, ai1, 0.0, 0.0],
             // `SetDefaults` zeroes both scratch arrays (`:736-740`) — only the
             // C# `NewProjectile`'s `ai0/ai1` arguments ride along.
             local_ai: [0.0; 3],
@@ -5066,7 +5661,6 @@ impl ProjectilePool {
             tile_collide: data.tile_collide,
             arrow: data.arrow,
             trap: data.trap,
-            scale: data.scale,
             bounces: 0,
             falling_tile: None,
             detonated: false,
@@ -5105,6 +5699,286 @@ impl ProjectilePool {
     /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
     /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
     /// roll), so do the yoyos and the throw's crit roll.
+    /// The tag-damage math of `Damage_PVE_Inner`'s `12919-12933` block: the
+    /// player's stack `ModifyHit`es every active tag that marks this NPC, the
+    /// damage goes through `SummonTagDamageMultiplier[type]` and the total
+    /// multiplier, and the tag's forced crit wins over the slot's.
+    /// `WhipTagEffect.CanRunHitEffects` (`:75-86`) gates on the summon/sentry
+    /// shot kinds — the port has none yet, so `is_summon_shot` (set by
+    /// M4-PROJ-8's minion/sentry spawns) rejects everything until then.
+    fn tag_damage_for(
+        &self,
+        slot: usize,
+        npc_idx: u16,
+        base: i32,
+        crit: bool,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> (i32, bool) {
+        let p = &self.slots[slot];
+        if !p.is_summon_shot || p.owner == 255 {
+            return (base, crit);
+        }
+        let Some(player) = player else {
+            return (base, crit);
+        };
+        let mut changes = tr_core::whip::TagDamageChanges::none();
+        for tag_type in player.tag_effects.active_types() {
+            player
+                .tag_effects
+                .modify_hit(npc_idx as usize, tag_type, &mut changes, rng);
+        }
+        let crit = changes.crit.unwrap_or(crit);
+        (
+            crate::tag_effects::apply_tag_damage(base, &changes, p.bonus_tag_damage, p.kind),
+            crit,
+        )
+    }
+    /// `TagEffectStack.OnHit` (`Projectile.cs:13658` → `TagEffectStack.cs:115-121`):
+    /// the proc-window consume. The proc bodies' spawns are the deferred
+    /// follow-ups; the consume decision and the Constellation's immediate
+    /// `TryEnableProcOnNPC` (`WhipTagEffect_Constellation.cs:10-14`) land here.
+    /// `:13707-13809` — the yoyo on-hit spawns (M4-PROJ-4b). All four arms
+    /// share the owner's `yoyoHitCounter` in the increment form (the same
+    /// counter the doublings peeked before the strike), and all are
+    /// owner-local in the C# (`this.owner == Main.myPlayer`) — the pool's
+    /// `damage_pve` only runs for locally-simulated slots, which is the
+    /// port's equivalent gate.
+    fn yoyo_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        hit: Vec2,
+        mut player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let kind = self.slots[slot].kind;
+        let (owner, damage, kb, center) = {
+            let p = &self.slots[slot];
+            (p.owner, p.damage, p.knock_back, p.pos + Vec2::splat(SIZE * 0.5))
+        };
+        let dropped = self.slots[slot].ai[0] == -2.0;
+        match kind {
+            CASCADE_YOYO if !dropped => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(2, true) {
+                    return;
+                }
+                let f = rng.next_float() * std::f32::consts::TAU;
+                // The `num29` floor/clamp (`:13734-13737`): the C# seeds the
+                // target distance at 208 when the scan finds none, which
+                // floors the shot's ai1 at dist/200.
+                let floor = 208.0 / 200.0;
+                let jitter = 0.22 + 0.22 * rng.next_float();
+                let ai1 = jitter.max(floor).min(1.5);
+                let spawned = self.spawn_with_data_ai_owned(
+                    CASCADE_EXPLOSION,
+                    owner,
+                    center.x,
+                    center.y,
+                    f.cos() * ai1,
+                    f.sin() * ai1,
+                    (damage as f32 * 2.0) as i32,
+                    kb,
+                    0.0,
+                    ai1,
+                );
+                // `localNPCImmunity[victimIndex] = -1` (`:13746`): the -1
+                // sentinel blocks that NPC for the shot's whole life.
+                if let Some(s) = spawned {
+                    self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                }
+            }
+            KRAKEN_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(4, true) {
+                    return;
+                }
+                let dir = hit - center;
+                let len = dir.length();
+                let dir = if len <= 1.0e-6 {
+                    Vec2::new(1.0, 0.0)
+                } else {
+                    dir / len
+                };
+                for l in [-2i32, 0, 2] {
+                    let v = rotate(dir, (l as f32) * std::f32::consts::TAU * 0.05)
+                        * (18.0 + 8.0 * rng.next_float());
+                    let _ = self.spawn_with_data_ai_owned(
+                        KRAKEN_WAVE,
+                        owner,
+                        center.x,
+                        center.y,
+                        v.x,
+                        v.y,
+                        ((damage as f32) * 0.5) as i32,
+                        kb,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
+            CHIK_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(3, true) {
+                    return;
+                }
+                for m in 0..5 {
+                    let angle = rng.next_float() * std::f32::consts::TAU;
+                    let mag = 8.0;
+                    let spawned = self.spawn_with_data_ai_owned(
+                        CRYSTAL_SHARD_MELEE,
+                        owner,
+                        center.x,
+                        center.y,
+                        angle.cos() * mag,
+                        angle.sin() * mag,
+                        damage,
+                        kb,
+                        if m != 0 { 1.0 } else { 0.0 },
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        let k = self.slots[s].kind;
+                        self.id_static.insert((k, npc_idx), self.update_count + 20);
+                    }
+                }
+            }
+            THE_EYE_OF_CTHULHU_YOYO => {
+                let Some(pl) = player.as_deref_mut() else { return };
+                if !pl.every_some_yoyo_hits(7, true) {
+                    return;
+                }
+                let f = rng.next_float() * std::f32::consts::TAU;
+                let floor = 80.0 / 200.0;
+                let jitter = 0.22 + 0.22 * rng.next_float();
+                let ai1 = jitter.max(floor).min(1.5);
+                let spawned = self.spawn_with_data_ai_owned(
+                    EYE_OF_CTHULHU_DASH,
+                    owner,
+                    center.x,
+                    center.y,
+                    f.cos() * 14.0,
+                    f.sin() * 14.0,
+                    (damage as f32 * 2.0) as i32,
+                    kb,
+                    0.0,
+                    ai1,
+                );
+                if let Some(s) = spawned {
+                    self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                }
+            }
+            _ => {}
+        }
+    }
+    fn tag_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        let (tag_type, proj_kind) = {
+            let p = &self.slots[slot];
+            (p.tag_effect_type, p.kind)
+        };
+        if tag_type == 0 {
+            return;
+        }
+        if let Some(p) = player.as_deref_mut() {
+            p.tag_effects.on_hit(npc_idx as usize, tag_type, proj_kind);
+            if tr_core::whip::tag_effect(tag_type)
+                .is_some_and(|e| tr_core::whip::constellation_enables_proc_on_tag(e))
+            {
+                // `WhipTagEffect_Constellation.OnTaggedHit` — the proc arms
+                // on the very hit that tagged it.
+                p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+            }
+        }
+    }
+    /// `ApplyWhipDebuffs` (`Projectile.cs:11727-11750`, called from `StatusNPC`
+    /// at `:13580`).
+    fn whip_debuffs(&mut self, slot: usize, npc: &mut Npc, rng: &mut dyn tr_core::loot::DropRng) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            FIRE_WHIP => npc.buffs.add_buff(323, 240), // Hellfire
+            COOL_WHIP => npc.buffs.add_buff(324, 240), // Frostburn
+            THORN_WHIP => {
+                // `:11738` — the 1/5 roll, from the item stream.
+                if rng.next_range(0, 5) == 0 {
+                    npc.buffs.add_buff(20, 180); // Poisoned
+                }
+            }
+            EEL_WHIP => npc.buffs.add_buff(362, 240), // Electrified
+            SCYTHE_WHIP => npc.buffs.add_buff(310, 240), // Oiled
+            _ => {}
+        }
+    }
+    /// The aiStyle-165 on-hit arms after the tag application
+    /// (`Projectile.cs:14258-13956`'s `TryDoingOnHitEffects` positions): the
+    /// `MinionAttackTargetNPC` override (`:14258-14263`) and the per-type
+    /// switch (`:13882-13956`) with the tag stack's seams filled.
+    fn whip_on_hit(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        let kind = self.slots[slot].kind;
+        let tag_type = self.slots[slot].tag_effect_type;
+        // `:14258-14263`: every aiStyle-165 hit retargets the minions.
+        if let Some(p) = player.as_deref_mut() {
+            p.minion_attack_target_npc = npc_idx as i16;
+        }
+        // `:13882-13956`: the per-type switch.
+        match kind {
+            FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
+                // `:13907-13911`: the first hit of this slot arms the proc
+                // window in the player's stack.
+                if self.slots[slot].local_ai[0] == 0.0 {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                    }
+                }
+            }
+            COOL_WHIP => {
+                // `:13923` — the unconditional player buff grant (the deferred
+                // 917 snowflake spawn waits on the derived buff gate).
+                if let Some(p) = player.as_deref_mut() {
+                    p.buffs.add_buff(312, 180);
+                }
+            }
+            COB_WHIP => {
+                // `:13934` — same shape for the CobWhip (the deferred 1036
+                // spark + the 365 gate).
+                if let Some(p) = player.as_deref_mut() {
+                    p.buffs.add_buff(365, 180);
+                }
+            }
+            SWORD_WHIP | EEL_WHIP | MOON_LORD_WHIP => {
+                // `:13947-13951`: the proc arms on every hit.
+                if let Some(p) = player.as_deref_mut() {
+                    p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+                }
+            }
+            CONSTELLATION_WHIP => {
+                // `:13938`: the first hit with the proc window armed spawns
+                // the star fan (deferred) and clears every proc window.
+                let armed = player
+                    .as_deref()
+                    .is_some_and(|p| p.tag_effects.can_proc(tag_type, npc_idx as usize));
+                if self.slots[slot].local_ai[0] == 0.0 && armed {
+                    self.slots[slot].local_ai[0] = 1.0;
+                    if let Some(p) = player.as_deref_mut() {
+                        p.tag_effects.remove_all_procs(tag_type);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn update(
         &mut self,
         world: &mut World,
@@ -5225,6 +6099,106 @@ impl ProjectilePool {
                         // retarget reads `Main.npc` and the owner gate.
                         129 => {
                             self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
+                        }
+                        1 => self.slots[i].ai_arrow(world),
+                        3 => self.slots[i].ai_boomerang(world, owner),
+                        14 => self.slots[i].ai_spear(world),
+                        16 => self.slots[i].ai_bomb(world),
+                        115 => self.slots[i].ai_yoyo_beam(world),
+                        210 => self.slots[i].ai_yoyo_shot(world),
+                        82 => {
+                            // `AI_082`'s homing target: the owner's centre
+                            // (`Player.FindClosest`'s single-player stand-in).
+                            let player = owner.unwrap_or((0.0, 0.0));
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_phasmal_eye(npcs, player)
+                        }
+                        83 => self.slots[i].ai_phasmal_sphere(&npcs[..]),
+                        84 => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        85 => {
+                            if let Some(p) = player.as_deref_mut() {
+                                self.slots[i].ai_moon_leech(&npcs[..], p);
+                            }
+                        }
+                        102 => {
+                            let player = owner.unwrap_or((0.0, 0.0));
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_nebula_eye(npcs, player)
+                        }
+                        103 => {
+                            let npcs = &npcs[..];
+                            self.slots[i].ai_stardust_mark(&*world, npcs)
+                        }
+                        122 => {
+                            // `:34927-34929`'s homing run, then the contact's
+                            // shield spend (`NPC.cs:72944-72955`).
+                            let (hit, dmg) = {
+                                let slot = &mut self.slots[i];
+                                (slot.ai_tower_damage_bolt(&npcs[..]), slot.damage)
+                            };
+                            if hit {
+                                self.slots[i].active = false;
+                                let tower = self.slots[i].ai[0] as usize;
+                                let shield = match tower {
+                                    0 => &mut world.tower_shield_solar,
+                                    1 => &mut world.tower_shield_vortex,
+                                    2 => &mut world.tower_shield_nebula,
+                                    _ => &mut world.tower_shield_stardust,
+                                };
+                                // The clamp `:72946-72948`'s shape.
+                                *shield = (*shield - dmg).max(0);
+                            }
+                        }
+                        99 => {
+                            // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
+                            // active slot below this index, same owner and
+                            // kind, `ai[0] >= -1f` — the double yoyo (the Yoyo
+                            // Glove's second copy).
+                            let (slot_owner, slot_kind) = {
+                                let p = &self.slots[i];
+                                (p.owner, p.kind)
+                            };
+                            let flag = self.slots[..i].iter().any(|p| {
+                                p.active
+                                    && p.owner == slot_owner
+                                    && p.kind == slot_kind
+                                    && p.ai[0] >= -1.0
+                            });
+                            let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
+                            // `:67764-67771` — the sweep flips the whole
+                            // owner's aiStyle-99 set with `ai[0] >= 0f` to the
+                            // return state.
+                            if tick.sweep {
+                                for p in self.slots.iter_mut() {
+                                    if p.active
+                                        && p.owner == slot_owner
+                                        && YOYO_KINDS.contains(&p.kind)
+                                        && p.ai[0] >= 0.0
+                                    {
+                                        p.ai[0] = -1.0;
+                                    }
+                                }
+                            }
+                            // `:67815` — the Terrarian's beam spawn.
+                            if let Some(b) = tick.beam {
+                                self.spawn_with_data(
+                                    TERRARIAN_BEAM,
+                                    b.x,
+                                    b.y,
+                                    b.vx,
+                                    b.vy,
+                                    b.damage,
+                                    b.knock_back,
+                                );
+                            }
+                        }
+                        165 => {
+                            // `AI_165_Whip` (`:47667-48270`): the swing
+                            // machine. The Moon Lord whip's extra arms are
+                            // pool spawns, so the request comes back out.
+                            if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng) {
+                                self.spawn_whip_arm(i, arm, owner);
+                            }
                         }
                         _ => {}
                     }
@@ -8918,6 +9892,7 @@ mod phasmal_projectile_tests {
             arrow: false,
             trap: false,
             bounces: 0,
+            blast_spawned: false,
         }
     }
 
@@ -9140,6 +10115,7 @@ mod ritual_projectile_tests {
             arrow: false,
             trap: false,
             bounces: 0,
+            blast_spawned: false,
         }
     }
 
@@ -9407,7 +10383,7 @@ mod widened_state_tests {
         assert_eq!((p.w, p.h), (14.0, 14.0));
         assert!(p.trap);
         assert_reset_defaults(p);
-        assert_eq!(p.ai, [0.0, 0.0, 0.0], "`spawn_with_data` passes ai0/ai1 0");
+        assert_eq!(p.ai, [0.0, 0.0, 0.0, 0.0], "`spawn_with_data` passes ai0/ai1 0");
     }
 
     #[test]
@@ -9420,7 +10396,7 @@ mod widened_state_tests {
             .spawn_with_data_ai(EXPLOSIVES_BLAST, 1.0, 2.0, 0.0, 0.0, 500, 10.0, 7.0, -3.0)
             .unwrap();
         let p = &pool.slots[slot];
-        assert_eq!(p.ai, [7.0, -3.0, 0.0]);
+        assert_eq!(p.ai, [7.0, -3.0, 0.0, 0.0]);
         assert_eq!(p.local_ai, [0.0; 3]);
         assert_reset_defaults(p);
     }
@@ -9446,6 +10422,8 @@ mod widened_state_tests {
 
     #[test]
     fn test_dw_1_2_set_immunity_still_overrides_the_row_default() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // The `set_immunity` path keeps working on top of the widened spawn:
         // the C# sets the cooldown in the per-type `SetDefaults`
         // (`ApplyGemStaffStats`'s 60 ticks, `:10683-10689` — Phase 2 rides
@@ -9485,10 +10463,10 @@ mod widened_state_tests {
         // The gate the cooldown arms still bites: one hit, then the local
         // entry holds the re-hits off for 12 ticks.
         let hp0 = npc.hp;
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert_eq!(npc.hp, hp0 - 10);
         assert_eq!(pool.slots[slot].penetrate, 2);
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert_eq!(npc.hp, hp0 - 10, "the 12-tick cooldown gates the re-hit");
     }
 
@@ -9653,6 +10631,8 @@ mod magic_data_tests {
 
     #[test]
     fn test_dw_2_2_the_gem_bolt_rows_spawn_with_the_local_immunity() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // DW-2.2: `ApplyGemStaffStats` (`Projectile.cs:10683-10689`) —
         // friendly, `usesLocalNPCImmunity = true`, `localNPCHitCooldown =
         // 60`, `timeLeft = 300` — rides the row onto the slot through
@@ -9704,9 +10684,9 @@ mod magic_data_tests {
         p.max_penetrate = 3;
         p.penetrate = 3;
         let hp0 = npc.hp;
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert_eq!(npc.hp, hp0 - 10);
-        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None);
+        pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert_eq!(npc.hp, hp0 - 10, "the 60-tick cooldown gates the re-hit");
     }
 
@@ -9775,30 +10755,46 @@ mod magic_ai_tests {
 
     /// One pool update with no NPC in range.
     fn step(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(w, &mut npcs, None, None);
+        pool.update(w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
     }
 
     /// The `tick(world, pool, npc)` fixture of the main `mod tests`, for the
     /// calls that need an NPC slice.
     fn tick(world: &mut World, pool: &mut ProjectilePool, npc: &mut Npc) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         for v in npc.immune.iter_mut() {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None);
+        pool.update(
+            world,
+            std::slice::from_mut(npc),
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
     }
 
     /// The same fixture over a whole `Vec<Npc>` — the targeting arms read the
     /// `Main.npc` slice, so the scan tests hand the pool several at once.
     fn tick_npcs(world: &mut World, pool: &mut ProjectilePool, npcs: &mut [Npc]) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         for n in npcs.iter_mut() {
             for v in n.immune.iter_mut() {
                 *v = (*v - 1).max(0);
             }
             n.hurt_cd = (n.hurt_cd - 1.0 / 60.0).max(0.0);
         }
-        pool.update(world, npcs, None, None);
+        pool.update(world, npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
     }
 
     // ---------------------------------------------------------------- DW-3.1
@@ -10807,6 +11803,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_dw_3_2_the_book_of_skulls_burns_time_left_inside_a_solid_tile() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:56794-56800`: standing in a solid tile the skull spends 33 ticks
         // a tick (its `tileCollide = false` flight lets it get there), plus the
         // 1 the pool's exit tail ages anyway.
@@ -10825,7 +11823,7 @@ mod magic_ai_tests {
                 0.0,
             )
             .unwrap();
-        pool.update(&mut w, &mut npcs, None, None);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert_eq!(pool.slots()[slot].time_left, 480 - 1 - 33);
         assert!(pool.slots()[slot].active, "it survives the drain");
     }
@@ -11318,6 +12316,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_dw_4b_the_spell_holds_the_aim_while_the_channel_is_open() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:43239-43249`: the channel keeps `ai[0..1]` on the clamped
         // `MouseWorld` while the held item shoots this kind.
         let mut p = crate::player::Player::spawn(&world());
@@ -11336,8 +12336,13 @@ mod magic_ai_tests {
             &mut w,
             &mut npcs,
             Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            None,
             Some(&mut p),
-        );
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            false,
+            );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], 500.0, "the aim X rides the channel target");
         assert_eq!(spell.ai[1], 400.0, "the aim Y rides the channel target");
@@ -11345,6 +12350,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_dw_4b_the_spell_releases_finds_a_target_and_floors_the_life() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:43250-43271`: the release drops the aim to −1, hunts a target
         // within line of sight, and the aiming floor holds `timeLeft` past
         // 60; a miss flies out at the cruise speed 32.
@@ -11365,8 +12372,13 @@ mod magic_ai_tests {
             &mut w,
             &mut npcs,
             Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            None,
             Some(&mut p),
-        );
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            false,
+            );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], -1.0, "the release clears the aim");
         assert_eq!(spell.ai[1], 0.0, "the found target rides ai[1] as the index + 1");
@@ -11385,8 +12397,13 @@ mod magic_ai_tests {
             &mut w,
             &mut npcs,
             Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            None,
             Some(&mut p),
-        );
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            false,
+            );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[1], -1.0, "a miss leaves the slot indexless");
         assert!(
@@ -11398,6 +12415,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_dw_4b_the_lost_spell_caps_the_life_at_300() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:43341-43350`: a released spell with no target walks its flight
         // to 32 and caps `timeLeft` at 300.
         let mut pool = ProjectilePool::new();
@@ -11409,7 +12428,7 @@ mod magic_ai_tests {
         pool.slots_mut()[slot].time_left = 900;
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         let spell = &pool.slots()[slot];
         assert!(
             spell.time_left <= 300,
@@ -11518,6 +12537,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_dw_4b_the_spirit_flame_retargets_inside_400f_and_caps_the_life() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:36202-36308`: the 659's parameters — the 400f retarget into
         // `ai[0]` with the life extended to 420, the −1 death at 5 and the
         // −2 wait cap at 240, and the tracking blend toward the target.
@@ -11553,7 +12574,7 @@ mod magic_ai_tests {
             .unwrap();
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert!(
             pool.slots()[slot].time_left <= 5,
             "the aimless flame dies at 5"
@@ -11567,7 +12588,7 @@ mod magic_ai_tests {
         pool.slots_mut()[slot].time_left = 900;
         let mut w = world();
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         assert!(
             pool.slots()[slot].time_left <= 240,
             "the waiting flame caps at 240"
@@ -11578,6 +12599,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_fix_4b_the_released_spell_blends_at_most_0p2() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // `:43292-43295`: the aim blend wraps the ramp in
         // `MathHelper.Lerp(0f, 0.2f, ...)`, so the velocity never snaps the
         // whole way to the approach vector. A released spell with a target
@@ -11594,7 +12617,7 @@ mod magic_ai_tests {
             10.0 * TILE_PX,
             SlimeVariant::Blue,
         )];
-        pool.update(&mut w, &mut npcs, None, None);
+        pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(), &mut rng, 0, false);
         let spell = &pool.slots()[slot];
         // The blend cap: the flight stays in the approach direction but only
         // 20% toward it, so |v| is at most 32 * 1.2 = 38.4 and the direction
@@ -11613,6 +12636,8 @@ mod magic_ai_tests {
 
     #[test]
     fn test_fix_4b_the_target_hunt_stops_at_the_800f_radius() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
         // The parameterless overload's 800f default (`:45628`): a target
         // past it is not acquired.
         let mut pool = ProjectilePool::new();
@@ -11632,8 +12657,13 @@ mod magic_ai_tests {
             &mut w,
             &mut npcs,
             Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            None,
             Some(&mut p),
-        );
+            YoyoInputs::default(),
+            &mut rng,
+            0,
+            false,
+            );
         let spell = &pool.slots()[slot];
         assert_eq!(spell.ai[0], -1.0, "the release runs");
         assert_eq!(spell.ai[1], -1.0, "no target past the 800f radius");

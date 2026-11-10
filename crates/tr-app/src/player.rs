@@ -662,6 +662,47 @@ pub struct Player {
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
     /// pixels. `Vec2::ZERO` while not channelling.
     pub channel_target: Vec2,
+    // ------------------------------- the ammo mastery layer (M3-ITEM-6)
+    // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
+    // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
+    // the ×1.1 speed fuse (`:53543`). Cleared and re-derived per tick by the
+    // grant seam in `world_sim/player.rs` (`ResetEffects` `:18605`).
+    pub magic_quiver: bool,
+    /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
+    /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
+    /// damage (`:53537-53541`).
+    pub has_molten_quiver: bool,
+    /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
+    /// +1 ammo damage on arrows (`:53548`).
+    pub acc_sharp_barb: bool,
+    /// `Player.ammoBox` (`Player.cs:1982`): buff 93, the Ammo Box (`:10080`) —
+    /// the 1/5 roll arm on ANY ammo (`:53599`).
+    pub ammo_box: bool,
+    /// `Player.ammoPotion` (`Player.cs:1984`): buff 112, the Ammo Reservation
+    /// (`:10195`) — the 1/5 roll arm on ANY ammo (`:53603`).
+    pub ammo_potion: bool,
+    /// `Player.huntressAmmoCost90` (`Player.cs:1960`): 3804/4983 (`:13179`,
+    /// `:13634`) — the 1/10 roll arm (`:53643`).
+    pub huntress_ammo_cost90: bool,
+    /// `Player.chloroAmmoCost80` (`Player.cs:1958`): 1002 (`:13649`) — the 1/5
+    /// roll arm (`:53647`).
+    pub chloro_ammo_cost80: bool,
+    /// `Player.ammoCost80` (`Player.cs:1962`): 1549/3878 (`:13715`, `:13222`) —
+    /// the 1/5 roll arm (`:53651`).
+    pub ammo_cost80: bool,
+    /// `Player.ammoCost75` (`Player.cs:1964`): 2758 (`:13908`) — the 1/4 roll
+    /// arm (`:53655`).
+    pub ammo_cost75: bool,
+    /// `Player.archery` (`Player.cs:2286`): buff 16, the Archery Potion
+    /// (`:10018`) — the ×1.2 speed fuse capped at 20 (`:53560`).
+    pub archery: bool,
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state.
+    pub ammo_cycling: crate::ammo::AmmoCycling,
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
+    // granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
+    // the offset/cooldown are written inside a successful pick (`:53569-53577`)
 }
 
 impl Player {
@@ -883,6 +924,18 @@ impl Player {
             channel: false,
             channel_item: 0,
             channel_target: Vec2::ZERO,
+            magic_quiver: false,
+            has_molten_quiver: false,
+            acc_sharp_barb: false,
+            ammo_box: false,
+            ammo_potion: false,
+            huntress_ammo_cost90: false,
+            chloro_ammo_cost80: false,
+            ammo_cost80: false,
+            ammo_cost75: false,
+            archery: false,
+            ammo_cycling: crate::ammo::AmmoCycling::default(),
+            yoyo_hit_counter: -1,
         }
     }
 
@@ -4209,6 +4262,21 @@ impl Player {
         out.prev_gfx_off_y = 0.0;
         out
     }
+    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
+        crate::ammo::AmmoFlags {
+            has_molten_quiver: self.has_molten_quiver,
+            magic_quiver: self.magic_quiver,
+            acc_sharp_barb: self.acc_sharp_barb,
+            archery: self.archery,
+            ammo_box: self.ammo_box,
+            ammo_potion: self.ammo_potion,
+            huntress_ammo_cost90: self.huntress_ammo_cost90,
+            chloro_ammo_cost80: self.chloro_ammo_cost80,
+            ammo_cost80: self.ammo_cost80,
+            ammo_cost75: self.ammo_cost75,
+        }
+    }
+
 
     /// Deterministic identity for the G6 world-range cache.
     pub fn render_key(&self) -> u32 {

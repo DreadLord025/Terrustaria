@@ -853,6 +853,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
+                            // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
+                            // the whip's tag row off the firing item + the
+                            // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
+                            // `timeToFlyOut` inputs (the prefixed
+                            // `itemAnimationMax`).
+                            let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+                                held.kind
+                            } else {
+                                0
+                            };
+                            let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+                            let animation_max =
+                                held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+                            app.projectiles
+                                .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                         }
                     }
                     if def.consumable {
