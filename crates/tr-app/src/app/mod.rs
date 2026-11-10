@@ -200,6 +200,10 @@ pub(crate) struct App {
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
+    /// BUG-11: `Main.ingameOptionsWindow` (`Main.cs:2025`) — the in-game
+    /// options window the inventory's Settings button opens
+    /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
+    pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
@@ -445,6 +449,16 @@ pub(crate) struct App {
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
     pub(crate) smart_cursor: tr_core::smart_cursor::ContinuityState,
+    /// `Main.SmartCursorWanted_Mouse` (`Main.cs:2011`, the mouse's
+    /// `SmartCursorIsUsed`, `:2889`): the **runtime** smart-cursor state,
+    /// flipped on the left-Shift press edge
+    /// (`Player.TryToToggleSmartCursor`, `Player.cs:24867`/`:28814-28820`) and
+    /// gating the lookup (`world_sim/smart_cursor::enabled`). Vanilla starts
+    /// it off (`Main.cs:67179`), so the port's default is `false`; the
+    /// persisted `settings.smart_cursor_toggle` is the toggle-mode flag
+    /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
+    /// this state.
+    pub(crate) smart_cursor_used: bool,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -1025,6 +1039,33 @@ impl App {
             self.favorite_slots.push(idx);
         }
         12
+    }
+
+    /// `Main.PendingPlayer`'s favourites on the front end
+    /// (`UICharacterSelect.cs:110`): a card's `.plr` bitfield hydrates the
+    /// live slots when the character is played (BUG-03). The bits are the
+    /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
+    pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
+        let mut slots = Vec::new();
+        for i in 0..crate::item::INV {
+            if bits & (1 << i) != 0 {
+                slots.push(i);
+            }
+        }
+        self.favorite_slots = slots;
+    }
+
+    /// The save-side mirror of [`Self::hydrate_favorites`]: the live
+    /// `favorite_slots` flattened into the `.plr` bitfield
+    /// (`Player.cs:54820-54824`).
+    pub(crate) fn favorite_bits(&self) -> u64 {
+        let mut bits = 0u64;
+        for &i in &self.favorite_slots {
+            if i < crate::item::INV {
+                bits |= 1 << i;
+            }
+        }
+        bits
     }
 
     pub(crate) fn is_favorite(&self, idx: usize) -> bool {
@@ -2432,6 +2473,8 @@ impl App {
             mine_timer: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,

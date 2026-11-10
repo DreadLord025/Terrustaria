@@ -39,6 +39,10 @@ pub struct PlayerEntry {
     /// The `.plr` file a disk-backed card erases; `None` for the session
     /// stand-in and the fakes.
     pub path: Option<PathBuf>,
+    /// `Item.favorited`'s per-inventory-slot bits from the `.plr`
+    /// (`Player.cs:54820-54824`, the read at `:55340-55362` ≥ 114) — the
+    /// App's `favorite_slots` hydrate from these on Play (BUG-03).
+    pub inv_favorites: u64,
     /// The appearance the character-select preview draws
     /// (`UICharacter.cs:104-119`'s `Main.PlayerRenderer.DrawPlayer`, BUG-02).
     /// `PlayerFile`'s seven RGB triplets read at `player_file.rs:238-242`
@@ -268,6 +272,7 @@ pub fn list_players(
             path: None,
             // `new Player()`'s colour initializers (`Player.cs:2554-2566`).
             appearance: Appearance::default(),
+            inv_favorites: 0,
         });
     }
     let mut disk = Vec::new();
@@ -308,6 +313,7 @@ pub fn list_players(
                             file.shoe_color,
                         ],
                     },
+                    inv_favorites: file.inv_favorites,
                 });
             }
         }
@@ -455,6 +461,7 @@ mod tests {
             deletable: true,
             path: None,
             appearance: Appearance::default(),
+            inv_favorites: 0,
         }
     }
 
@@ -591,6 +598,7 @@ mod tests {
             deletable: false,
             path: None,
             appearance: Appearance::default(),
+            inv_favorites: 0,
         };
         assert_eq!(
             list_players(None, Some(session.clone()), 0),
@@ -647,6 +655,7 @@ mod tests {
             pants_color: [255, 230, 175],
             shoe_color: [160, 105, 60],
             inventory,
+            inv_favorites: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -674,6 +683,7 @@ mod tests {
             deletable: false,
             path: None,
             appearance: Appearance::default(),
+            inv_favorites: 0,
         };
         let replaced = list_players(Some(&dir), Some(session.clone()), 0);
         assert_eq!(replaced.len(), 1);
@@ -887,6 +897,8 @@ mod tests {
                 pants_color: [61, 62, 63],
                 shoe_color: [71, 72, 73],
                 inventory: [(0, 0, 0); 58],
+                // Slots 0 and 4 starred — the BUG-03 half of the card.
+                inv_favorites: 1 << 0 | 1 << 4,
             },
         )
         .unwrap();
@@ -907,6 +919,11 @@ mod tests {
             "the saved character's colours ride the card"
         );
         assert_eq!((a.hair, a.skin_variant), (42, 9), "the hair and skin variant");
+        assert_eq!(
+            entries[0].inv_favorites,
+            1 << 0 | 1 << 4,
+            "the saved stars ride the card (BUG-03)"
+        );
         assert_eq!(entries[0].difficulty, 2, "the difficulty still rides");
     }
 }

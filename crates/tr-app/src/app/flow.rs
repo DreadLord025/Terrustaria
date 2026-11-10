@@ -1718,6 +1718,7 @@ pub(crate) mod front_flow_tests {
             deletable,
             path: None,
             appearance: ui::save_list::Appearance::default(),
+            inv_favorites: 0,
         }
     }
 
@@ -1888,6 +1889,8 @@ pub(crate) mod front_flow_tests {
             item_time: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: PathBuf::new(),
             dev_break: None,
             dev_place: Vec::new(),
@@ -2774,6 +2777,32 @@ pub(crate) mod front_flow_tests {
             app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
             "the pickaxe landed in the first free slot"
         );
+    }
+
+    /// The favourites survive the save/load round (BUG-03): two slots
+    /// toggled, flattened into the `.plr` bitfield and read back, land on the
+    /// same two slots — the App's `favorite_slots` used to be UI state with no
+    /// file representation.
+    #[test]
+    fn the_favorites_round_trip_through_the_bitfield() {
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        app.hydrate_favorites(0);
+        assert_eq!(app.toggle_favorite(3), 12, "the menu tick id");
+        assert!(app.is_favorite(3));
+        app.toggle_favorite(9);
+        let bits = app.favorite_bits();
+        assert_eq!(bits, 1 << 3 | 1 << 9, "the two stars flatten into the bits");
+        // The load half: a fresh App hydrates the same two slots.
+        let mut loaded = flow_app(None, Vec::new(), Vec::new());
+        loaded.hydrate_favorites(bits);
+        assert!(loaded.is_favorite(3) && loaded.is_favorite(9));
+        assert!(
+            !loaded.is_favorite(4),
+            "the untouched slot stays unstarred"
+        );
+        // The toggle is reversible and the bits follow it.
+        loaded.toggle_favorite(3);
+        assert_eq!(loaded.favorite_bits(), 1 << 9);
     }
 
     /// The front-end half of the audio clock (BUG-01): with a front screen

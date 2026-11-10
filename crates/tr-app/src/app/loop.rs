@@ -270,63 +270,17 @@ impl ApplicationHandler for App {
                             front.key(self, &event);
                             return;
                         }
-                        match code {
-                            KeyCode::Escape => {
-                                // The bestiary eats the Escape first
-                                // (`IngameFancyUI`'s GoBack), then the original
-                                // opens the inventory on Escape; the world is
-                                // saved on window close and with F9.
-                                if self.bestiary_open {
-                                    self.bestiary_open = false;
-                                    self.bestiary_selected = None;
-                                } else if self.emotes.menu_open {
-                                    self.emotes.close();
-                                } else {
-                                    self.inventory_open = !self.inventory_open;
-                                }
-                            }
-                            KeyCode::F1 => self.debug = !self.debug,
-                            KeyCode::F3 => {
-                                crate::debug_panel::handle_key(self, KeyCode::F3);
-                            }
-                            KeyCode::F2 => {
-                                self.light_mode = self.light_mode.next();
-                                self.world_key = None;
-                                log::info!("light mode: {}", self.light_mode.label());
-                            }
-                            KeyCode::F9 => self.save_world(),
-                            KeyCode::KeyM => {
-                                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`):
-                                // `M` only toggles the map when `Main.mapEnabled`.
-                                if self.settings.map_enabled {
-                                    if let Some(m) = self.map.as_mut() {
-                                        let open = !m.open;
-                                        m.set_open(open);
-                                    }
-                                }
-                            }
-                            _ if crate::debug_panel::handle_key(self, code) => {}
-                            KeyCode::Digit1 => {
-                                // The shop open: the 1 key buys the first
-                                // stock slot (the click-buy lands with the
-                                // click-routing work).
-                                if !self.buy_shop_item(0) {
-                                    self.selected = 0;
-                                }
-                            }
-                            KeyCode::Digit2 => self.selected = 1,
-                            KeyCode::Digit3 => self.selected = 2,
-                            KeyCode::Digit4 => self.selected = 3,
-                            KeyCode::Digit5 => self.selected = 4,
-                            KeyCode::Digit6 => self.selected = 5,
-                            KeyCode::Digit7 => self.selected = 6,
-                            KeyCode::Digit8 => self.selected = 7,
-                            KeyCode::Digit9 => self.selected = 8,
-                            KeyCode::Digit0 => self.selected = 9,
-                            _ => {}
-                        }
+                        self.world_key(code);
                     } else {
                         self.keys.remove(&code);
+                        // The smart-cursor hold mode (`Player.cs:28835-28839`):
+                        // releasing the key turns the wanted state off when the
+                        // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
+                        // `Main.cs:67178`, the port's persisted
+                        // `settings.smart_cursor_toggle`) is off.
+                        if code == KeyCode::ShiftLeft && !self.settings.smart_cursor_toggle {
+                            self.smart_cursor_used = false;
+                        }
                     }
                 }
             }
@@ -540,6 +494,213 @@ impl ApplicationHandler for App {
         if let Some(w) = &self.window {
             w.request_redraw();
         }
+    }
+}
+
+impl App {
+    /// The world-side key routes — `Main.UpdateInput`'s keyboard pass as the
+    /// port splits it: the Escape close chain, the map key (`Main.cMapFull`,
+    /// `M`), the hotbar digits, the debug panel and the smart-cursor toggle.
+    ///
+    /// Extracted from `window_event`'s `KeyboardInput` arm (the chat/menu/front
+    /// overlays eat the keys first and stay in the event handler, as in
+    /// `Main.DoUpdate_HandleChat`) so the chain is reachable headlessly: the
+    /// winit `KeyEvent` cannot be built without a live window, but every arm
+    /// below is pure `App` state. The method runs on the press only — winit
+    /// delivers key repeats as separate `Pressed` events, which is the port's
+    /// edge convention (the vanilla `release*` machine,
+    /// `Player.cs:25075-25086`).
+    pub(crate) fn world_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Escape => {
+                // The bestiary eats the Escape first (`IngameFancyUI`'s
+                // GoBack), the emotes wheel next, then the fullscreen map —
+                // `Player.ToggleInv` (`Player.cs:4973-4978`) closes
+                // `Main.mapFullscreen` and returns before the inventory
+                // toggle, so the vanilla close order is map → inventory →
+                // pause. The world is saved on window close and with F9.
+                if self.ingame_options.open {
+                    // BUG-11: `IngameOptions.Close` (`IngameOptions.cs:84`):
+                    // the window shuts and persists its settings
+                    // (`Main.SaveSettings`), the vanilla's first close arm.
+                    self.ingame_options.close();
+                    let _ = self.settings.save();
+                } else if self.bestiary_open {
+                    self.bestiary_open = false;
+                    self.bestiary_selected = None;
+                } else if self.emotes.menu_open {
+                    self.emotes.close();
+                } else if self.map.as_ref().is_some_and(|m| m.open) {
+                    // `Player.ToggleInv`'s first arm: Escape closes the
+                    // fullscreen map and consumes the press — no inventory
+                    // toggle this frame, like the source's `return`.
+                    if let Some(m) = self.map.as_mut() {
+                        m.set_open(false);
+                    }
+                } else {
+                    self.inventory_open = !self.inventory_open;
+                }
+            }
+            KeyCode::F1 => self.debug = !self.debug,
+            KeyCode::F3 => {
+                crate::debug_panel::handle_key(self, KeyCode::F3);
+            }
+            KeyCode::F2 => {
+                self.light_mode = self.light_mode.next();
+                self.world_key = None;
+                log::info!("light mode: {}", self.light_mode.label());
+            }
+            KeyCode::F9 => self.save_world(),
+            KeyCode::KeyM => {
+                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`):
+                // `M` only toggles the map when `Main.mapEnabled`.
+                if self.settings.map_enabled {
+                    if let Some(m) = self.map.as_mut() {
+                        let open = !m.open;
+                        m.set_open(open);
+                    }
+                }
+            }
+            KeyCode::ShiftLeft => {
+                // The smart-cursor toggle (`Player.TryToToggleSmartCursor`,
+                // `Player.cs:24867`/`:28814-28820`): the press edge flips
+                // `Main.SmartCursorWanted_Mouse` while
+                // `Main.cSmartCursorModeIsToggleAndNotHold` (`Main.cs:67178`,
+                // the port's persisted `settings.smart_cursor_toggle`) selects
+                // the toggle mode — its vanilla default. The runtime flag is
+                // `App.smart_cursor_used` (`Main.cs:2011`, default false); the
+                // persisted setting is never read as the state.
+                //
+                // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
+                self.audio.play("Menu_Tick");
+                if self.settings.smart_cursor_toggle {
+                    self.smart_cursor_used = !self.smart_cursor_used;
+                } else {
+                    // The hold mode (`:28835-28839`): the state tracks the key
+                    // (the release arm in `window_event` clears it).
+                    self.smart_cursor_used = true;
+                }
+            }
+            _ if crate::debug_panel::handle_key(self, code) => {}
+            KeyCode::Digit1 => {
+                // The shop open: the 1 key buys the first stock slot (the
+                // click-buy lands with the click-routing work).
+                if !self.buy_shop_item(0) {
+                    self.selected = 0;
+                }
+            }
+            KeyCode::Digit2 => self.selected = 1,
+            KeyCode::Digit3 => self.selected = 2,
+            KeyCode::Digit4 => self.selected = 3,
+            KeyCode::Digit5 => self.selected = 4,
+            KeyCode::Digit6 => self.selected = 5,
+            KeyCode::Digit7 => self.selected = 6,
+            KeyCode::Digit8 => self.selected = 7,
+            KeyCode::Digit9 => self.selected = 8,
+            KeyCode::Digit0 => self.selected = 9,
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::map::WorldMap;
+
+    /// A headless App with the map live and open (`M` while `mapEnabled`),
+    /// ready for the world-key chain.
+    fn map_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.map = Some(WorldMap::new(&app.world));
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(true);
+        }
+        app
+    }
+
+    #[test]
+    fn escape_closes_the_ingame_options_window_first() {
+        // BUG-11: `IngameOptions.Close` (`IngameOptions.cs:84`) is the
+        // vanilla close chain's first arm — the options window shuts and the
+        // inventory does NOT toggle open on the same press.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.ingame_options.open = true;
+        app.inventory_open = false;
+        app.world_key(KeyCode::Escape);
+        assert!(!app.ingame_options.open, "Escape closes the options window");
+        assert!(!app.inventory_open, "the press is consumed");
+    }
+
+    #[test]
+    fn escape_falls_through_when_the_options_window_is_shut() {
+        // The window shut: Escape keeps its old behaviour (the inventory
+        // toggle), so the new arm does not eat the key.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.ingame_options.open = false;
+        app.world_key(KeyCode::Escape);
+        assert!(app.inventory_open, "the inventory still toggles open");
+    }
+
+    #[test]
+    fn escape_closes_the_open_map_before_the_inventory() {
+        // `Player.ToggleInv` (`Player.cs:4973-4978`): with the fullscreen map
+        // up, the inventory key (`cInv`, Escape) closes the map and returns —
+        // the press must not also toggle the inventory open.
+        let mut app = map_app();
+        assert!(!app.inventory_open);
+        app.world_key(KeyCode::Escape);
+        assert!(
+            !app.map.as_ref().is_some_and(|m| m.open),
+            "Escape closes the map"
+        );
+        assert!(
+            !app.inventory_open,
+            "the press is consumed: the inventory stays shut"
+        );
+    }
+
+    #[test]
+    fn escape_falls_through_to_the_inventory_when_the_map_is_shut() {
+        // The vanilla close order (map → inventory → pause): with the map
+        // closed the same key keeps its old behaviour — the inventory toggle.
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.world_key(KeyCode::Escape);
+        assert!(app.inventory_open, "the inventory opens with the map shut");
+        app.world_key(KeyCode::Escape);
+        assert!(!app.inventory_open, "and closes again");
+    }
+
+    #[test]
+    fn the_map_key_still_toggles_the_map() {
+        // `Player.cs:24968-24982` (`cMapFull`, `M`): the map key opens the
+        // closed map — the extraction kept the arm.
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.world_key(KeyCode::KeyM);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
+        app.world_key(KeyCode::KeyM);
+        assert!(!app.map.as_ref().is_some_and(|m| m.open), "M closes it");
+    }
+
+    #[test]
+    fn the_smart_cursor_toggle_flips_the_runtime_flag() {
+        // `Player.TryToToggleSmartCursor` (`Player.cs:28814-28820`) bound to
+        // left-Shift: the runtime `Main.SmartCursorWanted_Mouse` analogue
+        // starts off (the vanilla default, `Main.cs:67179`) and every press
+        // edge flips it.
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(!app.smart_cursor_used, "the default is off");
+        app.world_key(KeyCode::ShiftLeft);
+        assert!(app.smart_cursor_used, "the press turns it on");
+        app.world_key(KeyCode::ShiftLeft);
+        assert!(!app.smart_cursor_used, "the second press turns it off");
     }
 }
 

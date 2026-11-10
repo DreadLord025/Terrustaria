@@ -296,6 +296,24 @@ impl App {
             self.ui_left_press = false;
             return;
         }
+        // `Main.DrawSettingButton`'s click arm (`Main.cs:45532-45580`,
+        // BUG-11): the Settings button opens (and, while the window is open,
+        // closes) the in-game options window — `IngameOptions.Open` /
+        // `Close` (`IngameOptions.cs:56`/`:84`).
+        if self.ingame_options.open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            if ui::ingame_options::click(self, screen, self.mouse_pos) {
+                self.ui_left_press = false;
+                self.inventory_open = false;
+                let _ = self.settings.save();
+                return;
+            }
+        } else if self.inventory_open && ui::ingame_options::button_hit(self.mouse_pos) {
+            self.ingame_options.open = true;
+            self.ui_left_press = false;
+            return;
+        }
         // `DrawEmoteBubblesButton`'s click arm (`Main.cs:42400-42405`):
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
