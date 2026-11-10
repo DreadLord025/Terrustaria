@@ -58,6 +58,7 @@ use tr_core::{TILE_PX, World};
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
+use crate::grapple;
 use crate::npc::{Npc, NpcKind};
 use tr_core::loot::DropRng;
 
@@ -1400,6 +1401,11 @@ pub struct Projectile {
     /// (`:34431-34436`).
     pub alpha: i32,
     bounces: u8,
+    /// `GrappleMovement`'s pull input: the attached aiStyle-7 hook's center
+    /// (`Player.cs:22757-22856` reads `grappling[]` — this multi-hook field is
+    /// the task's next phase; the single-hook bridge keeps the pull working
+    /// meanwhile, and `grappling_active`'s owner reads it).
+    pub grapple_center: Vec2,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
     /// per tick and places the tile on landing.
@@ -1455,6 +1461,7 @@ impl Default for Projectile {
             scale: 1.0,
             alpha: 0,
             bounces: 0,
+            grapple_center: Vec2::ZERO,
             falling_tile: None,
             detonated: false,
             wants_mark_spawn: None,
@@ -1464,6 +1471,18 @@ impl Default for Projectile {
 }
 
 impl Projectile {
+
+    /// `AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`) on this slot — the
+    /// flight, the tile attach and the retract; the state machine and the
+    /// per-kind tables live in `crate::grapple`.
+    pub(crate) fn ai_hook(
+        &mut self,
+        world: &World,
+        player_center: Vec2,
+        owner_dead: bool,
+    ) -> crate::grapple::HookTick {
+        crate::grapple::ai_hook(self, world, player_center, owner_dead)
+    }
     /// The box center — `Projectile.Center` (`Entity.cs`'s `Center`), the
     /// pool's uniform center for the box tests (the whip's *hit* comes from
     /// the swept curve, not from this).
@@ -3063,6 +3082,42 @@ impl ProjectilePool {
         &mut self.slots
     }
 
+    /// `Projectile.Kill` (`:70642`): the slot deactivates. The AI arms and the
+    /// recycle tables call it; the `timeLeft <= 0` path stays inline.
+    pub fn kill(&mut self, slot: usize) {
+        if slot < self.slots.len() {
+            self.slots[slot].active = false;
+            self.slots[slot].time_left = 0;
+        }
+    }
+
+    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6458-6477`):
+    /// the aim direction normalized by its own length and scaled to
+    /// `shootSpeed`, spawned at the player center. The degenerate aim
+    /// (`0,0` or NaN) falls back to the facing, as the source does.
+    pub fn spawn_hook(
+        &mut self,
+        kind: u16,
+        player_center: Vec2,
+        aim: Vec2,
+        shoot_speed: f32,
+        damage: i32,
+        knock_back: f32,
+        owner: u8,
+        facing: i32,
+    ) -> Option<usize> {
+        let delta = aim - player_center;
+        // `:6459-6467` — the degenerate aim (both zero, or NaN) falls back to
+        // the facing; otherwise the direction scales to `shootSpeed`.
+        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0) || delta.is_nan() {
+            (facing as f32 * shoot_speed, 0.0)
+        } else {
+            let k = shoot_speed / delta.length();
+            (delta.x * k, delta.y * k)
+        };
+        self.spawn_with_data_ai_owned(kind, owner, player_center.x, player_center.y, vx, vy, damage, knock_back, 0.0, 0.0)
+    }
+
     pub fn active_count(&self) -> usize {
         self.slots.iter().filter(|p| p.active).count()
     }
@@ -3514,6 +3569,25 @@ impl ProjectilePool {
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
                         1 => self.slots[i].ai_arrow(world),
+                        7 => {
+                            // `AI()`'s `else if (this.aiStyle == 7)`
+                            // (`Projectile.cs:24230-24233`) ->
+                            // `AI_007_GrapplingHooks`.
+                            let dead = player.as_ref().is_some_and(|p| p.dead);
+                            let center = owner
+                                .map(|(x, y)| Vec2::new(x, y))
+                                .unwrap_or(self.slots[i].pos);
+                            let tick = self.slots[i].ai_hook(world, center, dead);
+                            let attached = tick.attached;
+                            let dead = tick.dead;
+                            if dead {
+                                self.kill(i);
+                            } else if let Some(c) = attached {
+                                // The bridge to `GrappleMovement`'s pull
+                                // (retired by the multi-hook phase).
+                                self.slots[i].grapple_center = c;
+                            }
+                        }
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
@@ -7307,6 +7381,7 @@ mod phasmal_projectile_tests {
 
     fn spawn(kind: u16, x: f32, y: f32) -> Projectile {
         Projectile {
+            grapple_center: Vec2::ZERO,
             active: true,
             kind,
             owner: 0,
@@ -7785,6 +7860,7 @@ mod ritual_projectile_tests {
 
     fn rspawn(kind: u16, x: f32, y: f32) -> Projectile {
         Projectile {
+            grapple_center: Vec2::ZERO,
             active: true,
             kind,
             owner: 0,

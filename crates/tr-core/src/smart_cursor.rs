@@ -1889,7 +1889,10 @@ pub fn step_multicolor_wrench(
 
 /// `TileID.MinecartTrack` (`TileID.cs` — the C# reads the literal 314 in
 /// `Step_MinecartTracks`).
-const TRACK_TILE: u16 = 314;
+/// `TileID.MinecartTrack`. `pub` because the grappling hook's latch predicate
+/// (`Projectile.cs:52868-52879`, the TrackHook 403) reads the same tile id —
+/// one constant, not a second copy.
+pub const TRACK_TILE: u16 = 314;
 
 /// The cell is a minecart track.
 fn is_track(w: &crate::World, x: i32, y: i32) -> bool {
