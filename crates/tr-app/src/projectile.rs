@@ -23,6 +23,10 @@
 //!   `:15716-15737` (the swept-span multi-hit) and the on-hit arms
 //!   (`StatusNPC`'s `ApplyWhipDebuffs` `:11727-11750`, the per-type switch
 //!   `:13882-13956`); the tag stack itself is `tag_effects.rs`.
+//! - the grappling hook family (M4-PROJ-5): all 32 vanilla kinds carry a
+//!   `proj_data` row (the 20 `aiStyle = 7` `SetDefaults` blocks, e.g. the Hook
+//!   `:939-948`); the AI state machine, the multi-hook budgets and the
+//!   per-hook steering land with the task's later phases.
 //!
 //! The ammo-resolution rows (M3-ITEM-6, 2026-11-09): the `proj_data` block at
 //! the end of the match carries the kinds `Player.PickAmmo`
@@ -217,6 +221,76 @@ pub const CONSTELLATION_WHIP: u16 = 1034;
 pub const MOON_LORD_WHIP: u16 = 1035;
 /// `ProjectileID.SlimeWhip` (1104).
 pub const SLIME_WHIP: u16 = 1104;
+// --- the grappling hook family (M4-PROJ-5): the 32 vanilla kinds
+// `AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`) drives. The ids are
+// `ID/ProjectileID.cs`'s names; the `SetDefaults` rows land in `proj_data`
+// below. Phases 2-4 (the AI, the budgets, the steering) read these.
+/// `ProjectileID.Hook` (13) — the vanilla grappling hook.
+pub const HOOK: u16 = 13;
+/// `ProjectileID.IvyWhip` (32) — the 300 px-range hook of the Jungle chest.
+pub const IVY_WHIP: u16 = 32;
+/// `ProjectileID.DualHookBlue` (73) — the Dual Hook's blue head.
+pub const DUAL_HOOK_BLUE: u16 = 73;
+/// `ProjectileID.DualHookRed` (74) — the Dual Hook's red head.
+pub const DUAL_HOOK_RED: u16 = 74;
+/// `ProjectileID.WebSlingerHook` (165) — the three-at-once hook.
+pub const WEB_SLINGER_HOOK: u16 = 165;
+/// `ProjectileID.GemHookAmethyst` (230) — the first Gem Hook.
+pub const GEM_HOOK_AMETHYST: u16 = 230;
+/// `ProjectileID.GemHookTopaz` (231).
+pub const GEM_HOOK_TOPAZ: u16 = 231;
+/// `ProjectileID.GemHookSapphire` (232).
+pub const GEM_HOOK_SAPPHIRE: u16 = 232;
+/// `ProjectileID.GemHookEmerald` (233).
+pub const GEM_HOOK_EMERALD: u16 = 233;
+/// `ProjectileID.GemHookRuby` (234).
+pub const GEM_HOOK_RUBY: u16 = 234;
+/// `ProjectileID.GemHookDiamond` (235) — the last Gem Hook.
+pub const GEM_HOOK_DIAMOND: u16 = 235;
+/// `ProjectileID.SkeletronHand` (256) — the Skeletron hand hook
+/// (`extraUpdates = 1`, the only 6x6 hook box).
+pub const SKELETRON_HAND: u16 = 256;
+/// `ProjectileID.BatHook` (315).
+pub const BAT_HOOK: u16 = 315;
+/// `ProjectileID.WoodHook` (322).
+pub const WOOD_HOOK: u16 = 322;
+/// `ProjectileID.CandyCaneHook` (331).
+pub const CANDY_CANE_HOOK: u16 = 331;
+/// `ProjectileID.ChristmasHook` (332).
+pub const CHRISTMAS_HOOK: u16 = 332;
+/// `ProjectileID.FishHook` (372).
+pub const FISH_HOOK: u16 = 372;
+/// `ProjectileID.SlimeHook` (396).
+pub const SLIME_HOOK: u16 = 396;
+/// `ProjectileID.TrackHook` (403) — the minecart-track hook.
+pub const TRACK_HOOK: u16 = 403;
+/// `ProjectileID.AntiGravityHook` (446) — the gravity-flipping hook.
+pub const ANTI_GRAVITY_HOOK: u16 = 446;
+/// `ProjectileID.TendonHook` (486) — the first of the 1.4.4 quartet.
+pub const TENDON_HOOK: u16 = 486;
+/// `ProjectileID.ThornHook` (487).
+pub const THORN_HOOK: u16 = 487;
+/// `ProjectileID.IlluminantHook` (488) — the light-emitting hook.
+pub const ILLUMINANT_HOOK: u16 = 488;
+/// `ProjectileID.WormHook` (489) — the last of the 1.4.4 quartet.
+pub const WORM_HOOK: u16 = 489;
+/// `ProjectileID.LunarHookSolar` (646) — the first Lunar Hook.
+pub const LUNAR_HOOK_SOLAR: u16 = 646;
+/// `ProjectileID.LunarHookVortex` (647).
+pub const LUNAR_HOOK_VORTEX: u16 = 647;
+/// `ProjectileID.LunarHookNebula` (648).
+pub const LUNAR_HOOK_NEBULA: u16 = 648;
+/// `ProjectileID.LunarHookStardust` (649) — the last Lunar Hook.
+pub const LUNAR_HOOK_STARDUST: u16 = 649;
+/// `ProjectileID.StaticHook` (652) — the stationary hook.
+pub const STATIC_HOOK: u16 = 652;
+/// `ProjectileID.AmberHook` (753).
+pub const AMBER_HOOK: u16 = 753;
+/// `ProjectileID.SquirrelHook` (865).
+pub const SQUIRREL_HOOK: u16 = 865;
+/// `ProjectileID.QueenSlimeHook` (935) — the `extraUpdates = 3` hook whose
+/// latch teleports its owner.
+pub const QUEEN_SLIME_HOOK: u16 = 935;
 pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
@@ -586,6 +660,11 @@ fn set_defaults_scale(kind: u16) -> f32 {
         _ => 1.0,
     }
 }
+
+/// The grappling hook family's `timeLeft` — every aiStyle-7 row's
+/// `timeLeft *= 10` (`Projectile.cs`'s 20 blocks, e.g. `:939-948`) on the
+/// `:787` default 3600: the 36000-tick flight budget.
+const HOOK_TIME_LEFT: i32 = 10 * TIME_LEFT_DEFAULT;
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
@@ -1113,6 +1192,78 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` dropped — its local-immunity pair
             // (`localNPCHitCooldown = 60`) rides the overlay below.
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false),
+            // The grappling hook family (M4-PROJ-5) — all 20 vanilla
+            // `aiStyle = 7` blocks. Every row is the common tail
+            // (`netImportant`, `friendly`, `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft *= 10`); the boxes and the two
+            // `extraUpdates` differ, and `light`/`alpha` ride no consumer and
+            // stay dropped (73/74's 0.4f, 332's 0.5f, 446's 0.7f, 488's 0.3f,
+            // 396's 100). C# citations are per row group below.
+            // `Projectile.cs:939-948` — the Hook (13): 18x18.
+            HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:1141-1150` — the Ivy Whip (32): 18x18.
+            IVY_WHIP => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:1536-1546` — the Dual Hook pair (73/74): 18x18,
+            // `light = 0.4f` dropped.
+            DUAL_HOOK_BLUE | DUAL_HOOK_RED => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:2538-2547` — the Web Slinger (165): 12x12.
+            WEB_SLINGER_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:3164-3173` — the six Gem Hooks (230-235): 18x18,
+            // the shared block with no per-kind field.
+            GEM_HOOK_AMETHYST
+            | GEM_HOOK_TOPAZ
+            | GEM_HOOK_SAPPHIRE
+            | GEM_HOOK_EMERALD
+            | GEM_HOOK_RUBY
+            | GEM_HOOK_DIAMOND => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:3388-3399` — the Skeletron Hand (256): 6x6,
+            // `extraUpdates = 1` (`scale = 1f` is the stock default).
+            SKELETRON_HAND => (6.0, 6.0, 7, -1, HOOK_TIME_LEFT, 1, false, false, false),
+            // `Projectile.cs:4077-4086` — the Bat Hook (315): 14x14.
+            BAT_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4149-4158` — the Wood Hook (322): 14x14.
+            WOOD_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4235-4244` — the Candy Cane Hook (331): 18x18.
+            CANDY_CANE_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4246-4256` — the Christmas Hook (332): 18x18,
+            // `light = 0.5f` dropped.
+            CHRISTMAS_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4552-4561` — the Fish Hook (372): 18x18.
+            FISH_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4769-4779` — the Slime Hook (396): 18x18,
+            // `alpha = 100` dropped.
+            SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:4836-4845` — the Track Hook (403): 18x18.
+            TRACK_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:5176-5186` — the Anti Gravity Hook (446): 14x14,
+            // `light = 0.7f` dropped.
+            ANTI_GRAVITY_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // The 1.4.4 quartet (`Projectile.cs:5615-5643`): the four boxes
+            // below share the block's tail (`:5638-5643`).
+            // `Projectile.cs:5617-5621` — the Tendon Hook (486): 12x12.
+            TENDON_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:5622-5626` — the Thorn Hook (487): 22x22.
+            THORN_HOOK => (22.0, 22.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:5627-5632` — the Illuminant Hook (488): 12x12,
+            // `light = 0.3f` dropped.
+            ILLUMINANT_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:5633-5637` — the Worm Hook (489): 20x16.
+            WORM_HOOK => (20.0, 16.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:6966-6975` — the four Lunar Hooks (646-649): 18x18,
+            // the shared block with no per-kind field.
+            LUNAR_HOOK_SOLAR
+            | LUNAR_HOOK_VORTEX
+            | LUNAR_HOOK_NEBULA
+            | LUNAR_HOOK_STARDUST => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:7001-7010` — the Static Hook (652): 18x18.
+            STATIC_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:7756-7765` — the Amber Hook (753): 18x18.
+            AMBER_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:8301-8310` — the Squirrel Hook (865): 18x18.
+            SQUIRREL_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false),
+            // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
+            // `extraUpdates = 3`.
+            QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false),
             _ => return None,
         };
     // The `SetDefaults` inner ifs that add the local-immunity pair on top of
@@ -7350,6 +7501,262 @@ mod phasmal_projectile_tests {
         let hit = p.ai_tower_damage_bolt(&npcs);
         assert!(hit, "the bolt lands on the tower");
         let _ = world;
+    }
+
+    // --- the grappling hook family (M4-PROJ-5, Phase 1) ---
+    /// The 32 vanilla hook kinds with their `SetDefaults` box — the
+    /// transcription of `Projectile.cs`'s 20 aiStyle-7 blocks (research
+    /// §1.7; the `extraUpdates` and the shared tail are asserted below).
+    const HOOK_BOXES: &[(u16, f32, f32)] = &[
+        (HOOK, 18.0, 18.0),
+        (IVY_WHIP, 18.0, 18.0),
+        (DUAL_HOOK_BLUE, 18.0, 18.0),
+        (DUAL_HOOK_RED, 18.0, 18.0),
+        (WEB_SLINGER_HOOK, 12.0, 12.0),
+        (GEM_HOOK_AMETHYST, 18.0, 18.0),
+        (GEM_HOOK_TOPAZ, 18.0, 18.0),
+        (GEM_HOOK_SAPPHIRE, 18.0, 18.0),
+        (GEM_HOOK_EMERALD, 18.0, 18.0),
+        (GEM_HOOK_RUBY, 18.0, 18.0),
+        (GEM_HOOK_DIAMOND, 18.0, 18.0),
+        (SKELETRON_HAND, 6.0, 6.0),
+        (BAT_HOOK, 14.0, 14.0),
+        (WOOD_HOOK, 14.0, 14.0),
+        (CANDY_CANE_HOOK, 18.0, 18.0),
+        (CHRISTMAS_HOOK, 18.0, 18.0),
+        (FISH_HOOK, 18.0, 18.0),
+        (SLIME_HOOK, 18.0, 18.0),
+        (TRACK_HOOK, 18.0, 18.0),
+        (ANTI_GRAVITY_HOOK, 14.0, 14.0),
+        (TENDON_HOOK, 12.0, 12.0),
+        (THORN_HOOK, 22.0, 22.0),
+        (ILLUMINANT_HOOK, 12.0, 12.0),
+        (WORM_HOOK, 20.0, 16.0),
+        (LUNAR_HOOK_SOLAR, 18.0, 18.0),
+        (LUNAR_HOOK_VORTEX, 18.0, 18.0),
+        (LUNAR_HOOK_NEBULA, 18.0, 18.0),
+        (LUNAR_HOOK_STARDUST, 18.0, 18.0),
+        (STATIC_HOOK, 18.0, 18.0),
+        (AMBER_HOOK, 18.0, 18.0),
+        (SQUIRREL_HOOK, 18.0, 18.0),
+        (QUEEN_SLIME_HOOK, 18.0, 18.0),
+    ];
+
+    #[test]
+    fn the_hook_constants_carry_the_vanilla_ids() {
+        // `ID/ProjectileID.cs`'s transcription — the arms of Phases 2-4 key
+        // off these, so a wrong id is a wrong hook.
+        let ids = [
+            HOOK,
+            IVY_WHIP,
+            DUAL_HOOK_BLUE,
+            DUAL_HOOK_RED,
+            WEB_SLINGER_HOOK,
+            GEM_HOOK_AMETHYST,
+            GEM_HOOK_TOPAZ,
+            GEM_HOOK_SAPPHIRE,
+            GEM_HOOK_EMERALD,
+            GEM_HOOK_RUBY,
+            GEM_HOOK_DIAMOND,
+            SKELETRON_HAND,
+            BAT_HOOK,
+            WOOD_HOOK,
+            CANDY_CANE_HOOK,
+            CHRISTMAS_HOOK,
+            FISH_HOOK,
+            SLIME_HOOK,
+            TRACK_HOOK,
+            ANTI_GRAVITY_HOOK,
+            TENDON_HOOK,
+            THORN_HOOK,
+            ILLUMINANT_HOOK,
+            WORM_HOOK,
+            LUNAR_HOOK_SOLAR,
+            LUNAR_HOOK_VORTEX,
+            LUNAR_HOOK_NEBULA,
+            LUNAR_HOOK_STARDUST,
+            STATIC_HOOK,
+            AMBER_HOOK,
+            SQUIRREL_HOOK,
+            QUEEN_SLIME_HOOK,
+        ];
+        let vanilla = [
+            13, 32, 73, 74, 165, 230, 231, 232, 233, 234, 235, 256, 315, 322, 331, 332, 372, 396,
+            403, 446, 486, 487, 488, 489, 646, 647, 648, 649, 652, 753, 865, 935,
+        ];
+        assert_eq!(ids, vanilla);
+    }
+
+    #[test]
+    fn dw_1_1_the_32_hook_kinds_carry_the_vanilla_row() {
+        let mut distinct: Vec<u16> = HOOK_BOXES.iter().map(|&(kind, _, _)| kind).collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), 32, "the vanilla family's kind count");
+        for &(kind, w, h) in HOOK_BOXES {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} has no row"));
+            assert_eq!((d.w, d.h), (w, h), "{kind}");
+            assert_eq!(d.ai_style, 7, "{kind}");
+            assert_eq!(d.penetrate, -1, "{kind}");
+            assert!(!d.tile_collide, "{kind}");
+            assert_eq!(d.time_left, 36_000, "{kind}");
+            // The `extraUpdates` split: only 256 (1) and 935 (3) move.
+            let extra = match kind {
+                SKELETRON_HAND => 1,
+                QUEEN_SLIME_HOOK => 3,
+                _ => 0,
+            };
+            assert_eq!(d.extra_updates, extra, "{kind}");
+            // The pool defaults the family never touches.
+            assert!(!d.arrow && !d.trap, "{kind}");
+            assert!(!d.uses_local_immunity, "{kind}");
+            assert_eq!(d.local_hit_cooldown, -2, "{kind}");
+            assert!(!d.uses_id_static, "{kind}");
+            assert_eq!(d.id_static_hit_cooldown, -1, "{kind}");
+            assert_eq!(d.scale, 1.0, "{kind}");
+        }
+        let moved = HOOK_BOXES
+            .iter()
+            .filter(|&&(kind, _, _)| proj_data(kind).is_some_and(|d| d.extra_updates != 0))
+            .count();
+        assert_eq!(moved, 2, "only 256 and 935 run extra sub-steps");
+    }
+
+    #[test]
+    fn dw_1_2_the_non_hook_neighbours_stay_row_less() {
+        // The kinds on both sides of every hook block — an unlisted kind must
+        // keep returning `None` rather than a silent default row. (645 does
+        // not belong here: it is the poison dart's id and carries its own
+        // row.)
+        for kind in [
+            72, 75, 229, 236, 257, 316, 490, 650, 752, 866, 934, 936,
+        ] {
+            assert!(proj_data(kind).is_none(), "{kind} is not a hook");
+        }
+    }
+
+    #[test]
+    fn dw_1_3_every_hook_row_group_cites_the_source() {
+        // The golden rule's citation requirement is a file-content invariant,
+        // so it is checked against this file's own text: the hook section of
+        // `proj_data` must name every C# row group, and each group's arm must
+        // sit directly under its `Projectile.cs:line` citation.
+        const HOOK_ARMS: &[&str] = &[
+            "HOOK",
+            "IVY_WHIP",
+            "DUAL_HOOK_BLUE",
+            "WEB_SLINGER_HOOK",
+            "GEM_HOOK_AMETHYST",
+            "SKELETRON_HAND",
+            "BAT_HOOK",
+            "WOOD_HOOK",
+            "CANDY_CANE_HOOK",
+            "CHRISTMAS_HOOK",
+            "FISH_HOOK",
+            "SLIME_HOOK",
+            "TRACK_HOOK",
+            "ANTI_GRAVITY_HOOK",
+            "TENDON_HOOK",
+            "THORN_HOOK",
+            "ILLUMINANT_HOOK",
+            "WORM_HOOK",
+            "LUNAR_HOOK_SOLAR",
+            "STATIC_HOOK",
+            "AMBER_HOOK",
+            "SQUIRREL_HOOK",
+            "QUEEN_SLIME_HOOK",
+        ];
+        const HOOK_BLOCKS: &[&str] = &[
+            "Projectile.cs:939-948",
+            "Projectile.cs:1141-1150",
+            "Projectile.cs:1536-1546",
+            "Projectile.cs:2538-2547",
+            "Projectile.cs:3164-3173",
+            "Projectile.cs:3388-3399",
+            "Projectile.cs:4077-4086",
+            "Projectile.cs:4149-4158",
+            "Projectile.cs:4235-4244",
+            "Projectile.cs:4246-4256",
+            "Projectile.cs:4552-4561",
+            "Projectile.cs:4769-4779",
+            "Projectile.cs:4836-4845",
+            "Projectile.cs:5176-5186",
+            "Projectile.cs:5615-5643",
+            "Projectile.cs:5617-5621",
+            "Projectile.cs:5622-5626",
+            "Projectile.cs:5627-5632",
+            "Projectile.cs:5633-5637",
+            "Projectile.cs:6966-6975",
+            "Projectile.cs:7001-7010",
+            "Projectile.cs:7756-7765",
+            "Projectile.cs:8301-8310",
+            "Projectile.cs:8884-8894",
+        ];
+        let src = include_str!("projectile.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let start = lines
+            .iter()
+            .position(|l| l.contains("The grappling hook family (M4-PROJ-5) — all 20"))
+            .expect("the hook section's header");
+        let end = lines
+            .iter()
+            .position(|l| l.trim() == "_ => return None,")
+            .expect("the match's fall-through");
+        let section = &lines[start..end];
+        for cite in HOOK_BLOCKS {
+            assert!(
+                section.iter().any(|l| l.contains(cite)),
+                "the section must cite {cite}"
+            );
+        }
+        // One citation per row group: the contiguous comment block directly
+        // above each group's first arm line names its C# block.
+        for (i, line) in section.iter().enumerate() {
+            let t = line.trim();
+            let arm = HOOK_ARMS.iter().any(|a| match t.strip_prefix(a) {
+                Some("") => true,
+                Some(r) => r.starts_with(" =>") || r.starts_with(" |"),
+                None => false,
+            });
+            if !arm {
+                continue;
+            }
+            let mut cited = false;
+            let mut j = i;
+            while j > 0 && section[j - 1].trim().starts_with("//") {
+                j -= 1;
+                cited |= section[j].contains("Projectile.cs:")
+                    && section[j].contains(|c: char| c.is_ascii_digit());
+            }
+            assert!(cited, "the arm for {t} lacks its citation");
+        }
+    }
+
+    #[test]
+    fn a_hook_spawns_through_the_pool_with_its_box_and_budget() {
+        // Phase 1's purpose: the spawn path reads the rows, so a hook can
+        // exist in the pool at all (before it `proj_data(13)` was `None` and
+        // the spawn silently no-opped).
+        let mut pool = ProjectilePool::new();
+        let queen = pool
+            .spawn_with_data(QUEEN_SLIME_HOOK, 100.0, 200.0, 12.0, 0.0, 30, 0.0)
+            .expect("a free slot");
+        let p = &pool.slots[queen];
+        assert_eq!((p.w, p.h), (18.0, 18.0));
+        assert_eq!(p.time_left, 36_000);
+        assert_eq!(p.extra_updates, 3, "935's three sub-steps per tick");
+        assert!(!p.tile_collide, "the hook ignores tiles in flight");
+        assert_eq!(p.max_penetrate, -1);
+        assert!(p.active && p.kind == QUEEN_SLIME_HOOK && p.owner == 0);
+        // The 6x6 Skeletron Hand rides the same path with its own box and its
+        // single extra sub-step.
+        let hand = pool
+            .spawn_with_data(SKELETRON_HAND, 120.0, 200.0, 8.0, 0.0, 10, 0.0)
+            .expect("a second slot");
+        assert_eq!((pool.slots[hand].w, pool.slots[hand].h), (6.0, 6.0));
+        assert_eq!(pool.slots[hand].extra_updates, 1);
+        // A non-hook neighbour still refuses to spawn.
+        assert!(pool.spawn_with_data(257, 140.0, 200.0, 1.0, 0.0, 1, 0.0).is_none());
     }
 }
 
