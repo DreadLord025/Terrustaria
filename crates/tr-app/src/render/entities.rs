@@ -307,6 +307,20 @@ pub(crate) struct NpcAssets {
     pub(crate) betsy: Option<BgTex>,
     /// `NPC_568` — the Wither Beast (14-frame humanoid strip of 18x40).
     pub(crate) wither_beast: Option<BgTex>,
+    /// `NPC_558/559/560` — the etherian wyverns (5-frame strips of 38x38).
+    pub(crate) dd2_wyverns: Option<BgTex>,
+    /// `NPC_574/575` — the kobold gliders (10-frame strips of 38x38).
+    pub(crate) dd2_gliders: Option<BgTex>,
+    /// `NPC_565` — the Dark Mage T3 (the T1's 20-frame 34x62 strip).
+    pub(crate) dark_mage_t3: Option<BgTex>,
+    /// `NPC_569` — the Wither Beast T3 (17-frame humanoid strip of 18x40).
+    pub(crate) wither_beast_t3: Option<BgTex>,
+    /// `NPC_570/571` — the drakins (16-frame strips of 42x58).
+    pub(crate) dd2_drakins: Option<BgTex>,
+    /// `NPC_572/573` — the kobold walkers (18-frame strips of 18x40).
+    pub(crate) dd2_kobolds: Option<BgTex>,
+    /// `NPC_576/577` — the ogres (10-frame strips of 96x124).
+    pub(crate) dd2_ogres: Option<BgTex>,
     /// `NPC_550` — the tavernkeeper (16-frame humanoid strip of 18x40),
     /// `NPC_548` — the Etheria Crystal (40x40).
     pub(crate) tavern: Option<BgTex>,
@@ -470,6 +484,13 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dark_mage: sky_tex(atlas, "NPC_564", None),
         betsy: sky_tex(atlas, "NPC_551", None),
         wither_beast: sky_tex(atlas, "NPC_568", None),
+        dd2_wyverns: sky_tex(atlas, "NPC_558", None),
+        dd2_gliders: sky_tex(atlas, "NPC_574", None),
+        dark_mage_t3: sky_tex(atlas, "NPC_565", None),
+        wither_beast_t3: sky_tex(atlas, "NPC_569", None),
+        dd2_drakins: sky_tex(atlas, "NPC_570", None),
+        dd2_kobolds: sky_tex(atlas, "NPC_572", None),
+        dd2_ogres: sky_tex(atlas, "NPC_576", None),
         tavern: sky_tex(atlas, "NPC_550", None),
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
@@ -1454,6 +1475,53 @@ pub(crate) fn draw_npcs(
                 assets.wither_beast.as_ref(),
                 assets.wither_beast.as_ref().map_or(40.0, |t| t.h / 14.0),
                 [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The Old One's Army's tier-2/3 families (M4-EVENT-19): their
+            // own `Main.npcFrameCount` rows — the wyverns' 5, the gliders'
+            // 10, the Dark Mage T3's 20 (the T1's strip), the Wither Beast
+            // T3's 17, the drakins' 16, the kobold walkers' 18, the ogres'
+            // 10.
+            NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3 => (
+                assets.dd2_wyverns.as_ref(),
+                assets.dd2_wyverns.as_ref().map_or(38.0, |t| t.h / 5.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3 => (
+                assets.dd2_gliders.as_ref(),
+                assets.dd2_gliders.as_ref().map_or(38.0, |t| t.h / 10.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2DarkMageT3 => (
+                assets.dark_mage_t3.as_ref(),
+                assets.dark_mage_t3.as_ref().map_or(62.0, |t| t.h / 20.0),
+                [34.0, 62.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2WitherBeastT3 => (
+                assets.wither_beast_t3.as_ref(),
+                assets.wither_beast_t3.as_ref().map_or(40.0, |t| t.h / 17.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => (
+                assets.dd2_drakins.as_ref(),
+                assets.dd2_drakins.as_ref().map_or(58.0, |t| t.h / 16.0),
+                [42.0, 58.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 => (
+                assets.dd2_kobolds.as_ref(),
+                assets.dd2_kobolds.as_ref().map_or(40.0, |t| t.h / 18.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 => (
+                assets.dd2_ogres.as_ref(),
+                assets.dd2_ogres.as_ref().map_or(124.0, |t| t.h / 10.0),
+                [96.0, 124.0],
                 [n.x, n.y],
             ),
             // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.

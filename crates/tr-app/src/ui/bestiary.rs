@@ -735,6 +735,86 @@ fn portrait_data(
                 .unwrap_or(130.0);
             (sheet_i, h, 78.0, h, white)
         }
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19):
+        // their own sheets and `Main.npcFrameCount` rows.
+        (NpcKind::DD2WyvernT1, _) => {
+            let h = lookups.bestiary_npc_sheets[161]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DD2WyvernT2, _) => {
+            let h = lookups.bestiary_npc_sheets[162]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DD2WyvernT3, _) => {
+            let h = lookups.bestiary_npc_sheets[163]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DD2DarkMageT3, _) => {
+            let h = lookups.bestiary_npc_sheets[164]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::DD2WitherBeastT3, _) => {
+            let h = lookups.bestiary_npc_sheets[165]
+                .map(|s| s.height as f32 / 17.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2DrakinT2, _) => {
+            let h = lookups.bestiary_npc_sheets[166]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(58.0);
+            (sheet_i, h, 42.0, h, white)
+        }
+        (NpcKind::DD2DrakinT3, _) => {
+            let h = lookups.bestiary_npc_sheets[167]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(58.0);
+            (sheet_i, h, 42.0, h, white)
+        }
+        (NpcKind::DD2KoboldWalkerT2, _) => {
+            let h = lookups.bestiary_npc_sheets[168]
+                .map(|s| s.height as f32 / 18.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2KoboldWalkerT3, _) => {
+            let h = lookups.bestiary_npc_sheets[169]
+                .map(|s| s.height as f32 / 18.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::DD2KoboldFlyerT2, _) => {
+            let h = lookups.bestiary_npc_sheets[170]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DD2KoboldFlyerT3, _) => {
+            let h = lookups.bestiary_npc_sheets[171]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DD2OgreT2, _) => {
+            let h = lookups.bestiary_npc_sheets[172]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(124.0);
+            (sheet_i, h, 96.0, h, white)
+        }
+        (NpcKind::DD2OgreT3, _) => {
+            let h = lookups.bestiary_npc_sheets[173]
+                .map(|s| s.height as f32 / 10.0)
+                .unwrap_or(124.0);
+            (sheet_i, h, 96.0, h, white)
+        }
         // The shards' portraits.
         (NpcKind::StardustCellBig, _) => {
             let h = lookups.bestiary_npc_sheets[119]
