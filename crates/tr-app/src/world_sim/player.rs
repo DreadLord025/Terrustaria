@@ -123,12 +123,21 @@ pub(crate) fn grant_summon_caps(
     p: &mut Player,
     armor: &[ItemSlot; ARMOR],
     misc: &[ItemSlot; MISC],
+    world: &tr_core::World,
 ) {
+    // `Main.tenthAnniversaryWorld` — the port reads the world's seed flag
+    // (`World.seeds`, the `world_sim/npcs.rs:2895` stand-in pattern); the
+    // save-header wiring lands with M5-SEED-1, so a loaded .wld carries it
+    // only through world creation's anniversary seed option until then.
+    let tenth_anniversary = world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
     // `GrantArmorBenefits` (`:13103+`): the armor-piece and accessory slots
     // 0..10, each row once per equipped kind.
     for slot in &armor[..10] {
         match slot.kind {
-            238 | 3777 | 3778 | 4873 | 4899 | 5524 | 5068 | 2361 | 2362 | 3267 | 1832 | 1834 => {
+            238 if tenth_anniversary => p.max_minions += 1, // :13256-13259
+            3777 | 3778 | 4873 | 4899 | 5524 | 5068 | 2361 | 2362 | 3267 | 1832 | 1834 => {
                 p.max_minions += 1
             }
             1158..=1161 | 2370..=2371 | 2372 => p.max_minions += 1,
@@ -407,9 +416,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // tick's equipment and buffs, then the cycler's cooldown decrements
             // — both inside the fixed step, BEFORE the shoot path reads them.
             grant_ammo_mastery(p, &app.equip.armor, &app.equip.misc_equips);
-            // The `UpdateEquips` summon-cap rows (`Player.cs:13258-13948`,
+            // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
-            grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips);
+            grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
             p.ammo_cycling.tick();
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
@@ -1226,6 +1235,33 @@ mod tests {
             tick_ammo(&mut app);
             let p = app.player.as_ref().unwrap();
             assert_eq!((p.max_minions, p.max_turrets), (1, 1));
+        }
+
+        /// Review fix — the 238 row's +1 minion sits behind the C#'s
+        /// `Main.tenthAnniversaryWorld` gate (`Player.cs:13256-13259`): a
+        /// normal world grants nothing, the anniversary seed flag grants
+        /// +1, and dropping the flag returns the base on the next tick. The
+        /// port reads the gate from `World.seeds` (the
+        /// `SeedFlags::TENTH_ANNIVERSARY` stand-in — no save-header wiring
+        /// until M5-SEED-1).
+        #[test]
+        fn test_edge_the_238_row_is_anniversary_gated() {
+            let mut app = ammo_app();
+            app.equip.armor[0] = slot(238);
+            tick_ammo(&mut app);
+            assert_eq!(
+                app.player.as_ref().unwrap().max_minions,
+                1,
+                "a normal world grants nothing for 238"
+            );
+            // The anniversary flag: the +1 lands.
+            app.world.seeds = tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY.into();
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 2);
+            // Back to a normal world — the per-tick reset returns the base.
+            app.world.seeds = tr_core::seeds::SeedFlags::none();
+            tick_ammo(&mut app);
+            assert_eq!(app.player.as_ref().unwrap().max_minions, 1);
         }
     }
 }

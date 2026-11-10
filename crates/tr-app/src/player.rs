@@ -18,7 +18,7 @@ use crate::dye;
 use crate::item::{INV, ItemSlot};
 use crate::luck::LuckState;
 use crate::minecart;
-use crate::projectile::{PROJ_COUNT, ProjectilePool};
+use crate::projectile::{BABY_BIRD, PROJ_COUNT, ProjectilePool};
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use glam::Vec2;
 
@@ -230,9 +230,9 @@ pub struct Player {
     /// `Player.highestAbigailCounterOriginalDamage` (`Player.cs:1314`) — the
     /// recount's type-970 maximum; AI_062's 963 scaling reads it.
     pub highest_abigail_counter_original_damage: i32,
-    /// The 28 summon keep-alive flags `ResetEffects` clears
+    /// The 29 summon keep-alive flags `ResetEffects` clears
     /// (`Player.cs:18620-18646`+`:18741`) and `UpdateBuffs`' arms re-affirm
-    /// (`:10483-10947`); AI_062 reads them to pin `timeLeft = 2` (Phase 4).
+    /// (`:10483-10972`); AI_062 reads them to pin `timeLeft = 2` (Phase 4).
     /// Fields verbatim: `Player.cs:1268-1300` (order here groups the arm
     /// table's pairs).
     pub pygmy: bool,
@@ -263,6 +263,9 @@ pub struct Player {
     pub empress_blade: bool,
     pub stardust_guardian: bool,
     pub stardust_dragon: bool,
+    /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
+    /// chain's last arm (`:10957-10972`).
+    pub deadly_sphere_minion: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -818,11 +821,14 @@ fn flag_stardust_guardian(p: &mut Player) -> &mut bool {
 fn flag_stardust_dragon(p: &mut Player) -> &mut bool {
     &mut p.stardust_dragon
 }
+fn flag_deadly_sphere_minion(p: &mut Player) -> &mut bool {
+    &mut p.deadly_sphere_minion
+}
 
 /// The summon keep-alive arms in the C# chain's verbatim order
-/// (`Player.cs:10483-10947`). Buff 216 carries its own respawn arm and buffs
+/// (`Player.cs:10483-10972`). Buff 216 carries its own respawn arm and buffs
 /// 335/263 their status updaters — the driver special-cases those ids.
-const SUMMON_BUFF_ARMS: [SummonBuffArm; 28] = [
+const SUMMON_BUFF_ARMS: [SummonBuffArm; 29] = [
     SummonBuffArm {
         buff: 49,
         kinds: &[191, 192, 193, 194],
@@ -963,6 +969,11 @@ const SUMMON_BUFF_ARMS: [SummonBuffArm; 28] = [
         kinds: &[625],
         flag: flag_stardust_dragon,
     }, // :10944
+    SummonBuffArm {
+        buff: 161,
+        kinds: &[533],
+        flag: flag_deadly_sphere_minion,
+    }, // :10957
 ];
 
 impl Player {
@@ -1050,6 +1061,7 @@ impl Player {
             empress_blade: false,
             stardust_guardian: false,
             stardust_dragon: false,
+            deadly_sphere_minion: false,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -1908,17 +1920,17 @@ impl Player {
     /// Buff 216's arm (`Player.cs:10697-10726`): keep-alive on the 759 count;
     /// otherwise the respawn arm — below cap with the Baby Bird Staff (4281)
     /// in the inventory, spawn the item's shoot at the player's top with the
-    /// item's damage/knockBack and `originalDamage = item.damage` (`:10713`);
-    /// at cap (or without the staff) `DelBuff(j)` and no refresh (the C#
-    /// `flag2` guard). Returns false when the slot was deleted — the caller
-    /// rescans the index.
+    /// item's damage/knockBack (`originalDamage = item.damage` at `:10713` —
+    /// the data-row spawn seam writes it for minion rows); at cap (or without
+    /// the staff) `DelBuff(j)` and no refresh (the C# `flag2` guard). Returns
+    /// false when the slot was deleted — the caller rescans the index.
     fn run_baby_bird_arm(
         &mut self,
         pool: &mut ProjectilePool,
         inventory: &[ItemSlot; INV],
         j: usize,
     ) -> bool {
-        if self.owned_projectile_counts[759] > 0 {
+        if self.owned_projectile_counts[usize::from(BABY_BIRD)] > 0 {
             self.baby_bird = true;
         } else {
             // `base.whoAmI == Main.myPlayer` always holds in the
@@ -1928,24 +1940,31 @@ impl Player {
                 // inventory slot with the type and a stack.
                 if let Some(idx) = inventory.iter().position(|s| s.kind == 4281 && s.count > 0) {
                     if let Some(def) = registry::get(inventory[idx].kind) {
-                        if let Some(shoot) = def.projectile {
-                            // `Projectile.NewProjectile(..., base.Top,
-                            // Vector2.Zero, item.shoot, item.damage,
-                            // item.knockBack, whoAmI)` — `Entity.Top` is the
-                            // hitbox's top center; the C#'s pool-full
-                            // sentinel crash stands in as "not spawned".
-                            if let Some(slot) = pool.spawn(
-                                shoot,
+                        // `Projectile.NewProjectile(..., base.Top,
+                        // Vector2.Zero, item.shoot, item.damage,
+                        // item.knockBack, whoAmI)` — `Entity.Top` is the
+                        // hitbox's top center; item 4281's `Item.shoot` is
+                        // 759 (the generated row), so the verbatim data-row
+                        // slice (minion flag, 1.0 slots, timeLeft 18000,
+                        // the local pair) rides the spawn seam. The C#'s
+                        // pool-full sentinel crash stands in as "not
+                        // spawned".
+                        if pool
+                            .spawn_with_data_ai_owned(
+                                BABY_BIRD,
                                 0,
-                                Vec2::new(self.x + WIDTH * 0.5, self.y),
-                                Vec2::ZERO,
+                                self.x + WIDTH * 0.5,
+                                self.y,
+                                0.0,
+                                0.0,
                                 def.damage,
                                 def.knock_back,
-                                false,
-                            ) {
-                                pool.set_original_damage(slot, def.damage);
-                                self.baby_bird = true;
-                            }
+                                0.0,
+                                0.0,
+                            )
+                            .is_some()
+                        {
+                            self.baby_bird = true;
                         }
                     }
                 }
@@ -8904,6 +8923,14 @@ mod summon_tests {
         assert_eq!(bird.pos.x, p.x + WIDTH * 0.5);
         assert_eq!(bird.pos.y, p.y, "Entity.Top — the hitbox's top center");
         assert_eq!(bird.vel, Vec2::ZERO);
+        // The verbatim 759 slice rides the data-row spawn seam (the phase-1
+        // review fix): the 10×10 box and tile collide from the row, the
+        // 18000 lifetime, the minion flag and its 1.0 slot budget.
+        assert_eq!((bird.w, bird.h), (10.0, 10.0));
+        assert!(bird.tile_collide);
+        assert_eq!(bird.time_left, 18000);
+        assert!(bird.minion);
+        assert_eq!(bird.minion_slots, 1.0);
         let b = p.buffs.find_buff_index(216).unwrap();
         assert_eq!(p.buffs.buff_time[b], 18000);
         // At cap (`numMinions == maxMinions`): DelBuff, no spawn. The
@@ -8970,5 +8997,40 @@ mod summon_tests {
             pool.slots().iter().any(|s| s.active && s.kind == 759),
             "216 read the raised cap and spawned"
         );
+    }
+
+    /// The chain's 29th arm — buff 161 (`DeadlySphereMinion`, kind 533,
+    /// `Player.cs:10957-10972`, review fix): the plain keep-alive shape, kept
+    /// and refreshed while 533 is owned, dropped the pass the recount sees
+    /// it gone.
+    #[test]
+    fn test_edge_buff_161_tracks_projectile_533() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        let sphere = pool
+            .spawn(533, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        p.buffs.add_buff(161, 100);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(
+            p.deadly_sphere_minion,
+            "533 in the pool re-affirms the flag"
+        );
+        let b = p.buffs.find_buff_index(161).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000);
+        assert_eq!(p.owned_projectile_counts[533], 1);
+        // The drop: the minion leaves the pool, the buff follows one pass
+        // later — and the flag clears on the next tick's ResetEffects.
+        kill_pool_slot(&mut pool, sphere);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(161), None);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.deadly_sphere_minion);
     }
 }
