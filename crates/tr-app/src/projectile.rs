@@ -499,6 +499,7 @@ pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
+pub const BABY_BIRD: u16 = 759;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
@@ -867,7 +868,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`localNPCHitCooldown = 60`) rides the overlay below.
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false),
             // The summon rows (M4-PROJ-8 Phase 1) — the verbatim `SetDefaults`
-            // slices for the 12 minion kinds and the 18 sentry kinds. The
+            // slices for the 13 minion kinds and the 18 sentry kinds. The
             // damage/knockback stay the spawner's input; `extraUpdates`/`arrow`
             // /`trap` keep the stocks (no summon arm sets them). `timeLeft`:
             // the minions ride `timeLeft *= 5` on the stock 3600 (`:787`) =
@@ -893,6 +894,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ignoreWater (the stock true / false).
             STORM_TIGER_1 => (26.0, 20.0, 67, -1, 18000, 0, true, false, false),
             STORM_TIGER_2 | STORM_TIGER_3 => (20.0, 30.0, 67, -1, 18000, 0, true, false, false),
+            // The baby bird (`Projectile.cs:7829-7845` — the C#
+            // `ProjectileID.BabyBird`) — the buff-216 pet-respawn minion
+            // (Phase 2's arm), aiStyle 158; the `friendly`/`drawLayer` lines
+            // have no port consumer (the module doc).
+            BABY_BIRD => (10.0, 10.0, 158, -1, 18000, 0, true, false, false),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -937,10 +943,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         932 => (true, 60),
         // The summon rows' local pairs: the Guardian (`Projectile.cs:6721-
         // 6722`), the Storm Tigers (`:8096-8097`/`:8110-8111`/`:8124-8125`),
-        // Abigail (`:9111-9112`), the Lightning Auras (`:7332-7333`).
+        // Abigail (`:9111-9112`), the Lightning Auras (`:7332-7333`), the
+        // baby bird (`:7841-7842`).
         STARDUST_GUARDIAN => (true, 5),
         STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 => (true, 10),
         ABIGAIL => (true, 20),
+        BABY_BIRD => (true, 15),
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
@@ -949,7 +957,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
     // the stock `minion = false` / `minionSlots = 0f`
     // (`Projectile.cs:775-776`).
     let (minion, sentry, minion_slots) = match kind {
-        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL => (true, false, 1.0),
+        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD => {
+            (true, false, 1.0)
+        }
         RETANIMINI | SPAZMAMINI => (true, false, 0.5),
         STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
             (true, false, 0.0)
@@ -4872,9 +4882,9 @@ mod summon_tests {
         tr_core::tile_light::FastRandom::new(7)
     }
 
-    /// The 12 minion kinds (M4-PROJ-8 Phase 1's rows) — the aiStyle-62 family
-    /// plus the aiStyle-66/67/120 flag-minions.
-    const MINION_KINDS: [u16; 12] = [
+    /// The 13 minion kinds (M4-PROJ-8 Phase 1's rows) — the aiStyle-62 family
+    /// plus the aiStyle-66/67/120/158 flag-minions.
+    const MINION_KINDS: [u16; 13] = [
         HORNET,
         FLYING_IMP,
         TEMPEST,
@@ -4884,6 +4894,7 @@ mod summon_tests {
         RETANIMINI,
         SPAZMAMINI,
         STARDUST_GUARDIAN,
+        BABY_BIRD,
         STORM_TIGER_1,
         STORM_TIGER_2,
         STORM_TIGER_3,
@@ -4912,7 +4923,7 @@ mod summon_tests {
         DEAD_CELLS_BARNACLE,
     ];
 
-    /// DW-1.1: the 30 summon rows carry the verbatim `SetDefaults` slice —
+    /// DW-1.1: the 31 summon rows carry the verbatim `SetDefaults` slice —
     /// the box, aiStyle, penetrate, the `timeLeft` override (18000 for the
     /// `*= 5` minions, `SentryLifeTime` 36000 for the sentries) and the
     /// identification flags. Data-verbatim pattern
@@ -4922,12 +4933,12 @@ mod summon_tests {
         // (kind, w, h, ai_style, penetrate, time_left, tile_collide, minion,
         //  sentry, minion_slots) — every value read off the C# arm cited in
         // the row's comment.
-        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 30] = [
+        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 31] = [
             // `Projectile.cs:4563-4573` (373) / `:4587-4597` (375) /
             // `:4878-4890` (407) / `:4960-4971` (423) / `:6598-6608` (613) /
             // `:9100-9113` (963) / `:4707-4718` (387) / `:4723-4734` (388) /
             // `:6709-6723` (623) / `:8091-8098` (833) / `:8105-8112` (834) /
-            // `:8119-8126` (835).
+            // `:8119-8126` (835) / `:7829-7845` (759).
             (HORNET, 24.0, 26.0, 62, -1, 18000, false, true, false, 1.0),
             (
                 FLYING_IMP, 34.0, 26.0, 62, -1, 18000, false, true, false, 1.0,
@@ -5002,6 +5013,10 @@ mod summon_tests {
                 true,
                 false,
                 0.0,
+            ),
+            // `:7829-7845` (759).
+            (
+                BABY_BIRD, 10.0, 10.0, 158, -1, 18000, true, true, false, 1.0,
             ),
             // `Projectile.cs:3997-4007` (308) / `:4615-4622` (377) /
             // `:9143-9150` (966) / `:6916-6927` (641) / `:6929-6938` (643) /
@@ -5281,6 +5296,9 @@ mod summon_tests {
         let abigail = proj_data(ABIGAIL).unwrap();
         assert!(abigail.uses_local_immunity);
         assert_eq!(abigail.local_hit_cooldown, 20);
+        let baby_bird = proj_data(BABY_BIRD).unwrap();
+        assert!(baby_bird.uses_local_immunity);
+        assert_eq!(baby_bird.local_hit_cooldown, 15);
         for kind in [LIGHTNING_AURA_1, LIGHTNING_AURA_2, LIGHTNING_AURA_3] {
             let d = proj_data(kind).unwrap();
             assert!(d.uses_local_immunity, "kind {kind}");

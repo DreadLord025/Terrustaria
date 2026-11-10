@@ -112,3 +112,83 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     });
     app.projectile_step.cap_backlog();
 }
+
+#[cfg(test)]
+mod summon_fixture_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::{FROST_HYDRA, HORNET, MAX_PROJECTILES, WOODEN_ARROW};
+
+    /// The `TR_SUMMON` fixture arm's once-per-activation shape: the pin
+    /// spawns the Hornet + Frost Hydra pair anchored on the player's center,
+    /// then resets — further ticks spawn nothing and a re-armed pin spawns
+    /// the second pair (the review fix: the arm had no unit test).
+    #[test]
+    fn the_summon_fixture_spawns_one_pair_per_activation() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        app.summon_shot = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(!app.summon_shot, "the one-shot flag consumed");
+        let mut hornet = None;
+        let mut hydra = None;
+        for p in app.projectiles.slots().iter().filter(|p| p.active) {
+            match p.kind {
+                HORNET => hornet = Some((p.pos.x, p.pos.y)),
+                FROST_HYDRA => hydra = Some((p.pos.x, p.pos.y)),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            (hornet, hydra),
+            (Some((cx - 24.0, cy - 48.0)), Some((cx + 24.0, cy - 48.0)),),
+            "the pair anchored on the player's center"
+        );
+        assert_eq!(app.projectiles.active_count(), 2, "exactly the pair");
+        // The flag stays down: further ticks spawn nothing new.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.active_count(), 2, "no per-tick respawn");
+        // The reset makes the arm re-armable: a second activation spawns
+        // the second pair.
+        app.summon_shot = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(!app.summon_shot);
+        assert_eq!(app.projectiles.active_count(), 4, "the second pair");
+    }
+
+    /// A full pool declines the spawn — the C# `NewProjectile`'s 1000
+    /// sentinel (`Projectile.cs:10793`) drops the request — while the arm
+    /// still consumes the flag.
+    #[test]
+    fn the_summon_fixture_respects_a_full_pool() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // Fill every slot with an active filler so the arm finds no space.
+        for _ in 0..MAX_PROJECTILES {
+            app.projectiles.spawn_with_data_ai_owned(
+                WOODEN_ARROW,
+                0,
+                16.0,
+                16.0,
+                0.0,
+                0.0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
+        app.summon_shot = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(!app.summon_shot, "the flag consumed even on the decline");
+        assert_eq!(app.projectiles.active_count(), MAX_PROJECTILES);
+        assert!(
+            !app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && (p.kind == HORNET || p.kind == FROST_HYDRA)),
+            "the pair declined: the pool stayed full of fillers"
+        );
+    }
+}
