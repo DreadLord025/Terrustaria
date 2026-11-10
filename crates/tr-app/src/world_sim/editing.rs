@@ -543,22 +543,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
-            // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
-            // is ×1 at the port's default melee speed), the spawn at the
-            // player center (`RotatedRelativePoint(MountedCenter)`), the
-            // damage `weaponDamage` (the class multiplier) and the item's
-            // knockback.
+            // `shootSpeed` (`:47274-47292`), the spawn at the player center
+            // (`RotatedRelativePoint(MountedCenter)`), the damage
+            // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
-                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
                     let (fx_dmg, fx_spd, fx_kb) = held_fx
                         .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
                             (s.damage, s.shoot_speed, s.knock_back)
                         });
+                    // `if (sItem.melee && !ProjectileID.Sets
+                    // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
+                    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
+                    // the exception set (`ProjectileID.cs:547`), so every melee
+                    // shot divides (×1 at the default 1f bonus).
+                    let fx_spd = if class == registry::DamageClass::Melee {
+                        fx_spd / p.melee_speed()
+                    } else {
+                        fx_spd
+                    };
+                    // `if (sItem.type == 2611 || sItem.type == 5526)
+                    // pointPosition += vector2` (`:47239-47245`): the 1-px
+                    // spawn shift along the aim (the Flairon's arm).
+                    let spawn = if held.kind == 2611 || held.kind == 5526 {
+                        Vec2::new(pcx, pcy) + dir * 10.0 + dir
+                    } else {
+                        Vec2::new(pcx, pcy) + dir * 10.0
+                    };
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
