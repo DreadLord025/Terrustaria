@@ -1124,7 +1124,14 @@ impl App {
                     renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
-                    p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                    // The yoyo family's string anchors on the player's
+                    // centre (`Main.cs:27943-27945`'s mountedCenter +
+                    // gfxOffY) — the frame's rendered player carries both.
+                    let hand = render_player.as_ref().map(|pl| {
+                        let (cx, cy) = pl.center();
+                        (cx, cy + pl.gfx_off_y)
+                    });
+                    p.draw_with_hand(renderer, lookups, light, draw_cam, *zoom, screen, hand);
                 }
 
                 let boss = npcs
