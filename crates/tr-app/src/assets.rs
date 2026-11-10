@@ -1150,7 +1150,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 161] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1170,6 +1170,10 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 161] = [
         // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
         // the earlier slots keep their indexes.
         549,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19), appended
+        // after the lane gate so the earlier slots keep their indexes.
+        558, 559, 560, 565, 569, 570, 571,
+        572, 573, 574, 575, 576, 577,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -1731,6 +1735,19 @@ impl Lookups {
                 atlas.sheet("NPC_208").copied(),
                 // The Old One's Army's lane gate (M4-EVENT-18).
                 atlas.sheet("NPC_549").copied(),
+                atlas.sheet("NPC_558").copied(),
+                atlas.sheet("NPC_559").copied(),
+                atlas.sheet("NPC_560").copied(),
+                atlas.sheet("NPC_565").copied(),
+                atlas.sheet("NPC_569").copied(),
+                atlas.sheet("NPC_570").copied(),
+                atlas.sheet("NPC_571").copied(),
+                atlas.sheet("NPC_572").copied(),
+                atlas.sheet("NPC_573").copied(),
+                atlas.sheet("NPC_574").copied(),
+                atlas.sheet("NPC_575").copied(),
+                atlas.sheet("NPC_576").copied(),
+                atlas.sheet("NPC_577").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

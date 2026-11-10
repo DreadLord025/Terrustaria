@@ -1964,6 +1964,19 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2DarkMage
         | crate::npc::NpcKind::DD2Betsy
         | crate::npc::NpcKind::DD2WitherBeast
+        | crate::npc::NpcKind::DD2WyvernT1
+        | crate::npc::NpcKind::DD2WyvernT2
+        | crate::npc::NpcKind::DD2WyvernT3
+        | crate::npc::NpcKind::DD2DarkMageT3
+        | crate::npc::NpcKind::DD2WitherBeastT3
+        | crate::npc::NpcKind::DD2DrakinT2
+        | crate::npc::NpcKind::DD2DrakinT3
+        | crate::npc::NpcKind::DD2KoboldWalkerT2
+        | crate::npc::NpcKind::DD2KoboldWalkerT3
+        | crate::npc::NpcKind::DD2KoboldFlyerT2
+        | crate::npc::NpcKind::DD2KoboldFlyerT3
+        | crate::npc::NpcKind::DD2OgreT2
+        | crate::npc::NpcKind::DD2OgreT3
         | crate::npc::NpcKind::DD2Bartender
         | crate::npc::NpcKind::DD2EterniaCrystal
         | crate::npc::NpcKind::AncientCultist

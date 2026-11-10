@@ -9083,3 +9083,49 @@ per-wave `switch` with its own caps and rolls.
   archers, the drakes, the mystics, the ogres, the hounds, the sapper and
   the glider have no kind yet, so those picks drop out until they land
   (`nid_of`/`dd2_pool_id`).
+
+## The Old One's Army's tier-2/3 families (M4-EVENT-19)
+
+The lane spawn table's unported members landed: the 13 kinds the D2/D3
+rosters pick (the port ids 169-181), each with the vanilla row and its
+machine arm.
+
+- **The diving flyers** (`AI_108_DivingFlyer`, `NPC.cs:65392-65788`) are a
+  new machine in the port — the etherian wyverns (558/559/560) and the
+  kobold gliders (574/575). It is a five-state machine on `ai[0]`: the
+  approach (the 500-px engage gate with the `num4 = 90` smoothing toward a
+  point `num2 = 400` above the player and the `ai[3]` blocked-tick
+  counter), the wind-up (20 ticks for the wyverns, 30 for the gliders, at
+  0.95 damping with the gliders' `-0.1` drift), the dive (the `num11`
+  homing with the `num12 × num11` drag — 3.0 for the wyverns, 0.5 for the
+  gliders — and the 30-tick / 150-px / min-speed exits), the 45-tick
+  post-dive rest and the gliders' impact. The families differ by flags not
+  by numbers: the wyverns' `flag2 = false` keeps them out of the crash
+  state entirely, while the gliders' `num13 = 0` means their only dive
+  exits are the solid-collision and the 64-px proximity, both of which open
+  the 192-box impact — an 80-damage blast, the `alpha = 255` full-box
+  flash and the death at the third tick (the port's `wants_blast` intent +
+  `damage_override`, read by the contact path).
+- **The walkers** ride the port's `AI_107` arms: the Wither Beast T3 (569)
+  is the T2's aura/self-heal — it charges at `num5 = 110` frames with the
+  1.4/0.16/0.7 walk tuning and heals `lifeMax / 20` every 60 ticks; the
+  Drakins (570/571) run the flag12 stand-and-shoot, where `num8 = 60`
+  opens the burst, `num9` re-writes itself every 6 (571) or 9 (570) ticks
+  between 10 and 40 so they fire repeatedly, and the 671 leaves from the
+  22-px muzzle with the `Math.Abs(v.X) * num15` ballistic drop at 35/60;
+  the Kobold walkers (572/573) are the ignite-and-explode kamikaze — the
+  lit state sets `ai[1] = 1`, the 192-box blast follows on the third tick
+  of `ai[1] == 2`, and the sprint's `num23 = 4` (four times the 0.88 walk)
+  rides the flag5 charge arm; the Ogres (576/577) carry all three attack
+  arms at once — the flag5 chase (`velocity.X *= 0.7`, the 60-tick
+  cooldown), the flag3 throw (the 676 spit at 40 from the offset, the 683
+  ground pound at 60) and the flag4 hop (`velocity.Y = -13` at `num = 56`),
+  with `ai[1]`'s sub-state machine picking chase vs spit vs pound on the
+  distance and the 300-tick `localAI[0]` chase latch.
+- **The ports' roster is now complete** for the spawn tables: `nid_of` and
+  `dd2_pool_id` round-trip the D1/D2/D3 rosters (558-577, 548-551), so the
+  lane gate's pick resolves to a real kind and the pool's live caps count
+  them. The remaining DD2 families (the Lightning Bug 580-family and the
+  Old One's Skeleton's 566/567, already ported) sit outside the spawn
+  tables.
+
