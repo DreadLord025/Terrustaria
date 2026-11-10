@@ -2090,8 +2090,10 @@ impl Projectile {
                         // `:43250-43262`: release.
                         self.ai[0] = -1.0;
                         self.ai[1] = -1.0;
+                        // The parameterless overload's 800f default
+                        // (`:45628`).
                         let target = find_target_with_line_of_sight(
-                            world, npcs, self.pos, self.w, self.h, 3000.0, &[],
+                            world, npcs, self.pos, self.w, self.h, 800.0, &[],
                         );
                         if target != -1 {
                             self.ai[1] = target as f32;
@@ -2119,8 +2121,9 @@ impl Projectile {
             }
             if released && self.ai[1] == -1.0 {
                 // `:43266-43271`: the failed-homing re-search.
+                // The parameterless overload's 800f default (`:45628`).
                 let target =
-                    find_target_with_line_of_sight(world, npcs, self.pos, self.w, self.h, 3000.0, &[]);
+                    find_target_with_line_of_sight(world, npcs, self.pos, self.w, self.h, 800.0, &[]);
                 if target != -1 {
                     self.ai[1] = target as f32;
                 }
@@ -2141,11 +2144,16 @@ impl Projectile {
                 if chaseable(npc) {
                     let center = npc_center(npc);
                     aim = Some(center);
-                    // `:43292-43295`: the distance-ramped blend.
+                    // `:43292-43295`: the distance-ramped blend — the C#
+                    // wraps the ramp in `MathHelper.Lerp(0f, 0.2f, ...)`, so
+                    // the blend never exceeds 0.2.
                     let t = self.vel.distance(center);
-                    amount = get_lerp_value(200.0, 20.0, {
-                        1.0 - get_lerp_value(0.0, 100.0, t) * get_lerp_value(600.0, 400.0, t)
-                    });
+                    let ramp = get_lerp_value(
+                        200.0,
+                        20.0,
+                        1.0 - get_lerp_value(0.0, 100.0, t) * get_lerp_value(600.0, 400.0, t),
+                    );
+                    amount = 0.2 * ramp;
                 } else {
                     // `:43296-43297`: the mid-flight death of the target.
                     self.ai[1] = -1.0;
@@ -2642,19 +2650,32 @@ impl Projectile {
             if self.local_ai[0] == 0.0 && self.ai[0] < 0.0 && self.owner == 0 {
                 self.local_ai[0] = 5.0;
                 let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
-                let mut found = -1i32;
+                // The C# assigns inside the loop (`:36225`), so a later
+                // candidate only wins when it is closer than the held index
+                // (`:36218-36219`'s comparison turns live).
+                let mut found: usize = usize::MAX;
+                let mut found_distance = 400.0f32;
                 for (i, n) in npcs.iter().enumerate() {
                     if !chaseable(n) {
                         continue;
                     }
                     let c = npc_center(n);
+                    let distance = center.distance(c);
+                    let closer = found == usize::MAX
+                        || npc_center(&npcs[found]).distance(center) > distance;
                     let clear = can_hit_line(world, center.x, center.y, 0.0, 0.0, c.x, c.y, 0.0, 0.0)
                         || can_hit_line(world, center.x, center.y, 0.0, 0.0, n.x, n.y, 0.0, 0.0);
-                    if clear && center.distance(c) < 400.0 {
-                        found = i as i32;
+                    if closer && distance < 400.0 && clear {
+                        found = i;
+                        found_distance = distance;
                     }
                 }
-                self.ai[0] = found as f32;
+                let _ = found_distance;
+                self.ai[0] = if found == usize::MAX {
+                    -1.0
+                } else {
+                    found as f32
+                };
                 if found >= 0 {
                     // `:36228-36231`: a found target extends the life.
                     self.time_left = retarget_life;
@@ -7358,6 +7379,93 @@ mod magic_ai_tests {
         assert!(
             pool.slots()[slot].time_left <= 240,
             "the waiting flame caps at 240"
+        );
+    }
+
+    // ---- Batch-review fixes (phase 4b) --------------------------------------
+
+    #[test]
+    fn test_fix_4b_the_released_spell_blends_at_most_0p2() {
+        // `:43292-43295`: the aim blend wraps the ramp in
+        // `MathHelper.Lerp(0f, 0.2f, ...)`, so the velocity never snaps the
+        // whole way to the approach vector. A released spell with a target
+        // ahead keeps most of its own flight.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 30, 0.0, -1.0, 0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            10.0 * TILE_PX + 64.0,
+            10.0 * TILE_PX,
+            SlimeVariant::Blue,
+        )];
+        pool.update(&mut w, &mut npcs, None, None);
+        let spell = &pool.slots()[slot];
+        // The blend cap: the flight stays in the approach direction but only
+        // 20% toward it, so |v| is at most 32 * 1.2 = 38.4 and the direction
+        // keeps a large share of the original +x.
+        assert!(
+            spell.vel.x > 3.0,
+            "the 0.2 blend keeps the flight (vx={})",
+            spell.vel.x
+        );
+        assert!(
+            spell.vel.length() < 38.5,
+            "the blend caps the approach (|v|={})",
+            spell.vel.length()
+        );
+    }
+
+    #[test]
+    fn test_fix_4b_the_target_hunt_stops_at_the_800f_radius() {
+        // The parameterless overload's 800f default (`:45628`): a target
+        // past it is not acquired.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 30, 0.0, 320.0, 384.0,
+            )
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&world());
+        let mut w = world();
+        let mut npcs = vec![Npc::spawn_slime_sky(
+            10.0 * TILE_PX + 1000.0,
+            10.0 * TILE_PX,
+            SlimeVariant::Blue,
+        )];
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            Some(&mut p),
+        );
+        let spell = &pool.slots()[slot];
+        assert_eq!(spell.ai[0], -1.0, "the release runs");
+        assert_eq!(spell.ai[1], -1.0, "no target past the 800f radius");
+    }
+
+    #[test]
+    fn test_fix_4b_the_spirit_flame_keeps_the_closest_candidate() {
+        // `:36218-36225`: the in-loop assignment keeps the held-index
+        // comparison live, so the closest candidate wins, not the last.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                SPIRIT_FLAME, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 80, 0.0, -2.0, 0.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 200.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 64.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(
+            pool.slots()[slot].ai[0], 1.0,
+            "the nearer candidate wins regardless of the scan order"
         );
     }
 }
