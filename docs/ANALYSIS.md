@@ -8021,6 +8021,22 @@ aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
 
 
 ## Micro-biome passes (M5-BIOME-2)
+### The honey patches (M5-BIOME-2, second slice)
+
+`HoneyPatchBiome` (`HoneyPatchBiome.cs:9-83`) rides the hive pass: every
+placed hive rolls `Next(5)` patch points on the 30-90 px ring around its
+centre and each runs the full `Place` — the origin gate, the down-80 find,
+the 15-disc scan (75 % mud/hive + 2 hive tiles), the 8-disc solid gate
+(20+), the important-location scan and the four generation steps
+(the radial-dithered 229 fill, the honey pocket with the liquid kind 2,
+the mud rim, the honey cap). The port's structure map is the caller's
+`protected` rect list (the same neighbour-rect idiom the cave houses
+document). `CorruptionPitBiome` is never instantiated in the decompile —
+its `Place` is dead code, so no pass is ported for it (audited, not
+ported). Both world hashes re-pinned: a classic world's hives now carry
+their pockets.
+
+
 
 The three micro-biome passes are 1:1 ports; the deviations:
 
