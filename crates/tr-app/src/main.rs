@@ -96,14 +96,18 @@ fn main() -> Result<()> {
     }));
 
     let args: Vec<String> = std::env::args().collect();
-    // No argument loads our own generated world (`Documents/My Games/Terrustaria`).
-    // Passing a path still loads a `.wld` from the original game or a saved `.trwld`.
+    // `TR_WORLD=<path>` is the explicit debug/test path, and a positional
+    // argument still loads a `.wld` from the original game or a saved `.trwld`.
+    // The production path has neither: it boots the player's own newest world
+    // (`UIWorldSelect`'s list is what `WorldPlay` opens, BUG-05) and falls back
+    // to the pre-baked `Terrustaria` stand-in only when the saves dir holds no
+    // `.trwld` at all.
     let world_path = if let Some(p) = crate::env::world_path() {
         p
     } else {
         match args.get(1) {
             Some(p) => PathBuf::from(p),
-            None => app::terrstaria_world()?,
+            None => app::latest_own_world().unwrap_or(app::terrstaria_world()?),
         }
     };
 
