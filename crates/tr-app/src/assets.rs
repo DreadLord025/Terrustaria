@@ -409,6 +409,37 @@ pub fn load_world_images(
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        // The lunar family's per-kind sheets (M4-NPC-3s) — the v1 packed
+        // only NPC_409/420/425/426 and shared them across 22 kinds, so
+        // the solar family drew stardust-spider art. Now one sheet per
+        // kind (plus the chain's body/tail sheets and the lone head).
+        "NPC_405",
+        "NPC_406",
+        "NPC_407",
+        "NPC_409",
+        "NPC_410",
+        "NPC_411",
+        "NPC_412",
+        "NPC_413",
+        "NPC_414",
+        "NPC_402",
+        "NPC_403",
+        "NPC_404",
+        "NPC_415",
+        "NPC_416",
+        "NPC_417",
+        "NPC_418",
+        "NPC_419",
+        "NPC_420",
+        "NPC_421",
+        "NPC_423",
+        "NPC_424",
+        "NPC_425",
+        "NPC_426",
+        "NPC_427",
+        "NPC_428",
+        "NPC_429",
+        "NPC_518",
         // The towers' per-pillar glow masks (`Main.cs:24177-24233`): each
         // pillar's arm draws four ghost copies of its own sheet at the
         // velocity-rotated offsets.
