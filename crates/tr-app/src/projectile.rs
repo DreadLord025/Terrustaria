@@ -532,6 +532,34 @@ struct YoyoTick {
     beam: Option<YoyoBeamRequest>,
 }
 
+/// One flail helper spawn — the family's `Projectile.NewProjectile` calls
+/// (`:43914`/`:43927` the Drippler's 928, `:44137` the Flower Pow's petal
+/// 248, `:44094` the Flairon's bubble 405). The AI only sees its own slot,
+/// so the request rides out like `YoyoTick`'s beam; the dispatch arm spawns
+/// at most one per slot per tick (the vanilla never fires two in one AI
+/// pass).
+struct FlailSpawnRequest {
+    kind: u16,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+    knock_back: f32,
+    /// `NewProjectile`'s `ai0` — the Flairon seeds its bubbles with -10f.
+    ai0: f32,
+}
+
+/// What one flail AI tick hands back to the pool: the family's helper
+/// spawn and the `player.ChangeDir` facing the C# writes mid-machine (the
+/// port's facing is run-key driven, so the value rides out and the dispatch
+/// arm applies it after the AI pass).
+#[derive(Default)]
+struct FlailTick {
+    spawn: Option<FlailSpawnRequest>,
+    facing: Option<i32>,
+}
+
 /// The shared (non-per-kind) locals of `AI_015_Flails`
 /// (`Projectile.cs:43746-43760`), with the meleeSpeed-scaled ones marked.
 const FLAIL_THROW_MAX_DISTANCE: f32 = 800.0; // num3
@@ -1722,6 +1750,454 @@ impl Projectile {
         }
     }
 
+    /// The C# `Vector2` overload of `Utils.MoveTowards` (`Utils.cs:1772-1780`)
+    /// — the length-clamped step toward the target (the scalar peer lives in
+    /// `ambient_sound.rs`).
+    fn move_towards_vec(current: Vec2, target: Vec2, max_step: f32) -> Vec2 {
+        let v = target - current;
+        if v.length() < max_step {
+            return target;
+        }
+        current + v.normalize_or_zero() * max_step
+    }
+
+    /// The C# `wet && !lavaWet` read of the 948→947 morph (`:43737`):
+    /// `Collision.WetCollision`/`LavaCollision` over the slot box. The port's
+    /// Player liquid pass reads the mid-tile kind (`player.rs:1634-1643`); the
+    /// flail slot reuses that idiom — the box-scan approximation is recorded
+    /// in ANALYSIS.
+    fn flail_in_liquid(&self, world: &World) -> bool {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        world
+            .tile(cx as i32, cy as i32)
+            .filter(|t| t.liquid > 0)
+            .is_some_and(|t| t.liquid_kind() != tr_core::tile::LiquidKind::Lava)
+    }
+
+    /// `AI_015_Flails` (`Projectile.cs:43724-44169`) — the whole flail
+    /// machine: the kill gates, the per-kind parameter table
+    /// (`flail_params`), the seven `ai[0]` states, the movement, the 1058/247
+    /// per-kind tails and the common tail. The method runs BEFORE the pool's
+    /// move/tile-collision pass; `ai_flail_bounce` (the dispatcher's
+    /// `HandleMovement` peer) runs after it.
+    ///
+    /// Documented deviations (ANALYSIS): the `mapFullscreen` kill (no map
+    /// mode), the `noItems` gate (no field), `player.heldProj` /
+    /// `SetDummyItemTime` / `itemRotation` (no consumers — the held-item pose
+    /// is a render follow-up), `ownerHitCheck`/`drawLayer` (no consumers),
+    /// the dust call (no dust system) and the tile-impact/sound arms of the
+    /// bounce (a decor follow-up). The `player.ChangeDir` writes ride back in
+    /// `FlailTick.facing` (the port's facing is run-key driven), with the
+    /// same-tick reads served by the local `eff_dir`.
+    #[allow(clippy::too_many_arguments)]
+    fn ai_flail(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        inputs: FlailInputs,
+        flag5: bool,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> FlailTick {
+        let mut tick = FlailTick::default();
+        let center = match (inputs.center, owner) {
+            (Some(c), _) => Vec2::from(c),
+            // An absent player reads as the C#'s inactive `Main.player[owner]`.
+            (None, _) => {
+                self.active = false;
+                self.time_left = 0;
+                return tick;
+            }
+        };
+        let mounted = match inputs.mounted_center {
+            Some(m) => Vec2::from(m),
+            None => {
+                self.active = false;
+                self.time_left = 0;
+                return tick;
+            }
+        };
+        let head = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:43726-43731` — dead / CCed / the `900f * (1f / meleeSpeed)` leash.
+        if inputs.player_dead
+            || inputs.player_cced
+            || (head - center).length() > 900.0 / inputs.melee_speed
+        {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
+        // `:43737-43741` — the Flaming Mace's water extinguish.
+        if self.kind == FLAMING_MACE && self.flail_in_liquid(world) {
+            self.kind = MACE;
+        }
+        // `:43832-43835` — the 26/35 `drawLayer = 0` branch keys on `ai[2]`,
+        // whose only C# writer is the sentry-backpack tail (unreachable for
+        // flails); the port has no drawLayer consumer either, so the branch
+        // stays a note until the render follow-up.
+        let params = flail_params(self.kind);
+        let melee = 1.0 / inputs.melee_speed;
+        // `:43824-43831` — the meleeSpeed-scaled subset; `:43746-43760` the
+        // shared locals; `:43759`/`:43836-43837` the derived values.
+        let num = params.flight_ticks;
+        let num2 = params.throw_speed * melee;
+        let num3 = FLAIL_THROW_MAX_DISTANCE;
+        let num4 = FLAIL_RETRACT_ACCEL * melee;
+        let num5 = params.retract_speed * melee;
+        let num6 = FLAIL_REEL_ACCEL * melee;
+        let num7 = params.reel_kill_distance * melee;
+        let num8 = FLAIL_SPIN_SOFT_ACCEL * melee;
+        let num9 = FLAIL_SPIN_PULL_SPEED * melee;
+        let num10 = FLAIL_SPIN_INNER_RADIUS;
+        let num11 = FLAIL_HELD_NPC_COOLDOWN;
+        let num12 = params.spin_npc_cooldown;
+        let num13 = FLAIL_FLIGHT_NPC_COOLDOWN;
+        let num14 = num + 5.0;
+        let num15 = params.orbit_radius;
+        let num17 = num2 * num;
+        let num18 = num17 + 160.0;
+        self.local_hit_cooldown = num11 as i32;
+        // The effective player direction — the C# writes `player.ChangeDir`
+        // mid-machine and reads it back in the same pass.
+        let mut eff_dir = inputs.player_dir;
+        match self.ai[0] as i32 {
+            0 => {
+                // The held state (`:43841-43898`).
+                let mut aim = match inputs.aim {
+                    Some(a) => (Vec2::from(a) - mounted).normalize_or_zero(),
+                    None => Vec2::new(eff_dir as f32, 0.0),
+                };
+                if aim == Vec2::ZERO {
+                    // `SafeNormalize(UnitX * player.direction)` (`:43863`).
+                    aim = Vec2::new(eff_dir as f32, 0.0);
+                }
+                // `:43864-43871` — the forced facing, inverted on the dual
+                // flail (`flag5`).
+                eff_dir = if flag5 {
+                    if aim.x < 0.0 { 1 } else { -1 }
+                } else if aim.x > 0.0 {
+                    1
+                } else {
+                    -1
+                };
+                if !inputs.channel {
+                    // `:43873-43885` — the release throws.
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                    self.vel = aim * num2 + Vec2::from(inputs.player_vel);
+                    if flag5 {
+                        self.vel.x *= -1.0;
+                    }
+                    self.pos = mounted - Vec2::new(self.w * 0.5, self.h * 0.5);
+                    self.local_ai[1] = 0.0; // `ResetLocalNPCHitImmunity`
+                    self.local_hit_cooldown = num13 as i32;
+                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                }
+                // `:43888-43897` — the charge orbit.
+                self.local_ai[1] += 1.0;
+                let angle =
+                    std::f32::consts::PI * 10.0 * (self.local_ai[1] / 60.0) * eff_dir as f32;
+                let mut orbit = Vec2::new(eff_dir as f32, 0.0).rotate(Vec2::from_angle(angle));
+                orbit.y *= 0.8;
+                if orbit.y > 0.0 {
+                    orbit.y *= 0.5; // gravDir 1 (no flipped gravity ported)
+                }
+                self.pos =
+                    mounted + orbit * num15 - Vec2::new(self.w * 0.5, self.h * 0.5);
+                self.vel = Vec2::ZERO;
+                self.local_hit_cooldown = num12 as i32;
+            }
+            1 => {
+                // The fly-out (`:43900-43932`).
+                let grown = self.ai[1] >= num;
+                self.ai[1] += 1.0;
+                let flag3 = grown || (head - mounted).length() >= num3;
+                let num19 = 1.3f32;
+                if inputs.channel {
+                    // `:43905-43916` — the mid-flight re-grab; the Drippler
+                    // spawns its extra ball on both this and the arm end.
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.2;
+                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                } else if flag3 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.3;
+                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+                self.local_hit_cooldown = num13 as i32;
+            }
+            2 => {
+                // The retract (`:43934-43955`).
+                let to_player = (mounted - head).normalize_or_zero();
+                if (head - mounted).length() <= num5 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                if inputs.channel {
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                    self.vel *= 0.2;
+                } else {
+                    self.vel *= 0.98;
+                    self.vel = Self::move_towards_vec(self.vel, to_player * num5, num4);
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            3 => {
+                // The spin orbit (`:43957-43998`).
+                if !inputs.channel {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                }
+                let dist = (head - mounted).length();
+                let want_collide = self.ai[1] == 1.0;
+                let flag4 = dist <= num17;
+                if flag4 != want_collide {
+                    self.tile_collide = flag4;
+                    self.ai[1] = if flag4 { 1.0 } else { 0.0 };
+                }
+                let to_player = (mounted - head).normalize_or_zero();
+                if dist > num10 {
+                    if dist >= num17 {
+                        self.vel *= 0.5;
+                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
+                    }
+                    self.vel *= 0.98;
+                    self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                } else {
+                    if self.vel.length() < 6.0 {
+                        self.vel.x *= 0.96;
+                        self.vel.y += 0.2;
+                    }
+                    if inputs.player_vel.0 == 0.0 {
+                        self.vel.x *= 0.96;
+                    }
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            4 => {
+                // The final reel-in (`:44000-44017`).
+                self.tile_collide = false;
+                let to_player = (mounted - head).normalize_or_zero();
+                if (head - mounted).length() <= num7 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                self.vel *= 0.98;
+                self.vel = Self::move_towards_vec(self.vel, to_player * num7, num6);
+                let ahead = (head + self.vel - mounted).normalize_or_zero();
+                if to_player.dot(ahead) < 0.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return tick;
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            5 => {
+                // The bounce stagger (`:44019-44032`).
+                let grown = self.ai[1] >= num14;
+                self.ai[1] += 1.0;
+                if grown {
+                    self.ai[0] = 6.0;
+                    self.ai[1] = 0.0;
+                } else {
+                    self.local_hit_cooldown = num13 as i32;
+                    self.vel.y += 0.6;
+                    self.vel.x *= 0.95;
+                }
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            6 => {
+                // The post-release spin (`:44034-44047`).
+                if !inputs.channel || (head - mounted).length() > num18 {
+                    self.ai[0] = 4.0;
+                    self.ai[1] = 0.0;
+                    return self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+                }
+                // `!shimmerWet` — no shimmer in the port, so the arm always
+                // adds gravity.
+                self.vel.y += 0.8;
+                self.vel.x *= 0.95;
+                eff_dir = if center.x < head.x { 1 } else { -1 };
+            }
+            _ => {}
+        }
+        self.flail_tail(world, eff_dir, tick, inputs, npcs, rng)
+    }
+
+    /// One helper spawn request from the head's center — the Drippler's extra
+    /// ball (`:43914`/`:43927`) and the Flairon's bubble (`:44094`). The
+    /// Flower Pow's petal (`:44137`) aims at an NPC, so it builds its own.
+    fn flail_spawn(
+        &self,
+        kind: u16,
+        v: Vec2,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+    ) -> FlailSpawnRequest {
+        let c = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        FlailSpawnRequest {
+            kind,
+            x: c.x,
+            y: c.y,
+            vx: v.x,
+            vy: v.y,
+            damage,
+            knock_back,
+            ai0,
+        }
+    }
+
+    /// The `Main.myPlayer == this.owner` gate on the family's spawns — the
+    /// local owner only (the port's single-player stand-in for the C# owner
+    /// check).
+    fn flail_helper(
+        &self,
+        tick: &mut FlailTick,
+        inputs: FlailInputs,
+        kind: u16,
+        v: Vec2,
+        ai0: f32,
+    ) {
+        if self.owner as u8 == inputs.local_owner {
+            let req = self.flail_spawn(kind, v, self.damage, self.knock_back, ai0);
+            tick.spawn = Some(req);
+        }
+    }
+
+    /// The 1058/247 per-kind tails (`Projectile.cs:44050-44141`) plus the
+    /// common tail (`:44142-44168`). Every state arm falls out of the C#
+    /// switch into this block, so `ai_flail` routes its non-kill exits
+    /// through it. The `player.heldProj`/`SetDummyItemTime`/`itemRotation`
+    /// writes have no port consumers (documented deviations).
+    fn flail_tail(
+        &mut self,
+        world: &World,
+        eff_dir: i32,
+        mut tick: FlailTick,
+        inputs: FlailInputs,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> FlailTick {
+        let center = inputs.center.map(Vec2::from).unwrap_or_default();
+        let head = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mine = inputs.local_owner == self.owner as u8;
+        let special = matches!(self.kind, FLAIRON | FLOWER_POW);
+        match self.kind {
+            FLAIRON => {
+                // `:44053-44062` — the alpha fades in, then the rotation.
+                self.alpha = (self.alpha - 50).max(0);
+                let to_player = center - head;
+                self.rot = to_player.y.atan2(to_player.x) - std::f32::consts::PI / 2.0;
+                self.direction = if to_player.x < 0.0 { 1 } else { -1 };
+                // `:44075-44095` — the bubble cadence. The C# re-rolls
+                // `Next(3, 6)` every tick in the held state (and halves the
+                // knockback there); the jitter is the item-stream roll.
+                if mine {
+                    self.local_ai[2] += 1.0;
+                    let state = self.ai[0] as i32;
+                    let mut knock = self.knock_back;
+                    let cadence = if state == 0 {
+                        let c = rng.next_range(3, 6) as f32;
+                        knock *= 0.5;
+                        c
+                    } else if state == 6 || state == 3 {
+                        6.0
+                    } else {
+                        4.0
+                    };
+                    if self.local_ai[2] >= cadence {
+                        self.local_ai[2] = 0.0;
+                        // `vector8 = ((vector7 * -1).SafeNormalize(0) *
+                        // (Next(45, 65) * 0.1)).RotatedBy(
+                        // (NextDouble() - 0.5) * (π/2))`.
+                        let back = (-to_player).normalize_or_zero();
+                        let speed = rng.next_range(45, 65) as f32 * 0.1;
+                        let jitter = (rng.next_float() - 0.5) * std::f32::consts::PI / 2.0;
+                        let v = (back * speed).rotate(Vec2::from_angle(jitter));
+                        let req = self.flail_spawn(FLAIRON_BUBBLE, v, self.damage, knock, -10.0);
+                        tick.spawn = Some(req);
+                    }
+                }
+            }
+            FLOWER_POW => {
+                // `:44101-44107` — the spin.
+                let spin = (self.vel.x.abs() + self.vel.y.abs()) * 0.01;
+                self.rot += if self.vel.x > 0.0 { spin } else { -spin };
+                if self.ai[0] == 0.0 {
+                    self.rot += std::f32::consts::PI * 2.0 / 15.0 * eff_dir as f32;
+                }
+                // `:44114-44138` — the local owner's NPC scan: the closest
+                // `CanBeChasedBy` within 600 px with tile LOS fires the petal
+                // (`damage / 1.5`, `knockBack / 2`, speed 14).
+                if mine {
+                    self.local_ai[0] += 1.0;
+                    if self.local_ai[0] >= 20.0 {
+                        self.local_ai[0] = 17.0;
+                        let mut best: Option<(usize, f32)> = None;
+                        for (idx, n) in npcs.iter().enumerate() {
+                            if n.hp <= 0 || n.dont_take_damage {
+                                continue;
+                            }
+                            let (nx, ny) = n.center();
+                            let d = (Vec2::new(nx, ny) - head).length();
+                            if d < 600.0 && yoyo_can_hit(world, head.x, head.y, nx, ny) {
+                                let closer = match best {
+                                    Some((_, bd)) => d < bd,
+                                    None => true,
+                                };
+                                if closer {
+                                    best = Some((idx, d));
+                                }
+                            }
+                        }
+                        if let Some((idx, _)) = best {
+                            let (nx, ny) = npcs[idx].center();
+                            let v = (Vec2::new(nx, ny) - head).normalize_or_zero() * 14.0;
+                            let req = FlailSpawnRequest {
+                                kind: FLOWER_POW_PETAL,
+                                x: head.x,
+                                y: head.y,
+                                vx: v.x,
+                                vy: v.y,
+                                damage: (self.damage as f32 / 1.5) as i32,
+                                knock_back: self.knock_back / 2.0,
+                                ai0: 0.0,
+                            };
+                            tick.spawn = Some(req);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        // `:44142-44145` — the direction/spriteDirection from the velocity X
+        // (the Flairon's tail set its own above).
+        if self.kind != FLAIRON {
+            self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+        }
+        // `:44148-44158` — the rotation arm; the 1058/247 tails set
+        // `flag = false` and keep their own rotation.
+        if !special {
+            if self.vel.length() > 1.0 {
+                self.rot = self.vel.y.atan2(self.vel.x) + self.vel.x * 0.1;
+            } else {
+                self.rot += self.vel.x * 0.1;
+            }
+        }
+        // `:44159` — the per-tick lifetime re-pin.
+        self.time_left = 2;
+        tick.facing = Some(eff_dir);
+        tick
+    }
     /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
     /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
     /// scan sets `velocity = (0, -0.2)`); the gravity tail (`:47505-47520`)
@@ -1894,6 +2370,60 @@ pub struct YoyoInputs {
     pub channel: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
+}
+
+/// What `AI_015_Flails` reads off `Main.player[owner]` each tick — the
+/// `YoyoInputs` peer, widened for the chain anchor. Built once per fixed
+/// step in `world_sim/projectiles.rs` (the slot loop cannot borrow the
+/// player) and threaded through `ProjectilePool::update` to the aiStyle-15
+/// arm. The C# reads the live `Player` fields; the port snapshots them.
+/// `Copy`: every field is a scalar/pair, and one snapshot serves every
+/// simulated slot in a tick.
+#[derive(Clone, Copy)]
+pub struct FlailInputs {
+    /// `Main.MouseWorld` (`Projectile.cs:43863`) — the hold state's aim.
+    pub aim: Option<(f32, f32)>,
+    /// `Player.channel` (`:43872`, `:43905`, `:43942`, `:43959`, `:44035`).
+    pub channel: bool,
+    /// The kill gates (`:43727`): dead / `CCed` — the port drops the
+    /// `noItems` arm (no field, documented).
+    pub player_dead: bool,
+    /// `Player.CCed` (`:43727`).
+    pub player_cced: bool,
+    /// `Player.MountedCenter` (`:3335`) — the chain anchor.
+    pub mounted_center: Option<(f32, f32)>,
+    /// `Player.Center` — the kill-gate leash and the `ChangeDir`
+    /// comparisons (`:43727`, `:43930`).
+    pub center: Option<(f32, f32)>,
+    /// `player.velocity` — the throw add and the state-3 stand-still read
+    /// (`:43876`, `:43992`).
+    pub player_vel: (f32, f32),
+    /// `player.direction` — the hold orbit's spin axis (`:43889`).
+    pub player_dir: i32,
+    /// `player.meleeSpeed` (`:43824-43831`).
+    pub melee_speed: f32,
+    /// `Main.myPlayer` — the family's spawns are local-owner only
+    /// (`:43912`, `:44075`, `:44110`).
+    pub local_owner: u8,
+}
+
+impl Default for FlailInputs {
+    /// `meleeSpeed = 1f` — the C# base; a 0 here would divide the
+    /// meleeSpeed scaling to infinity.
+    fn default() -> Self {
+        Self {
+            aim: None,
+            channel: false,
+            player_dead: false,
+            player_cced: false,
+            mounted_center: None,
+            center: None,
+            player_vel: (0.0, 0.0),
+            player_dir: 1,
+            melee_speed: 1.0,
+            local_owner: 0,
+        }
+    }
 }
 
 impl ProjectilePool {
@@ -2300,6 +2830,7 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
+        flail_inputs: FlailInputs,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
@@ -2383,6 +2914,53 @@ impl ProjectilePool {
                                     b.damage,
                                     b.knock_back,
                                 );
+                            }
+                        }
+                        15 => {
+                            // `AI_015_Flails`'s `flag5` (`:43847-43862`): the
+                            // Blue Moon/Sunfury sibling scan — the 26↔35 pair,
+                            // same owner. It runs here, like the aiStyle-99
+                            // `flag` above, because the AI only sees its slot.
+                            let (slot_owner, slot_kind) = {
+                                let p = &self.slots[i];
+                                (p.owner, p.kind)
+                            };
+                            let flag5 = (slot_kind == BLUE_MOON || slot_kind == SUNFURY)
+                                && self.slots.iter().any(|p| {
+                                    p.active
+                                        && p.owner == slot_owner
+                                        && ((slot_kind == BLUE_MOON && p.kind == SUNFURY)
+                                            || (slot_kind == SUNFURY && p.kind == BLUE_MOON))
+                                });
+                            let tick =
+                                self.slots[i].ai_flail(world, npcs, owner, flail_inputs, flag5, rng);
+                            // The family's helper spawn — the yoyo beam
+                            // pattern. The 405's `alpha = 255` rides the spawn
+                            // site (`SetDefaults` `:4857`).
+                            if let Some(s) = tick.spawn {
+                                let owner_id = self.slots[i].owner;
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    s.kind,
+                                    owner_id,
+                                    s.x,
+                                    s.y,
+                                    s.vx,
+                                    s.vy,
+                                    s.damage,
+                                    s.knock_back,
+                                    s.ai0,
+                                    0.0,
+                                ) && s.kind == FLAIRON_BUBBLE
+                                {
+                                    self.slots[slot].alpha = 255;
+                                }
+                            }
+                            // The facing the C# forces with `player.ChangeDir`
+                            // mid-machine.
+                            if let Some(dir) = tick.facing {
+                                if let Some(p) = player.as_deref_mut() {
+                                    p.facing = dir;
+                                }
                             }
                         }
                         _ => {}
@@ -2681,7 +3259,9 @@ mod tests {
             0.0,
         );
         assert!(pool.slots().iter().any(|p| p.active && !p.friendly));
-        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w.clone(), &mut [], Some((pcx, pcy)), Some(&mut player), YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(player.hp < player.max_hp, "the shot hurt");
         assert!(!pool.slots().iter().any(|p| p.active), "the shot died");
         // The friendly shuriken at the same spot never hurts the player.
@@ -2703,6 +3283,7 @@ mod tests {
             Some((pcx2, pcy2)),
             Some(&mut player2),
             YoyoInputs::default(),
+            FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             true,
@@ -2717,7 +3298,9 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(world, std::slice::from_mut(npc), None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
     }
 
     #[test]
@@ -2768,7 +3351,9 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             !pool.slots()[slot].active,
             "penetrate 1 → dead after the hit"
@@ -2912,7 +3497,9 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut world, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -2934,7 +3521,9 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut world, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -2969,7 +3558,9 @@ mod falling_tests {
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -2989,7 +3580,9 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -3032,7 +3625,9 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -3120,13 +3715,17 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(
             pool.slots[0].vel.y, 0.0,
             "no gravity for the first 14 ticks"
         );
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -3150,7 +3749,9 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3172,7 +3773,9 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3192,10 +3795,14 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
             "the 6th tick adds 0.2"
@@ -3258,10 +3865,14 @@ mod boomerang_tests {
         pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
         let mut w = world();
         for _ in 0..29 {
-            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
-        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)), None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
         assert_eq!(pool.slots[0].ai[1], 0.0);
     }
@@ -3288,7 +3899,9 @@ mod boomerang_tests {
         }
         let mut bounced = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)), None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if pool.slots[0].ai[0] == 1.0 {
                 bounced = true;
                 break;
@@ -3326,7 +3939,9 @@ mod boomerang_tests {
         }
         let mut caught = false;
         for _ in 0..40 {
-            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)), None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 caught = true;
                 break;
@@ -3352,7 +3967,9 @@ mod boomerang_tests {
         let mut w = world();
         let mut died = false;
         for _ in 0..120 {
-            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)), None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -3413,7 +4030,9 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
         // The crater: the tiles inside radius 4 are gone.
@@ -3444,7 +4063,9 @@ mod bomb_tests {
         }
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..301 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(!pool.slots[0].active);
         assert!(
@@ -3484,7 +4105,9 @@ mod bomb_tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
         for _ in 0..181 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(
             w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
@@ -3503,14 +4126,18 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() > 1e-6,
             "no gravity before tick 5"
         );
         for _ in 0..5 {
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         }
         assert!(
             (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
@@ -3704,7 +4331,9 @@ mod bomb_tests {
             .spawn_with_data(TERRARIAN_YOYO, 320.0, 320.0, 8.0, 0.0, 190, 6.5)
             .expect("the Terrarian data row exists");
         let mut w = world();
-        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        pool.update(&mut w, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert!(pool.slots[wood].active, "the slot survives its first update");
         assert!(pool.slots[terrarian].active);
         assert_eq!(
@@ -4087,6 +4716,7 @@ mod yoyo_tests {
                 Some((500.0, 448.0)),
                 None,
                 YoyoInputs::default(),
+            FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4139,6 +4769,7 @@ mod yoyo_tests {
                 Some((320.0, 320.0)),
                 None,
                 YoyoInputs::default(),
+            FlailInputs::default(),
                 &mut tr_core::tile_light::FastRandom::new(7),
                 0,
                 true,
@@ -4293,7 +4924,8 @@ mod yoyo_tests {
         // not recycled by a later spawn.
         pool.slots[terrarian].active = false;
         for _ in 0..59 {
-            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(), &mut fast_seed(), 0, true);
         }
         assert!(!pool.slots[beam].active, "the beam fades out and dies");
         assert_eq!(pool.slots[beam].alpha, 255, "the full fade");
@@ -4309,7 +4941,8 @@ mod yoyo_tests {
                 .spawn_with_data_ai(WOOD_YOYO, 432.0, 320.0, 0.0, 0.0, 9, 2.5, -2.0, 0.0)
                 .unwrap();
             let mut w = world();
-            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(), &mut fast_seed(), 0, true);
+            pool.update(&mut w, &mut [], None, None, YoyoInputs::default(),
+            FlailInputs::default(), &mut fast_seed(), 0, true);
             pool.slots[slot].penetrate
         };
         let a = roll_once();

@@ -4,7 +4,7 @@
 use glam::Vec2;
 
 use crate::app::App;
-use crate::projectile::{SHURIKEN, YoyoInputs};
+use crate::projectile::{FlailInputs, SHURIKEN, YoyoInputs};
 use crate::registry;
 
 /// Fixed 60 Hz pool stepping. Damage lands through `Npc::hurt`, so the
@@ -53,6 +53,38 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
     };
+    // `AI_015_Flails`'s `Main.player[owner]` reads (`Projectile.cs:43726-44169`):
+    // the same aim/channel/death snapshot plus the chain anchor
+    // (`MountedCenter`, `:3335`), the kill-gate reads (`CCed`), the throw
+    // add and the state-3 stand-still read (`player.velocity`), the hold
+    // orbit's `player.direction` and the meleeSpeed scaling.
+    let flail_inputs = app.player.as_ref().map_or_else(
+        || FlailInputs { player_dead: true, ..FlailInputs::default() },
+        |p| {
+            let (cx, cy) = p.center();
+            let (mx, my) = p.mounted_center();
+            FlailInputs {
+                aim: Some((
+                    app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                    app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+                )),
+                channel: app.mine_down
+                    && {
+                        let held = app.inventory[app.selected];
+                        held.count > 0
+                            && registry::get(held.kind).is_some_and(|d| d.channel)
+                    },
+                player_dead: false,
+                player_cced: p.cced(),
+                mounted_center: Some((mx, my)),
+                center: Some((cx, cy)),
+                player_vel: (p.vx, p.vy),
+                player_dir: p.facing,
+                melee_speed: p.melee_speed(),
+                local_owner: app.local_id as u8,
+            }
+        },
+    );
     // The closure's disjoint field captures keep the step borrow
     // (`projectile_step`) apart from the pool/world/npcs/player set. The
     // yoyo rolls (`Projectile.cs:67746`'s jitter, `:67886`'s beam rolls,
@@ -71,6 +103,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             owner,
             app.player.as_mut(),
             inputs,
+            flail_inputs,
             &mut rng,
             local_owner,
             hostile_local,
