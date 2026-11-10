@@ -3468,6 +3468,40 @@ pub(crate) fn log_atlas_diagnostics(atlas: &Atlas, lookups: &assets::Lookups) {
     }
 }
 
+/// The production boot world (BUG-05): the player's own most recently
+/// modified `.trwld` in the saves dir — the world the lobby's `WorldPlay`
+/// would open anyway (`UIWorldSelect` lists them, `Main.LoadWorld` boots the
+/// selected one). `None` when the player has no saved world yet, and
+/// [`terrstaria_world`] takes over as the out-of-the-box stand-in.
+///
+/// The vanilla has no boot world at all (`Main.ActiveWorldFileData` is null
+/// until `PlayGame`); the port's `App::new` needs one, so the newest own
+/// world is the closest shape. The pre-baked `Terrustaria` world (seed 1 or
+/// `TR_SEED`) therefore stops being the production path and stays an explicit
+/// debug/demo one, alongside `TR_WORLD`.
+pub(crate) fn latest_own_world() -> Option<PathBuf> {
+    let dir = save::default_world_dir()?;
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_trwld = path
+            .extension()
+            .is_some_and(|e| e == "trwld")
+            && path.is_file();
+        if !is_trwld {
+            continue;
+        }
+        let Ok(when) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        if newest.as_ref().is_none_or(|(best, _)| when > *best) {
+            newest = Some((when, path));
+        }
+    }
+    newest.map(|(_, path)| path)
+}
+
 pub(crate) fn terrstaria_world() -> Result<PathBuf> {
     let path = save::default_world_path("Terrustaria")
         .context("cannot resolve Documents/My Games/Terrustaria")?;
@@ -3526,6 +3560,37 @@ mod tr_hooks {
         let out = f();
         unsafe { std::env::remove_var(name) };
         out
+    }
+
+    /// The production boot path (BUG-05): the player's own newest `.trwld`,
+    /// not the pre-baked `Terrustaria` stand-in. The mtime read is the vanilla
+    /// `UIWorldSelect`'s list shape — the lobby opens what `WorldPlay` picks.
+    #[test]
+    fn the_boot_world_is_the_players_newest_save() {
+        let dir = std::env::temp_dir().join(format!("tr-boot-world-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let worlds = dir.join("Documents/My Games/Terrustaria/Worlds");
+        std::fs::create_dir_all(&worlds).unwrap();
+        // Two saves; the second is written last so its mtime is the newest.
+        for name in ["Alpha", "Beta"] {
+            let path = worlds.join(format!("{name}.trwld"));
+            std::fs::write(&path, &[b'T', b'R', b'W', b'L', b'D', b'0', b'1', 0]).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let picked = with_pin("USERPROFILE", dir.to_str().unwrap(), latest_own_world);
+        assert_eq!(
+            picked.as_deref(),
+            Some(worlds.join("Beta.trwld").as_path()),
+            "the newest own world boots"
+        );
+        // An empty saves dir has no own world: the port's stand-in takes over
+        // (the documented debug/demo path).
+        let empty = std::env::temp_dir().join(format!("tr-boot-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&empty);
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(with_pin("USERPROFILE", empty.to_str().unwrap(), latest_own_world).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16
