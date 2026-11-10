@@ -81,6 +81,19 @@ frame step. There is no menu-side `MusicEnv` feed at all.
 4. Test: a front-screen frame produces a non-zero `cur_music`, and the world-entry
    transition does not restart the track if it is the same id.
 
+**Fixed 2026-11-10 (`BUG-01-menu-music`).** `App::update_menu_music` runs on the
+front-screen branch of `frame()` and `decide_new_music` grew the vanilla's
+`if (Main.gameMenu)` arm verbatim in its order: the drunk ladder (remix 70 inside
+it, not-the-bees 86, plain 60), remix 8, the anniversary 11 and the tail's
+default 51 — the world-creation screen's seed text feeds the flags through
+`SeedFlags::from_seed_text`, and `musicVolume == 0` still silences. The
+decision half of `MusicSystem::update` moved ahead of the audio-device gate so
+`cur_music` is observable in headless/screenshot builds. Parked (documented in
+the code): the `menuMode == 3000` credits track 89, the `playOldTile` /
+`titleMusicStyle` 6/50 arms and the `netMode == 2` silence. 5 tests: the ladder
+order, the zero-volume gate, the front-screen tick's `cur_music` and the
+creation screen's two seed flavours.
+
 ---
 
 ## 2. Character-select preview draws no character — S2 / High

@@ -380,7 +380,7 @@ static MUSIC_HANDLE: std::sync::Mutex<Option<rodio::OutputStreamHandle>> =
     std::sync::Mutex::new(None);
 
 /// The per-frame world state `Main.UpdateAudio_DecideOnNewMusic` reads.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MusicEnv {
     /// `Main.musicVolume`.
     pub music_volume: f32,
@@ -478,6 +478,13 @@ pub struct MusicEnv {
     pub jungle_deep_band_px: f32,
     /// `Main.cloudAlpha == 0 && !windy` — the town arm's quiet-sky gate.
     pub quiet_sky: bool,
+    /// `Main.gameMenu` (`Main.cs:12455`) — the front-end screens, where the
+    /// title-track ladder runs instead of every world branch (BUG-01).
+    pub menu: bool,
+    /// The worldgen seed flags the menu ladder reads (`WorldGen.drunkWorldGen`
+    /// and friends, `Main.cs:12463-12494`) — on the front end they come from
+    /// the world-creation screen's seed text.
+    pub menu_flags: tr_core::seeds::SeedFlags,
 }
 
 /// MS-ADPCM music player using the XACT wave bank.
@@ -489,8 +496,10 @@ pub struct MusicSystem {
     wavebank_path: Option<PathBuf>,
     /// `Music_{id}` → wave bank entry index, from `Sound Bank.xsb`.
     wave_indices: HashMap<u32, usize>,
-    /// `Main.curMusic` / `Main.newMusic`.
-    cur_music: u32,
+    /// `Main.curMusic` / `Main.newMusic`. Public for the front-end tick's
+    /// observability (BUG-01): the decision half runs without an audio
+    /// device, so `cur_music` is the track the menus play.
+    pub cur_music: u32,
     new_music: u32,
     /// `Main.musicFade[0..MAX_MUSIC]`.
     music_fade: Vec<f32>,
@@ -564,13 +573,10 @@ impl MusicSystem {
     /// `Main.UpdateAudio`, minus the focus/moon-lord/ambient specials the port has
     /// no state for. Call once per frame.
     pub fn update(&mut self, env: MusicEnv) {
-        if self.handle.is_none() {
-            self.handle = MUSIC_HANDLE.lock().unwrap().clone();
-            if self.handle.is_none() {
-                return;
-            }
-        }
-
+        // The decision half runs wherever an audio device is absent (the
+        // headless/screenshot builds decide the track and fall through), so
+        // `cur_music` is observable without rodio — only the fade/volume
+        // loop below needs the device.
         self.decide_new_music(env);
         if env.music_volume == 0.0 {
             self.new_music = 0;
@@ -580,6 +586,13 @@ impl MusicSystem {
         // over every world branch including the bosses.
         self.apply_music_box_override(&env);
         self.cur_music = self.new_music;
+
+        if self.handle.is_none() {
+            self.handle = MUSIC_HANDLE.lock().unwrap().clone();
+            if self.handle.is_none() {
+                return;
+            }
+        }
 
         let is_main_track_audible = self
             .music_fade
@@ -651,6 +664,28 @@ impl MusicSystem {
             .map(|(i, _)| i as u32)
             .unwrap_or(self.last_music_played);
 
+        // `if (Main.gameMenu)` (`Main.cs:12455-12532`) — the front-end
+        // ladder, an exclusive arm that returns. The vanilla's `netMode == 2`
+        // (`newMusic = 0`) tail is unreachable: the port is single-player.
+        if env.menu {
+            let flags = env.menu_flags;
+            self.new_music = if flags.contains(tr_core::seeds::SeedFlags::DRUNK) {
+                if flags.contains(tr_core::seeds::SeedFlags::REMIX) {
+                    70 // `remixWorldGen` (`:12470`)
+                } else if flags.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES) {
+                    86 // `notTheBeesWorld` (`:12488`)
+                } else {
+                    60 // the plain drunk title (`:12498`)
+                }
+            } else if flags.contains(tr_core::seeds::SeedFlags::REMIX) {
+                8 // `remixWorldGen` outside drunk (`:12503`)
+            } else if flags.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+                11 // `tenthAnniversaryWorldGen` (`:12510`)
+            } else {
+                51 // the tail's `default:` (`:12522`) — no titleMusicStyle
+            };
+            return;
+        }
         if let Some(boss) = env.boss_music {
             // The boss-flag ladder (`:12560-12620`): the event tracks (DD2
             // 92, the frost/pumpkin moons 97/98, the mech bosses 34/24/57/58,
@@ -1131,6 +1166,8 @@ mod tests {
             rock_band_px: 2000.0,
             jungle_deep_band_px: 1500.0,
             quiet_sky: true,
+            menu: false,
+            menu_flags: Default::default(),
         }
     }
 
@@ -1396,6 +1433,77 @@ mod tests {
         for name in ["Menu_Open", "Menu_Close", "Menu_Tick", "Unlock"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+    }
+
+    /// The front-end ladder (`Main.cs:12455-12532`'s `if (Main.gameMenu)`
+    /// arm): the title tracks are picked without any world state, and the
+    /// menu arm returns before every world branch — a boss nearby or a
+    /// rain storm cannot bleed into it (BUG-01).
+    #[test]
+    fn the_menu_ladder_picks_the_title_track() {
+        use tr_core::seeds::SeedFlags;
+        // No seed flags: the tail's `default:` → the title track 51.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the plain title track");
+        // The vanilla order: the world-dev flags first, then the specials.
+        for (bit, want) in [
+            (SeedFlags::DRUNK, 60),
+            (SeedFlags::REMIX, 8),
+            (SeedFlags::TENTH_ANNIVERSARY, 11),
+        ] {
+            let mut m = system();
+            let mut e = env(false);
+            e.menu = true;
+            e.menu_flags = SeedFlags::from(bit);
+            m.decide_new_music(e);
+            assert_eq!(m.new_music, want, "flag {bit}");
+        }
+        // Drunk + remix outranks the drunk default (`:12470`), and the
+        // not-the-bees 86 is nested *inside* the drunk arm (`:12488`) — it
+        // never fires on its own.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::REMIX.into();
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 70, "drunk + remix");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::NOT_THE_BEES.into();
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 86, "drunk + not the bees");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::NOT_THE_BEES);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "not the bees alone is not drunk");
+        // The menu arm returns: the world state it is fed is irrelevant.
+        let mut m = system();
+        let mut e = env(true);
+        e.menu = true;
+        e.boss_music = Some(93);
+        e.rain = true;
+        e.blood_moon = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the menu arm is exclusive");
+    }
+
+    /// The front-end tick keeps the volume gate: `musicVolume == 0` silences
+    /// the menu track the same way as the world ones (`Main.cs:12461`).
+    #[test]
+    fn the_menu_track_honours_the_zero_volume_gate() {
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.music_volume = 0.0;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 0);
     }
 }
 
