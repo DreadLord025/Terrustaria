@@ -1889,6 +1889,7 @@ pub(crate) mod front_flow_tests {
             item_time: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
             world_path: PathBuf::new(),
             dev_break: None,
             dev_place: Vec::new(),
