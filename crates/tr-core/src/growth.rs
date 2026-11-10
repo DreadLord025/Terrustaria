@@ -1493,6 +1493,159 @@ pub fn grow_spike(
     world.frame_important[spike_type as usize] = true;
 }
 
+/// `WorldGen.MossConversion` (`WorldGen.cs:71457-71503`): the moss family's
+/// internal conversion map — a moss-brick tile spreads over the pearlstone 38
+/// unchanged, a moss tile over the dirt 1 unchanged, and every other kind maps
+/// through the stone/moss-id pairs (the gray × purple × blue × green × brown
+/// families); an unmapped kind returns 0 (no spread).
+fn moss_conversion(this_type: u16, other_type: u16) -> u16 {
+    if crate::tiledata::SET_TILE_MOSS_BRICK.has(this_type) && other_type == 38 {
+        return this_type;
+    }
+    if crate::tiledata::TILE_MOSS.has(this_type) && other_type == 1 {
+        return this_type;
+    }
+    match this_type {
+        182 | 515 => {
+            if this_type == 182 {
+                515
+            } else {
+                182
+            }
+        }
+        180 | 513 => {
+            if this_type == 180 {
+                513
+            } else {
+                180
+            }
+        }
+        179 | 512 => {
+            if this_type == 179 {
+                512
+            } else {
+                179
+            }
+        }
+        381 | 517 => {
+            if this_type == 381 {
+                517
+            } else {
+                381
+            }
+        }
+        534 | 535 => {
+            if this_type == 534 {
+                535
+            } else {
+                534
+            }
+        }
+        536 | 537 => {
+            if this_type == 536 {
+                537
+            } else {
+                536
+            }
+        }
+        539 | 540 => {
+            if this_type == 539 {
+                540
+            } else {
+                539
+            }
+        }
+        625 | 626 => {
+            if this_type == 625 {
+                626
+            } else {
+                625
+            }
+        }
+        627 | 628 => {
+            if this_type == 627 {
+                628
+            } else {
+                627
+            }
+        }
+        183 | 516 => {
+            if this_type == 183 {
+                516
+            } else {
+                183
+            }
+        }
+        181 | 514 => {
+            if this_type == 181 {
+                514
+            } else {
+                181
+            }
+        }
+        _ => 0,
+    }
+}
+
+/// `UpdateWorld_OvergroundTile`'s moss branch (`WorldGen.cs:72371-72424`): a
+/// moss tile (the `Main.tileMoss` family or the `tileMossBrick` family) with a
+/// `NextDouble() < 0.5` roll converts the dirt/pearlstone neighbours in its
+/// clamped box through [`moss_conversion`] — each conversion re-frames its
+/// cell — and a `Next(6)` roll sprays a loose moss 184 into a free neighbour.
+///
+/// The port's omissions (recorded in ANALYSIS): the netcode
+/// (`NetMessage.SendTileSquare`), the paint/coating copy (no color cache) and
+/// the `color` argument of `SpreadGrass` (the port's growth writes carry none).
+fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut FastRandom) {
+    if rng.next_double() >= 0.5 {
+        return;
+    }
+    let Some(tile) = world.tile(i, j) else {
+        return;
+    };
+    let this_type = tile.kind;
+    for m in min_i..max_i {
+        for n in min_j..max_j {
+            if i == m && j == n {
+                continue;
+            }
+            let Some(neighbour) = world.tile(m, n) else {
+                continue;
+            };
+            if !neighbour.active() || !matches!(neighbour.kind, 1 | 38) {
+                continue;
+            }
+            let converted = moss_conversion(this_type, neighbour.kind);
+            if converted == 0 {
+                continue;
+            }
+            spread_grass(world, m, n, neighbour.kind, converted);
+            if world.tile(m, n).is_some_and(|t| t.kind == converted) {
+                // `SquareTileFrame(num17, num18)` (`:72396-72398`) — the
+                // converted cell's frames re-derive.
+                crate::framing::reframe_area(world, m, n, 1);
+            }
+        }
+    }
+    if rng.next(6) == 0 {
+        // The ±1 spray (`:72404-72421`): a free neighbour takes the loose
+        // moss 184.
+        let (mut tx, mut ty) = (i, j);
+        match rng.next(4) {
+            0 => tx -= 1,
+            1 => tx += 1,
+            2 => ty -= 1,
+            _ => ty += 1,
+        }
+        if !world.tile(tx, ty).is_some_and(|t| t.active()) {
+            if let Some(t) = world.tile_mut(tx, ty) {
+                t.kind = 184;
+                t.flags |= FLAG_ACTIVE;
+            }
+        }
+    }
+}
+
 pub fn update_world_overground_tile(
     world: &mut World,
     x: i32,
@@ -1584,6 +1737,23 @@ pub fn update_world_overground_tile(
         kind,
         2 | 23 | 199 | 60 | 70 | 109 | 226 | 633 | 661 | 662 | 32 | 352 | 477 | 492
     );
+    // The moss families (`:72371`'s gate) — the next else-if after the
+    // `SpreadOverground` grass pass.
+    if (crate::tiledata::TILE_MOSS.has(kind) || crate::tiledata::SET_TILE_MOSS_BRICK.has(kind))
+        && active
+    {
+        grow_moss_arm(
+            world,
+            x,
+            y,
+            x - 1,
+            x + 2,
+            y - 1,
+            y + 2,
+            rng,
+        );
+        return;
+    }
     if grass_pass {
         update_world_grass_growth(
             world,
@@ -3108,6 +3278,63 @@ mod tests {
         w.tiles[wall_idx].wall = 1;
         spread_grass(&mut w, 10, 20, 2, 23);
         assert_eq!(w.tile(11, 21).unwrap().wall, 1, "the walls stay (walls: false)");
+    }
+
+    /// DW-2.9: `MossConversion`'s map (`WorldGen.cs:71457-71503`) — the
+    /// moss-brick guard over the pearlstone, the moss guard over the dirt, the
+    /// family pairs and the 0 for an unmapped kind.
+    #[test]
+    fn moss_conversion_3_the_map_and_its_guards() {
+        // The moss-brick tiles keep the pearlstone 38 spread unchanged.
+        assert_eq!(moss_conversion(512, 38), 512);
+        // The moss tiles keep the dirt 1 spread unchanged.
+        assert_eq!(moss_conversion(179, 1), 179);
+        // The family pairs — the map runs only when BOTH guards miss: the
+        // moss-brick guard covers a brick over the pearlstone 38 (515 stays),
+        // so a brick maps only over a non-38 neighbour.
+        assert_eq!(moss_conversion(182, 38), 515);
+        assert_eq!(moss_conversion(515, 1), 182, "the brick maps over dirt");
+        assert_eq!(moss_conversion(381, 38), 517);
+        assert_eq!(moss_conversion(183, 38), 516);
+        assert_eq!(moss_conversion(515, 38), 515, "the brick guard beats the map");
+        // An unmapped kind returns 0 (the caller skips it).
+        assert_eq!(moss_conversion(5, 1), 0);
+    }
+
+    /// DW-2.9: the moss spread arm (`WorldGen.cs:72371-72424`) — a moss tile
+    /// converts the dirt neighbours in its box through the map; the
+    /// conversion re-frames the cell.
+    #[test]
+    fn moss_conversion_3_the_moss_arm_converts_the_neighbours() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        // The moss 179 at (10, 20); the dirt 1 neighbours above and right.
+        let midx = w.index(10, 20);
+        w.tiles[midx] = Tile { kind: 179, flags: FLAG_ACTIVE, ..Default::default() };
+        for &(x, y) in &[(9, 20), (10, 19), (11, 20), (10, 21)] {
+            let idx = w.index(x, y);
+            w.tiles[idx] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        // Drive the arm with the gate roll forced: the arm's first draw is the
+        // NextDouble < 0.5 gate — a seeded stream may refuse, so run enough
+        // attempts that at least one converts.
+        let mut rng = FastRandom::new(7);
+        let mut converted = 0;
+        for _ in 0..64 {
+            grow_moss_arm(&mut w, 10, 20, 9, 11, 19, 21, &mut rng);
+            converted += w
+                .tiles
+                .iter()
+                .filter(|t| matches!(t.kind, 179) && t.active())
+                .count();
+            if converted > 1 {
+                break;
+            }
+        }
+        assert!(converted > 1, "the moss arm spreads the 179 onto a dirt neighbour");
+        // The conversion leaves the moss source itself and the moss tile
+        // unique-source intact.
+        assert_eq!(w.tile(10, 20).unwrap().kind, 179);
     }
 }
 
