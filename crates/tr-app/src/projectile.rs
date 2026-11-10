@@ -550,6 +550,15 @@ struct FlailSpawnRequest {
     ai0: f32,
 }
 
+/// One flail hit-side decision — the multipliers plus whether the
+/// state-0 ellipse stood in for the box test.
+struct FlailHit {
+    damage_mult: f32,
+    knock_mult: f32,
+    from_x: f32,
+    replaces_box: bool,
+}
+
 /// What one flail AI tick hands back to the pool: the family's helper
 /// spawn and the `player.ChangeDir` facing the C# writes mid-machine (the
 /// port's facing is run-key driven, so the value rides out and the dispatch
@@ -3114,7 +3123,7 @@ impl ProjectilePool {
             if self.slots[i].detonated {
                 self.explode_bomb(i, world, npcs);
             }
-            self.damage_pve(i, npcs);
+            self.damage_pve(i, npcs, Some(flail_inputs));
             // The hostile shots' player contact (`Projectile.Damage_PVP`'s
             // single-player stand-in): the box overlap -> `Player.hurt`
             // (the iframes gate inside), the shot dies on the hit.
@@ -3162,8 +3171,9 @@ impl ProjectilePool {
         p.knock_back = knock_back;
         p.tile_collide = false;
         p.detonated = false;
-        // `Damage()` — the PVE walk through the resized box.
-        self.damage_pve(slot, npcs);
+        // `Damage()` — the PVE walk through the resized box (no flail
+        // snapshot in the bomb path).
+        self.damage_pve(slot, npcs, None);
         // `Kill_ExplodeTiles`: the radius circle kills the tiles
         // (`ExplodeTiles` `:78707+` — the distance check per tile), the
         // 3×3 walls around each kill follow (`:78741-78762`).
@@ -3239,11 +3249,86 @@ impl ProjectilePool {
         }
     }
 
+    /// The flail family's hit-side gates, one call per (slot, NPC):
+    /// `Damage_CanDealDamage` (`:12448`: state 0 with `localAI[1] <= 12`
+    /// deals nothing), `Colliding`'s state-0 ellipse (`:15336-15356`: the
+    /// 55-px radius around the owner's mounted center with the 0.8 Y
+    /// squash — 0.4 when the point sags with gravity, `gravDir == 1`
+    /// here), `Damage_GetProjectileSpecificDamageMultiplier` (`:14447-14465`:
+    /// ×1.2 held, the Blue Moon/Sunfury dual ×0.8) and `Damage`'s knockback
+    /// arms (`:13614-13619`: ×0.35 held, ×0.5 spinning, the hit direction
+    /// from the player's center). `None` = no hit this tick (the window or
+    /// the ellipse miss); the state-0 ellipse REPLACES the box test, so a
+    /// non-zero state must still run the caller's `contains` — the flag
+    /// rides in the first tuple slot.
+    fn flail_damage_adjust(
+        &self,
+        slot: usize,
+        inputs: FlailInputs,
+        npc: &Npc,
+        head_center: Vec2,
+    ) -> Option<FlailHit> {
+        let p = &self.slots[slot];
+        // The no-damage window first — the held head is harmless for the
+        // first 12 ticks of the charge.
+        if p.ai[0] == 0.0 && p.local_ai[1] <= 12.0 {
+            return None;
+        }
+        if p.ai[0] == 0.0 {
+            // The state-0 ellipse: the closest point of the NPC's RAW rect
+            // to the mounted center, the Y squash, the 55-px radius. The
+            // port's `Npc::contains` pads the box by 4 px; the C# uses the
+            // rect itself (`targetRect`), so the raw x/y + size×scale read
+            // is deliberate.
+            let mounted = inputs.mounted_center?;
+            let (w, h) = npc.size();
+            // ClosestPointInRect.
+            let px = mounted.0.clamp(npc.x, npc.x + w);
+            let py = mounted.1.clamp(npc.y, npc.y + h);
+            let dy_raw = py - mounted.1;
+            // `obj.gravDir > 0f && vector2.Y > 0f` — the clamped point below
+            // the player tightens the squash to 0.4.
+            let num = if dy_raw > 0.0 { 0.4 } else { 0.8 };
+            let dy = dy_raw / num;
+            let dx = px - mounted.0;
+            if (dx * dx + dy * dy).sqrt() > 55.0 {
+                return None;
+            }
+        }
+        // The damage/knockback multipliers.
+        let mut dmg_mult = if p.ai[0] == 0.0 { 1.2 } else { 1.0 };
+        if (p.kind == BLUE_MOON || p.kind == SUNFURY)
+            && self.slots.iter().any(|s| {
+                s.active
+                    && s.owner == p.owner
+                    && s.kind != p.kind
+                    && (s.kind == BLUE_MOON || s.kind == SUNFURY)
+            })
+        {
+            dmg_mult *= 0.8;
+        }
+        let kb_mult = match p.ai[0] as i32 {
+            0 => 0.35,
+            6 => 0.5,
+            _ => 1.0,
+        };
+        // The C# hit direction reads the PLAYER's center — the port's knock
+        // direction derives from `from_x`, so hand it the player's center.
+        let from_x = inputs.center.map_or_else(|| head_center.x, |c| c.0);
+        Some(FlailHit {
+            damage_mult: dmg_mult,
+            knock_mult: kb_mult,
+            from_x,
+            replaces_box: p.ai[0] == 0.0,
+        })
+    }
+
+
     /// `Damage_PVE` + `Damage_PVE_Inner` (`:12562-12700`) with the on-hit
     /// immunity application (`:14087-14119`). Single-hit slots bypass the
     /// per-owner gate (`flag3`, `:12620-12624`) and set no immunity
     /// (`:14112-14119`).
-    fn damage_pve(&mut self, slot: usize, npcs: &mut [Npc]) {
+    fn damage_pve(&mut self, slot: usize, npcs: &mut [Npc], flail: Option<FlailInputs>) {
         let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -3274,10 +3359,32 @@ impl ProjectilePool {
             if !single_hit && n.immune[owner] != 0 {
                 continue;
             }
-            if !n.contains(center.x, center.y) {
+            // The flail family's hit gates — `Colliding` (`:15336-15356`,
+            // the state-0 ellipse replaces the box test),
+            // `Damage_CanDealDamage` (`:12448`, the hold's first 12 ticks),
+            // `Damage_GetProjectileSpecificDamageMultiplier` (`:14427-14465`)
+            // and `Damage`'s knockback/hit-direction arms (`:13614-13619`).
+            let (mut damage, mut kb, mut from_x) = (damage, kb, center.x);
+            let mut skip_box_test = false;
+            if let Some(f) = flail {
+                if FLAIL_KINDS.contains(&p.kind) {
+                    match self.flail_damage_adjust(slot, f, n, center) {
+                        Some(hit) => {
+                            damage = (damage as f32 * hit.damage_mult) as i32;
+                            kb *= hit.knock_mult;
+                            from_x = hit.from_x;
+                            // `Colliding` (`:15338`): the state-0 ellipse
+                            // REPLACES the box test, not supplements it.
+                            skip_box_test = hit.replaces_box;
+                        }
+                        None => continue, // the window or the ellipse miss
+                    }
+                }
+            }
+            if !skip_box_test && !n.contains(center.x, center.y) {
                 continue;
             }
-            let landed = n.hurt_from_projectile(damage, center.x, kb, crit);
+            let landed = n.hurt_from_projectile(damage, from_x, kb, crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner] = 0;
@@ -4100,6 +4207,25 @@ mod flail_tests {
         tr_core::World::new("t".into(), 64, 64)
     }
 
+    /// A floor at y = 30 — the NPC fixtures spawn on the surface (the shared
+    /// `tests::ground` shape: the surface cache must be recomputed by hand).
+    fn ground() -> tr_core::World {
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
     fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
@@ -4481,6 +4607,137 @@ mod flail_tests {
             tick(&mut w, &mut pool, held);
         }
         assert!(!pool.slots[slot].active, "the flail reels in and dies");
+    }
+
+    #[test]
+    fn DW_5_1_the_held_head_deals_no_damage_in_the_first_12_ticks() {
+        // `:12448`: `aiStyle == 15 && ai[0] == 0 && localAI[1] <= 12` gates
+        // the whole damage out — the charge wind-up is harmless even though
+        // the ellipse already covers the target.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].local_ai[1] = 5.0; // inside the window
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        // The head sits on the mount; the slime at tile 20 (320 px) is far,
+        // so place the NPC on the mount instead.
+        npcs[0].x = 520.0;
+        npcs[0].y = 490.0;
+        let hp_before = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp_before, "the wind-up deals nothing");
+    }
+
+    #[test]
+    fn DW_5_1_the_state_0_ellipse_gates_the_hit() {
+        // `:15338-15356`: the 55-px ellipse around the mounted center
+        // replaces the box test; the Y squash is 0.8 above and 0.4 below.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].local_ai[1] = 13.0; // past the window
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        // 40 px right of the mount: the closest point is 40 px away → hit.
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        pool.update(&mut w, std::slice::from_mut(&mut npcs[0]), Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert!(npcs[0].hp < npcs[0].max_hp, "the ellipse hit lands");
+        // 80 px right: outside the radius → no hit. Refresh the NPC.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 580.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot2 = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot2].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "outside the ellipse misses");
+        // 30 px BELOW the mount: dy_raw 30 / 0.4 = 75 > 55 → miss.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 490.0;
+        npcs[0].y = 530.0;
+        let mut pool = ProjectilePool::new();
+        let slot3 = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot3].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "the sagging squash (0.4) misses at 30 px");
+    }
+
+    #[test]
+    fn DW_5_2_the_held_head_multiplies_the_damage_and_softens_the_knockback() {
+        // `:14447` (damage ×1.2 held) and `:13614-13619` (knockback ×0.35
+        // held, ×0.5 in state 6, the hit direction from the player center).
+        let mut w = ground();
+        // A held flail hits an NPC inside the ellipse; the slot's damage
+        // 200 / kb 10 read the multipliers through the took damage.
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 13.0;
+        // A big HP pool so the slime survives and the damage reads clean.
+        npcs[0].hp = 10_000;
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        // 200 × 1.2 = 240.
+        assert_eq!(10_000 - npcs[0].hp, 240, "the held damage ×1.2");
+    }
+
+    #[test]
+    fn DW_5_2_the_dual_flail_discounts_the_damage() {
+        // `:14450-14460`: the Blue Moon/Sunfury pair applies ×0.8 on top of
+        // the held ×1.2 → 200 × 0.96 = 192.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[moon].local_ai[1] = 13.0;
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0 - 11.0, 520.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        npcs[0].hp = 10_000;
+        let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(10_000 - npcs[0].hp, 192, "the dual ×0.8 on the held ×1.2");
+    }
+
+    #[test]
+    fn the_flail_gate_dirty_paths_return_no_hit() {
+        // Dirty: the gate with no mounted-center snapshot and the orphan
+        // slot must not panic and must deal nothing.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 13.0;
+        let hp = npcs[0].hp;
+        // No player snapshot at all — the slot dies on the kill gate before
+        // the damage walk, so nothing lands.
+        pool.update(&mut w, &mut npcs, None, None, YoyoInputs::default(),
+            FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        assert_eq!(npcs[0].hp, hp, "the orphan path deals nothing");
     }
 }
 
