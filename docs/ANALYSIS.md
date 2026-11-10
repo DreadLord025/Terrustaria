@@ -9371,3 +9371,25 @@ machine arm.
   Old One's Skeleton's 566/567, already ported) sit outside the spawn
   tables.
 
+
+## The moss spread arm (M5-SPREAD-2, remaining scope)
+
+`UpdateWorld_OvergroundTile`'s moss branch (`WorldGen.cs:72371-72424`) is the
+last arm of the M5-SPREAD-2 row: a moss-family tile (`Main.tileMoss` =
+179/180/181/182/183/381/534/536/539/625/627, `Main.cs:7007-7032` — the port's
+`TILE_MOSS`; or `tileMossBrick` = 512/513/514/515/516/517/535/537/540/626/628)
+with a `NextDouble() < 0.5` roll converts the dirt/pearlstone neighbours in its
+clamped box through `WorldGen.MossConversion` (`:71457-71503`): a moss-brick
+over pearlstone 38 or a moss over dirt 1 keeps itself (the guards), the family
+pairs (182↔515, 180↔513, 179↔512, 381↔517, 534↔535, 536↔537, 539↔540, 625↔626,
+627↔628, 183↔516, 181↔514) map when both guards miss, and 0 skips the cell.
+Each conversion re-frames its cell (`SquareTileFrame`), and a `Next(6)` roll
+sprays the loose moss 184 into a free neighbour.
+
+- Tests: `moss_conversion_3_the_map_and_its_guards` (the two guards beating the
+  map, the family pairs, the unmapped 0) and
+  `moss_conversion_3_the_moss_arm_converts_the_neighbours` (the seeded arm
+  spreads the moss onto a dirt neighbour). Suite 3110 / 0.
+- Out: the netcode (`NetMessage.SendTileSquare`), the paint/coating copy (the
+  port's growth writes carry no color cache) and `SpreadGrass`'s `color`
+  argument; `SpreadGrassWalls`/`SpreadDesertWalls` landed earlier in the row.
