@@ -1027,6 +1027,33 @@ impl App {
         12
     }
 
+    /// `Main.PendingPlayer`'s favourites on the front end
+    /// (`UICharacterSelect.cs:110`): a card's `.plr` bitfield hydrates the
+    /// live slots when the character is played (BUG-03). The bits are the
+    /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
+    pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
+        let mut slots = Vec::new();
+        for i in 0..crate::item::INV {
+            if bits & (1 << i) != 0 {
+                slots.push(i);
+            }
+        }
+        self.favorite_slots = slots;
+    }
+
+    /// The save-side mirror of [`Self::hydrate_favorites`]: the live
+    /// `favorite_slots` flattened into the `.plr` bitfield
+    /// (`Player.cs:54820-54824`).
+    pub(crate) fn favorite_bits(&self) -> u64 {
+        let mut bits = 0u64;
+        for &i in &self.favorite_slots {
+            if i < crate::item::INV {
+                bits |= 1 << i;
+            }
+        }
+        bits
+    }
+
     pub(crate) fn is_favorite(&self, idx: usize) -> bool {
         self.favorite_slots.contains(&idx)
     }
