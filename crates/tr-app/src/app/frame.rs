@@ -4,7 +4,6 @@
 //! interface draw. Plus the benchmark epilogue and the two RNG helpers the
 //! world simulation shares. (A7: extracted from `main.rs` whole.)
 
-use std::sync::OnceLock;
 use std::time::Instant;
 
 use glam::Vec2;
@@ -13,7 +12,7 @@ use tr_core::lighting::{LightParams, LightStyle};
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
-use crate::app::{App, WorldFrameKey, no_hud};
+use crate::app::{App, WorldFrameKey};
 use crate::assets;
 use crate::audio;
 use crate::craft;
@@ -29,14 +28,7 @@ use crate::render::tiles::draw_tiles;
 use crate::sound;
 use crate::ui;
 use crate::ui::text::{hud_text, hud_text_width};
-use crate::world_sim::clock::{advance_time, time_frozen};
-
-/// `TR_NOCACHE=1` disables D2 and G6, so benchmarks measure the full per-frame
-/// work instead of a cached scene. Also used to A/B the optimisations.
-fn no_cache() -> bool {
-    static NO_CACHE: OnceLock<bool> = OnceLock::new();
-    *NO_CACHE.get_or_init(|| std::env::var_os("TR_NOCACHE").is_some())
-}
+use crate::world_sim::clock::advance_time;
 
 impl App {
     /// `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`), ticked
@@ -103,6 +95,14 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
+        // `UserInterface.Update`'s lockout countdown
+        // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+        // state-change gate decays with the frame step, deterministic under
+        // `TR_SHOT` (dt pinned to 1/60 above). `Main.UpdateUIStates`
+        // (`Main.cs:17487-17491`) runs this whichever UI side is live, so it
+        // must not sit inside the in-game branch below — see
+        // [`App::tick_pointer_clock`].
+        self.tick_pointer_clock(dt);
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -117,7 +117,7 @@ impl App {
             .player
             .as_ref()
             .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-        if !time_frozen() {
+        if !crate::env::day_pinned() {
             // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
             // `:1441`): the powers' multiplier folds into the clock tick
             // (the freeze stops the advance entirely).
@@ -181,7 +181,7 @@ impl App {
         // the OS pointer stays in menus and on the fullscreen map.
         let vanilla_cursor = self.menu.is_none()
             && self.front.is_none()
-            && !no_hud()
+            && !crate::env::no_hud()
             && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open));
         if self.os_cursor_hidden != Some(vanilla_cursor) {
             if let Some(w) = &self.window {
@@ -251,12 +251,6 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
-            // `UserInterface.Update`'s lockout countdown
-            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
-            // state-change gate decays with the frame step, deterministic under
-            // `TR_SHOT` (dt pinned to 1/60 above).
-            self.pointer_ms = self.anim_time as f64 * 1000.0;
-            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
@@ -486,13 +480,9 @@ impl App {
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
         if self.is_client() && self.frame_count == 90 {
-            if let Ok(v) = std::env::var("TR_NET_EDIT") {
-                if let Some((sx, sy)) = v.split_once(',') {
-                    if let (Ok(x), Ok(y)) = (sx.trim().parse::<i32>(), sy.trim().parse::<i32>()) {
-                        self.request_edit(x, y, 0, 0);
-                        log::info!("net edit requested at {x},{y}");
-                    }
-                }
+            if let Some((x, y)) = crate::env::net_edit() {
+                self.request_edit(x, y, 0, 0);
+                log::info!("net edit requested at {x},{y}");
             }
         }
         self.poll_net();
@@ -541,20 +531,18 @@ impl App {
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
-        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // (`ChestUI.cs:115-122`, the `WorldChest` entity's own field since the
+        // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
-        // reads the map field directly so the borrow stays field-scoped).
+        // reads the entity directly so the borrow stays field-scoped).
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
-        let chest_stored_name = if chest_open > -1 {
-            self.chest_names
-                .get(&(chest_open as usize))
-                .map(String::as_str)
-                .unwrap_or("")
-        } else {
-            ""
-        };
+        let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+        // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
+        // per-chest slot count from the file (`Chest.maxItems`), the default
+        // 40 for every port-created chest.
+        let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
 
         {
             let App {
@@ -625,10 +613,7 @@ impl App {
                 // The override only sets the clock — the sky/tile colour comes from
                 // the same `SetBackColor` path as the natural clock (the old
                 // night→day lerp bypassed the ramps and the moon-phase floor).
-                let override_day = std::env::var("TR_DAY")
-                    .ok()
-                    .and_then(|v| v.parse::<f32>().ok())
-                    .map(|v| v.clamp(0.0, 1.0));
+                let override_day = crate::env::day_override();
                 let (is_day, natural_time) = match override_day {
                     Some(d) => {
                         let is_day = d >= 0.5;
@@ -747,7 +732,7 @@ impl App {
                     // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
                     // false until the EchoMonolith / 4409-accessory systems land;
                     // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
-                    draw_invisible_walls: std::env::var_os("TR_SHOW_INVISIBLE").is_some(),
+                    draw_invisible_walls: crate::env::show_invisible(),
                 };
                 let sky_uv = atlas
                     .as_ref()
@@ -794,7 +779,7 @@ impl App {
                 let mut leaf_rng = tr_core::tile_light::FastRandom::new(
                     (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
                 );
-                if std::env::var_os("TR_NO_WATERFALL").is_none() {
+                if !crate::env::no_waterfall() {
                     let half_v = screen * 0.5 / *zoom;
                     let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
                         .clamp(0, world.width - 1);
@@ -867,13 +852,11 @@ impl App {
                 // (`world_sim::weather::update_world_tick`, ×`Main.dayRate`,
                 // `Main.cs:17228-17231`); the sway counters stay per frame,
                 // faster with stronger wind.
-                wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
+                wind.sway_enabled = settings.tiles_sway && !crate::env::no_wind();
                 // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
                 // the leaf frequency are screenshotable at a chosen strength.
-                if let Ok(v) = std::env::var("TR_WIND_FORCE") {
-                    if let Ok(f) = v.parse::<f32>() {
-                        wind.speed_current = f.clamp(-1.24, 1.24);
-                    }
+                if let Some(f) = crate::env::wind_force() {
+                    wind.speed_current = f.clamp(-1.24, 1.24);
                 }
                 tr_core::wind::advance_tree_counter(tree_wind_counter, wind.speed_current);
                 tr_core::wind::advance_counter(grass_wind_counter, wind.speed_current);
@@ -977,7 +960,7 @@ impl App {
                     },
                     world_revision: world.revision,
                 };
-                let reuse_world = !no_cache() && *world_key == Some(key);
+                let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
                 if reuse_world {
                     renderer.begin_frame_keep_world();
                     tile_stats.draw_ms = 0.0;
@@ -1106,7 +1089,7 @@ impl App {
                 // world-effect range like the rain (world content — under the map
                 // batches and the interface). `TR_NO_WIND` is the A/B switch for
                 // the whole wind feature, spawns included.
-                let wind_ab_on = std::env::var_os("TR_NO_WIND").is_none();
+                let wind_ab_on = !crate::env::no_wind();
                 let drained: Vec<_> = leaf_spawns.drain(..).collect();
                 for s in drained.into_iter().take_while(|_| wind_ab_on) {
                     if leaves.len() >= 400 {
@@ -1139,7 +1122,14 @@ impl App {
                     renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
-                    p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                    // The yoyo family's string anchors on the player's
+                    // centre (`Main.cs:27943-27945`'s mountedCenter +
+                    // gfxOffY) — the frame's rendered player carries both.
+                    let hand = render_player.as_ref().map(|pl| {
+                        let (cx, cy) = pl.center();
+                        (cx, cy + pl.gfx_off_y)
+                    });
+                    p.draw_with_hand(renderer, lookups, light, draw_cam, *zoom, screen, hand);
                 }
 
                 let boss = npcs
@@ -1169,10 +1159,18 @@ impl App {
                 // nothing (out of P4 scope, the whole-UI P4 plan's
                 // Uncertainty 7).
                 let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
+                // `Main.MapScale` (`Main.cs:67297`, clamp `Main.cs:4494`): the
+                // minimap anchor and the whole panel's render scale, through the
+                // `Matrix.CreateScale(Main.MapScale)` batch transform
+                // (`Main.cs:55309-55329`). The full map keeps
+                // `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f
+                // `:66756`) and the zoom axis `Main.mapMinimapScale` is a
+                // separate multiplier (`Main.cs:55515-55522`).
+                let map_scale = settings.map_scale;
                 if settings.map_enabled
                     && menu.is_none()
                     && front.is_none()
-                    && !no_hud()
+                    && !crate::env::no_hud()
                     && !fullscreen_map
                     // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
                     // bestiary state covers the interface — the minimap HUD
@@ -1181,11 +1179,12 @@ impl App {
                     && self.map_style == 1
                 {
                     if let Some(m) = map.as_ref() {
-                        let pos =
-                            ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
+                        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
+                            screen, map_scale,
+                        ));
                         // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                        ui::minimap::draw_background(renderer, lookups, pos, 1.0);
-                        m.draw_minimap(renderer, world, screen, view_center);
+                        ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
+                        m.draw_minimap(renderer, world, screen, view_center, map_scale);
                         // The hover highlight is `MinimapFrame.Update`'s
                         // `buttonUnderMouse.IsHighlighted`
                         // (`MinimapFrame.cs:163`), resolved per frame in
@@ -1193,7 +1192,14 @@ impl App {
                         // `DrawTo` runs `Update` before the foreground batch
                         // (`MinimapFrameManager.cs:45`, `Main.cs:55769`).
                         let s = ui::minimap::style_index(&settings.minimap_frame);
-                        ui::minimap::draw_foreground(renderer, lookups, s, pos, self.minimap_hover);
+                        ui::minimap::draw_foreground(
+                            renderer,
+                            lookups,
+                            s,
+                            pos,
+                            self.minimap_hover,
+                            map_scale,
+                        );
                     }
                 }
                 if let Some(front) = front.as_mut() {
@@ -1229,7 +1235,7 @@ impl App {
                             hint,
                         );
                     }
-                } else if menu.is_none() && !no_hud() && !fullscreen_map {
+                } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
                     let craft_available = if self.crafting_open {
                         // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
                         // owned counts fold the inventory and the in-range
@@ -1290,6 +1296,10 @@ impl App {
                         &self.hotbar_scales,
                         player.as_ref(),
                         boss,
+                        // `BigProgressBarSystem.ShowText` (`ShowBossBarHealthText`,
+                        // `BigProgressBarSystem.cs:231`/`:236`): the gate on the
+                        // boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
+                        settings.boss_bar_text,
                         self.inventory_open,
                         self.crafting_open,
                         &self.mouse_item,
@@ -1305,7 +1315,7 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        &self.kill_tracker,
+                        &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
                         self.shop_npc
@@ -1336,6 +1346,7 @@ impl App {
                                 .flatten(),
                             editing: chest_editing,
                             name: chest_stored_name,
+                            max_items: chest_max_items,
                             edit_text: &chest_edit_text,
                             blinker: &mut self.text_blinker,
                             scroll_row: &mut self.chest_scroll_row,
@@ -1398,6 +1409,23 @@ impl App {
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
                 }
+                // `UIAchievementsMenu` (`Main.cs:48931`'s menuMode 888 +
+                // `MenuUI.SetState(Main.AchievementsMenu)`): the state draws
+                // over whatever the frame rendered — the menu's world
+                // backdrop here, the world itself in the fancy-UI arm. Its
+                // `OnActivate` picks the container's Top by `Main.gameMenu`.
+                if self.achievements_open {
+                    ui::achievements::draw_screen(
+                        renderer,
+                        lookups,
+                        screen,
+                        &self.achievements,
+                        self.achievements_scroll,
+                        &self.achievements_categories,
+                        self.mouse_pos,
+                        menu.is_some(),
+                    );
+                }
                 // Task 6b: upload the revealed tiles into the world-sized map texture
                 // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                 // and the minimap on the view centre (`Main.cs:55420-55421`,
@@ -1409,7 +1437,11 @@ impl App {
                     }
                 }
                 if let Some(map) = map.as_ref() {
-                    if !no_hud() && menu.is_none() && front.is_none() && settings.map_enabled {
+                    if !crate::env::no_hud()
+                        && menu.is_none()
+                        && front.is_none()
+                        && settings.map_enabled
+                    {
                         if map.open {
                             // `Main.cs:55483`: the biome `MapBG` backdrop is
                             // drawn before the wooden frame, so it goes into

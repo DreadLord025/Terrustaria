@@ -239,6 +239,18 @@ pub static SET_CONVERSION_SANDSTONE: TileSet = TileSet(&[
     0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
 ]);
 
+pub static SET_CONVERSION_STONE: TileSet = TileSet(&[
+    0x0000000002000002, 0x0020000000000000, 0x0000000000000000, 0x0000000000000800, 
+    0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+    0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+]);
+
+pub static SET_CONVERSION_MOSS: TileSet = TileSet(&[
+    0x0000000000000000, 0x0000000000000000, 0x00f8000000000000, 0x0000000000000000, 
+    0x0000000000000000, 0x2000000000000000, 0x0000000000000000, 0x0000000000000000, 
+    0x0000000009400000, 0x000a000000000000, 0x0000000000000000, 0x0000000000000000, 
+]);
+
 pub static SET_ICE_SKATE_SLIPPERY: TileSet = TileSet(&[
     0x0000000000000000, 0x8000000000000000, 0x0000001e00000000, 0x0000000000000100, 
     0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
@@ -255,4 +267,10 @@ pub static SET_CAN_BE_CLEARED_DURING_GENERATION: TileSet = TileSet(&[
     0xffffe5ffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffdffbffffffff, 
     0xffffffffffffffff, 0xfffe7fffffffffff, 0xffffffffffec0fff, 0xfffffff1ffffffff, 
     0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffffffff, 
+]);
+
+pub static SET_ALLOWS_SAVE_COMPRESSION_BATCHING: TileSet = TileSet(&[
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffff7fffffffff, 0xffffffffffffffff, 
+    0xfffffffffffffeff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffe7ffff, 
 ]);

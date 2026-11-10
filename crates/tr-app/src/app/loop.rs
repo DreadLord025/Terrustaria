@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{deterministic_pointer_park, mouse_pin, App};
+use crate::app::App;
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -87,18 +87,13 @@ impl ApplicationHandler for App {
             self.world.width as f32 * TILE_PX * 0.5,
             self.world.spawn_y as f32 * TILE_PX,
         );
-        if let Ok(cam) = std::env::var("TR_CAM") {
-            let mut it = cam.split(',').map(|v| v.trim().parse::<f32>());
-            if let (Some(Ok(x)), Some(Ok(y))) = (it.next(), it.next()) {
-                self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
-            }
+        if let Some((x, y)) = crate::env::camera_pin() {
+            self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
         }
         self.zoom = self.settings.zoom;
-        if let Ok(z) = std::env::var("TR_ZOOM") {
-            if let Ok(z) = z.parse::<f32>() {
-                self.zoom = z.clamp(0.25, 8.0);
-                self.zoom_pinned = true;
-            }
+        if let Some(z) = crate::env::zoom_pin() {
+            self.zoom = z.clamp(0.25, 8.0);
+            self.zoom_pinned = true;
         }
         if self.follow_player {
             if let Some(p) = &self.player {
@@ -113,7 +108,7 @@ impl ApplicationHandler for App {
         // M1.4-BG-18 phase 2 harness: `TR_POST=1` routes frames through the post
         // pipeline (passthrough until phase 3 ports filter passes). The noise
         // image rides along so filter bindings hold the real content texture.
-        if std::env::var_os("TR_POST").is_some() {
+        if crate::env::post_capture() {
             let gpu = self.gpu.as_ref().expect("gpu");
             let mut post = tr_render::PostPipeline::new(gpu);
             post.resize(gpu, gpu.config.width, gpu.config.height);
@@ -237,6 +232,15 @@ impl ApplicationHandler for App {
                             self.chat.open = true;
                             return;
                         }
+                        // `UIAchievementsMenu`'s Back (`GoBackClick` sets
+                        // `Main.menuMode = 0`): Escape closes the overlay
+                        // before the legacy menu sees the key (M6-ACH-2).
+                        if self.achievements_open && matches!(code, KeyCode::Escape) {
+                            self.achievements_open = false;
+                            self.achievements_categories = [true; 4];
+                            self.achievements_scroll = 0.0;
+                            return;
+                        }
                         if self.menu.is_some() {
                             if let Some(text) = event.text.as_ref() {
                                 if let Some(m) = self.menu.as_mut() {
@@ -333,6 +337,13 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
                 };
+                // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel
+                // moves the overlay's rows while it is open, before the
+                // hotbar's `HotbarPlus`/`HotbarMinus` cycle claims it.
+                if self.achievements_open {
+                    self.scroll_achievements(d);
+                    return;
+                }
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `Player.cs:25190-25197`: while the map is fullscreen the wheel
                     // zooms it instead of cycling the hotbar.
@@ -399,6 +410,14 @@ impl ApplicationHandler for App {
                             // held between the press and release events.
                             m.mouse_down = pressed;
                             if pressed {
+                                // `UIAchievementsMenu` rides over the legacy menu
+                                // (`Main.MenuUI.SetState`), so its Back and filter
+                                // toggles take the press first (M6-ACH-2).
+                                if pressed && self.achievements_open {
+                                    self.ui_left_press = true;
+                                    self.handle_achievements_clicks();
+                                    return;
+                                }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 self.apply_menu_action(action, event_loop);
@@ -469,7 +488,9 @@ impl ApplicationHandler for App {
                 }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
-                if mouse_pin().is_none() && !deterministic_pointer_park() {
+                if crate::env::mouse_pin().is_none()
+                    && !crate::env::deterministic_pointer_park()
+                {
                     self.mouse_pos = p;
                 }
                 // The menu reads the pinned pointer when `TR_MOUSE` is set, so

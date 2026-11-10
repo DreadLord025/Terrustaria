@@ -475,11 +475,18 @@ string[] wantedSets =
     // (Conversion.* TileID.cs:92ff, IceSkateSlippery :481, Clouds :505) — the
     // committed symbol names are kept via the dot-to-underscore emission below.
     "Conversion.Sand", "Conversion.HardenedSand", "Conversion.Sandstone",
+    // The gem/vanity tree ground tests (`WorldGen.cs:30304-30341`): the
+    // Stone ({1, 25, 117, 203}) and Moss (the 11 moss tiles) conversion
+    // sets `GemTreeGroundTest` reads (TileID.cs:90/:96).
+    "Conversion.Stone", "Conversion.Moss",
     "IceSkateSlippery", "Clouds",
     // `TileRunner`'s override check (`WorldGen.cs:76927`) — everything is clearable
     // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),
     // so the emitted set is the complement (default-true emission, Program.cs:92-96).
     "CanBeClearedDuringGeneration",
+    // The `.wld` tile RLE batching gate (`SaveWorldTiles:1573`, `TileID.cs:484`):
+    // default-true minus 423/520/723/724, so the emitted set is near-complete.
+    "AllowsSaveCompressionBatching",
 ];
 foreach (var name in wantedSets)
 {

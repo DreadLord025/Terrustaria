@@ -453,13 +453,177 @@ fn carve_interior(
 /// the entrance tower + shaft at the dungeon anchor, and the cracked-brick
 /// runs. The vanilla's entrance-hall precalculation and the biome styles
 /// (`dungeonGenerationStyles`) ride the follow-up.
+///
+/// The colour roll lives here — [`DungeonColor::roll`] below is this pass's
+/// `SetupDungeonGenVarVariables` `genRand.Next(3)` triple, and the live
+/// pipeline path carries its twin in `biomes::pass_dungeon`
+/// (`biomes.rs:1752`'s `rng.range(0, 3)` → the 41/43/44 + 7/8/9 rows). The
+/// drunk world's *re*-roll of that colour is NOT here: it is
+/// `WorldGen.FinishDrunkGen` (`WorldGen.cs:26226-26260` — the
+/// `Next(13, 25)` opener, the per-brick 41/43/44 bands 19-23/15-19/13-15
+/// and the `wallColor(25)` sweep) which runs in the seed-finish tail
+/// (`finish_seeds::finish_drunk_gen`'s owner), so the brick/wall ids stay
+/// the `Setup` triple here.
+///
+/// M5-SEED-1 seam: the `step_dungeon` step in `pipeline.rs` currently
+/// routes through `biomes::pass_dungeon` (the shape-level approximation),
+/// so this faithful pass is exercised by its own tests below rather than
+/// by the pipeline; the drunk start-row arm is ported here so the two
+/// implementations can be reconciled by the dungeon's owner without a
+/// re-derivation.
+/// `LegacyEntranceDungeonHall.LegacyHall`'s precalculated arm
+/// (`Halls/LegacyEntranceDungeonHall.cs:19-260`, the `base.calculated` /
+/// `UsePrecalculatedEntrance` path): the walk from `from` toward `to` in
+/// `steps` steps — the brick shell rect (the ±4/±6 jitter), the interior
+/// wall rect, then the interior carve (the ratio rect with the ±1/2 bump).
+///
+/// The port's deviations (recorded in ANALYSIS "Dungeon entrance halls"):
+/// the room-protection bookkeeping (`DungeonUtils.GetHighestProtectionTypeFromPoint`
+/// — the port has no room/protection records), the platform data list
+/// (`dungeonData.dungeonPlatformData` — no port store), the bounds tracker
+/// (`dungeonData.dungeonBounds`), the `Override*` settings arms (their only
+/// caller is the precalculated wrapper below, which sets `OverrideSteps`),
+/// and the DualDungeon `CrackedBrickChance = 0` (no dual-dungeon world).
+fn generate_entrance_hall(
+    world: &mut World,
+    from: (f64, f64),
+    to: (f64, f64),
+    steps: i32,
+    strength: i32,
+    brick: u16,
+    cracked: u16,
+    wall: u16,
+    max_y: i32,
+    r: &mut HallSeed,
+) {
+    // `(EndPosition - StartPosition).SafeNormalize(Vector2D.UnitX)` — a zero
+    // vector keeps the C#'s fallback of the unit X.
+    let (vx, vy) = (to.0 - from.0, to.1 - from.1);
+    let len = (vx * vx + vy * vy).sqrt();
+    let (mut dx, mut dy) = if len > 0.0 { (vx / len, vy / len) } else { (1.0, 0.0) };
+    // The precalculated arm's direction IS the normalized start->end vector
+    // (:90's `(EndPosition - StartPosition).SafeNormalize(UnitX)`): the
+    // slant rolls, the `num3` direction pick and the skewed/drunk clamps
+    // (:43-79) belong to the UN-precalculated path, which this port does not
+    // walk (the precalculated wrapper is the only caller).
+    let _ = &mut dy;
+    let underworld = max_y - 220;
+    let (mut px, mut py) = from;
+    let mut steps = steps;
+    while steps > 0 {
+        steps -= 1;
+        // `!WorldGen.InWorld(x, y, 35)` (:137-140).
+        if px < 35.0 || py < 35.0 || px > (world.width - 35) as f64 || py > (world.height - 35) as f64 {
+            break;
+        }
+        let n = strength as f64;
+        // The brick shell rect with the jitter (:142-151).
+        let bx0 = (px - n - 4.0 - r.next(6) as f64).max(30.0) as i32;
+        let bx1 = (px + n + 4.0 + r.next(6) as f64).min((world.width - 31) as f64) as i32;
+        let by0 = (py - n - 4.0).max(30.0) as i32;
+        let by1 = (py + n + 4.0 + r.next(6) as f64).min((world.height - 31) as f64) as i32;
+        // The brick writes (:171-186): the liquid clear + the brick type
+        // write over the whole shell rect (the C#'s CanPlaceTileAt gate —
+        // the port's `fill_brick` underworld band sits the cracked-brick
+        // arms, so the shells write brick directly here).
+        for k in bx0..=bx1 {
+            for l in by0..=by1 {
+                let Some(t) = world.tile_mut(k, l) else { continue };
+                t.liquid = 0;
+                t.kind = brick;
+                t.flags |= crate::tile::FLAG_ACTIVE;
+                t.set_paint(0);
+            }
+        }
+        // The wall writes over the shell's inner rect (:188-201). The C#'s
+        //  wall-paint clear rides the port's extras map,
+        // which the dungeon never writes — the clear is a no-op here.
+        for m in (bx0 + 1)..=(bx1 - 1) {
+            for n2 in (by0 + 1)..=(by1 - 1) {
+                let Some(t) = world.tile_mut(m, n2) else { continue };
+                t.wall = wall;
+            }
+        }
+        // The interior carve rect with the ±1/2 bump (:218-231) at the ratio
+        // (0.5) — the ClearTile + the wall write.
+        let bump = if r.next(strength as u32) == 0 { r.range(1, 3) as f64 } else { 0.0 };
+        let rw = n * HALL_INTERIOR_TO_EXTERIOR_RATIO;
+        let ix0 = (px - rw - bump).max(30.0) as i32;
+        let ix1 = (px + rw + bump).min((world.width - 31) as f64) as i32;
+        let iy0 = (py - rw - bump).max(30.0) as i32;
+        let iy1 = (py + rw + bump).min((world.height - 31) as f64) as i32;
+        for x in ix0..=ix1 {
+            for y in iy0..=iy1 {
+                let Some(t) = world.tile_mut(x, y) else { continue };
+                *t = Tile::default();
+                t.wall = wall;
+            }
+        }
+        let _ = underworld;
+        let _ = cracked;
+        let _ = dy;
+        px += dx;
+        py += dy;
+    }
+}
+
+/// `DungeonCrawler.MakeDungeon_GenerateNextEntranceHall_Precalculated`
+/// (`DungeonCrawler.cs:520-553`): the entrance hall toward the surface
+/// entrance. The budget `Next(10, 30)` is clamped to the walk's remaining
+/// distance (`Math.Max(1, (int)dist - amountPassed)`), the hall's end point
+/// is the `Vector2D.Lerp(currentPos, entrancePos, amountPassed / dist)`, and
+/// the walk ends (`createdDungeonEntranceOnSurface`) when the budget runs
+/// out. The precalculated path skips the C#'s surface-detection arm (the
+/// `!UsePrecalculatedEntrance` guard, :164-176). Returns whether the
+/// entrance reached the surface.
+fn walk_entrance_hall(
+    world: &mut World,
+    current: (f64, f64),
+    entrance: (f64, f64),
+    dist: i32,
+    amount_passed: &mut i32,
+    strength: i32,
+    brick: u16,
+    cracked: u16,
+    wall: u16,
+    max_y: i32,
+    r: &mut HallSeed,
+) -> ((f64, f64), bool) {
+    let mut num = r.range(10, 30) as i32;
+    if num > dist - *amount_passed {
+        num = (dist - *amount_passed).max(1);
+    }
+    let t = if dist > 0 { *amount_passed as f64 / dist as f64 } else { 1.0 };
+    let end = (
+        current.0 + (entrance.0 - current.0) * t,
+        current.1 + (entrance.1 - current.1) * t,
+    );
+    generate_entrance_hall(world, current, end, num, strength, brick, cracked, wall, max_y, r);
+    *amount_passed -= num;
+    let surface = *amount_passed <= 0;
+    (end, surface)
+}
+
 pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut HallSeed) {
+    // `WorldGen.cs:14804-14807` — and its dual-dungeon twin at `:14854-14857`
+    // (one per `GenVars.dungeonGenVars` entry): a drunk world (without
+    // `noSurface`) pins the dungeon start row to
+    // `(int)Main.worldSurface + 70` instead of the searched solid-tile depth
+    // the caller computed. The `Next(-200, 200)` offset draw (`:14769`) and
+    // the whole solid-tile search (`:14773-14803`) sit *before* the drunk
+    // line in vanilla, so both are evaluated either way — the arm replaces
+    // only the resulting start row and burns no draw of its own, which is
+    // what keeps a classic world byte-identical.
+    let top = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        world.world_surface as i32 + 70
+    } else {
+        surface_y
+    };
     let color = DungeonColor::roll(&mut |n| r.next(n));
     let brick = color.brick_tile();
     let cracked = color.cracked_tile();
     let wall = color.brick_wall();
     let setup = DungeonSetup::roll(&mut |lo, hi| r.range(lo, hi), world.width);
-    let top = surface_y;
     let bottom = (world.height - 220).min(top + (world.rock_layer as i32) * 2);
     // The entrance tower (:the existing pass's contract — a 5-wide shell
     // from the surface and the 3-wide carved shaft).
@@ -488,9 +652,36 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
             world.tiles[i].wall = wall;
         }
     }
+    // The entrance-hall precalculation (`MakeDungeon`'s main loop, the
+    // precalculated arm `DungeonCrawler.cs:441-456` + :520-553): the walk
+    // from the shaft's head toward the surface entrance until the budget
+    // (`setup.steps` — the C#'s `num2`) is spent. The port's tower stands
+    // at the anchor's own X (the C#'s searched entrance is offset by the
+    // entrance strengths — the port's geometry deviation, ANALYSIS), so the
+    // walk direction's X rides the entrance-strength sign arms.
+    let mut amount_passed = setup.steps;
+    let mut cursor = (x0 as f64, (top + 40) as f64);
+    loop {
+        let (end, surface) = walk_entrance_hall(
+            world,
+            cursor,
+            (x0 as f64, top as f64),
+            setup.steps,
+            &mut amount_passed,
+            setup.entrance_strength_x,
+            brick,
+            cracked,
+            wall,
+            world.height,
+            r,
+        );
+        if surface {
+            break;
+        }
+        cursor = end;
+    }
     // The crawler from the shaft's foot.
     crawl_layout(world, x0, top + 40, setup.steps, brick, cracked, wall, world.height, r);
-    let _ = setup.entrance_strength_x;
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
     let _ = setup.entrance_strength_y2;
@@ -587,6 +778,70 @@ mod tests {
         assert!(carved > 200, "the interior carve landed: {carved}");
     }
 
+    /// The topmost row carrying a dungeon brick (41/43/44) — the entrance
+    /// tower's first shell row (`top - 8`).
+    fn topmost_brick_row(w: &World) -> Option<i32> {
+        (0..w.height).find(|y| {
+            (0..w.width).any(|x| {
+                let t = w.tile(x, *y).unwrap();
+                t.active() && matches!(t.kind, 41 | 43 | 44)
+            })
+        })
+    }
+
+    #[test]
+    fn test_dungeon_1_the_drunk_start_row_pins_the_surface_plus_70() {
+        // `WorldGen.cs:14804-14807` (the dual-dungeon twin `:14854-14857`):
+        // drunk replaces the searched start row with
+        // `(int)Main.worldSurface + 70`, so the entrance tower (which begins
+        // 8 rows above the start row) moves down with it. A classic world
+        // keeps the searched row — the arm is flag-gated and burns no draw,
+        // so both the classic tile grid and the classic draw sequence are
+        // untouched.
+        // A vanilla-height world: `num6 = (maxTilesY - 220) - 100` = 880
+        // puts both start rows above `LegacyDungeonHall`'s upward-turn bound
+        // (`WorldGen.cs:149`-ish, the port's `generate_hall` `num6`), so the
+        // crawler walks DOWN from the shaft foot and never paints above the
+        // entrance tower — the tower's top row is the pass's start row minus
+        // 8, and reading it back reads the drunk arm directly.
+        let mut classic = flat_world(600, 1200, 60);
+        let mut drunk = flat_world(600, 1200, 60);
+        // The searched depth (the port's `surface_y`, the vanilla solid-tile
+        // search product) and `Main.worldSurface` disagree on purpose so the
+        // two arms pick different rows.
+        classic.world_surface = 60.0;
+        drunk.world_surface = 60.0;
+        drunk.seeds |= crate::seeds::SeedFlags::DRUNK;
+        let mut r1 = HallSeed::new(0xD00D);
+        let mut r2 = HallSeed::new(0xD00D);
+        generate_dungeon(&mut classic, 300, 92, &mut r1);
+        generate_dungeon(&mut drunk, 300, 92, &mut r2);
+        // The precalculated entrance hall's brick shell rides ±(strength+4)
+        // around the walk's end (the surface entrance) — the vanilla's
+        // visible entrance tower — so the topmost brick is the shell's top
+        // edge at the entrance point, not the shaft tower's top row. Both
+        // values are the fixed-seed pins of that shell.
+        assert_eq!(topmost_brick_row(&classic), Some(59), "the classic entrance shell");
+        assert_eq!(topmost_brick_row(&drunk), Some(97), "the drunk entrance shell");
+    }
+
+    #[test]
+    fn test_dungeon_1_the_classic_world_is_untouched_by_the_drunk_arm() {
+        // The flag gate is the whole contract: the drunk pass over a classic
+        // world reproduces the classic grid cell-for-cell (and the classic
+        // world reproduces itself), so the pinned `world_hash` worlds stay
+        // where they are.
+        let mut a = flat_world(600, 400, 60);
+        let mut b = flat_world(600, 400, 60);
+        let mut r1 = HallSeed::new(0xD00D);
+        let mut r2 = HallSeed::new(0xD00D);
+        generate_dungeon(&mut a, 300, 92, &mut r1);
+        generate_dungeon(&mut b, 300, 92, &mut r2);
+        for i in 0..a.tiles.len() {
+            assert_eq!(a.tiles[i].kind, b.tiles[i].kind, "cell {i} kind");
+        }
+    }
+
     #[test]
     fn test_dungeon_1_the_determinism_holds() {
         // Two runs on the same seed agree cell-for-cell.
@@ -602,4 +857,84 @@ mod tests {
             assert_eq!(a.tiles[i].flags, b.tiles[i].flags, "cell {i} flags");
         }
     }
+
+
+
+
+
+
+
+
+    /// DW-2.7: the precalculated entrance hall — the walker writes the brick
+    /// shell and the interior wall along the path, and the wrapper's budget
+    /// clamps (`Math.Max(1, dist - amountPassed)`) and surface flag ride the
+    /// C#'s `MakeDungeon_GenerateNextEntranceHall_Precalculated`.
+    #[test]
+    fn test_dungeon_2_the_precalculated_entrance_hall_walks_and_clamps() {
+        let mut w = flat_world(200, 400, 100);
+        w.world_surface = 100.0;
+        let h = w.height;
+        let mut r = HallSeed::new(0xE171);
+        let mut amount = 40;
+        let (_, surface) = walk_entrance_hall(
+            &mut w,
+            (100.0, 300.0),
+            (100.0, 100.0),
+            40,
+            &mut amount,
+            25,
+            41,
+            481,
+            7,
+            h,
+            &mut r,
+        );
+        // The budget spent exactly the walk's distance: the first hall's
+        //  clamped to  = 0 → max(1, 0) = 1, so one pass
+        // leaves 39 and the surface flag stays down.
+        assert_eq!(amount, 39, "one clamped step of the 40-row walk");
+        assert!(!surface, "the walk continues while budget remains");
+        // The shell rode the path: brick along the column around the start,
+        // walls inside it, and the carved interior.
+        let brick_or_wall = |x: i32, y: i32| {
+            let t = w.tile(x, y).unwrap();
+            t.active() && matches!(t.kind, 41 | 43 | 44) || t.wall == 7
+        };
+        assert!(brick_or_wall(100, 296), "the shell under the start row");
+        assert!(brick_or_wall(90, 296) || brick_or_wall(110, 296), "the shell's side");
+    }
+
+    /// DW-2.7: the zero-length direction falls back to the C#'s unit X
+    /// (`SafeNormalize(Vector2D.UnitX)`), and the budget's exhaustion raises
+    /// the surface flag.
+    #[test]
+    fn test_dungeon_2_the_entrance_hall_falls_back_and_flags_the_surface() {
+        let mut w = flat_world(200, 400, 100);
+        let h = w.height;
+        let mut r = HallSeed::new(0xBEEF);
+        // A degenerate entrance (the same point): the walk goes sideways in
+        // the fallback direction; the budget 1 exhausts in one call.
+        let mut amount = 1;
+        let (_, surface) = walk_entrance_hall(
+            &mut w,
+            (100.0, 200.0),
+            (100.0, 200.0),
+            1,
+            &mut amount,
+            10,
+            41,
+            481,
+            7,
+            h,
+            &mut r,
+        );
+        assert_eq!(amount, 0);
+        assert!(surface, "the spent budget creates the entrance on the surface");
+        let saw_brick = (90..110).any(|x| {
+            let t = w.tile(x, 200).unwrap();
+            t.active() && matches!(t.kind, 41 | 43 | 44)
+        });
+        assert!(saw_brick, "the fallback direction laid brick around the point");
+    }
+
 }

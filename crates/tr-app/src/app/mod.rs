@@ -23,7 +23,7 @@ pub(crate) use frame::{next_rand, rand01};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -38,7 +38,7 @@ use winit::keyboard::KeyCode;
 use winit::window::Window;
 
 use crate::achievements;
-use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
+use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_ui_preset};
 use crate::assets;
 use crate::audio;
 use crate::banners;
@@ -183,9 +183,19 @@ pub(crate) struct App {
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     pub(crate) inventory_open: bool,
-    /// `Main.BestiaryTracker.Kills` (`NPCKillsTracker.cs`): the per-world
-    /// bestiary kill counts, persisted in the sidecar's v5 kills line.
-    pub(crate) kill_tracker: tr_core::bestiary::KillTracker,
+    /// `Main.BestiaryTracker` (`BestiaryUnlocksTracker.cs`): the per-world
+    /// bestiary state — the kill counts plus the sighted/chatted credit-id
+    /// sets. For a `.wld` it rides world-file section 10 (`SaveBestiary:3396`);
+    /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
+    /// sights/chats have no equivalent for (they stay empty).
+    pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
+    /// `WorldGen.TownManager` (`TownRoomManager.cs`): one room per town NPC,
+    /// loaded from world-file section 9 (`SaveTownManager`'s list) and rebuilt
+    /// by the load fix-ups.
+    pub(crate) town_rooms: crate::town::TownRooms,
+    /// `NPC.ShimmeredTownNPCs` (`NPC.cs:6071`): the `bool[NPCID.Count]`
+    /// bitmap the NPC section's first list persists (truth indices).
+    pub(crate) shimmered_npcs: crate::town::ShimmeredTownNpcs,
     /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`'s port — the bestiary
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
@@ -204,8 +214,18 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
-    /// `Main.Achievements` — the achievement registry (M6-ACH-1).
+    /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
+    /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
+    /// `UIAchievementsMenu`'s port (M6-ACH-2): the overlay state over the
+    /// menu/world backdrop, opened from `Lang.menu[131]` (`Main.cs:48931`)
+    /// or `TR_ACHIEVEMENTS=1`.
+    pub(crate) achievements_open: bool,
+    /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
+    pub(crate) achievements_scroll: f32,
+    /// The four category toggles, all on at `OnActivate`
+    /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
+    pub(crate) achievements_categories: [bool; 4],
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -247,12 +267,6 @@ pub(crate) struct App {
     /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
     /// phase-4 file scope excludes assets.rs/cursor.rs).
     pub(crate) cursor_override: i32,
-    /// The stored `Chest.name` (`Chest.cs:82`) per store index — the panel's
-    /// name line and the rename submit's write target (`App.chest_names`
-    /// feeds `chest::chest_name`). A side map until M6-SAVE-2 widens the
-    /// `WorldChest` entity: the frozen `editing.rs` stocked-chest test
-    /// literal pins the struct shape (the phase-5 discovery, Gap #2).
-    pub(crate) chest_names: HashMap<usize, String>,
     /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
     /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
     /// submit's empty-if-default read (`ChestUI.cs:849-852`).
@@ -359,6 +373,14 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// The `27` projectile sync: the last-sent state per key (the
+    /// change-detection diff) and the per-projectile send budget in ticks
+    /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
+    pub(crate) net_proj_last: HashMap<i32, net::ProjectileState>,
+    pub(crate) net_proj_spam: HashMap<i32, i32>,
+    /// The host slot id per client-npc index (the `28 NPCStrike` target and
+    /// the `23` order), parallel to `npcs` on a joining client.
+    pub(crate) net_npc_slots: Vec<u32>,
     /// The `82` module cadence counter and the last ping send stamp (the
     /// client's RTT diagnostic, `NetPingModule`).
     pub(crate) net_module_beat: u32,
@@ -414,6 +436,9 @@ pub(crate) struct App {
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
     pub(crate) edit_target: Option<(i32, i32)>,
+    /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
+    /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
+    pub(crate) smart_cursor: tr_core::smart_cursor::ContinuityState,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -640,53 +665,6 @@ pub(crate) struct WorldFrameKey {
     pub(crate) world_revision: u64,
 }
 
-fn parse_light_mode(v: &str) -> Option<LightMode> {
-    match v.trim().to_ascii_lowercase().as_str() {
-        "color" | "colour" | "0" => Some(LightMode::Color),
-        "white" | "1" => Some(LightMode::White),
-        "retro" | "2" => Some(LightMode::Retro),
-        "trippy" | "glitch" | "3" => Some(LightMode::Trippy),
-        _ => None,
-    }
-}
-
-fn parse_xy(v: &str) -> Option<(i32, i32)> {
-    let (a, b) = v.split_once(',')?;
-    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
-}
-
-/// `TR_NOHUD=1` hides the HUD, hotbar and minimap so screenshots show only the
-/// world. The debug overlay (`TR_DEBUG`) is independent and still drawn.
-pub(crate) fn no_hud() -> bool {
-    static NO_HUD: OnceLock<bool> = OnceLock::new();
-    *NO_HUD.get_or_init(|| std::env::var_os("TR_NOHUD").is_some())
-}
-
-/// True when a `TR_SHOT` capture runs without an explicit `TR_MOUSE` pin: the
-/// OS pointer is then parked offscreen and `CursorMoved` is ignored, so two runs
-/// of the same command produce SHA256-equal screenshots no matter where the
-/// desktop mouse happens to be. The pointer is harness input, not scene content;
-/// an explicit `TR_MOUSE` still wins (the cursor/tooltip shots).
-pub(crate) fn deterministic_pointer_park() -> bool {
-    static V: OnceLock<bool> = OnceLock::new();
-    *V.get_or_init(|| std::env::var_os("TR_SHOT").is_some() && mouse_pin().is_none())
-}
-
-/// The `TR_DYE=k1,k2,...` pin parse: the first ten comma-separated kinds fill
-/// `Player.dye` positionally; garbage and 0 leave the slot empty.
-fn parse_tr_dye(list: &str) -> [u16; 10] {
-    let mut out = [0u16; 10];
-    for (slot, kind) in out.iter_mut().zip(list.split(',')) {
-        *slot = kind.trim().parse().unwrap_or(0);
-    }
-    out
-}
-
-/// The `TR_DMOUNT=<kind>` pin parse (`App.equip.misc_dyes[3]`); garbage → 0.
-fn parse_tr_dmount(s: &str) -> u16 {
-    s.trim().parse().unwrap_or(0)
-}
-
 /// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and
 /// snaps the player on through the real interaction decode, so the
 /// screenshots/tests exercise the live sitting/sleeping pose (the sim's
@@ -758,32 +736,6 @@ fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, 
     // The pin writes tiles after the render chunks were built — the
     // revision bump is what `apply_edit` uses to rebuild them.
     world.revision = world.revision.wrapping_add(1);
-}
-
-/// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
-/// motion, so screenshots can deterministically show the cursor and a hovered
-/// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).
-pub(crate) fn mouse_pin() -> Option<Vec2> {
-    static PIN: OnceLock<Option<Vec2>> = OnceLock::new();
-    *PIN.get_or_init(|| {
-        let s = std::env::var("TR_MOUSE").ok()?;
-        let mut it = s.split(',').map(|v| v.trim().parse::<f32>());
-        match (it.next(), it.next()) {
-            (Some(Ok(x)), Some(Ok(y))) => Some(Vec2::new(x, y)),
-            _ => None,
-        }
-    })
-}
-
-/// `TR_PAN=<tiles/frame>` pans the camera deterministically. Benchmarks use it to
-/// measure the moving-camera path, where the static-scene caches (D2/G6) mostly miss.
-pub(crate) fn pan_step() -> Option<f32> {
-    static PAN: OnceLock<Option<f32>> = OnceLock::new();
-    *PAN.get_or_init(|| {
-        std::env::var("TR_PAN")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-    })
 }
 
 impl App {
@@ -1135,6 +1087,22 @@ impl App {
         world_sim::editing::update_editing(self, dt, screen);
     }
 
+    /// The per-frame advance of the pointer clock and the state-change lockout:
+    /// `UserInterface.Update`'s countdown, decremented *before* it is read
+    /// (`UserInterface.cs:203-204`). `Main.UpdateUIStates`
+    /// (`Main.cs:17039`/`:17487-17492`) calls `MenuUI.Update` on **every**
+    /// frame, which is why the 200 ms post-`SetState` disable always expires:
+    /// gating this on the live side being closed would latch it forever and
+    /// silence every button of whichever front screen was open.
+    ///
+    /// Split out of `frame()` so the front-screen regime (`Main.menuMode ==
+    /// 888`) is reachable from a headless test; `dt` is the same frame step
+    /// `frame()` uses, pinned to 1/60 under `TR_SHOT`.
+    pub(crate) fn tick_pointer_clock(&mut self, dt: f32) {
+        self.pointer_ms = self.anim_time as f64 * 1000.0;
+        self.pointer.tick(f64::from(dt) * 1000.0);
+    }
+
     pub(crate) fn is_client(&self) -> bool {
         matches!(self.net, NetRole::Client(_))
     }
@@ -1159,7 +1127,7 @@ impl App {
     pub(crate) fn enter_front(&mut self, front: FrontScreen) {
         match front {
             FrontScreen::CharSelect => {
-                let fakes = tr_fake_count("TR_FAKE_CHARS");
+                let fakes = crate::env::fake_count("TR_FAKE_CHARS");
                 // The listing root is `Main.PlayerPath` (`Main.cs:67065-67075`)
                 // — the port's `Terrustaria/Players` (`save.rs`'s mirror).
                 let dir = save::default_players_dir();
@@ -1168,7 +1136,7 @@ impl App {
                 ui::char_select::sort_players(&mut self.players);
             }
             FrontScreen::WorldSelect => {
-                let fakes = tr_fake_count("TR_FAKE_WORLDS");
+                let fakes = crate::env::fake_count("TR_FAKE_WORLDS");
                 // The listing root is the port's `Documents/My Games/
                 // Terrustaria/Worlds` (`Main.WorldPath`'s directory,
                 // `Main.cs:67065-67075`; `save.rs:20-29`).
@@ -1429,8 +1397,20 @@ impl App {
     /// entity/session half of the startup: the render assets, the starting
     /// player and slimes, the inventory and the persisted session, the debug
     /// env hooks, the menu/network/map setup and the `TR_UI` preset.
+    ///
+    /// `settings` is the master copy, read once by `main` (`Settings::load`,
+    /// the read-once rule); the menu receives a clone so its edits park here on
+    /// close (`close_menu`/`park_menu`).
+    ///
+    /// `chests` is the world save's v7 chest record list (`load_world` →
+    /// `save::load`), M6-SAVE-1b's load-side twin of [`App::save_world`]: each
+    /// record re-stocks a store entry at its anchor, winning over the load-time
+    /// loot re-roll (the vanilla stocks the `Chest` objects inline with the
+    /// placement, so the re-roll only fills the tiles a save never came from).
     pub(crate) fn new(
+        settings: settings::Settings,
         world: World,
+        sections: WorldSections,
         world_path: PathBuf,
         atlas: Atlas,
         font_atlas: Option<tr_render::FontAtlas>,
@@ -1443,12 +1423,18 @@ impl App {
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
-        let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
+        let player_enabled = !crate::env::no_player();
         let mut player = player_enabled.then(|| Player::spawn(&world));
         let mut npcs = Vec::new();
+        // The town rooms (`WorldGen.TownManager`, world-file section 9): built
+        // from the loaded section so the home re-validation below can consult
+        // them, and carried onto the App so the save writes them back. An empty
+        // store for the generated worlds — `M4-TOWN-1`'s rooms wait for their
+        // own follow-up, the `.wld` store is this phase's.
+        let mut town_rooms = crate::town::TownRooms::from_wld_rooms(&sections.data.town_rooms);
         // `TR_POSE` keeps the capture scene empty — a contact-damage NPC
         // would knock the pinned player off the furniture.
-        let spawn_npcs = std::env::var_os("TR_POSE").is_none();
+        let spawn_npcs = !crate::env::pose_set();
         if spawn_npcs && player.is_some() {
             let p = player.as_ref().unwrap();
             let xt = (p.x / TILE_PX) as i32;
@@ -1468,15 +1454,15 @@ impl App {
             }
         }
         let follow_player = player.is_some()
-            && std::env::var_os("TR_CAM").is_none()
-            && std::env::var_os("TR_PAN").is_none();
+            && !crate::env::cam_set()
+            && !crate::env::pan_set();
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
         // The achievement condition states, restored from the port's own
         // `achievements.trdat` (the Rijndael+BSON vanilla format is the
         // documented M6-ACH-1 deviation).
-        let mut loaded_achievements = achievements::AchievementManager::ported();
+        let mut loaded_achievements = achievements::AchievementManager::registry();
         if let Some(path) = tr_core::save::achievements_path() {
             achievements::load(&path, &mut loaded_achievements);
         }
@@ -1570,17 +1556,12 @@ impl App {
                 loaded_kills = saved.kills;
             }
         }
-        if let Ok(v) = std::env::var("TR_COINS") {
-            if let Ok(n) = v.parse::<u64>() {
-                coins = n;
-            }
+        if let Some(n) = crate::env::coins() {
+            coins = n;
         }
         // `TR_DASH=<1|2|3|6>` pins `Player.dashType` — the granting items land
         // with M3-EQUIP-3 (Tabi/EoC Shield/Master Ninja Gear).
-        if let Some(d) = std::env::var("TR_DASH")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-        {
+        if let Some(d) = crate::env::dash_type() {
             if let Some(p) = player.as_mut() {
                 p.dash_type = d.clamp(0, 6);
             }
@@ -1588,36 +1569,9 @@ impl App {
         // `TR_MOUNT=<id|name>` pins a mount (the granting saddle items are
         // real items now — this stands in for the `miscEquips[3]` slot and
         // for tests/screenshots).
-        if let Ok(v) = std::env::var("TR_MOUNT") {
+        if let Some(id) = crate::env::mount_pin() {
             if let Some(p) = player.as_mut() {
-                let name = v.trim().to_ascii_lowercase();
-                let id = name.parse::<i32>().ok().or_else(|| match name.as_str() {
-                    "rudolph" => Some(0),
-                    "bunny" => Some(1),
-                    "slime" => Some(3),
-                    "scutlix" => Some(9),
-                    "unicorn" => Some(10),
-                    "basilisk" => Some(14),
-                    "horse" | "painted_horse" => Some(40),
-                    "majestic_horse" => Some(41),
-                    "dark_horse" => Some(42),
-                    "pogo" | "pogo_stick" => Some(43),
-                    "wofgoat" | "goat" => Some(47),
-                    "queenslime" => Some(50),
-                    "pigron" => Some(2),
-                    "bee" => Some(5),
-                    "ufo" => Some(7),
-                    "drill" => Some(8),
-                    "cutefishron" => Some(12),
-                    "broom" | "witchbroom" => Some(23),
-                    "pirateship" => Some(44),
-                    "book" | "darkmagebook" => Some(48),
-                    "lavashark" => Some(49),
-                    "bat" => Some(56),
-                    "pixie" => Some(61),
-                    _ => None,
-                });
-                p.pinned_mount = id;
+                p.pinned_mount = Some(id);
             }
         }
         // `TR_POSE=sit|sleep` pins the furniture pose for screenshots/tests:
@@ -1626,7 +1580,7 @@ impl App {
         // then holds the pose (no input reaches the headless capture). The
         // tile writes run without a player too (`TR_NOPLAYER` + `TR_POSE`
         // verifies the furniture draw itself).
-        if let Ok(v) = std::env::var("TR_POSE") {
+        if let Some(v) = crate::env::pose_mode() {
             apply_pose_pin(&mut world, player.as_mut(), v.trim());
         }
         // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
@@ -1634,7 +1588,7 @@ impl App {
         // BlizzardinaBottle 987, FartinaJar 1724, TsunamiInABottle 3201) and
         // the mounts land with M3-EQUIP-3 / M2-MOUNT-1. `balloon` also lifts
         // the jump statics (`jumpBoost`, `Player.cs:19589-19593`).
-        if let Ok(list) = std::env::var("TR_JUMPS") {
+        if let Some(list) = crate::env::jumps_list() {
             if let Some(p) = player.as_mut() {
                 for name in list.split(',') {
                     if name.trim().eq_ignore_ascii_case("balloon") {
@@ -1653,10 +1607,7 @@ impl App {
         // `TR_WINGS=<ArmorIDs.Wing>` / `TR_BOOTS=<1..5>` pin the flight gear —
         // the granting accessories land with M3-EQUIP-3. The wings set
         // `hasWings` (the fall-damage suppressor, `Player.cs:15602`).
-        if let Some(w) = std::env::var("TR_WINGS")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-        {
+        if let Some(w) = crate::env::wings() {
             if let Some(p) = player.as_mut() {
                 p.wings_logic = w.clamp(0, 49);
                 let (fly, _, _, _, _, _) = crate::player::Player::wing_stats(w);
@@ -1664,24 +1615,59 @@ impl App {
                 p.has_wings = w > 0;
             }
         }
-        if let Some(b) = std::env::var("TR_BOOTS")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-        {
+        if let Some(b) = crate::env::rocket_boots() {
             if let Some(p) = player.as_mut() {
                 p.pinned_rocket_boots = b.clamp(0, 5);
                 p.rocket_boots = b.clamp(0, 5);
             }
         }
-        // The Guide's world-gen arrival: one homeless Guide at the spawn
-        // point. The NPC persistence is M6-SAVE-1's (the world-file NPC
-        // sections), so every load respawns the Guide homeless — the
-        // look-for-home tick re-houses it within seconds.
-        if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
-            npcs.push(guide);
+        // The town roster's load (`WorldFile.cs:2884-2954`): a `.trwld`'s v10
+        // records restore the block-B town list — the kind, the given name,
+        // the position, the homelessness and the home tile. A world whose save
+        // carries none (a freshly generated world, or a pre-v10 save) keeps
+        // the vanilla-gen arrival: one homeless Guide at the spawn point,
+        // which the look-for-home tick re-houses within seconds. A `.wld`'s
+        // roster replaces these spawns outright below (`Main.npc[num2++]`).
+        if sections.from_wld {
+            // The file's roster wins; the Guide spawn is skipped (below).
+        } else if sections.native.npcs.is_empty() {
+            if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                npcs.push(guide);
+            }
+        } else {
+            for rec in &sections.native.npcs {
+                // An unknown kind is skipped, ' ownership read.
+                let Some(kind) = NpcKind::from_u16(rec.kind) else {
+                    continue;
+                };
+                let Some(mut npc) = Npc::spawn_town(&world, (rec.x / TILE_PX) as i32, kind) else {
+                    continue;
+                };
+                npc.x = rec.x;
+                npc.y = rec.y;
+                npc.home = if rec.homeless {
+                    None
+                } else {
+                    Some((rec.home_x, rec.home_y))
+                };
+                npc.given_name = rec.given_name.clone();
+                npcs.push(npc);
+            }
+        }
+        // `LoadNPCs` (`LoadWorld_Version2:1791`): a `.wld`'s town list IS the
+        // world's NPCs, so the file replaces the startup spawns outright
+        // (`Main.npc[num2++] = ...`, the C# shape — the spawn loop runs during
+        // play, not at load). The town rooms ride along because
+        // `FixAgainstExploits`' home re-validation consults them.
+        if sections.from_wld {
+            npcs = crate::npc::from_wld(&sections.data.npcs);
+            // `LoadWorld_LastMinuteFixes` → `FixAgainstExploits:1861`: the
+            // home re-validation runs after every section is read (the town
+            // rooms among them), not during `LoadNPCs`.
+            crate::town::fix_town_npc_homes(&world, &mut npcs, &mut town_rooms);
         }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
-        if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
+        if let Some((tx, ty)) = crate::env::spawn_xy() {
             if let Some(p) = player.as_mut() {
                 p.teleport(
                     tx as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5,
@@ -1689,7 +1675,7 @@ impl App {
                 );
             }
         }
-        if std::env::var_os("TR_BOSS").is_some() {
+        if crate::env::boss_set() {
             if let Some(p) = &player {
                 // `TR_BOSS=golem` places the Golem body for the family's
                 // deterministic shots (the parts ride the body's one-shot
@@ -1697,7 +1683,7 @@ impl App {
                 // the player on the ground; any other value (or a bare
                 // flag) keeps the King Slime. The Golem body takes the
                 // `SetDefaults` alpha fade.
-                let boss = std::env::var("TR_BOSS").unwrap_or_default();
+                let boss = crate::env::boss_mode();
                 if boss == "golem" {
                     let (bw, bh) = NpcKind::Golem.size();
                     let mut g = Npc::new(
@@ -1732,6 +1718,20 @@ impl App {
                         d.ai[1] = 12.0;
                     }
                     npcs.push(d);
+                } else if boss == "prime" {
+                    // Skeletron Prime (`TR_BOSS=prime`, M4-NPC-3j): the head
+                    // above the player; its machine's one-shot
+                    // `wants_limbs` init spawns the four limbs on the next
+                    // tick, so the shot hook captures the whole boss.
+                    let mut b = Npc::new(
+                        NpcKind::SkeletronPrime,
+                        p.x + 12.0 * TILE_PX,
+                        p.y - 14.0 * TILE_PX,
+                        1,
+                        0.0,
+                    );
+                    b.hp = b.max_hp;
+                    npcs.push(b);
                 } else if let Some(n) =
                     Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
                 {
@@ -1739,7 +1739,7 @@ impl App {
                 }
             }
         }
-        if let Ok(v) = std::env::var("TR_SLIME_AT") {
+        if let Some(v) = crate::env::slime_at() {
             for x in v.split(',').filter_map(|s| s.trim().parse::<i32>().ok()) {
                 if let Some(n) = Npc::spawn_slime(&world, x) {
                     npcs.push(n);
@@ -1750,7 +1750,7 @@ impl App {
         // the kinds stand beside the player so the draw's rows ride each
         // sheet's `Main.npcFrameCount` (the town 21-26, the goblins 16/21,
         // the cave walkers 15, the zombie's single frame).
-        if let Ok(v) = std::env::var("TR_NPC") {
+        if let Some(v) = crate::env::npc_names() {
             if let Some(p) = &player {
                 for name in v.split(',').map(|s| s.trim()) {
                     let kind = match name {
@@ -1774,36 +1774,85 @@ impl App {
                         "tim" => NpcKind::Tim,
                         "darkcaster" => NpcKind::DarkCaster,
                         "fireimp" => NpcKind::FireImp,
+                        // The martians' lineup (M4-NPC-3i): the ground
+                        // group's per-kind sheets, the probe/drone, the
+                        // Scutlix pair and the saucer family's four strips.
+                        "officer" => NpcKind::MartianOfficer,
+                        "grunt" => NpcKind::GrayGrunt,
+                        "engineer" => NpcKind::MartianEngineer,
+                        "zapper" => NpcKind::GigaZapper,
+                        "scrambler" => NpcKind::BrainScrambler,
+                        "raygunner" => NpcKind::RayGunner,
+                        "walker" => NpcKind::MartianWalker,
+                        "probe" => NpcKind::MartianProbe,
+                        "drone" => NpcKind::MartianDrone,
+                        "rider" => NpcKind::ScutlixRider,
+                        "scutlix" => NpcKind::Scutlix,
+                        "saucer" => NpcKind::MartianSaucer,
+                        "turret" => NpcKind::MartianSaucerTurret,
+                        "cannon" => NpcKind::MartianSaucerCannon,
+                        "saucercore" => NpcKind::MartianSaucerCore,
+                        // The Prime family (M4-NPC-3j): the head plus its
+                        // four limbs (the martian "cannon" already holds
+                        // the saucer mount, so the Prime's takes the
+                        // `primecannon` spelling).
+                        "prime" => NpcKind::SkeletronPrime,
+                        "primecannon" => NpcKind::PrimeCannon,
+                        "primesaw" => NpcKind::PrimeSaw,
+                        "primevice" => NpcKind::PrimeVice,
+                        "primelaser" => NpcKind::PrimeLaser,
+                        // The Twins (M4-NPC-3k): the two eyes ride their
+                        // hover machines up beside the player once spawned.
+                        "retinazer" => NpcKind::Retinazer,
+                        "spazmatism" => NpcKind::Spazmatism,
+                        // The Lunar pillars (M4-NPC-3l): the four towers
+                        // spawn on the ground beneath the player (their
+                        // machines hover them up over the first ticks).
+                        "stardust" => NpcKind::StardustTower,
+                        "nebula" => NpcKind::NebulaTower,
+                        "solar" => NpcKind::SolarTower,
+                        "vortex" => NpcKind::VortexTower,
+                        "cultist" => NpcKind::AncientCultist,
+                        // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
+                        // and the shared case-4 machine with the Twins.
+                        "eoc" => NpcKind::EyeOfCthulhu,
+                        // The Plantera + the Brain (M4-NPC-3o): the shared
+                        // case-262/266 machine.
+                        "plantera" => NpcKind::Plantera,
+                        "brain" => NpcKind::BrainOfCthulhu,
+                        "creeper" => NpcKind::Creeper,
+                        // The Queen Bee (M4-NPC-3p).
+                        "queenbee" => NpcKind::QueenBee,
+                        "kingslime" => NpcKind::KingSlime,
+                        // The boss parts (M4-NPC-3r).
+                        "wof" => NpcKind::WallOfFlesh,
+                        "wofeye" => NpcKind::WallOfFleshEye,
+                        "hungry" => NpcKind::Hungry,
+                        "skeletronhead" => NpcKind::SkeletronHead,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
                     let mut n =
                         Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
                     n.hp = n.max_hp;
+                    // The saucer family's `FindFrame` cases read the core's
+                    // mirrored `ai[3]` clock; give the spawn a mid-band value
+                    // so the lineup shows the attack rows rather than the
+                    // stripped idle frame.
+                    if n.kind.is_martian() {
+                        n.ai[3] = 100.0;
+                    }
                     npcs.push(n);
                 }
             }
         }
-        let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
+        let dev_break = crate::env::dev_break_xy();
         // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
-        let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
-            .ok()
-            .map(|v| {
-                v.split(';')
-                    .filter_map(|entry| {
-                        let mut it = entry.split(',');
-                        let x = it.next()?.trim().parse::<i32>().ok()?;
-                        let y = it.next()?.trim().parse::<i32>().ok()?;
-                        let k = it.next()?.trim().parse::<u16>().ok()?;
-                        Some((x, y, k))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let dev_place: Vec<(i32, i32, u16)> = crate::env::dev_place_list();
         // `TR_SPOUT=x,y`: build the `FindWaterfalls` half-brick case at a fixed tile (a half
         // brick with full liquid on its right and a clear drop below) so the waterfall
         // overlay can be screenshotted deterministically.
-        if let Some((x, y)) = std::env::var("TR_SPOUT").ok().and_then(|v| parse_xy(&v)) {
+        if let Some((x, y)) = crate::env::spout_xy() {
             for j in 1..=14 {
                 edit::kill_tile(&mut world, x, y + j, true);
             }
@@ -1819,12 +1868,7 @@ impl App {
                     // `TR_SPOUT_KIND=<0..3>`: the fall's liquid kind (1 = lava) so
                     // the typed waterfall branches and their `AddLight` glow are
                     // screenshotable.
-                    let kind_flag = match std::env::var("TR_SPOUT_KIND").as_deref() {
-                        Ok("1") => tr_core::tile::FLAG_LIQUID_LAVA,
-                        Ok("2") => tr_core::tile::FLAG_LIQUID_HONEY,
-                        Ok("3") => tr_core::tile::FLAG_LIQUID_SHIMMER,
-                        _ => 0,
-                    };
+                    let kind_flag = crate::env::spout_kind();
                     t.flags |= kind_flag;
                 }
             }
@@ -1834,7 +1878,7 @@ impl App {
         // arms: `chest`/`chestX`/`chestY` :33507-33522, `playerInventory` and
         // the crafting close ride the same path, `chest.rs:406-412`).
         let mut tr_chest_store: Vec<craft::WorldChest> = Vec::new();
-        let tr_chest = if std::env::var_os("TR_CHEST").is_some() {
+        let tr_chest = if crate::env::chest_fixture() {
             let cx = world.spawn_x + 3;
             // The first solid tile below the spawn point; the 2×2 sits on it.
             let mut gy = world.spawn_y;
@@ -1898,7 +1942,12 @@ impl App {
         let world_seed = world.seed;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
         wind.world_surface = world.world_surface;
-        wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
+        wind.sway_enabled = !crate::env::no_wind();
+        // M5-SEED-1: `Wind.remix_world` is the wind module's stand-in for
+        // `Main.remixWorld` (`WorldGen.cs:11221`) — the rain/wind gates read
+        // it (`rain.rs:524-592`, `wind.rs:294-329`). The world's own flag set
+        // is the source, so a remix world's rain starts like vanilla.
+        wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
         let ambient_waterfall = (0.0, 0.0, 0.0);
@@ -1909,30 +1958,27 @@ impl App {
 
         // Character name and the session menu (`M6`): screenshots and debug hooks skip
         // the menu so the deterministic output stays unchanged.
-        let player_name = std::env::var("TR_NAME").unwrap_or_else(|_| menu::random_name());
-        let join_target = std::env::var("TR_JOIN")
-            .ok()
-            .map(|addr| (addr, std::env::var("TR_JOIN_PW").unwrap_or_default()));
-        let auto_host = std::env::var("TR_HOST")
-            .ok()
-            .and_then(|p| p.parse::<u16>().ok());
-        let joined_before = std::env::var_os("TR_JOINED").is_some();
-        let force_menu = std::env::var_os("TR_MENU").is_some();
+        let player_name = crate::env::player_name().unwrap_or_else(|| menu::random_name());
+        let join_target = crate::env::join_target()
+            .map(|addr| (addr, crate::env::join_password().unwrap_or_default()));
+        let auto_host = crate::env::auto_host();
+        let joined_before = crate::env::joined_before();
+        let force_menu = crate::env::force_menu();
         // `TR_UI=<screen>` presets the front-end flow state after construction
         // (the `TR_PAGE` pattern; the plan Task 5 hook table).
-        let tr_ui = std::env::var("TR_UI").ok();
-        let skip_menu = (!force_menu && std::env::var_os("TR_SHOT").is_some())
-            || std::env::var_os("TR_CAM").is_some()
-            || std::env::var_os("TR_HOLD").is_some()
-            || std::env::var_os("TR_NOMENU").is_some()
-            || std::env::var_os("TR_MAP").is_some()
+        let tr_ui = crate::env::ui_preset_name();
+        let skip_menu = (!force_menu && crate::env::shot_set())
+            || crate::env::cam_set()
+            || crate::env::hold_set()
+            || crate::env::no_menu()
+            || crate::env::map_open()
             || joined_before
             || auto_host.is_some()
             || tr_ui.is_some();
         let menu_state = if skip_menu {
             None
         } else {
-            let mut m = menu::Menu::new(player_name.clone());
+            let mut m = menu::Menu::new(settings.clone(), player_name.clone());
             m.connecting = join_target.is_some();
             Some(m)
         };
@@ -1956,31 +2002,98 @@ impl App {
             }
         }
         let mut world_map = map::WorldMap::new(&world);
-        if std::env::var_os("TR_MAP").is_some() {
+        if crate::env::map_open() {
             world_map.set_open(true);
         }
         // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
         // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
         // with a pinned seed, so the creature skies stay screenshotable
         // without waiting for the 10-120 s scheduler. Test harness only.
-        let ambience_pin = std::env::var("TR_AMBIENCE").ok().and_then(|v| {
-            let mut it = v.split(',');
-            let ty = it
-                .next()
-                .map(str::trim)
-                .and_then(crate::ambience::parse_sky_entity_type);
-            let seed = it
-                .next()
-                .map(str::trim)
-                .and_then(|s| s.parse::<i32>().ok())
-                .unwrap_or(1);
-            ty.map(|ty| (ty, seed))
-        });
+        let ambience_pin = crate::env::ambience_pin();
         // The chests roll their loot here — before the struct literal moves
         // `world` (`AddBuriedChest`'s stock inline with the placement, the
         // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
         // chest merges in (its anchor is already stocked — the roll skips).
+        //
+        // M6-SAVE-1: a `.wld` load takes the file's chests instead — they are
+        // the player's own contents, and the roll only fills the anchors the
+        // file does not carry (`chest_gen::displace_loaded_chests`, the C#'s
+        // `LoadChests` shape: `Main.chest` is the file, nothing rolls). The
+        // `TR_CHEST` fixture is a generated-world screenshot hook, so it never
+        // merges into a `.wld` store; the `.trwld` path keeps `merge_store`
+        // byte-for-byte. Both branches run here because they read `world`.
         let world_chests = crate::chest_gen::generate_world_chests(&world);
+        // M6-SAVE-1b: the save's own chests seed the store ahead of the roll —
+        // `LoadChests` (`WorldFile.cs:2723-2805`)'s records as the seed half of
+        // `merge_store`, whose collision rule drops a rolled anchor a saved
+        // chest already claims (so the saved slots win, exactly the anchor this
+        // branch exists for).
+        let ore_tiers_seed = world.ore_tiers;
+        let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
+        // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
+        // v8 section's recorded counts restore the tally; the vanilla rides
+        // them inside the world-flags block.
+        let seeded_banners: Vec<(i32, i32)> =
+            sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
+        // Hoisted shadowing of the roll: a `.wld` load takes the file's chests
+        // instead — they are the player's own contents, and the roll only fills
+        // the anchors the file does not carry (`chest_gen::displace_loaded_chests`,
+        // the C#'s `LoadChests` shape: `Main.chest` is the file, nothing rolls).
+        // The `TR_CHEST` fixture is a generated-world screenshot hook, so it
+        // never merges into a `.wld` store; the `.trwld` path keeps
+        // `merge_store` byte-for-byte. Both branches run here because they
+        // read `world`.
+        let world_chests = if sections.from_wld {
+            let mut loaded = crate::chest::from_wld(&sections.data.chests);
+            // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
+            // file's records are in the store (`FixDresserChests:3269`), and
+            // only for a file old enough to predate the stored chest list.
+            if sections.version < 115 {
+                crate::chest::fix_dresser_chests(&mut loaded, &world);
+            }
+            crate::chest_gen::displace_loaded_chests(world_chests, loaded)
+        } else {
+            crate::chest_gen::merge_store(
+                crate::chest_gen::merge_store(world_chests, seeded_chests),
+                tr_chest_store,
+            )
+        };
+        // `LoadBestiary:3402` + `LoadCreativePowers:3418` (the last two
+        // sections, applied to their state owners). A `.wld`'s bestiary tracker
+        // *replaces* the built one — the world file is the `.wld` write target
+        // for the kills (owner decision 2026-11-08) and the sights/chats have
+        // no other form, so an empty bag would wipe them. The `.trwld` half:
+        // M6-SAVE-1d's native v9 section is the vanilla home
+        // (`NPCKillsTracker.Save`); a pre-v9 world falls back to the
+        // `.trplayer` sidecar's line, which stays the back-compat restore.
+        let mut app_bestiary = {
+            let mut tracker = tr_core::bestiary::WorldBestiary::new();
+            if sections.from_wld {
+                tracker = tr_core::wld::sections::bestiary::from_wld(&sections.data.bestiary);
+            } else {
+                let world_kills: Vec<(String, i32)> = sections
+                    .native
+                    .bestiary
+                    .iter()
+                    .map(|b| (b.credit_id.clone(), b.kills))
+                    .collect();
+                let kills = if world_kills.is_empty() {
+                    loaded_kills
+                } else {
+                    world_kills
+                };
+                tracker.kills.load_pairs(kills.into_iter());
+            }
+            tracker
+        };
+        let mut creative_powers = crate::creative::CreativePowers::new();
+        if sections.from_wld {
+            crate::creative::apply_persistent(&mut creative_powers, &sections.data.creative_powers);
+        }
+        // `Main.mouseColor`'s stored colour seeds the cursor tint
+        // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
+        // live settings, so this is only the pre-first-frame value.
+        let cursor_mouse_color = settings.mouse_color;
         let mut app = App {
             window: None,
             gpu: None,
@@ -2032,7 +2145,7 @@ impl App {
             reforge_cooldown: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
-            creative_powers: crate::creative::CreativePowers::new(),
+            creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
             invasion_spawn_timer: 0.0,
@@ -2074,14 +2187,7 @@ impl App {
                 // `TR_ARMOR=copper|iron|silver|gold`: equip a full early-metal set
                 // at load so the armor layers stay screenshotable without a
                 // drag-and-drop flow (vanilla equips through `Player.EquipArmor`).
-                if let Ok(set) = std::env::var("TR_ARMOR") {
-                    let ids: [u16; 3] = match set.trim() {
-                        "copper" => [89, 80, 76],
-                        "iron" => [90, 81, 77],
-                        "silver" => [91, 82, 78],
-                        "gold" => [92, 83, 79],
-                        _ => [0; 3],
-                    };
+                if let Some(ids) = crate::env::armor_set() {
                     for (slot, kind) in equip.armor.iter_mut().zip(ids) {
                         if kind != 0 {
                             *slot = ItemSlot {
@@ -2097,21 +2203,19 @@ impl App {
                 // vanilla equips dyes through the `ItemSlot` swap paths
                 // (deferred to the inventory-interaction task), so the plumbing
                 // stays screenshotable through the pin.
-                if let Ok(list) = std::env::var("TR_DYE") {
-                    for (slot, kind) in equip.dye.iter_mut().zip(parse_tr_dye(&list)) {
-                        if kind != 0 {
-                            *slot = ItemSlot {
-                                kind,
-                                name: registry::name(kind),
-                                count: 1,
-                                prefix: 0,
-                            };
-                        }
+                for (slot, kind) in equip.dye.iter_mut().zip(crate::env::dye_kinds()) {
+                    if kind != 0 {
+                        *slot = ItemSlot {
+                            kind,
+                            name: registry::name(kind),
+                            count: 1,
+                            prefix: 0,
+                        };
                     }
                 }
                 // `TR_DMOUNT=<kind>`: the saddle-dye stand-in — `miscDyes[3]`
                 // (`Player.cs:1484`, the vanilla mount dye slot).
-                let dmount = std::env::var("TR_DMOUNT").map_or(0, |s| parse_tr_dmount(&s));
+                let dmount = crate::env::misc_dye_mount();
                 if dmount != 0 {
                     equip.misc_dyes[3] = ItemSlot {
                         kind: dmount,
@@ -2124,10 +2228,7 @@ impl App {
             },
             // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
             // var selects the page for screenshots (0 = equipment, 2 = misc).
-            equip_page: std::env::var("TR_EQUIPPAGE")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0),
+            equip_page: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
@@ -2137,30 +2238,27 @@ impl App {
             // `TR_CHEST` opens the chest (`OpenChest` sets `playerInventory`,
             // `Player.cs:33517` — chest.rs:409), so the panel + the player
             // inventory draw together.
-            inventory_open: std::env::var_os("TR_INV").is_some() || tr_chest.is_some(),
-            kill_tracker: {
-                let mut tracker = tr_core::bestiary::KillTracker::new();
-                tracker.load_pairs(loaded_kills.into_iter());
-                tracker
-            },
-            bestiary_open: std::env::var_os("TR_BESTIARY").is_some(),
+            inventory_open: crate::env::inv_open() || tr_chest.is_some(),
+            bestiary: app_bestiary,
+            town_rooms,
+            shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
+                &sections.data.npcs.shimmered,
+            ),
+            bestiary_open: crate::env::bestiary_open(),
             // `TR_BESTIARY=<n>` also selects entry n (1-based) for the
             // info-page screenshots; `0`/absent stays on the grid.
-            bestiary_selected: std::env::var("TR_BESTIARY")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .and_then(|n| {
-                    if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
-                        Some(n - 1)
-                    } else {
-                        None
-                    }
-                }),
+            bestiary_selected: crate::env::bestiary_selected().and_then(|n| {
+                if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
+                    Some(n - 1)
+                } else {
+                    None
+                }
+            }),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
                 // (the vanilla state opens on Enter only).
                 let mut chat = chat::ChatMonitor::default();
-                if std::env::var_os("TR_CHAT").is_some() {
+                if crate::env::chat_open() {
                     chat.open = true;
                     chat.new_text("Belsin was slain...", crate::chat::COLOR_DEATH);
                     chat.new_text("*Belsin rolls a 42", crate::chat::COLOR_SERVER_MESSAGE);
@@ -2172,16 +2270,31 @@ impl App {
                 // The condition states load below (the sidecar block).
                 loaded_achievements
             },
+            // `UIAchievementsMenu`'s overlay state (M6-ACH-2):
+            // `TR_ACHIEVEMENTS` opens it for the screenshot runs, the
+            // categories all start on (`InitializePage`'s `SetState(true)`).
+            achievements_open: crate::env::achievements_open(),
+            achievements_scroll: 0.0,
+            // The filter bits default to all-on (`SetState(value: true)`);
+            // a shot run can pin a single category through the bitmask.
+            achievements_categories: {
+                let mask = crate::env::achievements_categories().unwrap_or(0xF);
+                [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
+            },
             emotes: {
                 // `TR_EMOTES` opens the wheel for the screenshot runs.
                 let mut sys = emotes::EmoteSystem::default();
-                if std::env::var_os("TR_EMOTES").is_some() {
+                if crate::env::emotes_open() {
                     sys.menu_open = true;
                     sys.new_bubble(0);
                 }
                 sys
             },
-            banners: banners::BannerSystem::default(),
+            banners: {
+                let mut banners = banners::BannerSystem::default();
+                banners.load_pairs(seeded_banners);
+                banners
+            },
             town_look_timer: 0.0,
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
@@ -2189,13 +2302,16 @@ impl App {
             // (the `TR_INV` presence pattern). An open chest closes it
             // (`OpenChest` → `NewCraftingUI.Close`, `chest.rs:408`) — and the
             // chest panel hides under it (`ChestUI.cs:86`).
-            crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
-                || std::env::var_os("TR_CRAFT").is_some())
+            crafting_open: (!crate::env::no_craft() || crate::env::craft_open())
                 && tr_chest.is_none(),
-            // The load-time loot roll (the hoist above); the `TR_CHEST`
-            // store's own chests stay (its anchor gets double-stocked in
-            // vanilla too — the fixture stock wins the first slots).
-            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
+            // The load-time loot roll (the hoist above), merged with the
+            // `TR_CHEST` fixture's own chests (they keep their slots; the roll's
+            // anchors append) — the `.trwld` path. A `.wld`'s store is built
+            // beside this one, in the hoist above. The chest names ride the
+            // `WorldChest` entity (M6-SAVE-1 phase 3's fold), so the old
+            // `App.chest_names` side map is gone — the records' names land in
+            // `store_from_records`' folded entity directly.
+            world_chests,
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2208,7 +2324,6 @@ impl App {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
-            chest_names: HashMap::new(),
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
@@ -2222,8 +2337,8 @@ impl App {
             front_hint: None,
             front_mouse_down: false,
             session_draft: None,
-            vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
-            settings: settings::Settings::load(),
+            vk_grid: crate::env::vk_grid(),
+            settings,
             player_name,
             net: net_role,
             remote_players: HashMap::new(),
@@ -2249,6 +2364,9 @@ impl App {
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
             net_module_beat: 0,
+            net_proj_last: HashMap::new(),
+            net_proj_spam: HashMap::new(),
+            net_npc_slots: Vec::new(),
             net_ping_at: None,
             net_rtt_ms: 0,
             join_target,
@@ -2258,11 +2376,7 @@ impl App {
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
             // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
             // out-of-range value falls back to 1).
-            map_style: std::env::var("TR_MAPSTYLE")
-                .ok()
-                .and_then(|v| v.parse::<i32>().ok())
-                .filter(|v| (0..=2).contains(v))
-                .unwrap_or(1),
+            map_style: crate::env::map_style(),
             audio: audio::Audio::new(assets::content_dir()),
             music: audio::MusicSystem::new(assets::content_dir()),
             last_hp: 100,
@@ -2273,50 +2387,45 @@ impl App {
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
-            mouse_pos: if deterministic_pointer_park() {
+            mouse_pos: if crate::env::deterministic_pointer_park() {
                 Vec2::new(-64.0, -64.0)
             } else {
-                mouse_pin().unwrap_or(Vec2::ZERO)
+                crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
-            cursor: ui::cursor::CursorState::default(),
+            cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
             edit_target: None,
+            smart_cursor: Default::default(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,
             camera: Vec2::ZERO,
             zoom: 1.0,
-            zoom_pinned: std::env::var_os("TR_ZOOM").is_some(),
-            debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(false),
+            zoom_pinned: crate::env::zoom_pinned(),
+            debug: crate::env::debug(),
             keys: HashSet::new(),
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
             frame_history: VecDeque::with_capacity(256),
             last_stats: tr_render::sprite::RenderStats::default(),
-            bench_frames: std::env::var("TR_BENCH").ok().and_then(|v| v.parse().ok()),
+            bench_frames: crate::env::bench_frames(),
             bench_samples: Vec::new(),
             frame_count: 0,
-            shot_path: std::env::var("TR_SHOT").ok().map(PathBuf::from),
-            shot_at: std::env::var("TR_SHOT_FRAME")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(20),
+            shot_path: crate::env::shot_path().map(PathBuf::from),
+            shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
             light: LightMap::new(),
             scratch: DrawScratch::default(),
             tile_stats: TileDrawStats::default(),
-            stats_on: std::env::var("TR_STATS").is_ok(),
+            stats_on: crate::env::stats_on(),
             stats_acc: StatsAcc::default(),
             debug_cache: DebugCache::default(),
-            light_mode: std::env::var("TR_LIGHT_MODE")
-                .ok()
-                .and_then(|v| parse_light_mode(&v))
-                .unwrap_or(LightMode::Color),
+            light_mode: crate::env::light_mode().unwrap_or(LightMode::Color),
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
@@ -2339,7 +2448,12 @@ impl App {
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
-            ore_tiers: tr_core::ores::SavedOreTiers::new(),
+            // M6-SAVE-1f: the tiers ride the World (the worldgen setup roll
+            // wrote them there; a loaded save's v11 section restored them),
+            // so the runtime copy reads them back instead of the static
+            // defaults — the altars' `smash_altar` then advances the same
+            // values `save_world` writes out.
+            ore_tiers: ore_tiers_seed,
             rain,
             ambient_waterfall,
             ambient_lavafall,
@@ -2391,7 +2505,7 @@ impl App {
             invasion_progress_near: false,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
-            dev_throw: std::env::var_os("TR_THROW").is_some(),
+            dev_throw: crate::env::dev_throw(),
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
@@ -2407,15 +2521,92 @@ impl App {
     }
 }
 
-/// Loads the world (`save::load` for the port's `.trwld`, `wld::load` for the
-/// retail `.wld`), applies the `TR_DAY` clock override and frames the loaded
-/// tiles and walls — the load half of the startup, verbatim from `main`.
-pub(crate) fn load_world(world_path: &Path) -> Result<World> {
+/// Whether `path` is the port's own world format (`.trwld`) — the one whose
+/// player/map sidecars and `save::load` apply. A `.wld` is a retail file: its
+/// sections, and only its world file, are the state's home.
+pub(crate) fn is_native_trwld(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == "trwld")
+}
+
+/// What [`load_world`] hands [`App::new`] beside the `World`: the loaded
+/// `.wld`'s section payloads, the format version their load fix-ups gate on,
+/// and the native `.trwld`'s own side records (`save::WorldSide` — its v7-v10
+/// sections). Exactly one of the two is populated for a given file.
+pub(crate) struct WorldSections {
+    /// The native `.trwld`'s v7-v10 side records; empty for a `.wld`.
+    pub native: save::WorldSide,
+    pub data: wld::sections::SectionData,
+    /// `WorldFile._versionNumber`; 0 for a `.trwld` (no version gates apply).
+    pub version: i32,
+    /// Whether `data` came from a `.wld`'s section table.
+    pub from_wld: bool,
+}
+
+impl Default for WorldSections {
+    fn default() -> Self {
+        Self {
+            native: save::WorldSide::default(),
+            data: wld::sections::SectionData::default(),
+            version: 0,
+            from_wld: false,
+        }
+    }
+}
+
+impl WorldSections {
+    /// A native `.trwld`'s side records as the whole payload.
+    pub(crate) fn native(native: save::WorldSide) -> Self {
+        Self {
+            native,
+            ..Self::default()
+        }
+    }
+}
+
+/// Loads the world (`save::load` for the port's `.trwld`,
+/// `wld::load_with_sections` for the retail `.wld`), applies the `TR_DAY` clock
+/// override and frames the loaded tiles and walls — the load half of the
+/// startup, verbatim from `main`.
+///
+/// The three `.wld` sections that are world state (`World.signs`,
+/// `World.pressure_plates`, `World.tile_entities`) are applied here in the C#'s
+/// `LoadWorld_Version2` order — signs, tile entities, plates — so the loaded
+/// world is complete before the framing passes and the `TR_*` hooks run; the
+/// App-owned sections ride [`WorldSections`] to `App::new`. The native
+/// `.trwld`'s records ride `sections.native` (`save::WorldSide`).
+pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     let t0 = Instant::now();
-    let mut world = if world_path.extension().is_some_and(|e| e == "trwld") {
-        save::load(&world_path)?
+    let (mut world, sections) = if is_native_trwld(world_path) {
+        let (world, native) = save::load(&world_path)?;
+        (
+            world,
+            WorldSections {
+                native,
+                ..WorldSections::default()
+            },
+        )
     } else {
-        wld::load(&world_path)?
+        let mut loaded = wld::load_with_sections(&world_path)?;
+        // `LoadWorld_Version2:1786` (signs) → `:1808` (tile entities) → `:1825`
+        // (pressure plates): the world-state halves, in that order.
+        tr_core::wld::sections::signs::apply_loaded(&mut loaded.world, &loaded.sections.signs);
+        tr_core::wld::sections::tile_entities::apply_loaded(
+            &mut loaded.world,
+            &loaded.sections.tile_entities,
+        );
+        tr_core::wld::sections::pressure_plates::apply_loaded(
+            &mut loaded.world,
+            &loaded.sections.pressure_plates,
+        );
+        (
+            loaded.world,
+            WorldSections {
+                data: loaded.sections,
+                version: loaded.version,
+                from_wld: true,
+                ..WorldSections::default()
+            },
+        )
     };
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
@@ -2429,7 +2620,7 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     // `TR_POOL=tx,ty,w,h,kind`: fill a rectangle with liquid at load (0 water,
     // 1 lava, 2 honey, 3 shimmer) so the honey/shimmer draw passes and the
     // waterfall types stay screenshotable without the biomes that produce them.
-    if let Ok(v) = std::env::var("TR_POOL") {
+    if let Some(v) = crate::env::pool_rect() {
         let mut it = v.split(',');
         let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
         if let Ok(vals) = vals
@@ -2469,7 +2660,7 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     // with the optional 6th value) at load, so the paint recolor and the wall
     // paint path stay screenshotable without a paint item. paint 29 = shadow,
     // 30 = negative, 31 = illuminant.
-    if let Ok(v) = std::env::var("TR_PAINT") {
+    if let Some(v) = crate::env::paint_rect() {
         let mut it = v.split(',');
         let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
         if let Ok(vals) = vals
@@ -2500,32 +2691,22 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     // load (the `TR_POOL` shape for tiles) — builds the floor/ceiling rows
     // the wooden set's anchors need; `TR_PAINT` writes paint colours, not
     // tile kinds.
-    if let Ok(v) = std::env::var("TR_FILL") {
+    if let Some(v) = crate::env::fill_rects() {
         apply_tr_fill(&mut world, &v);
     }
     // `TR_PLACE=x,y,kind[,style[,dir]][;...]`: place tile objects through the
     // Phase-2 route (`edit::place_item_tile`, the player's own RMB call) for
     // the object screenshots.
-    if let Ok(v) = std::env::var("TR_PLACE") {
-        apply_tr_places(&mut world, &parse_tr_place(&v));
-    }
+    apply_tr_places(&mut world, &crate::env::place_ops());
     // `TR_TOGGLE=x,y[,n][;...]`: n presses of the Phase-4 interaction
     // dispatcher (`edit::interact_at`) — the door closed→open→closed scenario.
-    if let Ok(v) = std::env::var("TR_TOGGLE") {
-        apply_tr_toggles(&mut world, &parse_tr_toggle(&v));
-    }
+    apply_tr_toggles(&mut world, &crate::env::toggle_ops());
     // `TR_TILES=x,y,kind,fx,fy[;...]`: write tiles with explicit frames at
     // load — the render fixture for the M1.4-TO-4 kinds (the plan stages the
     // scene by direct World writes, not through Phase 1 placement).
-    if let Ok(v) = std::env::var("TR_TILES") {
-        apply_tr_tiles(&mut world, &parse_tr_tiles(&v));
-    }
+    apply_tr_tiles(&mut world, &crate::env::tile_ops());
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
-    if let Some(d) = std::env::var("TR_DAY")
-        .ok()
-        .and_then(|v| v.parse::<f32>().ok())
-        .map(|v| v.clamp(0.0, 1.0))
-    {
+    if let Some(d) = crate::env::day_override() {
         world.day_time = d >= 0.5;
         world.time = if world.day_time {
             d as f64 * 54000.0
@@ -2535,36 +2716,30 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     }
     // `TR_MOON=<0..7>` pins `Main.moonPhase` — the night light floor follows it
     // (`Main.cs:63792-63829`), so the full/new-moon A/B stays screenshotable.
-    if let Some(p) = std::env::var("TR_MOON")
-        .ok()
-        .and_then(|v| v.parse::<u8>().ok())
-    {
+    if let Some(p) = crate::env::moon_phase() {
         world.moon_phase = p & 7;
     }
     // `TR_TIME=<ticks>` pins the raw world clock — the dawn/dusk windows the
     // `TR_DAY` day-half mapping cannot reach (the sunrise visibility spans
     // ticks 0..10800, the sunset 43200..54000).
-    if let Some(t) = std::env::var("TR_TIME")
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-    {
+    if let Some(t) = crate::env::time_pin() {
         world.time = t;
         world.day_time = t < 54000.0;
     }
     // `TR_SUNDIAL=1`/`TR_MOONDIAL=1`: arm the dial fast-forwards at start
     // (BG-21's screenshot pins). The flags only — `sundialing()` would also
     // start the 8-day cooldown and mute the dial glow the shot pair needs.
-    if std::env::var("TR_SUNDIAL").is_ok() {
+    if crate::env::sundial_pin() {
         world.fast_forward_to_dawn = true;
     }
-    if std::env::var("TR_MOONDIAL").is_ok() {
+    if crate::env::moondial_pin() {
         world.fast_forward_to_dusk = true;
     }
     // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
     // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,
     // `WorldGen.cs:44134-44217`) — so the light pass's invisible handling stays
     // screenshotable without a coating item.
-    if let Ok(v) = std::env::var("TR_ECHO") {
+    if let Some(v) = crate::env::echo_rect() {
         let mut it = v.split(',');
         let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
         if let Ok(vals) = vals
@@ -2616,7 +2791,20 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         world.time,
         if world.day_time { "day" } else { "night" }
     );
-    Ok(world)
+    if sections.from_wld {
+        log::info!(
+            "wld sections: {} chests, {} signs, {} npcs, {} tile entities, {} plates, {} rooms, {} bestiary kills, {} powers",
+            sections.data.chests.len(),
+            sections.data.signs.len(),
+            sections.data.npcs.town.len(),
+            sections.data.tile_entities.len(),
+            sections.data.pressure_plates.len(),
+            sections.data.town_rooms.len(),
+            sections.data.bestiary.kills.len(),
+            sections.data.creative_powers.records.len(),
+        );
+    }
+    Ok((world, sections))
 }
 
 // --- Deterministic load hooks for the object screenshots --------------------
@@ -2637,84 +2825,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
 // the render fixture for the M1.4-TO-4 kinds (sunflower 2x4, pots, clay pot,
 // herbs, piles, planter box), staged without the placement route.
 
-/// One `TR_PLACE` group: place this tile kind through the registry route.
-struct TrPlace {
-    x: i32,
-    y: i32,
-    kind: u16,
-    style: i32,
-    dir: i32,
-}
-
-/// One `TR_TOGGLE` group: `n` interaction presses at one tile.
-struct TrToggle {
-    x: i32,
-    y: i32,
-    n: u32,
-}
-
-/// Comma-separated `i64`s (`None` when any token is not a number) — the
-/// shared tail of every `TR_` hook parser.
-fn tr_nums(s: &str) -> Option<Vec<i64>> {
-    s.split(',').map(|v| v.trim().parse::<i64>().ok()).collect()
-}
-
-fn parse_tr_place(v: &str) -> Vec<TrPlace> {
-    v.split(';')
-        .filter_map(|group| {
-            // `[x, y, kind]` with the defaults of `Item.place_style` and the
-            // wired direction (Decisions #6/#7); longer groups override them.
-            let nums = tr_nums(group)?;
-            match nums[..] {
-                [x, y, kind] => Some(TrPlace {
-                    x: x as i32,
-                    y: y as i32,
-                    kind: kind as u16,
-                    style: 0,
-                    dir: 1,
-                }),
-                [x, y, kind, style] => Some(TrPlace {
-                    x: x as i32,
-                    y: y as i32,
-                    kind: kind as u16,
-                    style: style as i32,
-                    dir: 1,
-                }),
-                [x, y, kind, style, dir] => Some(TrPlace {
-                    x: x as i32,
-                    y: y as i32,
-                    kind: kind as u16,
-                    style: style as i32,
-                    dir: dir as i32,
-                }),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
-fn parse_tr_toggle(v: &str) -> Vec<TrToggle> {
-    v.split(';')
-        .filter_map(|group| match tr_nums(group)?[..] {
-            [x, y] => Some(TrToggle {
-                x: x as i32,
-                y: y as i32,
-                n: 1,
-            }),
-            [x, y, n] => Some(TrToggle {
-                x: x as i32,
-                y: y as i32,
-                n: n.max(0) as u32,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
 fn apply_tr_fill(world: &mut World, v: &str) {
     let mut touched = false;
     for group in v.split(';') {
-        let Some(nums) = tr_nums(group) else {
+        let Some(nums) = crate::env::tr_nums(group) else {
             continue;
         };
         if nums.len() != 5 {
@@ -2746,7 +2860,7 @@ fn apply_tr_fill(world: &mut World, v: &str) {
     }
 }
 
-fn apply_tr_places(world: &mut World, ops: &[TrPlace]) {
+fn apply_tr_places(world: &mut World, ops: &[crate::env::TrPlace]) {
     for op in ops {
         let ok = edit::place_item_tile(world, op.x, op.y, op.kind, op.style, op.dir);
         log::info!(
@@ -2764,48 +2878,7 @@ fn apply_tr_places(world: &mut World, ops: &[TrPlace]) {
     }
 }
 
-/// One `TR_TILES` cell: write this exact tile kind with these exact frames —
-/// the render fixture's direct world write (the plan's "tiles and frames are
-/// written into the World directly"), bypassing placement and framing. The
-/// 4-token `x,y,w,h` form clears the rectangle to air (and wipes its walls) so
-/// the fixture can stage a clean stage on lived-in terrain.
-struct TrTile {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    kind: i64,
-    fx: i16,
-    fy: i16,
-}
-
-fn parse_tr_tiles(v: &str) -> Vec<TrTile> {
-    v.split(';')
-        .filter_map(|group| match tr_nums(group)?[..] {
-            [x, y, w, h] => Some(TrTile {
-                x: x as i32,
-                y: y as i32,
-                w: w as i32,
-                h: h as i32,
-                kind: -1,
-                fx: 0,
-                fy: 0,
-            }),
-            [x, y, kind, fx, fy] => Some(TrTile {
-                x: x as i32,
-                y: y as i32,
-                w: 1,
-                h: 1,
-                kind,
-                fx: fx as i16,
-                fy: fy as i16,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
-fn apply_tr_tiles(world: &mut World, ops: &[TrTile]) {
+fn apply_tr_tiles(world: &mut World, ops: &[crate::env::TrTile]) {
     let mut touched = false;
     for op in ops {
         for dy in 0..op.h {
@@ -2859,7 +2932,7 @@ fn apply_tr_tiles(world: &mut World, ops: &[TrTile]) {
     }
 }
 
-fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
+fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
     for op in ops {
         for _ in 0..op.n {
             // No player exists at load: `direction` is 1 (right-facing) and
@@ -2947,7 +3020,7 @@ pub(crate) fn build_atlas(
     tile_ids.insert(7); // copper ore
     // `TR_POSE=sit|sleep` writes the chair/bed beside the spawn after the
     // usage scan — the pose pin's sheets ride along.
-    if std::env::var_os("TR_POSE").is_some() {
+    if crate::env::pose_set() {
         tile_ids.insert(15); // chair
         tile_ids.insert(79); // bed
     }
@@ -3010,15 +3083,9 @@ pub(crate) fn build_atlas(
 /// the `TR_SCAN_*` family locates the densest liquid/torch/self-lit 40x40
 /// windows, for deterministic screenshots.
 pub(crate) fn log_world_diagnostics(world: &World) {
-    if std::env::var("TR_DUMP_TILES").is_ok() {
-        let cx = std::env::var("TR_DUMP_X")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(world.width / 2);
-        let cy = std::env::var("TR_DUMP_Y")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(world.spawn_y + 12);
+    if crate::env::dump_tiles() {
+        let cx = crate::env::parsed_raw("TR_DUMP_X").unwrap_or(world.width / 2);
+        let cy = crate::env::parsed_raw("TR_DUMP_Y").unwrap_or(world.spawn_y + 12);
         for y in cy..cy + 8 {
             let mut line = String::new();
             for x in cx..cx + 16 {
@@ -3036,7 +3103,7 @@ pub(crate) fn log_world_diagnostics(world: &World) {
             log::info!("row {y}: {line}");
         }
     }
-    if std::env::var("TR_SCAN_WATER").is_ok() {
+    if crate::env::scan_water() {
         // Finds the densest 40x40 window of liquid cells, for flow/liquid screenshots.
         // The map edges (oceans) are skipped so the inland lake wins.
         const STEP: i32 = 40;
@@ -3069,7 +3136,7 @@ pub(crate) fn log_world_diagnostics(world: &World) {
             best.2 + STEP / 2
         );
     }
-    if std::env::var("TR_SCAN_TORCH").is_ok() {
+    if crate::env::scan_torch() {
         // Finds the densest 40x40 window of torches, for lighting-mode screenshots.
         const STEP: i32 = 40;
         let mut best = (0usize, 0i32, 0i32);
@@ -3106,15 +3173,9 @@ pub(crate) fn log_world_diagnostics(world: &World) {
     }
     // `TR_SCAN_LIGHT`: finds the 40x40 tile window with the most self-lit tiles
     // (torches, glowing mushrooms, lava...) so screenshots can target a lit cave.
-    if std::env::var("TR_SCAN_LIGHT").is_ok() {
+    if crate::env::scan_light() {
         const STEP: i32 = 40;
-        let bounds = std::env::var("TR_SCAN_Y")
-            .ok()
-            .and_then(|v| {
-                let (a, b) = v.split_once(',')?;
-                Some((a.trim().parse::<i32>().ok()?, b.trim().parse::<i32>().ok()?))
-            })
-            .unwrap_or((0, world.height));
+        let bounds = crate::env::scan_y().unwrap_or((0, world.height));
         let mut best = (0usize, 0i32, 0i32);
         let mut y = bounds.0.max(0);
         while y + STEP < bounds.1.min(world.height) {
@@ -3156,7 +3217,7 @@ pub(crate) fn log_world_diagnostics(world: &World) {
 /// The atlas diagnostics: `TR_CHECK_FRAMES` warns about near-empty tile and
 /// wall frames, `TR_ATLAS_DUMP` writes the atlas PNG and logs key sheet rects.
 pub(crate) fn log_atlas_diagnostics(atlas: &Atlas, lookups: &assets::Lookups) {
-    if std::env::var("TR_CHECK_FRAMES").is_ok() {
+    if crate::env::check_frames() {
         for (kind, slot) in lookups.tiles.iter().enumerate() {
             let Some(tt) = slot else { continue };
             if let Some(rect) = atlas.sheet(&tt.sheet) {
@@ -3207,7 +3268,7 @@ pub(crate) fn log_atlas_diagnostics(atlas: &Atlas, lookups: &assets::Lookups) {
         }
     }
 
-    if let Ok(path) = std::env::var("TR_ATLAS_DUMP") {
+    if let Some(path) = crate::env::atlas_dump() {
         image::save_buffer(
             &path,
             &atlas.pixels,
@@ -3244,18 +3305,15 @@ pub(crate) fn log_atlas_diagnostics(atlas: &Atlas, lookups: &assets::Lookups) {
 pub(crate) fn terrstaria_world() -> Result<PathBuf> {
     let path = save::default_world_path("Terrustaria")
         .context("cannot resolve Documents/My Games/Terrustaria")?;
-    let regen = std::env::var_os("TR_REGEN").is_some();
+    let regen = crate::env::regen();
     if !path.exists() || regen {
-        let seed = std::env::var("TR_SEED")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(1);
+        let seed = crate::env::seed().unwrap_or(1);
         let t = Instant::now();
         let world = worldgen::generate(&worldgen::GenOptions {
             seed,
             ..Default::default()
         });
-        save::save(&path, &world)?;
+        save::save(&path, &world, &save::WorldSide::default())?;
         log::info!(
             "generated '{}' (seed {seed}) in {:.0} ms -> {}",
             world.name,
@@ -3290,6 +3348,20 @@ mod tr_hooks {
     /// removes a `TR_*` variable must hold this lock for the whole call.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Runs `f` with `name` set to `value`, then removes it — the `TR_PLACE`/
+    /// `TR_TOGGLE`/`TR_TILES` parsers moved into `crate::env` as env-reading
+    /// accessors, so these tests drive the same read the load path does
+    /// (`ENV_LOCK` above serializes the mutation).
+    fn with_pin<T>(name: &str, value: &str, f: impl FnOnce() -> T) -> T {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Edition 2024: env mutation is `unsafe` (a parallel reader could
+        // observe a half-update); the ENV_LOCK above is that serialization.
+        unsafe { std::env::set_var(name, value) };
+        let out = f();
+        unsafe { std::env::remove_var(name) };
+        out
+    }
+
     /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16
     /// (a 3-tall opening at rows 17..=19), deep enough inside the world for
     /// `CanPlace`'s 5-tile edge margin (`TileObject.cs:215`).
@@ -3315,7 +3387,9 @@ mod tr_hooks {
     fn tr_place_parsing_defaults_and_groups() {
         // `[x, y, kind]` groups default to style 0 / dir 1 (Decisions #6/#7);
         // 4- and 5-number groups override style and style+dir.
-        let ops = parse_tr_place("10,19,18;14,19,21,0,-1");
+        let ops = with_pin("TR_PLACE", "10,19,18;14,19,21,0,-1", || {
+            crate::env::place_ops()
+        });
         assert_eq!(ops.len(), 2);
         assert_eq!(
             (ops[0].x, ops[0].y, ops[0].kind, ops[0].style, ops[0].dir),
@@ -3326,19 +3400,31 @@ mod tr_hooks {
             (14, 19, 21, 0, -1)
         );
         // Malformed groups are dropped; well-formed ones survive.
-        assert_eq!(parse_tr_place("x,y,18;5,19,4").len(), 1);
-        assert!(parse_tr_place("").is_empty());
+        assert_eq!(
+            with_pin("TR_PLACE", "x,y,18;5,19,4", || crate::env::place_ops()).len(),
+            1
+        );
+        assert!(
+            with_pin("TR_PLACE", "", || crate::env::place_ops()).is_empty()
+        );
     }
 
     #[test]
     fn tr_toggle_parsing_default_count() {
-        let ops = parse_tr_toggle("2026,198;7,9,3");
+        let ops = with_pin("TR_TOGGLE", "2026,198;7,9,3", || {
+            crate::env::toggle_ops()
+        });
         assert_eq!(ops.len(), 2);
         assert_eq!((ops[0].x, ops[0].y, ops[0].n), (2026, 198, 1));
         assert_eq!((ops[1].x, ops[1].y, ops[1].n), (7, 9, 3));
         // Wrong arity is dropped; a negative count clamps to 0 presses.
-        assert!(parse_tr_toggle("1,2,3,4").is_empty());
-        assert_eq!(parse_tr_toggle("1,2,-5")[0].n, 0);
+        assert!(
+            with_pin("TR_TOGGLE", "1,2,3,4", || crate::env::toggle_ops()).is_empty()
+        );
+        assert_eq!(
+            with_pin("TR_TOGGLE", "1,2,-5", || crate::env::toggle_ops())[0].n,
+            0
+        );
     }
 
     #[test]
@@ -3350,18 +3436,24 @@ mod tr_hooks {
         apply_tr_fill(&mut w, "0,20,40,1,1");
         apply_tr_fill(&mut w, "0,16,40,1,1");
         assert!(w.tile(10, 20).unwrap().active(), "fill wrote the floor");
-        apply_tr_places(&mut w, &parse_tr_place("10,19,10"));
+        apply_tr_places(&mut w, &with_pin("TR_PLACE", "10,19,10", crate::env::place_ops));
         assert!(w.tile(10, 19).unwrap().active() && w.tile(10, 17).unwrap().active());
         // `place` guarantees the frame_important bit (Decision #4).
         assert!(w.frame_important[10]);
         let closed_frame = w.tile(10, 18).unwrap().frame_y;
-        apply_tr_toggles(&mut w, &parse_tr_toggle("10,18,1"));
+        apply_tr_toggles(
+            &mut w,
+            &with_pin("TR_TOGGLE", "10,18,1", crate::env::toggle_ops),
+        );
         assert!(
             w.tile(10, 18).unwrap().active() && w.tile(10, 18).unwrap().kind == 11,
             "one press opens the door"
         );
         assert!(w.frame_important[11], "open_door keeps the tile-11 bit");
-        apply_tr_toggles(&mut w, &parse_tr_toggle("10,18,1"));
+        apply_tr_toggles(
+            &mut w,
+            &with_pin("TR_TOGGLE", "10,18,1", crate::env::toggle_ops),
+        );
         assert_eq!(
             w.tile(10, 18).unwrap().kind,
             10,
@@ -3376,7 +3468,9 @@ mod tr_hooks {
         // place one tile with explicit frames (negative frames are meaningful —
         // `-1` is "must be computed"), 4 tokens `x,y,w,h` are the clear
         // rectangle carrying the kind −1 sentinel.
-        let ops = parse_tr_tiles("5,6,82,0,18;7,8,82,18,-1");
+        let ops = with_pin("TR_TILES", "5,6,82,0,18;7,8,82,18,-1", || {
+            crate::env::tile_ops()
+        });
         assert_eq!(ops.len(), 2, "groups split on ';'");
         assert_eq!(
             (
@@ -3394,7 +3488,7 @@ mod tr_hooks {
             (ops[1].x, ops[1].y, ops[1].kind, ops[1].fx, ops[1].fy),
             (7, 8, 82, 18, -1)
         );
-        let clear = parse_tr_tiles("10,10,3,2");
+        let clear = with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops);
         assert_eq!(clear.len(), 1);
         assert_eq!(
             (
@@ -3408,7 +3502,7 @@ mod tr_hooks {
         );
         assert_eq!((clear[0].fx, clear[0].fy), (0, 0));
         // Both forms mix freely in one fixture string.
-        let mixed = parse_tr_tiles("5,6,82,0,18;0,0,3,2");
+        let mixed = with_pin("TR_TILES", "5,6,82,0,18;0,0,3,2", crate::env::tile_ops);
         assert_eq!(mixed.len(), 2);
         assert_eq!(mixed[0].kind, 82);
         assert_eq!(mixed[1].kind, -1);
@@ -3419,24 +3513,33 @@ mod tr_hooks {
         // The fixture is one env value; a malformed group must be dropped whole
         // without aborting the well-formed ones around it.
         assert!(
-            parse_tr_tiles("").is_empty(),
+            with_pin("TR_TILES", "", crate::env::tile_ops).is_empty(),
             "the empty string places nothing"
         );
-        assert!(parse_tr_tiles("1,2").is_empty(), "2 tokens is not a form");
-        assert!(parse_tr_tiles("1,2,3").is_empty(), "3 tokens is not a form");
         assert!(
-            parse_tr_tiles("1,2,3,4,5,6").is_empty(),
+            with_pin("TR_TILES", "1,2", crate::env::tile_ops).is_empty(),
+            "2 tokens is not a form"
+        );
+        assert!(
+            with_pin("TR_TILES", "1,2,3", crate::env::tile_ops).is_empty(),
+            "3 tokens is not a form"
+        );
+        assert!(
+            with_pin("TR_TILES", "1,2,3,4,5,6", crate::env::tile_ops).is_empty(),
             "6 tokens is not a form"
         );
         assert!(
-            parse_tr_tiles("x,y,82,0,18").is_empty(),
+            with_pin("TR_TILES", "x,y,82,0,18", crate::env::tile_ops).is_empty(),
             "non-numeric coords"
         );
         assert!(
-            parse_tr_tiles("1,2,82,0,z").is_empty(),
+            with_pin("TR_TILES", "1,2,82,0,z", crate::env::tile_ops).is_empty(),
             "non-numeric frames"
         );
-        assert_eq!(parse_tr_tiles("1,2,3;5,6,82,0,18").len(), 1);
+        assert_eq!(
+            with_pin("TR_TILES", "1,2,3;5,6,82,0,18", crate::env::tile_ops).len(),
+            1
+        );
     }
 
     #[test]
@@ -3456,7 +3559,7 @@ mod tr_hooks {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &parse_tr_tiles("5,6,82,0,18"));
+        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "5,6,82,0,18", crate::env::tile_ops));
         let t = w.tile(5, 6).unwrap();
         assert_eq!(t.kind, 82);
         assert_eq!((t.frame_x, t.frame_y), (0, 18));
@@ -3490,7 +3593,7 @@ mod tr_hooks {
             }
         }
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &parse_tr_tiles("10,10,3,2"));
+        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops));
         for x in 10..13 {
             for y in 10..12 {
                 assert_eq!(
@@ -3513,7 +3616,10 @@ mod tr_hooks {
         // is touched, so the revision stays exactly where it was.
         let mut w = World::new("t".into(), 40, 40);
         w.frame_important = vec![false; td::TILE_COUNT];
-        apply_tr_tiles(&mut w, &parse_tr_tiles("1000,1000,4,4;-5,-5,4,4"));
+        apply_tr_tiles(
+            &mut w,
+            &with_pin("TR_TILES", "1000,1000,4,4;-5,-5,4,4", crate::env::tile_ops),
+        );
         assert_eq!(w.revision, 0, "nothing touched -> no revision bump");
     }
 
@@ -3528,13 +3634,13 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
         unsafe { std::env::set_var("TR_SUNDIAL", "1") };
         unsafe { std::env::set_var("TR_MOONDIAL", "1") };
-        let world = load_world(&path).expect("scratch world loads");
+        let (world, sections) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
         let _ = std::fs::remove_file(&path);
@@ -3546,6 +3652,14 @@ mod tr_hooks {
         assert!(
             world.fast_forward_to_dusk,
             "TR_MOONDIAL arms the dusk fast-forward"
+        );
+        assert!(
+            sections.native.chests.is_empty(),
+            "the scratch world has no chest records"
+        );
+        assert!(
+            sections.native.banners.is_empty(),
+            "the scratch world has no banner records"
         );
         assert_eq!(
             (world.sundial_cooldown, world.moondial_cooldown),
@@ -3564,8 +3678,8 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
-        let world = load_world(&path).expect("scratch world loads");
+        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        let (world, sections) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
@@ -3589,23 +3703,23 @@ mod dye_pin_tests {
     /// garbage and empty entries stay empty slots.
     #[test]
     fn tr_dye_pin_fills_positionally_and_forgives_garbage() {
-        let dyes = parse_tr_dye("1007, 1015 ,, 1023");
+        let dyes = crate::env::parse_tr_dye("1007, 1015 ,, 1023");
         assert_eq!(dyes[0], 1007);
         assert_eq!(dyes[1], 1015);
         assert_eq!(dyes[2], 0, "empty entry leaves the slot empty");
         assert_eq!(dyes[3], 1023);
         assert_eq!(dyes[4..], [0; 6]);
-        assert_eq!(parse_tr_dye(""), [0; 10]);
-        assert_eq!(parse_tr_dye("nope,x")[..2], [0, 0]);
+        assert_eq!(crate::env::parse_tr_dye(""), [0; 10]);
+        assert_eq!(crate::env::parse_tr_dye("nope,x")[..2], [0, 0]);
         // Overlong lists clip to the ten dye slots.
-        assert_eq!(parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
+        assert_eq!(crate::env::parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
     }
 
     #[test]
     fn tr_dmount_pin_parses_one_kind() {
-        assert_eq!(parse_tr_dmount("1007"), 1007);
-        assert_eq!(parse_tr_dmount(" 2871 "), 2871);
-        assert_eq!(parse_tr_dmount("nope"), 0);
-        assert_eq!(parse_tr_dmount(""), 0);
+        assert_eq!(crate::env::parse_tr_dmount("1007"), 1007);
+        assert_eq!(crate::env::parse_tr_dmount(" 2871 "), 2871);
+        assert_eq!(crate::env::parse_tr_dmount("nope"), 0);
+        assert_eq!(crate::env::parse_tr_dmount(""), 0);
     }
 }

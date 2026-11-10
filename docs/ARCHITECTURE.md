@@ -39,14 +39,14 @@ an agent needs before touching code.
 | Liquids: flow sim, draw cache, waterfalls | `tr-core/src/liquid.rs`, `liquid_draw.rs`, `waterfall/` |
 | Tile objects: the registry, placement, the KillTile cascade | `tr-core/src/tileobject.rs`, `tr-core/src/edit.rs`; the drop resolution in `world_sim/editing.rs` |
 | World generation | `tr-core/src/worldgen/` |
-| Saves: `.trwld`, `.wld`, `.map`, binary primitives | `tr-core/src/{save,wld}.rs`, `map/file.rs`, `binio.rs`; sidecars in `persist.rs` + `app/saveglue.rs` |
+| Saves: `.trwld`, `.wld` (all 11 sections), `.map`, binary primitives | `tr-core/src/{save,wld}.rs` (the `.wld` codecs in `wld/sections/`), `map/file.rs`, `binio.rs`; sidecars in `persist.rs` + `app/saveglue.rs` (the load/save dispatch) |
 | Multiplayer | `net.rs`, `app/netglue.rs` |
-| Settings / `config.json` | `settings.rs`, `app/settings_ui.rs` |
+| Settings / `config.json` | `settings.rs` (keys/defaults/parse/save, read once in `main.rs` and threaded into `App`/`Menu`), `app/settings_ui.rs` (the `TR_UI` presets + `apply_settings`) |
 | Rain and storms | `rain.rs` (field + draw), `world_sim/weather.rs` (the 60 Hz tick) |
 | Audio | `audio.rs`, `sound.rs` |
 | Fullscreen map / minimap | `map.rs` (app), `tr-core/src/map/`, `ui/minimap.rs` |
 | HUD drawing (hotbar, hearts, inventory, tooltips, crafting, boss bar) | `ui/` — see `docs/UI.md` |
-| `TR_*` env flags | spread across the modules that consume them (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs` `TR_UI`, …); the planned `env.rs` consolidation is deferred |
+| `TR_*` env flags | `env.rs` (2026-11-09, REFACTOR-env) — one named accessor per pin, `OnceLock`-resolved; `TR_SUNDIAL`/`TR_MOONDIAL` stay live reads (the env-mutating tests) |
 
 ## Crates
 
@@ -64,8 +64,14 @@ an agent needs before touching code.
   (12 B/tile vs. the managed `Terraria.Tile` object.)
 - `world.rs` — row-major `Vec<Tile>`, bounds helpers, spawn scan, memory accounting,
   `frame_important` (the save's tile-frame-important bitset).
-- `wld.rs` — sectioned `.wld` reader (see `ANALYSIS.md`). Only header + tile sections are
-  decoded today; later sections are reachable via the section table.
+- `wld/` — the sectioned `.wld` reader **and writer** (see `ANALYSIS.md`): `mod.rs`
+  holds the framing (the pointer table, `load_with_sections`, `save`/`to_bytes`) and
+  `sections/` holds one file per section in `SaveWorld_Version2` order — `header`,
+  `flags`, `tiles` (sections 0-2) then the eight section lanes (chests, signs, npcs,
+  tile-entities, pressure-plates, town-rooms, bestiary, creative-powers), each with
+  `read`/`write` plus the world-facing halves the app glue calls. The app side lives
+  in `app/mod.rs` (`load_world`, `App::new`'s C#-order glue) and `app/saveglue.rs`
+  (`save_world`'s extension dispatch).
 - `save.rs` — native `.trwld`: magic/version/seed/header, `frame_important` table, and
   per-row RLE of the 12-byte `Tile`. Default path
   `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`; saves are written to a
@@ -254,7 +260,7 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
-  `audio.rs`, `sound.rs`, `inv.rs`.
+  `audio.rs`, `sound.rs`, `inv.rs`, `env.rs` (the `TR_*` pin accessors).
 
 Player simulation details (20×42 AABB, fixed 60 Hz, gravity/step/collision, survival
 mechanics), NPC AI, projectiles, editing and weather behaviour are described in

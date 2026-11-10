@@ -32,18 +32,27 @@
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::caves;
+use super::desert;
+use super::desert_dunes;
+use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::dungeon;
 use super::evil;
 use super::islands;
 use super::liquids;
 use super::living_trees;
+use super::micro_finish;
+use super::micro_grass;
+use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::spider_gem_moss;
 use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
 use crate::tree;
@@ -210,6 +219,19 @@ pub(crate) struct GenVars {
     pub(crate) pyr_x: Vec<i32>,
     pub(crate) pyr_y: Vec<i32>,
     pub(crate) num_pyr: i32,
+    /// `GenVars.UndergroundDesertLocation` / `UndergroundDesertHiveLocation`
+    /// (`GenVars.cs:138-140`) — the `Full Desert` pass's placement
+    /// (`DesertBiome.ExportDescriptionToEngine`, `DesertBiome.cs:48-53`),
+    /// the combined band inflated 10,10 and the hive rect. Written by
+    /// `desert::full_desert`; consumed by the underground houses
+    /// (`AdditionalDesertHouseCount`, `WorldGen.cs:16989`) and the TileRunner's
+    /// `case 53` containment (`tile_runner.rs`).
+    pub(crate) underground_desert: Option<super::desert::Rect>,
+    pub(crate) desert_hive: Option<super::desert::Rect>,
+    /// `GenVars.desertHiveHigh/Low/Left/Right` (`GenVars.cs:142-148`) — the
+    /// hive carve's bounds (`UpdateDesertHiveBounds`, `WorldGen.cs:10989`):
+    /// (left, high/top, right, low/bottom).
+    pub(crate) desert_hive_bounds: Option<(i32, i32, i32, i32)>,
     /// `GenVars.numOceanCaveTreasure`/`oceanCaveTreasure[2]`
     /// (`GenVars.cs:130-134`, reset in `WorldGen.cs:11224`, `GenVars.cs:440-442`)
     /// — the ocean-cave walker's treasure anchors (the counter wraps at
@@ -217,6 +239,19 @@ pub(crate) struct GenVars {
     /// `UnderwaterChests` (`:17245-17355`, M5-CHEST-gen) — published here.
     pub(crate) num_ocean_cave_treasure: i32,
     pub(crate) ocean_cave_treasure: [(i32, i32); 2],
+    /// `GenVars.crimsonLeft` (`GenVars.cs:280`) — the `genRand.Next(2)` roll
+    /// in `Reset` (`WorldGen.cs:11216-11223`) that splits the world into a
+    /// corruption-left / crimson-left half pair. The drunk/remix passes read
+    /// it to pick per-half evil flavours and the drunk split-line anchors
+    /// (`:13962`, `:14302`, `:18392`). The port draws it from its own
+    /// `pass_rng("Reset")` stream (the vanilla pre-pass `genRand` — the
+    /// isolation keeps every existing pass's draws untouched).
+    pub(crate) crimson_left: bool,
+    /// `GenVars.flipInfections` (`GenVars.cs:286`, set at
+    /// `WorldGen.cs:11127`): drunk && for-the-worthy && !remix — the evil
+    /// tile/wall ids swap (`:11298-11304`: ebonstone 25 ↔ crimstone 203,
+    /// ebonstone wall 3 ↔ crimstone wall 83). Derived, never drawn.
+    pub(crate) flip_infections: bool,
 }
 
 impl Default for GenVars {
@@ -260,9 +295,19 @@ impl Default for GenVars {
             pyr_x: Vec::new(),
             pyr_y: Vec::new(),
             num_pyr: 0,
+            // The C# leaves the desert locations `Rectangle.Empty` until
+            // `Full Desert` places one (`DesertBiome.cs:50-52`).
+            underground_desert: None,
+            desert_hive: None,
+            desert_hive_bounds: None,
             // The C# resets the treasure counter to 0 (`WorldGen.cs:11224`).
             num_ocean_cave_treasure: 0,
             ocean_cave_treasure: [(0, 0); 2],
+            // The C# zero-inits the seed-flag GenVars (`WorldGen.cs:11157-11160`)
+            // and derives `flipInfections` from the seed flags; the port
+            // computes both in `run`'s Reset stand-in.
+            crimson_left: false,
+            flip_infections: false,
         }
     }
 }
@@ -1014,22 +1059,46 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain height map", "Terrain", step_terrain_height_map),
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
+    // The vanilla Dunes slot (`WorldGen.cs:11517`, pass #3 after TerrainPass):
+    // right after the spans planner, before Ocean Sand (`:11580`). Vanilla
+    // runs its dune carver here — the M5-DESERT-structures port (the compact
+    // terrain model used to flatten the desert inside the terrain step).
+    step!("dunes", "Dunes", step_dunes),
     // The vanilla Ocean Sand slot (`WorldGen.cs:11580`): right after the
     // spans planner, before the jungle (`:12466`). Vanilla runs it third
     // (after TerrainPass and Dunes, both compact-model steps here) — the
     // M5-OCEAN phase-2 insertion.
     step!("ocean sand", "Ocean Sand", step_ocean_sand),
+    // The vanilla Grass slot (`WorldGen.cs:12423`): the M5-SEED-2 micro-seed
+    // bodies the C# runs there (`DoDigExtraHoles` `:12427-12430`) — a classic
+    // world's step draws nothing.
+    step!("micro grass", "Grass", step_micro_grass),
     step!("jungle", "Jungle", step_jungle),
     step!(
         "mud caves to grass",
         "Mud Caves To Grass",
         step_mud_caves_to_jungle_grass
     ),
+    // The vanilla Full Desert slot (`WorldGen.cs:12500`): after Mud Caves To
+    // Grass (`:12468`) and before Mushroom Patches (`:12544`) — the
+    // M5-DESERT-structures underground desert.
+    step!("full desert", "Full Desert", step_full_desert),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
-    step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
+    // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
+    // Granite (:12839): the granite caves recruit into pre-carved caves
+    // (the `GraniteBiome.CanPlace` inactive-origin gate feeds the
+    // pressure simulation's low-resistance air), so the step moves after
+    // the carve. The two passes draw from their own isolated streams, so
+    // the move is RNG-neutral for every other step.
+    step!("granite and marble", "Marble", step_granite_marble),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    // The vanilla Wavy Caves slot (`WorldGen.cs:12271`): after the cave
+    // family (Dirt In Rocks `:11935`) and before the ice/grass pair —
+    // M5-SEED-1's Don't Starve pass, whose body exists only for that seed
+    // (a classic world runs the step and draws nothing).
+    step!("wavy caves", "Wavy Caves", step_wavy_caves),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
@@ -1040,11 +1109,19 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
     step!("dungeon", "Dungeon", step_dungeon),
+    // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
+    // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
+    // called from the Dungeon pass when the seed is on — M5-SEED-1.
+    step!("constant lava layer", "", step_constant_lava_layer),
     // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
     step!("beaches", "Beaches", step_beaches),
-    step!("gravitating sand", "Gravitating Sand", step_gravitating_sand),
+    step!(
+        "gravitating sand",
+        "Gravitating Sand",
+        step_gravitating_sand
+    ),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
@@ -1055,6 +1132,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
+    // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
+    // chest family (the `UnderwaterChests` environs `:17245`, which the port's
+    // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
+    // insertion. Everything these three passes key on (the cave pockets of
+    // `Tunnels`, the gem veins of `Shinies`, the hive walls) already exists.
+    step!("spider caves", "Spider Caves", step_spider_caves),
+    step!("gem caves", "Gem Caves", step_gem_caves),
+    step!("moss", "Moss", step_moss),
     step!("altars", "Altars", step_altars),
     // The vanilla slot (`WorldGen.cs:15810`): immediately after Altars
     // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
@@ -1070,6 +1155,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
+    // The vanilla slot (`WorldGen.cs:19995`): after the micro-biomes the port
+    // grouped here and immediately before the plants pass (`:20122`) — the
+    // M5-STRUCT-5 webs/speleothems pass, which runs over whatever walls the
+    // spider and hive passes left.
+    step!("webs and honey", "Webs And Honey", step_webs_and_honey),
     step!(
         "mushroom and jungle plants",
         "Glowing Mushrooms and Jungle Plants",
@@ -1109,6 +1199,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
     step!("world tail", "", step_world_tail),
+    // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
+    // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
+    // seed (a classic world's tail is unchanged).
+    step!("seed finish", "", step_seed_finish),
 ];
 
 pub(crate) fn executed_pass_names() -> Vec<&'static str> {
@@ -1116,6 +1210,78 @@ pub(crate) fn executed_pass_names() -> Vec<&'static str> {
 }
 
 // --- the step adapters (the generate() call sites, verbatim) ----------------
+
+/// The vanilla Wavy Caves slot (`WorldGen.cs:12271`): the Don't Starve
+/// pass (`wavy::wavy_caves`). Classic worlds fall straight through.
+fn step_wavy_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        return;
+    }
+    wavy::wavy_caves(world, gv, streams, opts);
+}
+
+/// The vanilla Dungeon-tail call (`WorldGen.cs:14867`): the Constant's
+/// `LavaLayerCaverer` (`wavy::lava_layer_caverer`).
+fn step_constant_lava_layer(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        return;
+    }
+    wavy::lava_layer_caverer(world, streams, opts);
+}
+
+/// The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the seed
+/// `Finish*` passes (`finish_seeds`), each gated on its own flag.
+fn step_seed_finish(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::DRUNK) {
+        finish_seeds::finish_drunk_gen(world, streams, opts);
+    }
+    if opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
+        finish_seeds::finish_get_good_world(world, streams, opts);
+    }
+    if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+        finish_seeds::finish_tenth_anniversary_world(world, streams, opts);
+    }
+    // M5-SEED-2: the `SecretSeed.FinalizeSecretSeeds` arms
+    // (`WorldGen.cs:589-693`) — the C# calls them from `Finish()` after the
+    // classic tails (`:22467`), the same order here. The paint/coat/trap
+    // sweeps run before the surface conversions (the C#'s dispatch order).
+    micro_finish::run(world, streams, opts);
+    micro_surface::run(world, streams, opts);
+}
+
+/// The vanilla Grass slot (`WorldGen.cs:12423`): the M5-SEED-2
+/// `DoDigExtraHoles` body the C# runs there (`:12427-12430`).
+fn step_micro_grass(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    micro_grass::run(world, streams, opts);
+}
 
 fn step_terrain_height_map(
     _world: &mut World,
@@ -1150,6 +1316,67 @@ fn step_terrain_height_map(
         left_beach_end,
         right_beach_start,
     ));
+}
+
+/// `DunesAndPyramidLocations` (`WorldGen.cs:11517-11579`): the dune carver and
+/// the pyramid-slot anchors. The `Count`/`ChanceOfPyramid` options come from
+/// the pass's config section (`Configuration.json`'s `Passes.Dunes`); the snow
+/// band's start is the terrain fill's eastern third (`terrain.rs:242`).
+fn step_dunes(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    pass_config: &ConfigSection,
+) {
+    let count = pass_config
+        .get_range("Count")
+        .map_or(1, |r| r.get_random(&mut streams.pass_rng("Dunes"), world.width, world.height));
+    let chance = pass_config
+        .get_f64("ChanceOfPyramid")
+        .unwrap_or(0.8);
+    let anchors = desert_dunes::dunes(
+        world,
+        gv,
+        world.width * 2 / 3,
+        world.world_surface,
+        count,
+        chance,
+        &mut streams.pass_rng("Dunes"),
+    );
+    // `GenVars.PyrX/PyrY/numPyr` (`GenVars.cs:156-160`): the anchors the
+    // Pyramids step consumes (the append is the C#'s `:11570-11572`).
+    for (x, y) in anchors {
+        gv.pyr_x.push(x);
+        gv.pyr_y.push(y);
+        gv.num_pyr += 1;
+    }
+}
+
+/// `Full Desert` (`WorldGen.cs:12500-12543`): one underground desert opposite
+/// the dungeon (`GenVars.CurrentDungeonGenVars.dungeonSide` — the port's
+/// dungeon sits on the side of `spans().dungeon_x`).
+fn step_full_desert(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let dungeon_side = if gv.spans().dungeon_x > world.width / 2 {
+        1
+    } else {
+        -1
+    };
+    desert::full_desert(
+        world,
+        gv,
+        dungeon_side,
+        world.world_surface,
+        &mut streams.pass_rng("Full Desert"),
+    );
 }
 
 fn step_ocean_sand(
@@ -1233,7 +1460,7 @@ fn step_plan_biome_spans(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -1242,20 +1469,26 @@ fn step_plan_biome_spans(
     // dungeon-side sign is fixed Right because the port's dungeon sits on
     // the right (`plan_spans`' `dungeon_x`), so the C# `Next(2)` side draw
     // (`:11348`) is not portable. The pass consumes `jungle_origin_x`
-    // without redrawing.
+    // without redrawing. M5-SEED-1: the two seed range arms — remix widens
+    // the band to `Next(20, 35)` (`WorldGen.cs:11247`) and the anniversary
+    // world to `Next(25, 35)` (`:11360-11370`, remix-disabled) — replace the
+    // range only, so a classic world's draw is unchanged.
     let jungle_origin_x = {
         let mut origin_rng = streams.pass_rng("Jungle");
-        let percent = origin_rng.range(15, 30);
+        let (lo, hi) = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+            (20, 35)
+        } else if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+            (25, 35)
+        } else {
+            (15, 30)
+        };
+        let percent = origin_rng.range(lo, hi);
         (world.width as f64 * (percent as f64 * 0.01)) as i32
     };
     gv.jungle_origin_x = jungle_origin_x;
     let (width, left_beach_end, right_beach_start) = {
         let map = gv.map();
-        (
-            world.width,
-            map.left_beach_end,
-            map.right_beach_start,
-        )
+        (world.width, map.left_beach_end, map.right_beach_start)
     };
     let surface = gv.map().heights.clone();
     gv.spans = Some(biomes::plan_spans(
@@ -1368,7 +1601,13 @@ fn step_mushroom(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biomes::pass_mushroom(world, gv.spans(), gv.layers().rock_layer, &mut streams.rng);
+    biomes::pass_mushroom(
+        world,
+        gv.spans(),
+        gv.layers().rock_layer,
+        gv.layers().world_surface,
+        &mut streams.pass_rng("GlowingMushroomPatches"),
+    );
 }
 
 fn step_granite_marble(
@@ -1379,7 +1618,16 @@ fn step_granite_marble(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biomes::pass_granite_marble(world, gv.layers().rock_layer, &mut streams.rng);
+    biomes::pass_marble(
+        world,
+        gv.layers().rock_layer,
+        &mut streams.pass_rng("Marble"),
+    );
+    biomes::pass_granite(
+        world,
+        gv.layers().rock_layer,
+        &mut streams.pass_rng("Granite"),
+    );
 }
 
 fn step_cave_fields(
@@ -1527,8 +1775,16 @@ fn step_dungeon(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    biomes::pass_dungeon(world, &map.heights, gv.spans(), &mut streams.rng);
+    // The faithful crawler (`DungeonCrawler.MakeDungeon` +
+    // `LegacyDungeonLayoutProvider` + the hall/room walkers,
+    // `worldgen/dungeon.rs::generate_dungeon`) replaces the shape-level
+    // approximation (`biomes::pass_dungeon` — retired with this move, its
+    // tests keep it honest). The hall seed rides the pass's own stream; the
+    // `rng → pass_rng("Dungeon")` shift is this phase's accepted world change.
+    let dungeon_x = gv.spans().dungeon_x;
+    let surface_row = gv.map().heights[dungeon_x as usize];
+    let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
+    dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
 }
 
 fn step_ocean_caves(
@@ -1546,7 +1802,12 @@ fn step_ocean_caves(
     // change of this phase (the later `drng` consumers shift along their
     // stream — the same class as the M5-BIOME phase-3/6 accepted shifts).
     let layers = *gv.layers();
-    ocean::ocean_caves(world, gv, &layers, &mut streams.pass_rng("Create Ocean Caves"));
+    ocean::ocean_caves(
+        world,
+        gv,
+        &layers,
+        &mut streams.pass_rng("Create Ocean Caves"),
+    );
 }
 
 fn step_fragile_ice(
@@ -1663,6 +1924,81 @@ fn step_pots(
     _pass_config: &ConfigSection,
 ) {
     structures::pass_pots(world, &mut streams.srng);
+}
+
+/// `Spider Caves` (`WorldGen.cs:17356`) — the cave-pocket search and the
+/// `Spread.Spider` flood fill. The pass's own stream (`pass_rng`) is the
+/// port's model of the vanilla per-pass re-seed; `Main.tileSolid[379] = false`
+/// (`:17360`) rides inside the pass's `solid_tile`.
+fn step_spider_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let hell_top = gv.layers().hell_top;
+    let mut rng = streams.pass_rng("Spider Caves");
+    spider_gem_moss::pass_spider_caves(
+        world,
+        &mut rng,
+        world.rock_layer,
+        world.world_surface,
+        hell_top as f64,
+    );
+}
+
+/// `Gem Caves` (`WorldGen.cs:17428`).
+fn step_gem_caves(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Gem Caves");
+    spider_gem_moss::pass_gem_caves(world, &mut rng, world.rock_layer, world.world_surface);
+}
+
+/// `Moss` (`WorldGen.cs:17472`) — the neon-moss biomes, the moss caves and
+/// the scatters. The C#'s `GenVars.lavaLine`/`waterLine` (`GenVars.cs:62-64`)
+/// are the port's `GenVars` fields (the terrain-fill step's product), the
+/// depth anchors the arms key on.
+fn step_moss(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_layer, water_line, lava_line) = (world.rock_layer, gv.water_line, gv.lava_line);
+    let hell_top = gv.layers().hell_top;
+    let mut rng = streams.pass_rng("Moss");
+    spider_gem_moss::pass_moss(
+        world,
+        &mut rng,
+        rock_layer,
+        water_line as f64,
+        lava_line as f64,
+        hell_top,
+    );
+}
+
+/// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
+/// cobweb in the spider caves and honeyed speleothems in the hives.
+fn step_webs_and_honey(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Webs And Honey");
+    spider_gem_moss::pass_webs_and_honey(world, &mut rng, world.world_surface);
 }
 
 fn step_beehives(
@@ -1975,7 +2311,12 @@ fn step_shell_piles(
 ) {
     // The shell-pile blobs (`WorldGen.cs:16266`) over the Beaches anchors.
     let world_surface = gv.layers().world_surface;
-    ocean::shell_piles(world, gv, world_surface, &mut streams.pass_rng("Shell Piles"));
+    ocean::shell_piles(
+        world,
+        gv,
+        world_surface,
+        &mut streams.pass_rng("Shell Piles"),
+    );
 }
 
 fn step_water_plants(
@@ -2004,14 +2345,18 @@ fn step_cacti(
     // sea oats — replacing the compact desert-only cactus scatter (the
     // faithful middle zone's `PlantCactus` covers the desert's cacti).
     let layers = *gv.layers();
-    ocean::cactus_palm_trees_and_coral(world, &layers, &mut streams.pass_rng("Cactus, Palm Trees, & Coral"));
+    ocean::cactus_palm_trees_and_coral(
+        world,
+        &layers,
+        &mut streams.pass_rng("Cactus, Palm Trees, & Coral"),
+    );
 }
 
 fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2022,8 +2367,28 @@ fn step_world_tail(
     let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    world.spawn_x = map.spawn_center;
-    world.spawn_y = (map.heights[map.spawn_center as usize] - 6).max(1);
+    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
+    // centre of the map instead of the surface anchor — the first air cell
+    // scanning up from `maxTilesY - 10` at the centre column.
+    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        let x = world.width / 2;
+        let mut y = world.height - 10;
+        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
+            y -= 1;
+        }
+        Some((x, (y + 1).max(1)))
+    } else {
+        None
+    };
+    let (spawn_x, spawn_y) = match remix_spawn {
+        Some((x, y)) => (x, y),
+        None => (
+            map.spawn_center,
+            (map.heights[map.spawn_center as usize] - 6).max(1),
+        ),
+    };
+    world.spawn_x = spawn_x;
+    world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -2085,6 +2450,20 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[529] = true;
     world.frame_important[530] = true;
     world.frame_important[549] = true;
+    // The chest family — the sapling 20, the chest 21, the golden-chest style
+    // 467 and the two container kinds 441/468 (`Main.cs:7655-7659`; the
+    // vanilla bit is a no-op in `WorldGen.TileFrameImportant` for them, so a
+    // chest keeps its stored frames). Vanilla worlds honour them from boot,
+    // so a generated world must too: without the bit the load-time
+    // `frame_world` re-frames every chest tile through its object def, the
+    // 2x2 anchor frames (`frameX == 0 && frameY == 0` — the
+    // `generate_world_chests` and `is_locked` scans) are lost, and the
+    // chest-anchor scans miss every chest in a loaded world.
+    world.frame_important[20] = true;
+    world.frame_important[21] = true;
+    world.frame_important[467] = true;
+    world.frame_important[441] = true;
+    world.frame_important[468] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -2099,6 +2478,14 @@ pub(crate) fn run(
     config: &WorldGenConfig,
 ) {
     let mut gv = GenVars::default();
+    // The `WorldGen.Reset()` seed-flag tail (`WorldGen.cs:11125-11127`,
+    // `:11216-11223`): the derived combo booleans plus the `crimsonLeft`
+    // half-roll. Vanilla draws it from the pre-pass `genRand`; the port
+    // gives it its own `pass_rng("Reset")` stream so every existing
+    // per-pass draw schedule is byte-identical for a classic world.
+    let mut reset_rng = streams.pass_rng("Reset");
+    gv.crimson_left = reset_rng.range(0, 2) == 1;
+    gv.flip_infections = opts.flags.flip_infections();
     for step in EXECUTED_PIPELINE {
         // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
         // per `GenPassResult`) — the executed-step log names the step, its
@@ -2141,11 +2528,16 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_52_named_steps() {
+    fn the_executed_pipeline_is_59_named_steps() {
         let names = executed_pass_names();
         // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
-        assert_eq!(names.len(), 52);
+        // M5-STRUCT-5: + `spider caves` + `gem caves` + `moss` + `webs and
+        // honey` (vanilla `:17356` / `:17428` / `:17472` / `:19995`).
+        // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
+        // `:12500`).
+        // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
+        assert_eq!(names.len(), 62);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2162,7 +2554,11 @@ mod tests {
         // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
         // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
         // and `muds walls in jungle` between `vines` and `floating islands`
-        // (vanilla `:20193` → `:20813`) — and the three M5-OCEAN phase-2
+        // (vanilla `:20193` → `:20813`) — the four M5-STRUCT-5 cave
+        // decorations (`spider caves` + `gem caves` + `moss` between `chests`
+        // and `altars`, vanilla `:17245` → `:17356` → `:17428` → `:17472`,
+        // and `webs and honey` before `mushroom and jungle plants`, vanilla
+        // `:19995` → `:20122`) — and the three M5-OCEAN phase-2
         // insertions: `ocean sand` right after `plan biome spans`
         // (vanilla `:11517` → `:11580`), and `beaches` + `gravitating sand`
         // between `dungeon` (`:14757`) and `ocean caves` (`:14888` →
@@ -2173,20 +2569,28 @@ mod tests {
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
+                "dunes",
                 "ocean sand",
+                "micro grass",
                 "jungle",
                 "mud caves to grass",
+                "full desert",
                 "mushroom patches",
-                "granite and marble",
                 "cave fields",
+                // M5-BIOME-2: granite moved after the cave carve (the vanilla
+                // order) — the `GraniteBiome.CanPlace` inactive-origin gate
+                // needs the pre-carved caves.
+                "granite and marble",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "wavy caves",
                 "dirt to mud",
                 "ash blobs",
                 "ores and gems",
                 "evil",
                 "liquids",
                 "dungeon",
+                "constant lava layer",
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
@@ -2195,6 +2599,9 @@ mod tests {
                 "exposed gems",
                 "jungle shrines",
                 "chests",
+                "spider caves",
+                "gem caves",
+                "moss",
                 "altars",
                 "wet jungle",
                 "pyramids",
@@ -2207,6 +2614,7 @@ mod tests {
                 "campsites",
                 "spike pits",
                 "sword shrines",
+                "webs and honey",
                 "mushroom and jungle plants",
                 "jungle plants",
                 "vines",
@@ -2222,6 +2630,7 @@ mod tests {
                 "lihzahrd altar",
                 "water plants",
                 "world tail",
+                "seed finish",
             ]
         );
     }
@@ -2231,12 +2640,15 @@ mod tests {
     /// (vanilla `:12466` → `:12468`) and `dirt to mud` between
     /// `dirt-in-stone blobs` and `ash blobs` (the vanilla DirtToMud <
     /// Shinies and DirtToMud < Underworld relative pairs, research §5.3).
+    /// M5-SEED-1 inserts the Constant's `wavy caves` between them (the
+    /// vanilla Wavy Caves slot, `:12271`), so the dirt-to-mud adjacency is
+    /// +2 now — the relative pairs themselves still hold.
     #[test]
     fn test_DW_3_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
-        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 1);
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 2); // + wavy caves (M5-SEED-1)
         assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -2250,17 +2662,20 @@ mod tests {
     }
 
     /// DW-2.3: the three M5-OCEAN phase-2 ocean steps sit in their vanilla
-    /// positions — `ocean sand` immediately after `plan biome spans`
-    /// (vanilla `:11517` Dunes → `:11580` Ocean Sand), and `beaches` +
-    /// `gravitating sand` between `dungeon` (`:14757`) and `ocean caves`
-    /// (vanilla `:14888` → `:15138` → `:15167`).
+    /// positions — `ocean sand` immediately after the `dunes` step (the
+    /// M5-DESERT-structures `:11517` Dunes → `:11580` Ocean Sand pair; the
+    /// dunes step is after `plan biome spans`, whose planner the dunes' origin
+    /// roll reads), and `beaches` + `gravitating sand` between `dungeon`
+    /// (`:14757`) and `ocean caves` (vanilla `:14888` → `:15138` → `:15167`).
     #[test]
     fn test_DW_2_3_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("ocean sand"), pos("plan biome spans") + 1);
-        assert_eq!(names[pos("ocean sand") + 1], "jungle");
-        assert_eq!(pos("beaches"), pos("dungeon") + 1);
+        assert_eq!(pos("ocean sand"), pos("dunes") + 1);
+        assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
+        assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
+        assert_eq!(names[pos("micro grass") + 1], "jungle");
+        assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
@@ -2353,6 +2768,37 @@ mod tests {
         assert!(cpos("Jungle Temple") == cpos("Wet Jungle") + 1);
         assert!(cpos("Jungle Plants") == cpos("Glowing Mushrooms and Jungle Plants") + 1);
         assert!(cpos("Muds Walls In Jungle") > cpos("Vines"));
+    }
+
+    /// DW-5.6: the four M5-STRUCT-5 cave-decor steps sit in their vanilla
+    /// positions — `spider caves` + `gem caves` + `moss` between `chests` and
+    /// `altars` (vanilla Underwater Chests `:17245` → Spider Caves `:17356`
+    /// → Gem Caves `:17428` → Moss `:17472` → Jungle Temple `:17701`, with
+    /// the port's `lihzahrd temple` standing in for the temple), and
+    /// `webs and honey` immediately before `mushroom and jungle plants`
+    /// (vanilla Webs And Honey `:19995` → Glowing Mushrooms and Jungle
+    /// Plants `:20122`).
+    #[test]
+    fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("spider caves"), pos("chests") + 1);
+        assert_eq!(pos("gem caves"), pos("spider caves") + 1);
+        assert_eq!(pos("moss"), pos("gem caves") + 1);
+        assert_eq!(names[pos("moss") + 1], "altars");
+        assert_eq!(pos("webs and honey") + 1, pos("mushroom and jungle plants"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spider Caves") == cpos("Water Chests") + 1);
+        assert!(cpos("Gem Caves") == cpos("Spider Caves") + 1);
+        assert!(cpos("Moss") == cpos("Gem Caves") + 1);
+        assert!(cpos("Temple") == cpos("Moss") + 1);
+        assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
     }
 
     #[test]
@@ -2554,5 +3000,43 @@ mod tests {
         assert!(w.frame_important[137], "the dart trap 137");
         assert!(w.frame_important[237], "the Lihzahrd altar 237");
         assert!(!w.frame_important[226], "the Lihzahrd brick 226");
+    }
+
+    /// The chest family's boot statics (`Main.cs:7655-7659`) — and the load
+    /// behaviour they buy: a chest tile keeps its 2x2 anchor frames through
+    /// `frame_world` with the bit set, and loses them without it (the control
+    /// that made every generated world's chest anchors unscannable).
+    #[test]
+    fn the_chest_family_is_frame_important_and_survives_the_framer() {
+        let mut w = World::new("t".into(), 16, 16);
+        boot_statics(&mut w);
+        for &kind in &[20u16, 21, 441, 467, 468] {
+            assert!(w.frame_important[kind as usize], "kind {kind} is important");
+        }
+        // A chest anchor at (8, 8): active, kind 21, the 0,0 anchor frames the
+        // scans read, with solid neighbours so `frame_of` has something to
+        // frame against.
+        let i = w.index(8, 8);
+        w.tiles[i].kind = 21;
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        for &(x, y) in &[(7, 8), (9, 8), (8, 9)] {
+            let j = w.index(x, y);
+            w.tiles[j].kind = 1;
+            w.tiles[j].flags |= crate::tile::FLAG_ACTIVE;
+        }
+        crate::framing::frame_world(&mut w);
+        let t = w.tile(8, 8).unwrap();
+        assert_eq!((t.frame_x, t.frame_y), (0, 0), "the anchor frames survive");
+        // The control: the same world with the bit cleared re-frames the tile
+        // through its object def — the anchor is lost.
+        let mut control = w.clone();
+        control.frame_important[21] = false;
+        crate::framing::frame_world(&mut control);
+        let c = control.tile(8, 8).unwrap();
+        assert_ne!(
+            (c.frame_x, c.frame_y),
+            (0, 0),
+            "without the bit the framer rewrites the chest tile"
+        );
     }
 }

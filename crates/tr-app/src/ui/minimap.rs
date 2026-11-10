@@ -136,21 +136,44 @@ pub fn minimap_anchor(map_scale: f32) -> (i32, i32) {
     )
 }
 
-/// `Main.cs:55508-55509` at `MapScale = 1` (the port's reference, see the
-/// whole-UI P4 plan's Uncertainty 5 ruling): `(screen.x - anchor.0 as f32,
-/// anchor.1 as f32)` — `miniMapX = screenWidth - anchorLeft`,
-/// `miniMapY = anchorBottom` (the `*= num16` fixups are no-ops at `MapScale = 1`).
-pub fn minimap_origin(screen: glam::Vec2) -> [f32; 2] {
-    let (left, bottom) = minimap_anchor(1.0);
-    [screen.x - left as f32, bottom as f32]
+/// `Main.cs:55508-55511`: the panel origin in the minimap's **transform space** —
+/// `miniMapX = screenWidth - anchorLeft` / `miniMapY = anchorBottom` (`:55508-55509`,
+/// the anchor from [`minimap_anchor`]) divided by `1 / MapScale` (`:55510-55511`),
+/// because the whole pass draws inside `Matrix.CreateScale(Main.MapScale)`
+/// (`Main.cs:55309-55329`). The port has no transform matrix, so the callers
+/// multiply the raw positions and sizes by `map_scale` on the way to the screen:
+/// divide here, scale there. Both `(int)` truncations happen in this space, before
+/// the multiply, exactly as the source's.
+pub fn minimap_origin_raw(screen: glam::Vec2, map_scale: f32) -> [f32; 2] {
+    let (left, bottom) = minimap_anchor(map_scale);
+    // `Main.miniMapX = (int)((float)Main.miniMapX * num16);` / `miniMapY` (`:55510-55511`).
+    [
+        ((screen.x - left as f32) * (1.0 / map_scale)) as i32 as f32,
+        (bottom as f32 * (1.0 / map_scale)) as i32 as f32,
+    ]
 }
 
 /// `Main.cs:55546`: `DrawTo` position = origin + (-6 + 10, -6 + 10) — this is
-/// what `MinimapFrame.MinimapPosition` is set to (`MinimapFrameManager.cs:44`).
+/// what `MinimapFrameManager.MinimapPosition` is set to (`MinimapFrameManager.cs:44`).
+/// Transform space, like [`minimap_origin_raw`]; the draw passes scale it.
 pub fn draw_to_position(origin: [f32; 2]) -> [f32; 2] {
     [
         origin[0] - 6.0 + 10.0, // `num3 - 6f + 10f`
         origin[1] - 6.0 + 10.0, // `num4 - 6f + 10f`
+    ]
+}
+
+/// `Main.cs:55309-55329`: the minimap batch transform
+/// `Matrix.CreateScale(Main.MapScale)` — every position and size the minimap
+/// passes draw (the backdrop rect, the frame sheet, the button sheets) is
+/// multiplied by it. The port has no transform matrix, so the two draw passes
+/// apply it here, once, with one citation.
+pub fn scale_rect(rect: [f32; 4], map_scale: f32) -> [f32; 4] {
+    [
+        rect[0] * map_scale,
+        rect[1] * map_scale,
+        rect[2] * map_scale,
+        rect[3] * map_scale,
     ]
 }
 
@@ -345,6 +368,10 @@ pub fn button_sizes(lookups: &assets::Lookups, style_index: usize) -> [[f32; 2];
 /// order is `back → world → map_back → map → ui`. A backdrop pushed as a ui
 /// sprite would paint over the tiles.
 ///
+/// `map_scale` is `Main.MapScale`: the backdrop is drawn inside
+/// `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`), so the port
+/// scales the raw rect (position and size) by it on the way to the screen.
+///
 /// `lookups` is carried for signature parity with the other passes; the
 /// backdrop itself needs no sheet (`MagicPixel` is built into the renderer).
 pub fn draw_background(
@@ -352,8 +379,10 @@ pub fn draw_background(
     _lookups: &assets::Lookups,
     minimap_pos: [f32; 2],
     map_minimap_alpha: f32, // 1.0 (`Main.cs:66753`); clamp `Main.cs:55523-55530`
+    map_scale: f32,
 ) {
     let rect = backdrop_rect(minimap_pos); // `MinimapFrame.cs:181-182`
+    let rect = scale_rect(rect, map_scale);
     // `Color.Black * Main.mapMinimapAlpha` (`:182`); `Color.Black` = (0,0,0,255).
     let black = color::tint(color::mul([0, 0, 0, 255], map_minimap_alpha));
     r.push_map_back_sprite([rect[0], rect[1]], [rect[2], rect[3]], r.white_uv(), black);
@@ -365,12 +394,17 @@ pub fn draw_background(
 /// `this._position + parentPosition` (`Button.Draw`, `:38-44`) — at most one
 /// is highlighted (`GetButtonUnderMouse` returns the first hit, `:194-210`).
 /// Missing sheets draw nothing (`Lookups::default()`), like every other UI pass.
+///
+/// `map_scale` is `Main.MapScale`: like the backdrop, the foreground batch runs
+/// inside `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`), so every
+/// position and size below is scaled by it on the way to the screen.
 pub fn draw_foreground(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     style_index: usize,
     minimap_pos: [f32; 2],
     hover: Option<MinimapButton>,
+    map_scale: f32,
 ) {
     let Some(style) = FRAME_STYLES.get(style_index) else {
         return;
@@ -384,12 +418,11 @@ pub fn draw_foreground(
         .and_then(|f| f.as_ref());
     if let Some(rect) = frame {
         if let Some(uv) = lookups.hud_uv(Some(rect)) {
-            r.push_ui_sprite(
-                frame_pos,
-                [rect.width as f32, rect.height as f32],
-                uv,
-                [1.0; 4],
+            let scaled = scale_rect(
+                [frame_pos[0], frame_pos[1], rect.width as f32, rect.height as f32],
+                map_scale,
             );
+            r.push_ui_sprite([scaled[0], scaled[1]], [scaled[2], scaled[3]], uv, [1.0; 4]);
         }
     }
     // `Button.Draw` (`MinimapFrame.cs:38-44`): the hover sheet only while
@@ -409,12 +442,16 @@ pub fn draw_foreground(
         .and_then(|s| s.as_ref());
     if let Some(rect) = sheet {
         if let Some(uv) = lookups.hud_uv(Some(rect)) {
-            r.push_ui_sprite(
-                [raw_pos[0] + frame_pos[0], raw_pos[1] + frame_pos[1]],
-                [rect.width as f32, rect.height as f32],
-                uv,
-                [1.0; 4],
+            let scaled = scale_rect(
+                [
+                    raw_pos[0] + frame_pos[0],
+                    raw_pos[1] + frame_pos[1],
+                    rect.width as f32,
+                    rect.height as f32,
+                ],
+                map_scale,
             );
+            r.push_ui_sprite([scaled[0], scaled[1]], [scaled[2], scaled[3]], uv, [1.0; 4]);
         }
     }
 }
@@ -459,11 +496,70 @@ mod tests {
         // `Main.cs:55275-55276` at MapScale = 1 and the slider floor 0.5.
         assert_eq!(minimap_anchor(1.0), (292, 90));
         assert_eq!(minimap_anchor(0.5).0, 172);
-        // `Main.cs:55508-55509` at 1600x900, MapScale = 1.
-        let origin = minimap_origin(Vec2::new(1600.0, 900.0));
+        // `Main.cs:55508-55509` at 1600x900, MapScale = 1 (the divide by
+        // `1 / MapScale` of `:55510-55511` is the identity here).
+        let origin = minimap_origin_raw(Vec2::new(1600.0, 900.0), 1.0);
         assert_eq!(origin, [1308.0, 90.0]);
         // `Main.cs:55546`: `num3 - 6f + 10f` / `num4 - 6f + 10f`.
         assert_eq!(draw_to_position(origin), [1312.0, 94.0]);
+    }
+
+    /// DW-4.2: `Main.cs:55510-55511` — the origin lives in the transform space
+    /// of `Matrix.CreateScale(Main.MapScale)` (`Main.cs:55309-55329`), so it is
+    /// the screen anchor divided by the scale; the two clamp bounds
+    /// (`Main.cs:4494`) and a wide screen agree with the source's arithmetic.
+    #[test]
+    fn minimap_origin_raw_divides_by_map_scale() {
+        // `1600 - 292 = 1308` / 1 and `90 / 1`.
+        assert_eq!(minimap_origin_raw(Vec2::new(1600.0, 900.0), 1.0), [1308.0, 90.0]);
+        // Scale 0.5: anchor 172 -> `(1600 - 172) * 2`, `90 * 2`; both `(int)`-truncated.
+        assert_eq!(minimap_origin_raw(Vec2::new(1600.0, 900.0), 0.5), [2856.0, 180.0]);
+        // The visible panel edge is `raw * map_scale` = the screen anchor.
+        let raw = minimap_origin_raw(Vec2::new(1920.0, 1080.0), 0.5);
+        assert_eq!(raw[0] * 0.5, 1920.0 - 172.0);
+        assert_eq!(raw[1] * 0.5, 90.0);
+        // A 1280 screen at the default scale stays the old hardcode's value.
+        assert_eq!(minimap_origin_raw(Vec2::new(1280.0, 720.0), 1.0), [988.0, 90.0]);
+    }
+
+    /// DW-4.2: `Main.cs:55309-55329` — the backdrop, the frame sheet and the
+    /// button hitboxes are all drawn inside the `Matrix.CreateScale(Main.MapScale)`
+    /// batch, so their sizes and offsets scale by it while their raw geometry (and
+    /// therefore the hit test, fed the pointer divided by the scale,
+    /// `Main.cs:55512-55513`) stays where the source puts it.
+    #[test]
+    fn minimap_panel_scale_applies_to_every_size() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let style = &FRAME_STYLES[style_index("Default")];
+        for map_scale in [1.0f32, 0.5] {
+            let raw = draw_to_position(minimap_origin_raw(screen, map_scale));
+            // `MinimapFrame.cs:181-183`: the 244x244 backdrop, raw then scaled.
+            let raw_bg = backdrop_rect(raw);
+            let bg = scale_rect(raw_bg, map_scale);
+            assert_eq!(bg[2], 244.0 * map_scale);
+            assert_eq!(bg[3], 244.0 * map_scale);
+            // The position rides the same transform: the raw top-left, scaled.
+            assert_eq!(bg[0], raw_bg[0] * map_scale);
+            assert_eq!(bg[1], raw_bg[1] * map_scale);
+            // The frame sheet and the hovered button sheets scale the same way
+            // (`MinimapFrame.cs:187`, `:38-44`): a 244x244 sheet is 122x122 at the
+            // floor, and the `_frameOffset` (-8, -15) rides the transform too.
+            let frame_pos = frame_position(raw, style);
+            let frame = scale_rect([frame_pos[0], frame_pos[1], 244.0, 244.0], map_scale);
+            assert_eq!(frame[2], 244.0 * map_scale);
+            assert_eq!(frame[0], frame_pos[0] * map_scale);
+            assert_eq!(frame[1], frame_pos[1] * map_scale);
+            // The hit test stays in raw space: a pointer on the *visible* button
+            // centre resolves once it is divided by the scale.
+            let sizes = [[18.0, 18.0]; 3];
+            let (center, _half) = button_hitbox(style.zoom_in, frame_pos, sizes[BUTTON_ZOOM_IN]);
+            let visible = [center[0] * map_scale, center[1] * map_scale];
+            let pointer = Vec2::new(visible[0] / map_scale, visible[1] / map_scale);
+            assert_eq!(
+                button_under_mouse(pointer, frame_pos, style, sizes),
+                Some(MinimapButton::ZoomIn)
+            );
+        }
     }
 
     #[test]

@@ -4,6 +4,7 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod anim;
+pub mod bcrypt;
 pub mod armor_sets;
 pub mod bestiary;
 pub mod binio;
@@ -25,6 +26,7 @@ pub mod map;
 pub mod mapdata;
 pub mod save;
 pub mod scene;
+pub mod seeds;
 pub mod shimmer;
 pub mod shimmer_tables;
 pub mod sky;pub mod smart_cursor;
@@ -33,6 +35,7 @@ pub mod tile_light;
 pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
+pub mod whip;
 pub mod fishing;
 pub mod ores;
 pub mod spread;

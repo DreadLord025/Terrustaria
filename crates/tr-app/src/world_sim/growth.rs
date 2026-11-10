@@ -10,7 +10,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     // The hardmode switch (`WorldGen.StartHardmode`, `WorldGen.cs:31701-
     // 31720`): the dev trigger `TR_HARDMODE=1` (the WoF kill rides the
     // M4-NPC families) runs the runner half once.
-    if !app.world.hard_mode && std::env::var_os("TR_HARDMODE").is_some() {
+    if !app.world.hard_mode && crate::env::hardmode_forced() {
         app.world.hard_mode = true;
         let corruption = (app.world.seed >> 56) & 1 == 1;
         let mut rng = app.growth_rng;
@@ -25,7 +25,18 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         let world = &mut app.world;
         // The port has no freeze-time power and runs at the day rate 1
         // (`Main.desiredWorldTilesUpdateRate` = `dayRate`).
-        tr_core::growth::update_world(world, 1, raining, false, day_time, &mut rng);
+        // The shell-pile arm's weather inputs: the live rain intensity and
+        // the wind speed (`Main.maxRaining`/`Main.windSpeedCurrent`).
+        tr_core::growth::update_world(
+            world,
+            1,
+            raining,
+            false,
+            day_time,
+            app.rain.max_raining(),
+            app.wind.speed_current,
+            &mut rng,
+        );
         // `hardUpdateWorld`'s spread arms ride the same picks (the port
         // runs them unconditionally — the hardmode gate waits for
         // M5-HARDFORCE; `downedPlantBoss` false = the full rate).

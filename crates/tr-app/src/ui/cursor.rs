@@ -23,18 +23,25 @@ pub struct CursorState {
 
 impl Default for CursorState {
     fn default() -> Self {
-        Self {
-            // The tint seeds from the persisted `MouseColor` ("MouseColor"
-            // config key, `Main.cs:4164-4176`): the state reads the stored
-            // setting itself, like `Main` reads its static.
-            mouse_color: crate::settings::Settings::load().mouse_color,
-            alpha: 0.6,
-            direction: 1.0,
-        }
+        // `Main.mouseColor`'s static default (`Main.cs:67199`) — the persisted
+        // value arrives through [`CursorState::with_mouse_color`], because
+        // `config.json` is read once at startup (`Settings::load` in `main`),
+        // never per consumer.
+        Self::with_mouse_color([255, 50, 95, 255])
     }
 }
 
 impl CursorState {
+    /// The idle pulse seeded from a stored `MouseColor` ("MouseColor" config
+    /// key, `Main.cs:4164-4176`; the value's default is `Main.cs:67199`).
+    pub fn with_mouse_color(mouse_color: [u8; 4]) -> Self {
+        Self {
+            mouse_color,
+            alpha: 0.6,
+            direction: 1.0,
+        }
+    }
+
     /// `Main.CursorColor` (`Main.cs:52477`): advance the pulse by `0.015` per
     /// frame, clamping at `1.0` / `0.6` and flipping the direction there.
     pub fn update(&mut self) {
@@ -107,6 +114,22 @@ mod tests {
     // Expected values derived from `Main.cs:52477-52491` / `:67199` — never
     // from this code. The states are built explicitly so no test touches the
     // `Default` config.json read.
+
+    #[test]
+    fn the_stored_mouse_color_seeds_the_idle_pulse() {
+        // `Main.cs:67199`: `Main.mouseColor = new Color(255, 50, 95)` and
+        // `cursorColorDirection = 1` with `cursorAlpha` at its 0.6 floor — the
+        // constructor seeds the tint, `Default` carries the vanilla default and
+        // neither reads `config.json` (the app passes the startup-read value).
+        let seeded = CursorState::with_mouse_color([10, 20, 30, 255]);
+        assert_eq!(seeded.mouse_color, [10, 20, 30, 255]);
+        assert_eq!(seeded.alpha, 0.6);
+        assert_eq!(seeded.direction, 1.0);
+        let default = CursorState::default();
+        assert_eq!(default.mouse_color, [255, 50, 95, 255]);
+        assert_eq!(default.alpha, 0.6);
+        assert_eq!(default.direction, 1.0);
+    }
 
     #[test]
     fn cursor_oscillates_between_0_6_and_1() {

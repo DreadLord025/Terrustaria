@@ -213,8 +213,23 @@ pub struct Player {
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
+    /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
+    /// milestone switch, `Player.cs:56323`).
+    pub angler_quests_finished: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`): the golf score
+    /// the Golfer's shop and chatter tier (`Chest.cs:3158`, `NPC.cs:94792`).
+    pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
+    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
+    /// prefer while it stands. The consumers are the minion AIs
+    /// (M4-PROJ-8); the whip pass only writes it.
+    pub minion_attack_target_npc: i16,
+    /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
+    /// player applied (`tag_effects.rs`, M4-PROJ-7).
+    pub tag_effects: crate::tag_effects::TagEffectStack,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -355,6 +370,13 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
+    /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
+    /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
+    /// `drippingSlime` double is 100 instead of 8). Captured from the world at
+    /// spawn (`Player::spawn`) — the flag is immutable post-generation, exactly
+    /// like the C#'s world-level static.
+    vampirism: bool,
     /// `Player.itemRotation`'s source for useStyle 5 — the aim angle the App
     /// updates per tick (`swing_aim`), mirrored onto the player for the draw.
     pub swing_aim: f32,
@@ -422,6 +444,13 @@ pub struct Player {
     /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
     /// `RecalculateLuck` (`Player.cs:29137-29164`).
     pub luck_state: LuckState,
+    /// `Player.yoyoHitCounter` (`Player.cs:1220`: `= -1`): the lifetime
+    /// yoyo-hit counter behind `EverySomeYoyoHits` (`Player.cs:4308-4316`)
+    /// — the M4-PROJ-4b on-hit effects (the damage doublings and the
+    /// Cascade/Chik/Kraken/Eye-of-Cthulhu spawns). Vanilla never resets it
+    /// (no `ResetEffects` arm, no death/throw reset), so the port doesn't
+    /// either — the -1 start makes the first hit skip every effect.
+    pub yoyo_hit_counter: i32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -636,6 +665,20 @@ pub struct Player {
 }
 
 impl Player {
+    /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the counter's
+    /// modulo against `amount` (C#'s truncated remainder, so the -1 start
+    /// skips the very first hit) plus the optional bump. The one caller
+    /// pair is `Projectile`'s on-hit arms: the damage doublings peek
+    /// (`countUp = false`) before the strike, the spawns increment after
+    /// it — both on the same hit, in that order.
+    pub fn every_some_yoyo_hits(&mut self, amount: i32, count_up: bool) -> bool {
+        let hit = self.yoyo_hit_counter % amount == 0;
+        if count_up {
+            self.yoyo_hit_counter += 1;
+        }
+        hit
+    }
+
     pub fn spawn(world: &World) -> Self {
         // `FindSpawn` (`Player.cs:54592-54609`): the bed spawn — the port's
         // `World::bed_spawn` — overrides the world spawn when it validates
@@ -644,9 +687,7 @@ impl Player {
         // failure chat needs the monitor, which the join path has not built
         // yet); the revive prints like the C#.
         let (sx, sy) = match world.bed_spawn {
-            Some((bx, by))
-                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
-            {
+            Some((bx, by)) if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() => {
                 // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
                 // the spawn cell's top.
                 (
@@ -662,9 +703,13 @@ impl Player {
         Self {
             dead: false,
             deaths_pve: 0,
+            angler_quests_finished: 0,
+            golfer_score: 0,
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
+            tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -710,6 +755,11 @@ impl Player {
             seat_pos_offset: (0.0, 0.0),
             seat_y_offset: 0,
             no_knockback: false,
+            // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
+            // OnFire regen row's source (`Player.cs:18983-18992`).
+            vampirism: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
@@ -1078,11 +1128,11 @@ impl Player {
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
         self.cart_mounted = true;
-        // `:6226` — the minecart buff for 3600 ticks.
-        self.buffs.add_buff(CART_MOUNT_BUFF, 3600);
-        // The bottom-center resize 42 -> 52 (`:6266-6272` — the generic
-        // `heightBoost` branch; carts have no `PlayerSize` delegate).
-        self.y -= CART_MOUNT_HEIGHT - HEIGHT;
+        // M2-MOUNT-3: through the mount framework — `SetMount(6)` grants the
+        // row's buff 118 for 3600 (`:6226`) and applies the heightBoost 10
+        // bottom-center growth 42 -> 52 (`:6266-6272`). The same-id guard
+        // (`:6198`) keeps a re-mount a no-op, so the ride state stays.
+        self.set_mount(crate::mount::MOUNT_MINECART, self.wet);
     }
 
     /// `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the cart is not in
@@ -1111,13 +1161,22 @@ impl Player {
             return; // `:6146-6149` — the `!_active` guard
         }
         self.cart_mounted = false;
-        self.buffs.clear_buff(CART_MOUNT_BUFF); // `:6151`
+        // M2-MOUNT-3: the framework's `Dismount` clears the mount buff
+        // (`:6151`); the caller has already passed `CanDismountWithResult`,
+        // so the space probe inside would also succeed.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
         self.cart_flip = false; // `:6157-6160`
         self.last_boost = (0, 0);
         self.full_rotation = 0.0; // `:6161-6162`
         self.full_rotation_origin = (0.0, 0.0);
         self.on_track = false;
+        // The box restore: `mount_cart` now grows through the framework's
+        // `grow_hitbox` (`self.height = 52`), so the drop returns it to 42
+        // bottom-anchored (`:6182-6185`).
         self.y += CART_MOUNT_HEIGHT - HEIGHT;
+        self.height = HEIGHT;
     }
 
     /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
@@ -1259,6 +1318,14 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.buffs.clear_buff(CART_MOUNT_BUFF);
+        // M2-MOUNT-3: the cart row lives in `MountState` now, so the revive
+        // strip clears it like every other mount (`Player.cs:38908`) — the
+        // framework's dismount returns the box with it, and the spawn
+        // position is rebuilt below anyway.
+        if let Some(buff) = self.mount.dismount() {
+            self.clear_buff_type(buff);
+        }
+        self.height = HEIGHT;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
         // revive clears the sit/sleep state.
         self.sit_up();
@@ -1489,6 +1556,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:24591`: the tag stack's update right after the buff head —
+        // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
+        self.tag_effects.update_tick();
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
@@ -2651,6 +2721,7 @@ impl Player {
     /// regen ← 0; resets_time ← false
     /// poisoned(20): −4 | venom(70): −30 | chlorophyteSpore(397): −30
     /// onFire(24): −8, ×2 while drippingSlime(137)
+    ///             (−100/×−100 while `Main.vampireSeed`, the `vampirism` micro seed)
     /// onFire3(323): −8 ×2 | frostburn(44): −16 ×2 | frostburn2(324): −16 ×2
     /// cursedInferno(39): −24 ×2 | burned(67): −60 ×2
     /// suffocating(68): −40
@@ -2687,12 +2758,21 @@ impl Player {
         }
         let drip = self.holding(137); // drippingSlime doubles the fire family
         if self.holding(24) {
-            // OnFire — `:18976-18998` (the vampireSeed −100 variant has no
-            // source and stays out per plan).
+            // OnFire — `:18976-18998`. M5-SEED-2: the `vampirism` world trades
+            // the drain for its own (`Main.vampireSeed` → −100, and the
+            // `drippingSlime` double is −100 instead of −8, `:18983-18992`) —
+            // the flag comes from the world's micro seeds (`WorldGen.cs:555-558`).
             resets_time = true;
-            regen -= 8;
-            if drip {
+            if self.vampirism {
+                regen -= 100;
+                if drip {
+                    regen -= 100;
+                }
+            } else {
                 regen -= 8;
+                if drip {
+                    regen -= 8;
+                }
             }
         }
         if self.holding(323) {
@@ -5262,6 +5342,37 @@ mod tests {
         assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
     }
 
+    /// DW-3.3's field half — the ten ammo-mastery flags a fresh `Player` carries
+    /// (`player.rs`'s ammo block) plus the cycling struct: every one defaults
+    /// false/None/0/0 like the C#'s `ResetEffects`-cleared fields
+    /// (`Player.cs:18390-18664`, `:18479`), so the rolls stay inert until the
+    /// per-tick grant seam in `world_sim/player.rs` derives them from the
+    /// equipment and the buffs. The `ammo_flags()` projection is the single seam
+    /// `ammo::not_consume` / `ammo::resolve_projectile` read.
+    #[test]
+    fn the_ammo_fields_default_to_false_and_none() {
+        let w = crate::test_world_helpers::ground();
+        let p = Player::spawn(&w);
+        // The four fuse flags (Phase 1's fields).
+        assert!(!p.has_molten_quiver && !p.magic_quiver);
+        assert!(!p.acc_sharp_barb && !p.archery);
+        // The six roll flags Phase 3 appends.
+        assert!(!p.ammo_box && !p.ammo_potion && !p.huntress_ammo_cost90);
+        assert!(!p.chloro_ammo_cost80 && !p.ammo_cost80 && !p.ammo_cost75);
+        // The cycling state: None/0/0.
+        assert_eq!(p.ammo_cycling.mode, crate::ammo::AmmoCyclingMode::None);
+        assert_eq!((p.ammo_cycling.offset, p.ammo_cycling.cooldown), (0, 0));
+        // The projection round-trips: an all-false Player gives an all-false
+        // AmmoFlags, so the chain is the plain vanilla one.
+        let flags = p.ammo_flags();
+        assert_eq!(flags, crate::ammo::AmmoFlags::default());
+        // A granted flag reaches the struct the rolls read.
+        let mut granted = Player::spawn(&w);
+        granted.ammo_box = true;
+        granted.magic_quiver = true;
+        assert!(granted.ammo_flags().ammo_box && granted.ammo_flags().magic_quiver);
+    }
+
     #[test]
     fn the_use_style_body_dispatch_matches_the_playerframe_chain() {
         // `Player.cs:36307-36444`: the body rows per useStyle. `remaining` is
@@ -6073,7 +6184,13 @@ mod tests {
     /// A player with a large life pool for 300-tick drain runs; `update_survival`
     /// only (the buff timers are not decremented there, so the buff holds).
     fn drain_rig() -> Player {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        drain_rig_in(&World::new("t".into(), 64, 800))
+    }
+
+    /// The world-parameterized twin (M5-SEED-2's vampirism rigs pass a world
+    /// whose micro seeds carry `Main.vampireSeed`'s bit).
+    fn drain_rig_in(world: &World) -> Player {
+        let mut p = Player::spawn(world);
         p.max_hp = 1000;
         p.hp = 1000;
         p
@@ -6450,6 +6567,39 @@ mod tests {
         p.buffs.add_buff(137, 600);
         p.update_survival();
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
+    }
+
+    // M5-SEED-2: the `vampirism` world's OnFire row (`Player.cs:18983-18992`)
+    // drains −100 instead of −8, with the drippingSlime double at −100.
+    #[test]
+    fn the_vampirism_world_trades_the_on_fire_drain_for_its_own() {
+        // The classic row first — the flag is off on a classic world.
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -8);
+        // The seeded world: the flag rides the world's micro seeds, captured
+        // at `Player::spawn` (`WorldGen.cs:555-558`).
+        let mut w = World::new("t".into(), 64, 800);
+        w.micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        let mut p = drain_rig_in(&w);
+        assert!(p.vampirism, "the flag reaches the player");
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
+        // The drip double is 100 too, and only the fire family is affected.
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
+        p.buffs.add_buff(24, 600); // OnFire −100
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
     #[test]
