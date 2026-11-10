@@ -1462,7 +1462,14 @@ Deliberate deviations recorded:
   approximated by the editing path's `held_use_ammo == 0` — the ammo shooters are
   refused, but a non-ammo projectile weapon (a magic staff, the Terra Blade, a
   boomerang — all `noMelee = true` in `Item.SetDefaults`) can still swing its own
-  melee damage at an NPC, which the vanilla refuses. M3-ITEM owns the field.
+  melee damage at an NPC, which the vanilla refuses. Observed (throwaway rig, not
+  a test): the Wooden Boomerang (284) takes 9 off a defence-2 blue slime on its
+  first swing, because in the port's rig the throw is press-edge gated and the
+  melee arm does not wait for it; the Space Gun (127) escapes it only because the
+  `gunProj` id-keyed table gives it a `useAmmo`, so the `held_use_ammo == 0` gate
+  refuses it. M3-ITEM owns the field; do not approximate by excluding every
+  `projectile` item, because the Enchanted Sword (989) melees *and* shoots in
+  vanilla.
 - **`Main.infectedSeed` conditional** (Item.cs:2180, id 66): the seed branch is not
   evaluated; the base value is kept, the site is recorded by the generator.
 - **Slots are i16** (−1 = none): slot 0 is real (the Familiar set, ids 269-271);

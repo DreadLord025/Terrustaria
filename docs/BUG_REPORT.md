@@ -439,8 +439,13 @@ never the flat 15 — plus `bug_10_melee_refuses_the_town_npcs` and
 `test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var`, and the workspace
 suite 1912/0). Parked: the registry carries no `noMelee` (a named generator skip,
 ANALYSIS), so the `held_use_ammo == 0` gate is the port's approximation of the
-vanilla's `damage > 0 && !noMelee` — a non-ammo projectile weapon (a magic staff, a
-Terra Blade) can still swing its own melee damage, which the vanilla refuses.
+vanilla's `damage > 0 && !noMelee` — a non-ammo projectile weapon can still
+swing its own melee damage, which the vanilla refuses. Observed on a throwaway
+rig (not a test): the Wooden Boomerang (284) deals 9 to a defence-2 slime on its
+first swing, while the Space Gun (127) escapes only because the `gunProj`
+id-keyed table gives it a `useAmmo`. The real fix is the `no_melee` field on
+`ItemDef` (M3-ITEM) — excluding every `projectile` item instead would be wrong:
+the Enchanted Sword (989) melees *and* shoots in vanilla.
 
 ---
 
