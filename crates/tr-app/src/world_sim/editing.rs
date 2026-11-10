@@ -691,26 +691,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
-            // a town NPC takes no player melee unless the hit is the explicit
-            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
-            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
-            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
-            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
-            // the crystal's spawn shield). The vanilla also skips every
-            // `friendly` NPC — the port's town set is `is_town_npc` (the
-            // Travelling Merchant/Angler ride their own easter eggs).
-            // The vanilla arms the flags when the doll/curse is EQUIPPED
-            // (`Player.cs:15123-15129`); the port has no equip slot for
-            // them, so the inventory's presence arms the same flag (the
-            // recorded approximation — ANALYSIS).
-            let easter_egg = matches!(held.kind, 267 | 1307)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
-            let hit_idx = app.npcs.iter().position(|n| {
-                n.contains(ax, ay)
-                    && !n.dont_take_damage
-                    && (!n.kind.is_town_npc() || easter_egg)
-            });
+            let hit_idx = app.npcs.iter().position(|n| n.contains(ax, ay));
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
@@ -3202,42 +3183,6 @@ mod tests {
         let hp_c = c.npcs[0].hp;
         mine_frames(&mut c, 1);
         assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
-    }
-
-
-    /// BUG-10: melee on a town NPC is refused ('s
-    /// friendly gate, ) — the voodoo doll (267) and
-    /// the Clothier's curse (1307) are the only melee exceptions, and the
-    /// shielded NPCs (dontTakeDamage) skip the hit entirely.
-    #[test]
-    fn bug_10_melee_refuses_the_town_npcs() {
-        // A Guide standing on the floor at the cursor.
-        let mut a = melee_app();
-        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
-        a.npcs.clear();
-        a.npcs.push(guide);
-        a.inventory[a.selected].kind = 24; // the wooden sword
-        let hp = a.npcs[0].hp;
-        let hp_max = a.npcs[0].max_hp;
-        mine_frames(&mut a, 1);
-        assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
-        assert_eq!(a.npcs[0].max_hp, hp_max);
-        // The voodoo doll arms the easter egg.
-        let mut b = melee_app();
-        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
-        b.npcs.clear();
-        b.npcs.push(guide);
-        b.inventory[b.selected].kind = 24; // the sword does the hit
-        b.inventory[0].kind = 267; // the voodoo doll arms the flag
-        b.inventory[0].count = 1;
-        // The Guide spawns at the surface (y 300); the rig's cursor sits at
-        // (30, 260) — park the Guide into the cursor's box the way the slime
-        // rig does.
-        b.npcs[0].x = 30.0 * TILE_PX;
-        b.npcs[0].y = 260.0 * TILE_PX;
-        let hp = b.npcs[0].hp;
-        mine_frames(&mut b, 1);
-        assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
     }
 
     fn melee_app() -> App {

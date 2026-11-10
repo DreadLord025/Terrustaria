@@ -13,7 +13,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
-use super::{slot, text};
+use super::{bestiary, slot, text};
 use crate::assets;
 use crate::inv::EquipSlots;
 use crate::item::{ItemSlot, INV};
@@ -236,6 +236,14 @@ pub fn draw(
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
 ) -> InventoryHit {
+    // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
+    // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
+    // icon is drawn by `ui::mod` just before this call; the emote bubbles
+    // button lives here — its draw call was missing entirely until §14
+    // (`BUG_REPORT.md`: the button had a hitbox and a click handler but no
+    // sprite, so it was invisible).
+    bestiary::draw_emote_button(r, lookups, mouse);
+
     // `ItemSlot.cs:2499`: cell = `InventoryBack.Size() * inventoryScale`.
     let cell = lookups
         .ui_back

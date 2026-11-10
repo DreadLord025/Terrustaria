@@ -200,6 +200,10 @@ pub(crate) struct App {
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
+    /// BUG-11: `Main.ingameOptionsWindow` (`Main.cs:2025`) — the in-game
+    /// options window the inventory's Settings button opens
+    /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
+    pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
@@ -445,6 +449,16 @@ pub(crate) struct App {
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
     pub(crate) smart_cursor: tr_core::smart_cursor::ContinuityState,
+    /// `Main.SmartCursorWanted_Mouse` (`Main.cs:2011`, the mouse's
+    /// `SmartCursorIsUsed`, `:2889`): the **runtime** smart-cursor state,
+    /// flipped on the left-Shift press edge
+    /// (`Player.TryToToggleSmartCursor`, `Player.cs:24867`/`:28814-28820`) and
+    /// gating the lookup (`world_sim/smart_cursor::enabled`). Vanilla starts
+    /// it off (`Main.cs:67179`), so the port's default is `false`; the
+    /// persisted `settings.smart_cursor_toggle` is the toggle-mode flag
+    /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
+    /// this state.
+    pub(crate) smart_cursor_used: bool,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -2459,6 +2473,8 @@ impl App {
             mine_timer: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,
