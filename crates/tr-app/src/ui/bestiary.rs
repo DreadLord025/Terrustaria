@@ -77,6 +77,13 @@ pub fn panel_rect(screen: Vec2) -> [f32; 4] {
 
 /// The `Back` panel — `MakeExitButton` (`:364-380`): 50 px tall, bottom
 /// -25, centred, half the container's width (-10).
+/// `UI.Back` — the shared Back label (`UIBestiaryTest.cs:366`'s
+/// `Language.GetText("UI.Back")`), read by every screen that draws a Back
+/// panel (the bestiary, the emote wheel, the achievements menu).
+pub fn back_label() -> String {
+    crate::lang::text("UI.Back")
+}
+
 pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
     let w = (panel[2] - 10.0) * 0.5;
     [
@@ -229,13 +236,17 @@ pub fn draw_screen(
     // `MakeExitButton` (`:364-380`): the 0.7-large Back panel.
     let r0 = back_rect(&panel);
     let style = super::cards::fat_button_style();
-    let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
+    // `UITextPanel(Language.GetText("UI.Back"), 0.7f, large: true)`
+    // (`UIBestiaryTest.cs:366`) — the localized label, measured and drawn as
+    // the same string (the emote wheel and the achievements menu share it).
+    let label = back_label();
+    let text_w = text::hud_text_width(r, lookups, &label, style.text_scale);
     super::uistate::draw_text_panel(
         r,
         lookups,
         r0,
         &style,
-        "Back",
+        &label,
         text_w,
         back_hit(screen, mouse),
     );

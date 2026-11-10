@@ -591,13 +591,23 @@ bypasses it.
 **Root cause.** Hardcoded string + a hand-rolled centring instead of the shared text
 helper.
 
-**Fix plan.**
-1. Replace `"Back"` with the `lang::menu`/`lang::inter` Back accessor used by the
-   bestiary's `back_rect` path.
-2. Centre through the shared `text::` helper (the one `ui/bestiary.rs` uses) so the
-   measurement and the draw agree.
-3. Test: the emote Back label equality with the bestiary Back label in the
-   non-English locale fixture.
+**Status: FIXED 2026-11-10** (`fix-emote-back-label`).
+
+What landed: the shared `ui::bestiary::back_label()` accessor
+(`Language.GetText("UI.Back")`, `UIEmotesMenu.cs:78`'s source) now feeds both
+Back panels — the emote wheel (`ui/emotes.rs`) and the bestiary
+(`ui/bestiary.rs`, which carried the same literal) — measured and drawn as
+the same string through the existing `text::hud_text_width` +
+`uistate::draw_text_panel` path, so the measurement and the draw agree in
+every locale. 1 test (the label source).
+
+Two corrections from the source re-read: (a) the key is `UI.Back`, not a
+`Lang.menu`/`Lang.inter` row — `UIEmotesMenu.cs:78` reads
+`Language.GetText("UI.Back")`; (b) the port's `LanguageManager` answers a
+missing resource with the key itself (`lang.rs`'s fallback), so without the
+bundled `Terraria.Localization.Content` json the label reads the key — the
+report's non-English assertion is only meaningful with those resources loaded,
+which the test pins as the key source instead.
 
 ---
 
