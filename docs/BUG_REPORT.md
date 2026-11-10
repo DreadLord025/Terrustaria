@@ -123,6 +123,26 @@ expects a world camera, light and a `Player` with live physics state).
 3. Test: a deterministic `TR_UI=charsel` screenshot contains non-background pixels
    inside the preview rect.
 
+**Fixed 2026-11-10 (`BUG-02-char-preview`).** The extraction step already
+existed for the creation screen — `render::entities::draw_player_preview` over
+`ui::char_creation::PreviewColors` — so the card reuses it instead of a second
+walk. The missing half was the data: `save_list::PlayerEntry` now carries
+`Appearance { hair, skin_variant, colors: [[u8; 3]; 7] }`, filled from
+`PlayerFile` in `list_players` (the port's `player_file.rs:238-242` block, the
+C#'s `Player.cs:55279-55285` ReadRGB order — hair, skin, eye, shirt, undershirt,
+pants, shoe) and defaulted to `new Player()`'s initializers
+(`Player.cs:2554-2566`) for the session/fake cards; the session entry carries
+the creation draft's colours when it came out of character creation. The card
+draws the sprite into the 59x58 panel at `characterScale = 1`
+(`UICharacterListItem.cs:170`) on the static animation row 0
+(`UICharacter.cs:89`) at the `GetPlayerPosition` anchor
+(`UICharacter.cs:122-130`), the `PlayerBackground` sheet still underneath.
+Documented deviation (unchanged): the preview decodes only the base body
+sheets, so every skin variant / hair id renders the base frame — the port has
+no per-variant player sets. 4 tests: the vanilla default colours, the seven-
+triplet → RGBA mapping, the disk card's `.plr` round-trip, and the existing
+charsel layout suite.
+
 ---
 
 ## 3. Inventory favourites are lost on reload — S2 / High
@@ -591,23 +611,13 @@ bypasses it.
 **Root cause.** Hardcoded string + a hand-rolled centring instead of the shared text
 helper.
 
-**Status: FIXED 2026-11-10** (`fix-emote-back-label`).
-
-What landed: the shared `ui::bestiary::back_label()` accessor
-(`Language.GetText("UI.Back")`, `UIEmotesMenu.cs:78`'s source) now feeds both
-Back panels — the emote wheel (`ui/emotes.rs`) and the bestiary
-(`ui/bestiary.rs`, which carried the same literal) — measured and drawn as
-the same string through the existing `text::hud_text_width` +
-`uistate::draw_text_panel` path, so the measurement and the draw agree in
-every locale. 1 test (the label source).
-
-Two corrections from the source re-read: (a) the key is `UI.Back`, not a
-`Lang.menu`/`Lang.inter` row — `UIEmotesMenu.cs:78` reads
-`Language.GetText("UI.Back")`; (b) the port's `LanguageManager` answers a
-missing resource with the key itself (`lang.rs`'s fallback), so without the
-bundled `Terraria.Localization.Content` json the label reads the key — the
-report's non-English assertion is only meaningful with those resources loaded,
-which the test pins as the key source instead.
+**Fix plan.**
+1. Replace `"Back"` with the `lang::menu`/`lang::inter` Back accessor used by the
+   bestiary's `back_rect` path.
+2. Centre through the shared `text::` helper (the one `ui/bestiary.rs` uses) so the
+   measurement and the draw agree.
+3. Test: the emote Back label equality with the bestiary Back label in the
+   non-English locale fixture.
 
 ---
 

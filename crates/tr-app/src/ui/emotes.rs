@@ -170,20 +170,16 @@ pub fn draw(
             }
         }
     }
-    // The Back panel — `UITextPanel(Language.GetText("UI.Back"), 0.7f, large: true)`
-    // (`UIEmotesMenu.cs:78-84`): the localized label, measured and drawn
-    // through the same shared path as the bestiary's Back (`ui/bestiary.rs`)
-    // so the measurement and the draw agree in every language.
+    // The Back panel (`MakeExitButton`'s shared style).
     let back = super::bestiary::back_rect(&panel);
     let style = super::cards::fat_button_style();
-    let label = super::bestiary::back_label();
-    let text_w = text::hud_text_width(r, lookups, &label, style.text_scale);
+    let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
     super::uistate::draw_text_panel(
         r,
         lookups,
         back,
         &style,
-        &label,
+        "Back",
         text_w,
         back_hit(&panel, mouse),
     );
@@ -192,21 +188,6 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn bug18_the_emote_back_label_is_localized() {
-        // Bug 18: the emote wheel's Back label is `UI.Back` through the
-        // shared bestiary accessor (`UIEmotesMenu.cs:78`) — the same string
-        // the bestiary and the achievements menu read, so a non-English
-        // locale reads localized on every Back panel.
-        // The label comes from the shared accessor — the same `UI.Back`
-        // key the bestiary and the achievements menu read
-        // (`UIEmotesMenu.cs:78`). The manager answers a missing resource
-        // with the key itself, so the test pins the source (the accessor's
-        // answer), not the English text.
-        let label = super::super::bestiary::back_label();
-        assert_eq!(label, crate::lang::text("UI.Back"), "the shared accessor reads UI.Back");
-    }
 
     #[test]
     fn dw_4_1_the_in_game_container_is_the_c_sharp_split() {
