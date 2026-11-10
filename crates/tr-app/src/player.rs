@@ -645,6 +645,23 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
+    /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
+    /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
+    /// Missile / Flamelash / Rainbow Rod) read it while aiming
+    /// (`Projectile.cs`'s `AI_009_MagicMissiles` owner block).
+    /// Written by the item-use path (M4-PROJ-6 Phase 5), read by the arm
+    /// (Phase 4); default off.
+    pub channel: bool,
+    /// The shooting item's kind while `channel` — the C# block only holds the
+    /// aim while `HeldItem.shoot == type` (`AI_009_MagicMissiles`'s owner
+    /// block, `Projectile.cs:43239-43249`); 0 = no item.
+    pub channel_item: u16,
+    /// The aim target the channel feeds the spell: `MouseWorld` clamped by
+    /// `LimitPointToPlayerReachableArea` (`Projectile.cs:43241-43249`'s
+    /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
+    /// pixels. `Vec2::ZERO` while not channelling.
+    pub channel_target: Vec2,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -679,12 +696,13 @@ pub struct Player {
     /// `Player.archery` (`Player.cs:2286`): buff 16, the Archery Potion
     /// (`:10018`) — the ×1.2 speed fuse capped at 20 (`:53560`).
     pub archery: bool,
-    /// `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
-    /// (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
-    /// granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
-    /// the offset/cooldown are written inside a successful pick (`:53569-53577`)
-    /// and ticked down every tick (`Update_AmmoCycler` `:28419-28426`).
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state.
     pub ammo_cycling: crate::ammo::AmmoCycling,
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
+    // granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
+    // the offset/cooldown are written inside a successful pick (`:53569-53577`)
 }
 
 impl Player {
@@ -901,10 +919,11 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
-            // The ammo-mastery flags start false and the cycler None/0/0 — the
-            // per-tick grant seam in `world_sim/player.rs` re-derives them from
-            // the equipment and the buffs, exactly like the C#'s
-            // `ResetEffects` clear (`Player.cs:18390-18664`).
+            // `Player.channel` is off until a `channel` item is held
+            // (`Player.cs:52958-52968`).
+            channel: false,
+            channel_item: 0,
+            channel_target: Vec2::ZERO,
             magic_quiver: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
@@ -917,27 +936,6 @@ impl Player {
             archery: false,
             ammo_cycling: crate::ammo::AmmoCycling::default(),
             yoyo_hit_counter: -1,
-        }
-}
-
-    /// The ten ammo flags this phase re-derives per tick, as the pure data
-    /// `ammo::resolve_projectile` / `ammo::not_consume` read (`Player.cs:53537`,
-    /// `:53543`, `:53548`, `:53560`, `:53595`, `:53599`, `:53603`, `:53643`,
-    /// `:53647`, `:53651`, `:53655`). The struct lives in `ammo.rs` so the ammo
-    /// module stays the single owner of the flag SHAPE; this is the Player-side
-    /// projection the shooter wire (Phase 4) feeds it.
-    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
-        crate::ammo::AmmoFlags {
-            has_molten_quiver: self.has_molten_quiver,
-            magic_quiver: self.magic_quiver,
-            acc_sharp_barb: self.acc_sharp_barb,
-            archery: self.archery,
-            ammo_box: self.ammo_box,
-            ammo_potion: self.ammo_potion,
-            huntress_ammo_cost90: self.huntress_ammo_cost90,
-            chloro_ammo_cost80: self.chloro_ammo_cost80,
-            ammo_cost80: self.ammo_cost80,
-            ammo_cost75: self.ammo_cost75,
         }
     }
 
@@ -4285,6 +4283,21 @@ impl Player {
         out.prev_gfx_off_y = 0.0;
         out
     }
+    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
+        crate::ammo::AmmoFlags {
+            has_molten_quiver: self.has_molten_quiver,
+            magic_quiver: self.magic_quiver,
+            acc_sharp_barb: self.acc_sharp_barb,
+            archery: self.archery,
+            ammo_box: self.ammo_box,
+            ammo_potion: self.ammo_potion,
+            huntress_ammo_cost90: self.huntress_ammo_cost90,
+            chloro_ammo_cost80: self.chloro_ammo_cost80,
+            ammo_cost80: self.ammo_cost80,
+            ammo_cost75: self.ammo_cost75,
+        }
+    }
+
 
     /// Deterministic identity for the G6 world-range cache.
     pub fn render_key(&self) -> u32 {
