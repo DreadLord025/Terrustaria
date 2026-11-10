@@ -14,6 +14,7 @@ pub mod chrome;
 pub mod color;
 pub mod crafting;
 pub mod cursor;
+pub mod ingame_options;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -35,6 +36,7 @@ use tr_render::{SheetRect, SpriteRenderer};
 
 use crate::assets;
 use crate::inv;
+use crate::settings::Settings;
 use crate::item::{HOTBAR, INV, ItemSlot};
 use crate::player::Player;
 
@@ -303,6 +305,7 @@ pub fn draw_hud(
     kill_tracker: &tr_core::bestiary::KillTracker,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
+    ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
     shop: Option<(&[u16], f32)>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
@@ -335,6 +338,19 @@ pub fn draw_hud(
     // the open inventory's top row, before the slots.
     if inventory_open {
         bestiary::draw_inventory_button(r, lookups, mouse_pos);
+    }
+
+    // `Main.DrawSettingButton` (`Main.cs:45532-45580`): the Settings button
+    // rides the open inventory's row beside the bestiary/emote buttons, and
+    // the `IngameOptions` window draws over the open inventory
+    // (`DrawInterface_11_IngameOptionsMenu`, `Main.cs:46160-46168`).
+    if let Some((_settings, options)) = ingame_options {
+        if inventory_open {
+            ingame_options::draw_settings_button(r, lookups, mouse_pos);
+        }
+        if options.open {
+            ingame_options::draw_options(r, lookups, _settings, options, screen, mouse_pos);
+        }
     }
 
     // `IngameFancyUI.OpenUIState(Main.BestiaryUI)` (`Main.cs:42459`): the

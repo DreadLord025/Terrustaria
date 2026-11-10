@@ -519,7 +519,13 @@ impl App {
                 // `Main.mapFullscreen` and returns before the inventory
                 // toggle, so the vanilla close order is map → inventory →
                 // pause. The world is saved on window close and with F9.
-                if self.bestiary_open {
+                if self.ingame_options.open {
+                    // BUG-11: `IngameOptions.Close` (`IngameOptions.cs:84`):
+                    // the window shuts and persists its settings
+                    // (`Main.SaveSettings`), the vanilla's first close arm.
+                    self.ingame_options.close();
+                    let _ = self.settings.save();
+                } else if self.bestiary_open {
                     self.bestiary_open = false;
                     self.bestiary_selected = None;
                 } else if self.emotes.menu_open {
@@ -612,6 +618,29 @@ mod tests {
             m.set_open(true);
         }
         app
+    }
+
+    #[test]
+    fn escape_closes_the_ingame_options_window_first() {
+        // BUG-11: `IngameOptions.Close` (`IngameOptions.cs:84`) is the
+        // vanilla close chain's first arm — the options window shuts and the
+        // inventory does NOT toggle open on the same press.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.ingame_options.open = true;
+        app.inventory_open = false;
+        app.world_key(KeyCode::Escape);
+        assert!(!app.ingame_options.open, "Escape closes the options window");
+        assert!(!app.inventory_open, "the press is consumed");
+    }
+
+    #[test]
+    fn escape_falls_through_when_the_options_window_is_shut() {
+        // The window shut: Escape keeps its old behaviour (the inventory
+        // toggle), so the new arm does not eat the key.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.ingame_options.open = false;
+        app.world_key(KeyCode::Escape);
+        assert!(app.inventory_open, "the inventory still toggles open");
     }
 
     #[test]

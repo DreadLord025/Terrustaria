@@ -200,6 +200,10 @@ pub(crate) struct App {
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
+    /// BUG-11: `Main.ingameOptionsWindow` (`Main.cs:2025`) — the in-game
+    /// options window the inventory's Settings button opens
+    /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
+    pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
@@ -2470,6 +2474,7 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,
