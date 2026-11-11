@@ -10272,3 +10272,63 @@ the cursor onto the first tab raises the mean RGB of the `1516..1546 × 138..164
 band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
 `Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
 also moves the lighting, so the diff bbox covers the whole frame.
+
+## The friendly-fire melee gate (BUG-10)
+
+`ProcessHitAgainstNPC` (`Player.cs:44262-44304`) is the one place the player's
+melee decides whether an NPC may be hurt. The gate its friendly half needs:
+
+```csharp
+if (nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
+    (nPC.type != 54 || !this.killClothier) &&
+    (!nPC.isLikeATownNPC || (sItem.type != 5129 && sItem.type != 3351)))
+    return;
+```
+
+The earlier partial port compared `NpcKind::is_town_npc`, which is the *housing*
+subset (the ten kinds with a ported house/shop row), so eleven seller kinds —
+Angler, Stylist, Tax Collector, Golfer, Zoologist, Princess, Dye Trader, Party
+Girl, Wizard, Mechanic, Travelling Merchant — and the six bound/rescue forms
+(Bound Goblin/Wizard/Mechanic, Webbed Stylist, Sleeping Angler/Golfer) were all
+hittable. The gate now reads the real vanilla flag:
+`NpcKind::is_friendly` (`NPC.cs:8519` default false plus the `SetDefaults` arms
+`:8983-9060`, `:10257`, `:10493-10507`, `:13502-13516`, `:13796-13809`,
+`:16652-16665`) and `NpcKind::is_town_npc_like` for the C# `isLikeATownNPC`
+(`:6856-6864` — `townNPC || type == 453`; the Skeleton Merchant is not shipped,
+so the set is exactly the town kinds).
+
+**The exceptions.**
+
+* The doll flags are armed by `ApplyEquipFunctional` (`Player.cs:14368`), which
+  `UpdateEquips` calls for the accessory slots 3..10 (`:12948-12954`), and
+  `ResetEffects` clears them every tick (`:18365-18366`). The gate reads the
+  per-tick `Player.equipped` snapshot (`world_sim/player.rs` fills it from
+  `App.equip.armor`), so the previous inventory-wide scan — a doll sitting in the
+  bag used to arm the easter egg — is gone. The snapshot is the closest the
+  current equip model gets: the vanilla skips locked accessory slots through
+  `IsItemSlotUnlockedAndUsable`, which the port does not model (every slot is
+  treated as unlocked, the default character's 5 + the Demon Heart's 6th).
+* The Flymeal (5129) and the Tax Collector's Stick of Doom (3351) are the only
+  melee items the C# whitelists against town NPCs (`:44274`). Both are hitbox
+  melee items with no `shoot`, so the melee arm is their only damage path.
+* The cane's hit is forced to one damage (`:44300-44304`) and the Flymeal doubles
+  its roll, doubles again on the Nurse (`:44344-44353`) and takes
+  `armorPenetrationPercent = 1f`. The penetration value is added to the damage
+  like the C#'s `num2 += nPC.checkArmorPenetration(...)` (`:44383`) through the
+  already-ported `tr_core::damage::check_armor_penetration`, with the player's
+  own `GetArmorPenetration` passed as 0: the prefix table carries
+  `armor_penetration` (`prefix.rs`) but no consumer sums it into the player yet,
+  and the NPC-side ichor / broken-armor / Betsy's-curse terms are not surfaced by
+  the port's NPC buff store. Both are neutral defaults, not approximations of a
+  shipped behaviour.
+
+**Out of scope (the same defect class, own row).** Hostile/friendly projectiles
+run the same refusal through `Damage_PVE_Inner`'s `flag` (`Projectile.cs:12601`)
+and `flag2`'s hostile-vs-friendly arm (`:12605-12608`); `projectile.rs`'s
+`damage_pve` still filters on geometry only, so a player arrow can hurt a town
+NPC. Tracked as BUG-23 in the catalog.
+
+**Verification.** 3 tests in `world_sim/editing.rs`: the Guide refused and the
+worn doll arming the hit while the bagged doll does not; the 17 seller/bound
+kinds refused through `is_friendly`; the two item exceptions (the Flymeal's
+doubled roll, the cane's exact one damage) and the hostile still hittable.
