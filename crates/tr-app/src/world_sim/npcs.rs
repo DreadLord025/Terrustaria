@@ -1463,6 +1463,7 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
         app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
         app.invasion_progress_max = app.world.invasion_size_start;
         app.invasion_progress_icon = app.world.invasion_type + 3;
+        app.invasion_progress_wave = 0;
     }
 }
 
@@ -1488,6 +1489,18 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     }
     let worth = tr_core::dd2::KILL_WORTH_T1;
     app.world.dd2_wave_kills += worth;
+    // `DD2Event.CheckProgress` (`DD2Event.cs:376-392`): the wave report rides
+    // `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
+    // currentWave)` — icon 3 is the `Extra[79]` Old One's Army sheet and the
+    // `> 0` wave selects `DrawInvasionProgress`'s `Game.WaveMessage` arm.
+    let wave = app.world.dd2_wave;
+    let mut kills_i = app.world.dd2_wave_kills as i32;
+    let required = tr_core::dd2::required_wave_kills(wave, &mut kills_i);
+    app.invasion_progress = kills_i;
+    app.invasion_progress_max = required;
+    app.invasion_progress_icon = 3;
+    app.invasion_progress_wave = wave;
+    app.invasion_progress_display_left = 160;
     let passed = tr_core::dd2::wave_budget_passed(
         app.world.dd2_wave,
         &mut app.world.dd2_wave_kills,
@@ -1724,6 +1737,7 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
     app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
     app.invasion_progress_max = app.world.invasion_size_start;
     app.invasion_progress_icon = group + 3;
+    app.invasion_progress_wave = 0;
     app.invasion_progress_display_left = 160;
 }
 

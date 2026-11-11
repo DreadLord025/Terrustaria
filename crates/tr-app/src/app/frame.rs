@@ -1450,6 +1450,7 @@ impl App {
                         self.invasion_progress,
                         self.invasion_progress_max,
                         self.invasion_progress_icon,
+                        self.invasion_progress_wave,
                         self.invasion_progress_alpha,
                     );
                 } else if let Some(menu) = menu.as_mut() {

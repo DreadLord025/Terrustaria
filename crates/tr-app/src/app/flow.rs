@@ -1984,6 +1984,7 @@ pub(crate) mod front_flow_tests {
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
+            invasion_progress_wave: 0,
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
