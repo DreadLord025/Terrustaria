@@ -23,6 +23,144 @@ use crate::npc::{NpcKind, SlimeVariant};
 /// `UIBestiaryEntryButton`'s 72 px cell (`:27-28`).
 pub const CELL: f32 = 72.0;
 
+// ---------------------------------------------------------------------------
+// The component tree (`UIBestiaryTest.BuildPage`, `UIBestiaryTest.cs:66-161`)
+//
+// The container is only the root; everything visible is the chain
+// container → `UIPanel` → {top strip, main area, bottom bar} → {info page,
+// bestiary space}. The port used to approximate that chain with two
+// hand-written insets (`panel + 6/40`, `panel − 12/44`), which left the grid
+// 116 px too tall and 24 px too wide — it overlapped the 230 px info page and
+// the 20 px completion bar, so the cell lattice (and with it the entry count
+// per page) was wrong.
+// ---------------------------------------------------------------------------
+
+/// `UIPanel`'s `SetPadding(_cornerSize)` with the default `cornerSize = 12`
+/// (`UIPanel.cs:35`).
+const PANEL_PAD_X: f32 = 12.0;
+/// The same padding after `uIPanel.PaddingTop/Bottom -= 4f` (`:89-90`).
+const PANEL_PAD_TOP: f32 = 8.0;
+const PANEL_PAD_BOTTOM: f32 = 8.0;
+/// `UIPanel`'s `Height.Set(-90f, 1f)` inside the container (`:84-86`).
+const PANEL_H_INSET: f32 = 90.0;
+/// `UIBestiaryEntryInfoPage.Width.Set(230f, 0f)` (`UIBestiaryEntryInfoPage.cs:32`).
+pub const INFO_W: f32 = 230.0;
+/// `int num2 = 24` — the top strip (`:91`).
+const TOP_STRIP_H: f32 = 24.0;
+/// `int num3 = 20` — the gap the main area is pushed up by (`:110`).
+const MAIN_BOTTOM_GAP: f32 = 20.0;
+/// The `6` in `Height.Set(-num2 - 6 - num3, 1f)` (`:113`).
+const MAIN_TOP_GAP: f32 = 6.0;
+/// The bottom bar's `Height.Set(20f, 0f)` (`:121-125`).
+const BOTTOM_BAR_H: f32 = 20.0;
+/// The bestiary space's `Width.Set(-12f - info.Width.Pixels, 1f)` (`:139-141`).
+const SPACE_GAP_X: f32 = 12.0;
+
+/// The resolved element tree for one screen size.
+#[derive(Clone, Copy, Debug)]
+pub struct Layout {
+    /// `BuildPage`'s outer container (`:70-79`).
+    pub container: [f32; 4],
+    /// The `UIPanel` inside it (`:83-89`).
+    pub panel: [f32; 4],
+    /// The panel's padded inner box (`UIPanel.cs:35` + `:89-90`).
+    pub inner: [f32; 4],
+    /// `uIElement2` — the 24 px top strip (`:90-95`).
+    pub top_strip: [f32; 4],
+    /// `uIElement3` — the main area (`:109-117`).
+    pub main: [f32; 4],
+    /// `uIElement4` — the 20 px completion bar (`:120-125`).
+    pub bottom_bar: [f32; 4],
+    /// `uIElement5` / `_bestiarySpace` — the entry grid (`:138-146`).
+    pub grid: [f32; 4],
+    /// `UIBestiaryEntryInfoPage` — the 230 px info column, `Height (12, 1)`
+    /// over the main area and `HAlign = 1` (`:100-104`).
+    pub info: [f32; 4],
+}
+
+impl Layout {
+    /// `UIBestiaryEntryGrid.GetEntriesToShow` (`:355-364` and
+    /// `UIBestiaryEntryGrid.cs:80-86`): `width / 72` and `height / 72`.
+    pub fn metrics(&self) -> (usize, usize) {
+        (
+            ((self.grid[2] / CELL) as usize).max(1),
+            ((self.grid[3] / CELL) as usize).max(1),
+        )
+    }
+
+    /// `maxEntriesToHave` (`:363`).
+    pub fn per_page(&self) -> usize {
+        let (w, h) = self.metrics();
+        w * h
+    }
+
+    /// The cell rect of a slot index on the current page.
+    pub fn cell(&self, slot: usize) -> [f32; 4] {
+        let (cols, _) = self.metrics();
+        [
+            self.grid[0] + (slot % cols) as f32 * CELL,
+            self.grid[1] + (slot / cols) as f32 * CELL,
+            CELL,
+            CELL,
+        ]
+    }
+}
+
+/// Resolve the whole tree through the layout pass, the way the C#'s
+/// `UIElement.Recalculate` does (`UIElement.cs:306-322`).
+pub fn layout(screen: Vec2) -> Layout {
+    let container = panel_rect(screen);
+    let panel = [
+        container[0],
+        container[1],
+        container[2],
+        (container[3] - PANEL_H_INSET).max(0.0),
+    ];
+    let inner = [
+        panel[0] + PANEL_PAD_X,
+        panel[1] + PANEL_PAD_TOP,
+        (panel[2] - PANEL_PAD_X * 2.0).max(0.0),
+        (panel[3] - PANEL_PAD_TOP - PANEL_PAD_BOTTOM).max(0.0),
+    ];
+    let top_strip = [inner[0], inner[1], inner[2], TOP_STRIP_H];
+    // `uIElement3`: `Height (-num2 - 6 - num3, 1f)`, `VAlign = 1`, `Top -num3`.
+    let main_h = (inner[3] - TOP_STRIP_H - MAIN_TOP_GAP - MAIN_BOTTOM_GAP).max(0.0);
+    let main = [
+        inner[0],
+        inner[1] + inner[3] - main_h - MAIN_BOTTOM_GAP,
+        inner[2],
+        main_h,
+    ];
+    // `uIElement4`: `Height 20`, `VAlign = 1` — the last 20 px of the inner box.
+    let bottom_bar = [
+        inner[0],
+        inner[1] + inner[3] - BOTTOM_BAR_H,
+        inner[2],
+        BOTTOM_BAR_H,
+    ];
+    // `uIElement5`: `Width (-12 - infoW, 1)`, `Height (-4, 1)`, `VAlign = 1`.
+    let space_w = (main[2] - SPACE_GAP_X - INFO_W).max(0.0);
+    let space_h = (main[3] - 4.0).max(0.0);
+    let grid = [main[0], main[1] + main[3] - space_h, space_w, space_h];
+    // The info page: `Height (12, 1)` inside the main area, `HAlign = 1`.
+    let info = [
+        main[0] + main[2] - INFO_W,
+        main[1],
+        INFO_W,
+        main[3] + 12.0,
+    ];
+    Layout {
+        container,
+        panel,
+        inner,
+        top_strip,
+        main,
+        bottom_bar,
+        grid,
+        info,
+    }
+}
+
 /// The inventory's emote button — `DrawEmoteBubblesButton`'s rect
 /// (`Main.cs:42369-42408`: num=534, num2=244+30+4=278, the 30x30 box).
 pub const EMOTE_BUTTON_RECT: [f32; 4] = [534.0, 278.0, 30.0, 30.0];
@@ -87,50 +225,82 @@ pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
     ]
 }
 
-/// The grid area — the `-12px wide, -4px tall` bestiary space above the
-/// bottom bar (`:139-146`).
-fn grid_rect(panel: &[f32; 4]) -> [f32; 4] {
-    [
-        panel[0] + 6.0,
-        panel[1] + 40.0,
-        panel[2] - 12.0,
-        panel[3] - 40.0 - 4.0,
-    ]
+/// The grid page an entry lands on, and its slot within that page
+/// (`UIBestiaryEntryGrid.OffsetLibrary`/`GetEntriesToShow` keep `_atEntryIndex`
+/// on a `maxEntriesToHave` lattice, `UIBestiaryEntryGrid.cs:100-140`).
+pub fn page_of(screen: Vec2, idx: usize) -> (usize, usize) {
+    let per = layout(screen).per_page();
+    (idx / per, idx % per)
 }
 
-/// `UIBestiaryEntryGrid.GetEntriesToShow` (`:95-100`): the cells per
-/// row/column are the space divided by 72.
-fn grid_metrics(rect: &[f32; 4]) -> (usize, usize) {
-    let cols = ((rect[2] / CELL) as usize).max(1);
-    let rows = ((rect[3] / CELL) as usize).max(1);
-    // The rows grow with the entry count — the vanilla's bestiary scrolls
-    // (`UIBestiaryGrid`'s scroll bars land with the UI-scroll work); the
-    // fixed rows clipped the roster at the town-NPC growth.
-    let need = (crate::bestiary::ENTRIES.len() + cols - 1) / cols;
-    (cols, rows.max(need))
-}
-
-/// The entry index under the cursor (the grid's per-cell centre placement
-/// simplifies to a fixed lattice — the cards are `HAlign/VAlign = 0.5` with
-/// the fractional `Left/Top` offsets `:104-108` produce).
-pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
-    let panel = panel_rect(screen);
-    let rect = grid_rect(&panel);
-    let (cols, rows) = grid_metrics(&rect);
-    // `GetEntriesToShow`'s raw CELL lattice (the space divided by 72 — no
-    // insets): the draw and the hit-test share it, so the overflow rows
-    // keep the hits.
-    let cx = ((mouse.x - rect[0]) / CELL) as usize;
-    let cy = ((mouse.y - rect[1]) / CELL) as usize;
+/// The entry index under the cursor on `page`.
+pub fn card_at(screen: Vec2, mouse: Vec2, page: usize) -> Option<usize> {
+    let l = layout(screen);
+    let (cols, rows) = l.metrics();
+    // `GetEntriesToShow`'s raw CELL lattice: the space divided by 72, no insets.
+    if mouse.x < l.grid[0] || mouse.y < l.grid[1] {
+        return None;
+    }
+    let cx = ((mouse.x - l.grid[0]) / CELL) as usize;
+    let cy = ((mouse.y - l.grid[1]) / CELL) as usize;
     if cx >= cols || cy >= rows {
         return None;
     }
-    let idx = cy * cols + cx;
+    let idx = page * l.per_page() + cy * cols + cx;
     if idx < crate::bestiary::ENTRIES.len() {
         Some(idx)
     } else {
         None
     }
+}
+
+/// `UIBestiaryEntryGrid.GetRangeText` (`UIBestiaryEntryGrid.cs:88-96`):
+/// `"{first}-{last} ({total})"`.
+pub fn range_text(screen: Vec2, page: usize) -> String {
+    let l = layout(screen);
+    let per = l.per_page();
+    let total = crate::bestiary::ENTRIES.len();
+    let first = page * per;
+    let last = (first + per).min(total);
+    format!("{}-{} ({})", (first + 1).min(last), last, total)
+}
+
+/// The page Back/Forward arrows (`AddBackAndForwardButtons`, `:210-236`) and
+/// the page-range panel (`:238-252`), all in the 24 px top strip.
+pub const PAGE_BTN: f32 = 24.0;
+
+/// `[back, forward, range]` in the top strip.
+pub fn page_rects(screen: Vec2) -> [[f32; 4]; 3] {
+    let l = layout(screen);
+    let b = [l.top_strip[0], l.top_strip[1], PAGE_BTN, PAGE_BTN];
+    let f = [
+        l.top_strip[0] + PAGE_BTN + 1.0,
+        l.top_strip[1],
+        PAGE_BTN,
+        PAGE_BTN,
+    ];
+    let range = [
+        l.top_strip[0] + PAGE_BTN * 2.0 + 4.0,
+        l.top_strip[1],
+        135.0,
+        l.top_strip[3],
+    ];
+    [b, f, range]
+}
+
+/// `-1` for the Back arrow, `1` for Forward, when the cursor is over it.
+pub fn page_button_at(screen: Vec2, mouse: Vec2) -> Option<i32> {
+    let r = page_rects(screen);
+    let hit = |x: &[f32; 4]| {
+        mouse.x >= x[0] && mouse.x <= x[0] + x[2] && mouse.y >= x[1] && mouse.y <= x[1] + x[3]
+    };
+    if hit(&r[0]) {
+        return Some(-1);
+    }
+    if hit(&r[1]) {
+        return Some(1);
+    }
+    None
 }
 
 /// `true` while the cursor is over the Back panel (`MakeExitButton`'s
@@ -213,48 +383,27 @@ pub fn draw_screen(
     screen: Vec2,
     tracker: &KillTracker,
     selected: Option<usize>,
+    page: usize,
     mouse: Vec2,
 ) {
     // The state's background — the game keeps rendering behind
     // (`IngameFancyUI`), dimmed the way the port's other overlays are.
-    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-    let _ = (aw, ah);
     r.push_ui_sprite([0.0, 0.0], [screen.x, screen.y], r.white_uv(), BACKDROP);
-    draw_panel_chrome(r, lookups, screen);
+    let l = layout(screen);
+    draw_panel_chrome(r, lookups, screen, &l, page, mouse);
 
-    match selected {
-        Some(idx) => draw_info_page(r, lookups, screen, tracker, idx, mouse),
-        None => draw_grid(r, lookups, screen, tracker, mouse),
+    // The grid is always there; selecting an entry only fills the right-hand
+    // 230 px `UIBestiaryEntryInfoPage` column (`:100-104`, `:318-330`), it
+    // does not replace the grid.
+    draw_grid(r, lookups, screen, &l, tracker, page, mouse);
+    if let Some(idx) = selected {
+        draw_info_page(r, lookups, screen, tracker, idx, mouse);
     }
 
-    // The completion bar — `FillProgressBottomBar` + `GetCompletionPercentText`
-    // (`:390-430`): the fully-unlocked share of the entries.
-    let panel = panel_rect(screen);
-    let total = crate::bestiary::ENTRIES.len() as f32;
-    let done = crate::bestiary::ENTRIES
-        .iter()
-        .filter(|e| {
-            crate::bestiary::unlock_state(e, tracker)
-                == tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
-        })
-        .count() as f32;
-    let pct = if total > 0.0 {
-        done / total * 100.0
-    } else {
-        0.0
-    };
-    text::hud_text(
-        r,
-        lookups,
-        panel[0] + 8.0,
-        panel[1] + panel[3] - 46.0,
-        0.8,
-        [1.0, 1.0, 1.0, 1.0],
-        &format!("Unlocked: {:.0}%", pct),
-    );
+    draw_completion_bar(r, lookups, &l, tracker);
 
     // `MakeExitButton` (`:364-380`): the 0.7-large Back panel.
-    let r0 = back_rect(&panel);
+    let r0 = back_rect(&l.container);
     let style = super::cards::fat_button_style();
     let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
     super::uistate::draw_text_panel(
@@ -268,57 +417,201 @@ pub fn draw_screen(
     );
 }
 
-fn draw_panel_chrome(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2) {
-    // The panel body: `UIPanel`'s `BackgroundColor = (33, 43, 79) * 0.8`
-    // (`UIBestiaryTest.cs:84-88`), drawn as a flat quad (the port's panel
-    // style for the full-screen states).
-    let p = panel_rect(screen);
-    r.push_ui_sprite(
-        [p[0], p[1]],
-        [p[2], p[3]],
-        r.white_uv(),
-        [
-            33.0 / 255.0 * 0.8,
-            43.0 / 255.0 * 0.8,
-            79.0 / 255.0 * 0.8,
-            0.8,
-        ],
+/// `UIPanel.Draw`'s chrome — the 9-slice `PanelBorder` + `PanelBackground`
+/// (`UIPanel.cs:16-90`) in the bestiary's own colours — plus the top strip
+/// (`AddBackAndForwardButtons` `:210-252`, `AddSortAndFilterButtons`
+/// `:255-305`).
+fn draw_panel_chrome(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    l: &Layout,
+    page: usize,
+    mouse: Vec2,
+) {
+    // `UIPanel`: `BackgroundColor = new Color(33, 43, 79) * 0.8f`
+    // (`UIBestiaryTest.cs:87`), `BorderColor = Black` (`UIPanel.cs:19`).
+    super::panel::draw_panel(
+        r,
+        lookups,
+        lookups.ui_panel_bg,
+        l.panel,
+        [33.0 / 255.0 * 0.8, 43.0 / 255.0 * 0.8, 79.0 / 255.0 * 0.8, 0.8],
     );
-    // The header text — the screen has no title element; the port labels the
-    // panel with the inventory button's tooltip name.
+    super::panel::draw_panel(r, lookups, lookups.ui_panel_border, l.panel, [0.0, 0.0, 0.0, 1.0]);
+
+    // The page arrows (`:213-236`): 24 px `UIImageButton`s, `Button_Back`
+    // then `Button_Forward` one pixel right, each lighting up its
+    // `Button_Border` overlay on hover.
+    let [back, forward, range] = page_rects(screen);
+    let hover = |x: &[f32; 4]| {
+        mouse.x >= x[0] && mouse.x <= x[0] + x[2] && mouse.y >= x[1] && mouse.y <= x[1] + x[3]
+    };
+    for (rect, sheet) in [
+        (back, lookups.ui_bestiary_btn_back),
+        (forward, lookups.ui_bestiary_btn_forward),
+    ] {
+        if let Some(sh) = sheet {
+            push_whole(r, lookups, &sh, rect, [1.0; 4]);
+        }
+        if hover(&rect) {
+            if let Some(sh) = lookups.ui_bestiary_btn_border {
+                push_whole(r, lookups, &sh, rect, [1.0; 4]);
+            }
+        }
+    }
+
+    // The page-range panel (`:238-252`): a `UIPanel` with both colours
+    // `(35, 40, 83)` and no padding, carrying `GetRangeText`.
+    let range_col = [35.0 / 255.0, 40.0 / 255.0, 83.0 / 255.0, 1.0];
+    super::panel::draw_panel(r, lookups, lookups.ui_panel_bg, range, range_col);
+    super::panel::draw_panel(r, lookups, lookups.ui_panel_border, range, range_col);
+    let label = range_text(screen, page);
+    let lw = text::hud_text_width(r, lookups, &label, 0.8);
     text::hud_text(
         r,
         lookups,
-        p[0] + 12.0,
-        p[1] + 10.0,
-        1.0,
+        range[0] + (range[2] - lw) * 0.5,
+        range[1] + (range[3] - text::line_height(lookups) * 0.8) * 0.5,
+        0.8,
         [1.0; 4],
-        "Bestiary",
+        &label,
     );
+
+    // The sort and filter buttons (`AddSortAndFilterButtons`, `:255-305`):
+    // 17 px wide, `HAlign = 1`, stacked leftwards from the info column's
+    // left edge, each with a `Button_Wide_Border` hover.
+    let mk = |right: f32| [right - 17.0, l.top_strip[1], 17.0, l.top_strip[3]];
+    let filter = mk(l.top_strip[0] + l.top_strip[2] - INFO_W - 17.0);
+    let sort = mk(filter[0] - 3.0 - 17.0);
+    for (rect, sheet) in [
+        (sort, lookups.ui_bestiary_btn_sorting),
+        (filter, lookups.ui_bestiary_btn_filtering),
+    ] {
+        if let Some(sh) = sheet {
+            push_whole(r, lookups, &sh, rect, [1.0; 4]);
+        }
+        if hover(&rect) {
+            if let Some(sh) = lookups.ui_bestiary_btn_wide_border {
+                push_whole(r, lookups, &sh, rect, [1.0; 4]);
+            }
+        }
+    }
+    // `_sortingText` / `_filteringText` start empty (`:263-274`, `:291-302`)
+    // — the active step's name appears only after a click, which the port
+    // does not implement yet, so they draw nothing.
+
+    // The search bar (`UIWrappedSearchBar`, `:107-116`) sits at `HAlign = 1`
+    // with the info column's width.
+    if let Some(icon) = lookups.ui_search_icon {
+        let w = 24.0;
+        let rect = [
+            l.top_strip[0] + l.top_strip[2] - w,
+            l.top_strip[1],
+            w,
+            l.top_strip[3],
+        ];
+        push_whole(r, lookups, &icon, rect, [1.0; 4]);
+    }
+}
+
+/// `FillProgressBottomBar` (`:193-208`) + `GetCompletionPercentText`
+/// (`:161-168`): the 15 px `UIColoredSliderSimple` in the 20 px bottom bar,
+/// filled `(51, 137, 255)` over `(35, 43, 81)`, with the 0.8-scale percent
+/// text at its bottom-left.
+fn draw_completion_bar(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    l: &Layout,
+    tracker: &KillTracker,
+) {
+    let total = crate::bestiary::ENTRIES.len() as f32;
+    let done = crate::bestiary::ENTRIES
+        .iter()
+        .filter(|e| {
+            crate::bestiary::unlock_state(e, tracker)
+                == tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        })
+        .count() as f32;
+    let frac = if total > 0.0 { done / total } else { 0.0 };
+    let bar = [
+        l.bottom_bar[0],
+        l.bottom_bar[1] + l.bottom_bar[3] - 15.0,
+        l.bottom_bar[2],
+        15.0,
+    ];
+    r.push_ui_sprite(
+        [bar[0], bar[1]],
+        [bar[2], bar[3]],
+        r.white_uv(),
+        [35.0 / 255.0, 43.0 / 255.0, 81.0 / 255.0, 1.0],
+    );
+    if frac > 0.0 {
+        r.push_ui_sprite(
+            [bar[0], bar[1]],
+            [bar[2] * frac, bar[3]],
+            r.white_uv(),
+            [51.0 / 255.0, 137.0 / 255.0, 1.0, 1.0],
+        );
+    }
+    // `_progressPercentText`: `HAlign 0`, `VAlign 1`, both text origins 0 —
+    // bottom-left of the bar.
+    let label = completion_text(frac);
+    let lh = text::line_height(lookups) * 0.8;
+    text::hud_text(
+        r,
+        lookups,
+        bar[0],
+        bar[1] + bar[3] - lh,
+        0.8,
+        [1.0; 4],
+        &label,
+    );
+}
+
+/// `GetCompletionPercentText` (`:162-167`):
+/// `Language.GetTextValueWith("BestiaryInfo.PercentCollected", Percent)`.
+fn completion_text(frac: f32) -> String {
+    // `Utils.PrettifyPercentDisplay(value, "P2")` — the invariant-culture
+    // `P2` format is `"{value:P2}"` = two decimals and a space before `%`
+    // (`Utils.cs:1089-1101` trims the trailing space when the culture's
+    // percent pattern has none; en-US keeps it).
+    let pct = format!("{:.2} %", frac * 100.0);
+    let key = "BestiaryInfo.PercentCollected";
+    let s = crate::lang::text_named(key, &[("Percent", &pct)]);
+    if s == key || s.is_empty() {
+        pct
+    } else {
+        s
+    }
 }
 
 fn draw_grid(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
+    l: &Layout,
     tracker: &KillTracker,
+    page: usize,
     mouse: Vec2,
 ) {
-    let panel = panel_rect(screen);
-    let rect = grid_rect(&panel);
-    let (cols, rows) = grid_metrics(&rect);
-    for (idx, entry) in crate::bestiary::ENTRIES
-        .iter()
-        .take(cols * rows)
-        .enumerate()
-    {
-        let col = idx % cols;
-        let row = idx / cols;
-        let x = rect[0] + col as f32 * CELL;
-        let y = rect[1] + row as f32 * CELL;
-        let cell = [x, y, CELL, CELL];
-        let hover = card_at(screen, mouse) == Some(idx);
-        draw_card(r, lookups, cell, entry, tracker, idx, hover);
+    let per = l.per_page();
+    let start = page * per;
+    let hovered = card_at(screen, mouse, page);
+    for slot in 0..per {
+        let idx = start + slot;
+        let Some(entry) = crate::bestiary::ENTRIES.get(idx) else {
+            break;
+        };
+        draw_card(
+            r,
+            lookups,
+            l.cell(slot),
+            entry,
+            tracker,
+            idx,
+            hovered == Some(idx),
+        );
     }
 }
 
@@ -344,7 +637,7 @@ fn draw_card(
     }
     let state = crate::bestiary::unlock_state(entry, tracker);
     if state.known() {
-        draw_portrait(r, lookups, entry, cx, cy, inner[3]);
+        draw_portrait(r, lookups, entry, cx, cy, inner[3], true);
     } else if let Some(locked) = lookups.ui_bestiary_locked {
         // `UIBestiaryEntryIcon.DrawSelf`'s locked branch (`:44-56`): the
         // texture at white * 0.15, centred.
@@ -401,6 +694,7 @@ fn draw_portrait(
     cx: f32,
     cy: f32,
     box_h: f32,
+    fit: bool,
 ) {
     // `sheet_i` is the derived slot `portrait_data` reports; the sheet
     // itself comes back through `entry_sheet` (the same derivation, the
@@ -409,6 +703,33 @@ fn draw_portrait(
     let Some(sheet) = entry_sheet(lookups, entry) else {
         return;
     };
+    let (mut w, mut h) = (w, h);
+    if fit {
+        // The C# clips the icon through `OverflowHidden` on the 68x68 inner
+        // element (`UIBestiaryEntryButton.cs:31-40`); the port's renderer has
+        // no scissor rect, so an oversized portrait is scaled down to the
+        // box instead of spilling over its neighbours (deviation, see
+        // `docs/ANALYSIS.md`). Bosses are the tall end of the table.
+        let fit_h = (box_h - 8.0).max(1.0);
+        let scale = (fit_h / h).min(box_h / w).min(1.0);
+        w *= scale;
+        h *= scale;
+    }
+    // `(1, 1, 0)`: the portrait draws the entry's whole sheet into its box
+    // (the frame split is what the *button* sheets need, §14).
+    draw_sheet_frame(r, lookups, &sheet, 1, 1, 0, portrait_rect(entry, cx, cy, box_h, w, h), tint);
+}
+
+/// The portrait's destination rect — `UpdatePosition` (`:112-123`) with the
+/// optional fit scale of `draw_portrait`.
+fn portrait_rect(
+    entry: &crate::bestiary::BestiaryEntryDef,
+    cx: f32,
+    cy: f32,
+    box_h: f32,
+    w: f32,
+    h: f32,
+) -> [f32; 4] {
     let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
     let (x, y) = if floats {
         (cx - w * 0.5, cy - h * 0.5)
@@ -416,9 +737,7 @@ fn draw_portrait(
         let top = cy + box_h * 0.5;
         (cx - w * 0.5, top - h - 8.0)
     };
-    // `(1, 1, 0)`: the portrait draws the entry's whole sheet into its box
-    // (the frame split is what the *button* sheets need, §14).
-    draw_sheet_frame(r, lookups, &sheet, 1, 1, 0, [x, y, w, h], tint);
+    [x, y, w, h]
 }
 
 /// The portrait parameters — the `NpcAssets` table's sizes
@@ -1106,21 +1425,30 @@ fn draw_info_page(
     mouse: Vec2,
 ) {
     let _ = mouse;
-    let panel = panel_rect(screen);
+    // `UIBestiaryEntryInfoPage` is the right-hand 230 px column, `Height
+    // (12, 1)` over the main area and `HAlign = 1` (`UIBestiaryTest.cs
+    // :100-104`), `Padding 0` with a `UIList` padded `2` and `4` top/bottom
+    // (`UIBestiaryEntryInfoPage.cs:32-45`).
+    let info = layout(screen).info;
+    let list = [
+        info[0] + 2.0,
+        info[1] + 4.0,
+        info[2] - 4.0,
+        info[3] - 8.0,
+    ];
     let entry = &crate::bestiary::ENTRIES[idx];
     let state = crate::bestiary::unlock_state(entry, tracker);
-    if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
-        // The portrait card left of the info (the pretty-portrait mode's
-        // 72 px card scaled up).
-        let size = 216.0;
-        let px = panel[0] + 24.0;
-        let py = panel[1] + 60.0;
+    if let Some(_portrait_bg) = lookups.ui_bestiary_portrait {
+        // The portrait is the list's first item and spans the column's width.
+        let size = list[2];
+        let px = list[0];
+        let py = list[1];
         let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
         if let Some(back) = lookups.ui_bestiary_slot_back {
             push_whole(r, lookups, &back, inner, [1.0; 4]);
         }
         if state.known() {
-            draw_portrait(r, lookups, entry, px + size * 0.5, py + size * 0.5, size);
+            draw_portrait(r, lookups, entry, px + size * 0.5, py + size * 0.5, size, true);
         } else if let Some(locked) = lookups.ui_bestiary_locked {
             push_whole(r, lookups, &locked, inner, [0.15; 4]);
         }
@@ -1128,8 +1456,9 @@ fn draw_info_page(
             push_whole(r, lookups, &front, inner, [1.0; 4]);
         }
     }
-    let tx = panel[0] + 264.0;
-    let mut ty = panel[1] + 60.0;
+    // The info elements stack under the portrait (`UIList.ListPadding = 4`).
+    let tx = list[0] + 2.0;
+    let mut ty = list[1] + list[2] + 8.0;
     // The name — tier 1+ (`GetHoverText`'s `???` gate,
     // `UnlockableNPCEntryIcon.cs:213-226`).
     let shown_name = if state.known() { entry.name } else { "???" };
@@ -1318,27 +1647,148 @@ mod tests {
 
     #[test]
     fn the_grid_indexes_match_the_layout() {
-        // A 1280x720 screen: the panel is 900 wide (0.875*1280 = 1120 capped)
-        // and the grid fills rows of 72 px cells; every entry stays reachable.
+        // A 1280x720 screen: the container is 900 wide (0.875*1280 = 1120
+        // capped) and the grid fills rows of 72 px cells.
         let screen = Vec2::new(1280.0, 720.0);
-        let panel = panel_rect(screen);
-        assert_eq!(panel[2], 900.0);
-        let rect = grid_rect(&panel);
-        let (cols, rows) = grid_metrics(&rect);
-        assert!(cols * rows >= crate::bestiary::ENTRIES.len());
-        // The first cell's centre hits entry 0 — the probe rides
-        // `card_at`'s own lattice (the raw CELL grid, no insets) so the
-        // overflow rows keep the hit.
-        let first_x = rect[0] + CELL * 0.5;
-        let first_y = rect[1] + CELL * 0.5;
-        assert_eq!(card_at(screen, Vec2::new(first_x, first_y)), Some(0));
+        let l = layout(screen);
+        assert_eq!(l.container[2], 900.0);
+        let (cols, rows) = l.metrics();
+        let per = l.per_page();
+        assert_eq!(per, cols * rows);
+        // The grid stops where the 230 px info column starts (`:139-141`)
+        // and where the 20 px completion bar starts (`:120-125`).
+        assert_eq!(l.grid[2], l.main[2] - 12.0 - INFO_W);
+        assert_eq!(l.info[0], l.grid[0] + l.grid[2] + 12.0);
+        assert_eq!(l.info[2], INFO_W);
+        assert_eq!(l.grid[1] + l.grid[3], l.main[1] + l.main[3]);
+        assert_eq!(l.bottom_bar[1] + l.bottom_bar[3], l.inner[1] + l.inner[3]);
+        // The first cell's centre hits entry 0 on page 0 — the probe rides
+        // `card_at`'s own lattice (the raw CELL grid, no insets).
+        let first_x = l.grid[0] + CELL * 0.5;
+        let first_y = l.grid[1] + CELL * 0.5;
+        assert_eq!(card_at(screen, Vec2::new(first_x, first_y), 0), Some(0));
+        // The last cell of page 0 is `per - 1`, and page 1 starts at `per`.
+        let last_slot = per - 1;
+        let cell = l.cell(last_slot);
+        assert_eq!(
+            card_at(screen, Vec2::new(cell[0] + 1.0, cell[1] + 1.0), 0),
+            Some(last_slot)
+        );
+        let cell = l.cell(0);
+        assert_eq!(
+            card_at(screen, Vec2::new(cell[0] + 1.0, cell[1] + 1.0), 1),
+            Some(per)
+        );
         // The Back panel sits inside the container above the bottom edge.
-        let back = back_rect(&panel);
-        assert!(back[1] + back[3] <= panel[1] + panel[3]);
+        let back = back_rect(&l.container);
+        assert!(back[1] + back[3] <= l.container[1] + l.container[3]);
         assert!(back_hit(screen, Vec2::new(back[0] + 10.0, back[1] + 10.0)));
         // The inventory button's hover rect matches the vanilla constants.
         assert!(button_hit(Vec2::new(498.0, 278.0)));
         assert!(!button_hit(Vec2::new(490.0, 278.0)));
+    }
+
+    #[test]
+    fn every_card_portrait_stays_inside_its_cell() {
+        // The C# clips the icon through `OverflowHidden` on the 68x68 inner
+        // element (`UIBestiaryEntryButton.cs:31-40`); without a scissor rect
+        // the port scales an oversized portrait into the box instead, so no
+        // sprite may reach past its own cell.
+        let lk = full_bestiary_lookups();
+        let screen = Vec2::new(1600.0, 900.0);
+        let l = layout(screen);
+        let mut checked = 0;
+        for (idx, entry) in crate::bestiary::ENTRIES.iter().enumerate() {
+            let slot = idx % l.per_page();
+            let cell = l.cell(slot);
+            let inner = [cell[0] + 2.0, cell[1] + 2.0, CELL - 4.0, CELL - 4.0];
+            let (_s, _fh, mut w, mut h, _t) = portrait_data(entry, &lk);
+            if entry_sheet(&lk, entry).is_none() {
+                continue;
+            }
+            let fit_h = (inner[3] - 8.0).max(1.0);
+            let scale = (fit_h / h).min(inner[3] / w).min(1.0);
+            w *= scale;
+            h *= scale;
+            let r = portrait_rect(entry, cell[0] + CELL * 0.5, cell[1] + CELL * 0.5, inner[3], w, h);
+            assert!(
+                r[0] >= cell[0] - 0.01
+                    && r[1] >= cell[1] - 0.01
+                    && r[0] + r[2] <= cell[0] + CELL + 0.01
+                    && r[1] + r[3] <= cell[1] + CELL + 0.01,
+                "entry {idx} ({}) escapes its cell: {r:?} vs {cell:?}",
+                entry.name
+            );
+            checked += 1;
+        }
+        assert!(checked > 20, "the probe skipped too many entries: {checked}");
+    }
+
+    #[test]
+    fn the_component_tree_matches_the_c_sharp_chain() {
+        // `UIBestiaryTest.BuildPage` (`:66-161`) resolved at 1600x900:
+        //   container  x 350  y 180  w 900  h 680   (0.875*1600 capped, -220)
+        //   UIPanel    x 350  y 180  w 900  h 590   (Height -90, `:84-86`)
+        //   inner      x 362  y 188  w 876  h 574   (padding 12 / 8+8)
+        //   top strip  y 188  h 24                  (`num2`, `:91`)
+        //   main       y 218  w 876  h 524          (`:109-117`)
+        //   bottom bar y 742  h 20                  (`:120-125`)
+        //   grid       x 362  y 222  w 634  h 520   (-12-230 wide, -4 tall)
+        //   info       x 1008 y 218  w 230  h 536   (Height (12, 1), HAlign 1)
+        let l = layout(Vec2::new(1600.0, 900.0));
+        assert_eq!(l.container, [350.0, 180.0, 900.0, 680.0]);
+        assert_eq!(l.panel, [350.0, 180.0, 900.0, 590.0]);
+        assert_eq!(l.inner, [362.0, 188.0, 876.0, 574.0]);
+        assert_eq!(l.top_strip, [362.0, 188.0, 876.0, 24.0]);
+        assert_eq!(l.main, [362.0, 218.0, 876.0, 524.0]);
+        assert_eq!(l.bottom_bar, [362.0, 742.0, 876.0, 20.0]);
+        assert_eq!(l.grid, [362.0, 222.0, 634.0, 520.0]);
+        assert_eq!(l.info, [1008.0, 218.0, 230.0, 536.0]);
+        // `GetEntriesToShow`: 634/72 = 8 columns, 520/72 = 7 rows (`:355-364`).
+        assert_eq!(l.metrics(), (8, 7));
+        assert_eq!(l.per_page(), 56);
+        // The pre-fix hand-written insets gave 12x8 = 96 cells and ran the grid
+        // over the info column and the completion bar.
+        assert!(l.grid[0] + l.grid[2] <= l.info[0]);
+        assert!(l.grid[1] + l.grid[3] <= l.bottom_bar[1]);
+        // The info column is flush with the main area's right edge and one
+        // 12 px taller (`Height (12, 1)`), ending on the panel's bottom
+        // padding line.
+        assert_eq!(l.info[0] + l.info[2], l.main[0] + l.main[2]);
+        assert_eq!(l.info[3], l.main[3] + 12.0);
+    }
+
+    #[test]
+    fn the_page_arrows_walk_the_roster() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let l = layout(screen);
+        let per = l.per_page();
+        let total = crate::bestiary::ENTRIES.len();
+        let last = total.saturating_sub(1) / per;
+        assert!(last >= 1, "the roster needs more than one page");
+        // `GetRangeText` (`UIBestiaryEntryGrid.cs:88-96`).
+        assert_eq!(range_text(screen, 0), format!("1-{} ({})", per, total));
+        assert_eq!(
+            range_text(screen, last),
+            format!("{}-{} ({})", last * per + 1, total, total)
+        );
+        // The arrows sit in the 24 px strip: Back at its left edge, Forward
+        // one pixel right, and the range panel after them (`:213-252`).
+        let [b, f, r] = page_rects(screen);
+        assert_eq!(b, [l.top_strip[0], l.top_strip[1], PAGE_BTN, PAGE_BTN]);
+        assert_eq!(f[0], b[0] + PAGE_BTN + 1.0);
+        assert_eq!(r[0], b[0] + PAGE_BTN * 2.0 + 4.0);
+        assert_eq!(r[1], l.top_strip[1]);
+        // The hit test follows the rects.
+        assert_eq!(
+            page_button_at(screen, Vec2::new(b[0] + 1.0, b[1] + 1.0)),
+            Some(-1)
+        );
+        assert_eq!(
+            page_button_at(screen, Vec2::new(f[0] + 1.0, f[1] + 1.0)),
+            Some(1)
+        );
+        assert_eq!(page_button_at(screen, Vec2::new(r[0] + 1.0, r[1] + 1.0)), None);
     }
 
     /// A `Lookups` with the full 174-slot `bestiary_npc_sheets` table

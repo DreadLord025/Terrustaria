@@ -205,6 +205,10 @@ pub(crate) struct App {
     /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
     pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
+    /// `UIBestiaryEntryGrid._atEntryIndex / maxEntriesToHave` — the slot
+    /// offset rebuilt as a page number at the current grid size
+    /// (`UIBestiaryEntryGrid.cs:110-140`).
+    pub(crate) bestiary_page: usize,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
@@ -2469,6 +2473,9 @@ impl App {
                     None
                 }
             }),
+            // `TR_BESTIARY_PAGE=<n>` opens the grid at page n (0-based) for the
+            // paged-grid screenshots; absent stays on page 0.
+            bestiary_page: crate::env::bestiary_page().unwrap_or(0),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
                 // (the vanilla state opens on Enter only).

@@ -1361,6 +1361,7 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
+                        self.bestiary_page,
                         &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,

@@ -279,8 +279,19 @@ impl App {
                 self.ui_left_press = false;
                 return;
             }
+            // The page arrows (`MakeButtonGoByOffset` -> `OffsetLibraryByPages`,
+            // `UIBestiaryEntryGrid.cs:98-136`): one page at a time, clamped to
+            // `[0, last]` so the arrows never leave the roster.
+            if let Some(dir) = ui::bestiary::page_button_at(screen, self.mouse_pos) {
+                let per = ui::bestiary::layout(screen).per_page().max(1);
+                let last = crate::bestiary::ENTRIES.len().saturating_sub(1) / per;
+                let page = (self.bestiary_page as i64 + dir as i64).clamp(0, last as i64);
+                self.bestiary_page = page as usize;
+                self.ui_left_press = false;
+                return;
+            }
             // A card opens its info page (`Click_SelectEntryButton`).
-            if let Some(idx) = ui::bestiary::card_at(screen, self.mouse_pos) {
+            if let Some(idx) = ui::bestiary::card_at(screen, self.mouse_pos, self.bestiary_page) {
                 self.bestiary_selected = Some(idx);
                 self.ui_left_press = false;
                 return;
@@ -293,6 +304,9 @@ impl App {
             self.inventory_open = false;
             self.bestiary_open = true;
             self.bestiary_selected = None;
+            // `OnOpenPage` -> `UpdateBestiaryContents` rewinds the grid
+            // (`UIBestiaryTest.cs:57-60`, `:318-330`).
+            self.bestiary_page = 0;
             self.ui_left_press = false;
             return;
         }

@@ -9978,3 +9978,39 @@ owns the inventory click surface.
   `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
   the HUD uses the zero-anchor `text::border_string`.
 
+### The bestiary screen's component tree
+
+- **Two hand-written insets were the whole bug.** `grid_rect` derived the
+  grid from the *container* with `+6 / +40` and `-12 / -44`. The C# nests it
+  five levels deep — container → `UIPanel` (12 px padding, 8 top/bottom after
+  the `-4` trim, 90 px shorter) → inner → main area (24 top strip + 6 + 20 gap)
+  → bestiary space (`-12-230` wide, `-4` tall). The approximation left the
+  grid **116 px too tall and 24 px too wide**: it ran under the 230 px info
+  column and over the 20 px completion bar, and `GetEntriesToShow`'s
+  `width / 72` × `height / 72` therefore reported 96 cells a page instead of
+  56. `ui::bestiary::layout` now resolves the real chain, and
+  `the_component_tree_matches_the_c_sharp_chain` pins every rect at 1600×900.
+- **The grid grew rows to fake paging.** `grid_metrics` returned
+  `rows.max(ceil(count / cols))` so the whole roster stayed clickable, which is
+  not what the C# does: `UIBestiaryEntryGrid` keeps an `_atEntryIndex` and
+  walks it by `maxEntriesToHave` (`:98-140`), with Back/Forward arrows and a
+  `"{first}-{last} ({total})"` range label. `App.bestiary_page` is that
+  offset, `page_button_at` the arrows, `range_text` the label, and
+  `OnOpenPage` rewinds to page 0 (`UIBestiaryTest.cs:57-60`).
+- **The info page is a column, not a screen.** `selected` used to swap the
+  grid out for a full-width detail view. The C# appends
+  `UIBestiaryEntryInfoPage` (230 px, `Height (12, 1)`, `HAlign 1`) next to the
+  grid and fills its `UIList` (`:100-104`, `:318-330`), so the cards stay
+  visible while an entry is open. The port's portrait and text rows now live
+  inside that column.
+- **No scissor rect.** `UIBestiaryEntryButton` clips its icon with
+  `OverflowHidden` on a 68×68 inner element; `tr-render` has no clip
+  rectangle, so `draw_portrait` scales an oversized portrait into the box.
+  A clipped boss portrait (the vanilla shows the top of a tall sprite) becomes
+  a shrunk one — visible, documented, and better than the sprite covering its
+  neighbours. `every_card_portrait_stays_inside_its_cell` sweeps the roster.
+- **Named placeholders.** `Language.GetTextValueWith(key, new { Percent })`
+  builds `{Percent}`, not `{0}`; `lang::text_named` does that literal
+  substitution, so the completion label reads "12.50 % Collected" instead of
+  the raw `{Percent} Collected`.
+
