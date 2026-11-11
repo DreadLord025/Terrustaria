@@ -7001,10 +7001,14 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
   (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
   `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
-  favorited slots (`:631-634`); the favorited visual is the
-  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
-  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
-  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  favorited slots (`:631-634`); the favorited visual is the real gold sheet —
+  `Inventory_Back10` (`:2152-2156`) now packs into the content atlas and
+  `ui::slot::draw_slot_favorited` swaps it in ahead of the context table (the
+  C# chain puts the favorite arm before the hotbar-row `_9` arm), tinted
+  `Main.inventoryBack` as the C# leaves it; the old `OurFavoriteColor` tint
+  stand-in is gone. Out of scope: `Inventory_Back17` (`:2331-2335`, the gamepad
+  UI-point highlight) and `_19` (context 32, the loadout panel) — neither
+  surface is ported; the trash slot (448, 258) is clickable — left-click
   swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
   `:1008-1011`).
 

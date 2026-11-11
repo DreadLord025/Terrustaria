@@ -483,6 +483,9 @@ pub fn load_world_images(
         "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
+        // `ItemSlot.cs:2154`: the gold frame a *favorited* stack draws
+        // (`Main.OurFavoriteColor` is only the tooltip tint).
+        "Inventory_Back10",
         "Heart",
         "Bubble",
         "NPC_Head_Boss_7",
@@ -1307,6 +1310,9 @@ pub struct Lookups {
     pub ui_back_sel: Option<tr_render::SheetRect>,
     /// `Inventory_Back9`: the hotbar row frame inside the open inventory.
     pub ui_back_hotbar: Option<tr_render::SheetRect>,
+    /// `Inventory_Back10`: the gold frame a favorited stack draws
+    /// (`ItemSlot.cs:2154`).
+    pub ui_back10: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
@@ -1625,6 +1631,7 @@ impl Lookups {
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
+            ui_back10: atlas.sheet("Inventory_Back10").copied(),
             ui_font,
             item_font,
             death_font,
@@ -2702,6 +2709,19 @@ mod tests {
                 .all(|r| r.width > 0 && r.height > 0),
             "every registered rect is sane"
         );
+    }
+
+    #[test]
+    fn the_favorite_slot_sheet_packs() {
+        // `ItemSlot.cs:2154`: the gold frame a favorited stack swaps in. The
+        // sheet used to be absent from the pack list, so the draw code tinted
+        // the default background instead (`slot::favorited_slot_tint`).
+        let (_, lookups) = content_lookups();
+        let rect = lookups
+            .ui_back10
+            .expect("Inventory_Back10 must reach the atlas");
+        assert_eq!((rect.width, rect.height), (52, 52), "the step-1 sheet");
+        assert!(lookups.ui_back.is_some(), "the default sheet stays too");
     }
 
     #[test]
