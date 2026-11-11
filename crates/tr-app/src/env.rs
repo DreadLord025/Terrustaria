@@ -587,6 +587,15 @@ pin_bool! {
     "TR_CHEST"
 }
 
+pin_num! {
+    /// `TR_THROW=<projectile id>`: throws one shot of that kind from the
+    /// player's centre on the first world tick — the projectile-sprite
+    /// screenshot fixture (the `app.dev_throw` path's real spawn).
+    throw_kind,
+    "TR_THROW",
+    u16
+}
+
 pin_bool! {
     /// `TR_DIE`: kills the local player on the first world tick with the
     /// respawn-skip lockout already spent — the death-screen fixture for
