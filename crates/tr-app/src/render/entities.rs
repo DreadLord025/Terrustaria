@@ -1481,9 +1481,11 @@ pub(crate) fn draw_npcs(
             // anchor (the frame centred on the box's centre-X, its centre
             // 4 px below the box's bottom, `Main.cs:25511-25516`); the
             // rows ride each kind's `Main.npcFrameCount` (`npc.rs`'s
-            // `humanoid_frame_count`). The Zombie's sheet is the single
-            // 30x48 NPC_9 frame (no `FindFrame` case — static).
-            NpcKind::Zombie => humanoid_draw(assets.zombie.as_ref(), 1, n, w, h),
+            // `humanoid_frame_count`). The Zombie rides the same anchor over
+            // NPC_3 — 38x144, three 48-px rows (`Main.npcFrameCount[3]` = 3,
+            // `Main.cs:67082`); dividing by 1 squeezed all three rows into
+            // one quad.
+            NpcKind::Zombie => humanoid_draw(assets.zombie.as_ref(), 3, n, w, h),
             NpcKind::Guide => humanoid_draw(assets.guide.as_ref(), 26, n, w, h),
             NpcKind::Merchant => humanoid_draw(assets.merchant.as_ref(), 25, n, w, h),
             NpcKind::Dryad => humanoid_draw(assets.dryad.as_ref(), 21, n, w, h),
@@ -2577,6 +2579,52 @@ mod anchor_tests {
             uv: [0.0, 0.0, 1.0, 1.0],
             w,
             h,
+        }
+    }
+
+    /// The nine 🟡 M4-NPC display rows' arithmetic: every one of these
+    /// strips must divide into `Main.npcFrameCount[type]` whole rows, which
+    /// is how each arm's row count was chosen. The sizes are the real
+    /// `assets/Content/Images/NPC_*.xnb` dimensions, so a wrong divisor
+    /// shows up as a fractional row here instead of a squashed sprite in
+    /// game. (`npcFrameCount` values are `Main.cs:67082`.)
+    #[test]
+    fn the_boss_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type], the arm)
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::EyeOfCthulhu, 110.0, 996.0, 6),      // NPC_4
+            (NpcKind::Retinazer, 110.0, 1200.0, 6),        // NPC_125
+            (NpcKind::Spazmatism, 110.0, 1200.0, 6),       // NPC_126
+            (NpcKind::QueenBee, 172.0, 1824.0, 12),        // NPC_222
+            (NpcKind::SkeletronHead, 114.0, 264.0, 2),     // NPC_35
+            (NpcKind::WallOfFlesh, 142.0, 212.0, 2),       // NPC_113
+            (NpcKind::WallOfFleshEye, 130.0, 212.0, 2),    // NPC_114
+            (NpcKind::Plantera, 116.0, 1232.0, 8),         // NPC_262
+            (NpcKind::BrainOfCthulhu, 200.0, 1456.0, 8),   // NPC_266
+            (NpcKind::KingSlime, 174.0, 720.0, 6),         // NPC_50
+            (NpcKind::PrimeSaw, 38.0, 156.0, 2),           // NPC_129
+            (NpcKind::PrimeVice, 40.0, 140.0, 2),          // NPC_130
+            (NpcKind::PrimeCannon, 38.0, 76.0, 1),         // NPC_128
+            (NpcKind::PrimeLaser, 40.0, 62.0, 1),          // NPC_131
+            (NpcKind::GrayGrunt, 40.0, 432.0, 9),          // NPC_381
+            (NpcKind::Zombie, 38.0, 144.0, 3),             // NPC_3
+            (NpcKind::StardustTower, 174.0, 364.0, 1),     // NPC_493
+            (NpcKind::NebulaTower, 174.0, 364.0, 1),       // NPC_507
+            (NpcKind::SolarTower, 174.0, 364.0, 1),        // NPC_517
+        ];
+        for &(kind, w, h, rows) in cases {
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = boss_draw(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            assert_eq!(
+                fh,
+                h / rows as f32,
+                "{kind:?}: {h} px over {rows} rows must be a whole row"
+            );
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            // And the strip the machine walks never leaves those rows.
+            assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
         }
     }
 
