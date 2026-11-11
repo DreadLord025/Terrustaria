@@ -2771,9 +2771,9 @@ mod tests {
     fn the_underground_dispatcher_runs_the_passed_arms() {
         // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73614`): the
         // alch plant grows, the grass family converts (underground), the lily
-        // becomes 74 and the grass growth re-runs the spikes. The parked arms
-        // (the 655 kill, the dye/cattail/seaweed, the 444/396 moss/oyster, the
-        // web/town-NPC) stay out.
+        // becomes 74, the grass growth re-runs the spikes and the cattail runs
+        // its validity/growth pair. The parked arms (the 655 kill, the dye/
+        // seaweed, the 444/396 moss/oyster, the web/town-NPC) stay out.
         // The lily conversion: a lily (61) at Next(3)==0 over a non-226 tile
         // converts to 74.
         let mut w = world();
@@ -2805,6 +2805,89 @@ mod tests {
             }
         }
         assert!(converted, "the grass arm runs underground");
+    }
+
+    #[test]
+    fn the_cat_tail_frame_row_follows_the_soil() {
+        // `CheckCatTail`'s soil table (`:58797-58819`): the frame row is 0 on
+        // dirt/grass (2/477), 18 on sand (53), 54 on the corrupt/crimson/hallow
+        // grounds (199/234/662), 72 on the evil grass (23/112) and 90 on the
+        // mushroom grass (70). A valid run writes the row into every stalk
+        // cell's `frameY` (`:58891-58928`).
+        for (soil, row) in [(2u16, 0i16), (53, 18), (199, 54), (234, 54), (23, 72), (70, 90)] {
+            let mut w = world();
+            w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+            w.frame_important[519] = true;
+            // The water column: 195..=200, six deep, well inside the 8-tile
+            // distance cap, with the stalk's only cell at 201 on the soil.
+            for y in 195..=200 {
+                let i = w.index(100, y);
+                w.tiles[i].liquid = 200;
+            }
+            put(&mut w, 100, 202, soil, 0);
+            put(&mut w, 100, 201, 519, 0);
+            let i = w.index(100, 201);
+            w.tiles[i].liquid = 200;
+            let mut rng = FastRandom::new(7);
+            check_cat_tail(&mut w, 100, 201, &mut rng);
+            assert_eq!(
+                w.tile(100, 201).map(|t| t.frame_y),
+                Some(row),
+                "soil {soil} writes frameY {row}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_cat_tail_grows_a_base_and_a_tip() {
+        // `GrowCatTail` (`:58974-59082`): the base cell walks 0 → 18 →
+        // `18 * Next(2, 5)` and spawns the paired 90 tip above, so the stalk
+        // gains one cell per armed tip step; the base keeps a 36..=72 row (the
+        // `CheckCatTail` frame agreement, `:58848-58863`).
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[519] = true;
+        put(&mut w, 100, 202, 53, 0); // the sand ground
+        put(&mut w, 100, 201, 519, 0); // the stalk's base
+        for y in 196..=201 {
+            let i = w.index(100, y);
+            w.tiles[i].liquid = 200;
+        }
+        let mut rng = FastRandom::new(11);
+        for _ in 0..4 {
+            grow_cat_tail(&mut w, 100, 201, &mut rng);
+        }
+        let stalk: Vec<i16> = (190..=201)
+            .filter(|&y| w.tile(100, y).is_some_and(|t| t.active() && t.kind == 519))
+            .map(|y| w.tile(100, y).map(|t| t.frame_x).unwrap_or(0))
+            .collect();
+        assert!(stalk.len() >= 2, "the stalk gains a cell above the base");
+        let base = w.tile(100, 201).map(|t| t.frame_x).unwrap_or(0);
+        assert!(
+            [36i16, 54, 72].contains(&base),
+            "the base takes a 36/54/72 row, got {base}"
+        );
+    }
+
+    #[test]
+    fn the_cat_tail_dies_out_of_water() {
+        // `CheckCatTail` (`:58841-58845`): the cell just above the ground with
+        // `liquid < 127` rolls `Next(4)` and an invalid run is killed whole
+        // (`:58874-58890`) — a dry stalk never survives a long stream.
+        let mut w = world();
+        put(&mut w, 100, 202, 2, 0); // dry dirt
+        put(&mut w, 100, 201, 519, 0); // the stalk
+        let mut rng = FastRandom::new(5);
+        for _ in 0..64 {
+            check_cat_tail(&mut w, 100, 201, &mut rng);
+            if !w.tile(100, 201).is_some_and(|t| t.active() && t.kind == 519) {
+                break;
+            }
+        }
+        assert!(
+            !w.tile(100, 201).is_some_and(|t| t.active() && t.kind == 519),
+            "the dry stalk is killed"
+        );
     }
 
     #[test]
@@ -4167,15 +4250,292 @@ pub fn spread_desert_walls(
     world.tiles[idx].wall = new;
 }
 
+/// `WorldGen.catTailDistance` (`WorldGen.cs:4401`, seeded to 8 at `:86957`):
+/// the deepest a cattail stalk may stand above the water surface.
+const CAT_TAIL_DISTANCE: i32 = 8;
+
+/// `Main.tile[x, y]` read as the C# `null` check plus the accessor: `None`
+/// stands for the out-of-world cell the source returns early on.
+#[inline]
+fn cell(world: &World, x: i32, y: i32) -> Option<crate::tile::Tile> {
+    world.tile(x, y).copied()
+}
+
+/// `Tile.nactive()` (`Tile.cs:240-247`): the active bit set with the
+/// actuated-off bit clear.
+#[inline]
+fn nactive(t: &crate::tile::Tile) -> bool {
+    t.active() && !t.inactive()
+}
+
+/// `WorldGen.CheckCatTail` (`WorldGen.cs:58744-58930`): the cattail (519)
+/// validity sweep. It walks the stalk's column — down to the ground, back up
+/// through the water — and marks the run invalid when the water column is too
+/// shallow (`liquid < 127`, rolled at `Next(4)`), the stalk stands more than
+/// [`CAT_TAIL_DISTANCE`] above the water, the ground type has no frame row, or
+/// the tip frames disagree; an invalid run is killed whole (a 4-tile look-back
+/// above the stalk start through the ground), a valid one gets its soil frame
+/// row in `frameY`.
+pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
+    if cell(world, x, j).is_none() {
+        return;
+    }
+    let max_y = world.height as i32 - 50;
+    let mut flag = false;
+    let mut num2 = j;
+    // `:58751-58768`: the ground scan — down to the first cell that is active,
+    // `tileSolid` and not `tileSolidTop`.
+    while num2 < max_y
+        && !cell(world, x, num2).is_some_and(|t| {
+            t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        })
+    {
+        let Some(t) = cell(world, x, num2) else { return };
+        if t.active() && t.kind != 519 {
+            flag = true;
+        }
+        if !t.active() {
+            break;
+        }
+        num2 += 1;
+        if cell(world, x, num2).is_none() {
+            return;
+        }
+    }
+    let mut num = num2 - 1;
+    if cell(world, x, num).is_none() {
+        return;
+    }
+    // `:58769-58783`: the water column walk — anything but the cattail itself
+    // or non-water liquid invalidates the run.
+    while num > 50 && cell(world, x, num).is_some_and(|t| t.liquid > 0) {
+        let Some(t) = cell(world, x, num) else { return };
+        if (t.active() && t.kind != 519) || t.liquid_kind() != crate::tile::LiquidKind::Water {
+            flag = true;
+        }
+        num -= 1;
+        if cell(world, x, num).is_none() {
+            return;
+        }
+    }
+    num += 1;
+    if cell(world, x, num).is_none() {
+        return;
+    }
+    let num3 = num;
+    if num2 - num3 > CAT_TAIL_DISTANCE {
+        flag = true;
+    }
+    // `:58795-58824`: the soil's frame row. The pair (2, 477) shares row 0;
+    // the sand 53 row 18; the corrupt/crimson/hallow grounds row 54; the
+    // evil/crimson grass row 72; the mushroom grass row 90.
+    let ground = cell(world, x, num2).map(|t| t.kind).unwrap_or(0);
+    let num4: i32 = match ground {
+        2 | 477 => 0,
+        53 => 18,
+        199 | 234 | 662 => 54,
+        23 | 112 | 661 => 72,
+        70 => 90,
+        _ => -1,
+    };
+    if !cell(world, x, num2).is_some_and(|t| nactive(&t)) {
+        flag = true;
+    }
+    if num4 < 0 {
+        flag = true;
+    }
+    // `:58826-58840`: the stalk's lowest cell — the topmost 519 within
+    // `num3..=num2 - 1` when the cell directly above the ground is free.
+    num = num2 - 1;
+    if cell(world, x, num).is_some_and(|t| !t.active()) {
+        let mut n5 = num;
+        while n5 >= num3 {
+            let Some(t) = cell(world, x, n5) else { return };
+            if t.active() && t.kind == 519 {
+                num = n5;
+                break;
+            }
+            n5 -= 1;
+        }
+    }
+    while cell(world, x, num).is_some_and(|t| t.active() && t.kind == 519) {
+        num -= 1;
+    }
+    num += 1;
+    // `:58841-58847`: the shallow-water and the deep-tip rolls — the C#'s
+    // `&&` short-circuits, so the `Next(4)` draw only happens when the liquid
+    // test passes.
+    if cell(world, x, num2 - 1).is_some_and(|t| t.liquid < 127) && rng.next(4) == 0 {
+        flag = true;
+    }
+    if cell(world, x, num).is_some_and(|t| t.frame_x >= 180 && t.liquid > 127) && rng.next(4) == 0
+    {
+        flag = true;
+    }
+    // `:58848-58863`: the tip frame agreement.
+    if cell(world, x, num).is_some_and(|t| t.frame_x > 18) {
+        if let Some(above) = cell(world, x, num2 - 1) {
+            let cur = cell(world, x, num).map(|t| t.frame_x).unwrap_or(0);
+            if !(36..=72).contains(&above.frame_x) {
+                flag = true;
+            } else if cur < 90 {
+                flag = true;
+            } else if (108..=162).contains(&cur) {
+                if let Some(t) = world.tile_mut(x, num) {
+                    t.frame_x = 90;
+                }
+            }
+        }
+    }
+    // `:58864-58872`: a dry cell four above the stalk base under a 519 three
+    // above it means the run is floating out of the water.
+    if num2 > num + 4
+        && cell(world, x, num + 4).is_some_and(|t| t.liquid == 0)
+        && cell(world, x, num + 3).is_some_and(|t| t.kind == 519)
+    {
+        flag = true;
+    }
+    if flag {
+        // `:58874-58890`: the kill sweep — every 519 from four above the
+        // lowest stalk cell down to the ground dies and reframes.
+        let mut num6 = num3;
+        if num < num3 {
+            num6 = num;
+        }
+        for i in (num6 - 4)..=num2 {
+            if cell(world, x, i).is_some_and(|t| t.active() && t.kind == 519) {
+                crate::edit::kill_tile(world, x, i, false);
+                crate::framing::reframe_area(world, x, i, 1);
+            }
+        }
+    } else {
+        // `:58891-58928`: the frame-row writeback over the stalk run.
+        if cell(world, x, num).is_some_and(|t| i32::from(t.frame_y) == num4) {
+            return;
+        }
+        for k in num..num2 {
+            if cell(world, x, k).is_some_and(|t| t.active() && t.kind == 519) {
+                if let Some(t) = world.tile_mut(x, k) {
+                    t.frame_y = num4 as i16;
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.GrowCatTail` (`WorldGen.cs:58974-59082`): one growth step of a
+/// water-column cattail — the bottom cell's `frameX` advances 0 → 18 →
+/// `18 * Next(2, 5)` and then the tip chain (90 → 108/126..162) which spawns
+/// the next 519 cell above with the matching paired frame, so the stalk gains
+/// one tile per successful tip step.
+pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
+    let max_y = world.height as i32 - 50;
+    let mut num = j;
+    // `:58980-58983`: up through the liquid.
+    while num > 50 && cell(world, x, num).is_some_and(|t| t.liquid > 0) {
+        num -= 1;
+    }
+    // `:58985-58989`: down to the ground.
+    let mut i = num + 1;
+    while i < max_y
+        && !cell(world, x, i).is_some_and(|t| {
+            t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        })
+    {
+        i += 1;
+    }
+    num = i - 1;
+    // `:58990-58994`: back down to the stalk's own bottom cell.
+    while cell(world, x, num).is_some_and(|t| t.active() && t.kind == 519) {
+        num -= 1;
+    }
+    num += 1;
+    if !cell(world, x, num).is_some_and(|t| t.active() && t.kind == 519) {
+        return;
+    }
+    // `:58996-59004`: a full tip (frameX 90) with a cuttable tile above it
+    // clears that tile first.
+    if cell(world, x, num).is_some_and(|t| t.frame_x == 90)
+        && cell(world, x, num - 1).is_some_and(|t| t.active() && crate::tileobject::tile_cut(t.kind))
+    {
+        crate::edit::kill_tile(world, x, num - 1, false);
+    }
+    if cell(world, x, num - 1).is_some_and(|t| t.active()) {
+        return;
+    }
+    let frame_x = cell(world, x, num).map(|t| t.frame_x).unwrap_or(0);
+    let frame_y = cell(world, x, num).map(|t| t.frame_y).unwrap_or(0);
+    let paint = cell(world, x, num).map(|t| t.paint()).unwrap_or(0);
+    // The `CopyPaintAndCoating` target (`:59035`/`:59059`/`:59075`): the new
+    // cell above inherits the base cell's paint.
+    let place_above = |world: &mut World, frame_x_above: i16| {
+        if let Some(t) = world.tile_mut(x, num - 1) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 519;
+            t.frame_x = frame_x_above;
+            t.frame_y = frame_y;
+            t.set_paint(paint);
+        }
+    };
+    if frame_x == 0 {
+        // `:59006-59012`: the first segment.
+        if let Some(t) = world.tile_mut(x, num) {
+            t.frame_x = 18;
+        }
+        crate::framing::reframe_area(world, x, num, 1);
+    } else if frame_x == 18 {
+        // `:59013-59030`: the stalk grows its paired tip cell above.
+        let len = 18 * rng.next_range(2, 5) as i16;
+        if let Some(t) = world.tile_mut(x, num) {
+            t.frame_x = len;
+        }
+        place_above(world, 90);
+        crate::framing::reframe_area(world, x, num, 1);
+    } else if frame_x == 90 {
+        // `:59031-59078`: the tip arms — the submerged arm takes the 108 tip,
+        // the dry arm dies at `Next(3)` or takes a 126/144/162 tip with its
+        // 180/198/216 partner.
+        if cell(world, x, num - 1).is_some_and(|t| t.liquid == 0) {
+            let wet_below = cell(world, x, num).is_some_and(|t| t.liquid > 0)
+                || cell(world, x, num + 1).is_some_and(|t| t.liquid > 0)
+                || cell(world, x, num + 2).is_some_and(|t| t.liquid > 0);
+            if !cell(world, x, num - 2).is_some_and(|t| t.active()) && wet_below && rng.next(3) == 0
+            {
+                if let Some(t) = world.tile_mut(x, num) {
+                    t.frame_x = 108;
+                }
+                place_above(world, 90);
+            } else {
+                let pick = rng.next(3) as i16;
+                if let Some(t) = world.tile_mut(x, num) {
+                    t.frame_x = 126 + pick * 18;
+                }
+                place_above(world, 180 + pick * 18);
+            }
+        } else {
+            if let Some(t) = world.tile_mut(x, num) {
+                t.frame_x = 108;
+            }
+            place_above(world, 90);
+        }
+    }
+    // `:59080`: the final reframe of the cell pair, `resetFrame: false`.
+    crate::framing::reframe_area(world, x, num - 1, 1);
+}
+
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
 /// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
 /// grass growth (underground) + the spike arms, the lily conversion, the five
 /// vine families and, behind `allowed_to_spread`, the wall arms.
 ///
 /// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
-/// `plantDye`, the 519 cattail and the 549/53 seaweed, the 444/396 moss and
-/// oyster arms (`PlayerLOS`/`AnchorValid`/`CountNearBlocksTypes` have no
-/// ports), `GrowWeb`, `TrySpawningTownNPC`, the net sides, and the C#'s dual
+/// `plantDye`, the 549/53 seaweed, the 444/396 moss and oyster arms
+/// (`PlayerLOS`/`AnchorValid`/`CountNearBlocksTypes` have no ports),
+/// `GrowWeb`, `TrySpawningTownNPC`, the net sides, and the C#'s dual
 /// `genRand`/`Main.rand` streams (the port's per-consumer stream carries every
 /// draw).
 pub fn update_world_underground_tile(
@@ -4205,8 +4565,18 @@ pub fn update_world_underground_tile(
     if !active {
         // The hard-mode infection arm (`:73252`); the dye/cattail/seaweed
         // arms park.
-        crate::spread::hard_update_world(world, i, j, false, true, rng);
+        crate::spread::hard_update_world(world, i, j, false, allowed_to_spread, rng);
         return;
+    }
+    // `:73263-73271`: the cattail arm — the validity sweep, then (on
+    // `genRand.Next(2) == 0`, the cell still live) one growth step and a
+    // second validity sweep.
+    if kind == 519 {
+        check_cat_tail(world, i, j, rng);
+        if world.tile(i, j).is_some_and(|t| t.active()) && rng.next(2) == 0 {
+            grow_cat_tail(world, i, j, rng);
+            check_cat_tail(world, i, j, rng);
+        }
     }
     // The grass family + the spikes (`:73281-73295`).
     if SPREAD_UNDERGROUND.contains(&kind) {
@@ -4255,3 +4625,4 @@ pub fn update_world_underground_tile(
         spread_desert_walls(world, wall_dist, i, j, rng);
     }
 }
+

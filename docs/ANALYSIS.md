@@ -5498,13 +5498,45 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   neighbour-family gates (63-68, the corruption arm's 63/65/66/68), the
   `wallDist`-3 source scan and `Convert`'s wall chain (`:55261`/`:55176`/
   `:55100` — the Grass/Stone/HardenedSand/Sandstone/NewWall1..4 sets
-  `WallID.cs:37-48` per conversion type). Parked arms: the 655 life-fruit
-  kill (the NPC store), `plantDye`, the 519 cattail / 549+53 seaweed, the
+  `WallID.cs:37-48` per conversion type). The cattail family landed on top
+  of it (`GrowCatTail`/`CheckCatTail`, the next bullet); the pass also carries
+  the creative stop-spread gate into the hard-mode head (`allowed_to_spread`
+  had been hardcoded `true` there, so `M6-CREATIVE-1c`'s power never reached
+  the dispatcher). Parked arms: the 655 life-fruit
+  kill (the NPC store), `plantDye`, the 549+53 seaweed, the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
   `CountNearBlocksTypes` have no ports), `GrowWeb`, `TrySpawningTownNPC`, the
   net sides, the creative-power override on `AllowedToSpreadInfections`, and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw).
+
+- **The cattail family** (the dispatcher's 519 arm `WorldGen.cs:73263-73271`,
+  `CheckCatTail` `:58744-58930`, `GrowCatTail` `:58974-59082` — the
+  M5-SPREAD-1b slice): the arm runs on every picked 519 cell — the validity
+  sweep, then `Next(2) == 0` → one growth step and a second sweep (the C#
+  order). The sweep walks down to the first solid non-solid-top ground and up
+  through the water column, and kills the whole run (`KillTile` +
+  `SquareTileFrame` over four cells above the lowest stalk cell through the
+  ground) when: the water column is deeper than `catTailDistance` (8,
+  `:86957`) above the ground; the ground kind is off the frame-row table
+  (2/477 → 0, 53 → 18, 199/234/662 → 54, 23/112/661 → 72, 70 → 90) or not
+  `nactive()`; a foreign block or a non-water liquid sits in the column; the
+  cell above the ground holds `liquid < 127` and `Next(4) == 0`; a ≥180-row
+  tip sits in >127 water and `Next(4) == 0`; the base and tip rows disagree
+  (a 108..162 tip is re-armed to 90 instead); or the tip stands more than 4
+  above the ground with the `num+3`/`num+4` cells dry under a 519. A valid run
+  writes the soil row into every stalk cell's `frameY`. The growth step walks
+  the base 0 → 18 → `18 · Next(2, 5)` and then the tip arms — the submerged
+  108 tip, or the dry `Next(3)` pick that either dies or takes the 126/144/162
+  tip with its 180/198/216 partner — spawning the cell above and reframing
+  the pair. Deviations: `SquareTileFrame` is the port's `reframe_area` (the
+  3×3 autotile walk), the net sides drop, and the port's `growth_rng` carries
+  every draw. The slice also fixed a boot gap it depended on: 518/519/529/549
+  are frame-important (`Main.cs:7366-7378`) but
+  `worldgen::pipeline::boot_statics` never marked them, so `reframe_area`
+  overwrote exactly the `frameX`/`frameY` rows the growth arms write — the
+  four kinds now carry the bit (the classic world hashes are unchanged: no
+  worldgen pass places them before the framer runs). 3 tests.
 
 - **The beach-shells arm** (`UpdateWorld_OvergroundTile`'s
   `WorldGen.cs:72073-72135`): the last M5-SPREAD-1 row item. The weather
