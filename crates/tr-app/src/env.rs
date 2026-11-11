@@ -588,6 +588,13 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_OPTIONS`: opens the in-game options window at boot so
+    /// `TR_SHOT` captures the `IngameOptions` panel (M7-UI-4's fixture).
+    ingame_options_open,
+    "TR_OPTIONS"
+}
+
+pin_bool! {
     /// `TR_POSE`: keeps the capture scene empty — a contact-damage NPC
     /// would knock the pinned player off the furniture.
     pose_set,
