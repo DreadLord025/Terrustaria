@@ -1771,6 +1771,8 @@ pub(crate) mod front_flow_tests {
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
+            static_sheets: None,
+            fonts_cache: None,
             font_atlas: None,
             world,
             lookups: assets::Lookups::default(),
@@ -2818,6 +2820,33 @@ pub(crate) mod front_flow_tests {
             "the pressed card's file rides the swap"
         );
         assert!(app.front.is_none(), "the launch arm closes the front screens");
+    }
+
+    /// `UIWorldListItem.PlayGame`'s tail: the loaded world is entered, not
+    /// re-listed (`Main.LoadWorld` leaves `Main.gameMenu` false).
+    ///
+    /// The select-world Play used to load the world and then draw the lobby over
+    /// it: `swap_world` rebuilds the App through `App::new`, whose boot default
+    /// opens the legacy menu (`menu_state`), and nothing closed it afterwards —
+    /// while the multiplayer install ran `client_install_world`'s "close the
+    /// menu" tail and therefore worked. Both paths now end on
+    /// `App::enter_loaded_world`.
+    #[test]
+    fn entering_a_loaded_world_clears_both_front_end_sides() {
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        app.front_backup = Some(FrontScreen::CharSelect);
+        app.front_hint = Some("world load failed: x".into());
+        // The state `App::new`'s boot default leaves behind (the fresh App a
+        // `swap_world` builds starts with the legacy main page open).
+        app.menu = Some(menu::Menu::new(app.settings.clone(), "flow".into()));
+        assert!(app.menu.is_some() && app.front.is_some());
+
+        app.enter_loaded_world();
+
+        assert!(app.menu.is_none(), "the lobby page must not come back");
+        assert!(app.front.is_none(), "the 888 side clears too");
+        assert!(app.front_backup.is_none());
+        assert!(app.front_hint.is_none());
     }
 
     /// The favourites survive the save/load round (BUG-03): two slots
