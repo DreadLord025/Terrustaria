@@ -221,6 +221,25 @@ fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
     mouse.x >= x && mouse.x <= x + cell * scale && mouse.y >= y && mouse.y <= y + cell * scale
 }
 
+/// The ctx-1 (coin) and ctx-2 (ammo) cells as `(context, index)`:
+/// `Main.cs:41752-41782` draws the four coins at x 497 and the four ammo cells
+/// at x 534, both `inventoryScale` 0.6 with the shared `coin_ammo_y` rows. The
+/// draw pass hovers with this and the click pass resolves the same cell, so the
+/// two geometry copies cannot drift.
+pub(crate) fn coin_ammo_hit(mouse: Vec2, cell: f32) -> Option<(i32, usize)> {
+    for k in 0..crate::inv::COINS {
+        if hit_test(mouse, 497.0, coin_ammo_y(k, COIN_SCALE), COIN_SCALE, cell) {
+            return Some((1, k));
+        }
+    }
+    for k in 0..crate::inv::AMMO {
+        if hit_test(mouse, 534.0, coin_ammo_y(k, AMMO_SCALE), AMMO_SCALE, cell) {
+            return Some((2, k));
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Draw
 // ---------------------------------------------------------------------------
@@ -324,7 +343,7 @@ pub fn draw(
             COIN_SCALE,
             INVENTORY_BACK,
         );
-        if hit.hovered.is_none() && hit_test(mouse, 497.0, y, COIN_SCALE, cell) {
+        if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((1, k)) {
             hit.hovered = Some(HoverRef::Coin(k));
         }
     }
@@ -346,7 +365,7 @@ pub fn draw(
             AMMO_SCALE,
             INVENTORY_BACK,
         );
-        if hit.hovered.is_none() && hit_test(mouse, 534.0, y, AMMO_SCALE, cell) {
+        if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((2, k)) {
             hit.hovered = Some(HoverRef::Ammo(k));
         }
     }
