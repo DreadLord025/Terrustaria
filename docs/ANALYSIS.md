@@ -1887,7 +1887,8 @@ directly — the word aliases `settings|general|interface|video|multiplayer` and
 numeric `menuMode` of every P5 sub-screen: 26, 28, 25, 252, 1125, 111, 2008, 1212,
 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889), `TR_MENU=1` (keep the menu on
 screen), `TR_INV=1` (open the inventory),
-`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
+`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off), `TR_PVP=1`
+(open `DrawPVPIcons`'s multiplayer-only draw/click gates),
 `TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_MAPSTYLE=0|1|2` (select
 `Main.mapStyle`; invalid/missing → 1, `Main.cs:66750`), `TR_BOSS` (spawn King
 Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap),
@@ -9783,6 +9784,91 @@ the branch mechanics below; every C# site is in the report itself.
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
 
+## The PVP toggle + team select cells (M7-UI-7)
+
+`Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:
+the toggle was always frame `(false, 0)` and both icon groups had no hit test,
+hover text, click or cooldown, so the two controls the user pointed at (the PVP
+toggle and the six team cells beside the accessory columns) were decorative.
+
+The port now covers the whole function:
+
+- **Gates.** `ShouldPVPDraw` (`Main.cs:2909`) is the port's `App::is_client()`
+  (`Main.netMode == 1`); `ShouldTeamSelectDraw` (`:2911-2919`) is that same
+  client gate, since `Main.teamBasedSpawnsSeed` (`:351`) is not ported (no
+  team-spawn seeds until the M5-seed rows) and its single-player arm therefore
+  reads `false`. `Main.hidePVPAndTeamIcons` (`:2357`) is a new `App` field: the
+  C# sets it from the NPC-heads column overflow (`:42046`) and clears it on
+  every non-`EquipPage == 1` draw (`:42656-42659`) — the port does not draw the
+  NPC-heads column yet, so the flag only ever arrives `false`, but the early
+  return and the clear site are ported so the wiring exists when that panel
+  lands.
+- **Frames.** `PVP_0.Frame(2, 7)` is sliced at `(hostile, team)` (`:42664`,
+  `:42688`) and the hovered toggle swaps to the row-`PlayerTeamID.Count` (6)
+  cell at full white (`:42696-42700`); the six `PVP_1` cells narrow to
+  `rectangle2.Width - 2` and the `PVP_2` ring draws at `Location + (-2, 0)`
+  (`:42770-42773`).
+- **`teamCooldown`.** `Main.teamCooldown` / `teamCooldownLen = 300`
+  (`:965`/`:66781`) are `App::team_cooldown` / `chrome::TEAM_COOLDOWN_LEN`; the
+  timer decays once per update (`:17048-17051`) in `frame()` beside
+  `tick_pointer_clock`, **not** on the fixed world step — the C# decrements it
+  in `Update()`. While it runs both icon groups draw at `White * 0.25`
+  (`:42672`) and every hover/click is refused.
+- **Hover.** The text keys are the vanilla ones and needed no new
+  localization work: `UI.PvpIcon_Active`/`_Inactive` (`:42685`) and
+  `UI.TeamIcon{None,Red,Green,Blue,Yellow,Pink}_{Active,Inactive}`
+  (`:42734-42758`), all already present in
+  `Terraria.Localization.Content.en-US.json:348-360`. They are drawn through a
+  new `ui::tooltip::draw_mouse_text` (the single-line
+  `MouseTextHackZoom`/`MouseText` shape, same box + shadow + `mouseTextColor`
+  tint as the item tooltip). The C# also sets `player.mouseInterface = true`
+  while an icon is hovered, which suppresses the slot hover underneath; the
+  port mirrors that by skipping the item tooltip when a PVP hit is live.
+- **Clicks.** `App::handle_inventory_clicks` routes a press through
+  `chrome::pvp_hit` (same geometry as the draw) and applies
+  `chrome::pvp_click`'s gate chain: `teamCooldown == 0` for both, plus
+  `player.team != i` for a team cell (`:42689`, `:42753`). The effect is
+  `teamCooldown = 300` + `SoundEngine.PlaySound(12)` (the ported `Menu_Tick`
+  cue, `audio.rs`'s `SFX_CUES`) + the `hostile` flip / `team` write.
+
+**Deviations (all recorded as unported, not approximated):**
+
+- `NetMessage.SendData(30)` (the PVP-state broadcast, `:42694`) and
+  `SendData(157)` (the team change, `:42766`) have no counterpart — M6-NET's
+  message table carries neither id. The local state change is the whole visible
+  effect in single player; the MP broadcast rides M6-NET when those ids land.
+- `Player.TeamChangeAllowed()` (`Player.cs:4517-4520`) is a literal
+  `return true` in 1.4.5.8, so the `Lang.misc[84]` "cannot change team" refusal
+  (`:42757-42759`) is unreachable dead code and is not ported. If a future
+  patch gives the method a body, the arm comes back here.
+- `Main.teamBasedSpawnsSeed`'s `Spawn(PlayerSpawnContext.TeamSwap)` arm
+  (`:42768-42769`) has no port counterpart (no team-based spawn seeds), so a
+  team change on a seedless world does not respawn the player.
+- `PlayerInput.UsingGamepad` hovers the icons during the cooldown in the C#
+  (`:42680`, `:42725`); the port's pointer-driven hit test has no gamepad
+  branch, so a cooled-down icon reports no hover for either input.
+- The `UILinkPointNavigator.SetPosition(1550..1556, …)` registrations
+  (`:42703`, `:42781`) belong to the gamepad link graph, which the port does
+  not model.
+
+**Screenshot harness.** `TR_PVP=1` (`env::pvp_icons`) opens the two
+multiplayer-only gates so a single-player capture can show the icons: without
+it nothing draws, because the vanilla only shows them inside a client. The pin
+is resolved once into `App::pvp_icons_forced` (a field, so tests can open the
+gate without racing the `OnceLock`). The A/B proof: with the pin the
+capture differs from the unpinned one over exactly `(1371, 437)-(1523, 555)`
+— the toggle at `(1373, 435)`, the team grid below it and the hover tooltip
+box — and two pinned runs are SHA256-equal (`e2cbe1ef…` at 1600x900,
+`TR_MOUSE=1380,500`, i.e. team cell 0 hovered).
+
+**Finding (pre-existing, not fixed here).** The older inventory HUD hit tests
+in `app/clicks.rs` (the bank transfer buttons, `bank_button_at(mouse, m_h)`)
+compute `m_h` as `(screenH - 600) / 2`, while the draw path uses `Main.mH`
+(`ui::minimap::main_m_h`, 256 or `screenH - 600`). At 720 px those are 60 and
+120, so a live minimap puts those hit regions 60 px off the drawn buttons.
+This task added `App::main_m_h()` (the draw path's own value) and used it for
+the new PVP icons; converting the older call sites belongs to M7-UI-2, which
+owns the inventory click surface.
 ### BUG-08 — the invasion progress bar (`DrawInvasionProgress`)
 
 - **Where the fade head lives.** The C# runs `Main.invasionProgressDisplayLeft`'
