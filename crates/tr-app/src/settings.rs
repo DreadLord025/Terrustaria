@@ -135,6 +135,20 @@ pub struct Settings {
     /// plain static: default false): the "Smart Block Placement" row
     /// (`Main.cs:50286-50293`).
     pub smart_blocks: bool,
+    /// `DoorOpeningHelper.PreferenceSettings` (`DoorOpeningHelper.cs:216`,
+    /// default `Disabled` = 0): the "Smart Doors" row of the in-game options
+    /// (`IngameOptions.cs:644-657`). Persisted as `"DoorAutoOpeningMode"`
+    /// (`Main.cs:4208`/`:4545`).
+    pub smart_doors: u8,
+    /// `Player.Settings.HoverControl` (`Player.cs:362`, default
+    /// `ButtonControlMode.Hold` = 0 at `Player.cs:407`): the "Hover Controls"
+    /// row (`IngameOptions.cs:659-675`). Persisted as `"HoverControlMode"`
+    /// (`Main.cs:4209`/`:4546`).
+    pub hover_control: u8,
+    /// `Main.SettingsEnabled_AutoReuseAllItems` (`Main.cs:261`, default false):
+    /// the "Autofire" row (`IngameOptions.cs:677-684`). Persisted as
+    /// `"SettingsEnabled_AutoReuseAllItems"` (`Main.cs:4158`/`:4544`).
+    pub auto_reuse_all: bool,
     /// `LockOnHelper.UseMode` (`LockOnHelper.cs:24`): 0 FocusTarget,
     /// 1 TargetClosest, 2 ThreeDS. Default **2**, not the enum's 0:
     /// `LoadSettings` runs the `"LockOnPriority"` chain on every boot
@@ -208,6 +222,19 @@ pub struct Settings {
     /// (`Main.cs:49973-49979`). Vanilla key `"FlashyEffectsInterface"`
     /// (`Put` `:4216`, `Get` `:4351`).
     pub flashy_effects_interface: bool,
+    /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the 14 gameplay
+    /// binds of the menuMode 27 list, in the vanilla's declaration order
+    /// (`cUp, cLeft, cDown, cRight, ...` — **not** the typing order).
+    ///
+    /// Vanilla keeps them as plain strings and reads them back from
+    /// `config.json` under the `Key*` names (`Main.LoadSettings`,
+    /// `Main.cs:4582-4595`), handing them to `PlayerInput.CurrentProfile`'s
+    /// `KeyStatus` table (`:4602-4625`). The port writes the same names so a
+    /// vanilla config round-trips. See [`crate::input_map`] for the lookups.
+    pub keybinds: [String; crate::input_map::BIND_COUNT],
+    /// `Main.cMapStyle`..`Main.cMapAlphaDown` (`Main.cs:67190-67195`): the 6
+    /// map binds of the menuMode 272727 list (`:4596-4600`).
+    pub map_binds: [String; crate::input_map::MAP_BIND_COUNT],
 }
 
 impl Default for Settings {
@@ -253,6 +280,9 @@ impl Default for Settings {
             smart_cursor_toggle: true,            // Main.cs:67178
             smart_axe_first: false,               // Player.cs:334
             smart_blocks: false,                  // Player.cs:331
+            smart_doors: 0,                       // DoorOpeningHelper.cs:216 (Disabled)
+            hover_control: 0,                     // Player.cs:407 (Hold)
+            auto_reuse_all: false,                // Main.cs:261
             lock_on_priority: 2,                  // Main.cs:4496-4505
             use_storm_effects: true,              // Main.cs:66572
             foreground_sunlight: true,            // Main.cs:66574
@@ -267,6 +297,8 @@ impl Default for Settings {
             portrait_preference: 0,               // Main.cs:2331 (Detailed)
             boss_bar_text: true,                  // BigProgressBarSystem.cs:259
             flashy_effects_interface: true,       // Main.cs:66578
+            keybinds: crate::input_map::default_binds(),
+            map_binds: crate::input_map::default_map_binds(),
         }
     }
 }
@@ -504,6 +536,24 @@ impl Settings {
                 // Player.SmartCursorSettings.SmartBlocksEnabled)`
                 // (`Main.cs:4138`, read back at `:4411`).
                 "UseSmartCursorForCommonBlocks" => me.smart_blocks = boolean(value),
+                // `configuration.Put("DoorAutoOpeningMode",
+                // DoorOpeningHelper.PreferenceSettings)` (`Main.cs:4208`, read
+                // back at `:4545`); the enum is Disabled/GamepadOnly/Everything.
+                "DoorAutoOpeningMode" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        me.smart_doors = v.clamp(0, 2) as u8;
+                    }
+                }
+                // `configuration.Put("HoverControlMode",
+                // Player.Settings.HoverControl)` (`Main.cs:4209`/`:4546`).
+                "HoverControlMode" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        me.hover_control = v.clamp(0, 3) as u8;
+                    }
+                }
+                // `configuration.Put("SettingsEnabled_AutoReuseAllItems",
+                // Main.SettingsEnabled_AutoReuseAllItems)` (`Main.cs:4158`).
+                "SettingsEnabled_AutoReuseAllItems" => me.auto_reuse_all = boolean(value),
                 // `configuration.Put("CraftFromNearbyChests",
                 // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`), the
                 // `Player.Settings` control pair read back through the same
@@ -563,6 +613,18 @@ impl Settings {
                 // Main.FlashyEffectsInterface)` (`Main.cs:4216`, read back at
                 // `:4351`).
                 "FlashyEffectsInterface" => me.flashy_effects_interface = boolean(value),
+                // The 14 gameplay binds (`Main.cs:4582-4595`) and the 6 map
+                // binds (`:4596-4600`). A name the reader does not know keeps
+                // the row's default, like the vanilla `Get` leaving the field
+                // untouched when the key is absent.
+                "KeyUp" | "KeyLeft" | "KeyDown" | "KeyRight" | "KeyJump"
+                | "KeyThrowItem" | "KeyQuickHeal" | "KeyQuickMana" | "KeyQuickBuff"
+                | "KeyUseHook" | "KeyAutoSelect" | "KeyInventory" | "KeySmartCursor"
+                | "KeyMount" => me.set_keybind(key, json_bare_string(value)),
+                "KeyMapStyle" | "KeyFullscreenMap" | "KeyMapZoomIn" | "KeyMapZoomOut"
+                | "KeyMapAlphaUp" | "KeyMapAlphaDown" => {
+                    me.set_map_bind(key, json_bare_string(value))
+                }
                 _ => {}
             }
         }
@@ -605,13 +667,15 @@ impl Settings {
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
              \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
-             \"UseSmartCursorForCommonBlocks\": {},\n  \"CraftFromNearbyChests\": {},\n  \
+             \"UseSmartCursorForCommonBlocks\": {},\n  \"DoorAutoOpeningMode\": {},\n  \
+             \"HoverControlMode\": {},\n  \"SettingsEnabled_AutoReuseAllItems\": {},\n  \
+             \"CraftFromNearbyChests\": {},\n  \
              \"LockOnPriority\": {},\n  \
              \"ReverseUpDownForArmorSetBonuses\": {},\n  \
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
              \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
-             \"MinimapFrame\": \"{}\"\n}}\n",
+             \"MinimapFrame\": \"{}\"{}\n}}\n",
             self.auto_save,
             self.auto_pause,
             self.language,
@@ -661,6 +725,13 @@ impl Settings {
             self.smart_cursor_toggle,
             self.smart_axe_first,
             self.smart_blocks,
+            // `DoorOpeningHelper.PreferenceSettings`, `Player.Settings.HoverControl`
+            // and `Main.SettingsEnabled_AutoReuseAllItems` (`Main.cs:4208`,
+            // `:4209`, `:4158`) — the three rows the options window drew as
+            // "Parked" because the port carried no field for them.
+            self.smart_doors,
+            self.hover_control,
+            self.auto_reuse_all,
             // `configuration.Put("CraftFromNearbyChests",
             // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`); the port
             // keeps its own position in this list (Phase 2 only renames keys, it
@@ -678,8 +749,73 @@ impl Settings {
             self.boss_bar_text,
             self.flashy_effects_interface,
             self.minimap_frame,
+            self.bind_block(),
         )
     }
+
+    /// The `Key*` rows of `config.json`, as a comma-prefixed JSON fragment.
+    ///
+    /// Vanilla reads these back (`Main.cs:4582-4600`) but never writes them
+    /// from `SaveSettings`; the port writes them because its bind table lives
+    /// in `Settings` (the vanilla keeps the authority in
+    /// `PlayerInput.CurrentProfile`, a file the port does not have). The names
+    /// are the vanilla's, so a vanilla `config.json` still parses.
+    fn bind_block(&self) -> String {
+        let mut out = String::new();
+        for (i, action) in crate::input_map::Action::ALL.iter().enumerate() {
+            out.push_str(&format!(
+                ",
+  \"{}\": \"{}\"",
+                crate::input_map::Action::CONFIG_KEYS[i],
+                self.keybinds[action.index()]
+            ));
+        }
+        for (i, action) in crate::input_map::MapAction::ALL.iter().enumerate() {
+            out.push_str(&format!(
+                ",
+  \"{}\": \"{}\"",
+                crate::input_map::MapAction::CONFIG_KEYS[i],
+                self.map_binds[action.index()]
+            ));
+        }
+        out
+    }
+
+    /// One `Key*` row of [`Settings::parse`]. The row index comes from the
+    /// `config.json` name, so the two tables cannot drift.
+    fn set_keybind(&mut self, key: &str, value: String) {
+        for (i, name) in crate::input_map::Action::CONFIG_KEYS.iter().enumerate() {
+            if *name == key {
+                // An unknown key name (a hand edit) would bind nothing, so the
+                // row keeps its default instead of going dead.
+                if crate::input_map::parse_key(&value.trim()).is_some() {
+                    self.keybinds[i] = value.trim().to_string();
+                }
+                return;
+            }
+        }
+    }
+
+    fn set_map_bind(&mut self, key: &str, value: String) {
+        for (i, name) in crate::input_map::MapAction::CONFIG_KEYS.iter().enumerate() {
+            if *name == key {
+                if crate::input_map::parse_key(&value.trim()).is_some() {
+                    self.map_binds[i] = value.trim().to_string();
+                }
+                return;
+            }
+        }
+    }
+}
+
+/// The bare text of a JSON string value, as the `parse` pass sees it (the
+/// value arrives including its quotes, e.g. `\"W\"` -> `W`).
+fn json_bare_string(value: &str) -> String {
+    let v = value.trim();
+    v.strip_prefix('"')
+        .and_then(|rest| rest.split_once('"').map(|(s, _)| s))
+        .unwrap_or(v)
+        .to_string()
 }
 
 /// The stored `LightingMode` byte (`Terraria.Graphics.Light.LightMode`:
@@ -1252,6 +1388,45 @@ mod tests {
     }
 
     #[test]
+    /// M7-UI-5: the bind table round-trips through `config.json` under the
+    /// vanilla `Key*` names, and a vanilla file's rows win over the defaults
+    /// (`Main.LoadSettings`, `Main.cs:4582-4600`).
+    #[test]
+    fn m7_ui_5_the_binds_round_trip_through_the_config() {
+        let mut s = Settings::default();
+        s.keybinds[crate::input_map::Action::Jump.index()] = "F".into();
+        s.keybinds[crate::input_map::Action::Smart.index()] = "Q".into();
+        s.map_binds[crate::input_map::MapAction::Full.index()] = "Tab".into();
+        let back = Settings::parse(&s.to_json());
+        assert_eq!(back.keybinds, s.keybinds, "the 14 gameplay rows");
+        assert_eq!(back.map_binds, s.map_binds, "the 6 map rows");
+        // A vanilla config that only carries a couple of rows keeps the rest.
+        let back = Settings::parse(
+            "{
+  \"KeyQuickHeal\": \"Tab\",
+  \"KeyFullscreenMap\": \"F1\"
+}",
+        );
+        assert_eq!(
+            back.keybinds[crate::input_map::Action::QuickHeal.index()],
+            "Tab"
+        );
+        assert_eq!(
+            back.map_binds[crate::input_map::MapAction::Full.index()],
+            "F1"
+        );
+        assert_eq!(
+            back.keybinds[crate::input_map::Action::Mount.index()],
+            "R",
+            "an absent row keeps the default"
+        );
+        // An unreadable name keeps the default rather than going dead.
+        let back = Settings::parse("{
+  \"KeyJump\": \"NotAKey\"
+}");
+        assert_eq!(back.keybinds[crate::input_map::Action::Jump.index()], "Space");
+    }
+
     fn test_DW_2_3_to_json_writes_the_vanilla_key_names() {
         let json = Settings::default().to_json();
         // The exact key sequence, in the writer's own order (the order the port
@@ -1306,6 +1481,29 @@ mod tests {
                 "ShowBossBarHealthText",
                 "FlashyEffectsInterface",
                 "MinimapFrame",
+                // `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`) and the 6
+                // map binds (`:67190-67195`), written under the names
+                // `Main.LoadSettings` reads back (`:4582-4600`).
+                "KeyUp",
+                "KeyLeft",
+                "KeyDown",
+                "KeyRight",
+                "KeyJump",
+                "KeyThrowItem",
+                "KeyQuickHeal",
+                "KeyQuickMana",
+                "KeyQuickBuff",
+                "KeyUseHook",
+                "KeyAutoSelect",
+                "KeyInventory",
+                "KeySmartCursor",
+                "KeyMount",
+                "KeyMapStyle",
+                "KeyFullscreenMap",
+                "KeyMapZoomIn",
+                "KeyMapZoomOut",
+                "KeyMapAlphaUp",
+                "KeyMapAlphaDown",
             ]
         );
         // Vanilla names only: the port's twelve pre-parity spellings never

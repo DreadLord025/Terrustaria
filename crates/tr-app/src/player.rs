@@ -189,6 +189,50 @@ pub fn liquid_fall_cap() -> f32 {
     MAX_FALL / 3.0
 }
 
+/// `Main.OffsetsPlayerHeadgear[i].Y` (`Main.cs:66638-66660`): the per-body-row
+/// headgear lift the draw and the Moon Lord leg rows read. Rows 7-9 and 14-16
+/// are the `0` entries.
+pub fn offsets_player_headgear_y(row: usize) -> f32 {
+    match row.min(19) {
+        7..=9 | 14..=16 => 0.0,
+        _ => 2.0,
+    }
+}
+
+/// The held-item inputs of `PlayerFrame()` (`Player.cs:36144-36147`). The C#
+/// reads `this.inventory[this.selectedItem]` straight out of the player; the
+/// port keeps the inventory in the app, so the app hands the same fields in
+/// before each fixed step (`world_sim/player.rs`, beside `swing_aim`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameInputs {
+    /// `inventory[selectedItem].useStyle` — drives the item-use body chain.
+    pub use_style: u8,
+    /// `flag6` (`:36146`): `useStyle != 10 && != 14 && != 15`. Those three
+    /// styles (the fishing rod family and the like) skip the item-use rows.
+    pub use_style_blocks_frames: bool,
+    /// `inventory[selectedItem].type` — the useStyle 5 torch carve-out and the
+    /// `type == 0` empty-hand share of the useStyle 1 branch.
+    pub item_type: i32,
+    /// `inventory[selectedItem].holdStyle` — the idle hold rows.
+    pub hold_style: i32,
+    /// `flag5` = `CanVisuallyHoldItem(HeldItem)` (`:36143`).
+    pub can_visually_hold: bool,
+    /// `itemAnimation > 0`.
+    pub swing_active: bool,
+    /// `itemAnimation / itemAnimationMax` (1 at the start, 0 at the end).
+    pub swing_remaining: f32,
+    /// `itemRotation * direction` — the useStyle 5 aim.
+    pub aim_relative: f32,
+    /// `!wet || !item.noWet` — the two held-item arms that the water kills.
+    pub hold_style_dry: bool,
+    /// `!happyFunTorchTime || createTile != 4` — the torch hold override.
+    pub torch_hold_ok: bool,
+    /// The grapple body arm's lean — the hooks' centroid minus the body centre
+    /// (`Player.cs:36502-36520`).
+    pub grapple_dx: f32,
+    pub grapple_dy: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -280,6 +324,13 @@ pub struct Player {
     /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
     /// counter `/pvpdeath` reads (`PVPDeathCommand`).
     pub deaths_pvp: u32,
+    /// `Player.hostile` (`Player.cs:2570`): the PVP toggle the inventory's
+    /// `DrawPVPIcons` reads and toggles (`Main.cs:42664`, `:42692`). Gates the
+    /// PVP damage rules (`damage::*`, `Player.Damage_PVP`).
+    pub hostile: bool,
+    /// `Player.team` (`Player.cs:1430`): 0 = none, 1..=5 = Red/Green/Blue/
+    /// Yellow/Pink (`PlayerTeamID`). The `DrawPVPIcons` row index.
+    pub team: i32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -457,6 +508,41 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.bodyFrameCounter` (`Player.cs:36594`): only the `legs == 140`
+    /// walk branch accumulates it (`|velocity.X| * 0.5`); every other body arm
+    /// either zeroes it or leaves it alone.
+    body_frame_counter: f32,
+    /// `Player.swimTime` (`Player.cs:35756-35762`): the merman/flipper swim
+    /// window; `PlayerFrame` decrements it and clears it out of water.
+    pub swim_time: i32,
+    /// `Player.miscCounter`: ticked once per update in the original; the
+    /// sandstorm leg pose turns the player every 4 ticks on it
+    /// (`Player.cs:36302`).
+    pub misc_counter: u32,
+    /// `Player.pulley` / `Player.pulleyDir` (`Player.cs:1070`): the rope
+    /// pose — body rows 1 (dir 2) and 2 (dir 1).
+    pub pulley: bool,
+    pub pulley_dir: u8,
+    /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
+    pub shield_raised: bool,
+    /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
+    /// the air). No port source sets it yet, so the arm is coded but
+    /// unreachable.
+    pub sliding: bool,
+    /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
+    /// pose (leg row 0, body row 6, a 4-tick turn cadence).
+    pub sand_storm: bool,
+    /// `Player.carpetFrame` (`Player.cs:1094`, init `-1`): the Magic Carpet
+    /// glide pose (leg row 0, body row 6).
+    pub carpet_frame: i32,
+    /// `Player.legs` (`Player.cs:35766`): the effective legs armour texture id
+    /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
+    /// carve-out (`217`) read it; `0` = the default legs sheet.
+    pub legs_armor: i32,
+    /// The held-item half of `PlayerFrame()` — the C# reads
+    /// `inventory[selectedItem]` directly, the port feeds the summary in from
+    /// the app before the tick (`world_sim/player.rs`).
+    pub frame_inputs: FrameInputs,
     /// `Player.wet` — the head/body in WATER (`Player.cs:27728`).
     pub wet: bool,
     /// `Player.lavaWet` — in LAVA.
@@ -494,6 +580,16 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
+    /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
+    /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
+    /// `Update_NPCCollision` (`:31321`) all return early while it is set, and
+    /// `Main.UpdateWorld_Players` refills the three pools
+    /// (`Main.cs:17869-17873`).
+    pub creative_god_mode: bool,
+    /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
+    /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
+    pub far_placement_range: bool,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
     breath_cd: i32,
@@ -1056,6 +1152,8 @@ impl Player {
             angler_quests_finished: 0,
             golfer_score: 0,
             deaths_pvp: 0,
+            hostile: false,
+            team: 0,
             dead_time: 0,
             respawn_timer: 0,
             minion_attack_target_npc: -1,
@@ -1128,6 +1226,17 @@ impl Player {
             leg_frame: 0,
             body_frame: 0,
             leg_frame_counter: 0.0,
+            body_frame_counter: 0.0,
+            swim_time: 0,
+            misc_counter: 0,
+            pulley: false,
+            pulley_dir: 0,
+            shield_raised: false,
+            sliding: false,
+            sand_storm: false,
+            carpet_frame: -1,
+            legs_armor: 0,
+            frame_inputs: FrameInputs::default(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -1186,6 +1295,8 @@ impl Player {
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
+            creative_god_mode: false,
+            far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
             luck_state: LuckState::default(),
@@ -1684,6 +1795,14 @@ impl Player {
         self.leg_frame = 0;
         self.body_frame = 0;
         self.leg_frame_counter = 0.0;
+        self.body_frame_counter = 0.0;
+        self.swim_time = 0;
+        self.pulley = false;
+        self.pulley_dir = 0;
+        self.shield_raised = false;
+        self.sliding = false;
+        self.sand_storm = false;
+        self.carpet_frame = -1;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
         self.breath = BREATH_MAX;
@@ -1732,6 +1851,11 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s head (`Player.cs:38809-38812`): the godmode power
+        // (and an already-dead player) refuses the death entirely.
+        if self.creative_god_mode || self.dead {
+            return;
+        }
         // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
@@ -1767,6 +1891,40 @@ impl Player {
                 let (nx, ny) = n.center();
                 (cx - nx).abs() + (cy - ny).abs() < 4000.0
             }
+        })
+    }
+
+    /// `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`): a live
+    /// NPC inside the centred `Main.MaxWorldViewSize` (1920x1080) rect inflated
+    /// by 320 px blocks the respawn skip — an invasion NPC while its invasion
+    /// runs (`NPC.GetNPCInvasionGroup(type) == Main.invasionType`), or a
+    /// `NPCID.Sets.DangerThatPreventsOtherDangers` member (the port has none
+    /// yet, so only the invasion arm fires).
+    pub fn near_any_npcs_that_block_respawn(
+        &self,
+        npcs: &[crate::npc::Npc],
+        invasion_live: bool,
+    ) -> bool {
+        // `Utils.CenteredRectangle(Center, Main.MaxWorldViewSize)` then
+        // `Inflate(320, 320)` (`:38992-38998`).
+        const VIEW_W: f32 = 1920.0;
+        const VIEW_H: f32 = 1080.0;
+        const INFLATE: f32 = 320.0;
+        let (cx, cy) = self.center();
+        let half_w = VIEW_W * 0.5 + INFLATE;
+        let half_h = VIEW_H * 0.5 + INFLATE;
+        npcs.iter().any(|n| {
+            let (nx, ny) = n.center();
+            let (w, h) = n.size();
+            let overlaps = (nx - cx).abs() <= half_w + w * 0.5
+                && (ny - cy).abs() <= half_h + h * 0.5;
+            if !overlaps {
+                return false;
+            }
+            // `NPC.GetNPCInvasionGroup(nPC.type) > 0 && == Main.invasionType`
+            // (`:39005-39008`); the danger-set arm (`:39009-39012`) has no
+            // ported members.
+            invasion_live && n.kind.is_invasion_npc()
         })
     }
 
@@ -2049,6 +2207,12 @@ impl Player {
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+        // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
+        // journey godmode power swallows the hit outright — before the
+        // iframes, the defense reduction and the knockback.
+        if self.creative_god_mode {
+            return false;
+        }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -2086,6 +2250,32 @@ impl Player {
         self.hurt_inner(amount, cx, false)
     }
 
+    /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
+    /// `:57113`) after `Player.ResetEffects`' journey block
+    /// (`:18815-18828`): the base 5, or `5 * 2 + 8 = 18` while the
+    /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
+    /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
+    /// power's own toggle is the gate.
+    pub fn tile_range_x(&self) -> f32 {
+        let base = 5.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
+    /// `Player.tileRangeY` (`DefaultTileRangeY = 3`, `Player.cs:57114`) with
+    /// the same journey doubling (`:18823-18825`): `3` or `14`.
+    pub fn tile_range_y(&self) -> f32 {
+        let base = 3.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
     pub fn center(&self) -> (f32, f32) {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
@@ -2109,6 +2299,18 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
+    /// `ApplyEquipFunctional` arms them for the worn accessory slots 3..10
+    /// (`:14368`, the `UpdateEquips` loop `:12948-12954` — `IsItemSlotUnlockedAndUsable`
+    /// is not modelled, every slot counts as unlocked) and `ResetEffects`
+    /// clears them every tick (`:18365-18366`). The melee gate
+    /// (`ProcessHitAgainstNPC` `:44274`) and the projectile gate
+    /// (`Damage_PVE_Inner` `:12601`) both read this pair.
+    pub fn doll_flags(&self) -> (bool, bool) {
+        let worn = |k: u16| self.equipped[3..10].contains(&k);
+        (worn(267), worn(1307))
     }
 
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
@@ -3141,27 +3343,46 @@ impl Player {
         }
     }
 
-    /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
-    /// every tick after movement:
-    /// - idle: legs and body row `0` (the rest pose);
-    /// - airborne (`velocity.Y != 0`): row `5` (the jump/fall pose);
-    /// - walking (`velocity.X != 0`): legs advance one row per `8.0` of
-    ///   `legFrameCounter += |velocity.X| * 1.3`, cycling the walk band rows `7..=19`,
-    ///   and the body copies the leg row.
+    /// `PlayerFrame()` (`Player.cs:35755-36647`) — the legs and body rows of
+    /// every pose. The chain order is the vanilla one: the swim window, the
+    /// mount animator (`flag7` plus `DoesNotOverrideLegFrames`), the leg rows,
+    /// then the body rows (item use → pulley → hold styles → shield → mount →
+    /// grapple → water → swim → air → walk → idle).
     ///
-    /// The wings/mount/pulley/hold-style branches of the original are not modelled yet,
-    /// and item-use body frames are applied by the app via [`Player::apply_item_use_frame`]
-    /// while a swing is active.
+    /// The C# reads the held item out of `inventory[selectedItem]`; the port
+    /// keeps the inventory in the app, which hands the same fields in through
+    /// [`FrameInputs`] before each fixed step (`world_sim/player.rs`, beside
+    /// `swing_aim`).
+    ///
+    /// Arms whose granting equipment has no port field yet stay coded but
+    /// unreachable until it lands: Sandstorm in a Bottle (`sand_storm`), the
+    /// Magic Carpet (`carpet_frame`), flippers (`ShouldFloatInWater`), the
+    /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
-        // `Player.cs:36148-36217`: while mounted, the mount owns the leg
-        // frames and runs its own animator — the unmounted logic below is
-        // gated off exactly like the original's `flag7`.
+        let held = self.frame_inputs;
+        // `:35756-35762`: the swim window ticks down and dies out of water.
+        if self.swim_time > 0 {
+            self.swim_time -= 1;
+            if !self.wet {
+                self.swim_time = 0;
+            }
+        }
+        // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
+        // one of the 57-60 roller-skate mounts
+        // (`MountID.Sets.DoesNotOverrideLegFrames`, `MountID.cs:39`). Every
+        // mount still runs its own animator, so this block does not return.
+        let mut mount_owns_legs = false;
         if self.mount.is_active() {
-            // `:36150-36161`: the leg frames force to row 6 (the rows 0
-            // carve-out is for 23/45/48 — no rows here).
-            self.leg_frame_counter = 0.0;
-            self.leg_frame = 6;
-            // `:36155-36216`: the state selection.
+            let kind = self.mount.kind();
+            if !crate::mount::does_not_override_leg_frames(kind) {
+                mount_owns_legs = true;
+                // `:36150-36161`: row 6; the 23/45/48 carve-out forces row 0.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 6;
+                if matches!(kind, 23 | 45 | 48) {
+                    self.leg_frame = 0;
+                }
+            }
             if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
                 if self.mount.fly_time() > 0
                     && self.jump == 0
@@ -3219,50 +3440,244 @@ impl Player {
                     self.control_down,
                 );
             }
-            // `:36488`: the body frame locks to the mount's row.
-            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
-            return;
         }
-        if self.vy != 0.0 {
-            self.leg_frame_counter = 0.0;
-            self.leg_frame = 5;
-        } else if self.vx != 0.0 {
-            self.leg_frame_counter += self.vx.abs() * 1.3;
-            while self.leg_frame_counter > 8.0 {
-                self.leg_frame_counter -= 8.0;
-                self.leg_frame += 1;
+
+        // `:36219-36291`: the leg rows.
+        if !mount_owns_legs && self.legs_armor != 140 {
+            if self.swim_time > 0 {
+                // `:36221-36233`: the swim paddle — a flat 2 per tick.
+                self.leg_frame_counter += 2.0;
+                while self.leg_frame_counter > 8.0 {
+                    self.leg_frame_counter -= 8.0;
+                    self.leg_frame += 1;
+                }
+                if self.leg_frame < 7 {
+                    self.leg_frame = 19;
+                } else if self.leg_frame > 19 {
+                    self.leg_frame = 7;
+                }
+            } else if self.vy != 0.0 || self.grappling_active {
+                // `:36234-36240`: the jump/fall/hang row 5; the three
+                // always-animated wing sets keep row 0.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 5;
+                if matches!(self.wings_logic, 22 | 28 | 45)
+                    && self.should_draw_wings_that_are_always_animated()
+                {
+                    self.leg_frame = 0;
+                }
+            } else if self.vx != 0.0 {
+                // `:36242-36275`: the walk cycle. The slippery no-input arm
+                // (and the roller skates, `MountID.Sets.IsRollerSkates`) pins
+                // the rest row.
+                let roller_skates =
+                    self.mount.is_active() && crate::mount::is_roller_skates(self.mount.kind());
+                if ((self.slippy || self.slippy2) | roller_skates)
+                    && !self.control_left
+                    && !self.control_right
+                {
+                    self.leg_frame_counter = 0.0;
+                    self.leg_frame = 0;
+                } else {
+                    let mut num19 = self.vx.abs() * 1.3;
+                    // `:36255-36258`: the skates lock to 2 at full speed.
+                    if roller_skates && self.vx.abs() >= self.max_run_speed {
+                        num19 = 2.0;
+                    }
+                    self.leg_frame_counter += num19;
+                    while self.leg_frame_counter > 8.0 {
+                        self.leg_frame_counter -= 8.0;
+                        self.leg_frame += 1;
+                    }
+                    if self.leg_frame < 7 {
+                        self.leg_frame = 19;
+                    } else if self.leg_frame > 19 {
+                        self.leg_frame = 7;
+                    }
+                }
+            } else {
+                // `:36276-36282`: the rest row.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 0;
             }
-            if self.leg_frame < 7 {
-                self.leg_frame = 19;
-            } else if self.leg_frame > 19 {
-                self.leg_frame = 7;
-            }
-        } else {
+        }
+        // `:36292-36297`: the Magic Carpet glide pins the rest row.
+        if self.carpet_frame >= 0 {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 0;
         }
-
-        if self.vy != 0.0 {
-            self.body_frame = 5;
-        } else if self.vx != 0.0 {
-            self.body_frame = self.leg_frame;
-        } else {
+        // `:36298-36311`: the sandstorm dash pins the rest row and turns the
+        // player every 4 ticks while no item is in use.
+        if self.sand_storm {
+            if self.grappling_active {
+                self.sand_storm = false;
+            }
+            if self.misc_counter % 4 == 0 && !held.swing_active {
+                self.facing = -self.facing;
+            }
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 0;
+        } else if held.swing_active && held.use_style_blocks_frames {
+            // `:36312-36444`: the item-use rows per useStyle.
+            self.apply_item_use_frame(held.swing_remaining, held.use_style, held.aim_relative);
+        } else if self.pulley {
+            // `:36445-36454`: the rope pose.
+            self.body_frame = if self.pulley_dir == 2 { 1 } else { 2 };
+        } else if held.can_visually_hold
+            && held.hold_style == 1
+            && held.hold_style_dry
+            && held.torch_hold_ok
+        {
+            // `:36455-36459`: the torch hold (row 3).
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 2 && held.hold_style_dry {
+            // `:36460-36464`: the held-up item (row 2).
+            self.body_frame = 2;
+        } else if held.can_visually_hold && held.hold_style == 3 {
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 5 {
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 7 {
+            // `:36477-36481`: the holdStyle 7 row 11.
+            self.body_frame = 11;
+        } else if held.can_visually_hold && held.hold_style == 4 && self.vy == 0.0 {
+            // `:36483-36488`: the umbrella hold rests on row 0. (The C# also
+            // requires `gravDir == 1`; the port has no gravity flip.)
             self.body_frame = 0;
+        } else if self.shield_raised {
+            // `:36489-36492`: the raised shield (row 10).
+            self.body_frame = 10;
+        } else if self.mount.is_active()
+            && !crate::mount::does_not_override_body_frames(self.mount.kind())
+        {
+            // `:36493-36497`: the mount body row.
+            self.body_frame_counter = 0.0;
+            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
+        } else if self.grappling_active {
+            // `:36498-36535`: the grapple pose leans with the hooks' centroid.
+            self.sand_storm = false;
+            let dx = held.grapple_dx;
+            let dy = held.grapple_dy;
+            if dy < 0.0 && dy.abs() > dx.abs() {
+                self.body_frame = 2;
+            } else if dy > 0.0 && dy.abs() > dx.abs() {
+                self.body_frame = 4;
+            } else {
+                self.body_frame = 3;
+            }
+        } else if self.wet && self.should_float_in_water() {
+            // `:36536-36539`: the float pose (row 10).
+            self.body_frame = 10;
+        } else if self.swim_time > 0 {
+            // `:36540-36558`: the swim window — row 0 at the edges, row 5 in
+            // the middle.
+            self.body_frame = if self.swim_time > 20 {
+                0
+            } else if self.swim_time > 10 {
+                5
+            } else {
+                0
+            };
+        } else if self.vy != 0.0 {
+            // `:36559-36600`: the airborne rows.
+            if self.sliding {
+                self.body_frame = 3;
+            } else if self.sand_storm || self.carpet_frame >= 0 {
+                self.body_frame = 6;
+            } else if self.eoc_dash > 0 {
+                self.body_frame = 6;
+            } else if self.wings_logic > 0 {
+                self.body_frame = if matches!(self.wings_logic, 22 | 28 | 45) {
+                    0
+                } else if self.vy > 0.0 {
+                    if self.control_jump {
+                        6
+                    } else {
+                        5
+                    }
+                } else {
+                    6
+                };
+            } else {
+                self.body_frame = 5;
+            }
+            self.body_frame_counter = 0.0;
+        } else if self.vx != 0.0 {
+            // `:36602-36623`: the walk rows. The Moon Lord legs (140) run
+            // their own counter at `|velocity.X| * 0.5`; everything else
+            // copies the leg row.
+            if self.legs_armor == 140 {
+                self.body_frame_counter += self.vx.abs() * 0.5;
+                while self.body_frame_counter > 8.0 {
+                    self.body_frame_counter -= 8.0;
+                    self.body_frame += 1;
+                }
+                if self.body_frame < 7 {
+                    self.body_frame = 19;
+                } else if self.body_frame > 19 {
+                    self.body_frame = 7;
+                }
+            } else {
+                self.body_frame_counter += self.vx.abs() * 1.5;
+                self.body_frame = self.leg_frame;
+            }
+        } else {
+            // `:36624-36633`: the rest row.
+            self.body_frame_counter = 0.0;
+            self.body_frame = 0;
+        }
+
+        // `:36634-36644`: the Moon Lord legs override their own rows after the
+        // body chain — row 5 in the air, row 0 at rest, and row 7 whenever the
+        // body row's headgear offset is zero.
+        if self.legs_armor == 140 {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = if self.vy != 0.0 { 5 } else { 0 };
+            if offsets_player_headgear_y(self.body_frame as usize) == 0.0 {
+                self.leg_frame = 7;
+            }
+            if matches!(self.wings_logic, 22 | 28) {
+                self.leg_frame = 0;
+            }
+        }
+        // `:36645-36651`: the sitting/sleeping legs (217) pin row 5.
+        if self.legs_armor == 217 && (self.sitting || self.sleeping) {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 5;
         }
     }
 
-    /// `PlayerFrame()`'s item-use branch (`Player.cs:36307-36444`): the body
+    /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
+    /// the three always-animated wing sets keep the rest legs while airborne.
+    fn should_draw_wings_that_are_always_animated(&self) -> bool {
+        self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.data().is_some_and(|d| d.can_use_wings)
+    }
+
+    /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
+    /// (flippers or the merman buff) while not holding down; mounted, only the
+    /// Water Strider's mount (37) floats. No accessory grants
+    /// `canFloatInWater` in the port yet, so this stays false and the pose arm
+    /// is coded but unreachable.
+    fn should_float_in_water(&self) -> bool {
+        false
+    }
+
+    /// `PlayerFrame()`'s item-use branch (`Player.cs:36312-36444`): the body
     /// rows per useStyle while `itemAnimation > 0`. `remaining` is
     /// `itemAnimation / itemAnimationMax` (1 at the swing's start, 0 at the
     /// end — the C# compares `itemAnimation` against the fractions directly);
-    /// `aim_relative` is `itemRotation * direction` (the shooting styles'
-    /// rows read it). The quirks are verbatim: style 3's both branches are
-    /// row 3, style 5 reads the aim, style 13 mirrors style 1.
-    pub fn apply_item_use_frame(&mut self, remaining: f32, use_style: u8, aim_relative: f32) {
+    /// `aim_relative` is `itemRotation * direction` (the shooting styles' rows
+    /// read it). The quirks are verbatim: style 3's both branches are row 3,
+    /// style 5 reads the aim, style 13 mirrors style 1.
+    fn apply_item_use_frame(&mut self, remaining: f32, use_style: u8, aim_relative: f32) {
         // The inverted remaining: `itemAnimation > max * frac` ==
         // `remaining < (1 - frac)` (itemAnimation runs 1 -> 0).
         let inv = 1.0 - remaining;
         match use_style {
+
             // `:36312-36326` (blocks/placeables; `type == 0` shares it) —
             // rows 1 -> 2 -> 3 by thirds.
             1 | 0 => {
@@ -5271,6 +5686,38 @@ mod tests {
         assert_eq!(p.respawn_timer, 3600);
     }
 
+    /// BUG-06b: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
+    /// — the live invasion's members inside the view rect inflated by 320 px
+    /// block the skip; the same NPCs do not while the invasion is over, and a
+    /// non-invasion NPC never does (the danger-set arm has no ported members).
+    #[test]
+    fn bug_06b_only_the_live_invasions_npcs_block_the_respawn_skip() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let (px, py) = p.center();
+        let goblin = crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 200.0, py, 1, 0.0);
+        let slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, px + 200.0, py, 1, 0.0);
+        // Inside the rect while the invasion runs — blocked.
+        assert!(p.near_any_npcs_that_block_respawn(&[goblin.clone()], true));
+        // The invasion ended: the same goblin no longer blocks.
+        assert!(!p.near_any_npcs_that_block_respawn(&[goblin.clone()], false));
+        // A commoner NPC is not an invasion group member.
+        assert!(!p.near_any_npcs_that_block_respawn(&[slime], true));
+        // Out of the inflated view rect (1920x1080 + 320 px): no block.
+        let far = crate::npc::Npc::new(
+            crate::npc::NpcKind::GoblinWarrior,
+            px + 4000.0,
+            py,
+            1,
+            0.0,
+        );
+        assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
+        // The gate itself: a nearby danger NPC vetoes the skip.
+        p.dead_time = 200;
+        assert!(p.allows_respawn_timer_skip(false, false));
+        assert!(!p.allows_respawn_timer_skip(false, true));
+    }
+
     #[test]
     fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
         let w = World::new("t".into(), 64, 800);
@@ -6007,6 +6454,46 @@ mod tests {
     }
 
     #[test]
+    fn the_godmode_power_swallows_hits_death_and_refills() {
+        // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
+        // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
+        // refuses outright (`:38809-38812`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.creative_god_mode = true;
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        assert!(!p.hurt(50, p.x + 100.0), "the hit is swallowed");
+        assert_eq!(p.hp, hp, "no damage");
+        assert_eq!(p.vx, 0.0, "no knockback");
+        p.start_death(&w, false, false);
+        assert!(!p.dead, "KillMe refuses while the power is on");
+        // Switching the power off restores both arms.
+        p.creative_god_mode = false;
+        assert!(p.hurt(10, p.x + 100.0));
+        p.hp = 0;
+        p.start_death(&w, false, false);
+        assert!(p.dead);
+    }
+
+    #[test]
+    fn the_far_placement_power_doubles_the_tile_range() {
+        // `Player.ResetEffects` (`Player.cs:18815-18828`): the default
+        // `tileRangeX/Y` 5/3 (`:57113-57114`) become `* 2 + 8` = 18/14 while
+        // `FarPlacementRangePower` is enabled (`CreativePowers.cs:730-767`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.tile_range_x(), 5.0);
+        assert_eq!(p.tile_range_y(), 3.0);
+        p.far_placement_range = true;
+        assert_eq!(p.tile_range_x(), 18.0);
+        assert_eq!(p.tile_range_y(), 14.0);
+    }
+
+    #[test]
     fn the_horseshoe_and_the_shield_grant_their_flags() {
         // `Player.cs:15029-15033` (noFallDmg) + `:15025-15028` (noKnockback).
         let p = player_with_accessory(158);
@@ -6116,6 +6603,171 @@ mod tests {
         granted.ammo_box = true;
         granted.magic_quiver = true;
         assert!(granted.ammo_flags().ammo_box && granted.ammo_flags().magic_quiver);
+    }
+
+    /// Spawns on flat ground and settles (the first update is the spawn tick).
+    fn settled() -> (World, Player) {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        (w, p)
+    }
+
+    #[test]
+    fn the_leg_rows_cover_the_missing_playerframe_arms() {
+        // `Player.cs:36219-36291`: the leg chain. Each arm is driven from the
+        // state the C# reads, in the vanilla order.
+        let (w, mut p) = settled();
+        // The swim paddle (`:36221-36233`): a flat 2 per tick regardless of
+        // velocity, cycling rows 7..=19.
+        p.swim_time = 10;
+        p.wet = true;
+        p.vy = 0.0;
+        p.leg_frame = 7;
+        p.leg_frame_counter = 0.0;
+        // `while (counter > 8.0)` is strict, so the 8.0 sum needs a fifth tick.
+        for _ in 0..6 {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.leg_frame, 8, "2 per tick crosses 8.0 on the fifth tick");
+        // Out of water the window dies (`:35759-35761`).
+        p.wet = false;
+        p.update_frames(&w);
+        assert_eq!(p.swim_time, 0);
+        // The hover set pins row 5 (`:36234-36240`): the grapple holds the
+        // legs at the fall row even at rest.
+        let (w, mut p) = settled();
+        p.grappling_active = true;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 5, "the hooks hold the fall row");
+        // The rest row (`:36276-36282`).
+        p.grappling_active = false;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0);
+        // The slippery no-input arm (`:36244-36250`): on ice with no steering
+        // the legs rest even while sliding.
+        p.vy = 0.0;
+        p.vx = 6.0;
+        p.slippy = true;
+        p.control_left = false;
+        p.control_right = false;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0, "the ice slide pins the rest row");
+        // The walk cycle (`:36251-36275`) once the player steers.
+        p.control_right = true;
+        p.leg_frame = 7;
+        p.leg_frame_counter = 0.0;
+        for _ in 0..2 {
+            p.update_frames(&w);
+        }
+        assert!(p.leg_frame > 7, "the counter advanced the row");
+    }
+
+    #[test]
+    fn the_moon_lord_legs_overrun_the_body_rows() {
+        // `Player.cs:36634-36644`: the 140 legs re-derive their row from the
+        // body row's headgear offset after the body chain.
+        let (w, mut p) = settled();
+        p.legs_armor = 140;
+        assert_eq!(offsets_player_headgear_y(7), 0.0);
+        // Body row 7-9 has a zero headgear offset -> the leg row is pinned 7.
+        p.vy = 0.0;
+        p.vx = 4.0;
+        p.leg_frame = 9;
+        p.body_frame = 9;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 9, "the legs-140 walk keeps its own rows");
+        assert_eq!(p.leg_frame, 7, "the zero offset pins the leg row");
+        // Airborne the leg row follows `velocity.Y != 0` -> 5.
+        p.vy = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 5);
+        // The always-animated wings (22/28) still force row 0.
+        p.wings_logic = 22;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0);
+    }
+
+    #[test]
+    fn the_body_chain_order_matches_playerframe() {
+        // `Player.cs:36445-36633`: the body rows after the item-use arm, in the
+        // vanilla `else if` order.
+        let (w, mut p) = settled();
+        p.vx = 0.0;
+        // The rope pose (`:36445-36454`).
+        p.pulley = true;
+        p.pulley_dir = 2;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 1);
+        p.pulley_dir = 1;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 2);
+        p.pulley = false;
+        // holdStyle 1 (the torch) -> row 3 (`:36455-36459`); it beats the walk
+        // row because the arm comes first.
+        p.frame_inputs = FrameInputs {
+            hold_style: 1,
+            can_visually_hold: true,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            use_style_blocks_frames: true,
+            ..FrameInputs::default()
+        };
+        p.vx = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3, "the torch hold wins over the walk row");
+        // holdStyle 2 -> row 2 (`:36460-36464`).
+        p.frame_inputs.hold_style = 2;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 2);
+        // holdStyle 7 -> row 11 (`:36477-36481`).
+        p.frame_inputs.hold_style = 7;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 11);
+        // The umbrella (4) only rests on the ground.
+        p.frame_inputs.hold_style = 4;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0);
+        // The raised shield -> row 10 (`:36489-36492`).
+        p.frame_inputs = FrameInputs::default();
+        p.shield_raised = true;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 10);
+        p.shield_raised = false;
+        // With nothing held the walk row copies the legs (`:36619-36622`).
+        p.vy = 0.0;
+        p.leg_frame = 12;
+        p.vx = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, p.leg_frame);
+        assert!(p.leg_frame >= 12, "the walk advanced the leg row");
+        assert!(p.body_frame_counter > 0.0, "the 1.5x counter accumulated");
+        // At rest the body rests (`:36624-36633`).
+        p.vx = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0);
+    }
+
+    #[test]
+    fn the_airborne_body_rows_follow_the_wings() {
+        // `Player.cs:36559-36600`: the airborne rows per wing state.
+        let (_, mut p) = settled();
+        p.vy = 2.0;
+        p.wings_logic = 0;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 5, "no wings: the plain fall row");
+        p.wings_logic = 4;
+        p.control_jump = true;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 6, "rising under thrust: row 6");
+        p.vy = -2.0;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 6, "rising: row 6");
+        p.wings_logic = 22;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 0, "the always-animated set rests in the air");
     }
 
     #[test]

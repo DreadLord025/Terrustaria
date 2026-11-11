@@ -29,3 +29,6 @@ Thumbs.db
 target-m2d2/
 __pycache__/
 
+
+# local verification artifacts (TR_SHOT captures)
+/tmp/

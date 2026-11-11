@@ -1457,12 +1457,75 @@ NpcKind::SolarSelenian => 140,
         )
     }
 
+    /// `NPC.isLikeATownNPC` (`NPC.cs:6856-6864`: `townNPC || type == 453` —
+    /// the Skeleton Merchant, which the port does not ship): the vanilla
+    /// `townNPC` flag for every town kind the port carries — the housing set
+    /// of [`NpcKind::is_town_npc`] plus the eleven sellers that have no
+    /// ported housing entry yet (TravellingMerchant 368, Angler 369, Stylist
+    /// 353, TaxCollector 441, Golfer 588, Zoologist 633, Princess 663,
+    /// DyeTrader 207, PartyGirl 208, Wizard 108, Mechanic 124 — all
+    /// `this.townNPC = true` in `SetDefaults`, `NPC.cs:9011-17397`).
+    /// `ProcessHitAgainstNPC`'s melee exceptions read this set
+    /// (`Player.cs:44274`, `:44344`).
+    pub fn is_town_npc_like(self) -> bool {
+        self.is_town_npc()
+            || matches!(
+                self,
+                NpcKind::TravellingMerchant
+                    | NpcKind::Angler
+                    | NpcKind::Stylist
+                    | NpcKind::TaxCollector
+                    | NpcKind::Golfer
+                    | NpcKind::Zoologist
+                    | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
+                    | NpcKind::Wizard
+                    | NpcKind::Mechanic
+            )
+    }
+
+    /// `NPC.friendly` (`NPC.cs:8519`'s default `false` plus the `SetDefaults`
+    /// arms `:8983-9060`, `:10257`, `:10493-10507`, `:13502-13516`,
+    /// `:13796-13809`, `:16652-16665`): every town NPC and the six
+    /// bound/rescue forms the port ships. `ProcessHitAgainstNPC` refuses
+    /// every friendly NPC (`Player.cs:44272-44276`), and
+    /// `Damage_PVE_Inner` gates projectiles on the same flag
+    /// (`Projectile.cs:12601`).
+    pub fn is_friendly(self) -> bool {
+        self.is_town_npc_like()
+            || matches!(
+                self,
+                NpcKind::BoundGoblin
+                    | NpcKind::BoundWizard
+                    | NpcKind::BoundMechanic
+                    | NpcKind::WebbedStylist
+                    | NpcKind::SleepingAngler
+                    | NpcKind::SleepingGolfer
+            )
+    }
+
     /// `NPC.netID` as the `.wld` section writes it (`SaveNPCs:1718`): the
     /// vanilla id, which `crate::bestiary::ENTRIES` carries per kind.
     /// **Not** [`NpcKind::to_u16`] — that is the port's internal protocol id
     /// space; the wire needs the real one.
     pub fn net_id(self) -> i32 {
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
+    }
+
+    /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
+    /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
+    /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
+    pub fn is_invasion_npc(self) -> bool {
+        matches!(
+            self,
+            NpcKind::GoblinThief
+                | NpcKind::GoblinWarrior
+                | NpcKind::GoblinArcher
+                | NpcKind::GoblinSorcerer
+                | NpcKind::GoblinPeon
+                | NpcKind::GoblinSummoner
+        )
     }
 
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
@@ -1784,18 +1847,59 @@ NpcKind::SolarSelenian => 140,
     /// frame.
     pub fn humanoid_frame_count(self) -> u32 {
         match self {
-            NpcKind::Guide | NpcKind::WitchDoctor => 26,
+            NpcKind::Guide | NpcKind::WitchDoctor | NpcKind::TravellingMerchant => 26,
             NpcKind::Merchant
             | NpcKind::ArmsDealer
             | NpcKind::Demolitionist
             | NpcKind::Painter
-            | NpcKind::GoblinTinkerer => 25,
-            NpcKind::Nurse | NpcKind::Clothier => 23,
+            | NpcKind::GoblinTinkerer
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
+            | NpcKind::DyeTrader => 25,
+            NpcKind::Nurse
+            | NpcKind::Clothier
+            | NpcKind::Angler
+            | NpcKind::Wizard
+            | NpcKind::Mechanic
+            | NpcKind::Stylist
+            | NpcKind::Zoologist
+            | NpcKind::Princess
+            | NpcKind::PartyGirl => 23,
             NpcKind::Dryad => 21,
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
             _ => 1,
+        }
+    }
+
+    /// `NPCID.Sets.ExtraFramesCount` (`NPCID.cs:10464`) — the rows the
+    /// vanilla reserves at the *bottom* of a town sheet for the attack
+    /// poses. `FindFrame`'s humanoid arm wraps the walk band at
+    /// `Main.npcFrameCount - ExtraFramesCount` (`NPC.cs:69534`'s `num57`
+    /// and the `num57`-subtracted wrap), so a walker must never reach
+    /// them: doing so animates the NPC through its attack/pose rows
+    /// while it is merely walking. Only the kinds the town machine
+    /// animates today carry a value; everything else is 0 (the C#
+    /// `CreateIntSet` default).
+    pub fn extra_frames_count(self) -> u32 {
+        match self {
+            NpcKind::Guide | NpcKind::WitchDoctor | NpcKind::TravellingMerchant => 10,
+            NpcKind::Merchant
+            | NpcKind::Nurse
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist
+            | NpcKind::Painter
+            | NpcKind::GoblinTinkerer
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
+            | NpcKind::DyeTrader
+            | NpcKind::PartyGirl
+            | NpcKind::Zoologist => 9,
+            NpcKind::Dryad | NpcKind::Clothier | NpcKind::Wizard | NpcKind::Stylist
+            | NpcKind::Princess => 7,
+            NpcKind::Angler | NpcKind::Mechanic => 9,
+            _ => 0,
         }
     }
 
@@ -4327,7 +4431,13 @@ impl Npc {
     /// states the port's town machines do not model — the follow-up.
     fn humanoid_town_frame(&mut self) {
         if self.vy == 0.0 {
-            let count = self.kind.humanoid_frame_count();
+            // The wrap band stops before the `ExtraFramesCount` attack rows
+            // (`NPC.cs:69534`'s `num57` and the `frame.Y / num >=
+            // npcFrameCount - num57` wrap below it).
+            let count = self
+                .kind
+                .humanoid_frame_count()
+                .saturating_sub(self.kind.extra_frames_count());
             if self.vx == 0.0 {
                 self.frame_counter = 0.0;
                 self.frame = 0;
@@ -4343,6 +4453,41 @@ impl Npc {
                 if self.frame >= count {
                     self.frame = 2;
                 }
+            }
+        }
+    }
+
+    /// `FindFrame`'s plain walker arm (`case 3` and its 20-sibling group,
+    /// `NPC.cs`): the ground flip, row 2 while airborne or turning, row 0
+    /// standing, and the `|vx|` accumulator's 8/16/24/32 bands stepping
+    /// rows 0/1/2/1 on the strip's three rows.
+    fn walker_frame(&mut self) {
+        if self.vy == 0.0 {
+            self.sprite_dir = self.facing;
+        }
+        if self.vy != 0.0
+            || (self.facing == -1 && self.vx > 0.0)
+            || (self.facing == 1 && self.vx < 0.0)
+        {
+            self.frame_counter = 0.0;
+            self.frame = 2;
+        } else if self.vx == 0.0 {
+            self.frame_counter = 0.0;
+            self.frame = 0;
+        } else {
+            // The C# leaves `frame.Y` alone in the last branch (its 0..32
+            // accumulator laps at row 1), so the row is not written there.
+            self.frame_counter += self.vx.abs();
+            if self.frame_counter < 8.0 {
+                self.frame = 0;
+            } else if self.frame_counter < 16.0 {
+                self.frame = 1;
+            } else if self.frame_counter < 24.0 {
+                self.frame = 2;
+            } else if self.frame_counter < 32.0 {
+                self.frame = 1;
+            } else {
+                self.frame_counter = 0.0;
             }
         }
     }
@@ -5170,13 +5315,16 @@ impl Npc {
                 }
             }
             NpcKind::Zombie => {
-                // `FindFrame` has no case 9: the vanilla zombie's
-                // `frame.Y` stays at its `SetFrameSize` 0 — the NPC_9 sheet
-                // is a single 30x48 frame (`Main.npcFrameCount[9] = 1`,
-                // `Main.cs:67082`). The port's v1 ran a 3-frame walker
-                // (the case-3 group's idiom) whose rows 1/2 sampled past
-                // the sheet.
-                self.frame = 0;
+                // `FindFrame`'s walker arm (`case 3` — a member of the
+                // `case 3/52/53/132/161/186-189/200/223/251/254/255/319-321/
+                // 331/332/342/536/590/691` group, `NPC.cs`): NPC_3 is
+                // 38x144 with `Main.npcFrameCount[3]` = 3 (`Main.cs:67082`),
+                // i.e. three 48-px rows — the stand (row 0) and the two walk
+                // poses. The v1 pinned row 0 and cited `npcFrameCount[9]`
+                // (the Devourer tail's single frame), so the most common
+                // night enemy never animated; and the draw divided the sheet
+                // by 1, so all three rows were squeezed into one 48-px quad.
+                self.walker_frame();
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
@@ -5617,33 +5765,14 @@ impl Npc {
                 }
             }
             NpcKind::TravellingMerchant => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[368]` = 26 in the vanilla, `Main.cs:67120`,
-                // with `ExtraFramesCount` 10 / `AttackFrameCount` 5 —
-                // `NPCID.cs:10464-10465` — over the port's 3-row stand-in).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The town wander: `case 368` is a member of the shared
+                // humanoid-group list (`NPC.cs`'s `case 22 … case 368 …
+                // case 684` block), so the walk band is rows 2..15 of the
+                // 26-row strip — `Main.npcFrameCount[368]` = 26 with
+                // `ExtraFramesCount` 10 (`Main.cs:67120`,
+                // `NPCID.cs:10464`). The earlier 3-row stand-in sampled the
+                // top of the sheet and never left rows 0-2.
+                self.humanoid_town_frame();
             }
             NpcKind::Painter => {
                 // The humanoid-group walk (the town machine's
@@ -5793,7 +5922,12 @@ impl Npc {
             self.vy = -self.vy * 0.5;
         }
         self.facing = if dx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
+        // `:22740-22752` (aiStyle 13) — the eye flips on the SAME
+        // `num215 = player.Center.X - width/2 - center.X` the rotation
+        // uses (its own aim, not the body's), and the write is inside the
+        // two one-sided `if`s, so a dead-centre aim keeps the previous
+        // flip.
+        self.sprite_dir = if dx != 0.0 { self.facing } else { self.sprite_dir };
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -11047,7 +11181,11 @@ impl Npc {
         // The life mirror (`:26061-26064`) + the X/direction mirror.
         self.x = world.wof_x - w * 0.5;
         self.facing = if world.wof_x >= pcx { 1 } else { -1 };
-        self.sprite_dir = self.facing;
+        // `:26393-26403` (aiStyle 29) — the eye's flip is its own
+        // `num391 = player.Center.X - width/2 - eye.Center.X`, NOT the
+        // wall's `direction` the `:26068` body mirror reads: `a.frame 29`
+        // flips the iris toward the target even when the wall faces away.
+        self.sprite_dir = if pcx - w * 0.5 - (self.x + w * 0.5) > 0.0 { 1 } else { -1 };
         let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
         let top_half = self.ai[0] > 0.0;
         let target_y = if top_half {
@@ -11218,7 +11356,10 @@ impl Npc {
                 }
             }
             self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-            self.sprite_dir = self.facing;
+            // `:26416-26432` (aiStyle 29 is the WoF eye — the Deerclops
+            // rides aiStyle 40, `:29716`, which pins the flip at -1 and
+            // carries the aim in `rotation` instead).
+            self.sprite_dir = -1;
             self.vy = (self.vy + 0.4).clamp(-8.0, 16.0);
             if self.on_ground {
                 self.vy = 0.0;
@@ -12097,6 +12238,12 @@ impl Npc {
     }
 
     fn contact(&mut self, player: &mut Player) {
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before the whole collision pass — no
+        // NPC contact damage and none of the EoC shield-dash arm below.
+        if player.creative_god_mode {
+            return;
+        }
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -12669,6 +12816,18 @@ mod tests {
         player.hurt_cd = 0.0;
         bat.contact(&mut player);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before any contact arm runs.
+        let mut god = crate::player::Player::spawn(&w);
+        god.x = bat.x;
+        god.y = bat.y;
+        god.hurt_cd = 0.0;
+        god.creative_god_mode = true;
+        bat.contact(&mut god);
+        assert_eq!(
+            god.hp, god.max_hp,
+            "the godmode player takes no contact damage"
+        );
         // The bestiary entry maps.
         let e = crate::bestiary::entry_for_npc(NpcKind::CaveBat, SlimeVariant::Blue);
         assert_eq!(e.net_id, 49);
@@ -13148,26 +13307,23 @@ mod tests {
     }
 
     #[test]
-    fn the_zombie_sheet_is_a_single_static_frame() {
-        // `FindFrame` has no case 9: the vanilla zombie's `frame.Y` stays
-        // at its `SetFrameSize` 0 — the NPC_9 sheet is one 30x48 frame
-        // (`Main.npcFrameCount[9] = 1`, `Main.cs:67082`). The port's v1
-        // ran the case-3 group's walker (rows 0/1/2 sampled past the
-        // sheet); the town machine's rows 2.. belong to the humanoids
-        // (26-frame Guide et al.), never the zombie.
+    fn the_zombie_is_not_pinned_to_one_row() {
+        // The v1 read `FindFrame`'s missing `case 9` as "the zombie is a
+        // single NPC_9 frame". The zombie is type 3 and its arm IS in the
+        // walker group (`case 3` of `case 3/52/53/132/…`), over NPC_3 —
+        // 38x144, three 48-px rows (`Main.npcFrameCount[3]` = 3,
+        // `Main.cs:67082`). `the_zombie_walks_its_three_rows` pins the
+        // machine; this one keeps the sheet's row count honest.
         let mut z = bare(NpcKind::Zombie);
         z.vx = 0.9;
         z.frame = 5;
+        let mut seen = [false; 3];
         for _ in 0..40 {
             z.find_frame();
-            assert_eq!(z.frame, 0, "the zombie never animates");
+            assert!(z.frame < 3, "the zombie never leaves its three rows");
+            seen[z.frame as usize] = true;
         }
-        // The air and the backpedal do not move it either.
-        z.vy = 0.1;
-        z.facing = 1;
-        z.vx = -0.5;
-        z.find_frame();
-        assert_eq!(z.frame, 0, "airborne/backpedal holds the single frame");
+        assert_eq!(seen, [true, true, true], "all three rows animate");
     }
 
     #[test]
@@ -15564,6 +15720,172 @@ mod tests {
     }
 
     #[test]
+    fn the_town_walk_band_stops_before_the_extra_attack_rows() {
+        // `FindFrame`'s humanoid arm wraps the walk band at
+        // `Main.npcFrameCount - NPCID.Sets.ExtraFramesCount`
+        // (`NPC.cs:69534`'s `num57`, and the `frame.Y / num >=
+        // npcFrameCount - num57` wrap just below it) — the last rows of a
+        // town sheet are the attack poses, so a walking NPC must never
+        // reach them. The Guide's strip is 26 rows with 10 extra, i.e. a
+        // walk band of rows 2..15.
+        let mut g = bare(NpcKind::Guide);
+        g.vx = 0.5;
+        g.frame = 15;
+        g.frame_counter = 6.1;
+        g.find_frame();
+        assert_eq!(g.frame, 2, "the walk wraps at 16, not at the sheet's 26");
+        // The band's top row is still reachable.
+        g.frame = 14;
+        g.frame_counter = 6.1;
+        g.find_frame();
+        assert_eq!(g.frame, 15, "row 15 is the band's last");
+        // The Merchant: 25 rows, 9 extra -> the band is rows 2..15 and the
+        // wrap threshold is 25 - 9 = 16 (exclusive).
+        let mut m = bare(NpcKind::Merchant);
+        m.vx = 0.5;
+        m.frame = 14;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 15, "the merchant's band ends at 25 - 9 - 1");
+        m.frame = 15;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "and wraps back to row 2 at 16");
+    }
+
+    #[test]
+    fn the_extra_frame_counts_match_the_vanilla_table() {
+        // `NPCID.Sets.ExtraFramesCount` (`NPCID.cs:10464`): the reserved
+        // attack rows per town sheet. Transcribed from the `CreateIntSet`
+        // literal; every kind the port's town machine animates must carry
+        // its row count or it walks through its attack poses.
+        for (kind, extra) in [
+            (NpcKind::Guide, 10),
+            (NpcKind::WitchDoctor, 10),
+            (NpcKind::TravellingMerchant, 10),
+            (NpcKind::Merchant, 9),
+            (NpcKind::Nurse, 9),
+            (NpcKind::ArmsDealer, 9),
+            (NpcKind::Demolitionist, 9),
+            (NpcKind::Painter, 9),
+            (NpcKind::GoblinTinkerer, 9),
+            (NpcKind::TaxCollector, 9),
+            (NpcKind::Golfer, 9),
+            (NpcKind::DyeTrader, 9),
+            (NpcKind::PartyGirl, 9),
+            (NpcKind::Zoologist, 9),
+            (NpcKind::Angler, 9),
+            (NpcKind::Mechanic, 9),
+            (NpcKind::Dryad, 7),
+            (NpcKind::Clothier, 7),
+            (NpcKind::Wizard, 7),
+            (NpcKind::Stylist, 7),
+            (NpcKind::Princess, 7),
+            // The kinds `CreateIntSet` leaves at the 0 default.
+            (NpcKind::Skeleton, 0),
+            (NpcKind::UndeadMiner, 0),
+            (NpcKind::GoblinPeon, 0),
+            (NpcKind::GoblinThief, 0),
+            (NpcKind::GoblinWarrior, 0),
+            (NpcKind::GoblinArcher, 0),
+            (NpcKind::Zombie, 0),
+        ] {
+            assert_eq!(
+                kind.extra_frames_count(),
+                extra,
+                "{kind:?} reserves {extra} attack rows"
+            );
+        }
+        // The walk band never empties.
+        for kind in [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::TravellingMerchant,
+            NpcKind::Princess,
+        ] {
+            assert!(
+                kind.humanoid_frame_count() > kind.extra_frames_count() + 2,
+                "{kind:?} keeps a walk band"
+            );
+        }
+    }
+
+    #[test]
+    fn the_travelling_merchant_walks_the_shared_humanoid_band() {
+        // `case 368` is a member of the shared humanoid-group list, so the
+        // merchant rides the same machine as the Guide (26 rows, 10 extra
+        // -> the band 2..15) instead of the old 3-row stand-in.
+        let mut m = bare(NpcKind::TravellingMerchant);
+        m.vx = 0.5;
+        m.frame = 0;
+        m.frame_counter = 0.0;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "the walk snaps up to row 2");
+        m.frame_counter = 0.0;
+        for _ in 0..9 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 4, "two advances of the `|vx|*2 + 1` accumulator");
+        m.frame = 15;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "the band wraps at 16 (26 - 10)");
+        m.vx = 0.0;
+        m.find_frame();
+        assert_eq!(m.frame, 0, "standing still is row 0");
+    }
+
+    #[test]
+    fn the_zombie_walks_its_three_rows() {
+        // `FindFrame`'s walker arm (`case 3` of the
+        // `case 3/52/53/132/161/186-189/…` group, `NPC.cs`): NPC_3 is
+        // 38x144 with `Main.npcFrameCount[3]` = 3, so the strip is the
+        // stand row plus two walk poses. The v1 pinned row 0 and its draw
+        // divided the sheet by 1 (all three rows in one quad).
+        let mut z = bare(NpcKind::Zombie);
+        // Standing still: row 0.
+        z.vx = 0.0;
+        z.vy = 0.0;
+        z.frame = 7;
+        z.frame_counter = 5.0;
+        z.find_frame();
+        assert_eq!(z.frame, 0, "idle is row 0");
+        assert_eq!(z.frame_counter, 0.0, "and the accumulator resets");
+        // Walking: the `|vx|` bands 0..8 / 8..16 / 16..24 / 24..32.
+        let mut bands = Vec::new();
+        z.vx = 4.0;
+        z.frame_counter = 0.0;
+        for _ in 0..10 {
+            z.find_frame();
+            bands.push(z.frame);
+        }
+        // 4 px/tick: rows 0 (counter 4), 1 (8), 1 (12), 2 (16), 2 (20),
+        // 1 (24), 1 (28), then the lap back through 0.
+        assert_eq!(&bands[..7], &[0, 1, 1, 2, 2, 1, 1], "the four bands");
+        assert!(bands.iter().all(|f| *f < 3), "no row past the strip");
+        // Airborne and turning both hold row 2 and clear the accumulator.
+        z.vy = -1.0;
+        z.frame = 1;
+        z.frame_counter = 12.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "airborne holds the jump row");
+        assert_eq!(z.frame_counter, 0.0);
+        z.vy = 0.0;
+        z.facing = -1;
+        z.vx = 3.0;
+        z.frame_counter = 9.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "facing away from the motion");
+        // Grounded on the motion: the sprite faces the walk.
+        z.facing = 1;
+        z.vx = 3.0;
+        z.find_frame();
+        assert_eq!(z.sprite_dir, 1, "the ground flip");
+        // The drawn strip is three rows: the frame height is sheet / 3.
+        assert_eq!(z.kind.humanoid_frame_count(), 1, "not a town sheet");
+    }
+
+    #[test]
     fn the_swimmers_flap_wet_and_flop_dry() {
         // `FindFrame`'s case 55/57/58 (`NPC.cs:74181-74226`) + case 65
         // (`:74654-74678`): the wet flap rides rows 0..3 at the 6-tick
@@ -17071,6 +17393,53 @@ mod tests {
         );
         assert_eq!(n.facing, -1);
         assert_eq!(n.sprite_dir, -1, "the flip carries both fields");
+    }
+
+    /// BUG-07: aiStyle 13's two one-sided `if (num215 > 0)` /
+    /// `if (num215 < 0)` arms (`NPC.cs:22740-22752`) — the eye flips on its
+    /// OWN aim, so a target dead-centre (`num215 == 0`) leaves the previous
+    /// flip in place instead of snapping to the body's facing.
+    #[test]
+    fn bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim() {
+        let w = World::new("t".into(), 200, 100);
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 50.0 * 16.0;
+        n.y = 50.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        // A target to the left flips the eye left.
+        player.x = n.x - 120.0;
+        player.y = n.y;
+        n.update_eye(&w, &mut player, 0.0);
+        assert_eq!(n.sprite_dir, -1, "the eye aims left");
+        // Snap the player onto the eye's centre: `num215 == 0` writes
+        // nothing, so the flip is preserved.
+        player.x = n.x + n.size().0 * 0.5 - crate::player::WIDTH * 0.5;
+        player.y = n.y;
+        n.update_eye(&w, &mut player, 0.0);
+        assert_eq!(n.sprite_dir, -1, "a dead-centre aim keeps the flip");
+    }
+
+    /// BUG-07: aiStyle 29 (the WoF eye, `NPC.cs:26393-26403`) flips on its
+    /// own `num391` — the distance from the EYE to the player — not on the
+    /// wall body's `direction` the `:26068` mirror writes.
+    #[test]
+    fn bug_07_the_wof_eye_flips_on_its_own_aim() {
+        let mut w = World::new("t".into(), 200, 100);
+        w.wof_present = true;
+        w.wof_x = 100.0 * 16.0;
+        w.wof_draw_top = 400.0;
+        w.wof_draw_bottom = 900.0;
+        let mut n = bare(NpcKind::WallOfFleshEye);
+        n.x = w.wof_x - n.size().0 * 0.5;
+        let mut player = crate::player::Player::spawn(&w);
+        // The iris sits at the wall's X; the player is 300 px to its right.
+        player.x = w.wof_x + 300.0 - crate::player::WIDTH * 0.5;
+        player.y = 600.0;
+        n.update_wof_eye(&w, &player);
+        assert_eq!(n.sprite_dir, 1, "the target is right of the iris");
+        player.x = w.wof_x - 300.0 - crate::player::WIDTH * 0.5;
+        n.update_wof_eye(&w, &player);
+        assert_eq!(n.sprite_dir, -1, "the target is left of the iris");
     }
 }
 

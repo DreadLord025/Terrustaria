@@ -74,6 +74,7 @@ static ITEM_CORRECTIONS: [ItemDef; 1] = [
             scale: 1.0,
             stack: 1,
             bait: 0,
+            tile_boost: 0,
             pick: 0,
             axe: 0,
             hammer: 0,
@@ -152,6 +153,11 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // Without these arms the `by_tile` fallback leaks the seed item 307
         // for tile 82.
         28 | 82 | 83 | 84 | 185 | 186 | 187 => None,
+        // The tree trunks (5/596/616/634) and the palm (323) — their drop is
+        // the `KillTile_GetTreeDrops` record (the wood of the tree's family,
+        // `WorldGen.cs:66189-66261`), which the kill cascade emits per cell;
+        // the generic `by_tile` fallback finds no placing item for them.
+        5 | 323 | 596 | 616 | 634 => None,
         _ => by_tile(tile),
     }
 }

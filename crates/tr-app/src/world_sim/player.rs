@@ -163,35 +163,69 @@ pub(crate) fn grant_summon_caps(
     }
 }
 
+pub(crate) fn player_input(
+    app: &App,
+    binds: &[String; crate::input_map::BIND_COUNT],
+    map_open: bool,
+    hold_right: bool,
+    hold_jump: bool,
+) -> PlayerInput {
+    if map_open {
+        return PlayerInput {
+            left: false,
+            right: false,
+            jump: false,
+            down: false,
+            hook: false,
+        };
+    }
+    // `Player.controlLeft`/`controlRight`/`controlJump`/`controlDown` off
+    // `Main.cLeft`/`cRight`/`cJump`/`cDown` (`Main.cs:67164-67167`). The arrow
+    // keys are kept as a port convenience — vanilla binds only the four `c*`
+    // rows — so a rebind adds a key rather than replacing the arrows.
+    let held = |action: crate::input_map::Action, arrow: KeyCode| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+            || app.keys.contains(&arrow)
+    };
+    let any = |action: crate::input_map::Action| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+    };
+    PlayerInput {
+        left: held(crate::input_map::Action::Left, KeyCode::ArrowLeft),
+        right: hold_right || held(crate::input_map::Action::Right, KeyCode::ArrowRight),
+        // `cUp` also jumps: `Player.controlUp` feeds `controlJump` in the
+        // vanilla's `Player.Update`, which is why the default `W` jumps.
+        jump: hold_jump
+            || held(crate::input_map::Action::Jump, KeyCode::ArrowUp)
+            || any(crate::input_map::Action::Up),
+        down: held(crate::input_map::Action::Down, KeyCode::ArrowDown),
+        // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
+        // the port keeps `G` as the extra quick-grapple key.
+        hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
     // `Player.cs:24772-24803`: while the map is fullscreen every movement control
     // is zeroed, so the player stands still and the WASD keys pan the map.
     let map_open = app.map.as_ref().is_some_and(|m| m.open);
-    let input = if map_open {
-        PlayerInput {
-            left: false,
-            right: false,
-            jump: false,
-            down: false,
-            hook: false,
-        }
-    } else {
-        PlayerInput {
-            left: app.keys.contains(&KeyCode::KeyA) || app.keys.contains(&KeyCode::ArrowLeft),
-            right: hold_right
-                || app.keys.contains(&KeyCode::KeyD)
-                || app.keys.contains(&KeyCode::ArrowRight),
-            jump: hold_jump
-                || app.keys.contains(&KeyCode::Space)
-                || app.keys.contains(&KeyCode::KeyW)
-                || app.keys.contains(&KeyCode::ArrowUp),
-            down: app.keys.contains(&KeyCode::KeyS) || app.keys.contains(&KeyCode::ArrowDown),
-            // `Player.controlHook` (the quick-grapple key).
-            hook: app.keys.contains(&KeyCode::KeyG),
-        }
-    };
+    // The bind table, copied out so the player borrow below does not conflict
+    // (`Main.cUp`..`Main.cMount`, `Main.cs:67163-67176`).
+    let binds = app.keybinds.clone();
+    // `Player.Update`'s journey-power reads, copied out of the registry
+    // before the player borrow: `ResetEffects` clears `creativeGodMode`
+    // (`Player.cs:18789`) and the tick immediately re-reads the power
+    // (`:25493-25497`); the same `ResetEffects` block rebuilds
+    // `tileRangeX/Y` from `FarPlacementRangePower` (`:18815-18828`).
+    let power_god_mode = app.creative_powers.god_mode();
+    let power_far_placement = app.creative_powers.far_placement_range();
+    let input = player_input(app, &binds, map_open, hold_right, hold_jump);
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -202,7 +236,27 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
     // `TR_HOOK` parse above, so a dismount re-mounts on the next tick.
     let cart_pin = crate::env::cart_pin();
+    // `TR_DIE`: the death-screen fixture — the local player dies on the first
+    // tick past the skip lockout so `TR_SHOT` captures the respawn prompt.
+    if crate::env::die_pin() && !app.player.as_ref().is_some_and(|p| p.dead) {
+        let world = &app.world;
+        if let Some(p) = app.player.as_mut() {
+            p.start_death(world, false, false);
+            // `Player.KillMe`'s hp clamp — the death screen's draw gate reads
+            // `hp <= 0`, not `dead`.
+            p.hp = 0;
+            p.dead_time = 100;
+            // The broadcast line (`Lang.inter[38]`, "You were slain..."),
+            // which a real `Player.KillMe` would set through the death pass.
+            app.death_text = crate::lang::inter(38);
+        }
+    }
     if let Some(p) = app.player.as_mut() {
+        // `Player.ResetEffects`' journey block, re-run every tick: the godmode
+        // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
+        // tile-range toggle (`:18815-18828`).
+        p.creative_god_mode = power_god_mode;
+        p.far_placement_range = power_far_placement;
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
@@ -248,17 +302,20 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // boss check reads the live NPC list; the danger-NPC gate has no
         // `DangerThatPreventsOtherDangers` members in the ported set yet.
         if p.dead {
+            // `Player.AllowsRespawnTimerSkip`'s two NPC gates (`Player.cs:38962-38987`):
+            // a boss hindering the respawn, and any NPC that blocks it
+            // (`NearAnyNPCsThatBlockRespawn` — the live invasion's members;
+            // the danger-set arm has no ported members yet).
             let boss_near = p.boss_hinders(&app.npcs);
+            let invasion_live = app.world.invasion_size > 0;
+            let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
+            app.respawn_skip_available = p.allows_respawn_timer_skip(boss_near, danger_near);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
-                respawn_now = p.update_dead(input.jump, boss_near, false) || respawn_now;
-                // `Player.Update`'s dead path (`Player.cs:24752-24753`): the
-                // caches reset + recount, no `UpdateBuffs` — the buff arms
-                // never run while dead. `UpdateDead` zeroed the counters
-                // (`:17009-17010`).
+                respawn_now =
+                    p.update_dead(input.jump, boss_near, danger_near) || respawn_now;
                 p.reset_projectile_caches();
-                p.update_projectile_caches(&app.projectiles);
-            });
+                p.update_projectile_caches(&app.projectiles);            });
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
                 // a broken bed or an invalid room reverts the spawn to the
@@ -280,6 +337,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                app.respawn_skip_available = false;
+                app.respawn_skip_frames = 0;
                 app.npcs.clear();
                 app.npc_timer = 4.0;
                 if app.follow_player {
@@ -292,6 +351,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
             }
             return;
+        }
+        // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the
+        // flag and the prompt's counter clear (`Main.cs:45374-45376`'s else).
+        if app.respawn_skip_available {
+            app.respawn_skip_available = false;
+            app.respawn_skip_frames = 0;
         }
         // The quick-grapple fire: the `controlHook` press edge fires
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
@@ -382,11 +447,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The quick-mount key: the `controlMount` press edge (the menu's
         // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
         // (`Player.cs:24888-24893` -> `:6045-6100`).
-        static MOUNT_PREV: std::sync::atomic::AtomicBool =
-            std::sync::atomic::AtomicBool::new(false);
-        let mount_key = app.keys.contains(&KeyCode::KeyR);
-        let mount_edge =
-            mount_key && !MOUNT_PREV.swap(mount_key, std::sync::atomic::Ordering::Relaxed);
+        // `Main.cMount` (`Main.cs:67176`, default `R`). The previous edge is an
+        // `App` field, not a `static`, so two headless apps in one test process
+        // cannot share it.
+        let mount_key = app
+            .keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Mount, *k));
+        let mount_edge = mount_key && !app.mount_prev;
+        app.mount_prev = mount_key;
         if mount_edge && !map_open {
             if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
                 // `ItemCheck_TryStartUse`'s animation (the saddle's
@@ -445,6 +514,72 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
         }
         p.swing_aim = app.swing_aim;
+        // `PlayerFrame()`'s held-item inputs (`Player.cs:36143-36146`): the C#
+        // reads `inventory[selectedItem]` straight out of the player, the port
+        // hands the summary in before the fixed step.
+        {
+            let held = app.inventory[app.selected];
+            let kind = held.kind;
+            let use_style = crate::item::use_style(kind);
+            let hold_style = crate::item::hold_style(kind);
+            let swinging = app.swing > 0.0 && held.count > 0;
+            // `ItemCanBeVisuallyHeld`'s two reachable gates: the 55/56/61
+            // mounts hold nothing (`MountID.Sets.DontHoldItems`,
+            // `MountID.cs:46`) and the umbrella hold (4) is off while
+            // mounted, roped or airborne (`Player.cs:50209-50224`).
+            let mounted_blocks_hold =
+                p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let can_visually_hold = !mounted_blocks_hold
+                && (hold_style != 4
+                    || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
+            // The hooks' centroid relative to the body centre
+            // (`Player.cs:36502-36520`): only the body row leans on it.
+            let mut dx = 0.0f32;
+            let mut dy = 0.0f32;
+            if p.grappling_active {
+                let owner = app.local_id as u8;
+                let mut n = 0.0f32;
+                for pr in app.projectiles.slots() {
+                    if !pr.active
+                        || pr.owner != owner
+                        || !crate::projectile::proj_data(pr.kind)
+                            .is_some_and(|d| d.ai_style == 7)
+                    {
+                        continue;
+                    }
+                    dx += pr.pos.x + pr.w * 0.5;
+                    dy += pr.pos.y + pr.h * 0.5;
+                    n += 1.0;
+                }
+                if n > 0.0 {
+                    dx = dx / n - (p.x + crate::player::WIDTH * 0.5);
+                    dy = dy / n - (p.y + p.height * 0.5);
+                }
+            }
+            p.frame_inputs = crate::player::FrameInputs {
+                use_style,
+                // `flag6` (`Player.cs:36146`): the hidden/raise-lamp/hold-orb
+                // styles keep the locomotion rows.
+                use_style_blocks_frames: !matches!(use_style, 10 | 14 | 15),
+                item_type: kind as i32,
+                hold_style: hold_style as i32,
+                can_visually_hold,
+                swing_active: swinging,
+                swing_remaining: if swinging {
+                    app.swing / app.swing_max.max(f32::EPSILON)
+                } else {
+                    0.0
+                },
+                aim_relative: app.swing_aim * p.facing as f32,
+                // `!wet || !item.noWet` and `!happyFunTorchTime ||
+                // createTile != 4` — the port has neither item field, so both
+                // gates are open (documented in ANALYSIS).
+                hold_style_dry: true,
+                torch_hold_ok: true,
+                grapple_dx: dx,
+                grapple_dy: dy,
+            };
+        }
         let step = 1.0 / 60.0;
         if cart_pin && !p.cart_mounted {
             p.mount_cart();
@@ -455,6 +590,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
             // stand-in (no `DangerThatPreventsOtherDangers` members yet).
             let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
+            // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
+            // pose's 4-tick turn cadence reads it.
+            p.misc_counter = p.misc_counter.wrapping_add(1);
             p.update_with_grapple(&app.world, input, &grapple_for_tick, item_in_use, false);
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
@@ -501,6 +639,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             app.minecart_sparks.spawn(sparks);
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+            }
+            // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
+            // journey godmode player's three pools are refilled to their
+            // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the
+            // port's `max_hp`/`mana_max`/`BREATH_MAX`.
+            if p.creative_god_mode {
+                p.hp = p.max_hp;
+                p.mana = p.mana_max;
+                p.breath = crate::player::BREATH_MAX;
             }
         });
         app.player_step.drop_backlog();
@@ -565,6 +712,40 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    #[test]
+    fn the_journey_godmode_power_refreshes_the_flag_and_refills_the_pools() {
+        // The tick's creative reads (`Player.cs:18789` clears
+        // `creativeGodMode`, `:25493-25497` re-reads `GodmodePower`) plus
+        // `Main.UpdateWorld_Players`' refill (`Main.cs:17869-17873`).
+        let mut app = ammo_app();
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(true),
+        );
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 5;
+            p.mana = 0;
+            p.breath = 0;
+        }
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.creative_god_mode, "the flag is refreshed from the power");
+        assert_eq!(p.hp, p.max_hp, "statLife refilled to statLifeMax2");
+        assert_eq!(p.mana, p.mana_max, "statMana refilled");
+        assert_eq!(p.breath, crate::player::BREATH_MAX, "breath refilled");
+        // Off again: the next tick clears the flag and the hit path is live.
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(false),
+        );
+        tick_ammo(&mut app);
+        let p = app.player.as_mut().unwrap();
+        assert!(!p.creative_god_mode);
+        p.hurt_cd = 0.0;
+        assert!(p.hurt(10, 0.0), "the hurt lands once the power is off");
     }
 
     /// An equipment row carrying `kind`.

@@ -627,7 +627,13 @@ pub(crate) fn draw_tiles(
                     run_start = -1;
                 }
 
-                let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
+                // `DrawSingleTile`'s `vector` (`TileDrawing.cs:1010-1014`) plus
+                // the switch's per-type nudges (`:1020-1159`, `dd.draw_dx/dy`);
+                // the width centring stays per-arm (`:1013`'s `num5`).
+                let pos = [
+                    tx as f32 * TILE_PX + dd.draw_dx as f32,
+                    ty as f32 * TILE_PX + dd.draw_dy as f32,
+                ];
                 // Walls are drawn in their own pass above (`Main.DrawWalls`).
                 // `DrawTile_LiquidBehindTile` (solid layer): a slope that stands in
                 // liquid draws the water mask behind its open half, so the shoreline
@@ -645,6 +651,11 @@ pub(crate) fn draw_tiles(
                         tile,
                         water_style,
                     );
+                }
+                // The switch's early `return` arms (751/752 off their (0,0)
+                // frame, the palm's frond columns 323): no sprite at all.
+                if dd.skip_draw {
+                    continue;
                 }
                 let Some(tf) = tile_frame else {
                     continue;
@@ -703,6 +714,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                 } else if tile.kind == 27 {
@@ -787,11 +799,18 @@ pub(crate) fn draw_tiles(
                     stats.quads += 1;
                 } else if dd.top != 0 || dd.width != 16 || dd.height != 16 || dd.flip {
                     // `x*16 - (tileWidth - 16) / 2`, `y*16 + tileTop`; horizontal flip
-                    // swaps the source columns.
+                    // swaps the source columns. The centring is skipped for the
+                    // `DoNotAdjustDrawPositionBasedOnTileWidth` kinds (711,
+                    // `TileDrawing.cs:1010-1015`).
                     let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    let num5 = if dd.no_width_adjust {
+                        0.0
+                    } else {
+                        (dw - 16.0) * 0.5
+                    };
                     push_lit(
                         r,
-                        [pos[0] - (dw - 16.0) * 0.5, pos[1] + dd.top as f32],
+                        [pos[0] - num5, pos[1] + dd.top as f32],
                         [dw, dh],
                         flip_uv(tf.uv, dd.flip),
                         l,
@@ -800,31 +819,18 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                 } else if tile.slope() != 0 {
                     stats.quads +=
                         push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope());
                 } else if tile.half_brick() {
-                    // The C#'s half-brick arm draws the local `rectangle`
-                    // (`TileDrawing.cs:1298`) — the one rect case 80's biome
-                    // shift touches — while the flat path above rebuilds its
-                    // own unshifted rect.
-                    if dd.half_brick_src_y != 0 {
-                        push_half_shifted(
-                            r,
-                            pos,
-                            tf.uv,
-                            l,
-                            style,
-                            tx,
-                            ty,
-                            anim_time,
-                            dd.half_brick_src_y,
-                        );
-                    } else {
-                        push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
-                    }
+                    // The C#'s half-brick arm rebuilds its own rect from
+                    // `tileFrameX/Y + addFrX/addFrY` (`TileDrawing.cs:1298`) —
+                    // case 80's biome shift lands on `normalTileRect` only, so
+                    // the half-brick draw never carries `src_y_shift`.
+                    push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
                     stats.quads += 1;
                 } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
                     stats.quads +=
@@ -844,17 +850,19 @@ pub(crate) fn draw_tiles(
                     );
                     stats.quads += 1;
                 } else {
+                    let flat_uv = flat_src_uv(&dd, tile, tf, atlas, lookups);
                     push_lit(
                         r,
                         pos,
                         [TILE_PX, TILE_PX],
-                        tf.uv,
+                        flat_uv,
                         l,
                         style,
                         tx,
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                     // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
@@ -1172,6 +1180,37 @@ pub(crate) fn bilerp_corners(c: [[f32; 3]; 4], u: f32, v: f32) -> [f32; 3] {
 /// Tint and push one flat-lit sprite.
 #[allow(clippy::too_many_arguments)]
 #[inline]
+/// The plain flat arm's source rect: C#'s `normalTileRect`, the ONE rectangle
+/// `TileDrawing.DrawSingleTile`'s switch mutates (`TileDrawing.cs:1007`) and
+/// which only `DrawBasicTile`'s plain arm draws (`:1523`). That is why case
+/// 80's biome-cactus row shift (`src_y_shift`, `:1132-1147`) applies here and
+/// to no other arm — the half-brick, slice, slope and edge arms rebuild their
+/// rects from `tileFrameX/Y + addFrX/addFrY` and stay unshifted.
+fn flat_src_uv(
+    dd: &tr_core::drawdata::TileDrawData,
+    tile: &tr_core::tile::Tile,
+    tf: assets::FrameTex,
+    atlas: Option<&Atlas>,
+    lookups: &assets::Lookups,
+) -> [f32; 4] {
+    if dd.src_y_shift == 0 {
+        return tf.uv;
+    }
+    atlas
+        .and_then(|a| {
+            lookups.rect_uv(
+                a,
+                tile.kind,
+                dd.frame_x_override.unwrap_or(tile.frame_x) + dd.add_fr_x,
+                dd.frame_y_override.unwrap_or(tile.frame_y) + dd.add_fr_y + dd.src_y_shift,
+                dd.width.max(16) as u32,
+                dd.height.max(16) as u32,
+            )
+        })
+        .unwrap_or(tf)
+        .uv
+}
+
 fn push_lit(
     r: &mut SpriteRenderer,
     pos: [f32; 2],
@@ -1183,9 +1222,20 @@ fn push_lit(
     ty: i32,
     time: f32,
     paint: u8,
+    dd: &tr_core::drawdata::TileDrawData,
 ) {
+    // `finalColor = tileLight * 0.5f` for the cobwebs (`TileDrawing.cs:1078`)
+    // and the shard alpha (`:1091`) ride the shaded light.
     let c = style.shade(light, tx, ty, time);
-    r.push_sprite_paint(pos, size, uv, [c[0], c[1], c[2], 1.0], 0.0, paint);
+    let k = dd.light_scale;
+    r.push_sprite_paint(
+        pos,
+        size,
+        uv,
+        [c[0] * k, c[1] * k, c[2] * k, dd.src_alpha],
+        0.0,
+        paint,
+    );
 }
 
 /// Sub-rectangle of a 16x16 frame's UV rect, in tile pixels.
@@ -1284,26 +1334,6 @@ fn push_half(
 /// Bug 19: the half-brick arm with `DrawSingleTile`'s local rectangle Y shift
 /// (`TileDrawing.cs:1298` draws `rectangle`, which case 80 mutated) — the
 /// source row moves by `src_y`, the draw box stays the top 8 rows.
-fn push_half_shifted(
-    r: &mut SpriteRenderer,
-    pos: [f32; 2],
-    uv: [f32; 4],
-    light: [f32; 3],
-    style: &LightStyle,
-    tx: i32,
-    ty: i32,
-    time: f32,
-    src_y: i16,
-) {
-    let c = style.shade(light, tx, ty, time);
-    r.push_sprite(
-        [pos[0], pos[1] + 8.0],
-        [16.0, 8.0],
-        sub_uv(uv, 0.0, src_y as f32, 16.0, 8.0),
-        [c[0], c[1], c[2], 1.0],
-    );
-}
-
 /// `DrawSingleTile_SlicedBlock`: the block becomes a 4/8/4 grid whose outer slices
 /// take light from the adjacent tile, smoothing the seams between blocks.
 #[allow(clippy::too_many_arguments)]
@@ -1631,6 +1661,54 @@ mod tests {
             })
             .collect();
         Atlas::build(images, 1024)
+    }
+
+    // Bug 19/19b: the cactus draw. `DrawSingleTile` case 80 shifts the source
+    // rectangle down by the ground sand's biome row (`TileDrawing.cs:1132-1147`),
+    // and only the plain flat arm draws that rect (`:1523`). A port that drops
+    // the shift shows the wrong cactus sprite in the evil/hallow/crimson desert.
+    #[test]
+    fn test_BUG19b_the_cactus_flat_draw_carries_the_biome_row_shift() {
+        let atlas = sheet_atlas(&["Tiles_80"], 270, 252);
+        let mut lookups = assets::Lookups::build(
+            &atlas,
+            [(80_u16, "Tiles_80".to_string())].into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let tf = lookups
+            .frame_tex(&atlas, 80, 0, 0)
+            .expect("the cactus frame resolves");
+        let mut yy = |ground: u16| {
+            let mut w = World::new("t".into(), 40, 40);
+            for (x, y, kind) in [(20_i32, 19_i32, 80_u16), (20, 20, ground)] {
+                let i = w.index(x, y);
+                w.tiles[i].kind = kind;
+                w.tiles[i].flags = tr_core::tile::FLAG_ACTIVE;
+            }
+            let mut dd = tr_core::drawdata::TileDrawData::default();
+            let tile = *w.tile(20, 19).unwrap();
+            dd.apply_world_corrections(&w, 80, 20, 19, 0, 0, 0);
+            let uv = flat_src_uv(&dd, &tile, tf, Some(&atlas), &lookups);
+            (dd.src_y_shift, uv[1])
+        };
+        let (plain_shift, plain_y) = yy(53); // normal sand
+        let (evil_shift, evil_y) = yy(112); // ebonstone sand
+        assert_eq!(plain_shift, 0, "normal sand keeps the cell row");
+        assert_eq!(evil_shift, 54, "evil sand moves the sprite 54 px down");
+        assert!(evil_y > plain_y, "the evil draw samples a lower row");
+        assert!(
+            (evil_y - plain_y) * 252.0 > 50.0,
+            "the shift reaches the UV: {} vs {}",
+            evil_y,
+            plain_y
+        );
+        // `src_y_shift == 0` must reproduce the plain frame exactly.
+        assert_eq!(plain_y, tf.uv[1], "no shift, no UV change");
     }
 
     // A tile whose frames were never written (`frameX/frameY = -1`, the state

@@ -361,6 +361,10 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
 /// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
+/// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
+/// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
+pub const LEAF_BLOWER: u16 = 206;
+
 pub const POISON_DART: u16 = 645;
 /// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
 pub const ENCHANTED_BOOMERANG: u16 = 6;
@@ -405,6 +409,45 @@ pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// The whole aiStyle-99 weapon set — the kinds `DefaultToYoyo` covers.
+/// `Main.projFrames[type]` (`Main.cs:8441-8816`) for the kinds the port can
+/// spawn: every row defaults to 1 (`:8441`) and only these exceed it. The draw
+/// slices the sheet into `frames` equal rows and picks `Projectile.frame`
+/// (`Main.DrawProj`'s `Frame(1, projFrames[type], 0, frame)`); the per-family
+/// animators that advance `frame`/`frameCounter` land with their AI arms, so a
+/// row here without one draws frame 0.
+pub const fn proj_frames(kind: u16) -> u32 {
+    match kind {
+        34 => 6,
+        102 => 2,
+        254 => 5,
+        436 => 4,
+        447 => 4,
+        448 => 3,
+        450 => 5,
+        454 => 2,
+        456 => 4,
+        462 => 5,
+        519 => 4,
+        574 => 2,
+        206 => 5,
+        601 => 2,
+        645 => 7,
+        652 => 6,
+        659 => 4,
+        837 => 3,
+        1130 => 6,
+        _ => 1,
+    }
+}
+
+/// The projectile kinds `proj_data` carries — the set the atlas packs
+/// `Images/Projectile_{id}` for. Derived from the table itself rather than a
+/// second hand-maintained list: the id space above the port's highest row is
+/// empty, so the probe stops at 1200.
+pub fn spawnable_kinds() -> Vec<u16> {
+    (0..=1200u16).filter(|k| proj_data(*k).is_some()).collect()
+}
+
 pub const YOYO_KINDS: [u16; 21] = [
     CODE1_YOYO,
     WOOD_YOYO,
@@ -527,6 +570,47 @@ pub const TIME_LEFT_DEFAULT: i32 = 3600;
 /// (`Projectile.cs:14117`).
 const OWNER_IMMUNE_TICKS: i32 = 10;
 const SIZE: f32 = 6.0;
+
+/// `ProjectileID.RottenEgg` (318) — the one thrown projectile the C# lets hit
+/// a friendly NPC (`Damage_PVE_Inner`'s `this.type == 318` arm,
+/// `Projectile.cs:12601`).
+const ROTTEN_EGG: u16 = 318;
+
+/// The pool's view of [`crate::player::Player::doll_flags`] — the worn
+/// Guide/Clothier Voodoo Doll pair `Damage_PVE_Inner` reads
+/// (`Player.cs:15124`/`:15128`). No player (the bomb path) means no doll.
+fn doll_flags(player: Option<&crate::player::Player>) -> (bool, bool) {
+    player.map_or((false, false), |p| p.doll_flags())
+}
+
+/// `Damage_PVE_Inner`'s friendly refusal (`Projectile.cs:12601-12608`):
+/// `flag = !targetNPC.friendly | (this.type == 318) |
+/// (targetNPC.type == 22 && killGuide) | (targetNPC.type == 54 &&
+/// killClothier)`, and a friendly projectile whose `flag` is false returns
+/// without touching the NPC.
+///
+/// The C# arms that stay neutral here: `NPCID.Sets.ZappingJellyfish`
+/// (63/64/103/242 — no jellyfish kind is ported),
+/// `this.hostile & flag2` (the hostile shots' friendly-NPC damage — the
+/// port's hostile shots ride the player-contact pass instead), and
+/// `CanNPCBeHitByPlayerOrPlayerProjectile`'s critter block
+/// (`:20513-20529` — the Guide to Critter Companionship item and the
+/// minion/sentry shot flags are both unported).
+fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -> bool {
+    if !n.kind.is_friendly() {
+        return false;
+    }
+    if kind == ROTTEN_EGG {
+        return false;
+    }
+    if n.kind == NpcKind::Guide && kill_guide {
+        return false;
+    }
+    if n.kind == NpcKind::Clothier && kill_clothier {
+        return false;
+    }
+    true
+}
 
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
@@ -940,6 +1024,13 @@ fn set_defaults_scale(kind: u16) -> f32 {
 /// vanishes (Phase 1's deviation, fixed by this block). Their aiStyles
 /// 16 dispatch to `ai_bomb`; 147/75/10/181 stay unported stand-ins (the rows
 /// carry the vanilla value for the later AI port — M4-PROJ).
+/// `Main.rand.Next(min, maxExclusive)` over the pool's shared stream: the
+/// half-open range, mapped like the port's other `next_rand` consumers.
+fn rand_range(state: &mut u64, min: i32, max_excl: i32) -> f32 {
+    let span = (max_excl - min).max(1) as u64;
+    min as f32 + (crate::app::frame::next_rand(state) % span) as f32
+}
+
 /// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
 /// angle in radians.
 fn rotate(v: Vec2, angle: f32) -> Vec2 {
@@ -1106,6 +1197,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
             // `extraUpdates = 5`, the local immunity cooldown −1.
+            // `Projectile.cs:2937-2945` — the Leaf Blower petal: 14x14,
+            // aiStyle 40, penetrate 1, `alpha = 255` (the AI fades it in) and
+            // the 360-tick lifetime.
+            LEAF_BLOWER => (
+                14.0,
+                14.0,
+                40,
+                1,
+                360,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             POISON_DART => (
                 10.0,
                 10.0,
@@ -2363,6 +2469,13 @@ pub struct Projectile {
     pub alpha: i32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
+    /// `Projectile.frame` (`:451`, reset `:805`) — the row the draw slices out
+    /// of the `proj_frames`-many strip. The per-family animators that advance
+    /// it land with their AI arms.
+    pub frame: u32,
+    /// `Projectile.frameCounter` (`:452`, reset `:806`) — the per-family
+    /// cadence that advances [`Self::frame`].
+    pub frame_counter: u32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2466,6 +2579,8 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            frame: 0,
+            frame_counter: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
@@ -5726,6 +5841,71 @@ impl Projectile {
     /// and the `SoundID.Item28` cue are SKIPPED (no dust or sound layer in
     /// the pool), as are the other kinds' frame animations (no ported row,
     /// no `frame`/`frameCounter` slot fields).
+    /// `AI_040_LeafBlower` (`Projectile.cs:38003-38082`): the petal's fade-in /
+    /// fade-out life, its 5-frame flap and the drifting flight. The dust calls
+    /// (`:38040-38043`, `:38050-38054`) and the `Main.rand` dust jitter are
+    /// SKIPPED — no dust layer in the pool — while the drift draw
+    /// `Main.rand.Next(-100, 101) * 6E-05f` (`:38038-38039`) **is** drawn from
+    /// the pool's shared `Main.rand` stand-in (`hook_rng`), because it steers
+    /// the flight and skipping it would change the trajectory.
+    fn ai_leaf_blower(&mut self, rng: &mut u64) {
+        // `localAI[0]++` and the two-sided alpha ramp: fade in at 50/tick once
+        // the first 3 ticks are past, fade out at 2/tick after tick 50.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] > 50.0 {
+            self.alpha += 2;
+            if self.alpha >= 255 {
+                self.active = false;
+                return;
+            }
+        } else if self.local_ai[0] > 3.0 {
+            self.alpha -= 50;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+        }
+        // `:38024-38032` — the flap: 3 ticks per frame, 5 frames.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 5 {
+            self.frame = 0;
+        }
+        // `:38034-38035` — the per-shot drift acceleration.
+        self.vel.x += self.ai[0];
+        self.vel.y += self.ai[1];
+        if self.local_ai[1] == 0.0 {
+            // `:38036-38037`: the turn direction follows the launch velocity.
+            self.local_ai[2] = if self.vel.x > 0.0 { -1.0 } else { 1.0 };
+        }
+        self.local_ai[1] += 1.0;
+        if self.local_ai[1] == 1.0 {
+            // `:38039-38040` — one RNG draw pair per petal, ±0.006/tick².
+            self.ai[0] = rand_range(rng, -100, 101) * 6E-05;
+            self.ai[1] = rand_range(rng, -100, 101) * 6E-05;
+        }
+        // `:38058-38062` — after the 10-tick grace the flight curves: the
+        // velocity is rotated by the signed |ai[0]| ramp and damped 3%/tick.
+        if self.local_ai[1] > 10.0 {
+            let angle = self.local_ai[2] * self.ai[0].abs() * self.local_ai[1] * 0.35;
+            self.vel = rotate(self.vel, angle);
+            self.vel *= 0.97;
+        }
+        // `:38063-38069` — the speed band: never above 16 px/tick of steering
+        // (0.95/tick) and never below 12 (1.05/tick).
+        let (ax, ay) = (self.vel.x.abs(), self.vel.y.abs());
+        if ax + ay > 16.0 {
+            self.vel *= 0.95;
+        }
+        if ax + ay < 12.0 {
+            self.vel *= 1.05;
+        }
+        // `:38080` — the sprite faces along the flight, flipped 180°.
+        self.rot = self.vel.y.atan2(self.vel.x) + 3.14;
+    }
+
     fn ai_frost_bolt(&mut self, world: &World) {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
@@ -6685,8 +6865,15 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
-        let Some(uv) = lookups.shuriken_uv() else {
-            return;
+        // `Main.DrawProj`'s sprite: the kind's own sheet at
+        // `Frame(1, projFrames[type], 0, frame)` (`Main.cs:27929-27943`), or the
+        // shuriken stand-in when the sheet is not packed.
+        let (uv, sprite_w, sprite_h) = match lookups.proj_frame(self.kind, self.frame) {
+            Some((uv, w, h)) => (uv, w, h),
+            None => match lookups.shuriken_uv() {
+                Some(uv) => (uv, SIZE, SIZE),
+                None => return,
+            },
         };
         let tx = (self.pos.x / TILE_PX) as i32;
         let ty = (self.pos.y / TILE_PX) as i32;
@@ -6702,9 +6889,13 @@ impl Projectile {
             self.pos.x - (camera.x - screen.x * 0.5 / zoom),
             self.pos.y - (camera.y - screen.y * 0.5 / zoom),
         ];
+        // `Projectile.scale` multiplies the sprite (`Main.DrawProj`'s
+        // `float scale = projectile.scale`), and the sheet's own frame size is
+        // the quad — not the 16 px hitbox stand-in.
+        let scale = self.scale.max(0.0) * zoom;
         r.push_ui_sprite_rot(
             pos,
-            [SIZE * zoom, SIZE * zoom],
+            [sprite_w * scale, sprite_h * scale],
             uv,
             [c[0], c[1], c[2], 1.0],
             self.rot,
@@ -8441,6 +8632,13 @@ impl ProjectilePool {
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
                         // `AI_007_GrapplingHooks` — the grappling hooks.
+                        // `AI()`'s `else if (this.aiStyle == 40)`
+                        // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
+                        40 => {
+                            let mut rng = self.hook_rng;
+                            self.slots[i].ai_leaf_blower(&mut rng);
+                            self.hook_rng = rng;
+                        }
                         7 => {
                             let dead = player.as_ref().is_some_and(|p| p.dead);
                             let local = self.slots[i].owner == local_owner;
@@ -8898,7 +9096,7 @@ impl ProjectilePool {
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
-                self.gem_bolt_aoe(i, npcs);
+                self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()));
             }
         }
     }
@@ -8914,7 +9112,7 @@ impl ProjectilePool {
     /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
     /// it and the burst fires at most once per bolt (a dead slot never returns
     /// to `active`).
-    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc]) {
+    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
         let (kind, ai0) = match self.slots.get(slot) {
             Some(p) => (p.kind, p.ai[0]),
             None => return,
@@ -8963,7 +9161,7 @@ impl ProjectilePool {
         // rectangle against the NPC's, so the AoE rides the box walk, not
         // `damage_pve`'s fixed centre point (the point test would sit on
         // the already-hit centre NPC and the burst would deal nothing).
-        self.damage_pve_boxed(slot, npcs);
+        self.damage_pve_boxed(slot, npcs, dolls);
         // `:75483`: the trailing `Resize(22, 22)`.
         let (cx, cy) = {
             let p = &self.slots[slot];
@@ -9285,6 +9483,9 @@ impl ProjectilePool {
                 p.pos + Vec2::splat(SIZE * 0.5),
             )
         };
+        // `Player.killGuide`/`killClothier` — the worn-doll flags the friendly
+        // gate reads (`Player.cs:15124`/`:15128`).
+        let (kill_guide, kill_clothier) = doll_flags(player.as_deref());
         // The whip sweep — `FillWhipControlPoints`' live and previous frames
         // (`frameOffset` 0 / −1, `Projectile.cs:15718-15722`), filled once per
         // tick off the owner's arm anchor.
@@ -9323,6 +9524,11 @@ impl ProjectilePool {
             }
             let p = &self.slots[slot];
             if !self.target_allowed(slot, p, idx as u16) {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12608`) — ahead of
+            // the immunity gate, exactly like the C#'s early `return`.
+            if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
@@ -9449,7 +9655,7 @@ impl ProjectilePool {
     /// the normal PVE pass uses is the port's simplification for the
     /// flight-size boxes; the resized death bursts (the gem bolts' AoE)
     /// need the rectangle, or the burst's damage lands nowhere.
-    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc]) {
+    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
         let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -9475,6 +9681,11 @@ impl ProjectilePool {
             }
             let p = &self.slots[slot];
             if !self.target_allowed(slot, p, idx as u16) {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12608`): the
+            // resized death bursts obey the same gate as the plain walk.
+            if refuses_friendly(n, p.kind, dolls.0, dolls.1) {
                 continue;
             }
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
@@ -9563,6 +9774,76 @@ mod tests {
         w
     }
 
+    /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the
+    /// petal's alpha ramp, the 5-frame flap, the per-shot drift draw, the
+    /// rotation and the speed band.
+    #[test]
+    fn ai_040_leaf_blower_fades_flaps_and_drifts() {
+        let mut p = Projectile {
+            active: true,
+            kind: LEAF_BLOWER,
+            // The item's `shootSpeed` 14 (`Item.cs:14224`) — the band is only
+            // meaningful for a shot that starts at the muzzle speed.
+            vel: Vec2::new(14.0, 0.0),
+            alpha: 255,
+            time_left: 360,
+            ..Default::default()
+        };
+        let mut rng = 12345u64;
+        // Ticks 1-3: the alpha holds at 255 (the `> 3f` gate at `:38017`).
+        for _ in 0..3 {
+            p.ai_leaf_blower(&mut rng);
+        }
+        assert_eq!(p.alpha, 255);
+        assert_eq!(p.local_ai[0], 3.0);
+        // Tick 4 on fades 50/tick, so by tick 10 the alpha is zero.
+        for _ in 0..7 {
+            p.ai_leaf_blower(&mut rng);
+        }
+        assert_eq!(p.alpha, 0, "the fade-in lands on 0 by localAI[0] = 10");
+        // The flap: 3 ticks per frame, wrapping at 5 (`:38024-38032`).
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..30 {
+            p.ai_leaf_blower(&mut rng);
+            seen.insert(p.frame);
+        }
+        assert_eq!(seen.len(), 5, "all 5 frames of projFrames[206] ride");
+        assert!(p.frame_counter < 3);
+        // The drift draw stays inside `Next(-100, 101) * 6E-05`.
+        assert!(p.ai[0].abs() <= 100.0 * 6E-05);
+        assert!(p.ai[1].abs() <= 100.0 * 6E-05);
+        // The turn direction follows the launch velocity (`:38036-38037`).
+        assert!(p.local_ai[2] == 1.0 || p.local_ai[2] == -1.0);
+        // The speed band keeps |vx|+|vy| between 12 and 16 whatever the drift.
+        let band = p.vel.x.abs() + p.vel.y.abs();
+        assert!((11.0..=17.0).contains(&band), "the speed band holds ({band})");
+        // The sprite faces along the flight (`:38080`).
+        assert!((p.rot - (p.vel.y.atan2(p.vel.x) + 3.14)).abs() < 1e-4);
+        // Past tick 50 the alpha ramps back up 2/tick and kills at 255.
+        let mut ticks = 0;
+        while p.active && ticks < 400 {
+            p.ai_leaf_blower(&mut rng);
+            ticks += 1;
+        }
+        assert!(!p.active, "the petal fades out and dies");
+        assert!(ticks < 200, "the fade-out takes under 200 ticks ({ticks})");
+    }
+
+    /// The row: `Projectile.cs:2937-2945` — 14x14, aiStyle 40, penetrate 1,
+    /// alpha 255, 360 ticks; and the 5-frame strip the draw slices.
+    #[test]
+    fn leaf_blower_row_and_frames() {
+        let d = proj_data(LEAF_BLOWER).expect("the row exists");
+        assert_eq!((d.w, d.h), (14.0, 14.0));
+        assert_eq!(d.ai_style, 40);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 360);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(proj_frames(LEAF_BLOWER), 5);
+        // The item that fires it is already wired (`Item.cs:14223-14224`).
+        assert_eq!(crate::registry::projectile(1178), Some(LEAF_BLOWER));
+    }
+
     fn one_npc(world: &World) -> Npc {
         Npc::spawn_slime(world, 20).unwrap()
     }
@@ -9622,6 +9903,80 @@ mod tests {
             true,
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
+    }
+
+    /// BUG-23: the friendly refusal on the player's shots —
+    /// `Damage_PVE_Inner` (`Projectile.cs:12601-12608`). A shot passes a town
+    /// NPC, the doll-owned Guide arm lets it through, and the helper's arm
+    /// matrix covers the Rotten Egg and the bound forms.
+    #[test]
+    fn bug_23_projectiles_refuse_the_friendly_npcs() {
+        let w = ground();
+        let mut guide = Npc::spawn_guide(&w, 30).expect("the Guide spawns");
+        guide.x = 100.0;
+        guide.y = 100.0;
+        // The Guide's box is 18x40 at (100, 100); the shot's centre sits at
+        // `pos + 3` — (108, 108) puts it inside.
+        let mut npcs = vec![guide];
+        let mut player = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(SHURIKEN, 0, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0, false)
+            .expect("the slot");
+        let hp = npcs[0].hp;
+        pool.update(
+            &mut w.clone(),
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(npcs[0].hp, hp, "the shot passes through the Guide");
+        assert!(pool.slots[slot].active, "and the shot is not consumed");
+        // The worn Guide Voodoo Doll arms the arm (`Player.cs:15124`).
+        let mut npcs2 = vec![Npc::spawn_guide(&w, 30).expect("the Guide spawns")];
+        npcs2[0].x = 100.0;
+        npcs2[0].y = 100.0;
+        let mut player2 = crate::player::Player::spawn(&w);
+        player2.equipped[3] = 267;
+        let mut pool2 = ProjectilePool::new();
+        pool2
+            .spawn(SHURIKEN, 0, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0, false)
+            .expect("the slot");
+        let hp = npcs2[0].hp;
+        pool2.update(
+            &mut w.clone(),
+            &mut npcs2,
+            None,
+            None,
+            Some(&mut player2),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(npcs2[0].hp < hp, "the doll-armed Guide takes the shot");
+        // The helper's matrix: every friendly kind refuses a plain shot, the
+        // Rotten Egg (318) gets through everything, the doll arms only cover
+        // the Guide (22) and the Clothier (54), and the six bound forms have
+        // no arm at all (`isLikeATownNPC` does not cover them).
+        let bound = Npc::spawn_town(&w, 30, NpcKind::BoundGoblin).expect("the bound goblin spawns");
+        let clothier = Npc::spawn_town(&w, 30, NpcKind::Clothier).expect("the Clothier spawns");
+        let slime = one_npc(&w);
+        assert!(refuses_friendly(&npcs[0], SHURIKEN, false, false));
+        assert!(!refuses_friendly(&npcs[0], ROTTEN_EGG, false, false));
+        assert!(!refuses_friendly(&npcs[0], SHURIKEN, true, false));
+        assert!(!refuses_friendly(&clothier, SHURIKEN, false, true));
+        assert!(refuses_friendly(&clothier, SHURIKEN, true, false));
+        assert!(refuses_friendly(&bound, SHURIKEN, true, true));
+        assert!(!refuses_friendly(&bound, ROTTEN_EGG, false, false));
+        assert!(!refuses_friendly(&slime, SHURIKEN, false, false));
     }
 
     /// One pool update plus the per-NPC decay the NPC update would run
@@ -13201,6 +13556,8 @@ mod phasmal_projectile_tests {
             rot: 0.0,
             damage: 30,
             knock_back: 0.0,
+            frame: 0,
+            frame_counter: 0,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -13432,6 +13789,8 @@ mod ritual_projectile_tests {
             rot: 0.0,
             damage: 0,
             knock_back: 0.0,
+            frame: 0,
+            frame_counter: 0,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -14054,9 +14413,12 @@ mod magic_data_tests {
         // list — the follow-up row and the hostile riders; the Golem's
         // fireball 258 already rides a pre-existing row, the hostile
         // style-8 rider of the same kind, and keeps it).
-        for kind in [114u16, 116, 206, 297, 356, 409, 502, 617, 633] {
+        // 206 left the list with M4-PROJ-6b: the Leaf Blower's petal now
+        // carries its own row and `AI_040_LeafBlower`.
+        for kind in [114u16, 116, 297, 356, 409, 502, 617, 633] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        assert_eq!(proj_data(LEAF_BLOWER).unwrap().ai_style, 40);
         assert!(proj_data(GOLEM_FIREBALL).is_some(), "the Golem's 258 row stays");
         // The saucer stand-ins (447/450, aiStyle 79/80 as style numbers) are
         // distinct from the magic kinds 79/80 — no collision.

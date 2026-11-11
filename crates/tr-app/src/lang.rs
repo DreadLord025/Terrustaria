@@ -128,6 +128,15 @@ pub fn text_args(key: &str, args: &[String]) -> String {
     manager().lock().unwrap().get_text_value_args(key, args)
 }
 
+/// `Language.GetTextValue("GameUI.<name>", args)` — the `GameUI` category
+/// rows the tooltip prints (`Main.cs:20805-20816`'s fishing rows).
+pub fn game_ui_fmt(key: &str, value: i32) -> String {
+    text_args(
+        &format!("GameUI.{key}"),
+        &[value.to_string()],
+    )
+}
+
 /// `Lang.menu[i].Value` — the key is `LegacyMenu.{i}` (`Lang.cs:481`).
 pub fn menu(i: usize) -> String {
     text(&format!("LegacyMenu.{i}"))

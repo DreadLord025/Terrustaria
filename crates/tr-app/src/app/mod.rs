@@ -105,6 +105,16 @@ pub(crate) struct App {
     pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
+    /// The world-independent half of the atlas content, kept decoded so a world
+    /// swap (`swap_world`) repacks it instead of re-reading ~7 000 sheets from
+    /// disk. `None` until the first build; the content dir is fixed for the
+    /// process, so the pixels cannot go stale.
+    pub(crate) static_sheets: Option<Vec<tr_render::atlas::AtlasImage>>,
+    /// The decoded retail font glyph tables — the other world-independent cost
+    /// of a load (~1–2 s). Cached beside [`App::static_sheets`] for the same
+    /// reason; the `FontAtlas` page texture rides [`App::font_atlas`] instead of
+    /// being rebuilt.
+    pub(crate) fonts_cache: Option<assets::FontTables>,
     /// The packed BC2 font pages the renderer uploads (`loop`'s
     /// `SpriteRenderer::new`); `None` without the retail fonts.
     pub(crate) font_atlas: Option<tr_render::FontAtlas>,
@@ -178,6 +188,12 @@ pub(crate) struct App {
     pub(crate) equip: inv::EquipSlots,
     /// `Main.EquipPage`: 0 armour/vanity/dye, 2 misc equips, 3 camera.
     pub(crate) equip_page: i32,
+    /// `Main.EquipPageSelected` (`Main.cs:749`): the page the player *asked*
+    /// for with the tab icons (`DrawPageIcons`' click arm, `:42846-42858`).
+    /// `Main.EquipPage` above is the page actually drawn, recomputed every frame
+    /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
+    /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
+    pub(crate) equip_page_selected: i32,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -416,6 +432,18 @@ pub(crate) struct App {
     /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
     /// env var selects it for screenshots.
     pub(crate) map_style: i32,
+    /// `Main.teamCooldown` (`Main.cs:965`): ticks left before the PVP toggle
+    /// and the team cells accept another change (`teamCooldownLen = 300`,
+    /// `Main.cs:66781`). Decremented once per update (`Main.cs:17048-17051`).
+    pub(crate) team_cooldown: i32,
+    /// `Main.hidePVPAndTeamIcons` (`Main.cs:2357`): set by the NPC-heads column
+    /// overflow (`Main.cs:42046`), cleared on every non-`EquipPage == 1` draw
+    /// (`Main.cs:42656-42659`) and on world load (`Main.cs:42020`/`:67272`).
+    pub(crate) hide_pvp_and_team_icons: bool,
+    /// The `TR_PVP` pin resolved at boot ([`crate::env::pvp_icons`]) — held in a
+    /// field so tests can open the PVP draw/click gates without touching the
+    /// process environment (the pin is a `OnceLock`).
+    pub(crate) pvp_icons_forced: bool,
     pub(crate) audio: audio::Audio,
     pub(crate) music: audio::MusicSystem,
     pub(crate) last_hp: i32,
@@ -472,6 +500,17 @@ pub(crate) struct App {
     pub(crate) zoom_pinned: bool,
     pub(crate) debug: bool,
     pub(crate) keys: HashSet<KeyCode>,
+    /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
+    /// bind table, mirrored from `settings.keybinds` so a rebind in the
+    /// settings screen changes the input pass without a relaunch
+    /// ([`App::apply_settings`]).
+    pub(crate) keybinds: [String; crate::input_map::BIND_COUNT],
+    /// `Main.cMapStyle`..`Main.cMapAlphaDown` (`Main.cs:67190-67195`).
+    pub(crate) map_binds: [String; crate::input_map::MAP_BIND_COUNT],
+    /// The `controlMount` press edge's previous state (`Player.cs:24888`'s
+    /// `releaseMount` latch). An `App` field rather than a `static` so two
+    /// headless apps in one test process cannot share it.
+    pub(crate) mount_prev: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -625,12 +664,25 @@ pub(crate) struct App {
     pub(crate) lost_coin_string: String,
     /// The full death broadcast text (`{name} {text}`).
     pub(crate) death_text: String,
+    /// `Main._framesWithRespawnSkipAvailable`: the death screen's
+    /// "{InputTrigger_Jump} to skip" prompt's ramp counter
+    /// (`Main.cs:45347-45378`) — counts up while the skip is allowed and
+    /// zeroes otherwise (the C# counts it inside `DrawDeathText`).
+    pub(crate) respawn_skip_frames: i32,
+    /// `Player.AllowsRespawnTimerSkip()` for this frame, computed on the world
+    /// tick beside `UpdateDead` (`Player.cs:16919`) — the gate the prompt's
+    /// counter follows.
+    pub(crate) respawn_skip_available: bool,
     /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
     /// state — the points, the max, the icon (the group + 3), the 160-tick
     /// display timer, the fade alpha and the near-invasion flag.
     pub(crate) invasion_progress: i32,
     pub(crate) invasion_progress_max: i32,
     pub(crate) invasion_progress_icon: i32,
+    /// `Main.invasionProgressWave` (`Main.cs:1929`) — the moon-event wave
+    /// number; `0` selects `DrawInvasionProgress`'s `Game.WaveCleared` arm
+    /// (`:47806`), `> 0` the `Game.WaveMessage` arm (`:47782`).
+    pub(crate) invasion_progress_wave: i32,
     pub(crate) invasion_progress_display_left: i32,
     pub(crate) invasion_progress_alpha: f32,
     pub(crate) invasion_progress_near: bool,
@@ -769,6 +821,34 @@ impl App {
         world_sim::camera::screen_size(self)
     }
 
+    /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
+    /// clamped by the 600 px equipment push-up — the same value `frame()`
+    /// hands the inventory draw, so the HUD hit tests and the draw agree.
+    pub(crate) fn main_m_h(&self) -> f32 {
+        let minimap_live = self.settings.map_enabled
+            && self.map.as_ref().is_some_and(|m| !m.open)
+            && self.map_style == 1;
+        crate::ui::minimap::main_m_h(minimap_live, self.screen_size().1)
+    }
+
+    /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
+    /// page the held item forces (`ItemSlot.SelectEquipPage`,
+    /// `ItemSlot.cs:4622-4652`), falling back to `Main.EquipPageSelected`. Run
+    /// once per frame from `frame()` so the auto-jump is undone as soon as the
+    /// cursor stack empties.
+    pub(crate) fn resolve_equip_page(&mut self) {
+        let forced = crate::ui::chrome::select_equip_page(
+            self.mouse_item.kind,
+            self.mouse_item.count,
+            self.equip_page_selected,
+        );
+        self.equip_page = if forced == -1 {
+            self.equip_page_selected
+        } else {
+            forced
+        };
+    }
+
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
     }
@@ -780,24 +860,45 @@ impl App {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
         let step = 16.0 / m.scale;
+        let binds = self.keybinds.clone();
+        let map_binds = self.map_binds.clone();
         let k = |code| self.keys.contains(&code);
-        if k(KeyCode::KeyW) || k(KeyCode::ArrowUp) {
+        // The pan rows are the movement binds (`Main.cUp`..`Main.cRight`,
+        // `Main.cs:67163-67166`); the arrows stay as the port's convenience.
+        let held = |action: crate::input_map::Action, arrow: KeyCode| {
+            self.keys
+                .iter()
+                .any(|k| crate::input_map::is_bound(&binds, action, *k))
+                || k(arrow)
+        };
+        if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
             m.pos[1] -= step;
         }
-        if k(KeyCode::KeyS) || k(KeyCode::ArrowDown) {
+        if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
             m.pos[1] += step;
         }
-        if k(KeyCode::KeyA) || k(KeyCode::ArrowLeft) {
+        if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
             m.pos[0] -= step;
         }
-        if k(KeyCode::KeyD) || k(KeyCode::ArrowRight) {
+        if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
             m.pos[0] += step;
         }
-        // `Main.cs:50453-50454`: `cMapZoomIn = "Add"`, `cMapZoomOut = "Subtract"`.
-        if k(KeyCode::NumpadAdd) {
+        // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
+        // "Subtract"` — the menuMode 272727 rows, not a fixed key.
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if k(KeyCode::NumpadSubtract) {
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -1178,8 +1279,51 @@ impl App {
         self.pointer.tick(f64::from(dt) * 1000.0);
     }
 
+    /// The "the world is live now" state that both world-install paths end on:
+    /// the front end closes and the legacy menu hands its settings hint back.
+    /// `Main.LoadWorld` and the net install both leave `Main.gameMenu` false
+    /// (`client_install_world`'s tail is the twin) — exactly one of `front`/`menu`
+    /// is ever live (`Review Focus 1`), and in-game neither is.
+    pub(crate) fn enter_loaded_world(&mut self) {
+        if self.menu.is_some() {
+            self.close_menu();
+        }
+        self.front = None;
+        self.front_backup = None;
+        self.front_hint = None;
+        self.front_hover_hit = None;
+    }
+
     pub(crate) fn is_client(&self) -> bool {
         matches!(self.net, NetRole::Client(_))
+    }
+
+    /// `Main.DrawPVPIcons`'s state block (`Main.cs:42654-42676`): the two gates
+    /// (`ShouldPVPDraw` = `netMode == 1`, `ShouldTeamSelectDraw`), the local
+    /// player's `hostile`/`team` and `Main.teamCooldown`.
+    ///
+    /// `Main.netMode` is the port's [`App::is_client`]; `teamBasedSpawnsSeed`
+    /// (`Main.cs:351`) is not ported (no team-based spawn seeds until the
+    /// M5-seed rows), so the single-player arm reads `false` — with it off the
+    /// vanilla hides the team cells outside a multiplayer client anyway.
+    pub(crate) fn pvp_icon_state(&self) -> crate::ui::chrome::PvpIconState {
+        // `TR_PVP=1` opens the vanilla netsplit gates for screenshots (see
+        // [`crate::env::pvp_icons`]); the game rule stays `Main.netMode == 1`.
+        let pvp_draw = self.is_client() || self.pvp_icons_forced;
+        let (hostile, team) = self
+            .player
+            .as_ref()
+            .map(|p| (p.hostile, p.team))
+            .unwrap_or((false, 0));
+        crate::ui::chrome::PvpIconState {
+            pvp_draw,
+            // `Main.cs:2911-2919`: `ShouldTeamSelectDraw` — always inside the
+            // PVP gate, else the team-based-spawns seed (not ported: false).
+            team_select_draw: pvp_draw,            hide: self.hide_pvp_and_team_icons,
+            hostile,
+            team,
+            team_cooldown: self.team_cooldown,
+        }
     }
 
     /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
@@ -1482,8 +1626,30 @@ impl App {
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (world, sections) = load_world(path)?;
         let content = assets::content_dir().context("no retail Content directory")?;
-        let (atlas, font_atlas, lookups, atlas_stats) =
-            build_atlas(&world, &content.join("Images"))?;
+        let mut static_cache = self.static_sheets.take();
+        let mut fonts_cache = self.fonts_cache.take();
+        let built = build_atlas_reusing_static(
+            &world,
+            &content.join("Images"),
+            &mut static_cache,
+            &mut fonts_cache,
+        );
+        // Whatever happened, the decoded halves are carried onto the App (they
+        // are world-independent, so a failed swap must not throw them away — the
+        // next Play would re-decode for nothing).
+        let rebuilt = match built {
+            Ok(parts) => parts,
+            Err(e) => {
+                self.static_sheets = static_cache;
+                self.fonts_cache = fonts_cache;
+                return Err(e);
+            }
+        };
+        let (atlas, new_font_atlas, lookups, atlas_stats) = rebuilt;
+        // A cached font build returns no page texture (nothing was decoded), so
+        // the one already uploaded rides the swap — the same keep rule as the
+        // window/GPU below. A fresh build replaces it.
+        let font_atlas = new_font_atlas.or_else(|| self.font_atlas.take());
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
@@ -1515,6 +1681,17 @@ impl App {
         self.noise_tex = noise_tex;
         self.water_mask = water_mask;
         self.shot_path = shot_path;
+        // `App::new` builds fresh `None` caches; the decoded halves ride the swap
+        // so the next Play is fast too (both are world-independent).
+        self.static_sheets = static_cache;
+        self.fonts_cache = fonts_cache;
+        // `UIWorldListItem.PlayGame` -> `Main.LoadWorld` leaves the game menu
+        // (`Main.gameMenu = false`): the fresh `App::new` boots the legacy menu
+        // (the boot default), so the launch state is restored here — the same
+        // tail the net client install does (`client_install_world`). Without it
+        // the select-world Play loaded the world and then drew the lobby over
+        // it instead of entering the world (BUG-21).
+        self.enter_loaded_world();
         // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
         // world's spawn and the zoom on the setting, before the first frame.
         self.camera = Vec2::new(
@@ -1912,6 +2089,11 @@ impl App {
                 for name in v.split(',').map(|s| s.trim()) {
                     let kind = match name {
                         "guide" => NpcKind::Guide,
+                        // The Eye of Cthulhu's six-row strip (BUG-22's
+                        // shadowed arm) and the Travelling Merchant's shared
+                        // walk band.
+                        "eoc" => NpcKind::EyeOfCthulhu,
+                        "travellingmerchant" => NpcKind::TravellingMerchant,
                         "zombie" => NpcKind::Zombie,
                         "skeleton" => NpcKind::Skeleton,
                         "peon" => NpcKind::GoblinPeon,
@@ -2384,6 +2566,9 @@ impl App {
             // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
             // var selects the page for screenshots (0 = equipment, 2 = misc).
             equip_page: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
+            // the per-frame `SelectEquipPage` resolution below.
+            equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
@@ -2533,6 +2718,9 @@ impl App {
             // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
             // out-of-range value falls back to 1).
             map_style: crate::env::map_style(),
+            team_cooldown: 0,
+            hide_pvp_and_team_icons: false,
+            pvp_icons_forced: crate::env::pvp_icons(),
             audio: audio::Audio::new(assets::content_dir()),
             music: audio::MusicSystem::new(assets::content_dir()),
             last_hp: 100,
@@ -2557,7 +2745,13 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
-            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
+            ingame_options: {
+                // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
+                // at boot so `TR_SHOT` captures the panel.
+                let mut o = crate::ui::ingame_options::IngameOptions::new();
+                o.open = crate::env::ingame_options_open();
+                o
+            },
             world_path: world_path.clone(),
             dev_break,
             dev_place,
@@ -2566,6 +2760,9 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             keys: HashSet::new(),
+            keybinds: crate::input_map::default_binds(),
+            map_binds: crate::input_map::default_map_binds(),
+            mount_prev: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
@@ -2577,6 +2774,8 @@ impl App {
             shot_path: crate::env::shot_path().map(PathBuf::from),
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
+            static_sheets: None,
+            fonts_cache: None,
             light: LightMap::new(),
             scratch: DrawScratch::default(),
             tile_stats: TileDrawStats::default(),
@@ -2662,9 +2861,12 @@ impl App {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            respawn_skip_frames: 0,
+            respawn_skip_available: false,
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
+            invasion_progress_wave: 0,
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
@@ -3176,15 +3378,27 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
 
 /// Builds the sprite atlas and the sheet lookups from the world's used tile
 /// and wall types plus the UI fonts — the atlas+fonts half of the startup.
-pub(crate) fn build_atlas(
+/// Builds the sprite atlas and `Lookups` with the world-independent halves cached
+/// across calls — the world-swap fast path. `static_cache` holds the decoded static sheets (moved
+/// in and back out, no pixel copy) and `fonts_cache` the glyph tables; both are
+/// world-independent, so a swap only re-decodes the world's own tile/wall
+/// sheets. A cached font build returns `None` for the page texture: the caller
+/// keeps the `FontAtlas` it already uploaded.
+pub(crate) fn build_atlas_reusing_static(
     world: &World,
     assets_dir: &Path,
-) -> Result<(
-    Atlas,
-    Option<tr_render::FontAtlas>,
-    assets::Lookups,
-    (u32, u32, usize, usize),
-)> {
+    static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
+    fonts_cache: &mut Option<assets::FontTables>,
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+    build_atlas_inner(world, assets_dir, static_cache, fonts_cache)
+}
+
+fn build_atlas_inner(
+    world: &World,
+    assets_dir: &Path,
+    static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
+    fonts_cache: &mut Option<assets::FontTables>,
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -3202,8 +3416,43 @@ pub(crate) fn build_atlas(
     );
 
     let t1 = Instant::now();
-    let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let fonts = assets::load_fonts();
+    // Only the world's own sheets depend on the world; the static half and the
+    // retail fonts are re-decoded at boot and reused by every swap (BUG-21: the
+    // Play froze for ~1.4 s re-decoding ~7 000 sheets and ~1–2 s more on the
+    // fonts, all of them already in memory). `world ++ static ++ font` is the
+    // pre-split list's order, so the atlas layout and every UV are unchanged.
+    let mut images = assets::load_world_sheets(&assets_dir, &tile_ids, &wall_ids)?;
+    let world_len = images.len();
+    let cached = static_cache.take();
+    let static_reused = cached.is_some();
+    let static_sheets = match cached {
+        Some(tail) => tail,
+        None => assets::load_static_sheets(&assets_dir),
+    };
+    let static_len = static_sheets.len();
+    images.extend(static_sheets);
+    let cached_fonts = fonts_cache.take();
+    let fonts_reused = cached_fonts.is_some();
+    let (tables, font_atlas) = match cached_fonts {
+        Some(t) => {
+            // Straight back in: the cache is world-independent and the next swap
+            // must hit it too.
+            *fonts_cache = Some(t.clone());
+            (t, None)
+        }
+        None => {
+            let loaded = assets::load_fonts();
+            let t = loaded.tables();
+            *fonts_cache = Some(t.clone());
+            (t, loaded.atlas)
+        }
+    };
+    log::info!(
+        "{} static sheets ({}), fonts ({})",
+        static_len,
+        if static_reused { "reused" } else { "decoded" },
+        if fonts_reused { "reused" } else { "decoded" }
+    );
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -3213,7 +3462,12 @@ pub(crate) fn build_atlas(
     );
 
     let t2 = Instant::now();
-    let atlas = Atlas::build(images, 8192);
+    // `build_ref` borrows the sheets, so the static half survives the packing:
+    // the tail is split back off the packed list and refills the cache (the boot
+    // path's too, so the first Play skips the re-decode as well).
+    let atlas = Atlas::build_ref(&images, 8192);
+    let tail: Vec<_> = images.drain(world_len..world_len + static_len).collect();
+    *static_cache = Some(tail);
     log::info!(
         "atlas {}x{} ({:.1} MB, {} sheets) in {:.0} ms",
         atlas.width,
@@ -3234,11 +3488,11 @@ pub(crate) fn build_atlas(
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
-        fonts.ui,
-        fonts.item,
-        fonts.death,
-        fonts.combat_text,
-        fonts.combat_crit,
+        tables.ui,
+        tables.item,
+        tables.death,
+        tables.combat_text,
+        tables.combat_crit,
     );
 
     let atlas_stats = (
@@ -3247,7 +3501,7 @@ pub(crate) fn build_atlas(
         atlas.memory_bytes(),
         atlas.sheets.len(),
     );
-    Ok((atlas, fonts.atlas, lookups, atlas_stats))
+    Ok((atlas, font_atlas, lookups, atlas_stats))
 }
 
 /// The world-dump diagnostics: `TR_DUMP_TILES` prints the raw tile grid and
@@ -3565,6 +3819,81 @@ mod tr_hooks {
         let out = f();
         unsafe { std::env::remove_var(name) };
         out
+    }
+
+
+    /// BUG-21 end to end: the select-world Play enters the world (the lobby does
+    /// not come back) and the second swap reuses the cached atlas/font halves
+    /// instead of re-decoding them.
+    ///
+    /// The real `App::new` + `swap_world` path, headless (no window/GPU): the
+    /// first swap pays the boot decode, the second must be markedly cheaper and
+    /// leave the same atlas.
+    #[test]
+    fn bug21_swap_world_enters_the_world_and_reuses_the_caches() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(content) = find_content_dir() else {
+            eprintln!("no assets/Content junction: skipping the swap e2e");
+            return;
+        };
+        assets::set_content_dir(content.clone());
+        let assets_dir = content.join("Images");
+
+        // Two scratch worlds through the real save path.
+        let dir = std::env::temp_dir().join(format!("tr-bug21-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths = Vec::new();
+        for name in ["Alpha", "Beta"] {
+            let path = dir.join(format!("{name}.trwld"));
+            let mut w = World::new(name.into(), 64, 64);
+            w.compute_column_surface();
+            save::save(&path, &w, &save::WorldSide::default()).unwrap();
+            paths.push(path);
+        }
+
+        // The boot App over the first world, with the boot caches filled exactly
+        // like `main` does.
+        let (world, sections) = load_world(&paths[0]).unwrap();
+        let mut boot_static = None;
+        let mut boot_fonts = None;
+        let (atlas, font_atlas, lookups, stats) =
+            build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)
+                .expect("boot atlas");
+        let mut app = App::new(
+            settings::Settings::default(),
+            world,
+            sections,
+            paths[0].clone(),
+            atlas,
+            font_atlas,
+            lookups,
+            stats,
+        );
+        app.static_sheets = boot_static;
+        app.fonts_cache = boot_fonts;
+        // The boot default: the legacy menu is open (the lobby).
+        assert!(app.menu.is_some(), "the boot App opens the lobby");
+
+        // The Play: the world swaps in and the lobby must not come back.
+        app.swap_world(&paths[1]).expect("first swap");
+        assert!(app.menu.is_none(), "the lobby must not come back");
+        assert!(app.front.is_none(), "the 888 side clears too");
+        assert_eq!(app.world.name, "Beta", "the selected world is live");
+        assert!(app.static_sheets.is_some(), "the static half is cached");
+        assert!(app.fonts_cache.is_some(), "the font tables are cached");
+        assert!(app.font_atlas.is_some(), "the font page texture rides the swap");
+
+        // The second Play reuses both caches (the decode half is pinned by
+        // `assets::tests::test_the_second_atlas_build_reuses_the_static_half`,
+        // which measures the atlas build alone; a wall-clock assertion here
+        // would flake on the rest of `App::new`).
+        app.swap_world(&paths[0]).expect("second swap");
+        assert_eq!(app.world.name, "Alpha");
+        assert!(app.menu.is_none() && app.front.is_none());
+        assert!(app.static_sheets.is_some() && app.fonts_cache.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The production boot path (BUG-05): the player's own newest `.trwld`,

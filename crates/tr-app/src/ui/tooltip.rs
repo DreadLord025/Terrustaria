@@ -153,44 +153,24 @@ pub fn tooltip_box_rect(mouse: Vec2, w: f32, h: f32, screen: Vec2) -> [f32; 4] {
 /// One `MouseText` line height (`DynamicSpriteFont.MeasureString(...).Y`). The built-in
 /// bitmap fallback draws 8 px glyphs (`SpriteRenderer::push_text`).
 fn line_height(lookups: &assets::Lookups) -> f32 {
-    match &lookups.ui_font {
-        Some(f) => f.line_spacing,
-        None => 8.0,
-    }
+    super::text::line_height(lookups)
 }
 
-/// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
-/// plus the item name in its rare colour, with placeholder zeroed stat lines for
-/// weapons (spec §9.3; the real `Item.ToolTip` lines are a later data port).
-pub fn draw_item_tooltip(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    mouse: Vec2,
-    hover: Option<&ItemSlot>,
-    screen: Vec2,
-    pulse: UiPulse,
-) {
-    let Some(item) = hover else {
-        return;
-    };
-    // Empty slots show nothing (`Main.HoverItem.type > 0` guard, `Main.cs:20213`).
-    if item.count == 0 {
-        return;
-    }
-    // `Main.cs:20358-20360`: every line starts white, line 0 takes the name
-    // colour. `Lang.GetItemNameValue` — the localized `ItemName.{const}` row.
+/// `Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-20875`) —
+/// the item's tooltip rows: line 0 is the name in its rare colour
+/// (`:20358-20360`), then the stat/tool rows each behind its own value gate,
+/// through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`).
+/// The player-side layers the C# folds in (the weapon-damage multiplier, the
+/// crit bonuses, `minionKB`, the quiver x1.1) are the accessory layer and out
+/// of this pass; the values are the item def's own.
+pub fn item_tooltip_lines(
+    kind: u16,
+    d: &crate::itemdata::ItemDef,
+) -> Vec<(String, [f32; 4])> {
     let mut lines: Vec<(String, [f32; 4])> = vec![(
-        crate::lang::item_name(item.kind),
-        item_name_color(registry::rare(item.kind)),
+        crate::lang::item_name(kind),
+        item_name_color(registry::rare(kind)),
     )];
-    // `Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-20800`) —
-    // the stat rows, through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`).
-    // The player-side layers the C# folds in (the weapon-damage multiplier, the
-    // crit bonuses, `minionKB`, the quiver x1.1) are the accessory layer and out
-    // of this pass; the values are the item def's own.
-    let Some(d) = registry::get(item.kind) else {
-        return;
-    };
     if d.damage > 0 {
         // Damage (`:20677-20700`) — the class suffix (melee tip[2], ranged
         // tip[3], magic tip[4], summon tip[53], else tip[55]).
@@ -259,6 +239,24 @@ pub fn draw_item_tooltip(
         };
         lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
     }
+    // `:20805-20816` — the fishing rows (`GameUI.PrecentFishingPower` /
+    // `BaitRequired` / `BaitPower`). The pole's own `fishingPole` value is
+    // not in the port's registry yet, so only the bait half is reachable;
+    // the row shape is the C#'s `GameUI.BaitPower {0}`.
+    if d.bait > 0 {
+        lines.push((
+            crate::lang::game_ui_fmt("BaitPower", d.bait as i32),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20817-20830` — the equipable / tile-wand rows. The C# gates on
+    // `!flag` (the vanity-cosmetic latch) and paints `tip[60]` instead of
+    // `tip[23]` for the two shop-only pets (854/3035) — the port's
+    // registry has the slot flags, so the shape carries over; the shop
+    // latch is unreachable outside a shop, so `tip[23]` is the row.
+    if d.head_slot > 0 || d.body_slot > 0 || d.leg_slot > 0 || d.accessory {
+        lines.push((crate::lang::tip(23), [1.0, 1.0, 1.0, 1.0]));
+    }
     // The tool rows (`:20819-20864`) — each behind its own value gate.
     if d.defense > 0 {
         lines.push((
@@ -284,6 +282,42 @@ pub fn draw_item_tooltip(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
+    // `:20865-20875` — the range bonus (`tip[54]`, the `+N` when positive:
+    // `:20868` prefixes the sign only for the positive arm).
+    if d.tile_boost != 0 {
+        let row = if d.tile_boost > 0 {
+            format!("+{}{}", d.tile_boost, crate::lang::tip(54))
+        } else {
+            format!("{}{}", d.tile_boost, crate::lang::tip(54))
+        };
+        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+    }
+    lines
+}
+
+/// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
+/// plus the item name in its rare colour, with placeholder zeroed stat lines for
+/// weapons (spec §9.3; the real `Item.ToolTip` lines are a later data port).
+pub fn draw_item_tooltip(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    hover: Option<&ItemSlot>,
+    screen: Vec2,
+    pulse: UiPulse,
+) {
+    let Some(item) = hover else {
+        return;
+    };
+    // Empty slots show nothing (`Main.HoverItem.type > 0` guard, `Main.cs:20213`).
+    if item.count == 0 {
+        return;
+    }
+    let Some(d) = registry::get(item.kind) else {
+        return;
+    };
+    let lines = item_tooltip_lines(item.kind, d);
+
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.
     let lh = line_height(lookups);
     let mut w = 0.0f32;
@@ -324,6 +358,46 @@ pub fn draw_item_tooltip(
         hud_text(r, lookups, tx, ty + line_y, 1.0, line, text);
         line_y += lh;
     }
+}
+
+/// `Main.MouseTextHackZoom(text)` → `Main.MouseText` (`Main.cs:20123-20131`,
+/// `:20138-20210`) for a single uncoloured line: the bordered box at the pointer
+/// plus the white text. This is the shape the PVP/team hover uses
+/// (`Main.cs:42684`/`:42736` — `MouseTextHackZoom(Language.GetTextValue("UI.*"))`);
+/// the item tooltip above is the many-line variant of the same pass.
+pub fn draw_mouse_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    text: &str,
+    screen: Vec2,
+    pulse: UiPulse,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let lh = line_height(lookups);
+    // `Main.cs:20367-20377`: the single line's measured width, one line tall.
+    let w = hud_text_width(r, lookups, text, 1.0);
+    let rect = tooltip_box_rect(mouse, w, lh, screen);
+    draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
+    // The same `(14, 9)` inset and `mouseTextColor` tint the tooltip uses
+    // (`Main.cs:20400-20407`).
+    let tx = rect[0] + BOX_INSET.x;
+    let ty = rect[1] + BOX_INSET.y;
+    let tint = pulse.text;
+    for dir in [(-2.0f32, 0.0f32), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
+        hud_text(
+            r,
+            lookups,
+            tx + dir.0,
+            ty + dir.1,
+            1.0,
+            [0.0, 0.0, 0.0, tint],
+            text,
+        );
+    }
+    hud_text(r, lookups, tx, ty, 1.0, [tint, tint, tint, tint], text);
 }
 
 /// Index of the slot drawn under `mouse`. Open inventory: the 10x5 grid at
@@ -373,6 +447,45 @@ pub fn hovered_slot(
 
 #[cfg(test)]
 mod tests {
+    /// M7-UI-6: the tooltip row set — the equipable row (`tip[23]`), the
+    /// tool range bonus (`tip[54]`, sign-prefixed only when positive,
+    /// `Main.cs:20865-20875`) and the bait row (`GameUI.BaitPower`,
+    /// `:20805-20816`) each appear only behind their own gate.
+    #[test]
+    fn m7_ui_6_the_tooltip_rows_follow_their_gates() {
+        let copper_pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let rows = item_tooltip_lines(1, copper_pickaxe);
+        assert!(rows.len() > 1, "the name plus the tool rows");
+        // The pickaxe is not equipable: no `tip[23]`.
+        let equip = crate::lang::tip(23);
+        assert!(!rows.iter().any(|(t, _)| *t == equip), "no equipable row");
+        // Its `pick` row is `Lang.tip[26]`-suffixed.
+        assert!(
+            rows.iter().any(|(t, _)| t.ends_with(&crate::lang::tip(26))),
+            "the pick-power row"
+        );
+        // An accessory with a range bonus: both rows appear.
+        let row = crate::itemdata::ItemDef {
+            tile_boost: 3,
+            accessory: true,
+            ..*copper_pickaxe
+        };
+        let rows = item_tooltip_lines(1, &row);
+        assert!(rows.iter().any(|(t, _)| *t == equip), "the equipable row");
+        let boost = crate::lang::tip(54);
+        assert!(
+            rows.iter().any(|(t, _)| t == &format!("+3{boost}")),
+            "the positive range row carries the +"
+        );
+        // A negative boost drops the sign prefix (`:20872`).
+        let row = crate::itemdata::ItemDef {
+            tile_boost: -2,
+            ..*copper_pickaxe
+        };
+        let rows = item_tooltip_lines(1, &row);
+        assert!(rows.iter().any(|(t, _)| t == &format!("-2{boost}")));
+    }
+
     use super::*;
 
     #[test]

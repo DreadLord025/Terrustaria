@@ -369,6 +369,10 @@ impl Menu {
     /// app reads `config.json` once at startup and hands the clone in), so the
     /// menu edits the same values `close_menu`/`park_menu` copy back.
     pub fn new(settings: Settings, name: String) -> Self {
+        // The persisted bind table, taken before `settings` moves into the
+        // struct (see the field initialisers).
+        let seed_binds = settings.keybinds.clone();
+        let seed_map_binds = settings.map_binds.clone();
         let mut me = Self {
             page: Page::Main,
             selected: 0,
@@ -397,8 +401,12 @@ impl Menu {
             hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
             sel_color: [0, 0, 0, 0],
             set_key: None,
-            keybinds: default_keybinds(),
-            map_binds: default_map_binds(),
+            // Seeded from the persisted table (`Main.LoadSettings`'s `Key*`
+            // reads, `Main.cs:4582-4600`) so the settings screen shows what the
+            // input pass actually uses; `close_menu`/`park_menu` copy the edits
+            // back.
+            keybinds: seed_binds,
+            map_binds: seed_map_binds,
             screen_size: Vec2::new(1600.0, 900.0),
             hint: None,
             persist: true,
@@ -1328,6 +1336,42 @@ mod tests {
         );
     }
 
+    /// M7-UI-5: a rebind made on the settings screen reaches the input pass.
+    /// `Main.setKey`'s capture (`Main.cs:50569-50576`) writes the row, `Back`
+    /// syncs through `close_menu`, and `PlayerInput.CurrentProfile`'s re-seed
+    /// (`:4602`) makes `App.keybinds` the live table — so the new key toggles
+    /// the map and the old one does nothing.
+    #[test]
+    fn m7_ui_5_a_menu_rebind_reaches_the_input_pass() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, Vec::new(), Vec::new());
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let mut m = menu(Page::MapKeys);
+        // Row 1 is `Main.cMapFull` (`Main.cs:50425-50430` / `:50476-50479`).
+        m.activate(1);
+        assert_eq!(m.set_key, Some(1), "the row is capturing");
+        m.key(winit::keyboard::KeyCode::KeyF);
+        assert_eq!(m.map_binds[1], "F", "the capture took F");
+        app.menu = Some(m);
+        app.close_menu();
+        assert_eq!(
+            app.settings.map_binds[crate::input_map::MapAction::Full.index()],
+            "F",
+            "the master settings took the rebind"
+        );
+        app.world_key(winit::keyboard::KeyCode::KeyM);
+        assert!(!app.map.as_ref().is_some_and(|m| m.open), "M is free now");
+        app.world_key(winit::keyboard::KeyCode::KeyF);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "F opens the map");
+        // The table survives the `config.json` round trip the close writes.
+        let back = crate::settings::Settings::parse(&app.settings.to_json());
+        assert_eq!(
+            back.map_binds[crate::input_map::MapAction::Full.index()],
+            "F",
+            "the rebind is persisted"
+        );
+    }
+
     #[test]
     fn parked_confirm_pages_keep_the_app_settings() {
         // DW-3.2 — the flow hops sync through `App::park_menu`
@@ -2209,15 +2253,15 @@ mod tests {
         // `Main.cs:50565-50568` opens the capture on the clicked row, the row
         // shows `_` (`:50523-50526`), and the first pressed key is stored
         // under its name and closes it (`:50569-50576` — `string.Concat(key)`,
-        // winit's debug name here).
+        // i.e. the XNA `Keys` spelling the input map and `config.json` use).
         let mut m = menu(Page::Keybindings);
         m.activate(0);
         assert_eq!(m.set_key, Some(0));
         assert_eq!(m.items()[0].label, "Up                _");
         m.key(winit::keyboard::KeyCode::KeyG);
         assert_eq!(m.set_key, None);
-        assert_eq!(m.keybinds[0], "KeyG");
-        assert_eq!(m.items()[0].label, "Up                KeyG");
+        assert_eq!(m.keybinds[0], "G");
+        assert_eq!(m.items()[0].label, "Up                G");
         // Navigation keys are captured too — vanilla's `GetPressedKeys` sees
         // Escape before anything else, so Escape rebinding to "Escape" (the
         // Inventory default) beats closing the screen.
@@ -2233,8 +2277,8 @@ mod tests {
         assert_eq!(m.set_key, Some(3));
         assert_eq!(m.items()[3].label, "Zoom Out                    _");
         m.key(winit::keyboard::KeyCode::KeyN);
-        assert_eq!(m.map_binds[3], "KeyN");
-        assert_eq!(m.items()[3].label, "Zoom Out                    KeyN");
+        assert_eq!(m.map_binds[3], "N");
+        assert_eq!(m.items()[3].label, "Zoom Out                    N");
     }
 
     #[test]
@@ -2448,35 +2492,51 @@ mod tests {
     }
 
     #[test]
-    fn multiplayer_screen_shows_join_first() {
+    fn multiplayer_screen_shows_the_four_steam_rows() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
-        // `Main.cs:50699-50736` with `num41 = 0` (no Steam network): the
-        // `Lang.menu[145]` "Join via Steam" row stored at index 1 (`:50704`)
-        // is overwritten by "Host & Play" (`:50705`), so the screen is
-        // Join / Host & Play / Back over the 250/80 defaults — Join first
-        // (Review Focus 6; the old port showed Host & Play first).
+        // `Main.cs:50699-50736` with `num41 = 1` (the retail PC build ships
+        // Steam, so `SocialAPI.Network != null`):
+        //   0         `Lang.menu[146]` "Join via IP"
+        //   1         `Lang.menu[145]` "Join via Steam"
+        //   1 + num41 `Lang.menu[88]`  "Host & Play"
+        //   2 + num41 `Lang.menu[5]`   "Back"
+        // `num5 = 3 + num41` = 4 over the 250/80 defaults. The `num41 == 0`
+        // three-row variant is what the port used to draw; it is a different
+        // label for row 0 (`menu[87]` "Join") *and* a different row count, so
+        // the row order the owner reported is this table.
         let m = menu(Page::Multiplayer);
         let items = m.items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        let expected = [crate::lang::menu(87), crate::lang::menu(88), crate::lang::menu(5)];
+        let expected: Vec<String> = [146, 145, 88, 5]
+            .iter()
+            .map(|i| crate::lang::menu(*i))
+            .collect();
         let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
         assert_eq!(labels, expected);
+        assert_eq!(items.len(), 4, "`num5 = 3 + num41` (`:50735`)");
         assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0 && !i.header));
         let layout = Page::Multiplayer.layout();
         let draw_y = |i: usize| layout.y0 + layout.row * i as f32;
-        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (250.0, 330.0, 410.0));
-        // Join opens the IP screen (vanilla `:50714-50718` routes through the
-        // character select, then `:66241` opens 13); Host & Play the host
-        // password screen (plan deviation); Back the main menu
-        // (`:50732-50735`).
+        assert_eq!(
+            (draw_y(0), draw_y(1), draw_y(2), draw_y(3)),
+            (250.0, 330.0, 410.0, 490.0)
+        );
+        // Row 0 opens the IP screen (vanilla `:50710-50718` routes through the
+        // character select, then `:66241` opens 13), row 1 is the Steam join
+        // interface the port has no session for (`:50726-50730`), row 2 the
+        // host password screen (plan deviation), row 3 the main menu
+        // (`:50731-50734`).
         let mut m = menu(Page::Multiplayer);
         m.activate(0);
         assert_eq!(m.page, Page::JoinIp);
         let mut m = menu(Page::Multiplayer);
         m.activate(1);
-        assert_eq!(m.page, Page::HostPassword);
+        assert_eq!(m.page, Page::Multiplayer, "the Steam row only reports");
+        assert!(m.hint.is_some());
         let mut m = menu(Page::Multiplayer);
         m.activate(2);
+        assert_eq!(m.page, Page::HostPassword);
+        let mut m = menu(Page::Multiplayer);
+        m.activate(3);
         assert_eq!(m.page, Page::Main);
     }
 
@@ -2598,7 +2658,9 @@ mod tests {
         // :2212-2214` for 31, `Main.cs:48797-48799` for 30).
         let mut m = menu(Page::Multiplayer);
         m.server_password = "leak".into();
-        m.activate(1);
+        // Row 2 is "Host & Play" (`1 + num41` with `num41 = 1`, `:50704`);
+        // rows 0/1 are the two joins.
+        m.activate(2);
         assert_eq!(m.page, Page::HostPassword);
         assert!(m.server_password.is_empty());
         let mut m = menu(Page::JoinPort);
@@ -2714,7 +2776,7 @@ mod tests {
         // `Main.HostAndPlay` fixes the listen port at 7777 (`Main.cs:52011`);
         // the typed password rides along.
         let mut m = menu(Page::Multiplayer);
-        m.activate(1);
+        m.activate(2); // "Host & Play" (`1 + num41`, `:50704`)
         assert_eq!(m.page, Page::HostPassword);
         m.character('p');
         match m.activate(2) {

@@ -296,6 +296,38 @@ biome comes from the ground tile under the trunk. Top and branch tiles (`frameX`
 the tile pass. Forest world-style randomisation (`TreeTops.GetTreeStyle`, a later save
 section we do not parse) is approximated as style 0; gem/vanity/palm trees are not composed.
 
+### The tree kill cascade (BUG-16, 2026-11-11)
+
+`TileFrameImportant` dispatches the tree kinds to `WorldGen.CheckTree` (the forest
+tree 5), `CheckTreeWithSettings` (the gem/vanity/ash variants) and `CheckPalmTree`
+(323) — `WorldGen.cs:85876-85911`. Those routines kill the tree cells that lost
+their support; the `KillTile` chain is what makes a felled tree fall instead of
+floating. The port's `tr-core/src/edit.rs::check_tree` / `check_palm_tree` run the
+same machine; the ground test is the only parameter (`TreeVariant::ground_type` /
+`ground_valid` — the forest tree folds the grass family onto plain dirt, the
+variants use `GemTreeGroundTest`/`VanityTreeGroundTest`/`AshTreeGroundTest`).
+
+Two deviations:
+
+- **The palm's canopy re-roll** (`CheckPalmTree`, `:54385-54388`) draws
+  `genRand.Next(7, 10) * 22` into the cell's `frameX`. The core has no RNG
+  stream, so `TileKill::palm_frame_rolls` records the request and the app
+  resolves it after the cascade. The C#'s neighbour ring does not fire for that
+  arm (`frameY` is unchanged), so the deferral changes nothing but the moment
+  the frame is written.
+- **`noItem`.** The C#'s `CheckTree` calls `WorldGen.KillTile(i, j)` with the
+  default `noItem: false`, so a tree cell killed by the cascade always drops
+  its wood. The port propagates the ambient `noItem` like the other `Check*`
+  kills, so the worldgen pass (which suppresses the drops) stays quiet. In
+  play `noItem` is false either way.
+
+The drop rolls follow the house RNG seam: one `item_rng` throw per event seeds
+the `FastRandom` that stands in for the C#'s `genRand` stream and the
+`Main.rand` roll spends the item stream directly. Note that in the C#
+`WorldGen.genRand` **is** `Main.rand` (a property, `WorldGen.cs:4445`), so the
+C# draws its four tree-drop rolls from one stream and the port draws them from
+two — the same approximation the pot and pile loot already use.
+
 ## Lighting
 
 Terraria's light is a **tile light map**, not a per-vertex shader effect:
@@ -1183,10 +1215,9 @@ The character is composed from the original 40×56 part strips (`Player_0_0` hea
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and a faithful `Player.PlayerFrame` port
 (`player.rs::update_frames`). The legs and body each carry a frame row (`leg_frame`/
-`body_frame`): idle is row 0 (the rest pose), airborne (`velocity.Y != 0`) is row 5, and
-walking advances one row per `8.0` of `legFrameCounter += |velocity.X| * 1.3`, cycling the
-walk band `7..=19` with the body copying the leg row; during an item swing the app applies
-the `useStyle 1` body rows `1 -> 2 -> 3` via `apply_item_use_frame`. (An earlier version
+`body_frame`), and since M2-DRAW-3 the whole of `PlayerFrame()` (`Player.cs:35755-36647`)
+is ported arm for arm (see "The full PlayerFrame chain" below) rather than the three-arm
+approximation this paragraph used to describe. (An earlier version
 returned row 5 at rest, which made the idle character look like it was about to jump, and
 used an unrelated `walk_time` counter that flickered between rows.) The legs/pants/shoes
 draw with `leg_frame`, the torso/arms/head/eyes/hair with `body_frame`. Torso and undershirt
@@ -1855,7 +1886,8 @@ directly — the word aliases `settings|general|interface|video|multiplayer` and
 numeric `menuMode` of every P5 sub-screen: 26, 28, 25, 252, 1125, 111, 2008, 1212,
 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889), `TR_MENU=1` (keep the menu on
 screen), `TR_INV=1` (open the inventory),
-`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
+`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off), `TR_PVP=1`
+(open `DrawPVPIcons`'s multiplayer-only draw/click gates),
 `TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_MAPSTYLE=0|1|2` (select
 `Main.mapStyle`; invalid/missing → 1, `Main.cs:66750`), `TR_BOSS` (spawn King
 Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap),
@@ -2427,12 +2459,46 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   (`:5063-5078`, WorldGen.cs:47687), cactus 80 source-Y +54/108/162 for
   corrupt/hallowed/crimson ground (`:1132-1147`, kind 80 only — 142/143 are
   pumps), cog 272 parity shift ×90 (`:1125-1131`).
+- **Bug 19b (the cactus shift's real consumer)**: the corrected offsets above
+  are folded into `TileDrawData::src_y_shift` (renamed from
+  `half_brick_src_y`) and the renderer applies them to the PLAIN flat draw
+  only, via `flat_src_uv` (`render/tiles.rs`). The C# builds one local
+  `rectangle` from `tileFrameX/Y + addFrX/addFrY` (`TileDrawing.cs:1007`),
+  the switch mutates its `Y` (`:1129`, `:1137-1145`, `:1162`), and the plain
+  arm of `DrawBasicTile` is the consumer (`normalTileRect`, `:1523`); the
+  half-brick (`:1298`), slice (`:1560`), slope and edge arms rebuild their own
+  rects and therefore drop the shift. The BUG-19 landing had the consumer
+  backwards (half-brick only), so every standard cactus in the corrupt/
+  hallowed/crimson desert drew the wrong row (0 px instead of 54/108/162).
+  Tests: `drawdata::tests::bug19_the_cactus_shift_lands_on_the_flat_draw_rect`
+  and `render::tiles::tests::test_BUG19b_the_cactus_flat_draw_carries_the_biome_row_shift`
+  (the UV moves by ≥ 50 sheet px while the unshifted case reproduces the
+  frame exactly).
 - `solid_above` on the Rust call site is `active && TILE_SOLID &&
   !TILE_SOLID_TOP` at `(x, y-1)` (`render/tiles.rs`); the C# analogue probed
   by case 4 is `WorldGen.SolidTile(x, y-1)` (`:4672-4679`). The predicate
   delta is a follow-up, documented on `draw_data` (Phase 4).
-- `DoNotAdjustDrawPositionBasedOnTileWidth = {711}` and the positional switch
-  of `DrawSingleTile` (`:1020-1159`) remain follow-ups (out of TILE-DRAW-1).
+- **The positional switch** (`DrawSingleTile` `:1020-1159`, landed as
+  TILE-DRAW-5): `apply_world_corrections` now carries the switch's draw-local
+  revisions on `TileDrawData` — `draw_dx`/`draw_dy` (the `vector` nudges: 751
+  (+11, −8), 752 (+8), 136 (±2 by `frameX / 18`), 442 (`frameX / 22 == 3` →
+  +2), 726 (−2 then the `Tile.blockType()` ledges ±6 and +2 for the
+  half-brick/slope arms), 723/724 (the four anchor sides), 129 (the 2 px nudge
+  away from the shard's cell) and 323 (`vector.X += frameY` for the palm
+  rows)), `skip_draw` (751/752 off their `(0, 0)` frame), `light_scale` (51/697
+  `finalColor = tileLight * 0.5`), `src_alpha` (129's 100/255, and 0 for the
+  big `frameX >= 324` shards) and `no_width_adjust`
+  (`TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth = {711}`). The
+  renderer adds the offsets to the cell origin before dispatching (every C#
+  arm shares `vector`), honours `skip_draw` before the sprite (the `return`
+  arms), folds `light_scale`/`src_alpha` into `push_lit`'s colour, and skips
+  the `(tileWidth − 16) / 2` centring for 711. Parked: the disco arms
+  (160/692, they need `Main.DiscoR/G/B` in the draw data), case 83's texture
+  override, and case 323's `return` for the frond columns 88..=132 — the port
+  has no palm canopy pass, so hiding those columns would delete the palm tops;
+  they keep drawing in the tile pass (deviation). Test:
+  `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
+  arm, the half-brick/slope `blockType` table of 726, the shard alphas).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -5466,13 +5532,111 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   neighbour-family gates (63-68, the corruption arm's 63/65/66/68), the
   `wallDist`-3 source scan and `Convert`'s wall chain (`:55261`/`:55176`/
   `:55100` — the Grass/Stone/HardenedSand/Sandstone/NewWall1..4 sets
-  `WallID.cs:37-48` per conversion type). Parked arms: the 655 life-fruit
-  kill (the NPC store), `plantDye`, the 519 cattail / 549+53 seaweed, the
+  `WallID.cs:37-48` per conversion type). The cattail family landed on top
+  of it (`GrowCatTail`/`CheckCatTail`, the next bullet); the pass also carries
+  the creative stop-spread gate into the hard-mode head (`allowed_to_spread`
+  had been hardcoded `true` there, so `M6-CREATIVE-1c`'s power never reached
+  the dispatcher). The seaweed and web arms landed on top of it (the
+  M5-SPREAD-1c bullet below). The dye-plant head landed 4th (the
+  M5-SPREAD-1d bullet below) and the tombstone arm 5th (the M5-SPREAD-1e
+  bullet below). Parked arms: the 655 life-fruit
+  kill (the NPC store), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
-  `CountNearBlocksTypes` have no ports), `GrowWeb`, `TrySpawningTownNPC`, the
-  net sides, the creative-power override on `AllowedToSpreadInfections`, and
+  `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
+  net sides, the creative-power override on `AllowedToSpreadInfections` (the
+  port passes the gate through `allowed_to_spread` instead), and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
-  carries every draw).
+  carries every draw — the dye head's `Main.rand.Next(2500)`/`Next(10000)`
+  now draw from it too).
+
+- **Abigail's flower** (`TryGrowingAbigailsFlower` `WorldGen.cs:73049-73073`,
+  `HasValidGroundForAbigailsFlowerBelowSpot` `:73026-73046`,
+  `NoNearbyAbigailsFlower` `:73076-73095`, and the tombstone arm of
+  `UpdateWorld` `:72063-72067` — the M5-SPREAD-1e slice): a grave cell (85)
+  rolls `Main.rand.Next(30)`; on a hit the arm draws one spot in the 20x20 box
+  around the grave (`max(10, i − 10) .. min(maxTilesX − 10, i + 10)`, same on
+  `j`) — twice on a Don't Starve world (`Main.dontStarveWorld` →
+  `world.seeds`' `DONT_STARVE`) — and the first spot whose tile below is a
+  mushroom grass 70 / ash grass 633 / `Conversion.Grass` member
+  (`SET_GRASS`/`SolidTileAllowBottomSlope`) and which holds no active 624
+  within the 120-tile box (clamped to the 10-tile margin) takes
+  `PlaceTile(624)` with frame 0/0. The flower is now in the boot
+  frame-important statics (`pipeline.rs`, `Main.cs:7366-7378`), so `reframe_area`
+  keeps the 0/0 frame instead of autotiling a 1x1 flower. Deviations: the gate
+  and the two spot draws share the port's single `rng` stream (the vanilla
+  splits `Main.rand`/`WorldGen.genRand`), and `Check1x1`
+  (`WorldGen.cs:45237-45252`, the "flower dies when its ground is converted"
+  arm) is not ported — no 1x1 framing port exists yet, so a 624 whose ground
+  goes away floats. Tests: `the_tombstone_grows_abigails_flower` (the box, the
+  grass seat, the 0/0 frame, the no-second-flower rule) and
+  `the_abigails_flower_ground_and_distance_rules` (the ground table, the
+  2-tile margin, the 120-tile box).
+
+- **The dye plants** (`plantDye` `WorldGen.cs:71286-71436`, `PlaceDye`
+  `:53988-54065`, and both dispatchers' heads — the M5-SPREAD-1d slice):
+  every `nactive` pick rolls `Next(2500)` (underground) or `Next(3000)`
+  (overground) and, in hard mode, `Next(10000)`/`Next(15000)` for the exotic
+  family (the overground exotic arm also needs `x` outside the middle
+  40..60 % of the world). `plantDye` runs three passes behind the 95-tile
+  margins: the surface band (`j < worldSurface`), the underground band
+  (`worldSurface <= j < height − 200`), and the hanging style 7 below an
+  empty cell. Each band first refuses when its ±`num` box (90, 240 exotic)
+  already holds a 227 of its own `frameX < 272` / `>= 272` family, then picks
+  the style by soil: dirt/grass 2/109 → 3 or 4 (`Next(4)`), jungle 60 → 2 or 4
+  (`Next(2)`, the underground band's 2 / default / 1 cascade), sand 53 in
+  full water → 2, mushroom grass 80 (11×21 box clear of 112/234) → 6,
+  dirt/stone/clay 0/1/59 → default or 1 (`Next(2)`), any full-water cell → 5,
+  the grass/moss/dirt set → `Next(8, 12)` exotic, and the hanging pass →
+  style 7 under a kind-0 cell. `PlaceDye` re-checks the seat per style
+  (free-above/free-below sets including the 1.4.5 697/703, the mushroom pair,
+  the full non-lava/honey/shimmer liquid for style 5, the open wall for 3/4)
+  and writes `frameX = 34 * style`, `frameY` 0. Deviation: vanilla's
+  `Main.rand` draws ride the port's `growth_rng` (the stream-position
+  deviation all growth arms share).
+
+- **The seaweed and web arms** (`UpdateWorld_UndergroundTile`'s
+  `:73272-73282` and the tail `else`'s `:73803-73806` — the M5-SPREAD-1c
+  slice): `GrowCheckSeaweed` (`:58917-58973`) runs for every picked 549 and,
+  on a sand 53 with a flat top (no `topSlope`, no half brick) and a free cell
+  above, behind `Next(20)`. A stand out of water (`liquid < 200` on the cell
+  or the one above) dies at `Next(2)`; in water the arm stands down when the
+  cell above or two above is occupied, when the `Next(1)` gate fails (vanilla
+  still draws it — `maxValue` is 1), when either cell above is not full water
+  (`liquid == 255`), when the 9×13 box holds more than 30 seaweed, or when the
+  sea floor is further than `17 - Next(20)` rows below; otherwise it writes
+  the 549 above. `GrowWeb` (`:74088-74122`) takes one `Next(10)` per pick and
+  fills an empty cell whose `Next(2, 4)` box touches a solid when the wall is
+  62 and the cell holds no liquid. Deviations: the notTheBees/getGoodWorld
+  branch of the web box test is dead (the port generates no such seeds), the
+  net sides drop, and both writes go through the port's `reframe_area`.
+
+- **The cattail family** (the dispatcher's 519 arm `WorldGen.cs:73263-73271`,
+  `CheckCatTail` `:58744-58930`, `GrowCatTail` `:58974-59082` — the
+  M5-SPREAD-1b slice): the arm runs on every picked 519 cell — the validity
+  sweep, then `Next(2) == 0` → one growth step and a second sweep (the C#
+  order). The sweep walks down to the first solid non-solid-top ground and up
+  through the water column, and kills the whole run (`KillTile` +
+  `SquareTileFrame` over four cells above the lowest stalk cell through the
+  ground) when: the water column is deeper than `catTailDistance` (8,
+  `:86957`) above the ground; the ground kind is off the frame-row table
+  (2/477 → 0, 53 → 18, 199/234/662 → 54, 23/112/661 → 72, 70 → 90) or not
+  `nactive()`; a foreign block or a non-water liquid sits in the column; the
+  cell above the ground holds `liquid < 127` and `Next(4) == 0`; a ≥180-row
+  tip sits in >127 water and `Next(4) == 0`; the base and tip rows disagree
+  (a 108..162 tip is re-armed to 90 instead); or the tip stands more than 4
+  above the ground with the `num+3`/`num+4` cells dry under a 519. A valid run
+  writes the soil row into every stalk cell's `frameY`. The growth step walks
+  the base 0 → 18 → `18 · Next(2, 5)` and then the tip arms — the submerged
+  108 tip, or the dry `Next(3)` pick that either dies or takes the 126/144/162
+  tip with its 180/198/216 partner — spawning the cell above and reframing
+  the pair. Deviations: `SquareTileFrame` is the port's `reframe_area` (the
+  3×3 autotile walk), the net sides drop, and the port's `growth_rng` carries
+  every draw. The slice also fixed a boot gap it depended on: 518/519/529/549
+  are frame-important (`Main.cs:7366-7378`) but
+  `worldgen::pipeline::boot_statics` never marked them, so `reframe_area`
+  overwrote exactly the `frameX`/`frameY` rows the growth arms write — the
+  four kinds now carry the bit (the classic world hashes are unchanged: no
+  worldgen pass places them before the framer runs). 3 tests.
 
 - **The beach-shells arm** (`UpdateWorld_OvergroundTile`'s
   `WorldGen.cs:72073-72135`): the last M5-SPREAD-1 row item. The weather
@@ -6969,10 +7133,14 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
   (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
   `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
-  favorited slots (`:631-634`); the favorited visual is the
-  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
-  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
-  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  favorited slots (`:631-634`); the favorited visual is the real gold sheet —
+  `Inventory_Back10` (`:2152-2156`) now packs into the content atlas and
+  `ui::slot::draw_slot_favorited` swaps it in ahead of the context table (the
+  C# chain puts the favorite arm before the hotbar-row `_9` arm), tinted
+  `Main.inventoryBack` as the C# leaves it; the old `OurFavoriteColor` tint
+  stand-in is gone. Out of scope: `Inventory_Back17` (`:2331-2335`, the gamepad
+  UI-point highlight) and `_19` (context 32, the loadout panel) — neither
+  surface is ported; the trash slot (448, 258) is clickable — left-click
   swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
   `:1008-1011`).
 
@@ -7017,8 +7185,11 @@ Deviations (deliberate, in plan order):
   range-closed; `tick_open` now covers banks (the `HandleBeingInChestRange`
   port) — out of range or a dead tile closes with sound 11.
 - **The coin-row favorite gap.** `toggle_favorite`'s `idx >= INV` guard
-  keeps the coin/ammo rows unfavoritable; the favorited sell/drop pass or
-  M7-UI-2 rides it.
+  keeps the coin/ammo rows unfavoritable: the port keys favorites by grid
+  index (`App.favorite_slots`), so `canFavoriteAt[1]/[2]` has no key space
+  until the flag moves onto the item (the BUG-03 `.plr` side is already
+  slot-keyed). The rows' *movement* landed in M7-UI-2b (below); the favorite
+  toggle and the shift-into-chest transfer still need that move.
 - **The trash swap is a plain swap.** `trash_swap`'s doc claimed a
   favorited guard; the C# swap (`MouseItemSwap` `ItemSlot.cs:1255-1263`)
   has none — favorited held items CAN be trashed there; the can't-drop rule
@@ -9752,6 +9923,59 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 hold→throw→bounce→reel lifecycle.
+## The full `PlayerFrame` chain (M2-DRAW-3, 2026-11-11)
+
+`Player::update_frames` now ports `PlayerFrame()` (`Player.cs:35755-36647`) arm for arm
+instead of the three-branch approximation (idle / air / walk) it started with. The chain
+order is the vanilla `else if` ladder, and that order is the point: the item-use arm comes
+BEFORE the rope/hold/shield/mount/grapple/water/air/walk arms, so a swing no longer leaks
+the walk row, and the held-item rows no longer have to be patched in at draw time (the old
+`apply_item_use_frame` + `frame.rs` post-pass are gone; the app feeds the same inputs in
+through `player::FrameInputs` before the fixed step, beside `swing_aim`).
+
+Legs (`:36219-36291`): the swim paddle (`swimTime > 0`, a flat `+2.0` counter with no
+velocity term), the jump/fall/hang row 5 (`velocity.Y != 0 || grappling[0] > -1`) with the
+three always-animated wing sets (22/28/45 inside `ShouldDrawWingsThatAreAlwaysAnimated`)
+keeping row 0, the walk cycle with the slippery no-input and roller-skate
+(`MountID.Sets.IsRollerSkates` = 57-60) rest-row pins and the skates' `num19 = 2f` lock at
+`maxRunSpeed`, the rest row, then the Magic-Carpet (`carpetFrame >= 0`) and sandstorm
+pins and the post-chain Moon Lord legs (`legs == 140`: `velocity.Y != 0 ? 5 : 0`, row 7
+when `Main.OffsetsPlayerHeadgear[bodyRow].Y == 0`, row 0 for wings 22/28) and the sitting
+legs (`legs == 217`) row 5.
+
+Body (`:36312-36633`): the full useStyle table (1/0, 7, 2, 11, 9, 6, 3, 4, 8, 12, 13, 5
+with the `type == 281/986` carve-out and the `gravDir`-flipped aim rows), the rope pose
+(`pulleyDir == 2 ? 1 : 2`), holdStyles 1/2/3/5/7 and 4 (row 3/2/3/3/11/0 with the
+`CanVisuallyHoldItem` and dry-torch gates), the raised shield row 10, the mount body row,
+the grapple lean (the hooks' centroid vs the body centre → rows 2/4/3), the water float row
+10, the swim window (>20 → 0, >10 → 5, else 0), the airborne rows (sliding 3, sandstorm /
+carpet 6, EOC dash 6, wings: 22/28/45 → 0 and otherwise 6 rising / 6 under thrust / 5
+falling, plain 5), the walk rows (`legs == 140` runs its own `|velocity.X| * 0.5` counter,
+everything else copies the leg row after a `|velocity.X| * 1.5` body counter) and the rest
+row 0.
+
+The draw side needed no new offsets. The port's part tables were audited against the C#
+and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
+(`PlayerDrawSet.cs:1952-2023`), the back arm's `+2` rows (`:2034`), the
+`compShoulderOverFrontArm` clears at rows 1/2/5 (`:1961,1966,1976`), the torso column-1
+override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
+`GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
+the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
+`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+chain fed those tables wrong rows; with the rows correct the existing tables are correct
+too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
+duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+
+Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
+whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
+Bottle (`sand_storm`), the Magic Carpet (`carpet_frame`), flippers/merman
+(`ShouldFloatInWater` returns false), the pulley/rope item (`pulley`) and the raised shield
+(`shield_raised`). `Player.sliding` exists as a field nothing sets yet (the slope/ice slide
+pose). `Item.noWet` and `happyFunTorchTime` have no item-table columns, so the two held-item
+dry gates are always open. `gravDir == -1` arms are coded as the `== 1` value only — the
+port has no gravity flip. The armour-set dust/VFX side effects inside `PlayerFrame`
+(`:35819-36140`, ~400 lines of per-set particles) stay with the armour tasks.
+
 ## The player-audit fixes 11-15 (2026-11-10)
 
 The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
@@ -9791,3 +10015,634 @@ the branch mechanics below; every C# site is in the report itself.
   All literal sheet indices are gone from the code (doc comments keep the
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
+
+## The in-game options window (M7-UI-4)
+
+`IngameOptions.Draw` (`IngameOptions.cs:103-1441`) is the vanilla's in-game
+settings window: a 670x480 panel (`:125-129`) split into a **left navigation
+column** and a **right page of setting rows**, both animated per row.
+
+**What landed.** The window is now the C#'s two-column shape instead of the
+port's flat six-row list:
+
+- the left column is the eight navigation rows — `Lang.menu[114]` General,
+  `[210]` Interface, `[63]` Video, `[218]` Controls, `[66]` Controls→keybinds,
+  `[131]` Achievements, `[118]` Close Menu and `Lang.inter[35]` Save & Exit
+  (`:214-330`). The `Invite Friends` row (`:257-270`) is the social-API arm and
+  stays out (AGENTS.md non-goals), so `num7 + 1 = 8` slots;
+- the right column carries the four pages as static tables — 17/14/15/15 rows
+  (`page()`, the C#'s `:400-1441` sequential `DrawRightSide` calls). Each row
+  is a `RowAct`: a header, a value bar, an on/off toggle, a multi-state cycle,
+  or a `Parked` row for a vanilla setting the port does not model;
+- both columns reproduce `DrawLeftSide`/`DrawRightSide` (`:1457-1504`): the row
+  position is `anchor + offset * (1 + i)`, the label is **centred** on it
+  (`origin 0.5, 0.5`), the tint is `Color.Lerp(Gray, White, scaleFraction)`
+  with **Gold** for the selected category, and the per-row scale animates at
+  `0.01`/frame in the left column (`0.7..0.8`, `:157-199`) and at
+  `0.001`/frame on the right (`1.0..1.001`, `:333-390`) — including the
+  culture shrink for the long translated labels (`:167-185`, `:345-357`:
+  ru/pt/pl/fr shrink the left to `0.4..0.44` and pull the right column to the
+  2/3 mark; German `0.55..0.6`; the It/Sp and German deltas are
+  category-bound);
+- the hover pass emits the vanilla's cues — `SoundEngine.PlaySound(12)` on a
+  hover change (`:187`, `:191`) and `(10)` on a category click (`:222`) —
+  through `App::audio` from the frame loop (`update()`, called beside
+  `tick_pointer_clock`), and clears `rightLock` on the button release
+  (`:385-388`);
+- the value bars drag while locked (`Main.musicVolume = ...`, `:424`) and the
+  geometry is the C#'s `valuePosition.X = vector3.X + vector2.X - num3/2 - 20`
+  (`:437`) with the label hanging 70 px left (`vector6.X -= num`, `:417`).
+
+**Deviations (all deliberate, each row cited in `page()`):**
+
+1. **Parked rows.** A vanilla row whose state the port has no field for is
+   drawn dimmed and inert rather than invented: the UI scale (`:561`), the
+   door-opening preference (`:644`), auto-reuse-all (`:677`), the map frame /
+   health style / portrait preference / opaque tooltip box (`:751-840`), the
+   window mode + resolution (`:876-910`), the cursor/border colour pickers
+   (`:1075-1371`). Their settings are the named follow-ups of M7-UI-3
+   (equipment/dye), M7-UI-5 (keybinds) and the window backend row.
+2. **The video page's slot count.** The C# sets `num11 = 14` for the video
+   category but draws 15 rows and compensates with `vector7.Y -= 2f`
+   (`:362-365`); the port keeps both verbatim (`right_slots(2) == 14`,
+   `right_pitch(2) - 2`).
+3. **The wave-quality label.** `:1022-1036` switches on the level with a
+   per-level `GameUI.*` key; the port renders `GameUI.WaveQuality` plus the
+   level ordinal instead of inventing key names.
+4. **Keybinds / Save & Exit.** The C# calls `IngameFancyUI.OpenKeybinds()` and
+   `WorldGen.SaveAndQuit()` inline (`:252-256`, `:300-310`); the port records
+   the action on `IngameOptions::pending` and closes, because the keybinding
+   screen is M7-UI-5 and the quit path belongs to the front-end flow.
+5. **Text metrics.** The vanilla measures with the retail font
+   (`DrawBorderStringBig`); the port centres with `text::hud_text_width` and
+   the font's `line_spacing`, which is the same box within a pixel.
+
+**Verification.** 13 new tests (the slot counts, the two books' pitches and the
+`1 + i` anchor, the eight navigation rows, the four pages' row counts, the
+scale bands and their clamps, the bar/toggle/cycle round trips, the label
+resolution of every row on every page, and the in-panel bounds of every row).
+The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
+captured 1600x900 frame shows the title, the eight left rows (the selected
+category in gold) at the 42.3 px pitch and the seventeen General rows inside
+the panel.
+## The Settings button and window redraw (M7-UI-4b)
+
+`M7-UI-4` gave the in-game options window its vanilla *content*; the *chrome*
+was still the port's own. Three things were wrong and are now the C#'s.
+
+### The button is text, not a box
+
+`ui/ingame_options.rs` used to draw a 30x30 `Inventory_Back` sheet at a
+hard-coded `(850, 580)`, which is the vanilla's spot at 1600x900 and nowhere
+else. Vanilla never draws a box at all: `Main.DrawSettingButton`
+(`Main.cs:45532-45544`) draws the localised `Lang.inter[62]` ("Settings") in the
+**death font** with a four-way black outline, at scale `0.8`, growing to a cap
+of `0.96` by `0.02` a frame while the mouse is over it. `App` now stores that
+scale (`IngameOptions::button_scale`) and the previous frame's `mouseOver`
+latch (`button_mouse_over`), so the ramp starts one frame after the hover — the
+C#'s own lag.
+
+The **position** is `Main.RefreshSettingsButtonStatus` (`:45492-45511`), whose
+whole point is to keep the word clear of the equipment column:
+
+| condition | effect |
+| --- | --- |
+| always | `posX = UIScreenWidth - 110`, `posY = UIScreenHeight - 20` |
+| `player.dead` | `posX += 40` |
+| `PushEquipmentAreaUp` | `posY -= 30` |
+| options window **closed** | `num = 174 + Main.mH` (+ the extra-accessory slop), `num2 = num + 47.6 * (8 + extra)`; if `posY - 28 <= num2` then `posX -= 140`, `posY = num2 - 47 + 30`, `_settingsButtonIsPushedToSide = true` |
+
+`settings_button_pos` returns the point and the pushed flag; `button_layout`
+resolves it against `measure_button` (the death-font width of the word) and
+`ButtonLayout::hit` is the strict `x > pos[0] && x < pos[0] + w && y > pos[1] &&
+y < pos[1] + h / 2 - 10` box of `:17018-17026` — note the shaved bottom third.
+`app/clicks.rs` tests that box instead of the old constant rect, and
+`ui/mod.rs` draws the button from the stored layout both while the inventory is
+open and while the window is.
+
+### The panel is the nine-slice
+
+The window's background was a stretched `Inventory_Back` sheet; the vanilla uses
+`Utils.DrawInvBG(Main.spriteBatch, new Rectangle(x - 20, y - 20, 670 + 40,
+480 + 40), new Color(33, 15, 91, 255) * 0.685f)` (`IngameOptions.cs:127`), i.e.
+`Inventory_Back13` cut into nine. Both columns are `DrawInvBG` too, at the
+default tint `(63, 65, 151, 255) * 0.785f`. `ui/tooltip::draw_inv_bg` already
+ported that helper, so the window and its columns now call it.
+
+The title is `GameUI.SettingsMenu` ("Settings Menu") **centred** on the panel's
+top edge — `vector2.X = (screenWidth / 2 - 670 / 2) ... DrawString(...,
+vector2 - font.MeasureString(text) / 2 + new Vector2(0, -4), ...)`
+(`:132-137`) — where the port had left-aligned it. And the right column's **bar
+rows only** are shifted 70 px left (`vector6.X -= num`, `:417`); the port now
+applies the shift in `right_row_anchor` and centres `right_row_rect` on the
+drawn anchor.
+
+### Three rows that were placeholders
+
+The `General` page drew `UI.DoorOpeningPreference` and `UI.AutoReuseAllOn` as
+dimmed, inert `Parked` rows — and `UI.DoorOpeningPreference` is **not a key in
+the en-US file at all**, so it rendered as the literal string. The vanilla's
+three rows are back to being settings:
+
+| row | C# source | port field | save key |
+| --- | --- | --- | --- |
+| Smart Doors | `IngameOptions.cs:644-657`, cycling `DoorOpeningHelper.PreferenceSettings` (`DoorOpeningHelper.cs:262-276`: `Disabled -> EnabledForEverything -> EnabledForGamepadOnly`) | `Settings.smart_doors: u8` | `DoorAutoOpeningMode` (`Main.cs:4208`/`:4545`) |
+| Hover Controls | `:659-675`, `Player.Settings.CycleHoverControl` (`Player.cs:379-383`); the label is `Hold` only for `ButtonControlMode.Hold`, else `Click` | `Settings.hover_control: u8` | `HoverControlMode` (`:4209`/`:4546`) |
+| Autofire | `:677-684`, toggling `Main.SettingsEnabled_AutoReuseAllItems` | `Settings.auto_reuse_all: bool` | `SettingsEnabled_AutoReuseAllItems` (`:4158`/`:4544`) |
+
+That also corrected `General`'s row count: the port had merged the doors and
+hover preferences into one row, so it drew 17 rows where the C# draws 18
+(`num11 = 17` is the *last index*, exactly like the video page's quirk).
+
+### Other fixes in the same pass
+
+- `GameUI.GameZoom` takes `Math.Round(Main.GameZoomTarget * 100f)`, not the
+  bar's fraction, so the row reads "Zoom: 100%" instead of "Zoom: 0%"
+  (`:512` vs `:529`).
+- `ui/text.rs` grew `ui_font_width` / `death_font_width`, needed by
+  `measure_button` and by the title's centring.
+- `ui/inventory.rs::extra_accessory_slots()` exposes `EXTRA_ACCESSORY_SLOTS` for
+  the button's column-overlap test.
+
+**Deviations.** The port has no `PlayerInput.UsingGamepad`, so the
+`EnabledForGamepadOnly` state behaves as plain "smart doors on" would not —
+it is stored and named faithfully but nothing reads it yet (the door-opening
+helper itself is unported). `HoverControlMode` is likewise stored and named but
+unread, since the port's hover control is implicitly "hold". Both are recorded
+here rather than silently wired to a guess.
+
+## The PVP toggle + team select cells (M7-UI-7)
+
+`Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:
+the toggle was always frame `(false, 0)` and both icon groups had no hit test,
+hover text, click or cooldown, so the two controls the user pointed at (the PVP
+toggle and the six team cells beside the accessory columns) were decorative.
+
+The port now covers the whole function:
+
+- **Gates.** `ShouldPVPDraw` (`Main.cs:2909`) is the port's `App::is_client()`
+  (`Main.netMode == 1`); `ShouldTeamSelectDraw` (`:2911-2919`) is that same
+  client gate, since `Main.teamBasedSpawnsSeed` (`:351`) is not ported (no
+  team-spawn seeds until the M5-seed rows) and its single-player arm therefore
+  reads `false`. `Main.hidePVPAndTeamIcons` (`:2357`) is a new `App` field: the
+  C# sets it from the NPC-heads column overflow (`:42046`) and clears it on
+  every non-`EquipPage == 1` draw (`:42656-42659`) — the port does not draw the
+  NPC-heads column yet, so the flag only ever arrives `false`, but the early
+  return and the clear site are ported so the wiring exists when that panel
+  lands.
+- **Frames.** `PVP_0.Frame(2, 7)` is sliced at `(hostile, team)` (`:42664`,
+  `:42688`) and the hovered toggle swaps to the row-`PlayerTeamID.Count` (6)
+  cell at full white (`:42696-42700`); the six `PVP_1` cells narrow to
+  `rectangle2.Width - 2` and the `PVP_2` ring draws at `Location + (-2, 0)`
+  (`:42770-42773`).
+- **`teamCooldown`.** `Main.teamCooldown` / `teamCooldownLen = 300`
+  (`:965`/`:66781`) are `App::team_cooldown` / `chrome::TEAM_COOLDOWN_LEN`; the
+  timer decays once per update (`:17048-17051`) in `frame()` beside
+  `tick_pointer_clock`, **not** on the fixed world step — the C# decrements it
+  in `Update()`. While it runs both icon groups draw at `White * 0.25`
+  (`:42672`) and every hover/click is refused.
+- **Hover.** The text keys are the vanilla ones and needed no new
+  localization work: `UI.PvpIcon_Active`/`_Inactive` (`:42685`) and
+  `UI.TeamIcon{None,Red,Green,Blue,Yellow,Pink}_{Active,Inactive}`
+  (`:42734-42758`), all already present in
+  `Terraria.Localization.Content.en-US.json:348-360`. They are drawn through a
+  new `ui::tooltip::draw_mouse_text` (the single-line
+  `MouseTextHackZoom`/`MouseText` shape, same box + shadow + `mouseTextColor`
+  tint as the item tooltip). The C# also sets `player.mouseInterface = true`
+  while an icon is hovered, which suppresses the slot hover underneath; the
+  port mirrors that by skipping the item tooltip when a PVP hit is live.
+- **Clicks.** `App::handle_inventory_clicks` routes a press through
+  `chrome::pvp_hit` (same geometry as the draw) and applies
+  `chrome::pvp_click`'s gate chain: `teamCooldown == 0` for both, plus
+  `player.team != i` for a team cell (`:42689`, `:42753`). The effect is
+  `teamCooldown = 300` + `SoundEngine.PlaySound(12)` (the ported `Menu_Tick`
+  cue, `audio.rs`'s `SFX_CUES`) + the `hostile` flip / `team` write.
+
+**Deviations (all recorded as unported, not approximated):**
+
+- `NetMessage.SendData(30)` (the PVP-state broadcast, `:42694`) and
+  `SendData(157)` (the team change, `:42766`) have no counterpart — M6-NET's
+  message table carries neither id. The local state change is the whole visible
+  effect in single player; the MP broadcast rides M6-NET when those ids land.
+- `Player.TeamChangeAllowed()` (`Player.cs:4517-4520`) is a literal
+  `return true` in 1.4.5.8, so the `Lang.misc[84]` "cannot change team" refusal
+  (`:42757-42759`) is unreachable dead code and is not ported. If a future
+  patch gives the method a body, the arm comes back here.
+- `Main.teamBasedSpawnsSeed`'s `Spawn(PlayerSpawnContext.TeamSwap)` arm
+  (`:42768-42769`) has no port counterpart (no team-based spawn seeds), so a
+  team change on a seedless world does not respawn the player.
+- `PlayerInput.UsingGamepad` hovers the icons during the cooldown in the C#
+  (`:42680`, `:42725`); the port's pointer-driven hit test has no gamepad
+  branch, so a cooled-down icon reports no hover for either input.
+- The `UILinkPointNavigator.SetPosition(1550..1556, …)` registrations
+  (`:42703`, `:42781`) belong to the gamepad link graph, which the port does
+  not model.
+
+**Screenshot harness.** `TR_PVP=1` (`env::pvp_icons`) opens the two
+multiplayer-only gates so a single-player capture can show the icons: without
+it nothing draws, because the vanilla only shows them inside a client. The pin
+is resolved once into `App::pvp_icons_forced` (a field, so tests can open the
+gate without racing the `OnceLock`). The A/B proof: with the pin the
+capture differs from the unpinned one over exactly `(1371, 437)-(1523, 555)`
+— the toggle at `(1373, 435)`, the team grid below it and the hover tooltip
+box — and two pinned runs are SHA256-equal (`e2cbe1ef…` at 1600x900,
+`TR_MOUSE=1380,500`, i.e. team cell 0 hovered).
+
+**Finding (pre-existing, not fixed here).** The older inventory HUD hit tests
+in `app/clicks.rs` (the bank transfer buttons, `bank_button_at(mouse, m_h)`)
+compute `m_h` as `(screenH - 600) / 2`, while the draw path uses `Main.mH`
+(`ui::minimap::main_m_h`, 256 or `screenH - 600`). At 720 px those are 60 and
+120, so a live minimap puts those hit regions 60 px off the drawn buttons.
+This task added `App::main_m_h()` (the draw path's own value) and used it for
+the new PVP icons; converting the older call sites belongs to M7-UI-2, which
+owns the inventory click surface.
+### BUG-08 — the invasion progress bar (`DrawInvasionProgress`)
+
+- **Where the fade head lives.** The C# runs `Main.invasionProgressDisplayLeft`'
+  decay and the `invasionProgressAlpha` ramp **inside the draw function**
+  (`Main.cs:47700-47728`), so the fade is per rendered frame. The port keeps
+  the head in `world_sim::npcs::update_invasion_state` on the fixed step, so
+  the ramp is deterministic and framerate-independent (the BUG-11-15 merge
+  had dropped that arm once already; the test now pins it). The two gates
+  that the C# puts *after* the ramp — `invasionProgress == -1` (`:47698`) and
+  `alpha <= 0` (`:47729`) — are ported verbatim in the draw
+  (`ui::invasion_bar_alpha`), which is what actually stops the panel from
+  being permanently on screen.
+- **`invasionProgressMode`.** The C#'s mode 0 (Off) zeroes the timer and the
+  alpha (`:47718-47722`); modes 1 (Timed) and 2 (On) are the same to the
+  draw, and the difference lives in `CheckInvasionProgressDisplay`, which the
+  C# gates on `mode == 2` before scanning for nearby invasion NPCs. The port
+  reads the same setting through `Settings::event_progress`.
+- **The DD2 wave report.** `DD2Event.CheckProgress` calls
+  `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
+  currentWave)` (`DD2Event.cs:376-392`); the port's `dd2_report_kill` now
+  reports through the same four values, so the Old One's Army draws with the
+  `Extra[79]` icon and the `Game.WaveMessage` arm. The moon events' waves are
+  still the parked half of that row (no Frost/Pumpkin Moon wave driver).
+- **The group plate.** The C# draws a **second** panel at
+  `(screenWidth - num13, screenHeight - 80)` with the group's `Extra` icon and
+  its `* 0.5f`-tinted `Inventory_Back13` plate (`:47831-47845`). The port had
+  only a flat label line under the bar; it now draws the plate, the icon
+  (`num * 0.8`, origin `(0, h/2)` so the icon straddles the plate's top edge —
+  the C#'s own geometry) and the right-aligned label (`num * 0.9`, anchor
+  `(1, 0.4)`).
+- **The label table.** The pre-BUG-08 draw had icons 5 and 6 swapped (icon 5
+  is `Lang.inter[87]` "Frost Legion", icon 6 `Lang.inter[86]` "Pirate
+  Invasion") and no Martian row at all. Both are fixed and pinned by
+  `bug_08_the_icon_dispatch_matches_the_source_table`.
+- **`Utils.DrawBorderString`'s anchor.** The C# origin is
+  `(anchorx, anchory) * MeasureString(text)` in **unscaled** pixels, then the
+  sprite batch scales it, so the destination top-left is
+  `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
+  the HUD uses the zero-anchor `text::border_string`.
+
+## The projectile sprites (M4-PROJ-6b render)
+
+The AI port drew every non-yoyo projectile with the same sprite: `draw_with_hand`
+asked `Lookups::shuriken_uv()` for the 22x22 `Projectile_3` frame and stamped it at
+a fixed `SIZE x SIZE` quad. The vanilla instead draws
+`TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0, frame)`
+(`Main.cs:27929-27943`) at `projectile.scale`. That gap is now closed for the kinds
+the port can spawn:
+
+- **Sheets.** `assets.rs` packs `Images/Projectile_{id}` for every kind
+  `projectile::spawnable_kinds()` reports — the set derived from the `proj_data`
+  rows themselves (a probe over the id space, `0..=1200`) rather than a second
+  hand-maintained list. ~180 small sheets; a missing file just leaves the kind
+  unpacked and the shuriken fallback covers it (the `SHURIKEN` 3 dev shot has no
+  `proj_data` row and stays on the stand-in).
+- **Frames.** `projectile::proj_frames(kind)` carries the `Main.projFrames[type]`
+  rows (`Main.cs:8441-8816`): every type defaults to 1 and only 18 of the spawned
+  ids exceed it (34 → 6, 645 → 7, 254 → 5, …). `Lookups::proj_frame` slices the
+  packed sheet into that many equal rows, clamps the frame index and returns the
+  frame's **own** pixel size, so the quad is the art's size, not the shuriken's.
+- **State.** `Projectile.frame` (`:451`, reset at `SetDefaults` `:805`) exists so
+  the AI arms can advance it; the vanilla advances `frame`/`frameCounter` per
+  family (there is no generic animator: `:23477`, `:25213`, …), so each ported AI
+  arm owns its own cadence — until one lands, a multi-frame kind draws frame 0.
+- **Scale.** The draw multiplies the frame size by `Projectile.scale` (the C#
+  `float scale = projectile.scale`), which the yoyo family already set and the
+  rest now honour.
+
+**Verification.** One test asserts that >100 sheets pack, that each kind's slice
+height equals `sheet_height / proj_frames`, that frame `frames-1` stays inside the
+sheet, that the 34/645 rows hold, and that an unpacked kind answers `None` while
+`shuriken_uv` stays live. The screenshot fixture is `TR_THROW=<id>` (one shot from
+the player's centre on the first tick, re-armed when the pool empties); a
+pixel-diff of `TR_THROW=645` against the same frame without it isolates a 35x28
+sprite in the poison dart's greens `(34,221,151)`/`(208,253,235)` at the spot the
+22 px grey shuriken used to be — `docs/screenshots/m4-proj-6b-poison-dart.png`.
+
+**Still open** (`M4-PROJ-6b`): the caster AI families themselves (Unholy Trident
+27, Spectre 59/51, Leaf Blower 40, Razorblade Typhoon 71, Nebula Arcanum 118/119,
+Last Prism 75/84) and the GemStaff/MagicMissile/RainbowRod/FlameLash trail
+shaders.
+
+## The Leaf Blower petal (M4-PROJ-6b-leaf)
+
+The first of the leftover caster families. `ProjectileID.LeafBlower` (206,
+`Projectile.cs:2937-2945`) is the 14x14 petal the Leaf Blower (item 1178, whose
+registry row already carried `projectile: Some(206)`) fires at `shootSpeed` 14;
+`AI_040_LeafBlower` (`:38003-38082`) is a compact, self-contained arm, so it landed
+whole:
+
+- **The row.** 14x14, aiStyle 40, penetrate 1, `timeLeft` 360, `tileCollide` true
+  and the `alpha = 255` the AI fades in — the state group carries that override.
+- **The fade.** `localAI[0]` counts up; the alpha holds for the first 3 ticks,
+  drops 50/tick to 0, then from tick 50 rises 2/tick and `Kill()`s at 255 — the
+  petal is visible ~50 ticks and gone by ~153.
+- **The flap.** 3 ticks per frame over `projFrames[206] = 5` (`Main.cs:8596`),
+  which the sprite pass' `proj_frames` table now carries.
+- **The flight.** `ai[0]`/`ai[1]` are drawn once, at tick 1, as
+  `Main.rand.Next(-100, 101) * 6E-05`; `localAI[2]` stores the launch-direction
+  sign; past tick 10 the velocity is rotated by
+  `localAI[2]·|ai[0]|·localAI[1]·0.35` and damped 0.97/tick, and the
+  `|vx|+|vy|` band clamps it into 12..16 px/tick (×1.05 below, ×0.95 above).
+- **The two RNG draws ride the pool's shared `Main.rand` stand-in** (`hook_rng`,
+  the stream the hook family's cracked-brick roll already uses): they steer the
+  trajectory, so skipping them would desync the flight; dust — which they *also*
+  gate in the C# — is SKIPPED, as in the other M4-PROJ-6 arms (the pool draws no
+  dust).
+
+**Verification.** Two tests: the row/frames/registry wiring, and a 100-tick walk
+of the AI that pins the alpha on 255 through tick 3 and 0 by tick 10, sees all 5
+frames within 30 ticks with `frame_counter < 3`, keeps `ai*` inside
+`±100·6E-05`, holds the speed band, matches the `+3.14` rotation, and then runs
+the petal to its fade-out kill in under 200 ticks. The screenshot fixture
+`TR_THROW=206` isolates a 20x16 sprite in the petal's greens
+`(40,146,96)`/`(113,168,24)`/`(63,116,7)` against the same frame without it —
+`docs/screenshots/m4-proj-6b-leaf-blower.png`.
+
+## The equipment-page tabs (M7-UI-3a)
+
+The three icons to the right of the inventory grid (`UI/DisplaySlots_2…10`) were
+painted by `ui/chrome.rs::draw_page_icons`, which already returned the hovered
+tab number — and **every caller threw the value away**. `App.equip_page` could
+only be set by the `TR_EQUIPPAGE` debug pin, so all three tabs were decoration.
+
+`Main.DrawPageIcons` (`Main.cs:42787-42868`) is one function with two halves; the
+port now has both.
+
+**The geometry** was already correct and stays untouched: the anchors are
+`(screenWidth - 162, yPos)` with `x += 82` for the first tab and `- 48` each
+after (`:42790-42791`), i.e. `screenWidth - 80 / -128 / -176`, drawn at scale
+`0.9` with the state-dependent sheet (`(EquipPage == 2) ? 3 : 2`, `== 1 ? 5 : 4`,
+`== 3 ? 10 : 8`, `:42792`, `:42804`, `:42816`) and the highlight sheets
+`6 / 7 / 9` at origin `(2, 2)` except tab 3's `(0, 0)`.
+
+**What was missing is the gates.** `Collision.CheckAABBvAABBCollision` runs
+against the *native* (unscaled) sheet, so the hit rect is the sheet size, not the
+0.9-scaled one — `page_tab_hit` takes the three native sizes (`page_tab_sizes`
+reads them from `Lookups::page_icons`). Each tab then applies its own
+mouse-item gate, and they are *not* the same:
+
+| tab | `EquipPageSelected` | gate (`Main.cs`) |
+|---|---|---|
+| first (`DisplaySlots_2/3`) | 2 | `mouseItem.stack < 1 \|\| mouseItem.dye > 0` (`:42793`) |
+| middle (`DisplaySlots_4/5`) | 1 | `mouseItem.stack < 1` (`:42805`) |
+| right (`DisplaySlots_8/10`) | 3 | `mouseItem.stack < 1` (`:42817`) |
+
+The first tab is the only one a held dye does not block, because that is the tab
+that reaches the dye page.
+
+**The click** (`:42828-42858`) is a toggle, not a switch: pressing the page you
+are already on falls back to page 0, pressing another selects it. `page_tab_click`
+returns exactly that, and returns `None` for tab 3 because tab 3 is the
+capture-mode entry (`:42835-42847` sets `CaptureManager.Instance.Active`), not a
+page. The sound is `SoundEngine.PlaySound(10)` (`:42857`), the ported `Menu_Open`.
+
+**The page actually drawn is not the page selected.** `Main.EquipPageSelected` is
+the player's wish; `Main.EquipPage` is what renders, and it is re-derived *every
+frame* by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) and then
+
+```csharp
+if (Main.EquipPage == -1) Main.EquipPage = Main.EquipPageSelected;   // Main.cs:42864-42866
+```
+
+`SelectEquipPage` sets `EquipPage = -1` first and then overrides it from the
+cursor stack: hooks, mounts and pets force page 2; armour, accessories and (when
+the dye page was the selection) a held dye force page 0. The port keeps that shape
+— `App::resolve_equip_page` runs from `frame()` and `select_equip_page` returns
+`-1` for "no opinion".
+
+**Deviations.**
+
+* Only the air arm and the armour/accessory arm of `SelectEquipPage` are ported.
+  The other arms need item fields `ItemDef` does not carry (`Item.shoot` for the
+  `Main.projHook` lookup, `Item.mountType`, `Item.dye`) plus the
+  `Main.vanityPet` / `Main.lightPet` buff sets. `itemdata.rs` is generated by
+  `tools/GenItemData/gen.py` and is marked "Never hand-edit", so adding them is a
+  generator change, not an addendum here. Until then a held dye is treated as an
+  ordinary held stack and the first tab is refused (`page_tab_hit`'s `has_dye`
+  argument stands in for the missing `Item.dye > 0`).
+* `Main.CaptureModeDisabled` (`:42821-42825`) is not modelled — tab 3 is drawn
+  white, and clicking it does nothing.
+* Tab 1 selects `EquipPageSelected = 1`, but the port has no page-1 draw:
+  `Main.cs:41368` hands page 1 to `DrawNPCHousesInUI`, the housing panel, which is
+  its own subsystem. Page 1 falls through to the equipment columns exactly as
+  page 3 already did.
+* `TR_EQUIPPAGE` now seeds `equip_page_selected` as well as `equip_page`, so the
+  pin survives the per-frame resolution.
+
+**Verification.** 7 new tests (the half-open edges, the per-tab gates, the toggle,
+`select_equip_page`, and two `handle_inventory_clicks` end-to-end arms including
+the held-armour auto-jump). The suite is 2027 + 18 + 1 + 1236 + 21, 0 failed. The
+hover glow is checked as a pixel statistic rather than a screenshot diff: moving
+the cursor onto the first tab raises the mean RGB of the `1516..1546 × 138..164`
+band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
+`Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
+also moves the lighting, so the diff bbox covers the whole frame.
+
+### The journey powers' sim wiring (M6-CREATIVE-1c)
+
+The registry from M6-CREATIVE-1 already owned the states and the clock
+multiplier; this pass gives the three sim-facing powers their consumers,
+ported from the same `CreativePowers.cs` classes:
+
+- **`GodmodePower`** (`:692-727`) → `Player.creative_god_mode`. The vanilla
+  clears `Player.creativeGodMode` in `ResetEffects` (`Player.cs:18789`) and
+  re-reads the manager a few lines later (`:25493-25497`); the port refreshes
+  the flag at the head of its fixed step (`world_sim::player::update_player`),
+  which is the same "reset, then read the power" order. Consumers:
+  `Player::hurt_inner` returns before the iframes/defense/knockback
+  (`:38203-38206`), `Player::start_death` refuses outright
+  (`:38809-38812`), `Npc::contact` returns before the whole
+  `Update_NPCCollision` body — including the EoC shield-dash arm
+  (`:31321-31324`) — and the fixed step refills `hp`/`mana`/`breath` to
+  their maxima (`Main.UpdateWorld_Players`, `Main.cs:17869-17873`).
+- **`FarPlacementRangePower`** (`:730-767`) → `Player::far_placement_range`,
+  which makes `Player::tile_range_x/y` return the C#'s
+  `DefaultTileRangeX/Y` (`5`/`3`, `:57113-57114`) or the journey form
+  `* 2 + 8` (`18`/`14`, `:18815-18828`). The `update_editing` reach gate —
+  the port's documented circular stand-in for
+  `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)` — now
+  derives its radius from `tile_range_x() + 1`, so the base gate is the
+  previous 6-tile constant unchanged and the power widens it exactly as the
+  C# widens the rectangle.
+- **`StopBiomeSpreadPower`** (`:1540-1571`) →
+  `CreativePowers::allowed_to_spread_infections`) =
+  `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`);
+  `tr_core::growth::update_world` gained the flag as an explicit parameter
+  (it had been hardcoded `true`) and `world_sim::growth::update_growth`
+  feeds it to both `update_world` and `spread::hard_update_world`, which
+  already carried it.
+
+Deliberate deviations:
+
+- The port has no journey-difficulty flag (`Main.IsJourneyMode`), so the
+  `FarPlacementRangePower` toggle alone is the gate, and its registry
+  default stays `false` — in the vanilla `_defaultToggleState = true` is only
+  reachable inside a journey world, whose creation screen the port does not
+  have. Enabling the power from the (unported) powers UI or a load is what
+  turns it on.
+- The godmode refill runs inside the fixed step instead of
+  `Main.UpdateWorld_Players`' frame tail; the two coincide at 60 Hz and the
+  pools are only ever read after the step.
+- The C# NPC-side gates (`NPC.cs:37157`, `:44305`, `:56483`, `:63404`,
+  `Projectile.cs:12110`, `:31804`) only stop bosses/minions from *targeting*
+  a godmode player. They are not ported: the damage and death arms above
+  already make the player invulnerable, and the targeting arms change no
+  observable state the port models.
+- Still open on the row: the powers UI (`UICreativePowersMenu`) and the
+  per-player persistence (`IPersistentPerPlayerContent`, `godmodePowerEnabled`/
+  `farPlacementRangePowerEnabled` in the `.plr`).
+
+## The friendly-fire melee gate (BUG-10)
+
+`ProcessHitAgainstNPC` (`Player.cs:44262-44304`) is the one place the player's
+melee decides whether an NPC may be hurt. The gate its friendly half needs:
+
+```csharp
+if (nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
+    (nPC.type != 54 || !this.killClothier) &&
+    (!nPC.isLikeATownNPC || (sItem.type != 5129 && sItem.type != 3351)))
+    return;
+```
+
+The earlier partial port compared `NpcKind::is_town_npc`, which is the *housing*
+subset (the ten kinds with a ported house/shop row), so eleven seller kinds —
+Angler, Stylist, Tax Collector, Golfer, Zoologist, Princess, Dye Trader, Party
+Girl, Wizard, Mechanic, Travelling Merchant — and the six bound/rescue forms
+(Bound Goblin/Wizard/Mechanic, Webbed Stylist, Sleeping Angler/Golfer) were all
+hittable. The gate now reads the real vanilla flag:
+`NpcKind::is_friendly` (`NPC.cs:8519` default false plus the `SetDefaults` arms
+`:8983-9060`, `:10257`, `:10493-10507`, `:13502-13516`, `:13796-13809`,
+`:16652-16665`) and `NpcKind::is_town_npc_like` for the C# `isLikeATownNPC`
+(`:6856-6864` — `townNPC || type == 453`; the Skeleton Merchant is not shipped,
+so the set is exactly the town kinds).
+
+**The exceptions.**
+
+* The doll flags are armed by `ApplyEquipFunctional` (`Player.cs:14368`), which
+  `UpdateEquips` calls for the accessory slots 3..10 (`:12948-12954`), and
+  `ResetEffects` clears them every tick (`:18365-18366`). The gate reads the
+  per-tick `Player.equipped` snapshot (`world_sim/player.rs` fills it from
+  `App.equip.armor`), so the previous inventory-wide scan — a doll sitting in the
+  bag used to arm the easter egg — is gone. The snapshot is the closest the
+  current equip model gets: the vanilla skips locked accessory slots through
+  `IsItemSlotUnlockedAndUsable`, which the port does not model (every slot is
+  treated as unlocked, the default character's 5 + the Demon Heart's 6th).
+* The Flymeal (5129) and the Tax Collector's Stick of Doom (3351) are the only
+  melee items the C# whitelists against town NPCs (`:44274`). Both are hitbox
+  melee items with no `shoot`, so the melee arm is their only damage path.
+* The cane's hit is forced to one damage (`:44300-44304`) and the Flymeal doubles
+  its roll, doubles again on the Nurse (`:44344-44353`) and takes
+  `armorPenetrationPercent = 1f`. The penetration value is added to the damage
+  like the C#'s `num2 += nPC.checkArmorPenetration(...)` (`:44383`) through the
+  already-ported `tr_core::damage::check_armor_penetration`, with the player's
+  own `GetArmorPenetration` passed as 0: the prefix table carries
+  `armor_penetration` (`prefix.rs`) but no consumer sums it into the player yet,
+  and the NPC-side ichor / broken-armor / Betsy's-curse terms are not surfaced by
+  the port's NPC buff store. Both are neutral defaults, not approximations of a
+  shipped behaviour.
+
+**Out of scope (the same defect class, own row).** Hostile/friendly projectiles
+run the same refusal through `Damage_PVE_Inner`'s `flag` (`Projectile.cs:12601`)
+and `flag2`'s hostile-vs-friendly arm (`:12605-12608`); `projectile.rs`'s
+`damage_pve` still filters on geometry only, so a player arrow can hurt a town
+NPC. Tracked as BUG-23 in the catalog.
+
+**Verification.** 3 tests in `world_sim/editing.rs`: the Guide refused and the
+worn doll arming the hit while the bagged doll does not; the 17 seller/bound
+kinds refused through `is_friendly`; the two item exceptions (the Flymeal's
+doubled roll, the cane's exact one damage) and the hostile still hittable.
+
+### The projectile half (BUG-23)
+
+`Damage_PVE_Inner`'s refusal (`Projectile.cs:12601-12608`) is the projectile
+twin of the melee gate, and it reads the same two doll flags — the port now
+shares them through `Player::doll_flags` (the melee arm and the pool both call
+it). The C# expression is ported verbatim:
+
+```csharp
+bool flag = !targetNPC.friendly | (this.type == 318) |
+    (targetNPC.type == 22 && this.owner < 255 && Main.player[this.owner].killGuide) |
+    (targetNPC.type == 54 && this.owner < 255 && Main.player[this.owner].killClothier);
+if (this.owner < 255 && !Main.player[this.owner].CanNPCBeHitByPlayerOrPlayerProjectile(targetNPC, this))
+    flag = false;
+...
+if ((!this.friendly || (!flag && !NPCID.Sets.ZappingJellyfish[targetNPC.type])) && !(this.hostile & flag2))
+    return;
+```
+
+The gate runs in **both** PVE walks: the plain point walk (`damage_pve`) and the
+resized death bursts (`damage_pve_boxed` — the gem bolts' AoE and the bombs'
+`PrepareBombToBlow` walk), because the C# funnels all of them through
+`Projectile.Damage()` → `Damage_PVE` → `Damage_PVE_Inner`. The refusal sits
+ahead of the per-owner immunity gate, matching the C# early `return`.
+
+Neutral arms (no ported system to read):
+
+* `NPCID.Sets.ZappingJellyfish` — 63/64/103/242; no jellyfish kind is ported, so
+  the "poke the jellyfish and get zapped instead" arm has nothing to act on.
+* `this.hostile & flag2` — hostile projectiles damaging friendly NPCs (the
+  invasion flavour). The port's hostile shots (`friendly == false`) run the
+  player-contact pass only, so there is no hostile-vs-town path to gate yet.
+* `CanNPCBeHitByPlayerOrPlayerProjectile`'s critter block (`:20513-20529`) — it
+  needs `dontHurtCritters` (the Guide to Critter Companionship item) or a
+  minion/sentry shot; neither exists in the port (the summon system is the
+  blocked M4-PROJ-8 row). With both false the function returns `true`, so
+  `flag` is unchanged — the port passing the critter kinds is faithful.
+
+**Verification.** 1 test (`projectile::tests::bug_23_…`): a shuriken passes a
+Guide without consuming itself, the same shot lands once the Guide Voodoo Doll
+sits in accessory slot 3, and the `refuses_friendly` matrix is pinned for the
+Rotten Egg (318), the Clothier-with-curse arm, the bound goblin (no arm — the
+C# `isLikeATownNPC` excludes it) and a hostile slime.
+
+### The coin and ammo rows (M7-UI-2b)
+
+`Main.DrawInventory` draws the coin row (context 1) and the ammo row (context
+2) with `ItemSlot.Handle` over every cell it draws (`Main.cs:41752-41782`), so
+the port's draw-only rows were dead to the pointer — the click pass only knew
+the 10×5 grid (`slot_at_mouse`) and the closed hotbar.
+
+The rows now resolve through one shared geometry, `ui::inventory::coin_ammo_hit`
+(x 497 / 534, scale 0.6, `(int)(85 + row·56·0.6 + 20)`), which the draw pass
+also hovers with — the two copies of the formula cannot drift. The click path
+(`App::coin_ammo_click`) is the C# cell handler with the C# gates:
+
+* left → the shared action-0 move (`left_click_movement`), behind
+  `PickItemMovementAction`'s accepted-kind gate (`ItemSlot.cs:1369-1374`): the
+  coin row takes air and 71-74 only, the ammo row takes `FitsAmmoSlot`;
+* right → the `ItemSlot.cs:1700-1772` stack split (half up, one down);
+* the rows are inert while the inventory is closed (they draw only in the open
+  panel).
+
+`FitsAmmoSlot` (`Item.cs:1369-1376`) is ported over the flags the port carries —
+air, `ammo > 0`, `bait > 0`. Deviations: the `PaintOrCoating` arm, `notAmmo`,
+and the three literal exceptions (353/530/849) have no port counterpart, so a
+held paint bucket is refused where vanilla takes it.
+
+The shift arms landed in **M7-UI-2c**: `ItemSlot.GetAlternateClickAction`'s
+ctx-1/ctx-2 cases (`ItemSlot.cs:657-665`) call the same `TryPlacingInChest` with
+the context's array, so `chest::try_placing_in_chest` was split into
+`try_placing_from(app, Source, just_check)` with `Source::Inv | Coin | Ammo`
+reading and writing the right array (`App.inventory` vs `App.equip.coins`/`ammo`
+— the C# has one `Player.inventory[0..58]`), and the old signature delegates with
+`Source::Inv`. The cursor-9 light and the cursor-9 click both resolve the row
+first (`App::chest_transfer_source`).
+
+Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
+flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
+in ROADMAP's M7-UI-2 remainder.

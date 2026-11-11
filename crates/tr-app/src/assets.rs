@@ -53,8 +53,34 @@ fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
-/// Loads only the sheets referenced by the world (plus a dirt fallback).
+/// The two halves of the atlas content: the world-derived sheets (the tile and
+/// wall sheets this world's usage scan asked for) and the world-independent
+/// ones (backgrounds, NPCs, items, UI, …).
+///
+/// The split exists so a world swap can re-decode only the small world half and
+/// re-pack the previous static half: the static sheets are the bulk of the
+/// decode time (a full boot decode measured ~1.4 s with the retail content) and
+/// none of them depend on the world. Concatenating `world ++ static` reproduces
+/// the pre-split list's order exactly, so the atlas layout — and every UV — is
+/// unchanged.
+pub type WorldSheets = (Vec<AtlasImage>, Vec<AtlasImage>);
+
+/// Every sheet the atlas needs for `world`, as `(world_half, static_half)` —
+/// concatenate the two in that order to get the pre-split list.
 pub fn load_world_images(
+    dir: &Path,
+    tiles: &BTreeSet<u16>,
+    walls: &BTreeSet<u16>,
+) -> Result<WorldSheets> {
+    Ok((
+        load_world_sheets(dir, tiles, walls)?,
+        load_static_sheets(dir),
+    ))
+}
+
+/// The world-dependent half of [`load_world_images`]: the tile and wall sheets
+/// the usage scan asked for, plus the dirt fallback.
+pub fn load_world_sheets(
     dir: &Path,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
@@ -103,6 +129,24 @@ pub fn load_world_images(
             images.push(img);
         }
     }
+
+    if !missing.is_empty() {
+        log::warn!(
+            "{} world sheets have no matching texture (first 10: {:?})",
+            missing.len(),
+            &missing[..missing.len().min(10)]
+        );
+    }
+
+    Ok(images)
+}
+
+/// The world-independent half of [`load_world_images`]: the backgrounds, the
+/// player/NPC/armor/mount/projectile sheets, every item icon and the tile-side
+/// overlays. Reused as-is across a world swap (the content dir is fixed for a
+/// process, so the decoded pixels cannot go stale).
+pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
+    let mut images = Vec::new();
 
     // Whole-image sheets used by the sky/background pass.
     for name in [
@@ -228,6 +272,16 @@ pub fn load_world_images(
         "Extra_164",
         "Extra_169",
         "Extra_204",
+        // BUG-08: the invasion progress bar's icon sheets (`TextureAssets.Extra`
+        // rows, each 32x32): frost moon 8, pumpkin moon 12, Old One's Army 79,
+        // martians 10, pirates 11, frost legion 7, goblins 9 (`Main.cs:47737-47780`).
+        "Extra_7",
+        "Extra_8",
+        "Extra_9",
+        "Extra_10",
+        "Extra_11",
+        "Extra_12",
+        "Extra_79",
         // The M2-MOUNT-2 hover/flyer set (`Mount.cs:1163-2532`): Pigron, the
         // Bee + its wing strip, the UFO + its glow, the Drill's three parts,
         // CuteFishron, Witch Broom (Extra_113), Pirate Ship (166), Dark Mage
@@ -473,6 +527,9 @@ pub fn load_world_images(
         "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
+        // `ItemSlot.cs:2154`: the gold frame a *favorited* stack draws
+        // (`Main.OurFavoriteColor` is only the tooltip tint).
+        "Inventory_Back10",
         "Heart",
         "Bubble",
         "NPC_Head_Boss_7",
@@ -504,6 +561,9 @@ pub fn load_world_images(
         "UI/DisplaySlots_10",
         "UI/PVP_0",
         "UI/PVP_1",
+        // `UI/PVP_2`: the hover ring behind a hovered team cell
+        // (`Main.cs:42771-42773`, `TextureAssets.Pvp[2]`).
+        "UI/PVP_2",
         // P3 modern crafting panel (`NewCraftingUI`): the `Inventory_Back18` craft
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
@@ -715,6 +775,17 @@ pub fn load_world_images(
             Err(_) => log::warn!("missing background texture {name}"),
         }
     }
+    // The projectile sprites (`TextureAssets.Projectile[type]`, the
+    // `"Images/Projectile_" + type` initializer): the `Main.DrawProj` frame
+    // source. Packed for every kind `proj_data` carries — the extra decode is
+    // ~180 small sheets and a missing file keeps the shuriken fallback.
+    for kind in crate::projectile::spawnable_kinds() {
+        let name = format!("Projectile_{kind}");
+        match load_png(dir, &name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => { /* the shuriken fallback covers it */ }
+        }
+    }
 
     // Every item icon the content carries: `AssetInitializer.cs:111-125` fills
     // `TextureAssets.Item[i]` with `Images/Item_<i>` for the whole `ItemID`
@@ -825,15 +896,7 @@ pub fn load_world_images(
         }
     }
 
-    if !missing.is_empty() {
-        log::warn!(
-            "{} world sheets have no matching texture (first 10: {:?})",
-            missing.len(),
-            &missing[..missing.len().min(10)]
-        );
-    }
-
-    Ok(images)
+    images
 }
 
 /// `Content` directory bundled with the project (the retail `.xnb` files copied into
@@ -927,6 +990,33 @@ pub struct LoadedFonts {
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death: Option<UiFont>,
     /// `Fonts/Combat_Text`/`Combat_Crit`: damage numbers (`FontAssets.CombatText`).
+    pub combat_text: Option<UiFont>,
+    pub combat_crit: Option<UiFont>,
+}
+
+impl LoadedFonts {
+    /// The glyph tables alone, without the BC2 page array — cheap to clone
+    /// relative to a decode (the world swap re-derives `Lookups` from these on
+    /// every load, and re-decoding ~38 636 glyphs costs ~1–2 s).
+    pub fn tables(&self) -> FontTables {
+        FontTables {
+            ui: self.ui.clone(),
+            item: self.item.clone(),
+            death: self.death.clone(),
+            combat_text: self.combat_text.clone(),
+            combat_crit: self.combat_crit.clone(),
+        }
+    }
+}
+
+/// The world-independent glyph tables [`LoadedFonts`] carries, cached on the App
+/// so a world swap does not re-decode the five retail fonts (the other ~1–2 s of
+/// a load, measured with the retail content).
+#[derive(Clone, Default)]
+pub struct FontTables {
+    pub ui: Option<UiFont>,
+    pub item: Option<UiFont>,
+    pub death: Option<UiFont>,
     pub combat_text: Option<UiFont>,
     pub combat_crit: Option<UiFont>,
 }
@@ -1096,6 +1186,20 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "jellyfishBowl3",
 ];
 
+/// The invasion progress bar's icon sheets in the order
+/// `TextureAssets.Extra[7], [8], [9], [10], [11], [12], [79]`
+/// (`Main.cs:47737-47780`): frost legion, frost moon, goblins/pirate/etc.,
+/// martians, pirates, pumpkin moon, Old One's Army.
+pub(crate) const INVASION_ICON_EXTRAS: [&str; 7] = [
+    "Extra_7",
+    "Extra_8",
+    "Extra_9",
+    "Extra_10",
+    "Extra_11",
+    "Extra_12",
+    "Extra_79",
+];
+
 /// The ambient-sky creature sheets with their `SpriteFrame(1, rows)` row
 /// counts (`AmbientSky.cs`, one entry per `Main.Assets.Request`).
 const AMBIENCE_SHEETS: &[(&str, u32)] = &[
@@ -1243,8 +1347,13 @@ pub struct Lookups {
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
     pub dust: Option<tr_render::SheetRect>,
-    /// `Projectile_3.png`: the 22x22 shuriken frame.
+    /// `Projectile_3.png`: the 22x22 shuriken frame (the fallback sprite for
+    /// kinds whose own sheet is absent).
     pub shuriken: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Projectile[type]` — one packed sheet per kind
+    /// [`crate::projectile::spawnable_kinds`] reports (absent when the file is
+    /// missing).
+    pub proj_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
     /// (`Main.DrawProjDirect`, `Main.cs:28044`).
     pub fishing_line: Option<tr_render::SheetRect>,
@@ -1264,6 +1373,9 @@ pub struct Lookups {
     pub ui_back_sel: Option<tr_render::SheetRect>,
     /// `Inventory_Back9`: the hotbar row frame inside the open inventory.
     pub ui_back_hotbar: Option<tr_render::SheetRect>,
+    /// `Inventory_Back10`: the gold frame a favorited stack draws
+    /// (`ItemSlot.cs:2154`).
+    pub ui_back10: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
@@ -1313,8 +1425,9 @@ pub struct Lookups {
     /// `UI/DisplaySlots_0..10`: the equipment page tabs (`DrawPageIcons`,
     /// `Main.cs:42787`).
     pub page_icons: [Option<tr_render::SheetRect>; 11],
-    /// `UI/PVP_0`/`PVP_1`: the PVP toggle and team icons (`Main.cs:42654`).
-    pub pvp: [Option<tr_render::SheetRect>; 2],
+    /// `UI/PVP_0`/`PVP_1`/`PVP_2`: the PVP toggle, the team icons and the
+    /// hover highlight (`Main.cs:42654`: `TextureAssets.Pvp[0]/[1]/[2]`).
+    pub pvp: [Option<tr_render::SheetRect>; 3],
     /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
     pub ui_defense_shield: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
@@ -1410,6 +1523,9 @@ pub struct Lookups {
     pub ui_color_blip: Option<tr_render::SheetRect>,
     /// `Images/ColorSlider`: the 11x25 slider knob (`IngameOptions.cs:1566`).
     pub ui_color_slider: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[7,8,9,10,11,12,79]` — the invasion progress bar's
+    /// icon sheets, indexed by [`INVASION_ICON_EXTRAS`] (`Main.cs:47737-47780`).
+    pub invasion_icons: [Option<tr_render::SheetRect>; 7],
     /// `Images/UI/Slider_Highlight`: the hover overlay — `TextureAssets.ColorHighlight`
     /// (`AssetInitializer.cs:349`; NOT `Images/ColorHighlight`), 178x16.
     pub ui_slider_highlight: Option<tr_render::SheetRect>,
@@ -1549,6 +1665,15 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            proj_sheets: crate::projectile::spawnable_kinds()
+                .into_iter()
+                .filter_map(|k| {
+                    atlas
+                        .sheet(&format!("Projectile_{k}"))
+                        .copied()
+                        .map(|r| (k, r))
+                })
+                .collect(),
             fishing_line: atlas.sheet("FishingLine").copied(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
@@ -1569,6 +1694,7 @@ impl Lookups {
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
+            ui_back10: atlas.sheet("Inventory_Back10").copied(),
             ui_font,
             item_font,
             death_font,
@@ -1830,6 +1956,7 @@ impl Lookups {
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),
             ui_color_slider: atlas.sheet("ColorSlider").copied(),
+            invasion_icons: INVASION_ICON_EXTRAS.map(|n| atlas.sheet(n).copied()),
             ui_slider_highlight: atlas.sheet("UI/Slider_Highlight").copied(),
             // P6 card buttons (`UICharacterListItem.cs:52-60` — cloud sheets
             // loaded for completeness but unused: SocialAPI.Cloud is null, plan §J.2).
@@ -1967,7 +2094,7 @@ impl Lookups {
             page_icons: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
             }),
-            pvp: [0, 1].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
+            pvp: [0, 1, 2].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
@@ -2140,6 +2267,23 @@ impl Lookups {
     pub fn leaf_frame(&self, style: u32) -> Option<(f32, f32)> {
         let sheet = self.leaf_sheet(style)?;
         Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
+    }
+
+    /// UV and frame size of a projectile sprite — `Main.DrawProj`'s
+    /// `TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0,
+    /// frame)` (`Main.cs:27929-27943`): the sheet sliced into `frames` equal
+    /// rows. `None` when the kind's sheet is not packed (the shuriken fallback
+    /// covers it).
+    pub fn proj_frame(&self, kind: u16, frame: u32) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.proj_sheets.get(&kind)?;
+        let frames = crate::projectile::proj_frames(kind).max(1);
+        let h = (rect.height / frames).max(1);
+        let frame = frame.min(frames - 1);
+        Some((
+            uv_rect(rect, self.atlas_size, 0, (frame * h) as i32, rect.width, h),
+            rect.width as f32,
+            h as f32,
+        ))
     }
 
     /// UV of the shuriken projectile/item sprite.
@@ -2453,8 +2597,9 @@ mod tests {
             let images_dir = content.join("Images");
             let tiles = BTreeSet::new();
             let walls = BTreeSet::new();
-            let images =
+            let (mut images, static_sheets) =
                 load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+            images.extend(static_sheets);
             let atlas = tr_render::Atlas::build(images, 8192);
             let lookups = Lookups::build(
                 &atlas,
@@ -2544,6 +2689,91 @@ mod tests {
         );
     }
 
+    /// The world-swap fast path splits the sheet list in two (`world ++ static`)
+    /// so the static half can be cached across swaps. The concatenation must be
+    /// the pre-split list, in order — `Atlas::build`'s shelf sort breaks size ties
+    /// by input order, so a reordering would move every UV.
+    #[test]
+    fn test_the_world_and_static_split_concatenates_to_the_full_list() {
+        let content = crate::app::find_content_dir().unwrap();
+        // `load_png` resolves names through the process-global images dir, so the
+        // test must seed it exactly like startup does.
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let tiles: BTreeSet<u16> = [1u16, 2, 30].into_iter().collect();
+        let walls: BTreeSet<u16> = [1u16, 4].into_iter().collect();
+
+        let (world_half, static_half) = load_world_images(&images_dir, &tiles, &walls).unwrap();
+        let joined: Vec<String> = world_half
+            .iter()
+            .chain(static_half.iter())
+            .map(|i| i.name.clone())
+            .collect();
+
+        // The halves are exactly the two loaders, in the same order.
+        let world_only = load_world_sheets(&images_dir, &tiles, &walls).unwrap();
+        let static_only = load_static_sheets(&images_dir);
+        assert_eq!(
+            joined,
+            world_only
+                .iter()
+                .chain(static_only.iter())
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>(),
+            "split order"
+        );
+        // The world half holds only this world's sheets (plus the Tiles_0
+        // fallback); the static half carries the content-wide ones.
+        assert!(
+            world_half.len() < static_half.len(),
+            "{} world vs {} static",
+            world_half.len(),
+            static_half.len()
+        );
+        assert!(static_half.iter().any(|i| i.name.starts_with("Item_")));
+    }
+
+    /// The world-swap fast path: the second build reuses the decoded static half
+    /// and the font tables, so only the world's own sheets are re-decoded. Pinned
+    /// here because a regression (a fresh `App::new` dropping the caches) would
+    /// bring the multi-second Play freeze back.
+    #[test]
+    fn test_the_second_atlas_build_reuses_the_static_half() {
+        let content = crate::app::find_content_dir().unwrap();
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let world = tr_core::world::World::new("bench".into(), 64, 64);
+
+        let mut cache = None;
+        let mut fonts = None;
+        let t0 = std::time::Instant::now();
+        let first =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let first_ms = t0.elapsed().as_millis();
+        assert!(first.is_ok(), "boot build");
+        assert!(cache.is_some(), "the boot build caches the static half");
+        assert!(fonts.is_some(), "the boot build caches the font tables");
+
+        let t1 = std::time::Instant::now();
+        let second =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let second_ms = t1.elapsed().as_millis();
+        assert!(second.is_ok(), "swap build");
+        assert!(cache.is_some(), "the swap keeps the cache for the next one");
+        assert!(fonts.is_some(), "and the font tables");
+
+        // Same atlas either way — the swap must not change what is drawn.
+        let (a, _, _, sa) = first.unwrap();
+        let (b, _, _, sb) = second.unwrap();
+        assert_eq!(sa, sb, "identical atlas stats");
+        assert_eq!(a.pixels, b.pixels, "identical atlas pixels");
+
+        assert!(
+            second_ms * 2 < first_ms.max(1),
+            "the reuse must be markedly faster: {first_ms} ms then {second_ms} ms"
+        );
+    }
+
     #[test]
     fn test_DW_4_1_item_icons_cover_enumerated_content_files() {
         let (atlas, lookups) = content_lookups();
@@ -2564,6 +2794,46 @@ mod tests {
             registered, enumerated,
             "item_icons == the enumerated file set"
         );
+    }
+
+    /// M4-PROJ-6b: the projectile sprites — every kind `proj_data` carries
+    /// packs its `Projectile_{id}` sheet, and [`Lookups::proj_frame`] slices it
+    /// into the `Main.projFrames[type]` rows (`Main.cs:8441-8816`), returning
+    /// the frame's own pixel size so the draw no longer falls back to the
+    /// 16 px shuriken quad.
+    #[test]
+    fn m4_proj_6b_proj_sheets_pack_and_slice_by_proj_frames() {
+        let (_, lookups) = content_lookups();
+        let mut packed = 0;
+        for kind in crate::projectile::spawnable_kinds() {
+            if let Some((_, w, h)) = lookups.proj_frame(kind, 0) {
+                packed += 1;
+                let frames = crate::projectile::proj_frames(kind);
+                let rect = lookups.proj_sheets.get(&kind).expect("the sheet packs");
+                assert_eq!(
+                    h,
+                    (rect.height / frames.max(1)).max(1) as f32,
+                    "kind {kind}: {frames} frames slice the sheet's {} px",
+                    rect.height
+                );
+                assert_eq!(w, rect.width as f32);
+                // Every frame stays inside the sheet.
+                if let Some((_, _, last)) = lookups.proj_frame(kind, frames - 1) {
+                    assert!(last <= h);
+                }
+            }
+        }
+        assert!(packed > 100, "only {packed} projectile sheets packed");
+        // The multi-frame table itself: the C# rows the port's ids reach.
+        assert_eq!(crate::projectile::proj_frames(34), 6);
+        assert_eq!(crate::projectile::proj_frames(645), 7);
+        assert_eq!(crate::projectile::proj_frames(0), 1, "the default row");
+        // The fallback seam: a kind with no packed sheet answers `None`, which
+        // is what keeps the 22x22 shuriken stand-in reachable (`SHURIKEN` 3 is
+        // spawned by the dev path but carries no `proj_data` row).
+        assert!(lookups.proj_frame(3, 0).is_none());
+        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite exists");
+        assert!(lookups.proj_frame(65_000, 0).is_none());
     }
 
     #[test]
@@ -2588,6 +2858,19 @@ mod tests {
                 .all(|r| r.width > 0 && r.height > 0),
             "every registered rect is sane"
         );
+    }
+
+    #[test]
+    fn the_favorite_slot_sheet_packs() {
+        // `ItemSlot.cs:2154`: the gold frame a favorited stack swaps in. The
+        // sheet used to be absent from the pack list, so the draw code tinted
+        // the default background instead (`slot::favorited_slot_tint`).
+        let (_, lookups) = content_lookups();
+        let rect = lookups
+            .ui_back10
+            .expect("Inventory_Back10 must reach the atlas");
+        assert_eq!((rect.width, rect.height), (52, 52), "the step-1 sheet");
+        assert!(lookups.ui_back.is_some(), "the default sheet stays too");
     }
 
     #[test]

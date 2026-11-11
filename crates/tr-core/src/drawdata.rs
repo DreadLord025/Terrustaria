@@ -20,7 +20,7 @@ use crate::tiledata::TILE_SOLID;
 use crate::world::World;
 
 /// `GetTileDrawData` metrics needed by the tile pass.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TileDrawData {
     pub width: u16,
     pub height: u16,
@@ -37,13 +37,34 @@ pub struct TileDrawData {
     pub frame_x_override: Option<i16>,
     /// Final value of C#'s `ref tileFrameY` when the case rewrites it.
     pub frame_y_override: Option<i16>,
-    /// Bug 19: the `DrawSingleTile`-local `rectangle` Y shift (case 80's
-    /// biome-cactus `rectangle.Y += 54/108/162`). The C# builds `rectangle`
-    /// once and only the half-brick arm draws it (`TileDrawing.cs:1007`,
-    /// `:1298`) — the flat path rebuilds its own rect from `addFrY` without
-    /// the shift — so the offset lives on its own field and the half-brick
-    /// draw applies it.
-    pub half_brick_src_y: i16,
+    /// The `DrawSingleTile`-local `rectangle.Y` shift (case 80's biome-cactus
+    /// `rectangle.Y += 54/108/162`, `TileDrawing.cs:1132-1147`). The C# builds
+    /// `rectangle` once (`:1007`) and the PLAIN flat arm draws it
+    /// (`DrawBasicTile`'s `normalTileRect`, `:1523`), while the half-brick,
+    /// slice, slope and edge arms rebuild their own rects from
+    /// `tileFrameX/Y + addFrX/addFrY` — so the renderer applies this offset to
+    /// the flat draw's source rectangle only.
+    pub src_y_shift: i16,
+    /// `DrawSingleTile`'s local `vector.X/Y` nudges (`TileDrawing.cs:1020-1159`):
+    /// the per-type sprite offsets C# applies to the draw position after it is
+    /// built from `tileX * 16 - num5, tileY * 16 + tileTop + halfBrickHeight`
+    /// (`:1010-1014`). Every draw arm shares `vector`, so the renderer adds
+    /// these to the cell origin before dispatching.
+    pub draw_dx: i16,
+    pub draw_dy: i16,
+    /// The switch's early `return` arms (751/752 off their `(0, 0)` frame): C#
+    /// draws nothing at all for those cells.
+    pub skip_draw: bool,
+    /// `case 51/697`'s `finalColor = tileLight * 0.5f` (`:1076-1079`): the
+    /// renderer scales the shaded tile light (1.0 = untouched).
+    pub light_scale: f32,
+    /// `case 129`'s `new Color(255, 255, 255, 100)` / `Color.Transparent`
+    /// (`:1089-1092`): the source alpha of the flat draw (1.0 = opaque).
+    pub src_alpha: f32,
+    /// `TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth` (711,
+    /// `TileDrawing.cs:1011-1015`): the `(tileWidth - 16) / 2` centring is
+    /// skipped, so the sprite hangs from the cell's left edge.
+    pub no_width_adjust: bool,
 }
 
 impl Default for TileDrawData {
@@ -61,7 +82,13 @@ impl Default for TileDrawData {
             flip: false,
             frame_x_override: None,
             frame_y_override: None,
-        half_brick_src_y: 0,
+            src_y_shift: 0,
+            draw_dx: 0,
+            draw_dy: 0,
+            skip_draw: false,
+            light_scale: 1.0,
+            src_alpha: 1.0,
+            no_width_adjust: false,
         }
     }
 }
@@ -1196,14 +1223,14 @@ impl TileDrawData {
             }
             // `DrawSingleTile` `case 80`: source-Y shift by the ground sand
             // (TileDrawing.cs:1132-1147). Only kind 80 — 142/143 are pumps.
-            // The shift lands on `half_brick_src_y`, NOT `add_fr_y`: the C#
-            // mutates the local `rectangle` (`:1007`) only the half-brick arm
-            // consumes (`:1298`), while the flat path rebuilds its rect from
-            // `tileFrameY + addFrY` unshifted — folding it into the shared
-            // `add_fr_y` (the pre-fix behaviour) shifted every cactus.
+            // The shift lands on the C#'s local `rectangle` (`:1007`), which
+            // only the plain flat arm draws (`DrawBasicTile`'s
+            // `normalTileRect`, `:1523`) — the port keeps it off `add_fr_y`
+            // (whose consumers rebuild their rects like the C# does) and the
+            // renderer folds it into the flat draw's source rect.
             80 => {
                 let (evil, good, crimson) = cactus_type(world, x, y, frame_x, frame_y);
-                self.half_brick_src_y += cactus_source_y_offset(evil, good, crimson) as i16;
+                self.src_y_shift += cactus_source_y_offset(evil, good, crimson) as i16;
             }
             // `DrawSingleTile` `case 272`: parity shift; C# adds it to both
             // `addFrY` and the built rectangle, the port's source rectangle is
@@ -1211,6 +1238,117 @@ impl TileDrawData {
             // (TileDrawing.cs:1125-1131).
             272 => {
                 self.add_fr_y += cog_source_y_offset(x, y, tile_frame) as i16;
+            }
+            _ => {}
+        }
+        // The `DrawSingleTile` switch (`TileDrawing.cs:1020-1159`) — C# revises
+        // the draw-local `vector`, the source rectangle's height and the final
+        // colour per type. Every arm below is ported verbatim; the disco arms
+        // (160/692) and the texture override (83) stay parked (they need the
+        // `Main.DiscoR/G/B` triple and the per-tile sheet override).
+        let block_type = |world: &World, x: i32, y: i32| -> i16 {
+            let Some(t) = world.tile(x, y) else {
+                return 0;
+            };
+            if t.half_brick() {
+                1
+            } else {
+                let slope = t.slope() as i16;
+                if slope > 0 { slope + 1 } else { 0 }
+            }
+        };
+        match kind {
+            // `case 751`/`case 752`: only the (0, 0) frame draws; the sleeping
+            // digtoise is nudged (+11, -8), the egg +8 right
+            // (`TileDrawing.cs:1022-1039`).
+            751 => {
+                if frame_x != 0 || frame_y != 0 {
+                    self.skip_draw = true;
+                } else {
+                    self.draw_dx += 11;
+                    self.draw_dy -= 8;
+                }
+            }
+            752 => {
+                if frame_x != 0 || frame_y != 0 {
+                    self.skip_draw = true;
+                } else {
+                    self.draw_dx += 8;
+                }
+            }
+            // `case 136` (`:1040-1052`): the frame column shifts the sprite.
+            136 => match frame_x / 18 {
+                1 => self.draw_dx -= 2,
+                2 => self.draw_dx += 2,
+                _ => {}
+            },
+            // `case 442` (`:1053-1058`): the third 22-px column sits 2 px right.
+            442 if frame_x / 22 == 3 => self.draw_dx += 2,
+            // `case 726` — CannonBall (`:1059-1077`): -2 left, then the
+            // half-brick/slope arm adds 6 to the side the block leans to and 2
+            // down except for the flat halves.
+            726 => {
+                self.draw_dx -= 2;
+                match block_type(world, x, y) {
+                    3 => {
+                        self.draw_dx -= 6;
+                        self.draw_dy += 2;
+                    }
+                    2 => {
+                        self.draw_dx += 6;
+                        self.draw_dy += 2;
+                    }
+                    5 => self.draw_dx -= 6,
+                    4 => self.draw_dx += 6,
+                    _ => {}
+                }
+            }
+            // `case 51`/`case 697` — cobwebs (`:1078-1080`): half light.
+            51 | 697 => {
+                self.light_scale = 0.5;
+            }
+            // `case 129` — crystal shards (`:1088-1107`): 100/255 alpha, none
+            // for the `frameX >= 324` columns (the big shards), and the 2 px
+            // nudge away from the shard's cell.
+            129 => {
+                self.src_alpha = if frame_x >= 324 { 0.0 } else { 100.0 / 255.0 };
+                let num6 = 2;
+                if frame_y < 36 {
+                    self.draw_dy += if frame_y == 0 { num6 } else { -num6 };
+                } else {
+                    self.draw_dx += if frame_y == 36 { num6 } else { -num6 };
+                }
+            }
+            // `case 723`/`case 724` — the kite/critter anchors (`:1108-1125`):
+            // the frame column picks the 2 px nudge per side.
+            723 | 724 => match frame_x / 18 {
+                0 => self.draw_dy += 2,
+                1 => self.draw_dy -= 2,
+                2 => self.draw_dx -= 2,
+                3 => self.draw_dx += 2,
+                _ => {}
+            },
+            // `case 323` — the palm (`:1150-1156`): every row shifts right by
+            // its own `frameY`. The C# also `return`s for the frond columns
+            // 88..=132 because `DrawTrees` draws the canopy from the tree pass;
+            // the port has no palm canopy pass, so those columns keep drawing
+            // here (a documented deviation — hiding them would delete the palm
+            // tops).
+            323 => {
+                self.draw_dx += frame_y;
+            }
+            // `case 114` (`:1157-1162`): the source rectangle grows 2 px when
+            // the tile is not on its first row.
+            114 => {
+                if frame_y > 0 {
+                    self.height += 2;
+                }
+            }
+            // `TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth` — the
+            // rainbow boulder hangs from the cell's left edge
+            // (`TileDrawing.cs:1010-1015`).
+            711 => {
+                self.no_width_adjust = true;
             }
             _ => {}
         }
@@ -1230,7 +1368,13 @@ mod tests {
         flip: false,
         frame_x_override: None,
         frame_y_override: None,
-        half_brick_src_y: 0,
+        src_y_shift: 0,
+        draw_dx: 0,
+        draw_dy: 0,
+        skip_draw: false,
+        light_scale: 1.0,
+        src_alpha: 1.0,
+        no_width_adjust: false,
     };
 
     fn dd(kind: u16, x: i32, y: i32, fx: i16, fy: i16, tile_frame: i32) -> TileDrawData {
@@ -1243,7 +1387,7 @@ mod tests {
         // Generic blocks and the types with no switch case. The global
         // `addFrY = tileFrame * 38` default is the only field that moves with
         // `tile_frame` (TileDrawing.cs:4533).
-        for kind in [0, 1, 19, 25, 40, 50, 51, 75, 76, 255, u16::MAX] {
+        for kind in [0, 1, 19, 25, 40, 50, 75, 76, 255, u16::MAX] {
             assert_eq!(draw_data(kind, 0, 0, 0, 0, 0, true), DEFAULT, "kind {kind}");
             assert_eq!(
                 draw_data(kind, 7, 9, 90, 18, 0, false),
@@ -2038,12 +2182,141 @@ mod tests {
 
 
     #[test]
-    fn bug19_the_cactus_shift_lands_on_the_half_brick_rect_only() {
+    fn the_positional_switch_nudges_and_hides_the_sprites() {
+        // `DrawSingleTile`'s switch (`TileDrawing.cs:1020-1159`): the per-type
+        // `vector` nudges, the early `return` arms and the `finalColor`
+        // revisions, all driven off `apply_world_corrections`.
+        let w = World::new("t".into(), 60, 40);
+
+        // 751/752 only draw on their (0, 0) frame (`:1022-1039`).
+        let mut a = TileDrawData::default();
+        a.apply_world_corrections(&w, 751, 20, 20, 0, 0, 0);
+        assert_eq!((a.draw_dx, a.draw_dy, a.skip_draw), (11, -8, false));
+        let mut b = TileDrawData::default();
+        b.apply_world_corrections(&w, 751, 20, 20, 18, 0, 0);
+        assert!(b.skip_draw, "751 off the (0,0) frame draws nothing");
+        let mut c = TileDrawData::default();
+        c.apply_world_corrections(&w, 752, 20, 20, 0, 0, 0);
+        assert_eq!((c.draw_dx, c.draw_dy, c.skip_draw), (8, 0, false));
+        let mut d = TileDrawData::default();
+        d.apply_world_corrections(&w, 752, 20, 20, 0, 18, 0);
+        assert!(d.skip_draw, "752 off the (0,0) frame draws nothing");
+
+        // 136 by its frame column (`:1040-1052`).
+        for (fx, dx) in [(0i16, 0i16), (18, -2), (36, 2), (54, 0)] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 136, 20, 20, fx, 0, 0);
+            assert_eq!(t.draw_dx, dx, "136 frameX {fx}");
+            assert_eq!(t.draw_dy, 0);
+        }
+        // 442's third 22-px column (`:1053-1058`).
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 442, 20, 20, 66, 0, 0);
+        assert_eq!(t.draw_dx, 2);
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 442, 20, 20, 44, 0, 0);
+        assert_eq!(t.draw_dx, 0);
+
+        // 723/724 anchors (`:1108-1125`).
+        for (fx, (dx, dy)) in [
+            (0i16, (0i16, 2i16)),
+            (18, (0, -2)),
+            (36, (-2, 0)),
+            (54, (2, 0)),
+            (72, (0, 0)),
+        ] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 723, 20, 20, fx, 0, 0);
+            assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "723 frameX {fx}");
+            let mut u = TileDrawData::default();
+            u.apply_world_corrections(&w, 724, 20, 20, fx, 0, 0);
+            assert_eq!((u.draw_dx, u.draw_dy), (dx, dy), "724 frameX {fx}");
+        }
+
+        // 726 — CannonBall: -2, plus the half-brick/slope ledge +-6 / +2
+        // (`:1059-1077`); `Tile.blockType()` is 1 for the half brick and
+        // `slope + 1` otherwise (`Tile.cs:202-214`).
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 726, 20, 20, 0, 0, 0);
+        assert_eq!((t.draw_dx, t.draw_dy), (-2, 0), "flat");
+        let mut half = World::new("t".into(), 60, 40);
+        let i = half.index(20, 20);
+        half.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&half, 726, 20, 20, 0, 0, 0);
+        assert_eq!((t.draw_dx, t.draw_dy), (-2, 0), "half brick keeps the -2");
+        // `Tile.blockType()` = `slope + 1` for every slope (`Tile.cs:208-213`),
+        // so slopes 1/3 take the +6 arms (blockType 2/4) and slopes 2/4 the -6
+        // ones (blockType 3/5).
+        for (slope, dx, dy) in [(1u8, 4i16, 2i16), (2, -8, 2), (3, 4, 0), (4, -8, 0)] {
+            let mut sl = World::new("t".into(), 60, 40);
+            let i = sl.index(20, 20);
+            sl.tiles[i].set_slope(slope);
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&sl, 726, 20, 20, 0, 0, 0);
+            assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "slope {slope}");
+        }
+
+        // 51/697 draw at half light (`:1078-1080`).
+        for kind in [51u16, 697] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, kind, 20, 20, 0, 0, 0);
+            assert_eq!(t.light_scale, 0.5, "kind {kind}");
+        }
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0);
+        assert_eq!(t.light_scale, 1.0);
+
+        // 129 crystal shards (`:1088-1107`): 100/255 alpha (none for the big
+        // `frameX >= 324` columns) and the 2 px nudge away from the shard's
+        // own cell.
+        for (fx, fy, (dx, dy), alpha) in [
+            (0i16, 0i16, (0i16, 2i16), 100.0 / 255.0),
+            (0, 18, (0, -2), 100.0 / 255.0),
+            (0, 36, (2, 0), 100.0 / 255.0),
+            (0, 54, (-2, 0), 100.0 / 255.0),
+            (324, 0, (0, 2), 0.0),
+        ] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 129, 20, 20, fx, fy, 0);
+            assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "129 ({fx},{fy})");
+            assert!((t.src_alpha - alpha).abs() < 1e-6, "129 ({fx},{fy}) alpha");
+        }
+
+        // 323 palm (`:1150-1156`): the trunk shifts right by its own `frameY`.
+        // The frond columns keep drawing here (the port has no palm canopy
+        // pass, see the deviation on `apply_world_corrections`).
+        for fy in [0i16, 22, 44] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 323, 20, 20, 0, fy, 0);
+            assert_eq!((t.draw_dx, t.skip_draw), (fy, false), "323 frameY {fy}");
+        }
+
+        // 114 (`:1157-1162`): the source rectangle grows 2 px below row 0.
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 114, 20, 20, 0, 18, 0);
+        assert_eq!(t.height, 18);
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 114, 20, 20, 0, 0, 0);
+        assert_eq!(t.height, 16);
+
+        // 711 — the rainbow boulder keeps the cell's left edge (`num5 = 0`).
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 711, 20, 20, 0, 0, 0);
+        assert!(t.no_width_adjust);
+        let mut t = TileDrawData::default();
+        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0);
+        assert!(!t.no_width_adjust);
+    }
+
+    #[test]
+    fn bug19_the_cactus_shift_lands_on_the_flat_draw_rect() {
         // Bug 19: `DrawSingleTile` case 80 (`TileDrawing.cs:1132-1147`) shifts the
-        // local `rectangle` (`:1007`) that ONLY the half-brick arm draws
-        // (`:1298`); the flat path rebuilds its own rect from `addFrY`
-        // unshifted. The port's `half_brick_src_y` carries the offset and
-        // `add_fr_y` stays clean.
+        // local `rectangle` (`:1007`). The plain flat arm draws that rect
+        // (`DrawBasicTile`'s `normalTileRect`, `:1523`) — Bug 19b: the port had
+        // folded it into a "half-brick only" field, so a standard cactus
+        // dropped its biome row. The port's `src_y_shift` carries the offset
+        // and `add_fr_y` stays clean.
         let mut w = World::new("t".into(), 60, 40);
         // The cactus column: a segment above the ground, the ebonstone sand
         // 112 below it (the walk needs the segment under the probe).
@@ -2051,22 +2324,22 @@ mod tests {
         put(&mut w, 30, 30, 112);
         let mut dd = TileDrawData::default();
         dd.apply_world_corrections(&w, 80, 30, 29, 0, 0, 0);
-        assert_eq!(dd.half_brick_src_y, 54, "evil shifts the half-brick rect");
-        assert_eq!(dd.add_fr_y, 0, "the flat path stays unshifted");
+        assert_eq!(dd.src_y_shift, 54, "evil shifts the flat rect");
+        assert_eq!(dd.add_fr_y, 0, "addFrY stays clean");
         // The hallow ground 116 → 108; the crimson 234 → 162.
         let mut w2 = World::new("t".into(), 60, 40);
         put(&mut w2, 30, 29, 80);
         put(&mut w2, 30, 30, 116);
         let mut dd2 = TileDrawData::default();
         dd2.apply_world_corrections(&w2, 80, 30, 29, 0, 0, 0);
-        assert_eq!(dd2.half_brick_src_y, 108);
+        assert_eq!(dd2.src_y_shift, 108);
         assert_eq!(dd2.add_fr_y, 0);
         let mut w3 = World::new("t".into(), 60, 40);
         put(&mut w3, 30, 29, 80);
         put(&mut w3, 30, 30, 234);
         let mut dd3 = TileDrawData::default();
         dd3.apply_world_corrections(&w3, 80, 30, 29, 0, 0, 0);
-        assert_eq!(dd3.half_brick_src_y, 162);
+        assert_eq!(dd3.src_y_shift, 162);
         assert_eq!(dd3.add_fr_y, 0);
         // A normal-sand cactus (53) shifts nothing.
         let mut w4 = World::new("t".into(), 60, 40);
@@ -2074,7 +2347,7 @@ mod tests {
         put(&mut w4, 30, 30, 53);
         let mut dd4 = TileDrawData::default();
         dd4.apply_world_corrections(&w4, 80, 30, 29, 0, 0, 0);
-        assert_eq!(dd4.half_brick_src_y, 0);
+        assert_eq!(dd4.src_y_shift, 0);
         assert_eq!(dd4.add_fr_y, 0);
     }
 
@@ -2223,15 +2496,15 @@ mod tests {
             dye.apply_world_corrections(&w2, 227, 30, 30, fx, 0, 0);
             assert_eq!(dye.frame_x_override, None, "frameX {fx}");
         }
-        // 80: source-Y shift on the half-brick rect only (bug 19) — the C#'
-        // `rectangle` shift lands on `half_brick_src_y`, `add_fr_y` stays
-        // clean (TileDrawing.cs:1132-1147 / :1007 / :1298).
+        // 80: source-Y shift on the flat draw's rect (bug 19/19b) — the C#'
+        // `rectangle` shift lands on `src_y_shift`, `add_fr_y` stays clean
+        // (TileDrawing.cs:1132-1147 / :1007 / :1523).
         let mut w3 = World::new("t".into(), 64, 64);
         put(&mut w3, 30, 30, 80);
         put(&mut w3, 30, 31, 116);
         let mut cac = dd(80, 30, 30, 0, 0, 0);
         cac.apply_world_corrections(&w3, 80, 30, 30, 0, 0, 0);
-        assert_eq!(cac.half_brick_src_y, 108, "pearlsand → +108");
+        assert_eq!(cac.src_y_shift, 108, "pearlsand → +108");
         assert_eq!(cac.add_fr_y, 0, "the flat path stays unshifted");
         assert_eq!(cac.top, 2);
         // Dirty: 142/143 are pumps sharing only the top-2 arm — the

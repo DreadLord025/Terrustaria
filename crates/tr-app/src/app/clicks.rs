@@ -88,6 +88,34 @@ fn left_click_movement(held: &mut ItemSlot, target: &mut ItemSlot) -> bool {
     held.count > 0 || target.count > 0
 }
 
+/// `ItemID.CopperCoin..PlatinumCoin` — the four kinds the ctx-1 row takes
+/// (`ItemSlot.PickItemMovementAction` `:1369-1371`).
+fn is_coin_kind(kind: u16) -> bool {
+    (71..=74).contains(&kind)
+}
+
+/// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`) over the flags the port carries:
+/// air, an ammo item (`ammo > 0`) or bait. The C# also takes the paint-and-
+/// coating arm and the three literal exceptions (353/530/849), and honours
+/// `notAmmo`; none of those has a port counterpart yet.
+fn fits_ammo_slot(kind: u16) -> bool {
+    if kind == 0 {
+        return true;
+    }
+    registry::get(kind).is_some_and(|d| d.ammo > 0 || d.bait > 0)
+}
+
+/// The accepted-move gate `PickItemMovementAction` gives a context before the
+/// shared action-0 move runs (`:1341-1379`): context 0/3 always allow, the
+/// ctx-1 coin row takes coins, the ctx-2 ammo row takes the ammo set.
+pub(crate) fn context_accepts(context: i32, kind: u16) -> bool {
+    match context {
+        1 => kind == 0 || is_coin_kind(kind),
+        2 => fits_ammo_slot(kind),
+        _ => true,
+    }
+}
+
 impl App {
     /// The slot under the cursor, using the same geometry as `draw_hud`.
     pub(crate) fn slot_at_mouse(&self) -> Option<usize> {
@@ -120,6 +148,108 @@ impl App {
                 x += advance;
             }
             None
+        }
+    }
+
+    /// The coin (ctx 1) or ammo (ctx 2) cell under the cursor —
+    /// `Main.DrawInventory`'s rows (`Main.cs:41752-41782`) through the shared
+    /// `ui::inventory::coin_ammo_hit` geometry. Closed inventory: nothing.
+    pub(crate) fn coin_ammo_at_mouse(&self) -> Option<(i32, usize)> {
+        if !self.inventory_open || self.bestiary_open {
+            return None;
+        }
+        let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+        ui::inventory::coin_ammo_hit(self.mouse_pos, cell)
+    }
+
+    /// The [`chest::Source`] under the cursor for the shift-transfer arms: the
+    /// coin/ammo rows resolve through their own cells, everything else through
+    /// the grid. `None` when the pointer is over neither.
+    fn chest_transfer_source(&self) -> Option<chest::Source> {
+        // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`): air or
+        // a favorited slot answers null for every context. The rows keep no
+        // favorites yet, so only the air half is theirs (`try_placing_from`
+        // refuses an empty source).
+        if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
+            return Some(if ctx == 1 {
+                chest::Source::Coin(k)
+            } else {
+                chest::Source::Ammo(k)
+            });
+        }
+        let slot = self.slot_at_mouse()?;
+        if self.is_favorite(slot) {
+            return None;
+        }
+        Some(chest::Source::Inv(slot))
+    }
+
+    /// One coin/ammo cell's press — `ItemSlot.Handle` over the ctx-1/ctx-2
+    /// cells: left runs the shared action-0 move behind
+    /// `PickItemMovementAction`'s gate, right the `:1700-1772` split. The Alt
+    /// favorite arm stays out: the port keeps favorites as inventory indices
+    /// (`App.favorite_slots`), so the row's `canFavoriteAt[1]/[2]` has no key
+    /// space yet (the recorded gap in ANALYSIS).
+    fn coin_ammo_click(&mut self, context: i32, k: usize, left: bool) {
+        if k >= crate::inv::COINS {
+            return;
+        }
+        let mut held = self.mouse_item;
+        let mut target = if context == 1 {
+            self.equip.coins[k]
+        } else {
+            self.equip.ammo[k]
+        };
+        if left {
+            // `PickItemMovementAction`: a refused move never runs, and the
+            // held stack stays on the cursor (the C# `result == -1` falls to
+            // the sound-only tail, `:1004-1011`).
+            if !context_accepts(context, held.kind) {
+                return;
+            }
+            if left_click_movement(&mut held, &mut target) {
+                self.audio.play("Grab");
+            }
+        } else if held.count == 0 {
+            if target.count > 0 {
+                let take = (target.count + 1) / 2;
+                held = ItemSlot {
+                    kind: target.kind,
+                    name: target.name,
+                    count: take,
+                    prefix: target.prefix,
+                };
+                target.count -= take;
+                if target.count == 0 {
+                    target = EMPTY_SLOT;
+                }
+            }
+        } else if target.count == 0 {
+            if !context_accepts(context, held.kind) {
+                return;
+            }
+            target = ItemSlot {
+                kind: held.kind,
+                name: held.name,
+                count: 1,
+                prefix: held.prefix,
+            };
+            held.count -= 1;
+            if held.count == 0 {
+                held = EMPTY_SLOT;
+            }
+        } else if target.kind == held.kind && target.count < registry::max_stack(target.kind) {
+            target.count += 1;
+            held.count -= 1;
+            if held.count == 0 {
+                held = EMPTY_SLOT;
+            }
+        }
+        self.mouse_item = held;
+        if context == 1 {
+            self.equip.coins[k] = target;
+        } else {
+            self.equip.ammo[k] = target;
         }
     }
 
@@ -309,7 +439,9 @@ impl App {
                 let _ = self.settings.save();
                 return;
             }
-        } else if self.inventory_open && ui::ingame_options::button_hit(self.mouse_pos) {
+        } else if self.inventory_open
+            && self.ingame_options.button_layout.hit(self.mouse_pos)
+        {
             self.ingame_options.open = true;
             self.ui_left_press = false;
             return;
@@ -406,6 +538,78 @@ impl App {
         self.ui_right_press = false;
         if !left && !right {
             return;
+        }
+        // `Main.DrawPVPIcons`'s click handling (`Main.cs:42678-42694`, `:42724-42767`):
+        // the PVP toggle and the six team cells. Both sit inside the open
+        // inventory (`DrawInventory`'s tail, `:41003`) and consume the press
+        // before the slot grid. The gates, in the C# order: the
+        // `hostile`/`team` change needs `teamCooldown == 0`; the team change
+        // also needs the cell to hold a different team and
+        // `Player.TeamChangeAllowed()` (a `return true` stub in 1.4.5.8,
+        // `Player.cs:4517-4520`, kept as the gate it is).
+        if left && self.inventory_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            // `Main.mH` as `frame()` hands it to the draw (`Main.cs:45771-45783`).
+            let m_h = self.main_m_h();
+            let state = self.pvp_icon_state();
+            if let Some(hit) = ui::chrome::pvp_hit(
+                screen,
+                self.equip_page,
+                m_h,
+                &state,
+                self.mouse_pos,
+                ui::chrome::pvp_team_cell(&self.lookups),
+            ) {
+                // The gate chain (`:42689-42694`, `:42753-42767`) is
+                // `ui::chrome::pvp_click`'s job — this arm is the effect.
+                match ui::chrome::pvp_click(&state, &hit) {
+                    Some(ui::chrome::PvpClick::ToggleHostile) => {
+                        self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        if let Some(p) = self.player.as_mut() {
+                            p.hostile = !p.hostile;
+                        }
+                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)` —
+                        // the PVP-state broadcast. M6-NET's message table has
+                        // no 30 (`net.rs`); the local flip is the whole effect
+                        // in SP (ANALYSIS).
+                    }
+                    Some(ui::chrome::PvpClick::SetTeam(i)) => {
+                        self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        if let Some(p) = self.player.as_mut() {
+                            p.team = i;
+                        }
+                        // `:42765-42770`: `SendData(157)` in MP, else the
+                        // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
+                        // is not ported — no team spawn seeds yet).
+                    }
+                    None => {}
+                }
+                return;
+            }
+            // `Main.DrawPageIcons`' click handling (`Main.cs:42828-42858`): the
+            // three equipment-page tabs. Pressing the selected tab falls back to
+            // page 0; pressing another selects it. The effect is scoped to
+            // `Main.EquipPageSelected` — `Main.EquipPage` is re-derived every
+            // frame in `frame()` (`:42864-42867`).
+            let num20 = 174.0 + m_h;
+            if let Some(tab) = ui::chrome::page_tab_hit(
+                screen,
+                num20 - 32.0,
+                self.mouse_pos,
+                (self.mouse_item.kind, self.mouse_item.count),
+                false,
+                ui::chrome::page_tab_sizes(&self.lookups),
+            ) {
+                if let Some(sel) = ui::chrome::page_tab_click(tab, self.equip_page_selected) {
+                    self.equip_page_selected = sel;
+                    // `SoundEngine.PlaySound(10)` (`:42857`) — the port's cue.
+                    self.audio.play("Menu_Open");
+                }
+                return;
+            }
         }
         // `Main.cs:41087-41120`: the map-style icon row's clicks — one-shot on
         // the press (`Main.mouseLeft && Main.mouseLeftRelease`), only while the
@@ -629,6 +833,14 @@ impl App {
             }
             return;
         }
+        // The coin (ctx 1) and ammo (ctx 2) rows: `Main.DrawInventory` handles
+        // every cell it draws (`Main.cs:41752-41782`), and the shared grid
+        // probe below knows nothing about them (`slot_at_mouse` covers the
+        // 10x5 grid and the closed hotbar).
+        if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
+            self.coin_ammo_click(ctx, k, left);
+            return;
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };
@@ -736,6 +948,13 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The ctx-1/ctx-2 rows ride the same cursor (`ItemSlot.cs:680-686`
+            // covers 0/1/2), so the source resolves before the grid probe.
+            if let Some(src) = self.chest_transfer_source() {
+                chest::try_placing_from(self, src, false);
+                self.ui_left_press = false;
+                return true;
+            }
             let Some(slot) = self.slot_at_mouse() else {
                 return false;
             };
@@ -856,12 +1075,11 @@ impl App {
             }
         }
         if chest >= 0 {
-            if let Some(slot) = self.slot_at_mouse() {
-                // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`):
-                // `item.IsAir || item.favorited` → null — a favorited slot
-                // never lights the shift cursor, so the cursor-9 click arm
-                // cannot fire for one either.
-                if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
+            // `ItemSlot.cs:657-665`: the ctx-1/ctx-2 arms reach the same
+            // `TryPlacingInChest` check, so a hovered coin/ammo cell lights the
+            // transfer cursor exactly like a grid slot.
+            if let Some(src) = self.chest_transfer_source() {
+                if chest::try_placing_from(self, src, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
                 }
             }
@@ -1160,6 +1378,10 @@ impl App {
     pub(crate) fn close_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
+            // The settings screen's bind edits (`Main.cs:4602`'s `KeyStatus`
+            // re-seed): the menu owns the rebind UI, `Settings` owns the table.
+            self.settings.keybinds = m.keybinds;
+            self.settings.map_binds = m.map_binds;
         }
         self.apply_settings();
     }
@@ -1170,6 +1392,8 @@ impl App {
     pub(crate) fn park_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
+            self.settings.keybinds = m.keybinds;
+            self.settings.map_binds = m.map_binds;
         }
         self.apply_settings();
     }
@@ -2231,6 +2455,141 @@ mod tests {
         app
     }
 
+    /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click
+    /// surfaces. `Main.cs:41752-41782` draws them through `ItemSlot.Handle`,
+    /// so a left click runs the shared action-0 move behind
+    /// `PickItemMovementAction`'s gate (`:1369-1371` coins, `:1372-1374` via
+    /// `FitsAmmoSlot`) and a right click the `:1700-1772` split.
+    const COIN_SLOT_0: Vec2 = Vec2::new(505.0, 110.0);
+    const AMMO_SLOT_0: Vec2 = Vec2::new(540.0, 110.0);
+
+    #[test]
+    fn ui_2b_the_coin_row_takes_coins_and_refuses_everything_else() {
+        let mut app = inv_app();
+        // The vanilla move is two clicks: pick the stack up off the grid, then
+        // drop it on the coin cell (the C# has no grid→row shortcut either).
+        app.mouse_item = slot(71, 37);
+        app.mouse_pos = COIN_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.coins[0], slot(71, 37), "the stack moved in");
+        assert_eq!(app.mouse_item.count, 0, "the cursor drained");
+        // And back out: a click on the full cell lifts it.
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(71, 37), "the cell emptied onto the cursor");
+        assert_eq!(app.equip.coins[0].count, 0);
+        app.equip.coins[0] = slot(71, 37);
+        // `PickItemMovementAction`'s ctx-1 arm: only air and 71..=74 pass, so a
+        // held wood stack stays on the cursor and the cell keeps its coins.
+        app.mouse_item = slot(9, 5);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 5), "the refused stack stayed held");
+        assert_eq!(app.equip.coins[0], slot(71, 37), "the cell was untouched");
+    }
+
+    #[test]
+    fn ui_2b_the_ammo_row_takes_the_ammo_set() {
+        let mut app = inv_app();
+        app.mouse_item = slot(40, 120);
+        app.mouse_pos = AMMO_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.ammo[0], slot(40, 120), "the arrows moved in");
+        // A wood stack fails `FitsAmmoSlot` (`ammo`/`bait` both 0).
+        app.mouse_item = slot(9, 5);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 5), "the wood was refused");
+        assert_eq!(app.equip.ammo[0], slot(40, 120));
+    }
+
+    #[test]
+    fn ui_2b_the_rows_split_on_right_click() {
+        let mut app = inv_app();
+        app.equip.coins[1] = slot(72, 11);
+        app.mouse_pos = Vec2::new(505.0, 145.0); // coin row 1
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(72, 6), "the half rounded up");
+        assert_eq!(app.equip.coins[1], slot(72, 5), "the cell keeps the rest");
+    }
+
+    /// M7-UI-2c — shift+click on a coin/ammo cell transfers into the open
+    /// chest: `GetAlternateClickAction`'s ctx-1/ctx-2 arms (`ItemSlot.cs:657-665`)
+    /// reach the same `TryPlacingInChest` check and the cursor-9 click arm
+    /// carries the context's array into the merge/empty passes.
+    #[test]
+    fn ui_2c_shift_click_sends_the_coin_row_to_the_chest() {
+        let mut app = chest_app(vec![slot(71, 5)]);
+        app.equip.coins[0] = slot(71, 20);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = COIN_SLOT_0;
+        app.ui_left_press = true;
+        // The chest handler owns the cursor-9 arm (`OverrideLeftClick`
+        // `ItemSlot.cs:813-850`) and consumes the press.
+        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert_eq!(app.cursor_override, CURSOR_TO_CHEST, "the cursor lit");
+        assert_eq!(
+            crate::chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(71, 25)),
+            "the merge pass poured the coins in"
+        );
+        assert_eq!(app.equip.coins[0].count, 0, "the cell drained");
+    }
+
+    #[test]
+    fn ui_2c_shift_click_sends_the_ammo_row_to_the_chest() {
+        let mut app = chest_app(vec![]);
+        app.equip.ammo[1] = slot(40, 60);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(540.0, 145.0); // ammo row 1
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert_eq!(app.cursor_override, CURSOR_TO_CHEST);
+        assert_eq!(
+            crate::chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(40, 60)),
+            "the empty pass took the whole stack"
+        );
+        assert_eq!(app.equip.ammo[1].count, 0);
+    }
+
+    /// The placer's `Source` keeps the two arrays apart: a coin transfer writes
+    /// the coin cell, never the grid slot with the same index.
+    #[test]
+    fn ui_2c_the_transfer_source_keeps_the_arrays_apart() {
+        let mut app = chest_app(vec![]);
+        app.inventory[0] = slot(9, 3);
+        app.equip.coins[0] = slot(72, 4);
+        assert!(crate::chest::try_placing_from(
+            &mut app,
+            crate::chest::Source::Coin(0),
+            true
+        ));
+        assert!(!crate::chest::try_placing_from(
+            &mut app,
+            crate::chest::Source::Coin(0),
+            false
+        ));
+        assert_eq!(crate::chest::chest_slot(&app.world_chests, 0, 0), Some(slot(72, 4)));
+        assert_eq!(app.equip.coins[0].count, 0, "the coin cell drained");
+        assert_eq!(app.inventory[0], slot(9, 3), "the grid slot is untouched");
+    }
+
+    #[test]
+    fn ui_2b_the_rows_are_dead_while_the_inventory_is_closed() {
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.equip.coins[0] = slot(71, 9);
+        app.mouse_pos = COIN_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.coins[0], slot(71, 9), "no lane off-screen");
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
     /// DW-4.1 — Alt+left-click on an inventory slot toggles the favorite
     /// (`OverrideHover`'s cursor-3 arm `ItemSlot.cs:616-620` +
     /// `OverrideLeftClick`'s `:745-755` → `ToggleFavorited`): the click is
@@ -2459,5 +2818,177 @@ mod tests {
         app.mouse_pos = TRASH_CELL;
         assert!(ui::inventory::trash_slot_at(TRASH_CELL, false));
         assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
+    }
+
+    // ------------------------------------------------------------------
+    // The PVP toggle / team select cells (`Main.DrawPVPIcons`).
+    // ------------------------------------------------------------------
+
+    /// The screen point of the PVP toggle's hover box and of one team cell, at
+    /// the test app's 1600x900 frame with the minimap live (`Main.mH = 256`).
+    fn pvp_points(app: &App) -> (Vec2, Vec2) {
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let m_h = app.main_m_h();
+        let (x, y) = ui::chrome::pvp_icon_xy(screen.x, app.equip_page, m_h);
+        // `num2 = x + 10`, and the box is `num2 - 7 .. num2 + 25` (`:42678`).
+        let toggle = Vec2::new(x + 10.0, y + 10.0);
+        // The team grid starts at `num2 -= 10; num3 += 60` (`:42718`).
+        let team0 = Vec2::new(x + 6.0, y + 66.0);
+        (toggle, team0)
+    }
+
+    /// A headless app with the PVP icons' draw/click gates forced open (the
+    /// `TR_PVP` pin, held in a field so the test does not race the `OnceLock`).
+    fn pvp_app() -> App {
+        let mut app = inv_app();
+        app.pvp_icons_forced = true;
+        app
+    }
+
+    /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets
+    /// `EquipPageSelected`, the drawn page follows it on the next frame, and the
+    /// next frame's `SelectEquipPage` joins in without an item held.
+    #[test]
+    fn page_tab_click_switches_the_equipment_page() {
+        let mut app = inv_app();
+        let (sw, _sh) = app.screen_size();
+        let screen = Vec2::new(sw, app.screen_size().1);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        // The test harness loads no atlas, so stand in the native tab sheet
+        // (the `UI/DisplaySlots_*` cells are 22x18 in the retail XNB).
+        for i in [2usize, 4, 8] {
+            app.lookups.page_icons[i] = Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: 22,
+                height: 18,
+                plain_frame: (0, 0),
+            });
+        }
+        let sizes = ui::chrome::page_tab_sizes(&app.lookups);
+        assert_eq!(sizes[0], (22.0, 18.0));
+        // Tab index 0 is `EquipPageSelected = 2` (the misc page).
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_pos = tab2;
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 2);
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(10)`");
+        // The frame tail resolves `EquipPage` from the empty cursor stack.
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2, "`:42866` falls back to the selection");
+        // Pressing the same tab again falls back to page 0 (`:42853-42857`).
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0);
+    }
+
+    /// `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4647-4650`): holding a piece of
+    /// armour forces page 0 even when the misc page was selected.
+    #[test]
+    fn held_armour_forces_the_equipment_page() {
+        let mut app = inv_app();
+        app.equip_page_selected = 2;
+        let armour = (0u16..6196)
+            .find(|&k| crate::itemdata::ITEMS[k as usize].head_slot != -1)
+            .expect("a helmet exists");
+        app.mouse_item = slot(armour, 1);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0, "`:4647-4650`");
+        // Dropping the stack restores the selection.
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2);
+    }
+
+    /// `Main.cs:42793`: with the `dye > 0` half of tab 2's gate unported a held
+    /// dye is refused like any other stack — the documented deviation.
+    #[test]
+    fn a_held_stack_refuses_the_page_tabs() {
+        let mut app = inv_app();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0, "the press was refused");
+    }
+
+    /// `Main.cs:42689-42694`: a press on the toggle flips `hostile`, arms the
+    /// 300-tick cooldown and plays `SoundEngine.PlaySound(12)`. A second press
+    /// inside the cooldown does nothing.
+    #[test]
+    fn pvp_toggle_click_flips_hostile_under_the_cooldown() {
+        let mut app = pvp_app();
+        let (toggle, _) = pvp_points(&app);
+        app.mouse_pos = toggle;
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hostile, "the toggle flipped");
+        assert_eq!(app.team_cooldown, ui::chrome::TEAM_COOLDOWN_LEN);
+        assert_eq!(app.audio.played_count(), before + 1, "the Menu_Tick cue");
+        // Inside the cooldown the gate refuses (`:42689`'s `teamCooldown == 0`).
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hostile, "still flipped once");
+    }
+
+    /// `Main.cs:42753-42767`: a press on a team cell sets `team`, and pressing
+    /// the player's own team is refused by `player.team != i`.
+    #[test]
+    fn team_cell_click_sets_the_team_and_refuses_the_same_one() {
+        let mut app = pvp_app();
+        let (_, team0) = pvp_points(&app);
+        // Team 0 is where the player already stands — refused, no cooldown.
+        app.mouse_pos = team0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 0);
+        assert_eq!(app.team_cooldown, 0, "nothing happened, no cooldown armed");
+        // The next cell along (`i = 1`, +20 px on x) is Red.
+        app.mouse_pos = team0 + Vec2::new(20.0, 0.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 1, "joined the Red team");
+        assert_eq!(app.team_cooldown, ui::chrome::TEAM_COOLDOWN_LEN);
+    }
+
+    /// The cooldown decays once per frame (`Main.cs:17048-17051`) and never
+    /// below zero.
+    #[test]
+    fn team_cooldown_decays_per_frame() {
+        let mut app = pvp_app();
+        app.team_cooldown = 2;
+        app.frame();
+        assert_eq!(app.team_cooldown, 1);
+        app.frame();
+        assert_eq!(app.team_cooldown, 0);
+        app.frame();
+        assert_eq!(app.team_cooldown, 0, "clamped at zero");
+    }
+
+    /// The icons are inert while the gates are closed (`Main.netMode != 1`
+    /// without the pin, `Main.cs:2909`).
+    #[test]
+    fn pvp_click_is_inert_without_the_gates() {
+        let mut app = inv_app();
+        let (toggle, team0) = pvp_points(&app);
+        app.mouse_pos = toggle;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hostile);
+        app.mouse_pos = team0 + Vec2::new(20.0, 0.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 0);
     }
 }
