@@ -382,6 +382,41 @@ correct, but the remaining families still rely on the generic fallback.
 4. Regression: a `TR_NPC=<kind>` lineup screenshot per fixed family, SHA256-stable;
    assert `sprite_dir != facing` cases render flipped.
 
+**Status: closed 2026-11-11** (`BUG-07-npc-sprite-direction` +
+`BUG-07-npc-anchor-trash` + `BUG-07-npc-findframe-families`).
+
+- **Flip.** `render/entities.rs`'s `flip_dir` is `n.sprite_dir` alone — the
+  whitelist is gone from the tree. The machine audit of the 24 sites found two
+  whose source is the entity's *own aim*, not the body's `direction` and neither of
+  which the port had: aiStyle 13's demon eye (`NPC.cs:22740-22752`) and aiStyle 29's
+  Wall-of-Flesh iris (`:26393-26403`). Both now write from their own `num215` /
+  `num391`; the eye keeps its previous flip when the aim is exactly 0 (the C#'s two
+  one-sided `if`s). The Deerclops rides aiStyle 40 (`:29716`), which pins the flip
+  at -1 and carries the aim in `rotation` — its walk no longer writes the flip. The
+  other 22 sites (`aiStyle 0/10/12/13/22/25/27/28/33/34/35/36/38/39/40` and the
+  `FindFrame`-arm writes) already matched the port's machines.
+- **Anchor.** The real cause of the "wrong display" half of this report was never
+  the flip: the generic draw carried no vertical anchor table at all. `Main.NPCAddHeight`
+  (`Main.cs:22002-22184`) is ported in full (the terms the port models, with the
+  reused net ids 108/124/64 disambiguated by rank), together with the
+  `num45`/`num46`/`num47` chain (`:22991-23115`): the `halfSize` overrides
+  (`4/125/126` → 55/107, Plantera 77+26, the golem head 21+16, the Brain's
+  `50 × scale`, the `+4`/`+8` humanoid groups) and the DD2 support ring's
+  *overwrite* group (`:23214-23243`). The DD2 family also read the wrong sheets
+  (one shared `NPC_553`/`NPC_556` for every tier), so the 17- and 14-row strips
+  divided by a foreign row count; each kind now has its own art through the new
+  `generic_anchor`.
+- **FindFrame.** Audited all 602 `FindFrame` cases against the port's 202 net ids:
+  every kind either has its C# case ported or falls through to a generic arm the
+  port already implements (the humanoid town/skeleton group's `|vx| * 2 + 1` walk,
+  the martians' ground group, the DD2 goblins/skeletons, the saucers, the lunar
+  pillars). No blind `(frame + 1) % count` fallback is reachable for a modelled
+  kind.
+- **Regression.** 3 new/updated tests (`the_anchor_nudges_follow_the_c_sharp_switch`,
+  `bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim`,
+  `bug_07_the_wof_eye_flips_on_its_own_aim`) plus the SHA-stable lineup capture
+  `docs/screenshots/npc_anchor_check.png`.
+
 ---
 
 ## 8. Invasion progress bar is always drawn — S2 / High
