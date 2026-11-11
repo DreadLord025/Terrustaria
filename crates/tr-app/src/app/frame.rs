@@ -1355,6 +1355,7 @@ impl App {
                         self.equip_page,
                         *selected,
                         &self.hotbar_scales,
+                        &npcs[..],
                         player.as_ref(),
                         boss,
                         // `BigProgressBarSystem.ShowText` (`ShowBossBarHealthText`,

@@ -627,7 +627,13 @@ pub(crate) fn draw_tiles(
                     run_start = -1;
                 }
 
-                let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
+                // `DrawSingleTile`'s `vector` (`TileDrawing.cs:1010-1014`) plus
+                // the switch's per-type nudges (`:1020-1159`, `dd.draw_dx/dy`);
+                // the width centring stays per-arm (`:1013`'s `num5`).
+                let pos = [
+                    tx as f32 * TILE_PX + dd.draw_dx as f32,
+                    ty as f32 * TILE_PX + dd.draw_dy as f32,
+                ];
                 // Walls are drawn in their own pass above (`Main.DrawWalls`).
                 // `DrawTile_LiquidBehindTile` (solid layer): a slope that stands in
                 // liquid draws the water mask behind its open half, so the shoreline
@@ -645,6 +651,11 @@ pub(crate) fn draw_tiles(
                         tile,
                         water_style,
                     );
+                }
+                // The switch's early `return` arms (751/752 off their (0,0)
+                // frame, the palm's frond columns 323): no sprite at all.
+                if dd.skip_draw {
+                    continue;
                 }
                 let Some(tf) = tile_frame else {
                     continue;
@@ -703,6 +714,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                 } else if tile.kind == 27 {
@@ -787,11 +799,18 @@ pub(crate) fn draw_tiles(
                     stats.quads += 1;
                 } else if dd.top != 0 || dd.width != 16 || dd.height != 16 || dd.flip {
                     // `x*16 - (tileWidth - 16) / 2`, `y*16 + tileTop`; horizontal flip
-                    // swaps the source columns.
+                    // swaps the source columns. The centring is skipped for the
+                    // `DoNotAdjustDrawPositionBasedOnTileWidth` kinds (711,
+                    // `TileDrawing.cs:1010-1015`).
                     let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    let num5 = if dd.no_width_adjust {
+                        0.0
+                    } else {
+                        (dw - 16.0) * 0.5
+                    };
                     push_lit(
                         r,
-                        [pos[0] - (dw - 16.0) * 0.5, pos[1] + dd.top as f32],
+                        [pos[0] - num5, pos[1] + dd.top as f32],
                         [dw, dh],
                         flip_uv(tf.uv, dd.flip),
                         l,
@@ -800,6 +819,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                 } else if tile.slope() != 0 {
@@ -842,6 +862,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         tile.paint(),
+                        &dd,
                     );
                     stats.quads += 1;
                     // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
@@ -1201,9 +1222,20 @@ fn push_lit(
     ty: i32,
     time: f32,
     paint: u8,
+    dd: &tr_core::drawdata::TileDrawData,
 ) {
+    // `finalColor = tileLight * 0.5f` for the cobwebs (`TileDrawing.cs:1078`)
+    // and the shard alpha (`:1091`) ride the shaded light.
     let c = style.shade(light, tx, ty, time);
-    r.push_sprite_paint(pos, size, uv, [c[0], c[1], c[2], 1.0], 0.0, paint);
+    let k = dd.light_scale;
+    r.push_sprite_paint(
+        pos,
+        size,
+        uv,
+        [c[0] * k, c[1] * k, c[2] * k, dd.src_alpha],
+        0.0,
+        paint,
+    );
 }
 
 /// Sub-rectangle of a 16x16 frame's UV rect, in tile pixels.

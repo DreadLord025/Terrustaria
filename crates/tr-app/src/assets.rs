@@ -530,6 +530,31 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         // `ItemSlot.cs:2154`: the gold frame a *favorited* stack draws
         // (`Main.OurFavoriteColor` is only the tooltip tint).
         "Inventory_Back10",
+        // `Main.DrawNPCHousesInUI`'s empty housing cell (`:42080`) and the head
+        // sheets it fills them with — one per town NPC the port ships
+        // (`NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`).
+        "Inventory_Back11",
+        "NPC_Head_1",
+        "NPC_Head_2",
+        "NPC_Head_3",
+        "NPC_Head_4",
+        "NPC_Head_5",
+        "NPC_Head_6",
+        "NPC_Head_7",
+        "NPC_Head_8",
+        "NPC_Head_9",
+        "NPC_Head_10",
+        "NPC_Head_11",
+        "NPC_Head_14",
+        "NPC_Head_15",
+        "NPC_Head_17",
+        "NPC_Head_20",
+        "NPC_Head_21",
+        "NPC_Head_22",
+        "NPC_Head_23",
+        "NPC_Head_24",
+        "NPC_Head_25",
+        "NPC_Head_45",
         "Heart",
         "Bubble",
         "NPC_Head_Boss_7",
@@ -1376,6 +1401,13 @@ pub struct Lookups {
     /// `Inventory_Back10`: the gold frame a favorited stack draws
     /// (`ItemSlot.cs:2154`).
     pub ui_back10: Option<tr_render::SheetRect>,
+    /// `Inventory_Back11`: the empty cell of the housing page
+    /// (`Main.cs:42080`).
+    pub ui_back11: Option<tr_render::SheetRect>,
+    /// `TextureAssets.NpcHead[head]`, indexed by the vanilla head id
+    /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
+    /// heads the port ships no NPC for.
+    pub npc_heads: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
@@ -1695,6 +1727,10 @@ impl Lookups {
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
             ui_back10: atlas.sheet("Inventory_Back10").copied(),
+            ui_back11: atlas.sheet("Inventory_Back11").copied(),
+            npc_heads: (0..crate::ui::housing::HEAD_COUNT)
+                .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
+                .collect(),
             ui_font,
             item_font,
             death_font,
@@ -2871,6 +2907,42 @@ mod tests {
             .expect("Inventory_Back10 must reach the atlas");
         assert_eq!((rect.width, rect.height), (52, 52), "the step-1 sheet");
         assert!(lookups.ui_back.is_some(), "the default sheet stays too");
+    }
+
+    #[test]
+    fn the_housing_page_sheets_pack() {
+        // `Main.cs:42079-42095`: an `Inventory_Back11` cell per town NPC plus
+        // the head sheet centred in it. The guide head (1) is the sheet the
+        // page draws for the port's most common town NPC.
+        let (_, lookups) = content_lookups();
+        let cell = lookups
+            .ui_back11
+            .expect("Inventory_Back11 must reach the atlas");
+        assert_eq!((cell.width, cell.height), (52, 52), "the step-1 cell");
+        let guide = lookups.npc_heads[1].expect("NPC_Head_1 must reach the atlas");
+        // The shipped content pack's heads are 24x22 (a texture pack may swap
+        // them); anything up to 36 px draws 1:1 and the rest shrinks
+        // (`housing.rs::head_rect`).
+        assert!(guide.width > 0 && guide.height > 0, "a real head sheet");
+        assert!(guide.width < 52 && guide.height < 52, "it fits the cell");
+        assert_eq!(lookups.npc_heads.len(), crate::ui::housing::HEAD_COUNT);
+        // Every head the ported town kinds resolve to is packed: none of them
+        // may draw an empty cell (`housing::head_of` → `type_to_head_index`).
+        for kind in [
+            crate::npc::NpcKind::Guide,
+            crate::npc::NpcKind::Merchant,
+            crate::npc::NpcKind::Nurse,
+            crate::npc::NpcKind::Dryad,
+            crate::npc::NpcKind::Painter,
+            crate::npc::NpcKind::Princess,
+        ] {
+            let head = crate::ui::housing::head_of(kind).expect("a head index");
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "{kind:?} wants NPC_Head_{head}"
+            );
+        }
+        assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
     }
 
     #[test]
