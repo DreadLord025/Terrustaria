@@ -577,6 +577,8 @@ pub fn draw_hud(
     map_style: i32,
     bestiary_open: bool,
     bestiary_selected: Option<usize>,
+    // `UIBestiaryEntryGrid`'s `_atEntryIndex / maxEntriesToHave` page.
+    bestiary_page: usize,
     kill_tracker: &tr_core::bestiary::KillTracker,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
@@ -632,7 +634,15 @@ pub fn draw_hud(
     // bestiary covers the interface while open (the state's draw replaces
     // the HUD behind it).
     if bestiary_open {
-        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        bestiary::draw_screen(
+            r,
+            lookups,
+            screen,
+            kill_tracker,
+            bestiary_selected,
+            bestiary_page,
+            mouse_pos,
+        );
         return;
     }
 

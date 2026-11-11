@@ -625,6 +625,14 @@ pin_num! {
     usize
 }
 
+pin_num! {
+    /// `TR_BESTIARY_PAGE=<n>`: the bestiary grid's page (0-based), the
+    /// `UIBestiaryEntryGrid._atEntryIndex` walk's stand-in for the shots.
+    bestiary_page,
+    "TR_BESTIARY_PAGE",
+    usize
+}
+
 pin_bool! {
     /// `TR_CHAT`: opens the chat panel with seeded lines.
     chat_open,
