@@ -2767,17 +2767,84 @@ impl Player {
                 987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
                 1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
                 3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-                // The balloons (`:14806/:15093-15101`, :14820 - the combos
-                // carry their bottle's option + jumpBoost; the horseshoe
-                // balloons add noFallDmg + the luck flag):
-                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                // The bottle combos (`:14822-14835`): 1164 (Bundle of
+                // Balloons) and 5331 (its Amber/Glass variant) carry all three
+                // bottles at once.
+                1164 | 5331 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                     self.jump_boost = true;
                 }
-                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
-                // Flurry variant `:15013-15016`):
-                54 | 1579 => self.acc_run_speed = 6.0,
+                // Every other bottle/balloon carries its own option *and*
+                // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
+                // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
+                // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
+                // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
+                // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
+                // Comb) carry only the boost, and so does `159`/`3225` (the
+                // Aglet-style `jumpSpeedBoost` rows).
+                399 | 1250 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.jump_boost = true;
+                }
+                1251 | 1163 => {
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                    self.jump_boost = true;
+                }
+                983 | 1252 => {
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.jump_boost = true;
+                }
+                1863 | 3250 => {
+                    self.has_jump_options[ExtraJump::Fart.index()] = true;
+                    self.jump_boost = true;
+                }
+                3252 | 3241 => {
+                    self.has_jump_options[ExtraJump::Sail.index()] = true;
+                    self.jump_boost = true;
+                }
+                159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+                // The boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
+                // `:15017-15020` Amphibian — `accRunSpeed = 6f`):
+                54 | 1579 | 3200 => self.acc_run_speed = 6.0,
                 // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
                 128 => self.rocket_boots = 1,
+                // The Spectre Boots (`:15213-15216` - tier 2).
+                405 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 2;
+                }
+                // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
+                // +8% move).
+                898 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 2;
+                    self.move_speed += 0.08;
+                }
+                // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
+                // skates).
+                1862 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 3;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Terraspark Boots (`:15390-15396` - tier 4).
+                5000 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 4;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
+                4874 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 5;
+                }
+                // The Titan Glove's melee-speed row (`:15103-15107`); its
+                // `autoReuseGlove` flag has no port consumer yet.
+                211 => self.melee_speed_bonus += 0.12,
                 // The Ice Skates (`:15089-15092`).
                 950 => self.ice_skate = true,
                 // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -5611,6 +5678,42 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-7 — the movement accessories grant the live flags (the
+    /// `TR_JUMPS`/`TR_BOOTS` pins stop being the only source).
+    #[test]
+    fn the_movement_accessories_grant_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Bundle of Balloons (1164): Cloud + Sandstorm + Blizzard + jumpBoost.
+        // Before M3-EQUIP-7 only the jump boost was ported, so the item gave
+        // one extra jump instead of three.
+        p.equipped[3] = 1164;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        assert!(p.jump_boost);
+        // Frostspark Boots (1862): tier 3, 6.75 accel, +8% move, ice skates.
+        p.equipped[3] = 1862;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 3);
+        assert!((p.acc_run_speed_value() - 6.75).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        assert!(p.ice_skate);
+        assert!(!p.has_jump_options[ExtraJump::Cloud.index()]);
+        // Hellfire Treads (4874): the tier-5 boots at the plain 6f.
+        p.equipped[3] = 4874;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 5);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        // A Sandstorm balloon (1252): the bottle's option and the boost.
+        p.equipped[3] = 0;
+        p.equipped[4] = 1252;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.jump_boost);
     }
 
     /// M3-EQUIP-5 — `ArmorSetBonuses.Benefits`' scalar rows ride the same pass.
