@@ -1457,6 +1457,19 @@ Deliberate deviations recorded:
   vanity/noWet/mech/noMelee/noUseGraphic/paint/flame, and the equip-slot tail
   (wing/hand/back/waist/face/balloon/neck/shield/front/beard/voice) are parsed but
   not provisioned — each skip carries a reason string; nothing is dropped silently.
+  Consequence for the melee arm (BUG-09): `ItemDef` has no `noMelee`, so the
+  vanilla's `damage > 0 && !noMelee` melee-hit gate (`Player.cs:43648`) is
+  approximated by the editing path's `held_use_ammo == 0` — the ammo shooters are
+  refused, but a non-ammo projectile weapon (a magic staff, the Terra Blade, a
+  boomerang — all `noMelee = true` in `Item.SetDefaults`) can still swing its own
+  melee damage at an NPC, which the vanilla refuses. Observed (throwaway rig, not
+  a test): the Wooden Boomerang (284) takes 9 off a defence-2 blue slime on its
+  first swing, because in the port's rig the throw is press-edge gated and the
+  melee arm does not wait for it; the Space Gun (127) escapes it only because the
+  `gunProj` id-keyed table gives it a `useAmmo`, so the `held_use_ammo == 0` gate
+  refuses it. M3-ITEM owns the field; do not approximate by excluding every
+  `projectile` item, because the Enchanted Sword (989) melees *and* shoots in
+  vanilla.
 - **`Main.infectedSeed` conditional** (Item.cs:2180, id 66): the seed branch is not
   evaluated; the base value is kept, the site is recorded by the generator.
 - **Slots are i16** (−1 = none): slot 0 is real (the Familiar set, ids 269-271);
@@ -5475,6 +5488,77 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   seashell (324 with the `RollRandomSeaShellStyle` roller — the ocean twin
   keeps the worldgen stream).
 
+- **Bug 16 — tree drops** (`KillTile`'s case 5/596/616/634 →
+  `KillTile_GetTreeDrops`, `WorldGen.cs:65214-65231`/`:66189-66261`):
+  `growth.rs::tree_drops` ports the whole drop arm — `tree_bottom`
+  (`GetTreeBottom`'s frame-column decode `:63451-63473` + the trunk walk
+  `:63474-63480`), `tree_type` (the ground-family map `:63080-63111`),
+  `TreeTypeDropsAcorns` (`:63112-63119`), the canopy acorn roll and the
+  per-family wood variants (ash 5215 / ebonwood 619 / shadewood 911 / jungle
+  620 / pearlwood 621 / mushroom 183 at 1/2 / boreal 2503). The app's
+  `cell_drops` gained the tree kinds (the `genRand` stream rides the seeded
+  FastRandom, the pot-event convention). Deviation: the `bonusWood` roll
+  (the closest player's axe + `Main.rand.Next(3) == 0`, `:66250-66256`) parks
+  with the player seam. A second deviation, recorded because the audit's fix
+  plan assumed it: vanilla `KillTile` has **no whole-tree collapse** — the
+  trunk above a felled base stands until struck (each struck cell dropping
+  through these arms), so the report's "collapse the whole trunk" item was
+  dropped against the golden rule rather than ported.
+
+- **Bug 17 — front-end sounds** (the `FadedMouseOver`/activation cues):
+  `handle_front_click` plays the flow's cue after the click table resolves —
+  `Menu_Close` (11) for the Back-family clicks (`UICharacterSelect.cs:118`,
+  `UIWorldSelect.cs`'s `GoBackClick`), `Menu_Open` (10) for the activations
+  (`UICharacterListItem.cs:198/:248`, `UIWorldListItem.cs:365`,
+  `UICharacterSelect.cs:110`). The hover edge — the front screens' framework
+  element enter (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`) and the
+  legacy menu's row enter (`Main.DoStatefulTickSound`, `Main.cs:3244`) — plays
+  one `Menu_Tick` per enter, tracked by the App's `front_hover_hit` (the
+  framework element id) and the menu's own `hover` field. `Audio` gained a
+  `played` counter (`played_count()`) as the test seam — the headless Apps have
+  no output device. Deviation from the report's plan: the menu activation cue is
+  `Menu_Tick` (12), not `Grab` (7) — the vanilla's Grab is the chest/inventory
+  slot-movement cue (`ItemSlot.cs:759-769`).
+
+- **Bug 18 — the emote Back label** (`UIEmotesMenu.cs:78`'s
+  `UITextPanel(Language.GetText("UI.Back"), 0.7f, large: true)`): the shared
+  `ui::bestiary::back_label()` accessor now feeds the emote wheel's Back panel
+  (`ui/emotes.rs`) and the bestiary's own (which carried the same hardcoded
+  literal), measured and drawn as one string through the existing
+  `text::hud_text_width` + `uistate::draw_text_panel` path — the C#'s
+  `TextHAlign 0.5` centring against the localized `_textSize.X`. Two source
+  corrections: the key is `UI.Back` (not a `Lang.menu` row) and the manager's
+  missing-resource fallback answers the key itself, so a locale without the
+  bundled content jsons reads the key (documented; the resource loading is
+  `lang.rs`'s existing path).
+
+- **Bug 19 — the biome-cactus frame** (`DrawSingleTile`'s case 80,
+  `TileDrawing.cs:1132-1147`): the port folded the `rectangle.Y += 54/108/162`
+  shift into the shared `add_fr_y`, which the FLAT build path also consumes
+  (`render/tiles.rs`'s source rect `fy + add_fr_y`) — so every cactus on any
+  ground shifted, while the C# mutates only the local `rectangle` (`:1007`)
+  whose single consumer is the half-brick arm (`:1298`). `TileDrawData` now
+  carries `half_brick_src_y` for that rect's shift; the half-brick draw
+  (`push_half_shifted`) applies it and the flat path stays unshifted. The
+  `cactus_source_y_offset` helper stays as the data layer.
+
+- **Bug 20 — the trash slot** (the vanilla's destroy-on-quick-trash
+  container): the quick-trash — `GetAlternateClickAction`'s else-chain tail
+  (`ItemSlot.cs:679-682`) lights `AlternateClickAction.Trash`'s cursor 6 on a
+  Shift-held hover over a non-favorited, non-air inventory slot when no
+  crafting/reforge/chest arm matched (the chain tail sits after the chest
+  arm — an earlier placement stole the chest's shift-click), and the click arm
+  (`OverrideLeftClick`'s cursor-6 arm `:759-775`) replaces the trash with the
+  stack and empties the slot; the cues are `TrashItem` (no port asset — the
+  recorded gap) and `Grab`. `on_player_death` clears the trash
+  (`Player.DropItems`' first line, `Player.cs:54304`); the event-item purge
+  (`:24729-24736`) rides the unported event items and the wholesale clear
+  covers it. The slot's rect shifts to (453, 426) at 0.755 while
+  `Main.ChestOrShopUIVisible` (`Main.cs:42349-42366`) through one
+  `trash_rect` helper shared by the draw and the hit test. Deviations: the
+  Journey research exception (`:762`) and the shop's sell cursor wait for
+  their models.
+
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -8021,6 +8105,22 @@ aiStyle map: **425/429 ride aiStyle 3 (the walker) and 423 rides aiStyle
 
 
 ## Micro-biome passes (M5-BIOME-2)
+### The honey patches (M5-BIOME-2, second slice)
+
+`HoneyPatchBiome` (`HoneyPatchBiome.cs:9-83`) rides the hive pass: every
+placed hive rolls `Next(5)` patch points on the 30-90 px ring around its
+centre and each runs the full `Place` — the origin gate, the down-80 find,
+the 15-disc scan (75 % mud/hive + 2 hive tiles), the 8-disc solid gate
+(20+), the important-location scan and the four generation steps
+(the radial-dithered 229 fill, the honey pocket with the liquid kind 2,
+the mud rim, the honey cap). The port's structure map is the caller's
+`protected` rect list (the same neighbour-rect idiom the cave houses
+document). `CorruptionPitBiome` is never instantiated in the decompile —
+its `Place` is dead code, so no pass is ported for it (audited, not
+ported). Both world hashes re-pinned: a classic world's hives now carry
+their pockets.
+
+
 
 The three micro-biome passes are 1:1 ports; the deviations:
 
@@ -8452,6 +8552,60 @@ replay-pair tests and the wind tests) stay green unchanged.
   `flame.rs`'s second 48-bit LCG copy are recorded as a follow-up engineering
   row.
 
+## Magic staves (M4-PROJ-6)
+
+The port's caster families land in `crates/tr-app/src/projectile.rs` beside
+the arrow/boomerang/bomb arms. The slot state the machines need
+(`localAI`/`alpha`/`scale`) and the row defaults the spawn applies ride the
+C# `SetDefaults` reset group; the dispatch arms 8/9/18/22/24/28/29/47/48/50/
+129 plus the aiStyle-1 rider gate sit at `ProjectilePool::update`'s
+`match data.ai_style`.
+
+Deliberate deviations and skips (all one-line-cited in the code):
+- **Dust and sound are skipped in every arm** — the pool has no dust layer
+  and no sound sink; the `Main.rand`/`SoundEngine` calls inside the C# AI
+  blocks are recorded per arm. The frame animations (`frameCounter`/`frame`)
+  are skipped the same way: no frame fields on the slot and no frame slicing
+  in the projectile draw. Both are the render/Audio follow-up.
+- **The Magnet Sphere's candidate pick is the first in `Main.npc` order** —
+  the C#'s `Main.rand.Next(num)` pick has no pool RNG (the determinism rule);
+  identical to the vanilla for the single-candidate case the spawn usually
+  sees. The rider damage/penetrate bumps (the lasers' `rand.Next` rolls) are
+  skipped for the same reason.
+- **AllGems2's seven-bolt branch is ported but unreachable in this
+  decompilation** — only `AllGems` (the Bejeweled Staff 6171) has a writer in
+  `Player.cs`, so bit 9 is never set; the initial `NextFromList` draw the
+  branch's loop overwrites is therefore not consumed.
+- **Wind physics runs only for the new arms** (styles 8/24/28/29, the C#'s
+  `ShouldUseWindPhysics` `:22101-22124`, applied after the AI sub-steps). The
+  ported arrow/bomb arms keep their pre-existing no-wind behaviour — the fix
+  is behaviour-affecting and belongs to a follow-up row. `Main.windPhysics`
+  is false in this decompile, so the pool's `wind_speed` defaults to inert
+  and the faithful behaviour is "no wind" either way. The C#'s
+  `MathHelper.Clamp` on the tail line discards its return (a no-op in the
+  source) — ported as written.
+- **The PVE walk's fixed centre point stands in for the boxes** in the
+  normal (flight-size) pass; the resized death bursts (the gem bolts' AoE)
+  ride the new `damage_pve_boxed` rectangle walk `Projectile.Damage` actually
+  runs — without it the burst's 160×160 box would deal no damage.
+- **The channel reads a one-tick-old aim**: the frame runs
+  `update_projectiles` before `update_editing`, so the aim the spell reads
+  was written on the previous tick — the same net state as the C#, where
+  `ItemCheck` precedes `UpdateWorld_Projectiles` and the owner block reads
+  the previous tick's player state too.
+- **The Bejeweled Staff 6171 rides `registry::ITEM_CORRECTIONS`** — the
+  GenItemData placeholder band (3263-3989) still emits the zero row for it
+  (the generator misses its case); the id-keyed correction is the `place_tile`
+  3813 precedent. The band's other in-scope staves (3377/3779/3787) were
+  fixed by the M6-SAVE-1 `itemdata.rs` regen and now ride the generated rows.
+- The style-22 owner tile writes (the Ice Rod's `PlaceTile`/`KillTile`) run
+  at the owner branch through `tr_core::edit`; the frozen block variant of
+  the hostile 291 style-50 branch stays out (no ported row).
+
+The batch review's three spell-arm findings (the missing
+`MathHelper.Lerp(0f, 0.2f, …)` wrap on the aim blend, the 800f target-search
+default and the retarget's closest-wins loop) were fixed forward against the
+decompilation and pinned with tests.
 ## .trwld v6 — the world flags, wires and tile entities (M6-SAVE-1) (re-landed)
 
 Re-landed: the `M5-CHEST-gen-flag-extras` merge (`07d786ab`) dropped this work from
@@ -9323,3 +9477,276 @@ item-driven fire (`QuickGrapple_GetItemToUse` + `ItemCheck_TryStartUse`),
 the latch blacklist (`UpdateBlacklistedTilesForGrappling`),
 `DoQueenSlimeHookTeleport`, the TrackHook→minecart transfer, and the net
 messages (13/17/29).
+## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
+
+The M5-SPREAD-2 row's deferred "next slice".
+
+### The thorns
+
+`TileID.Sets.SpreadOverground` (`TileID.cs:621`) is the gate the port's
+overground arm reads; it was missing the thorn tiles 32/352 and the
+golf-grass 477/492, so the arm the C# triggers on the *thorn* itself was
+unreachable. With the set fixed, `:72362-72370`'s arms land: the corruption
+thorn (32) grows into the corrupt grass 23 and the crimson thorn (352) into
+the crimson grass 199, each at `genRand.Next(3)` — drawn only for a 32/352
+cell — plus the jungle `:73658-73661`'s thorn-69 arm (no roll). The
+underground twin (`:73280-73294`) stays dead code in both the C# and the
+port (`Sets.SpreadUnderground` excludes 32/352).
+
+`grow_spike` carried two deviations, both fixed:
+
+- the "converted grass" map's sentinel was `0` (the C# `-1`); it is now
+  `u16::MAX`, which is what the knife-edge `t.kind != converted` compare
+  needs;
+- the write replaced the whole `Tile`, zeroing the frames and the liquid;
+  the C# (`:45476-45481`) sets the kind and the active bit on the existing
+  tile, `CopyPaintAndCoating`s from the seed tile and runs
+  `SquareTileFrame` — the port now does all three.
+
+### The wall chains
+
+`convert_wall_by_case` (growth.rs) was the three evil types' flat
+Grass/Stone/HardenedSand/Sandstone/NewWall ladder. It now carries every
+conversion type's wall arm in the C#'s order: the missing `Dirt`/`Snow`/`Ice`
+sets (`WallID.cs:39-41`), the glowing-mushroom set (`WallID.cs:88`), and the
+0/3/5/6/7/11/12 arms — cleanse's grass-family `Next(10)` surface roll and
+262/274/292-295 switch, desert's two set unions (187/216), snow's (71/40),
+purify's natural-wall 349 plus its dirt/NewWall arms, jungle-mud's variant
+of the same, and corruption-II's four separate NewWall guards followed by
+the ebonstone fallback. `spread::convert_wall` routes through it, so the
+evil callers now get the C#'s chain: the stone wall 1 converts to 3/83 (the
+port's old natural-slice 3/192 was the deviation) and the dirt wall's arm
+lands on the cleanse types.
+
+### Deviations
+
+- The torch arms (`TileID.Sets.Conversion.Torch`) of every conversion type
+  are still deferred: one shared helper would cover them but they need the
+  frame-x/y predicate.
+- `SpecialSeedFeatures.RainbowSandAndBlackSandWalls` (the paint reset inside
+  `Convert_ActuallyConvertWall`, `:56329-56343`) is not modelled — it is a
+  secret-seed runtime flag.
+- The `NetMessage.SendTileSquare` broadcast is not ported (single-player).
+## The Old One's Army's tier-2/3 families (M4-EVENT-19)
+
+The lane spawn table's unported members landed: the 13 kinds the D2/D3
+rosters pick (the port ids 169-181), each with the vanilla row and its
+machine arm.
+
+- **The diving flyers** (`AI_108_DivingFlyer`, `NPC.cs:65392-65788`) are a
+  new machine in the port — the etherian wyverns (558/559/560) and the
+  kobold gliders (574/575). It is a five-state machine on `ai[0]`: the
+  approach (the 500-px engage gate with the `num4 = 90` smoothing toward a
+  point `num2 = 400` above the player and the `ai[3]` blocked-tick
+  counter), the wind-up (20 ticks for the wyverns, 30 for the gliders, at
+  0.95 damping with the gliders' `-0.1` drift), the dive (the `num11`
+  homing with the `num12 × num11` drag — 3.0 for the wyverns, 0.5 for the
+  gliders — and the 30-tick / 150-px / min-speed exits), the 45-tick
+  post-dive rest and the gliders' impact. The families differ by flags not
+  by numbers: the wyverns' `flag2 = false` keeps them out of the crash
+  state entirely, while the gliders' `num13 = 0` means their only dive
+  exits are the solid-collision and the 64-px proximity, both of which open
+  the 192-box impact — an 80-damage blast, the `alpha = 255` full-box
+  flash and the death at the third tick (the port's `wants_blast` intent +
+  `damage_override`, read by the contact path).
+- **The walkers** ride the port's `AI_107` arms: the Wither Beast T3 (569)
+  is the T2's aura/self-heal — it charges at `num5 = 110` frames with the
+  1.4/0.16/0.7 walk tuning and heals `lifeMax / 20` every 60 ticks; the
+  Drakins (570/571) run the flag12 stand-and-shoot, where `num8 = 60`
+  opens the burst, `num9` re-writes itself every 6 (571) or 9 (570) ticks
+  between 10 and 40 so they fire repeatedly, and the 671 leaves from the
+  22-px muzzle with the `Math.Abs(v.X) * num15` ballistic drop at 35/60;
+  the Kobold walkers (572/573) are the ignite-and-explode kamikaze — the
+  lit state sets `ai[1] = 1`, the 192-box blast follows on the third tick
+  of `ai[1] == 2`, and the sprint's `num23 = 4` (four times the 0.88 walk)
+  rides the flag5 charge arm; the Ogres (576/577) carry all three attack
+  arms at once — the flag5 chase (`velocity.X *= 0.7`, the 60-tick
+  cooldown), the flag3 throw (the 676 spit at 40 from the offset, the 683
+  ground pound at 60) and the flag4 hop (`velocity.Y = -13` at `num = 56`),
+  with `ai[1]`'s sub-state machine picking chase vs spit vs pound on the
+  distance and the 300-tick `localAI[0]` chase latch.
+- **The ports' roster is now complete** for the spawn tables: `nid_of` and
+  `dd2_pool_id` round-trip the D1/D2/D3 rosters (558-577, 548-551), so the
+  lane gate's pick resolves to a real kind and the pool's live caps count
+  them. The remaining DD2 families (the Lightning Bug 580-family and the
+  Old One's Skeleton's 566/567, already ported) sit outside the spawn
+  tables.
+
+
+## The moss spread arm (M5-SPREAD-2, remaining scope)
+
+`UpdateWorld_OvergroundTile`'s moss branch (`WorldGen.cs:72371-72424`) is the
+last arm of the M5-SPREAD-2 row: a moss-family tile (`Main.tileMoss` =
+179/180/181/182/183/381/534/536/539/625/627, `Main.cs:7007-7032` — the port's
+`TILE_MOSS`; or `tileMossBrick` = 512/513/514/515/516/517/535/537/540/626/628)
+with a `NextDouble() < 0.5` roll converts the dirt/pearlstone neighbours in its
+clamped box through `WorldGen.MossConversion` (`:71457-71503`): a moss-brick
+over pearlstone 38 or a moss over dirt 1 keeps itself (the guards), the family
+pairs (182↔515, 180↔513, 179↔512, 381↔517, 534↔535, 536↔537, 539↔540, 625↔626,
+627↔628, 183↔516, 181↔514) map when both guards miss, and 0 skips the cell.
+Each conversion re-frames its cell (`SquareTileFrame`), and a `Next(6)` roll
+sprays the loose moss 184 into a free neighbour.
+
+- Tests: `moss_conversion_3_the_map_and_its_guards` (the two guards beating the
+  map, the family pairs, the unmapped 0) and
+  `moss_conversion_3_the_moss_arm_converts_the_neighbours` (the seeded arm
+  spreads the moss onto a dirt neighbour). Suite 3110 / 0.
+- Out: the netcode (`NetMessage.SendTileSquare`), the paint/coating copy (the
+  port's growth writes carry no color cache) and `SpreadGrass`'s `color`
+  argument; `SpreadGrassWalls`/`SpreadDesertWalls` landed earlier in the row.
+
+## The chest style main items (M5-CHEST-gen)
+
+The `num10` (slot-0 main item) dispatcher of `AddBuriedChest`
+(`WorldGen.cs:35892-36205`) and the caller-side mains that pre-set it landed
+2026-11-10 as the `Context` probes over the anchor's surroundings:
+
+- **The `Pyramid` structure's own chest** (`WorldGen.cs:27853-27873`): the
+  caller pre-sets the main with the `Next(3)` pick and a second `Next(3)` on
+  the zero, so the Pharaoh'sMask 848 lands only on two zeros (1/9) and the
+  SandstorminaBottle 857 / FlyingCarpet 934 otherwise; `Main.tenthAnniversaryWorld`'s
+  `0 → 1` rides M5-SEED-1. `flag11`'s companion row writes the
+  Pharaoh'sRobe 866 into slot 1 right after the mask (`:36234-36239`) — the
+  only family whose main carries a second slot in the same write.
+- **`flag3`'s underground-desert arm** (`:36023-36047`): the shallow four
+  {4056, 4055, 4262, 4263} or the deep three {4061, 4062, 4276}, split by
+  `flag20 = num7 > (desertHiveHigh*3 + desertHiveLow*4)/7`. **Deviation:**
+  the hive bounds ride the worldgen-only `GenVars` and are gone by the
+  load-time sweep, so the port keeps the `GenVars` reset values
+  (`High = maxTilesY`, `Low = 0`) — the deep table below three sevenths of
+  the world height. The vanilla's second flag3 disjunct (`chestTileType == 467
+  && chestStyle == 10`) overlaps the port's jungle family, which keeps the
+  `JungleCycle` main; the desert table rides only the hardened-sand (216)
+  probe.
+- **The probe split**: the old single `pyramid` flag read both 216 and 187;
+  it now splits into `pyramid` (187 — the `Pyramid` structure's own chamber)
+  and `desert` (216 — the hive's shell), because the vanilla's two arms write
+  different mains and the flag3 extras (`:36814-36823`) belong to the desert
+  family alone. The pyramid's chest is NOT a flag3 chest — its main is
+  pre-set, so the `num10 != 0` disjuncts all fail.
+- **`flag2`'s ice arm** (`:36064-36088`): the seven-item table with the 1/20
+  Extractinator 997; the remix's `1319 → 725` swap and the FTW `52`
+  overrides stay parked with their seeds.
+- **`flag8`'s hell arm** (`:36115-36118`): the world-shuffled
+  `GenVars.hellChestItem` (`WorldGen.cs:11246-11258` — the `while (Count > 0)`
+  pick-and-remove over {274, 220, 112, 218, 3019}, the remix row swapping the
+  112 for the 683) walked once per place with the `hellChest` counter's wrap
+  (`:36210-36217`). **Deviation:** the vanilla shuffles the worldgen
+  `genRand` at the reset; the port shuffles the sweep's own per-world stream
+  as its first consumer, so a world re-loads with the same table (a
+  different order than vanilla, which the port cannot share).
+- **`IslandHouse`'s sky arm** (`:79344-79363`): the `skyIslandHouseCount`
+  cycle 159/65/158/2219 for the first four houses and `Next(4)` after.
+  **Deviation:** the vanilla's counter advances once per island house built
+  (`:79344`); the port advances once per sky-flagged anchor stocked in the
+  scan order.
+- **The chain order**: the vanilla's arms are sequential `if`s whose last
+  write wins on `num10`, and the water 939 arm is gated on `num10 == 0`
+  (`:36197-36200`). The port keeps one `if/else if` chain with the water arm
+  last, so the other families' mains win where both probes read true. The
+  band rows' draws still run first (the port's pre-existing inversion of the
+  vanilla's num10-then-band order) — the stream is the port's own splitmix,
+  so the order matters for determinism, not for parity.
+- **Parked with their seeds**: the anniversary's flag11 row (848,
+  `:36267-36271`), the remix's flag12 `num9` style rows (`:36179-36195`),
+  error's chest row, and `GrowLivingTreePassageRoom`'s style-12 main
+  (832/4281, `:29303-29306`) — the port's living trees and pyramids place
+  plain style-0 chests, so the style-gated arms have no anchor to read.
+
+## The flail family (M4-PROJ-3b)
+
+`AI_015_Flails` (`Projectile.cs:43724-44169`) ports as `ai_flail` in
+`crates/tr-app/src/projectile.rs`, driven by the `FLAIL_PARAMS` per-kind
+table (`:43761-43823`'s switch — num/num2/num5/num7/num12/num15 over the
+defaults 10/24/16/48/15/30, with `num2/4/5/6/7/8/9` scaled by
+`1/meleeSpeed`). The ten kinds (25/26/35/63/154/247/757/947/948/1058) ride
+`DefaultToFlail` (`:10753-10762`: aiStyle 15, drawLayer 7, friendly,
+`penetrate = -1`, melee, `usesLocalNPCImmunity` with cooldown 10) and the
+three helpers (928 aiStyle 14 pen 2 timeLeft 250, 248 aiStyle 1, 405
+aiStyle 70 pen 1 alpha 255 timeLeft 120) land rows beside them.
+
+The state machine (`ai[0]` 0..6) runs inside one tick per
+`ProjectilePool::update`; the C#'s `HandleMovement` peer is the port's
+`flail_move` (the face-clamped per-axis advance with the blocked
+component zeroed) followed by `ai_flail_bounce`
+(`AI_015_HandleMovementCollision` `:43655-43717`), gated on the velocity
+change exactly like the C# `flag` (`:17896-17904`) — without the gate the
+handler's unconditional state-1 arm would stagger every fly-out tick.
+The state-1 bounce's `position -= vector` undoes the whole move; the port
+steps the blocked axis 1 px at a time instead of `Collision.Move`'s
+sub-steps (agrees to the sub-pixel; the only numeric approximation in the
+family). The throw path gains `speed /= meleeSpeed` (`Player.cs:47063`,
+×1 at the port's default bonus) and the Flairon's 1 px aim offset
+(`:47239-47245`); `Player::melee_speed()` and `Player::mounted_center()`
+(`Player.cs:3335`, equal to `center()` with no mount offsets) back the
+AI's reads. The `948 → 947` water morph reads the mid-tile liquid kind
+(the port's Player liquid-pass idiom) for `wet && !lavaWet`; the map-
+fullscreen kill and the `noItems` gate have no port arms (documented).
+
+Hit side: the held state's first 12 ticks deal nothing
+(`:12448`), the state-0 hitbox is the 55-px ellipse around the owner's
+mounted center with the 0.8/0.4 Y squash (`:15336-15356`, replacing the
+box test), the held damage is ×1.2 with the Blue Moon/Sunfury dual ×0.8
+(`:14447-14465`), the knockback ×0.35 held / ×0.5 spinning with the hit
+direction from the player's center (`:13614-13619`). The atlas §17 note
+"damage ×0.35/×0.5" is wrong: those are knockback multipliers (recorded
+here so the row can be corrected).
+
+Deviations (all deferred to a decor/render follow-up, none simulated):
+`AI_015_Flails_Dust` (`:44399-44474`), `CreateImpactExplosion` +
+`CreateImpactExplosion2_FlailTileCollision` (`:69633`/`:69774`), the
+bounce's `Collision.HitTiles` ×count (no generic projectile→tile seam in
+the port) and `SoundEngine.PlaySound(0, …)` (the AI has no audio
+access), the `player.heldProj` / `SetDummyItemTime` / `itemRotation`
+writes and `ownerHitCheck` (no consumers), the drawLayer 7 vs the 26/35
+`ai[2] == 1` branch (no drawLayer consumer; `ai[2]` is only written by
+the sentry-backpack tail, unreachable for flails), and the chain/string
+render (cf. the yoyo string, M4-PROJ-4c). The `player.ChangeDir` writes
+ride back in `FlailTick.facing` with the same-tick reads served by a
+local `eff_dir` (the port's facing is run-key driven). The Flairon's
+bubble cadence and jitter (`Main.rand.Next(3, 6)`, `Next(45, 65)`,
+`NextDouble`) draw from the pool's rng stream — the item stream by the
+yoyo convention. 22 seeded tests cover the data table, the per-kind
+rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
+transitions with the per-state factors, the kill gates, the morph, the
+Flairon bubbles, the Drippler's extra ball, the damage gates and a full
+hold→throw→bounce→reel lifecycle.
+## The player-audit fixes 11-15 (2026-11-10)
+
+The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
+the branch mechanics below; every C# site is in the report itself.
+
+- **BUG-11** — the in-game options window. `ui/ingame_options.rs` ports
+  `Main.DrawSettingButton`'s button (`RefreshSettingsButtonStatus`'s fixed
+  `UIScreenWidth - 110` / `UIScreenHeight - 20` rect on the port's fixed
+  960×600 UI canvas — the same space the bestiary icon and the emote button
+  ride) and the `IngameOptions` panel: the 670×480 origin at `screen/2 -
+  size/2` with the 20-px hover padding, the `num5 = 70` row pitch, the three
+  volume bars over `sliders::value_bar_rects` (music/sound/ambient with the
+  `rightLock` drag), the map-scale/auto-pause/auto-save toggles, and the
+  `IngameOptions.Close` close (Escape's first arm, persisting through
+  `Settings::save`). Deviations: the vanilla two-column navigation (the left
+  column's general/interface/video/controls/language rows) is not mounted —
+  the port carries those rows in the front-end `Menu` (M7-UI-4's field
+  parity); the volume bars' click-to-set is the slider's drag only.
+- **BUG-12** — the Escape chain's map arm. The vanilla order is
+  options → bestiary → emotes → map → inventory (`Player.ToggleInv`,
+  `Player.cs:4973-4978`). The chain was extracted into
+  `App::world_key(KeyCode)` so the winit event path and the tests share one
+  body.
+- **BUG-13** — the Smart Cursor split. `App.smart_cursor_used` is the
+  runtime state (`Main.SmartCursorWanted_Mouse`, default off) and the
+  persisted `smart_cursor_toggle` remains the config key it has always
+  been — the bug was the setting serving as the runtime gate. The toggle is
+  the left-Shift press edge with the `Menu_Tick` cue.
+- **BUG-14** — the button strips. `draw_sheet_frame` now takes the frame
+  grid and slices `w / frames_x` like `Utils.Frame`, exposed as the pure
+  `sheet_frame_uv`; the emote button's sheet was never packed into the
+  atlas (the actual root cause of the invisible button — the hitbox and the
+  click handler existed, the sprite did not).
+- **BUG-15** — the off-by-one. The Solar Selenian is NPC 419
+  (`NPCID.cs:11515`), which resolves through `bestiary_sheet_index` to slot
+  135 of the 174-entry table; the report's suggested 625 is `SeaTurtle`.
+  All literal sheet indices are gone from the code (doc comments keep the
+  history).
+4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)

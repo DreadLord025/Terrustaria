@@ -22,17 +22,14 @@
 //! statics the port does not generate), the `GenVars` cross-chest fairness
 //! flags (`generatedShadowKey`/`gennedLivingMahoganyWands` — once per
 //! world in vanilla, approximated here per-chest with the vanilla odds),
-//! the desert/pyramid/water/skyisland style tables (the biome flags `flag2`
-//! jungle / `flag4` mahogany / `flag12` skyware / `flag8` idol / `flag9`
-//! dungeon keys are approximated by the depth band and the wall/tile
-//! probes around the anchor — the full style dispatcher rides [7]).
+//! the remix/tenth-anniversary/FTW variants of the ported arms.
 
 use crate::chest::WorldChest;
-use crate::item::{ItemSlot, EMPTY_SLOT};
+use crate::item::{EMPTY_SLOT, ItemSlot};
 use crate::prefix;
 use tr_core::save::ChestRecord;
-use tr_core::world::World;
 use tr_core::tile::FLAG_ACTIVE;
+use tr_core::world::World;
 
 /// The chest tile kinds an anchor can carry (`craft::CHEST_TILES`).
 const CHEST_KINDS: [u16; 2] = [21, 341];
@@ -43,6 +40,50 @@ const DEEP_BAND_PAD: i32 = 250;
 /// `GenVars.hellChestItem` — the underwater-chest 939 override carries the
 /// water chests' item; the unused slot keeps the vanilla name.
 const UNDERWATER_ITEM: u16 = 939;
+
+/// `WorldGen.AddBuriedChest`'s `flag3` arm's main table (`:36043`): the
+/// underground-desert family's slot 0 — the AncientChisel 4056 / SandBoots
+/// 4055 / MysticCoilSnake 4262 / MagicConch 4263 shallow row and the
+/// ThunderSpear 4061 / ThunderStaff 4062 / CatBast 4276 deep row, the split
+/// by `flag20`'s desert-hive depth test (`:36041`).
+const DESERT_CHEST_SHALLOW: [u16; 4] = [4056, 4055, 4262, 4263];
+const DESERT_CHEST_DEEP: [u16; 3] = [4061, 4062, 4276];
+/// The `flag3` arm's depth test's divisor — `(High*3 + Low*4) / 7` with the
+/// no-hive `Low = 0`.
+const DESERT_DEPTH_DIVISOR: i32 = 7;
+
+/// `Pyramid`'s own chest (`WorldGen.cs:27853-27873`): the double-roll
+/// `Next(3)` with the 0 → `Next(3)` re-roll, so the Pharaoh'sMask 848 only
+/// on two zeros (1/9) and the SandstorminaBottle 857 / FlyingCarpet 934
+/// otherwise (`Main.tenthAnniversaryWorld`'s `0 → 1` rides M5-SEED-1).
+const PYRAMID_CHEST: [u16; 3] = [848, 857, 934];
+/// The Pharaoh'sRobe 866 — `flag11`'s companion row, written into slot 1
+/// right after the mask's slot 0 (`:36234-36239`).
+const PHARAOHS_ROBE: u16 = 866;
+
+/// `flag2`'s main table (`:36075`): the ice family's seven items.
+const ICE_CHEST: [u16; 7] = [670, 724, 950, 1319, 987, 1579, 6153];
+/// The remix variant of the SnowballCannon pick (1319 → the IceBow 725,
+/// `:36076-36079`) — parked with the remix worlds, which the port does not
+/// generate.
+const ICE_CHEST_REMIX: u16 = 1319;
+const ICE_CHEST_REMIX_ITEM: u16 = 725;
+/// The ice row's 1/20 Extractinator 997 override (`:36080-36083`).
+const ICE_EXTRACTINATOR_ODDS: u64 = 20;
+const EXTRACTINATOR: u16 = 997;
+
+/// `flag8`'s main: `GenVars.hellChestItem[GenVars.hellChest]` (`:36118`) —
+/// the five hell-chest items shuffled once per world at `WorldGen.Reset`
+/// (`:11246-11258`, the remix row swaps the FlowerofFire 112 for the
+/// UnholyTrident 683).
+const HELL_CHEST: [u16; 5] = [274, 220, 112, 218, 3019];
+const HELL_CHEST_REMIX: [u16; 5] = [274, 220, 683, 218, 3019];
+
+/// `IslandHouse`'s main table (`WorldGen.cs:79344-79363`): the
+/// `GenVars.skyIslandHouseCount` cycle over the ShinyRedBalloon 159 /
+/// Starfury 65 / LuckyHorseshoe 158 / CelestialMagnet 2219, with the
+/// `> 3 → Next(4)` re-roll on the fifth and later house.
+const SKY_ISLAND_CHEST: [u16; 4] = [159, 65, 158, 2219];
 
 /// The `GenVars` bar item tables (`SavedOreTiers`/`GenVars` statics):
 /// copper/iron/silver/gold bars. The port generates ore tiers by id, not
@@ -66,11 +107,19 @@ struct Row {
 
 impl Row {
     fn plain(kind: u16) -> Self {
-        Self { kind, count: 1, prefix: 0 }
+        Self {
+            kind,
+            count: 1,
+            prefix: 0,
+        }
     }
 
     fn stacked(kind: u16, count: u32) -> Self {
-        Self { kind, count, prefix: 0 }
+        Self {
+            kind,
+            count,
+            prefix: 0,
+        }
     }
 }
 
@@ -214,8 +263,16 @@ struct Context {
     /// `flag6` — the living-tree family (wall 244 at the anchor, the C#'s
     /// `:36135-36144` condition).
     living_tree: bool,
-    /// `flag3` — the pyramid sandstone (485/216 walls).
+    /// `flag3` — the pyramid's own sandstone walls (187): the `Pyramid`
+    /// structure's chest (`WorldGen.cs:27853-27873`), whose main item the
+    /// CALLER pre-sets (the Pharaoh family), so it never takes the
+    /// underground-desert table below.
     pyramid: bool,
+    /// `flag3`'s underground-desert arm (`:36023`'s `IsUndergroundDesert(i, k)`
+    /// disjunct): the hardened-sand shell walls 216 the desert's hive writes
+    /// (`worldgen/desert.rs`). The vanilla's desert-table main and the
+    /// `flag3` extras (`:36814-36823`) ride this family.
+    desert: bool,
     /// `flag4` — the living mahogany family (wall 63 wood walls + the tulip
     /// 1683/the 2422 column in the room).
     mahogany: bool,
@@ -252,6 +309,98 @@ impl Context {
     }
 }
 
+/// The `flag3` arm's `flag20` depth test with the no-hive `GenVars` values
+/// (`High = maxTilesY`, `Low = 0`, `GenVars.cs:142-148`): the vanilla's
+/// hive bounds ride the worldgen-only `GenVars` and are gone by the
+/// load-time sweep, so the port keeps the reset values — the deep table
+/// below three sevenths of the world height (ANALYSIS).
+fn deep_desert_chest(height: i32, y: i32) -> bool {
+    y > height * 3 / DESERT_DEPTH_DIVISOR
+}
+
+/// The `flag3` arm's main pick (`:36043`): `Utils.SelectRandom` over the
+/// shallow four, or the deep three when `flag20` holds (`:36041`).
+fn desert_chest_main(rng: &mut u64, deep: bool) -> u16 {
+    let table: &[u16] = if deep {
+        &DESERT_CHEST_DEEP
+    } else {
+        &DESERT_CHEST_SHALLOW
+    };
+    table[next(rng, table.len() as u64) as usize]
+}
+
+/// `Pyramid`'s own chest main (`:27853-27864`): the `Next(3)` with the
+/// `== 0 → Next(3)` re-roll, so the Pharaoh'sMask 848 lands only on two
+/// zeros (1/9) and the 857/934 on the other eight ninths.
+fn pyramid_chest_main(rng: &mut u64) -> u16 {
+    let mut pick = next(rng, 3);
+    if pick == 0 {
+        pick = next(rng, 3);
+    }
+    PYRAMID_CHEST[pick as usize]
+}
+
+/// `flag2`'s main pick (`:36075-36083`): the seven-item table then the 1/20
+/// Extractinator override, in the C# order. The remix's `1319 → 725` swap
+/// (`:36076-36079`) stays parked — the port generates no remix worlds.
+fn ice_chest_main(rng: &mut u64) -> u16 {
+    let mut item = ICE_CHEST[next(rng, ICE_CHEST.len() as u64) as usize];
+    if item == ICE_CHEST_REMIX {
+        // The remix arm — parked with the remix worlds (`ICE_CHEST_REMIX_ITEM`).
+    }
+    if next(rng, ICE_EXTRACTINATOR_ODDS) == 0 {
+        item = EXTRACTINATOR;
+    }
+    item
+}
+
+/// `IslandHouse`'s main (`:79344-79363`): the `skyIslandHouseCount` cycle,
+/// with the `> 3 → genRand.Next(4)` re-roll on the fifth and later house.
+/// The counter advances once per sky chest stocked — the vanilla's advances
+/// once per island house built (`:79344`), the port's approximation
+/// (ANALYSIS "World chest loot (M5-CHEST-gen)").
+fn sky_island_chest_main(houses: u32, rng: &mut u64) -> u16 {
+    let pick = if houses > 3 {
+        next(rng, SKY_ISLAND_CHEST.len() as u64)
+    } else {
+        houses as u64
+    };
+    SKY_ISLAND_CHEST[pick as usize]
+}
+
+/// `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`): the
+/// `while (list.Count > 0)` draw — a uniform pick-and-remove over the five
+/// items, once per world before any chest stocks. The vanilla shuffles the
+/// worldgen `genRand` at the reset; the port runs the same algorithm over
+/// the sweep's stream at the front of `generate_world_chests`, so a world
+/// re-loads with the same table (ANALYSIS).
+fn shuffle_hell_chest(rng: &mut u64, remix: bool) -> [u16; 5] {
+    let mut list: Vec<u16> = if remix {
+        HELL_CHEST_REMIX.to_vec()
+    } else {
+        HELL_CHEST.to_vec()
+    };
+    let mut out = [0u16; 5];
+    for slot in out.iter_mut() {
+        let index = next(rng, list.len() as u64) as usize;
+        *slot = list[index];
+        list.remove(index);
+    }
+    out
+}
+
+/// The `flag14` arm's counter (`:36210-36217`): `GenVars.hellChest++` after
+/// every hell-chest place, wrapping at the table's length — the port models
+/// the vanilla's `hellChest` index over the shuffled table.
+fn next_hell_chest(table: &[u16; 5], counter: &mut usize) -> u16 {
+    let item = table[*counter];
+    *counter += 1;
+    if *counter >= table.len() {
+        *counter = 0;
+    }
+    item
+}
+
 fn context_at(world: &World, x: i32, y: i32) -> Context {
     let near = |wx: u16| {
         (-2..=2).any(|dx| {
@@ -284,7 +433,8 @@ fn context_at(world: &World, x: i32, y: i32) -> Context {
     Context {
         jungle: near(60),
         living_tree: wall_near(244),
-        pyramid: wall_near(216) || wall_near(187),
+        pyramid: wall_near(187),
+        desert: wall_near(216),
         mahogany: wall_near(63),
         ice: near(147) || near(161) || near(162) || near(197),
         granite: wall_near(164) || wall_near(401),
@@ -824,8 +974,9 @@ fn ore_pick() -> u16 {
 
 /// One anchored chest's stock decided by its surroundings: the fixed
 /// special slot (`GetDungeonLootAndChestStyle`'s dungeon cycle, the
-/// `GetNextJungleChestItem` cycle, the underwater override 939), then the
-/// depth band rows.
+/// `GetNextJungleChestItem` cycle, `Pyramid`'s Pharaoh roll, the
+/// `flag3`/`flag2`/`flag8`/`IslandHouse` main tables, the underwater
+/// override 939), then the depth band rows.
 fn stock_chest(
     world: &World,
     x: i32,
@@ -836,10 +987,18 @@ fn stock_chest(
     dungeon: &mut DungeonCycle,
     jungle: &mut JungleCycle,
     genned_wands: &mut bool,
+    hell_chest: &[u16; 5],
+    hell_counter: &mut usize,
+    sky_houses: &mut u32,
     rng: &mut u64,
 ) -> Vec<Row> {
     let ctx = context_at(world, x, y);
-    let band = band_for(y, world.world_surface, world.rock_layer as f64, world.height);
+    let band = band_for(
+        y,
+        world.world_surface,
+        world.rock_layer as f64,
+        world.height,
+    );
     let mut rows = stock_band(band, &ctx, chest_style, chest_kind, rng);
     if ctx.dungeon {
         // The dungeon-family chests cycle the fixed loot item
@@ -857,11 +1016,44 @@ fn stock_chest(
         let mut row = Row::plain(jungle.take(rng));
         roll_prefix_on(rng, &mut row);
         rows.insert(0, row);
+    } else if ctx.pyramid {
+        // The `Pyramid` structure's own chest (`:27853-27873`): its main is
+        // pre-set by the CALLER, so the vanilla's `flag3` arm never fires on
+        // it (its `num10 != 0` disjuncts all fail) — the Pharaoh double-roll
+        // and the `flag11` companion ride this family instead.
+        let main = pyramid_chest_main(rng);
+        rows.insert(0, Row::plain(main));
+        if main == 848 {
+            // `flag11`'s companion (`:36234-36239`) — slot 1, right after the
+            // mask's slot 0.
+            rows.insert(1, Row::plain(PHARAOHS_ROBE));
+        }
+    } else if ctx.desert {
+        // `flag3`'s underground-desert arm (`:36023-36047`): the shallow
+        // four or the deep three by `flag20`'s hive-depth test.
+        let deep = deep_desert_chest(world.height, y);
+        rows.insert(0, Row::plain(desert_chest_main(rng, deep)));
+    } else if ctx.ice {
+        // `flag2`'s main arm (`:36064-36088`): the seven-item table with the
+        // 1/20 Extractinator override.
+        rows.insert(0, Row::plain(ice_chest_main(rng)));
+    } else if ctx.sky {
+        // `IslandHouse`'s main (`:79344-79363`): the sky-island house count
+        // cycle, re-rolled past the fourth house.
+        let main = sky_island_chest_main(*sky_houses, rng);
+        *sky_houses += 1;
+        rows.insert(0, Row::plain(main));
+    } else if hell {
+        // `flag8`'s main arm (`:36115-36118`): the world-shuffled
+        // `GenVars.hellChestItem` table, the `GenVars.hellChest` counter
+        // advancing after the place (`:36210-36217`).
+        rows.insert(0, Row::plain(next_hell_chest(hell_chest, hell_counter)));
     } else if ctx.water {
-        // The non-dungeon natural chests carry no fixed special slot in
-        // this port slice (the vanilla num10 assignment rides the
-        // placement-style dispatcher [7]); the underwater/water-style
-        // chests carry the 939 override.
+        // The water family's main (`:36197-36200`): the 939 override, which
+        // the vanilla gates on `num10 == 0` — the port keeps this arm last in
+        // the chain so the other families' mains win wherever both read
+        // true. The non-family natural chests carry no fixed slot here (the
+        // vanilla num10 assignment rides the placement-style dispatcher).
         rows.insert(0, Row::plain(UNDERWATER_ITEM));
     }
     // The fixed rows' family extras (`AddBuriedChest`'s two `num10 > 0`
@@ -891,8 +1083,13 @@ fn stock_chest(
                 rows.push(Row::plain(3199));
             }
         }
-        if ctx.mahogany {
-            // `flag3` `:36814-36823`.
+        if ctx.mahogany || ctx.desert {
+            // `flag3` `:36814-36823`. The vanilla's flag3 family is the
+            // underground-desert cave chests and the 467-style-10 mahogany
+            // pair; the port's `desert` (hardened-sand shell) and `mahogany`
+            // (wood walls) probes carry the two halves. The `Pyramid`
+            // structure's chest is NOT a flag3 chest (the caller pre-sets its
+            // main), so the pyramid probe stays out of this arm.
             if next(rng, 7) == 0 {
                 rows.push(Row::plain(4346));
             }
@@ -959,8 +1156,12 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
     // `ImproveAllChestContents`, `!getGoodWorldGen` — `:24278-24280`): the
     // anniversary seed's stocked chests take the good prefixes instead. The
     // port stocks at load time, so the sweep rides this seam.
-    let improve_prefixes = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
-        && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let improve_prefixes = world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && !world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
     let seed = world
         .seed
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
@@ -972,6 +1173,20 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
     // `GenVars.gennedLivingMahoganyWands` — false per world (`GenVars`'
     // reset), the flag4 arm's once-per-world fairness (`:36824`).
     let mut genned_wands = false;
+    let hell_chest = HELL_CHEST;
+    let mut hell_counter = 0usize;
+    let mut sky_houses = 0u32;
+    // `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`) — the table is
+    // drawn once per world, before any chest stocks, so every load reads the
+    // same five-item order; the remix row swaps the 112 for the 683.
+    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let hell_chest = shuffle_hell_chest(&mut rng, remix);
+    // `GenVars.hellChest` — 0 per world (`GenVars`' reset), the flag14 arm's
+    // counter (`:36210-36217`).
+    let mut hell_counter = 0usize;
+    // `GenVars.skyIslandHouseCount` — 0 per world, the `IslandHouse` cycle's
+    // counter (`:79344`).
+    let mut sky_houses = 0u32;
     for y in 1..world.height - 1 {
         for x in 1..world.width - 1 {
             let Some(t) = world.tile(x, y) else { continue };
@@ -1008,6 +1223,9 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
                 &mut dungeon,
                 &mut jungle,
                 &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
                 &mut rng,
             );
             if rows.is_empty() {
@@ -1317,7 +1535,10 @@ mod tests {
         let chests = generate_world_chests(&w);
         assert_eq!(chests.len(), 1, "one anchor stocks one chest");
         let rows = &chests[0].slots;
-        assert!(rows.len() >= 2, "the surface band carries at least the weapon row");
+        assert!(
+            rows.len() >= 2,
+            "the surface band carries at least the weapon row"
+        );
         // The 1/11 weapon pick: any of the surface-table ids is faithful.
         let weapon = [280, 281, 284, 285, 953, 946, 3068, 3069, 3084, 4341, 6165];
         assert!(
@@ -1519,7 +1740,24 @@ mod tests {
         let mut jungle = JungleCycle::new();
         let mut rng = 42u64 | 1;
         let mut genned_wands = false;
-        let rows = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
+        let rows = stock_chest(
+            &w,
+            100,
+            198,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
         let slot0 = &rows[0];
         assert!(
             matches!(slot0.kind, 211 | 212 | 213 | 964 | 2292 | 3017),
@@ -1542,8 +1780,6 @@ mod tests {
         }
         assert!(seen_next, "the counter walks the table");
     }
-
-
 
     /// A rig tall enough for a real Deep band (`y < height - 250` past the
     /// rock layer): the 200x300 rig collapses its band to Deepest below the
@@ -1591,8 +1827,11 @@ mod tests {
             }
         }
         let ctx2 = context_at(&w2, 120, 198);
-        assert!(!ctx2.sky, "the desert's shell wall is not the skyware family");
-        assert!(ctx2.pyramid, "and it reads as the pyramid/desert family");
+        assert!(
+            !ctx2.sky,
+            "the desert's shell wall is not the skyware family"
+        );
+        assert!(ctx2.desert, "and it reads as the underground-desert family");
     }
 
     /// The dungeon probe reads the dungeon walls (7/8/9, the port's own
@@ -1607,7 +1846,10 @@ mod tests {
                 w.tiles[i].wall = 8;
             }
         }
-        assert!(context_at(&w, 120, 198).dungeon, "wall 8 reads as the dungeon");
+        assert!(
+            context_at(&w, 120, 198).dungeon,
+            "wall 8 reads as the dungeon"
+        );
         let mut w2 = rig();
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
@@ -1640,7 +1882,10 @@ mod tests {
         // `flag13` (`:37419-37427`): the Lihzahrd Furnace guaranteed, then the
         // Solar Tablet at 1/5 or the Lunar Tablet stack.
         let kinds: Vec<u16> = chests[0].slots.iter().map(|s| s.kind).collect();
-        assert!(kinds.contains(&2195), "the temple furnace landed: {kinds:?}");
+        assert!(
+            kinds.contains(&2195),
+            "the temple furnace landed: {kinds:?}"
+        );
         assert!(
             kinds.iter().any(|k| *k == 2766 || *k == 2767),
             "a temple tablet landed: {kinds:?}"
@@ -1693,6 +1938,9 @@ mod tests {
             let mut dungeon = DungeonCycle::new();
             let mut jungle = JungleCycle::new();
             let mut genned_wands = false;
+            let hell_chest = HELL_CHEST;
+            let mut hell_counter = 0usize;
+            let mut sky_houses = 0u32;
             let mut rng = seed | 1;
             let rows = stock_chest(
                 &w,
@@ -1704,13 +1952,19 @@ mod tests {
                 &mut dungeon,
                 &mut jungle,
                 &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
                 &mut rng,
             );
             runs += 1;
             machines += rows.iter().filter(|r| r.kind == 2198).count();
             fish += rows.iter().filter(|r| r.kind == 669).count();
         }
-        assert!(machines > 0, "the Ice Machine row fires ({machines}/{runs})");
+        assert!(
+            machines > 0,
+            "the Ice Machine row fires ({machines}/{runs})"
+        );
         assert!(fish > 0, "the Fish row fires ({fish}/{runs})");
         // The odds: 1/7 and 1/50 — the machine row is the more common one.
         assert!(
@@ -1731,9 +1985,28 @@ mod tests {
         let mut dungeon = DungeonCycle::new();
         let mut jungle = JungleCycle::new();
         let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
         let mut rng = 42u64 | 1;
-        let plain = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
-        let family_ids: &[u16] = &[5629, 4429, 4427, 5528, 3199, 4346, 4066, 3360, 3361, 4426, 5525];
+        let plain = stock_chest(
+            &w,
+            100,
+            198,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
+        let family_ids: &[u16] = &[
+            5629, 4429, 4427, 5528, 3199, 4346, 4066, 3360, 3361, 4426, 5525,
+        ];
         assert!(
             !plain.iter().any(|r| family_ids.contains(&r.kind)),
             "a family-less chest takes no family extras"
@@ -1759,9 +2032,25 @@ mod tests {
             let mut dungeon = DungeonCycle::new();
             let mut jungle = JungleCycle::new();
             let mut genned_wands = false;
+            let hell_chest = HELL_CHEST;
+            let mut hell_counter = 0usize;
+            let mut sky_houses = 0u32;
             let mut rng = seed | 1;
-            let rows =
-                stock_chest(&w, 100, 338, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+            let rows = stock_chest(
+                &w,
+                100,
+                338,
+                false,
+                0,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
+                &mut rng,
+            );
             rows.iter().any(|r| r.kind == 3199)
         });
         assert!(hit.is_some(), "the ice family's 1/5 row fires");
@@ -1802,33 +2091,104 @@ mod tests {
         let seed = (1u64..400)
             .find(|&s| {
                 let wands = |rows: &[Row]| {
-                    rows.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count()
+                    rows.iter()
+                        .filter(|r| r.kind == 3360 || r.kind == 3361)
+                        .count()
                 };
                 let mut dungeon = DungeonCycle::new();
                 let mut jungle = JungleCycle::new();
                 let mut genned_wands = false;
+                let hell_chest = HELL_CHEST;
+                let mut hell_counter = 0usize;
+                let mut sky_houses = 0u32;
                 let mut rng = s | 1;
-                let first = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
-                let second = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+                let first = stock_chest(
+                    &w,
+                    30,
+                    49,
+                    false,
+                    0,
+                    21,
+                    &mut dungeon,
+                    &mut jungle,
+                    &mut genned_wands,
+                    &hell_chest,
+                    &mut hell_counter,
+                    &mut sky_houses,
+                    &mut rng,
+                );
+                let second = stock_chest(
+                    &w,
+                    30,
+                    49,
+                    false,
+                    0,
+                    21,
+                    &mut dungeon,
+                    &mut jungle,
+                    &mut genned_wands,
+                    &hell_chest,
+                    &mut hell_counter,
+                    &mut sky_houses,
+                    &mut rng,
+                );
                 wands(&first) == 2 && wands(&second) == 0
             })
             .expect("a seed whose second call misses the 1/5 roll exists");
         let mut dungeon = DungeonCycle::new();
         let mut jungle = JungleCycle::new();
         let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
         let mut rng = seed | 1;
-        let rows = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let rows = stock_chest(
+            &w,
+            30,
+            49,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
         assert!(genned_wands, "the fairness flag trips on the first grant");
-        let wands = rows.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
+        let wands = rows
+            .iter()
+            .filter(|r| r.kind == 3360 || r.kind == 3361)
+            .count();
         assert_eq!(wands, 2, "both wands row together ({wands})");
         // A second chest with the same seed now needs the 1/5 roll — with
         // this stream it does not fire again, so the pair is granted once.
-        let rows2 = stock_chest(&w, 30, 49, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
-        let wands2 = rows2.iter().filter(|r| r.kind == 3360 || r.kind == 3361).count();
-        assert_eq!(wands2, 0, "the once-per-world grant does not repeat ({wands2})");
+        let rows2 = stock_chest(
+            &w,
+            30,
+            49,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
+        let wands2 = rows2
+            .iter()
+            .filter(|r| r.kind == 3360 || r.kind == 3361)
+            .count();
+        assert_eq!(
+            wands2, 0,
+            "the once-per-world grant does not repeat ({wands2})"
+        );
     }
-
-
 
     #[test]
     fn the_remaining_tail_rows_roll_at_the_vanilla_odds() {
@@ -1841,6 +2201,9 @@ mod tests {
         let mut dungeon = DungeonCycle::new();
         let mut jungle = JungleCycle::new();
         let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
 
         // A water-family anchor (tile 4869 beside the seat) takes the globe
         // unconditionally and exactly one of the water pair.
@@ -1857,7 +2220,21 @@ mod tests {
         }
         put_chest(&mut w, 100, 198);
         let mut rng = 3u64 | 1;
-        let rows = stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let rows = stock_chest(
+            &w,
+            100,
+            198,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
         assert!(
             rows.iter().any(|r| r.kind == 2195),
             "the flag13 globe is unconditional"
@@ -1881,12 +2258,28 @@ mod tests {
             };
         }
         put_chest(&mut w, 100, 198);
-        let hits = (1u64..400).filter(|&seed| {
-            let mut rng = seed | 1;
-            stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
+        let hits = (1u64..400)
+            .filter(|&seed| {
+                let mut rng = seed | 1;
+                stock_chest(
+                    &w,
+                    100,
+                    198,
+                    false,
+                    0,
+                    21,
+                    &mut dungeon,
+                    &mut jungle,
+                    &mut genned_wands,
+                    &hell_chest,
+                    &mut hell_counter,
+                    &mut sky_houses,
+                    &mut rng,
+                )
                 .iter()
                 .any(|r| r.kind == 2204)
-        }).count();
+            })
+            .count();
         assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
         assert!(hits < 400, "and not on every one — the 1/4 gate is real");
 
@@ -1902,14 +2295,26 @@ mod tests {
         }
         let rows13 = (1u64..64).any(|seed| {
             let mut rng = seed | 1;
-            stock_chest(&w, 100, 198, false, 13, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
-                .iter()
-                .any(|r| r.kind == 5234)
+            stock_chest(
+                &w,
+                100,
+                198,
+                false,
+                13,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
+                &mut rng,
+            )
+            .iter()
+            .any(|r| r.kind == 5234)
         });
         assert!(rows13, "the style-13 row fires on some stream");
     }
-
-
 
     #[test]
     fn the_21_block_rows_gate_on_the_chest_kind() {
@@ -1920,6 +2325,9 @@ mod tests {
         let mut dungeon = DungeonCycle::new();
         let mut jungle = JungleCycle::new();
         let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
 
         // A dungeon-family anchor: the flag9 row (2192) rolls 1/8.
         let mut w = rig();
@@ -1933,9 +2341,23 @@ mod tests {
         let hits = (1u64..600)
             .filter(|&seed| {
                 let mut rng = seed | 1;
-                stock_chest(&w, 100, 198, false, 0, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
-                    .iter()
-                    .any(|r| r.kind == 2192)
+                stock_chest(
+                    &w,
+                    100,
+                    198,
+                    false,
+                    0,
+                    21,
+                    &mut dungeon,
+                    &mut jungle,
+                    &mut genned_wands,
+                    &hell_chest,
+                    &mut hell_counter,
+                    &mut sky_houses,
+                    &mut rng,
+                )
+                .iter()
+                .any(|r| r.kind == 2192)
             })
             .count();
         assert!(hits > 0, "the 1/8 flag9 row fires on some stream ({hits})");
@@ -1959,7 +2381,21 @@ mod tests {
             }
         }
         let mut rng = 3u64 | 1;
-        let mahog = stock_chest(&w, 100, 198, false, 25, 341, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng);
+        let mahog = stock_chest(
+            &w,
+            100,
+            198,
+            false,
+            25,
+            341,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
         assert!(
             !mahog.iter().any(|r| matches!(r.kind, 2766 | 2767 | 5234)),
             "the 21-only rows skip the mahogany anchor: {:?}",
@@ -1977,12 +2413,355 @@ mod tests {
         put_chest(&mut w2, 100, 198);
         let rows21 = (1u64..64).find(|&seed| {
             let mut rng = seed | 1;
-            stock_chest(&w2, 100, 198, false, 25, 21, &mut dungeon, &mut jungle, &mut genned_wands, &mut rng)
-                .iter()
-                .any(|r| matches!(r.kind, 2766 | 2767 | 5234))
+            stock_chest(
+                &w2,
+                100,
+                198,
+                false,
+                25,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
+                &mut rng,
+            )
+            .iter()
+            .any(|r| matches!(r.kind, 2766 | 2767 | 5234))
         });
         assert!(rows21.is_some(), "the 21 anchor takes a 21-only row");
     }
 
+    /// The probe split: the pyramid's own sandstone walls (187) read the
+    /// `Pyramid` family, the underground desert's hardened-sand shell (216)
+    /// reads the `flag3` desert family — the vanilla's two separate arms
+    /// (`:27853` the caller main / `:36023` the `IsUndergroundDesert` arm).
+    #[test]
+    fn the_pyramid_and_desert_probes_read_their_own_walls() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(120 + dx, 197 + dy);
+                w.tiles[i].wall = 187; // the pyramid's sandstone
+            }
+        }
+        let ctx = context_at(&w, 120, 198);
+        assert!(ctx.pyramid, "the sandstone reads the pyramid family");
+        assert!(!ctx.desert, "and not the desert one");
+    }
 
+    /// `Pyramid`'s chest main (`:27853-27873`): the double-roll, so the
+    /// Pharaoh'sMask 848 only on two zeros and the 857/934 otherwise, with
+    /// the `flag11` companion 866 in slot 1 right after the mask.
+    #[test]
+    fn the_pyramid_chest_stocks_the_pharaoh_roll_and_the_robe() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].wall = 187; // the pyramid chamber's sandstone
+            }
+        }
+        put_chest(&mut w, 100, 197);
+        // Over many streams every main is one of the three Pharaoh items and
+        // the robe only ever rides a mask chest.
+        let mut mask_with_robe = 0u32;
+        let mut pair_without_mask = 0u32;
+        for seed in 1u64..600 {
+            let mut dungeon = DungeonCycle::new();
+            let mut jungle = JungleCycle::new();
+            let mut genned_wands = false;
+            let hell_chest = HELL_CHEST;
+            let mut hell_counter = 0usize;
+            let mut sky_houses = 0u32;
+            let mut rng = seed | 1;
+            let rows = stock_chest(
+                &w,
+                100,
+                197,
+                false,
+                0,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
+                &mut rng,
+            );
+            let main = rows[0].kind;
+            assert!(
+                matches!(main, 848 | 857 | 934),
+                "slot 0 rides the Pharaoh table ({main})"
+            );
+            if main == 848 {
+                assert_eq!(rows[1].kind, PHARAOHS_ROBE, "the robe rides slot 1");
+                mask_with_robe += 1;
+            } else {
+                assert!(rows.len() < 2 || rows[1].kind != PHARAOHS_ROBE);
+                pair_without_mask += 1;
+            }
+        }
+        assert!(mask_with_robe > 0, "the 1/9 mask+robe pair is reachable");
+        assert!(pair_without_mask > 0, "and the 857/934 arms dominate");
+    }
+
+    /// `flag3`'s underground-desert arm (`:36023-36047`): the shallow four
+    /// above three sevenths of the height and the deep three below it, the
+    /// no-hive `GenVars` split the port keeps at load time.
+    #[test]
+    fn the_desert_chest_stocks_the_flag3_table_both_depths() {
+        let shallow: &[u16] = &DESERT_CHEST_SHALLOW;
+        let deep: &[u16] = &DESERT_CHEST_DEEP;
+        for (deep_flag, y, table) in [(false, 100i32, shallow), (true, 500i32, deep)] {
+            let mut w = World::new("t".into(), 200, 600);
+            w.world_surface = 200.0;
+            w.rock_layer = 300.0;
+            w.seed = 42;
+            for x in 0..200 {
+                for yy in 341..344 {
+                    let i = w.index(x, yy);
+                    w.tiles[i] = tr_core::tile::Tile {
+                        kind: 1,
+                        flags: FLAG_ACTIVE,
+                        ..Default::default()
+                    };
+                }
+            }
+            for dx in -2i32..=0 {
+                for dy in -2i32..=0 {
+                    let i = w.index(100 + dx, y as i32 + dy);
+                    w.tiles[i].wall = 216; // the hardened-sand shell
+                }
+            }
+            put_chest(&mut w, 100, y as i32);
+            let mut dungeon = DungeonCycle::new();
+            let mut jungle = JungleCycle::new();
+            let mut genned_wands = false;
+            let hell_chest = HELL_CHEST;
+            let mut hell_counter = 0usize;
+            let mut sky_houses = 0u32;
+            let mut rng = 42u64 | 1;
+            let rows = stock_chest(
+                &w,
+                100,
+                y as i32,
+                false,
+                0,
+                21,
+                &mut dungeon,
+                &mut jungle,
+                &mut genned_wands,
+                &hell_chest,
+                &mut hell_counter,
+                &mut sky_houses,
+                &mut rng,
+            );
+            assert_eq!(
+                deep_desert_chest(w.height, y as i32),
+                deep_flag,
+                "the depth split reads the height line"
+            );
+            assert!(
+                table.contains(&rows[0].kind),
+                "slot 0 rides the {} table ({})",
+                if deep_flag { "deep" } else { "shallow" },
+                rows[0].kind
+            );
+        }
+    }
+
+    /// `flag2`'s main arm (`:36064-36088`): the ice family's seven-item
+    /// table (or the 1/20 Extractinator) on the ice tiles the port probes.
+    #[test]
+    fn the_ice_chest_stocks_the_flag2_table() {
+        let mut w = rig();
+        for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-2, -2)] {
+            let i = w.index(100 + dx, 199 + dy);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 147,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        put_chest(&mut w, 100, 198);
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
+        let mut rng = 42u64 | 1;
+        let rows = stock_chest(
+            &w,
+            100,
+            198,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
+        assert!(
+            matches!(
+                rows[0].kind,
+                670 | 724 | 950 | 1319 | 987 | 1579 | 6153 | 997
+            ),
+            "slot 0 rides the ice table ({})",
+            rows[0].kind
+        );
+    }
+
+    /// `IslandHouse`'s cycle (`:79338-79363`): the first four sky chests of a
+    /// world take the fixed 159/65/158/2219 in order — the vanilla's
+    /// `skyIslandHouseCount` table before the `> 3` re-roll.
+    #[test]
+    fn the_sky_chests_walk_the_island_house_cycle() {
+        let mut w = rig();
+        for (slot, x) in [40i32, 60, 80, 100].iter().enumerate() {
+            for dx in -2i32..=0 {
+                for dy in -2i32..=0 {
+                    let i = w.index(x + dx, 197 + dy);
+                    w.tiles[i].wall = 73; // the island house's cloud walls
+                }
+            }
+            let _ = slot;
+            put_chest(&mut w, *x, 199);
+        }
+        let chests = generate_world_chests(&w);
+        let mains: Vec<u16> = chests.iter().map(|c| c.slots[0].kind).collect();
+        assert_eq!(
+            mains,
+            vec![159, 65, 158, 2219],
+            "the four houses walk the vanilla table in order: {mains:?}"
+        );
+        // A fifth house re-rolls (`> 3 → Next(4)`): any of the four lands.
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(120 + dx, 197 + dy);
+                w.tiles[i].wall = 73;
+            }
+        }
+        put_chest(&mut w, 120, 199);
+        let chests = generate_world_chests(&w);
+        let fifth = chests.last().map(|c| c.slots[0].kind).unwrap_or(0);
+        assert!(
+            SKY_ISLAND_CHEST.contains(&fifth),
+            "the fifth house re-rolls the table ({fifth})"
+        );
+    }
+
+    /// `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`): the five items
+    /// come out as a permutation of the table — the same `while (Count > 0)`
+    /// pick-and-remove, over the port's stream, once per world.
+    #[test]
+    fn the_hell_table_shuffles_to_a_permutation() {
+        for seed in 1u64..200 {
+            let mut rng = seed | 1;
+            let table = shuffle_hell_chest(&mut rng, false);
+            let mut sorted = table.to_vec();
+            sorted.sort_unstable();
+            let mut want = HELL_CHEST.to_vec();
+            want.sort_unstable();
+            assert_eq!(sorted, want, "the shuffle permutes the table ({seed})");
+        }
+        let mut rng = 42u64 | 1;
+        assert_eq!(
+            shuffle_hell_chest(&mut rng, true)
+                .iter()
+                .filter(|&&k| k == 683)
+                .count(),
+            1,
+            "the remix row swaps the 112 for the 683"
+        );
+    }
+
+    /// `flag8`'s main arm (`:36115-36118` + `:36210-36217`): the hell-band
+    /// chests walk the world's shuffled `hellChestItem` table, the counter
+    /// wrapping at its length.
+    #[test]
+    fn the_hell_chests_walk_the_shuffled_table() {
+        let mut w = rig();
+        for x in [40i32, 60, 80, 100, 120, 140] {
+            put_chest(&mut w, x, 199);
+        }
+        let chests = generate_world_chests(&w);
+        let mains: Vec<u16> = chests.iter().map(|c| c.slots[0].kind).collect();
+        // The same world-seeded stream `generate_world_chests` opens with:
+        // the shuffle is the stream's first consumer.
+        let seed = 42u64
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(0x2545_F491_4F6C_DD1D);
+        let mut stream = seed | 1;
+        let table = shuffle_hell_chest(&mut stream, false);
+        assert_eq!(
+            mains,
+            vec![table[0], table[1], table[2], table[3], table[4], table[0]],
+            "the six hell chests walk the table with the wrap: {mains:?}"
+        );
+        for kind in &mains {
+            assert!(
+                HELL_CHEST.contains(kind),
+                "every main is a hell-chest item ({kind})"
+            );
+        }
+    }
+
+    /// The families' mains displace the band's own weapon row on slot 0 —
+    /// the vanilla writes `num10` into `chest.item[0]` (`:36229-36232`) and
+    /// the band rows follow it.
+    #[test]
+    fn the_family_mains_ride_slot_zero() {
+        let mut w = rig();
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 197 + dy);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 147,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        put_chest(&mut w, 100, 197);
+        let mut dungeon = DungeonCycle::new();
+        let mut jungle = JungleCycle::new();
+        let mut genned_wands = false;
+        let hell_chest = HELL_CHEST;
+        let mut hell_counter = 0usize;
+        let mut sky_houses = 0u32;
+        let mut rng = 42u64 | 1;
+        let rows = stock_chest(
+            &w,
+            100,
+            197,
+            false,
+            0,
+            21,
+            &mut dungeon,
+            &mut jungle,
+            &mut genned_wands,
+            &hell_chest,
+            &mut hell_counter,
+            &mut sky_houses,
+            &mut rng,
+        );
+        assert!(
+            !matches!(
+                rows[0].kind,
+                280 | 281 | 284 | 285 | 953 | 946 | 3068 | 3069 | 3084 | 4341 | 6165
+            ),
+            "slot 0 is the family main, not the surface weapon ({})",
+            rows[0].kind
+        );
+        assert!(rows.len() > 1, "the band rows still follow it");
+    }
 }

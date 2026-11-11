@@ -84,6 +84,12 @@ pub fn walker_step(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // `NPC.spriteDirection` is the renderer's flip source
+        // (`Main.cs:23124-23128`) and `AI_000_Fighters`' head keeps it in
+        // lockstep with the movement direction (`NPC.cs:19867`,
+        // `:24893`/`:25607`) — BUG-07: without this write every walker froze
+        // at `spriteDirection`'s -1 default once the renderer read it.
+        npc.sprite_dir = npc.facing;
         npc.vx = npc.facing as f32 * params.speed;
     } else {
         npc.vx *= 0.9;

@@ -200,6 +200,10 @@ pub(crate) struct App {
     /// screen over the world, opened from the inventory's bestiary button
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
+    /// BUG-11: `Main.ingameOptionsWindow` (`Main.cs:2025`) — the in-game
+    /// options window the inventory's Settings button opens
+    /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
+    pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
@@ -303,6 +307,12 @@ pub(crate) struct App {
     /// The port's not-ported notice for front-screen clicks whose target
     /// lands with Tasks 6-8 (ours, like `Menu.hint`).
     pub(crate) front_hint: Option<String>,
+
+    /// Bug 17: the front-end hover edge — the framework element id the pointer
+    /// sat on last frame (`None` = outside), so `FadedMouseOver`'s menu tick
+    /// fires once per enter (`UICharacterSelect.cs:124`,
+    /// `UIWorldSelect.cs:126`).
+    pub(crate) front_hover_hit: Option<u32>,
     /// `Main.mouseLeft`'s port for the front screens (`Main.cs:51101`'s role):
     /// held between the press and release events while `front` is live — the
     /// creation screen's HSL sliders drag off it, like the menu's value bars.
@@ -319,6 +329,10 @@ pub(crate) struct App {
     pub(crate) vk_grid: bool,
     /// `config.json` options edited by the settings screens.
     pub(crate) settings: settings::Settings,
+    /// The world the front end selected on Play (`UIWorldListItem.PlayGame`
+    /// → `Main.LoadWorld`, BUG-04): the file the world swap loads at the next
+    /// frame boundary. `None` while no world is pending.
+    pub(crate) play_world: Option<PathBuf>,
     pub(crate) player_name: String,
     pub(crate) net: NetRole,
     /// Players of other machines streaming from the host/client.
@@ -439,6 +453,16 @@ pub(crate) struct App {
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
     pub(crate) smart_cursor: tr_core::smart_cursor::ContinuityState,
+    /// `Main.SmartCursorWanted_Mouse` (`Main.cs:2011`, the mouse's
+    /// `SmartCursorIsUsed`, `:2889`): the **runtime** smart-cursor state,
+    /// flipped on the left-Shift press edge
+    /// (`Player.TryToToggleSmartCursor`, `Player.cs:24867`/`:28814-28820`) and
+    /// gating the lookup (`world_sim/smart_cursor::enabled`). Vanilla starts
+    /// it off (`Main.cs:67179`), so the port's default is `false`; the
+    /// persisted `settings.smart_cursor_toggle` is the toggle-mode flag
+    /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
+    /// this state.
+    pub(crate) smart_cursor_used: bool,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -796,6 +820,31 @@ impl App {
         world_sim::clock::advance_disco(self);
     }
 
+    /// The front-end half of `Main.UpdateAudio` (`Main.cs:17816`): the audio
+    /// clock runs on every frame, so the title/character/world screens are
+    /// not silent (BUG-01). `Main.UpdateAudio_DecideOnNewMusic`'s `gameMenu`
+    /// arm (`Main.cs:12455-12532`) picks the title track; the worldgen seed
+    /// flags it reads come from the world-creation screen's seed text (the
+    /// vanilla's `WorldGen.drunkWorldGen` and friends), and the other front
+    /// screens play the plain title track.
+    pub(crate) fn update_menu_music(&mut self) {
+        let menu_flags = match &self.front {
+            Some(FrontScreen::WorldCreation(draft)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
+            }
+            _ => tr_core::seeds::SeedFlags::default(),
+        };
+        self.music.update(audio::MusicEnv {
+            music_volume: self.settings.music_volume,
+            menu: true,
+            menu_flags,
+            // `Main.activeMusicBox = -1` — the derived default 0 is the first
+            // box's id, which would override the title track.
+            music_box: -1,
+            ..Default::default()
+        });
+    }
+
     /// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
     /// tick, matching the original 30 Hz rate.
     pub(crate) fn update_liquids(&mut self, dt: f32) {
@@ -992,6 +1041,33 @@ impl App {
             self.favorite_slots.push(idx);
         }
         12
+    }
+
+    /// `Main.PendingPlayer`'s favourites on the front end
+    /// (`UICharacterSelect.cs:110`): a card's `.plr` bitfield hydrates the
+    /// live slots when the character is played (BUG-03). The bits are the
+    /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
+    pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
+        let mut slots = Vec::new();
+        for i in 0..crate::item::INV {
+            if bits & (1 << i) != 0 {
+                slots.push(i);
+            }
+        }
+        self.favorite_slots = slots;
+    }
+
+    /// The save-side mirror of [`Self::hydrate_favorites`]: the live
+    /// `favorite_slots` flattened into the `.plr` bitfield
+    /// (`Player.cs:54820-54824`).
+    pub(crate) fn favorite_bits(&self) -> u64 {
+        let mut bits = 0u64;
+        for &i in &self.favorite_slots {
+            if i < crate::item::INV {
+                bits |= 1 << i;
+            }
+        }
+        bits
     }
 
     pub(crate) fn is_favorite(&self, idx: usize) -> bool {
@@ -1387,6 +1463,92 @@ impl App {
     }
     pub(crate) fn pan_camera(&mut self, dt: f32) {
         world_sim::camera::pan_camera(self, dt);
+    }
+
+    /// The front end's Play tail (`UIWorldListItem.PlayGame` → `Main.LoadWorld`,
+    /// BUG-04): the selected `.wld`/`.trwld` is loaded and the whole
+    /// world-derived state re-derives from it through [`App::new`]'s own body —
+    /// the same construction the boot path runs, so a swapped world is
+    /// indistinguishable from a booted one. The window/GPU/audio/music and the
+    /// shot-capture state survive the swap (the vanilla's `LoadWorld` walks the
+    /// same split: the device and the config stay, the world state reloads).
+    ///
+    /// The atlas is rebuilt from the new world's tile/wall usage
+    /// ([`build_atlas`]) and the renderer is recreated from it — the old one
+    /// holds the old atlas texture (the same recreation the boot's `loop` runs).
+    /// A failed load leaves the current world untouched and returns the error,
+    /// so the menu stays alive with its own world rather than a black screen.
+    pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
+        let (world, sections) = load_world(path)?;
+        let content = assets::content_dir().context("no retail Content directory")?;
+        let (atlas, font_atlas, lookups, atlas_stats) =
+            build_atlas(&world, &content.join("Images"))?;
+        let settings = self.settings.clone();
+        let shot_path = self.shot_path.clone();
+        let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
+        let music =
+            std::mem::replace(&mut self.music, audio::MusicSystem::new(assets::content_dir()));
+        let window = self.window.take();
+        let gpu = self.gpu.take();
+        let post = self.post.take();
+        let noise_tex = self.noise_tex.take();
+        let water_mask = self.water_mask.take();
+        // The fresh App carries the new world's state (clouds, sky, stars,
+        // player, npcs, town rooms, chests, liquids, rain, wind, atmo,
+        // bestiary, the loader pins) exactly as App::new built it at boot.
+        *self = App::new(
+            settings,
+            world,
+            sections,
+            path.to_path_buf(),
+            atlas,
+            font_atlas,
+            lookups,
+            atlas_stats,
+        );
+        self.window = window;
+        self.gpu = gpu;
+        self.audio = audio;
+        self.music = music;
+        self.post = post;
+        self.noise_tex = noise_tex;
+        self.water_mask = water_mask;
+        self.shot_path = shot_path;
+        // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
+        // world's spawn and the zoom on the setting, before the first frame.
+        self.camera = Vec2::new(
+            self.world.width as f32 * TILE_PX * 0.5,
+            self.world.spawn_y as f32 * TILE_PX,
+        );
+        if let Some((x, y)) = crate::env::camera_pin() {
+            self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
+        }
+        self.zoom = self.settings.zoom;
+        if let Some(z) = crate::env::zoom_pin() {
+            self.zoom = z.clamp(0.25, 8.0);
+            self.zoom_pinned = true;
+        }
+        // The renderer rides the new atlas texture (the dye-param table is
+        // static vanilla data, re-uploaded like the boot's).
+        if let Some(gpu) = self.gpu.as_ref() {
+            if let Some(atlas) = self.atlas.as_ref() {
+                let mut renderer = SpriteRenderer::new(gpu, atlas, 8, self.font_atlas.as_ref());
+                renderer.set_dye_params(
+                    gpu,
+                    &crate::dye::dye_params()
+                        .iter()
+                        .map(|p| tr_render::sprite::DyeParam {
+                            mode: p.mode,
+                            _pad: p._pad,
+                            color: p.color,
+                            secondary: p.secondary,
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                self.renderer = Some(renderer);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -2146,6 +2308,7 @@ impl App {
             creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            play_world: None,
             invasion_spawn_timer: 0.0,
             npc_rng: world_seed,
             spawn_no_cycle: false,
@@ -2333,6 +2496,7 @@ impl App {
             players: Vec::new(),
             worlds: Vec::new(),
             front_hint: None,
+            front_hover_hit: None,
             front_mouse_down: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
@@ -2398,6 +2562,8 @@ impl App {
             mine_timer: 0.0,
             edit_target: None,
             smart_cursor: Default::default(),
+            smart_cursor_used: false,
+            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: world_path.clone(),
             dev_break,
             dev_place,
@@ -3307,6 +3473,40 @@ pub(crate) fn log_atlas_diagnostics(atlas: &Atlas, lookups: &assets::Lookups) {
     }
 }
 
+/// The production boot world (BUG-05): the player's own most recently
+/// modified `.trwld` in the saves dir — the world the lobby's `WorldPlay`
+/// would open anyway (`UIWorldSelect` lists them, `Main.LoadWorld` boots the
+/// selected one). `None` when the player has no saved world yet, and
+/// [`terrstaria_world`] takes over as the out-of-the-box stand-in.
+///
+/// The vanilla has no boot world at all (`Main.ActiveWorldFileData` is null
+/// until `PlayGame`); the port's `App::new` needs one, so the newest own
+/// world is the closest shape. The pre-baked `Terrustaria` world (seed 1 or
+/// `TR_SEED`) therefore stops being the production path and stays an explicit
+/// debug/demo one, alongside `TR_WORLD`.
+pub(crate) fn latest_own_world() -> Option<PathBuf> {
+    let dir = save::default_world_dir()?;
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_trwld = path
+            .extension()
+            .is_some_and(|e| e == "trwld")
+            && path.is_file();
+        if !is_trwld {
+            continue;
+        }
+        let Ok(when) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        if newest.as_ref().is_none_or(|(best, _)| when > *best) {
+            newest = Some((when, path));
+        }
+    }
+    newest.map(|(_, path)| path)
+}
+
 pub(crate) fn terrstaria_world() -> Result<PathBuf> {
     let path = save::default_world_path("Terrustaria")
         .context("cannot resolve Documents/My Games/Terrustaria")?;
@@ -3365,6 +3565,37 @@ mod tr_hooks {
         let out = f();
         unsafe { std::env::remove_var(name) };
         out
+    }
+
+    /// The production boot path (BUG-05): the player's own newest `.trwld`,
+    /// not the pre-baked `Terrustaria` stand-in. The mtime read is the vanilla
+    /// `UIWorldSelect`'s list shape — the lobby opens what `WorldPlay` picks.
+    #[test]
+    fn the_boot_world_is_the_players_newest_save() {
+        let dir = std::env::temp_dir().join(format!("tr-boot-world-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let worlds = dir.join("Documents/My Games/Terrustaria/Worlds");
+        std::fs::create_dir_all(&worlds).unwrap();
+        // Two saves; the second is written last so its mtime is the newest.
+        for name in ["Alpha", "Beta"] {
+            let path = worlds.join(format!("{name}.trwld"));
+            std::fs::write(&path, &[b'T', b'R', b'W', b'L', b'D', b'0', b'1', 0]).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let picked = with_pin("USERPROFILE", dir.to_str().unwrap(), latest_own_world);
+        assert_eq!(
+            picked.as_deref(),
+            Some(worlds.join("Beta.trwld").as_path()),
+            "the newest own world boots"
+        );
+        // An empty saves dir has no own world: the port's stand-in takes over
+        // (the documented debug/demo path).
+        let empty = std::env::temp_dir().join(format!("tr-boot-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&empty);
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(with_pin("USERPROFILE", empty.to_str().unwrap(), latest_own_world).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16

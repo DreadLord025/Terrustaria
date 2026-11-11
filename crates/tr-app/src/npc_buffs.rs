@@ -282,6 +282,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DD2DarkMage
         | NpcKind::DD2Betsy
         | NpcKind::DD2WitherBeast
+        | NpcKind::DD2WyvernT1
+        | NpcKind::DD2WyvernT2
+        | NpcKind::DD2WyvernT3
+        | NpcKind::DD2DarkMageT3
+        | NpcKind::DD2WitherBeastT3
+        | NpcKind::DD2DrakinT2
+        | NpcKind::DD2DrakinT3
+        | NpcKind::DD2KoboldWalkerT2
+        | NpcKind::DD2KoboldWalkerT3
+        | NpcKind::DD2KoboldFlyerT2
+        | NpcKind::DD2KoboldFlyerT3
+        | NpcKind::DD2OgreT2
+        | NpcKind::DD2OgreT3
         | NpcKind::DD2Bartender
         | NpcKind::DD2EterniaCrystal
         | NpcKind::AncientCultist

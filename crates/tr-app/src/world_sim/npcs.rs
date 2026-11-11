@@ -1345,6 +1345,16 @@ pub(crate) fn update_invasion_state(app: &mut App) {
     } else {
         app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
     }
+    // `if (Main.invasionProgressMode == 0)` (`Main.cs:47718`): the off mode
+    // zeroes BOTH the display timer and the alpha — the bar never shows. The
+    // C#'s mode-1 arm (`>= 3` at `:49908`) is the completion path the port
+    // does not model. (Re-landed: the fix-front-end-click-sounds merge
+    // `13834a96` resolved main against a base that predated it and dropped
+    // this arm and its test.)
+    if app.settings.event_progress == 0 {
+        app.invasion_progress_display_left = 0;
+        app.invasion_progress_alpha = 0.0;
+    }
     if app.invasion_progress_near {
         app.invasion_progress_display_left = app.invasion_progress_display_left.max(160);
     }
@@ -1512,7 +1522,21 @@ fn nid_of(id: u16) -> Option<NpcKind> {
         566 => 104,
         567 => 105,
         568 => 108,
-        558 => 101, // the Wyvern rides the same walker until its arms land
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19): the port
+        // ids 148-160.
+        558 => 169,
+        559 => 170,
+        560 => 171,
+        565 => 172,
+        569 => 173,
+        570 => 174,
+        571 => 175,
+        572 => 176,
+        573 => 177,
+        574 => 178,
+        575 => 179,
+        576 => 180,
+        577 => 181,
         _ => return None,
     })
 }
@@ -1626,6 +1650,20 @@ fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
         NpcKind::DD2EterniaCrystal => 548,
         NpcKind::DD2LanePortal => 549,
         NpcKind::DD2Bartender => 550,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19).
+        NpcKind::DD2WyvernT1 => 558,
+        NpcKind::DD2WyvernT2 => 559,
+        NpcKind::DD2WyvernT3 => 560,
+        NpcKind::DD2DarkMageT3 => 565,
+        NpcKind::DD2WitherBeastT3 => 569,
+        NpcKind::DD2DrakinT2 => 570,
+        NpcKind::DD2DrakinT3 => 571,
+        NpcKind::DD2KoboldWalkerT2 => 572,
+        NpcKind::DD2KoboldWalkerT3 => 573,
+        NpcKind::DD2KoboldFlyerT2 => 574,
+        NpcKind::DD2KoboldFlyerT3 => 575,
+        NpcKind::DD2OgreT2 => 576,
+        NpcKind::DD2OgreT3 => 577,
         _ => return None,
     };
     Some(id)
@@ -5343,6 +5381,37 @@ mod invasion_bar_tests {
                 ));
             }
         }
+    }
+
+    /// BUG-08: the invasion progress bar's off mode (Main.cs:47718): the
+    /// off setting zeroes both the display timer and the alpha, so the panel
+    /// never draws; the default (mode 2) leaves the ramp untouched.
+    /// (Re-landed with the arm — the BUG-11-15/front-end-sound merge dropped
+    /// this test with the code.)
+    #[test]
+    fn bug_08_the_off_mode_zeroes_the_invasion_bar() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 40;
+        app.world.invasion_size_start = 80;
+        app.world.invasion_goblins = true;
+        app.invasion_progress = 40;
+        app.invasion_progress_max = 80;
+        app.invasion_progress_icon = 4;
+        app.invasion_progress_display_left = 160;
+        app.invasion_progress_alpha = 1.0;
+        update_invasion_state(&mut app);
+        assert!(app.invasion_progress_alpha > 0.0, "the default leaves the alpha");
+        app.settings.event_progress = 0;
+        app.invasion_progress_alpha = 0.7;
+        app.invasion_progress_display_left = 120;
+        update_invasion_state(&mut app);
+        assert_eq!(app.invasion_progress_alpha, 0.0, "mode 0 zeroes the alpha");
+        assert_eq!(
+            app.invasion_progress_display_left, 0,
+            "mode 0 zeroes the display timer"
+        );
     }
 }
 
@@ -9103,8 +9172,10 @@ mod dd2_lane_tests {
 
     #[test]
     fn the_gate_drops_the_unported_picks() {
-        // The tier-2 and tier-3 rosters carry families the port has not
-        // landed; those picks spawn nothing until their kinds do.
+        // The tier-3 wave-6 roster: its two chains pick from the balista
+        // (577), the drake (569), the tier-2 mystic (571) and the Kobold
+        // walker pair — M4-EVENT-19 ported all of them, so the pick now
+        // spawns and only the still-unported kobold flyer (574/575) drops.
         let mut world = surface_world();
         world.hard_mode = true;
         world.downed_mech_boss1 = true;
@@ -9118,14 +9189,232 @@ mod dd2_lane_tests {
         gate.wants_dd2_spawn = true;
         app.npcs.push(gate);
         update_npcs(&mut app, 1.0 / 60.0);
-        // The intent was consumed, so the resolve ran — the roll's pick (the
-        // tier-3 wave-6 roster's 571/569/577 family) has no ported kind.
+        // The intent was consumed, so the resolve ran — the pick's kind is
+        // ported now, so one of the wave-6 families walks out.
         assert!(app.npcs.iter().all(|n| !n.wants_dd2_spawn), "the resolve ran");
-        assert_eq!(
-            app.npcs.iter().filter(|n| n.hp > 0).count(),
-            1,
-            "the tier-3 wave-6 pick has no ported kind yet"
+        assert!(
+            app.npcs.iter().filter(|n| n.hp > 0).count() > 1,
+            "the tier-3 wave-6 pick spawns: {}",
+            app.npcs.iter().filter(|n| n.hp > 0).count()
         );
     }
 }
+}
+
+#[cfg(test)]
+mod dd2_tier_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn fixture() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// The tier-2/3 families' rows (`SetDefaults`'s cases 558-577): the
+    /// port ids, the vanilla sizes, the hp, the damage and the defense.
+    #[test]
+    fn the_tier_two_and_three_rows_round_trip() {
+        for (kind, id, w, h, hp, dmg, def, kb) in [
+            (NpcKind::DD2WyvernT1, 169u16, 38.0, 38.0, 60, 30, 4, 0.2),
+            (NpcKind::DD2WyvernT2, 170, 38.0, 38.0, 180, 75, 16, 0.2),
+            (NpcKind::DD2WyvernT3, 171, 38.0, 38.0, 600, 100, 30, 0.05),
+            (NpcKind::DD2DarkMageT3, 172, 34.0, 62.0, 4000, 90, 38, 0.0),
+            (NpcKind::DD2WitherBeastT3, 173, 18.0, 40.0, 1400, 80, 40, 0.05),
+            (NpcKind::DD2DrakinT2, 174, 42.0, 58.0, 900, 60, 30, 0.0),
+            (NpcKind::DD2DrakinT3, 175, 42.0, 58.0, 3000, 90, 40, 0.0),
+            (NpcKind::DD2KoboldWalkerT2, 176, 18.0, 40.0, 260, 60, 26, 0.2),
+            (NpcKind::DD2KoboldWalkerT3, 177, 18.0, 40.0, 800, 80, 32, 0.1),
+            (NpcKind::DD2KoboldFlyerT2, 178, 38.0, 38.0, 170, 50, 16, 0.4),
+            (NpcKind::DD2KoboldFlyerT3, 179, 38.0, 38.0, 580, 80, 32, 0.25),
+            (NpcKind::DD2OgreT2, 180, 96.0, 124.0, 5000, 70, 34, 0.0),
+            (NpcKind::DD2OgreT3, 181, 96.0, 124.0, 13000, 90, 40, 0.0),
+        ] {
+            assert_eq!(kind.to_u16(), id, "{:?}", kind);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (w, h), "{:?}'s size", kind);
+            assert_eq!(n.max_hp, hp, "{:?}'s hp", kind);
+            assert_eq!(n.defense(), def, "{:?}'s defense", kind);
+            assert_eq!(n.knock_back_resist(), kb, "{:?}'s kb", kind);
+        }
+    }
+
+    /// The vanilla ids: the lane spawn table's ids map back to the port's
+    /// kinds (`nid_of`), so the D2/D3 rosters now resolve.
+    #[test]
+    fn the_lane_table_resolves_every_ported_family() {
+        for (id, kind) in [
+            (558u16, NpcKind::DD2WyvernT1),
+            (559, NpcKind::DD2WyvernT2),
+            (560, NpcKind::DD2WyvernT3),
+            (564, NpcKind::DD2DarkMage),
+            (565, NpcKind::DD2DarkMageT3),
+            (569, NpcKind::DD2WitherBeastT3),
+            (570, NpcKind::DD2DrakinT2),
+            (571, NpcKind::DD2DrakinT3),
+            (572, NpcKind::DD2KoboldWalkerT2),
+            (573, NpcKind::DD2KoboldWalkerT3),
+            (574, NpcKind::DD2KoboldFlyerT2),
+            (575, NpcKind::DD2KoboldFlyerT3),
+            (576, NpcKind::DD2OgreT2),
+            (577, NpcKind::DD2OgreT3),
+        ] {
+            assert_eq!(super::nid_of(id), Some(kind), "{}", id);
+            assert_eq!(super::dd2_pool_id(kind), Some(id), "{}", id);
+        }
+    }
+
+    /// `AI_108_DivingFlyer`'s state machine (`NPC.cs:65392-65788`): the
+    /// approach, the engage, the wind-up and the dive — the wyvern's launch
+    /// rides `num8` (8).
+    #[test]
+    fn the_diving_flyer_cycles_through_its_dive() {
+        let mut n = Npc::new(
+            NpcKind::DD2WyvernT1,
+            150.0 * TILE_PX,
+            110.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        // The approach (`num3`'s 500-px engage gate): close, then engage.
+        // The dive's homing adds `num12 / num11` per tick (the C#'s drag), so
+        // the speed is read on the wind-up's LAUNCH tick — the 1 → 2 flip —
+        // not at any later point of the dive.
+        let mut dived = false;
+        let mut speed = 0.0;
+        for _ in 0..400 {
+            let was = n.ai[0];
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if was == 1.0 && n.ai[0] == 2.0 {
+                dived = true;
+                speed = n.vx.hypot(n.vy);
+                break;
+            }
+        }
+        assert!(dived, "the wyvern dived");
+        // The launch speed rides `num8` (8).
+        assert!((speed - 8.0).abs() < 0.5, "the launch speed: {}", speed);
+    }
+
+    /// The kobold glider's impact (`:65728-65788`): the 192-box, the 80-ish
+    /// damage and the death at the third tick — the glider has `num13 = 0`,
+    /// so only the solid-collision or the 64-px proximity opens it.
+    #[test]
+    fn the_glider_self_destructs_on_impact() {
+        let mut n = Npc::new(
+            NpcKind::DD2KoboldFlyerT2,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.ai[0] = 3.0;
+        n.ai[1] = 0.0;
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut blasted = false;
+        for _ in 0..6 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_blast {
+                blasted = true;
+            }
+        }
+        assert!(blasted, "the impact's blast request");
+        assert_eq!(n.damage_override, Some(80), "the 192-box's damage");
+        assert!(n.hp <= 0, "the glider dies with it: {}", n.hp);
+    }
+
+    /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`): the ogre's chase
+    /// window latches at 300 ticks and the spit leaves on `num9` (36).
+    #[test]
+    fn the_ogre_latches_its_chase_window_and_spits() {
+        let mut n = Npc::new(
+            NpcKind::DD2OgreT2,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        // 640 px away: past `num4 + 300` (430) but inside the spit's 1000-px
+        // engage, so `ai[1] = 1` (the 676) picks over the pound's 683.
+        player.x = 190.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut shot = None;
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                break;
+            }
+        }
+        let s = shot.expect("the ogre throws");
+        assert_eq!(s.0, 676, "the spit");
+        // `:63103`'s `GetAttackDamage_ForProjectiles(40f, 30f)` — the port's
+        // classic-damage convention takes the first value.
+        assert_eq!(s.5, 40, "the spit's damage");
+    }
+
+    /// `AI_107`'s 570/571 arm (`NPC.cs:63145-63195`): the drakin's 671
+    /// burst leaves from the 22-px muzzle offset at the tier's damage.
+    #[test]
+    fn the_drakin_bursts_the_671_from_its_muzzle() {
+        let mut n = Npc::new(
+            NpcKind::DD2DrakinT2,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = 7u64;
+        let mut shot = None;
+        let mut origin_x = 0.0f32;
+        for _ in 0..240 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                origin_x = n.x;
+                break;
+            }
+        }
+        let s = shot.expect("the drakin fires");
+        assert_eq!(s.0, 671, "the drakin's shot");
+        assert_eq!(s.5, 35, "the T2's damage");
+        // `:63162`'s `vector.X += 22 * direction` rides the box's CENTRE
+        // (`base.Center + vector`), so the muzzle sits 22 px right of the
+        // 42-wide box's centre.
+        assert!(
+            (s.1 - (origin_x + 21.0 + 22.0)).abs() < 1.0,
+            "the muzzle offset: {}",
+            s.1
+        );
+    }
 }
