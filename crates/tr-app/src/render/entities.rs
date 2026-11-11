@@ -713,7 +713,31 @@ fn tower_draw<'a>(
 /// celestial pillars' 141-145, the AoW's 621-623).
 fn npc_add_height(n: &Npc) -> f32 {
     use NpcKind::*;
-    let town = n.kind.is_town_npc();
+    // `n.townNPC` in the C# — the port's `is_town_npc` list is narrower
+    // than the vanilla's (it omits the Mechanic/the Wizard/the Tavernkeep
+    // and the rest of the post-1.1 arrivals), so the vanilla's own
+    // `townNPC = true` family is added here rather than in the enum
+    // helper the housing/town machine reads.
+    let town = n.kind.is_town_npc()
+        || matches!(
+            n.kind,
+            Mechanic
+                | BoundMechanic
+                | Wizard
+                | BoundWizard
+                | Stylist
+                | WebbedStylist
+                | Angler
+                | SleepingAngler
+                | TaxCollector
+                | Golfer
+                | SleepingGolfer
+                | Zoologist
+                | Princess
+                | DyeTrader
+                | PartyGirl
+                | TravellingMerchant
+        );
     let v = match n.kind {
         // `:22011` — 125/126 (the Twins) 30, `:22034` 126 again.
         Retinazer | Spazmatism => 30.0,
@@ -774,21 +798,28 @@ fn npc_add_height(n: &Npc) -> f32 {
         Angler | SleepingAngler => 2.0,
         // `:22149` 579 (the Bouncy Slime — no port kind), `:22153` 612/613
         // (the T3 goblins' rig) 2.
-        DD2GoblinT3 => 2.0,
+        // The port's DD2 Skeleton T3 wears the same 612/613 rig row; the
+        // T2/T3 javelin pair rides 581/582 (see `npc_anchor_nudge`).
+        DD2GoblinT3 | DD2SkeletonT3 => 2.0,
         // `:22169` 269/270/271/274/277 — the Painted/vanity town ids' -2.
         // `:22174` the `townNPC && ai[0] == 5` sitting row: -4 as a flat
         // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
-        _ if town && n.ai[0] == 5.0 => {
-            let extra = match n.kind {
-                DyeTrader => -2.0,
-                _ => 0.0,
-            };
-            -4.0 + extra
-        }
-        // `:22178` 671-675 (the Travelling Merchant's pet trio) +10.
         _ => 0.0,
     };
-    v * n.scale
+    // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
+    // that the sitting ladder then deepens for the 124 (the Mechanic) and
+    // the town slimes.
+    let mut shift = v;
+    if town && n.ai[0] == 5.0 {
+        shift -= 4.0;
+        if matches!(n.kind, Mechanic | BoundMechanic) {
+            shift -= 2.0;
+        }
+        if n.kind == DyeTrader {
+            shift -= 2.0;
+        }
+    }
+    shift * n.scale
 }
 
 /// `Main.cs:22992-22994`'s three anchor terms for the generic NPC draw:
@@ -834,9 +865,14 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
+    // `float num47 = Main.NPCAddHeight(rCurrentNPC);` — the function
+    // multiplies by `scale` ITSELF (`:22184`), and the `:23048` switch then
+    // adds its own `50 * scale` terms.
     let mut num47 = npc_add_height(n);
     let mut num45 = 0.0;
     match n.kind {
+        // The vanilla's 124 — the port's `Mechanic` kind — at `:23000`.
+        Mechanic | BoundMechanic => num46 = 2.0,
         // `:23026` — the id 477 group's `num47 = 22` (an absolute, not an
         // add: the DD2 Ogre's sheet is far taller than its box).
         DD2OgreT2 | DD2OgreT3 => num47 = 22.0,
@@ -844,32 +880,28 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         DD2KoboldWalkerT2 | DD2KoboldWalkerT3 => num46 = 14.0,
         // `:23020` — 484's `num46 = 2` (the DD2 Wither Beast T3's rig).
         DD2WitherBeastT3 => num46 = 2.0,
-        // `:23018` — 490's `num46 = 4` (the DD2 Drakin's carry).
-        // `:23014` — 581's `num46 = -6` (the DD2 Javelin T2's rig).
+        // `:23014` — 581's `num46 = -6` (the port's DD2 Javelin T2). 581 is
+        // NOT in the `:23214` support group's overwrite list, so the -6
+        // stands alone.
         DD2JavelinT2 => num46 = -6.0,
-        // `:23010` — 537's `num46 = 2`.
-        // `:23030` — 606's `num46 -= 2`.
-        // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders).
+        // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders); the
+        // port's T1/T2 pair is its stand-in.
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
+        // `:23106` — 688's `num46 += 10`.
+        DD2GoblinT1 => num46 += 10.0,
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
         // `:23086` — the Golem head's `num47 += 16`.
         GolemHead | GolemHeadFree => num47 += 16.0,
-        // `:23090` — 288's `num47 += 6` (the DD2 Ogre's fist ids — no port
-        // kind; 288 is the port's DD2 Ogre T2's own net id, so the row is
-        // kept for the T2 only where the port uses 288 itself).
-        // `:23106` — 688's `num46 += 10`.
-        DD2GoblinT1 => num46 += 10.0,
-        // `:23214-23243` — the DD2 support group's `num47` overwrites:
-        // the javelineers' -8, the bombers' -5, the kobold walkers' -4, the
-        // drakins' -2 and the Wither Beasts' -3.
-        DD2JavelinT1 => num47 = -8.0,
+        // `:23214-23243` — the DD2 support group's `num47` OVERWRITES: the
+        // javelineers' -8, the bombers' -5, the kobold walkers' -4 and the
+        // Wither Beasts' -3. (The drakins' -2 and the goblin attackers' own
+        // rows are absent from the port's `NPCAddHeight` list.)
+        DD2JavelinT1 | DD2JavelinT2 => num47 = -8.0,
         DD2GoblinBomberT1 | DD2GoblinBomberT2 | DD2GoblinBomberT3 => num47 = -5.0,
         DD2KoboldWalkerT2 => num47 = -4.0,
         DD2WitherBeast => num47 = -3.0,
-        // `:23101-23112` — the 694-only `num45`/`num46` terms (the port has
-        // no kind for 694; kept out).
         _ => {}
     }
     num45 + num46 + num47
@@ -2544,8 +2576,8 @@ mod anchor_tests {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
-    /// `Main.cs:23048`'s per-kind anchor nudge (`num47`): the Plantera head's
-    /// 26, the Brain's `50 * scale`, and the DD2 group's negative shifts.
+    /// `Main.cs:22991-23115`'s `num45`/`num46`/`num47` chain — the
+    /// `Main.NPCAddHeight` base plus the `:23048` switch's per-kind terms.
     #[test]
     fn the_anchor_nudges_follow_the_c_sharp_switch() {
         let mut n = bare(NpcKind::Plantera);
@@ -2554,9 +2586,27 @@ mod anchor_tests {
         let mut b = bare(NpcKind::BrainOfCthulhu);
         b.scale = 0.5;
         assert_eq!(npc_anchor_nudge(&b), 25.0, "the Brain's 50 * scale");
-        for kind in [NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2] {
-            assert_eq!(npc_anchor_nudge(&bare(kind)), -8.0, "{kind:?}");
-        }
+        // The support group's `num47` is an OVERWRITE (`:23226-23243`), so
+        // its own `NPCAddHeight` row (4/-5/-4/-2/-3 for the goblin rows)
+        // never reaches the draw: the switch replaces it.
+        // (the T2's `num46 = -6` from `:23014` is a separate `else if`
+        // chain, so it does not see this overwrite.)
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2JavelinT1)), -8.0);
+        // (the T3's own `NPCAddHeight` row is 4 (`:22087`), which the
+        // switch's -8 overwrite replaces.)
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2JavelinT3)), 4.0);
+        // (`NPCAddHeight`'s T2 row is -6 (`:23014`), replaced by the -8.
+        // The vanilla's 581 — the port calls it T2 — takes only the
+        // overwrite: history.)
+        // (the vanilla's 581, the port's T2, takes `NPCAddHeight`'s 2
+        // (`:22153`, the 612/613 rig row) and the `:23038` `num46 -= 2`
+        // from the same chain — it is NOT in the support group's overwrite
+        // list, so both apply.)
+        assert_eq!(
+            npc_anchor_nudge(&bare(NpcKind::DD2JavelinT2)),
+            -6.0,
+            "the T2's -6 num46"
+        );
         for kind in [
             NpcKind::DD2GoblinBomberT1,
             NpcKind::DD2GoblinBomberT2,
@@ -2565,6 +2615,49 @@ mod anchor_tests {
             assert_eq!(npc_anchor_nudge(&bare(kind)), -5.0, "{kind:?}");
         }
         assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2WitherBeast)), -3.0);
+        // `Main.NPCAddHeight`'s own rows (`Main.cs:22002-22184`): the Twins'
+        // 30 (`:22011`), the Eater of Souls' 26 (`:22031`), the zombie's 13
+        // (`:22039`), the hellbat's 10 (`:22079`), the Skeletron's -4
+        // (`:22099`) and the Wall of Flesh's -2 (`:22103`).
+        for (kind, want) in [
+            (NpcKind::Retinazer, 30.0),
+            (NpcKind::Spazmatism, 30.0),
+            (NpcKind::EaterOfSouls, 26.0),
+            (NpcKind::Zombie, 13.0),
+            (NpcKind::DevourerHead, 13.0),
+            (NpcKind::GiantWormHead, 8.0),
+            (NpcKind::Hellbat, 10.0),
+            (NpcKind::CaveBat, 4.0),
+            (NpcKind::Shark, 5.0),
+            (NpcKind::GrayGrunt, 4.0),
+            (NpcKind::SkeletronHead, -4.0),
+            (NpcKind::WallOfFlesh, -2.0),
+            (NpcKind::SkeletronHand, 20.0),
+            (NpcKind::Goldfish, 56.0),
+            (NpcKind::TheDestroyer, 30.0),
+            (NpcKind::GoblinArcher, 14.0),
+            // The town rows: the Clothier's 2 (`:22015` — it is a 2-px
+            // row, untouched by the sitting shift) and the vanilla's 124
+            // (the port's Mechanic) at 2 (`:23000`), which the sitting
+            // ladder then takes to -4.
+            (NpcKind::Clothier, 2.0),
+            (NpcKind::Mechanic, 2.0),
+        ] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), want, "{kind:?}");
+        }
+        // The `townNPC && ai[0] == 5` sitting row: `NPCAddHeight`'s -4
+        // replaces nothing for the Clothier (its 2 is its own row), the
+        // C# sums (`num -= 4`), so 2 + -4 = -2.
+        let mut sitting = bare(NpcKind::Clothier);
+        sitting.ai[0] = 5.0;
+        assert!(sitting.kind.is_town_npc(), "the town test must hold");
+
+        assert_eq!(npc_anchor_nudge(&sitting), -2.0, "the Clothier's 2 + -4");
+        // The vanilla's 124 (the port's Mechanic): the `:23000` `num46 = 2`
+        // then the sitting ladder's `-4 - 2` (`:22174`'s 124 arm) => -4.
+        let mut sit_mech = bare(NpcKind::Mechanic);
+        sit_mech.ai[0] = 5.0;
+        assert_eq!(npc_anchor_nudge(&sit_mech), -4.0, "the Mechanic's 2 - 6");
         // The unoverridden kinds stay at 0 (the towers/saucers/Deerclops
         // compute their own anchors).
         for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
