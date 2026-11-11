@@ -407,6 +407,57 @@ impl App {
         if !left && !right {
             return;
         }
+        // `Main.DrawPVPIcons`'s click handling (`Main.cs:42678-42694`, `:42724-42767`):
+        // the PVP toggle and the six team cells. Both sit inside the open
+        // inventory (`DrawInventory`'s tail, `:41003`) and consume the press
+        // before the slot grid. The gates, in the C# order: the
+        // `hostile`/`team` change needs `teamCooldown == 0`; the team change
+        // also needs the cell to hold a different team and
+        // `Player.TeamChangeAllowed()` (a `return true` stub in 1.4.5.8,
+        // `Player.cs:4517-4520`, kept as the gate it is).
+        if left && self.inventory_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            // `Main.mH` as `frame()` hands it to the draw (`Main.cs:45771-45783`).
+            let m_h = self.main_m_h();
+            let state = self.pvp_icon_state();
+            if let Some(hit) = ui::chrome::pvp_hit(
+                screen,
+                self.equip_page,
+                m_h,
+                &state,
+                self.mouse_pos,
+                ui::chrome::pvp_team_cell(&self.lookups),
+            ) {
+                // The gate chain (`:42689-42694`, `:42753-42767`) is
+                // `ui::chrome::pvp_click`'s job — this arm is the effect.
+                match ui::chrome::pvp_click(&state, &hit) {
+                    Some(ui::chrome::PvpClick::ToggleHostile) => {
+                        self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        if let Some(p) = self.player.as_mut() {
+                            p.hostile = !p.hostile;
+                        }
+                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)` —
+                        // the PVP-state broadcast. M6-NET's message table has
+                        // no 30 (`net.rs`); the local flip is the whole effect
+                        // in SP (ANALYSIS).
+                    }
+                    Some(ui::chrome::PvpClick::SetTeam(i)) => {
+                        self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        if let Some(p) = self.player.as_mut() {
+                            p.team = i;
+                        }
+                        // `:42765-42770`: `SendData(157)` in MP, else the
+                        // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
+                        // is not ported — no team spawn seeds yet).
+                    }
+                    None => {}
+                }
+                return;
+            }
+        }
         // `Main.cs:41087-41120`: the map-style icon row's clicks — one-shot on
         // the press (`Main.mouseLeft && Main.mouseLeftRelease`), only while the
         // inventory is open (their home is `DrawInventory`, `:41055`) and the
@@ -2465,5 +2516,101 @@ mod tests {
         app.mouse_pos = TRASH_CELL;
         assert!(ui::inventory::trash_slot_at(TRASH_CELL, false));
         assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
+    }
+
+    // ------------------------------------------------------------------
+    // The PVP toggle / team select cells (`Main.DrawPVPIcons`).
+    // ------------------------------------------------------------------
+
+    /// The screen point of the PVP toggle's hover box and of one team cell, at
+    /// the test app's 1600x900 frame with the minimap live (`Main.mH = 256`).
+    fn pvp_points(app: &App) -> (Vec2, Vec2) {
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let m_h = app.main_m_h();
+        let (x, y) = ui::chrome::pvp_icon_xy(screen.x, app.equip_page, m_h);
+        // `num2 = x + 10`, and the box is `num2 - 7 .. num2 + 25` (`:42678`).
+        let toggle = Vec2::new(x + 10.0, y + 10.0);
+        // The team grid starts at `num2 -= 10; num3 += 60` (`:42718`).
+        let team0 = Vec2::new(x + 6.0, y + 66.0);
+        (toggle, team0)
+    }
+
+    /// A headless app with the PVP icons' draw/click gates forced open (the
+    /// `TR_PVP` pin, held in a field so the test does not race the `OnceLock`).
+    fn pvp_app() -> App {
+        let mut app = inv_app();
+        app.pvp_icons_forced = true;
+        app
+    }
+
+    /// `Main.cs:42689-42694`: a press on the toggle flips `hostile`, arms the
+    /// 300-tick cooldown and plays `SoundEngine.PlaySound(12)`. A second press
+    /// inside the cooldown does nothing.
+    #[test]
+    fn pvp_toggle_click_flips_hostile_under_the_cooldown() {
+        let mut app = pvp_app();
+        let (toggle, _) = pvp_points(&app);
+        app.mouse_pos = toggle;
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hostile, "the toggle flipped");
+        assert_eq!(app.team_cooldown, ui::chrome::TEAM_COOLDOWN_LEN);
+        assert_eq!(app.audio.played_count(), before + 1, "the Menu_Tick cue");
+        // Inside the cooldown the gate refuses (`:42689`'s `teamCooldown == 0`).
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hostile, "still flipped once");
+    }
+
+    /// `Main.cs:42753-42767`: a press on a team cell sets `team`, and pressing
+    /// the player's own team is refused by `player.team != i`.
+    #[test]
+    fn team_cell_click_sets_the_team_and_refuses_the_same_one() {
+        let mut app = pvp_app();
+        let (_, team0) = pvp_points(&app);
+        // Team 0 is where the player already stands — refused, no cooldown.
+        app.mouse_pos = team0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 0);
+        assert_eq!(app.team_cooldown, 0, "nothing happened, no cooldown armed");
+        // The next cell along (`i = 1`, +20 px on x) is Red.
+        app.mouse_pos = team0 + Vec2::new(20.0, 0.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 1, "joined the Red team");
+        assert_eq!(app.team_cooldown, ui::chrome::TEAM_COOLDOWN_LEN);
+    }
+
+    /// The cooldown decays once per frame (`Main.cs:17048-17051`) and never
+    /// below zero.
+    #[test]
+    fn team_cooldown_decays_per_frame() {
+        let mut app = pvp_app();
+        app.team_cooldown = 2;
+        app.frame();
+        assert_eq!(app.team_cooldown, 1);
+        app.frame();
+        assert_eq!(app.team_cooldown, 0);
+        app.frame();
+        assert_eq!(app.team_cooldown, 0, "clamped at zero");
+    }
+
+    /// The icons are inert while the gates are closed (`Main.netMode != 1`
+    /// without the pin, `Main.cs:2909`).
+    #[test]
+    fn pvp_click_is_inert_without_the_gates() {
+        let mut app = inv_app();
+        let (toggle, team0) = pvp_points(&app);
+        app.mouse_pos = toggle;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hostile);
+        app.mouse_pos = team0 + Vec2::new(20.0, 0.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().team, 0);
     }
 }

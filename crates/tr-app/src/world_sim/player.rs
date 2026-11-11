@@ -184,6 +184,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
     // `TR_HOOK` parse above, so a dismount re-mounts on the next tick.
     let cart_pin = crate::env::cart_pin();
+    // `TR_DIE`: the death-screen fixture — the local player dies on the first
+    // tick past the skip lockout so `TR_SHOT` captures the respawn prompt.
+    if crate::env::die_pin() && !app.player.as_ref().is_some_and(|p| p.dead) {
+        let world = &app.world;
+        if let Some(p) = app.player.as_mut() {
+            p.start_death(world, false, false);
+            // `Player.KillMe`'s hp clamp — the death screen's draw gate reads
+            // `hp <= 0`, not `dead`.
+            p.hp = 0;
+            p.dead_time = 100;
+            // The broadcast line (`Lang.inter[38]`, "You were slain..."),
+            // which a real `Player.KillMe` would set through the death pass.
+            app.death_text = crate::lang::inter(38);
+        }
+    }
     if let Some(p) = app.player.as_mut() {
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -230,10 +245,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // boss check reads the live NPC list; the danger-NPC gate has no
         // `DangerThatPreventsOtherDangers` members in the ported set yet.
         if p.dead {
+            // `Player.AllowsRespawnTimerSkip`'s two NPC gates (`Player.cs:38962-38987`):
+            // a boss hindering the respawn, and any NPC that blocks it
+            // (`NearAnyNPCsThatBlockRespawn` — the live invasion's members;
+            // the danger-set arm has no ported members yet).
             let boss_near = p.boss_hinders(&app.npcs);
+            let invasion_live = app.world.invasion_size > 0;
+            let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
+            app.respawn_skip_available = p.allows_respawn_timer_skip(boss_near, danger_near);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
-                respawn_now = p.update_dead(input.jump, boss_near, false) || respawn_now;
+                respawn_now =
+                    p.update_dead(input.jump, boss_near, danger_near) || respawn_now;
             });
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
@@ -256,6 +279,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                app.respawn_skip_available = false;
+                app.respawn_skip_frames = 0;
                 app.npcs.clear();
                 app.npc_timer = 4.0;
                 if app.follow_player {
@@ -268,6 +293,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
             }
             return;
+        }
+        // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the
+        // flag and the prompt's counter clear (`Main.cs:45374-45376`'s else).
+        if app.respawn_skip_available {
+            app.respawn_skip_available = false;
+            app.respawn_skip_frames = 0;
         }
         // The quick-grapple fire: the `controlHook` press edge fires
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook

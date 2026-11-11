@@ -332,11 +332,9 @@ impl Menu {
     }
 
     // menuMode 12 (`Main.cs:50699-50736`): `num41` is 0 without Steam
-    // networking (`SocialAPI.Network == null`, `:50700`), so the
-    // `Lang.menu[145]` "Join via Steam" row stored at index 1
-    // (`:50703`) is immediately overwritten by `Lang.menu[88]` at
-    // `1 + num41` (`:50704`) — the non-Steam screen is
-    // Join / Host & Play / Back (`:50702`, `:50704`, `:50705`).
+    // networking (`SocialAPI.Network != null`, `:50700`), so the four
+    // rows are Join via IP / Join via Steam / Host & Play / Back
+    // (`:50702`, `:50703`, `1 + num41` `:50704`, `2 + num41` `:50705`).
     // Vanilla routes both joins through the character select
     // (`:50713-50730`, then `:66241`/`:66234-66236`); the port has no
     // character picker yet (P6), so the rows open the input screens
@@ -381,17 +379,42 @@ impl Menu {
     // blank non-clickable rows), row 9 `Lang.menu[4]` "Accept"
     // (`:50815-50817`) and row 10 `Lang.menu[5]` "Back"
     // (`:50832-50833`).
+    // menuMode 12 (`Main.cs:50699-50735`): `num41 = (SocialAPI.Network != null)
+    // ? 1 : 0` — the retail PC build ships Steam, so `num41 = 1` and the
+    // screen has **four** rows (`num5 = 3 + num41`, `:50735`) over the 250/80
+    // defaults:
+    //   0           `Lang.menu[146]` "Join via IP"  → `:50710-50718`
+    //   1           `Lang.menu[145]` "Join via Steam" → `:50726-50730`
+    //   1 + num41   `Lang.menu[88]`  "Host & Play"  → `:50719-50725`
+    //   2 + num41   `Lang.menu[5]`   "Back"         → `:50731-50734`
+    //
+    // The pre-fix screen drew the **no-Steam** three-row variant
+    // (`menu[87]` "Join" / "Host & Play" / "Back"), which is a different
+    // label *and* a different row count — the row order the owner reported
+    // as wrong. The `2 + num41` / `1 + num41` writes overwrite the
+    // "Join via Steam" slot when `num41 == 0`, which is exactly why the two
+    // variants differ.
+    //
+    // Deviations (both documented in `docs/ANALYSIS.md`): vanilla's rows 0
+    // and 2 open the character select (`menuMode = 1`) with `menuMultiplayer`
+    // / `menuServer` set and continue to the IP / host screens from there;
+    // the port goes straight to those screens. Vanilla row 1 calls
+    // `SocialAPI.Friends.OpenJoinInterface()`, which the port has no Steam
+    // session for, so it reports the not-ported notice.
     fn multiplayer_items(&self) -> Vec<Item> {
         vec![
-            // Row 0 (`:50702`): `Lang.menu[87]` "Join" — vanilla opens the
-            // character select, then 13 (`:50714-50718`, `:66241`).
-            Item::new(crate::lang::menu(87), Act::Nav(Page::JoinIp)),
-            // Row 1 (`:50704`, the `1 + num41` overwrite): `Lang.menu[88]`
+            // Row 0 (`:50702`): `Lang.menu[146]` "Join via IP" (the `num41 == 1`
+            // arm of `Lang.menu[SocialAPI.Network != null ? 146 : 87]`).
+            Item::new(crate::lang::menu(146), Act::Nav(Page::JoinIp)),
+            // Row 1 (`:50703`): `Lang.menu[145]` "Join via Steam" —
+            // `SocialAPI.Friends.OpenJoinInterface()` (`:50726-50730`).
+            Item::new(crate::lang::menu(145), Act::Hint("Steam join is not ported yet")),
+            // Row 2 (`:50704`, the `1 + num41` write): `Lang.menu[88]`
             // "Host & Play" — vanilla opens the character select with
-            // `menuServer` (`:50720-50726`), the port goes to 30.
+            // `menuServer` (`:50719-50725`), the port goes to 30.
             Item::new(crate::lang::menu(88), Act::Nav(Page::HostPassword)),
-            // Row 2 (`:50705`, the `2 + num41` Back): `Lang.menu[5]`
-            // returns to menuMode 0 (`:50727-50733`).
+            // Row 3 (`:50705`, the `2 + num41` Back): `Lang.menu[5]`
+            // returns to menuMode 0 (`:50731-50734`).
             Item::new(crate::lang::menu(5), Act::Nav(Page::Main)),
         ]
     }
