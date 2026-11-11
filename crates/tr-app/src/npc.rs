@@ -4884,20 +4884,22 @@ impl Npc {
                     self.frame = (self.frame + 1) % 11;
                 }
             }
-            // The WitherBeast: the humanoid 14-frame strip.
+            // The WitherBeast: `Main.npcFrameCount[568/569]` = 17 rows.
             NpcKind::DD2WitherBeast => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 14;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
-            // The tavernkeeper: the humanoid 16-frame strip.
+            // The tavernkeeper: `Main.npcFrameCount[550]` = 25 rows.
             NpcKind::DD2Bartender => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 16;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             // The Old One's Army's tier-2/3 families (M4-EVENT-19): the
@@ -4944,20 +4946,21 @@ impl Npc {
                 }
             }
             NpcKind::DD2DarkMageT3 => {
-                // `Main.npcFrameCount[564]` = 9 (`Main.cs:67140`) — the T3
-                // rides the T1's 20-frame caster strip in the port, scaled
-                // by the C#'s shared `case 564:` arm.
+                // `Main.npcFrameCount[564-567]` = 9 (`Main.cs:67140`).
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             NpcKind::DD2WitherBeastT3 => {
+                // `Main.npcFrameCount[568/569]` = 17.
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 17;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => {
@@ -5000,32 +5003,26 @@ impl Npc {
             NpcKind::DD2LanePortal => {
                 self.frame = 0;
             }
-            // The shards: the walker accumulator over their strips — the
-            // 405's 4 frames (`Main.npcFrameCount[405]` = 4), the 406's
-            // 2, the 407's 5, the 423's 12, the 425's 13 and the 429's 10.
+            // The shards: the walker accumulator over their OWN strips. The
+            // row count is the vanilla `Main.npcFrameCount[netID]` (the
+            // divisor `NPC.SetFrameSize` uses), so no frame can leave its
+            // sheet; the per-kind cadence of the C#'s `case 405`/`406`/... is
+            // parked (ANALYSIS M4-NPC-3t).
             NpcKind::StardustCellBig
             | NpcKind::StardustCellSmall
             | NpcKind::StardustJellyfishBig
             | NpcKind::NebulaBeast
             | NpcKind::VortexRifleman
             | NpcKind::VortexSoldier => {
-                let count = match self.kind {
-                    NpcKind::StardustCellBig => 4,
-                    NpcKind::StardustCellSmall => 2,
-                    NpcKind::StardustJellyfishBig => 5,
-                    NpcKind::NebulaBeast => 12,
-                    NpcKind::VortexRifleman => 13,
-                    _ => 10,
-                };
+                let count = crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % count;
                 }
             }
-            // The tower mobs' strips: the spiders 4/11 rows, the soldier 5,
-            // the drakomire 1, its rider 10, the sroller 10, the corite 15
-            // and the selenian 8.
+            // The tower mobs' strips, same accumulator over each kind's own
+            // vanilla row count.
             NpcKind::StardustSpiderBig
             | NpcKind::StardustSpiderSmall
             | NpcKind::StardustSoldier
@@ -5039,21 +5036,7 @@ impl Npc {
             | NpcKind::StardustWormHead
             | NpcKind::SolarSpearman
             | NpcKind::SolarSelenian => {
-                let count = match self.kind {
-                    NpcKind::SolarDrakomire => 1,
-                    NpcKind::SolarCrawltipedeHead
-                    | NpcKind::SolarCrawltipedeBody
-                    | NpcKind::SolarCrawltipedeTail
-                    | NpcKind::StardustWormHead => 1,
-                    NpcKind::SolarSpearman => 10,
-                    NpcKind::SolarCorite => 15,
-                    NpcKind::StardustSpiderBig => 4,
-                    NpcKind::StardustSpiderSmall => 11,
-                    NpcKind::SolarDrakomireRider => 10,
-                    NpcKind::SolarSroller => 10,
-                    NpcKind::SolarSelenian => 8,
-                    _ => 5,
-                };
+                let count = crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
@@ -5062,10 +5045,7 @@ impl Npc {
             }
             // The nebula trio's 6/6/12-frame strips.
             NpcKind::NebulaFloater | NpcKind::BrainSuckler | NpcKind::Predictor => {
-                let count = match self.kind {
-                    NpcKind::Predictor => 12,
-                    _ => 6,
-                };
+                let count = crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
@@ -5075,11 +5055,7 @@ impl Npc {
             // The vortex trio's 15/9/5-frame strips over the walker
             // accumulator.
             NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab => {
-                let count = match self.kind {
-                    NpcKind::VortexHunter => 15,
-                    NpcKind::VortexAlien => 9,
-                    _ => 5,
-                };
+                let count = crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
@@ -5136,12 +5112,14 @@ impl Npc {
             NpcKind::DD2EterniaCrystal => {
                 self.frame = 0;
             }
-            // The Dark Mage: the 20-frame caster strip.
+            // The Dark Mage: `Main.npcFrameCount[564]` = 9 rows (the v1
+            // walked a 20-row cycle five rows past the sheet).
             NpcKind::DD2DarkMage => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -15599,6 +15577,134 @@ mod tests {
         let e = crate::bestiary::entry_for_npc(NpcKind::TravellingMerchant, SlimeVariant::Blue);
         assert_eq!(e.net_id, 368);
         assert_eq!(crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant), Some(19));
+    }
+
+    // M4-NPC-3t: EVERY ported kind must keep `FindFrame` inside its own
+    // sheet's row count (`Main.npcFrameCount[netID]`) — a row past the strip
+    // samples the neighbouring row (or the sheet's blank tail) and shows up as
+    // a scrambled or half-missing sprite. The kinds whose draw uses a GRID
+    // cell index instead of a row are listed with their cell bound.
+    #[test]
+    fn every_kind_finds_a_frame_inside_its_vanilla_strip() {
+        use crate::render::entities::{npc_rows, texture_net_id};
+        let mut bad: Vec<String> = Vec::new();
+        for net in 0u16..697 {
+            let Some(kind) = NpcKind::from_u16(net) else {
+                continue;
+            };
+
+            // A few kinds lack a bestiary row (a separate audit) and
+            // `NpcKind::net_id` reads the bestiary, so filter them first.
+            if !crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                continue;
+            }
+            // The grid/cell draws: `MoonLordHead` walks the 3x3 grid (cell
+            // 0..8, `Main.cs:24926`) and the Deerclops the 5x5 one
+            // (`Main.cs:26334-26412`).
+            let rows = match kind {
+                NpcKind::MoonLordHead => 9,
+                NpcKind::Deerclops => 25,
+                _ => npc_rows(texture_net_id(kind)),
+            };
+            let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for (vx, vy) in [(0.0, 0.0), (2.5, 0.0), (-2.5, 0.0), (0.0, 3.0), (0.0, -3.0)] {
+                for ai0 in [0.0, 1.0, 2.0, 5.0, 6.0, 30.0, 100.0, 210.0, 400.0] {
+                    for ai1 in [0.0, 20.0, 120.0, 300.0] {
+                        n.vx = vx;
+                        n.vy = vy;
+                        n.ai = [ai0, ai1, 0.0, ai0];
+                        n.frame = 0;
+                        n.frame_counter = 0.0;
+                        for _ in 0..24 {
+                            n.find_frame();
+                            if n.frame >= rows {
+                                bad.push(format!(
+                                    "{kind:?} (net {}): row {} of {rows}: ai {ai0}/{ai1}, v {vx}/{vy}",
+                                    kind.net_id(),
+                                    n.frame
+                                ));
+                                // One report per kind is enough to name the bug.
+                                break;
+                            }
+                        }
+                        if !bad.is_empty() && bad.last().unwrap().starts_with(&format!("{kind:?} ")) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        bad.sort();
+        bad.dedup();
+        assert!(bad.is_empty(), "{} kind(s) left their strip:
+{}", bad.len(), bad.join("
+"));
+    }
+
+    // M4-NPC-3t: the pillar/Moon-Lord families now draw from their OWN
+    // `NPC_<netID>` sheets, so a `FindFrame` row that lands outside
+    // `Main.npcFrameCount[netID]` would sample a neighbouring row of the same
+    // sheet (or the sheet's blank tail) instead of bleeding across a shared
+    // family sheet. Sweep the motion/AI states each machine branches on and
+    // assert every row stays inside the vanilla strip.
+    #[test]
+    fn the_pillar_family_rows_stay_inside_their_own_sheets() {
+        // (kind, `Main.npcFrameCount[netID]`)
+        let cases: &[(NpcKind, u32)] = &[
+            // `MoonLordHead` is a 3x3 GRID sheet (cell index 0..8, the
+            // custom block at `Main.cs:24846-24927`) — asserted separately.
+            (NpcKind::MoonLordHand, 4),
+            (NpcKind::MoonLordCore, 5),
+            (NpcKind::MoonLordFreeEye, 4),
+            (NpcKind::MoonLordLeechBlob, 1),
+            (NpcKind::StardustWormHead, 1),
+            (NpcKind::StardustCellBig, 4),
+            (NpcKind::StardustCellSmall, 2),
+            (NpcKind::StardustJellyfishBig, 5),
+            (NpcKind::StardustSpiderBig, 11),
+            (NpcKind::StardustSpiderSmall, 5),
+            (NpcKind::StardustSoldier, 11),
+            (NpcKind::SolarCrawltipedeHead, 1),
+            (NpcKind::SolarCrawltipedeBody, 1),
+            (NpcKind::SolarCrawltipedeTail, 1),
+            (NpcKind::SolarDrakomire, 10),
+            (NpcKind::SolarDrakomireRider, 10),
+            (NpcKind::SolarSroller, 15),
+            (NpcKind::SolarCorite, 8),
+            (NpcKind::SolarSelenian, 17),
+            (NpcKind::SolarSpearman, 10),
+            (NpcKind::NebulaFloater, 6),
+            (NpcKind::BrainSuckler, 6),
+            (NpcKind::NebulaBeast, 12),
+            (NpcKind::Predictor, 12),
+            (NpcKind::VortexRifleman, 13),
+            (NpcKind::VortexSoldier, 10),
+            (NpcKind::VortexHunter, 15),
+            (NpcKind::VortexAlien, 9),
+            (NpcKind::VortexHeadcrab, 5),
+        ];
+        for &(kind, rows) in cases {
+            let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for (vx, vy) in [(0.0, 0.0), (2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)] {
+                for ai0 in [0.0, 1.0, 2.0, 6.0, 30.0, 100.0, 200.0, 400.0] {
+                    for ai1 in [0.0, 20.0, 100.0, 280.0, 420.0] {
+                        n.vx = vx;
+                        n.vy = vy;
+                        n.ai = [ai0, ai1, 0.0, ai0];
+                        n.frame = 0;
+                        n.frame_counter = 0.0;
+                        for _ in 0..40 {
+                            n.find_frame();
+                            assert!(
+                                n.frame < rows,
+                                "{kind:?}: row {} left the {rows}-row strip                                  (vx {vx}, vy {vy}, ai {ai0}/{ai1})",
+                                n.frame
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
