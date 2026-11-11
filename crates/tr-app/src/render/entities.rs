@@ -1406,6 +1406,13 @@ pub(crate) fn draw_player_map_icon(
 /// First enemy pass: the blue slime, tinted and lit like the player, with an overhead
 /// health bar once damaged.
 #[allow(clippy::too_many_arguments)]
+// The frame arms below must stay a single `match`: an appended arm never
+// reaches the GPU when an earlier arm already covers the kind, and the compiler
+// only warns (`unreachable_patterns`). Several M4-NPC display fixes were lost
+// that way — the Eye of Cthulhu's six-row strip and the goblins' humanoid band
+// each had a faithful arm sitting behind a stale v1 arm — so a duplicate is a
+// hard error here.
+#[deny(unreachable_patterns)]
 pub(crate) fn draw_npcs(
     r: &mut SpriteRenderer,
     assets: &NpcAssets,
@@ -1550,13 +1557,11 @@ pub(crate) fn draw_npcs(
                 [34.0, 8.0],
                 [n.x, n.y],
             ),
-            // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
-            NpcKind::EyeOfCthulhu => (
-                assets.eoc.as_ref(),
-                assets.eoc.as_ref().map_or(110.0, |t| t.h / 2.0),
-                [100.0, 110.0],
-                [n.x, n.y],
-            ),
+            // The Eye of Cthulhu is drawn by its own arm further down (the
+            // 110x996 sheet's six 166-px rows, `Main.npcFrameCount[4]` = 6).
+            // The v1 arm that stood here — `t.h / 2` over a 100x110 quad at
+            // the box's corner — sampled HALF the sheet into one sprite and
+            // silently shadowed the faithful arm.
             // The Queen Bee: the 2-frame 66x66 sheet.
             // NPC_222 is 172x1824 — twelve 152-px rows
             // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082`; the v1
@@ -2129,25 +2134,14 @@ pub(crate) fn draw_npcs(
             NpcKind::PrimeCannon => prime_draw(assets.prime_cannon.as_ref(), 1, n, w, h),
             NpcKind::PrimeSaw => prime_draw(assets.prime_saw.as_ref(), 2, n, w, h),
             NpcKind::PrimeVice => prime_draw(assets.prime_vice.as_ref(), 2, n, w, h),
-            NpcKind::PrimeLaser => prime_draw(assets.prime_laser.as_ref(), 1, n, w, h),            // The goblins: the 3-frame humanoid sheets (the vanilla
-            // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
-            NpcKind::GoblinPeon
-            | NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher => {
-                let tex = match n.kind {
-                    NpcKind::GoblinPeon => assets.goblin_peon.as_ref(),
-                    NpcKind::GoblinThief => assets.goblin_thief.as_ref(),
-                    NpcKind::GoblinWarrior => assets.goblin_warrior.as_ref(),
-                    _ => assets.goblin_archer.as_ref(),
-                };
-                (
-                    tex,
-                    tex.map_or(48.0, |t| t.h / 3.0),
-                    [38.0, 48.0],
-                    [n.x - 10.0, n.y - 5.0],
-                )
-            }
+            NpcKind::PrimeLaser => prime_draw(assets.prime_laser.as_ref(), 1, n, w, h),
+            // The goblins are drawn by the humanoid arm further down (the
+            // 16-row strips, `Main.npcFrameCount[26/27/28]` = 16 and
+            // `[111]` = 21). The v1 arm that stood here divided the sheet
+            // by 3 — its comment claimed `npcFrameCount = 3` — and pinned
+            // the quad to magic `[n.x - 10, n.y - 5]` offsets, so a goblin
+            // sampled a 1/3 slice of its strip and floated off its box; it
+            // also shadowed the faithful arm.
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
@@ -2574,6 +2568,62 @@ mod anchor_tests {
     /// A bare NPC at the spawn point (the port's test helper).
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// A sheet of the given pixel size, packed into the whole atlas UV
+    /// square (what `sky_tex` hands the draw arms).
+    fn sheet(w: f32, h: f32) -> BgTex {
+        BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w,
+            h,
+        }
+    }
+
+    #[test]
+    fn the_eoc_frame_is_one_of_the_sheets_six_rows() {
+        // `Main.npcFrameCount[4]` = 6 (`Main.cs:67082`) and NPC_4 measures
+        // 110x996, so a frame is 110x166. The stale v1 arm divided the sheet
+        // by 2 and drew a 100x110 quad at the box's corner, sampling half the
+        // strip into one sprite; it sat in front of the faithful arm and so
+        // won. `draw_npcs` now denies that shadowing outright.
+        let t = sheet(110.0, 996.0);
+        let n = bare(NpcKind::EyeOfCthulhu);
+        let (w, h) = n.kind.size();
+        let (tex, fh, size, pos) = boss_draw(Some(&t), 6, &n, w, h);
+        assert!(tex.is_some());
+        assert_eq!(fh, 166.0, "996 / 6 rows");
+        assert_eq!(size, [110.0, 166.0], "the frame is wider than the 100x110 box");
+        // The generic anchor: the frame centre lands 4 px below the box's
+        // bottom.
+        assert_eq!(pos[0], n.x + w * 0.5 - 55.0);
+        assert_eq!(pos[1], n.y + h + 4.0 - 83.0);
+        // One frame's UV spans exactly 1/6 of the strip.
+        let uv = npc_frame_uv(&t, fh, 2);
+        assert!((uv[1] - 2.0 / 6.0).abs() < 1e-6, "row 2 starts at 1/3");
+        assert!((uv[3] - 3.0 / 6.0).abs() < 1e-6, "and ends at 1/2");
+    }
+
+    #[test]
+    fn the_goblin_frame_is_one_of_the_humanoid_strips_rows() {
+        // `Main.npcFrameCount[26/27/28]` = 16 (`Main.cs:67082`); the stale v1
+        // arm divided the strip by 3 and pinned the quad to magic
+        // `[n.x - 10, n.y - 5]` offsets. The humanoid arm derives the frame
+        // from the sheet and anchors it at the vanilla's `box_bottom + 4`.
+        let t = sheet(38.0, 768.0);
+        let n = bare(NpcKind::GoblinPeon);
+        let (w, h) = n.kind.size();
+        let (_, fh, size, pos) = humanoid_draw(Some(&t), 16, &n, w, h);
+        assert_eq!(fh, 48.0, "768 / 16 rows");
+        assert_eq!(size, [38.0, 48.0]);
+        assert_eq!(pos[0], n.x + w * 0.5 - 19.0);
+        assert_eq!(pos[1], n.y + h + 4.0 - 24.0);
+        let uv = npc_frame_uv(&t, fh, 5);
+        assert!((uv[1] - 5.0 / 16.0).abs() < 1e-6);
+        assert!((uv[3] - 6.0 / 16.0).abs() < 1e-6);
+        // The archer's strip is 21 rows (`[111]`), not 16.
+        let (_, fh, _, _) = humanoid_draw(Some(&t), 21, &bare(NpcKind::GoblinArcher), w, h);
+        assert!((fh - 768.0 / 21.0).abs() < 1e-4);
     }
 
     /// `Main.cs:22991-23115`'s `num45`/`num46`/`num47` chain — the
