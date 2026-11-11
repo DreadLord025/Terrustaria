@@ -69,6 +69,72 @@ pub(crate) struct WhipArmSpawn {
 /// — the M4-PROJ-1 placeholder internal table was migrated to the verbatim
 /// ids; the shuriken 3 is the vanilla id the registry's generated rows
 /// carry, `itemdata.rs`).
+/// `ProjectileID.Hook` (13) — the vanilla grappling hook.
+pub const HOOK: u16 = 13;
+/// `ProjectileID.IvyWhip` (32) — the 300 px-range hook of the Jungle chest.
+pub const IVY_WHIP: u16 = 32;
+/// `ProjectileID.DualHookBlue` (73) — the Dual Hook's blue head.
+pub const DUAL_HOOK_BLUE: u16 = 73;
+/// `ProjectileID.DualHookRed` (74) — the Dual Hook's red head.
+pub const DUAL_HOOK_RED: u16 = 74;
+/// `ProjectileID.WebSlingerHook` (165) — the three-at-once hook.
+pub const WEB_SLINGER_HOOK: u16 = 165;
+/// `ProjectileID.GemHookAmethyst` (230) — the first Gem Hook.
+pub const GEM_HOOK_AMETHYST: u16 = 230;
+/// `ProjectileID.GemHookTopaz` (231).
+pub const GEM_HOOK_TOPAZ: u16 = 231;
+/// `ProjectileID.GemHookSapphire` (232).
+pub const GEM_HOOK_SAPPHIRE: u16 = 232;
+/// `ProjectileID.GemHookEmerald` (233).
+pub const GEM_HOOK_EMERALD: u16 = 233;
+/// `ProjectileID.GemHookRuby` (234).
+pub const GEM_HOOK_RUBY: u16 = 234;
+/// `ProjectileID.GemHookDiamond` (235) — the last Gem Hook.
+pub const GEM_HOOK_DIAMOND: u16 = 235;
+/// `ProjectileID.SkeletronHand` (256) — the Skeletron hand hook
+/// (`extraUpdates = 1`, the only 6x6 hook box).
+pub const SKELETRON_HAND: u16 = 256;
+/// `ProjectileID.BatHook` (315).
+pub const BAT_HOOK: u16 = 315;
+/// `ProjectileID.WoodHook` (322).
+pub const WOOD_HOOK: u16 = 322;
+/// `ProjectileID.CandyCaneHook` (331).
+pub const CANDY_CANE_HOOK: u16 = 331;
+/// `ProjectileID.ChristmasHook` (332).
+pub const CHRISTMAS_HOOK: u16 = 332;
+/// `ProjectileID.FishHook` (372).
+pub const FISH_HOOK: u16 = 372;
+/// `ProjectileID.SlimeHook` (396).
+pub const SLIME_HOOK: u16 = 396;
+/// `ProjectileID.TrackHook` (403) — the minecart-track hook.
+pub const TRACK_HOOK: u16 = 403;
+/// `ProjectileID.AntiGravityHook` (446) — the gravity-flipping hook.
+pub const ANTI_GRAVITY_HOOK: u16 = 446;
+/// `ProjectileID.TendonHook` (486) — the first of the 1.4.4 quartet.
+pub const TENDON_HOOK: u16 = 486;
+/// `ProjectileID.ThornHook` (487).
+pub const THORN_HOOK: u16 = 487;
+/// `ProjectileID.IlluminantHook` (488) — the light-emitting hook.
+pub const ILLUMINANT_HOOK: u16 = 488;
+/// `ProjectileID.WormHook` (489) — the last of the 1.4.4 quartet.
+pub const WORM_HOOK: u16 = 489;
+/// `ProjectileID.LunarHookSolar` (646) — the first Lunar Hook.
+pub const LUNAR_HOOK_SOLAR: u16 = 646;
+/// `ProjectileID.LunarHookVortex` (647).
+pub const LUNAR_HOOK_VORTEX: u16 = 647;
+/// `ProjectileID.LunarHookNebula` (648).
+pub const LUNAR_HOOK_NEBULA: u16 = 648;
+/// `ProjectileID.LunarHookStardust` (649) — the last Lunar Hook.
+pub const LUNAR_HOOK_STARDUST: u16 = 649;
+/// `ProjectileID.StaticHook` (652) — the stationary hook.
+pub const STATIC_HOOK: u16 = 652;
+/// `ProjectileID.AmberHook` (753).
+pub const AMBER_HOOK: u16 = 753;
+/// `ProjectileID.SquirrelHook` (865).
+pub const SQUIRREL_HOOK: u16 = 865;
+/// `ProjectileID.QueenSlimeHook` (935) — the `extraUpdates = 3` hook whose
+/// latch teleports its owner.
+pub const QUEEN_SLIME_HOOK: u16 = 935;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
 pub const WOODEN_ARROW: u16 = 1;
@@ -527,6 +593,9 @@ pub struct ProjData {
 /// overrides nothing: the C# `SetDefaults` reset — the immunity flags off
 /// (`Projectile.cs:714-715`), the cooldowns −2/`-1` (`:464`, `:466`, reset
 /// `:712-713`), `alpha = 0` (`:779`) and `scale = 1f` (`:785`).
+/// The hook family's `timeLeft *= 10` (`Projectile.cs`'s common tail).
+const HOOK_TIME_LEFT: i32 = 10 * TIME_LEFT_DEFAULT;
+
 const RESET_STATE: (bool, i32, bool, i32, i32, f32) = (false, -2, false, -1, 0, 1.0);
 
 /// `ProjectileID.Sets.YoyosLifeTimeMultiplier` (`ProjectileID.cs:425`) — the
@@ -1800,6 +1869,71 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` dropped — its local-immunity pair
             // (`localNPCHitCooldown = 60`) rides the overlay below.
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:939-948` — the Hook (13): 18x18.
+            HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:1141-1150` — the Ivy Whip (32): 18x18.
+            IVY_WHIP => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:1536-1546` — the Dual Hook pair (73/74): 18x18,
+            // `light = 0.4f` dropped.
+            DUAL_HOOK_BLUE | DUAL_HOOK_RED => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:2538-2547` — the Web Slinger (165): 12x12.
+            WEB_SLINGER_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:3164-3173` — the six Gem Hooks (230-235): 18x18,
+            // the shared block with no per-kind field.
+            GEM_HOOK_AMETHYST
+            | GEM_HOOK_TOPAZ
+            | GEM_HOOK_SAPPHIRE
+            | GEM_HOOK_EMERALD
+            | GEM_HOOK_RUBY
+            | GEM_HOOK_DIAMOND => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:3388-3399` — the Skeletron Hand (256): 6x6,
+            // `extraUpdates = 1` (`scale = 1f` is the stock default).
+            SKELETRON_HAND => (6.0, 6.0, 7, -1, HOOK_TIME_LEFT, 1, false, false, false, RESET_STATE),
+            // `Projectile.cs:4077-4086` — the Bat Hook (315): 14x14.
+            BAT_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4149-4158` — the Wood Hook (322): 14x14.
+            WOOD_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4235-4244` — the Candy Cane Hook (331): 18x18.
+            CANDY_CANE_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4246-4256` — the Christmas Hook (332): 18x18,
+            // `light = 0.5f` dropped.
+            CHRISTMAS_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4552-4561` — the Fish Hook (372): 18x18.
+            FISH_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4769-4779` — the Slime Hook (396): 18x18,
+            // `alpha = 100` dropped.
+            SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4836-4845` — the Track Hook (403): 18x18.
+            TRACK_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5176-5186` — the Anti Gravity Hook (446): 14x14,
+            // `light = 0.7f` dropped.
+            ANTI_GRAVITY_HOOK => (14.0, 14.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // The 1.4.4 quartet (`Projectile.cs:5615-5643`): the four boxes
+            // below share the block's tail (`:5638-5643`).
+            // `Projectile.cs:5617-5621` — the Tendon Hook (486): 12x12.
+            TENDON_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5622-5626` — the Thorn Hook (487): 22x22.
+            THORN_HOOK => (22.0, 22.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5627-5632` — the Illuminant Hook (488): 12x12,
+            // `light = 0.3f` dropped.
+            ILLUMINANT_HOOK => (12.0, 12.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5633-5637` — the Worm Hook (489): 20x16.
+            WORM_HOOK => (20.0, 16.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:6966-6975` — the four Lunar Hooks (646-649): 18x18,
+            // the shared block with no per-kind field.
+            LUNAR_HOOK_SOLAR
+            | LUNAR_HOOK_VORTEX
+            | LUNAR_HOOK_NEBULA
+            | LUNAR_HOOK_STARDUST => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:7001-7010` — the Static Hook (652): 18x18.
+            STATIC_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:7756-7765` — the Amber Hook (753): 18x18.
+            AMBER_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:8301-8310` — the Squirrel Hook (865): 18x18.
+            SQUIRREL_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
+            // `extraUpdates = 3`.
+            QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2066,7 +2200,12 @@ pub struct Projectile {
     pub arrow: bool,
     /// `Projectile.trap`.
     pub trap: bool,
-    /// `Projectile.direction` (the C# default 1) — the ±1 sprite direction:
+    /// `GrappleMovement`'s pull input: the attached aiStyle-7 hook's center
+    /// (`Player.cs:22757-22856` reads `grappling[]` — this multi-hook field is
+    /// the task's next phase; the single-hook bridge keeps the pull working
+    /// meanwhile, and `grappling_active`'s owner reads it).
+    pub grapple_center: Vec2,
+    /// The C# `Projectile.direction`
     /// the yoyo rotation spins by it (`Projectile.cs:68096`) and the pose
     /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
     pub direction: i32,
@@ -2145,6 +2284,7 @@ impl Default for Projectile {
             arrow: false,
             trap: false,
             direction: 1,
+            grapple_center: Vec2::ZERO,
             bounces: 0,
             falling_tile: None,
             detonated: false,
@@ -2167,6 +2307,23 @@ impl Projectile {
     /// the swept curve, not from this).
     pub fn center(&self) -> (f32, f32) {
         (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5)
+    }
+
+    /// `AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`) on this slot — the
+    /// flight, the tile attach and the retract; the state machine and the
+    /// per-kind tables live in `crate::grapple`.
+    pub(crate) fn ai_hook(
+        &mut self,
+        world: &World,
+        player_center: Vec2,
+        owner_dead: bool,
+        // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
+        // the cracked-brick break (`Projectile.cs:52586`).
+        local_owner: bool,
+        // The hook's own `u64` stream (`Main.rand`'s stand-in).
+        hook_rng: Option<&mut u64>,
+    ) -> crate::grapple::HookTick {
+        crate::grapple::ai_hook(self, world, player_center, owner_dead, local_owner, hook_rng)
     }
 
     fn shuriken(x: f32, y: f32, vx: f32, vy: f32, crit: bool) -> Self {
@@ -5986,6 +6143,16 @@ pub struct ProjectilePool {
     id_static: HashMap<(u16, u16), u64>,
     /// `Main.GameUpdateCount`.
     update_count: u64,
+    /// `Player.grappling[10]` / `Player.grapCount` (`Player.cs:2742`/`:2744`):
+    /// the attached aiStyle-7 hook slots, rebuilt in slot order on every tick's
+    /// projectile pass. `Player.grappling` is `int[20]` in the C# but only 10
+    /// entries are reachable (the `AI_007` `< 10` guard), so 10 suffice.
+    hook_reg: [i16; 10],
+    hook_grap_count: usize,
+    /// The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16 cracked-brick break,
+    /// `Projectile.cs:52586-52595`), seeded from the world seed like the other
+    /// per-consumer streams and interleaved with nothing else.
+    hook_rng: u64,
     /// `Main.windSpeedCurrent` as the AI arms' wind tail sees it
     /// (`Projectile.cs:16777-16781`). `0f` = off: the C# gate
     /// `Main.windPhysics` is `false` by default and never set true in the
@@ -6081,6 +6248,9 @@ impl ProjectilePool {
             local_immunity: vec![0; MAX_PROJECTILES * 256],
             id_static: HashMap::new(),
             update_count: 0,
+            hook_reg: [-1; 10],
+            hook_grap_count: 0,
+            hook_rng: 0,
             wind_speed: 0.0,
         }
     }
@@ -6185,6 +6355,89 @@ impl ProjectilePool {
         &mut self.slots
     }
 
+    pub fn kill(&mut self, slot: usize) {
+        if slot < self.slots.len() {
+            self.slots[slot].active = false;
+            self.slots[slot].time_left = 0;
+        }
+    }
+
+    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6458-6477`):
+    /// the aim direction normalized by its own length and scaled to
+    /// `shootSpeed`, spawned at the player center. The degenerate aim
+    /// (`0,0` or NaN) falls back to the facing, as the source does.
+    pub fn spawn_hook(
+        &mut self,
+        kind: u16,
+        player_center: Vec2,
+        aim: Vec2,
+        shoot_speed: f32,
+        damage: i32,
+        knock_back: f32,
+        owner: u8,
+        facing: i32,
+    ) -> Option<usize> {
+        let delta = aim - player_center;
+        // `:6459-6467` — the degenerate aim (both zero, or NaN) falls back to
+        // the facing; otherwise the direction scales to `shootSpeed`.
+        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0) || delta.is_nan() {
+            (facing as f32 * shoot_speed, 0.0)
+        } else {
+            let k = shoot_speed / delta.length();
+            (delta.x * k, delta.y * k)
+        };
+        self.spawn_with_data_ai_owned(kind, owner, player_center.x, player_center.y, vx, vy, damage, knock_back, 0.0, 0.0)
+    }
+
+
+    /// `Player.grappling` / `Player.grapCount` — the attached aiStyle-7 slots in
+    /// registration order (the C#'s slot order), rebuilt each tick by
+    /// [`Self::update`]. `GrappleMovement`'s pull and the fire-time budgets read
+    /// this; the AI arm and the recycle tables are the only writers.
+    pub fn hook_reg(&self) -> (&[i16; 10], usize) {
+        (&self.hook_reg, self.hook_grap_count)
+    }
+
+    /// Seed the hooks' `Main.rand` stand-in from the world seed — the app calls it
+    /// once at construction (the pool is built before the world exists).
+    pub fn seed_hooks(&mut self, world_seed: u64) {
+        self.hook_rng = world_seed ^ 0x606B_005B_5EED;
+    }
+
+    /// `Player.Update`'s `grappling[0] = -1; grapCount = 0` (`:28300-28301`):
+    /// the clear. The port runs it at the top of the projectile pass, which
+    /// keeps the vanilla's one-tick latency (the pull reads last tick's set).
+    fn clear_hook_reg(&mut self) {
+        self.hook_reg = [-1; 10];
+        self.hook_grap_count = 0;
+    }
+
+    /// `AI_007`'s `grappling[grapCount++] = whoAmI` (`:52705`/`:52862`), under the
+    /// `< 10` guard. Only an active slot is ever appended (the caller gates it),
+    /// so a dead index cannot land.
+    fn register_hook(&mut self, slot: usize) {
+        if self.hook_grap_count < self.hook_reg.len() {
+            self.hook_reg[self.hook_grap_count] = slot as i16;
+            self.hook_grap_count += 1;
+        }
+    }
+
+    /// `QuickGrapple`'s fire-time gate and recycle (`Player.cs:6396-6399`): the
+    /// in-flight and attached counts over this owner's aiStyle-7 slots.
+    pub fn hook_counts(&self, owner: u8) -> (usize, usize) {
+        let mut flight = 0usize;
+        let mut attached = 0usize;
+        for p in self.slots.iter() {
+            if p.active && p.owner == owner && proj_data(p.kind).is_some_and(|d| d.ai_style == 7) {
+                if p.ai[0] == 2.0 {
+                    attached += 1;
+                } else {
+                    flight += 1;
+                }
+            }
+        }
+        (flight, attached)
+    }
     pub fn active_count(&self) -> usize {
         self.slots.iter().filter(|p| p.active).count()
     }
@@ -6898,6 +7151,10 @@ impl ProjectilePool {
         hostile_local: bool,
     ) {
         self.update_count += 1;
+        // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
+        // runs it at the end of the player pass, so starting here preserves
+        // the vanilla's one-tick latency exactly.
+        self.clear_hook_reg();
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
                 continue;
@@ -6973,7 +7230,62 @@ impl ProjectilePool {
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
-                        8 => self.slots[i].ai_ball_of_fire(world),
+                        // `AI()`'s `else if (this.aiStyle == 7)`
+                        // (`Projectile.cs:24230-24233`) ->
+                        // `AI_007_GrapplingHooks` — the grappling hooks.
+                        7 => {
+                            let dead = player.as_ref().is_some_and(|p| p.dead);
+                            let local = self.slots[i].owner == local_owner;
+                            let center = owner
+                                .map(|(x, y)| Vec2::new(x, y))
+                                .unwrap_or(self.slots[i].pos);
+                            // The stream is copied out and back so the slot
+                            // borrow and the rng borrow never overlap.
+                            let mut rng = self.hook_rng;
+                            let tick =
+                                self.slots[i].ai_hook(world, center, dead, local, Some(&mut rng));
+                            self.hook_rng = rng;
+                            let crack = tick.crack;
+                            let attached = tick.attached;
+                            let dead = tick.dead;
+                            let latched = tick.latched;
+                            if dead {
+                                self.kill(i);
+                            } else if let Some(c) = attached {
+                                self.slots[i].grapple_center = c;
+                                self.register_hook(i);
+                                if latched {
+                                    let owner = self.slots[i].owner;
+                                    let cap =
+                                        crate::grapple::hook_spec_id(self.slots[i].kind).max_attached;
+                                    let mut count = 0usize;
+                                    let mut worst = usize::MAX;
+                                    // The C#'s `num13 = 100000` initial.
+                                    let mut worst_time = i64::MAX;
+                                    for (k, p) in self.slots.iter().enumerate() {
+                                        let hook = p.active
+                                            && p.owner == owner
+                                            && proj_data(p.kind).is_some_and(|d| d.ai_style == 7);
+                                        if (hook && p.ai[0] == 2.0) || k == i {
+                                            count += 1;
+                                            if (p.time_left as i64) < worst_time {
+                                                worst = k;
+                                                worst_time = p.time_left as i64;
+                                            }
+                                        }
+                                    }
+                                    if count > cap && worst != usize::MAX {
+                                        self.kill(worst);
+                                    }
+                                }
+                            }
+                            // `:52590-52593` — the 1/16 cracked-brick break.
+                            if let Some((tx, ty)) = crack {
+                                if let Some(t) = world.tile_mut(tx, ty) {
+                                    t.flags &= !tr_core::tile::FLAG_ACTIVE;
+                                }
+                            }
+                        }
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
@@ -6981,6 +7293,7 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
+                        8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
@@ -11516,6 +11829,7 @@ mod phasmal_projectile_tests {
 
     fn spawn(kind: u16, x: f32, y: f32) -> Projectile {
         Projectile {
+            grapple_center: Vec2::ZERO,
             active: true,
             kind,
             owner: 0,
@@ -11739,6 +12053,7 @@ mod ritual_projectile_tests {
 
     fn rspawn(kind: u16, x: f32, y: f32) -> Projectile {
         Projectile {
+            grapple_center: Vec2::ZERO,
             active: true,
             kind,
             owner: 0,

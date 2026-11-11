@@ -477,11 +477,6 @@ pub struct Player {
     /// `Player.GoingDownWithGrapple` (`Player.cs:808`): the pull points
     /// downward — the platforms fall through.
     pub going_down_with_grapple: bool,
-    /// The grapple hook's attached center, set by the caller per tick (the
-    /// vanilla `GrappleMovement` reads `Main.projectile` directly).
-    pub grapple_hook_center: Vec2,
-    /// The attached hook's type (the pull-speed table lookup).
-    pub grapple_hook_type: i32,
     /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
     /// budget in ticks and its refill cap.
     pub wing_time: f32,
@@ -851,8 +846,6 @@ impl Player {
             has_wings: false,
             grappling_active: false,
             going_down_with_grapple: false,
-            grapple_hook_center: Vec2::ZERO,
-            grapple_hook_type: 13,
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
@@ -1603,7 +1596,7 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, None, false, false)
+        self.update_with_grapple(world, input, &[], false, false)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -1615,14 +1608,18 @@ impl Player {
         &mut self,
         world: &World,
         input: PlayerInput,
-        grapple: Option<(Vec2, i32)>,
+        // `Player.grappling[]`/`grapCount` as a `(ProjectileID, center,
+        // rotation)` triple per registered hook (`Player.cs:2742`/`:2744`) —
+        // the pool rebuilds it on its own pass, so the caller only hands the
+        // set over. The rotation is read by the Squirrel Hook's steering alone.
+        grapple: &[(u16, Vec2, f32)],
         item_in_use: bool,
         danger_near: bool,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
-        // caller passes the attached state, so derive it here.
-        self.grappling_active = grapple.is_some();
+        // caller passes the registered set, so derive it here.
+        self.grappling_active = !grapple.is_empty();
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -2215,7 +2212,7 @@ impl Player {
         // vector to the attached hook center clamped to the pull speed. The
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
-            self.grapple_movement(grapple, input);
+            self.grapple_movement(grapple, input, item_in_use);
         }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
@@ -3689,10 +3686,17 @@ impl Player {
     /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
     /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
     /// attached hook (the param already filters to the attached state).
-    fn grapple_movement(&mut self, hook: Option<(Vec2, i32)>, input: PlayerInput) {
-        let Some((hook_center, hook_type)) = hook else {
+    fn grapple_movement(
+        &mut self,
+        hooks: &[(u16, Vec2, f32)],
+        input: PlayerInput,
+        item_in_use: bool,
+    ) {
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): zero registered hooks
+        // carries the current velocity through untouched.
+        if hooks.is_empty() {
             return;
-        };
+        }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
         // budgets refill every tick while grappling.
         self.wing_time = self.wing_time_max as f32;
@@ -3702,33 +3706,45 @@ impl Player {
         // `:22645`: the fall origin refreshes per tick — no fall damage.
         self.fall_start = (self.y / TILE_PX) as i32;
 
-        // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
-        // vector to the hook center clamped to the per-type pull speed.
-        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5);
-        let dist = to_hook.length();
-        let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
-        let pull = if dist > 0.001 {
-            to_hook * (pull_speed / dist).min(1.0)
-        } else {
-            Vec2::ZERO
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): the steering-adjusted
+        // average of every registered hook's center, clamped to
+        // `grappling[0]`'s type pull speed. The tuple's third element is the
+        // hook's rotation (only the Squirrel Hook reads it).
+        let pull = crate::grapple::grapple_pull(
+            hooks,
+            Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5),
+            // `PlayerInput` has no `up` arm (nothing consumes it in the
+            // port); the C# reads `controlUp` here.
+            crate::grapple::steering_stick(input.left, input.right, false, input.down),
+        );
+        let Some(pull) = pull else {
+            // `:22845-22847`: no registered hook carries the velocity through.
+            return;
         };
-        // `:22659`: `flag3` = the pull points down while the CURRENT velocity
-        // is zero (a grounded pull) — read before the replacement.
-        let flag3 = pull.y > 0.0 && self.vy == 0.0;
+        // `:22659`: `flag3` = the pull points down while the CURRENT velocity is
+        // zero (a grounded pull) — read before the replacement.
+        let flag3 = pull.vel.y > 0.0 && self.vy == 0.0;
         // `:22660-22661`: the pull replaces the velocity outright.
-        self.vx = pull.x;
-        self.vy = pull.y;
+        self.vx = pull.vel.x;
+        self.vy = pull.vel.y;
         // `:22655-22658`: the pull points downward → the platforms fall
         // through (`GoingDownWithGrapple`).
-        self.going_down_with_grapple = pull.y > 0.0;
-        // `:22655-22658`: the pull points downward → the platforms fall
-        // through (`GoingDownWithGrapple`).
+        self.going_down_with_grapple = pull.going_down;
 
-        // `:22670-22673`: the direction follows the pull.
-        if self.vx > 0.0 {
-            self.facing = 1;
-        } else if self.vx < 0.0 {
-            self.facing = -1;
+        // `:22670-22676`: the direction follows the pull; an exactly-zero X
+        // takes the Squirrel Hook's preferred direction instead. The C# gates
+        // the block on `itemAnimation == 0`, which the sim passes in.
+        if !item_in_use {
+            if self.vx == 0.0 {
+                if let Some(d) = pull.dir {
+                    self.facing = d;
+                }
+            }
+            if self.vx > 0.0 {
+                self.facing = 1;
+            } else if self.vx < 0.0 {
+                self.facing = -1;
+            }
         }
 
         // `:22705-22739`: the jump-off.
@@ -5128,7 +5144,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
-        let grapple = Some((hook_center, 13));
+        // One registered Hook — the multi-hook seam's single-member case.
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -5149,7 +5166,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let start_row = (p.y / TILE_PX) as i32;
-        let grapple = Some((Vec2::new(p.x, p.y - 300.0), 13));
+        let center = Vec2::new(p.x, p.y - 300.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
             p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
             // GrappleMovement refreshes the origin BEFORE the position
@@ -5175,10 +5193,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         // The press edge: the jump-off.
         p.update_with_grapple(
             &w,
@@ -5203,10 +5220,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(
             &w,
             PlayerInput {
@@ -5231,10 +5247,9 @@ mod tests {
     fn downward_pull_sets_going_down() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // One attached Hook below the player.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         assert!(p.going_down_with_grapple, "the pull points down");
     }

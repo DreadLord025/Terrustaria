@@ -9430,6 +9430,53 @@ the `FishingLine` sheet's 12-px slice as the source rectangle
   the render rows' scope; `ApplicationItemPositionOffsetFromMount` is a
   mount row's input (the port has no mounts yet).
 
+## Grappling hooks (M4-PROJ-5)
+
+The hook family landed as a pool aiStyle-7 projectile: `grapple.rs` holds the
+state machine and the tables, `ProjectilePool::update` drives it, and
+PHYS-6's single-hook stand-in is retired. All 32 vanilla kinds carry a
+`proj_data` row (18x18 for the Hook through 6x6 for the Skeletron Hand,
+20x16 for the Worm Hook, `timeLeft *= 10` = 36000, `extraUpdates` 1 for 256
+and 3 for 935).
+
+- **The update order is the source's own.** `Main` runs players before
+  projectiles, so `GrappleMovement` reads `grappling[]` written by the
+  *previous* tick's pass and `Player.Update` clears it at its end
+  (`Player.cs:28300-28301`). The port clears at the top of the projectile
+  pass — the same one-tick latency, preserved rather than optimized away.
+- **The latch scan is the source's box, not a tile under the tip.** The
+  10x10 box at `Center - (5,5)` over the x-major range `[tile(Center-21),
+  tile(Center+37)]`, first match wins; the position pins to
+  `GetTileVisualHitbox`'s center (`:66577-66595`) and stops integrating.
+- **Two fire-time tables disagree and are ported verbatim.** `QuickGrapple`'s
+  `num6`/`num7` (in-flight cap and the recycle) and `AI_007`'s `num14` attach
+  cap differ for 73/74, 652 and 372; and 73/74 are not symmetric with each
+  other (only `num == 73` is special-cased at `:6369-6372`, so 74 keeps the
+  default budget while both share the attach cap of 1).
+- **The pull averages every registered hook** and takes its speed cap from
+  `grappling[0]`'s type (`:22832-22851`), as the source does — a mixed set
+  uses the first hook's cap, not each hook's own.
+- **The Static Hook hangs the player still with no input held.** With no
+  direction its contribution is the player's own center, so the pull
+  collapses; the 6 px slack only engages once a direction is held.
+- **The cracked-brick 1/16 break rides the hook's own `u64` stream.** The
+  C# draws `Main.rand.Next(16) == 0`, whose interleaving with the other
+  consumers of that global stream is not replayable in this port. The hook
+  therefore owns a per-consumer stream seeded from the world seed beside
+  `ambience_rng` (the house pattern) instead of sharing the item stream —
+  a documented deviation, chosen so the roll is deterministic and testable.
+- **PHYS-6's four wrong constants are corrected, and its tests untouched.**
+  The max distance for 256 (425) and 935 (500) and the pull caps for 487
+  (12) and the Lunar four (16) had been inherited as the defaults; PHYS-6's
+  grapple tests pin type 13 (whose values were and stay right) and are left
+  as the regression anchor, with the new values asserted separately.
+
+Deferred to their own rows: the chain/sprite rendering and the `light` /
+`projFrames[652]` animation (nothing in `render/` reads `proj_data`), the
+item-driven fire (`QuickGrapple_GetItemToUse` + `ItemCheck_TryStartUse`),
+the latch blacklist (`UpdateBlacklistedTilesForGrappling`),
+`DoQueenSlimeHookTeleport`, the TrackHook→minecart transfer, and the net
+messages (13/17/29).
 ## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
 
 The M5-SPREAD-2 row's deferred "next slice".
