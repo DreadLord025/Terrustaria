@@ -128,22 +128,6 @@ pub fn text_args(key: &str, args: &[String]) -> String {
     manager().lock().unwrap().get_text_value_args(key, args)
 }
 
-/// `Language.GetTextValueWith(key, new { Name = value })` — the **named**
-/// argument form. The C# builds the format string from the anonymous type's
-/// property names, so the placeholders are `{Name}` rather than `{0}`; the
-/// port substitutes them literally after the `{Key}` pass. Returns the key
-/// itself when it is missing, like `text`.
-pub fn text_named(key: &str, args: &[(&str, &str)]) -> String {
-    let mut s = text(key);
-    if s == key {
-        return s;
-    }
-    for (name, value) in args {
-        s = s.replace(&format!("{{{name}}}"), value);
-    }
-    s
-}
-
 /// `Lang.menu[i].Value` — the key is `LegacyMenu.{i}` (`Lang.cs:481`).
 pub fn menu(i: usize) -> String {
     text(&format!("LegacyMenu.{i}"))

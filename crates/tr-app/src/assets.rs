@@ -553,15 +553,6 @@ pub fn load_world_images(
         "UI/Bestiary/Icon_Locked",
         "UI/Bestiary/Portrait_Front",
         "UI/Bestiary/Button_Back",
-        // `UIBestiaryTest.AddBackAndForwardButtons` / `AddSortAndFilterButtons`
-        // (`:212-252`): the page Back/Forward arrows, the sort and filter
-        // glyphs and their shared `Button_Wide_Border` hover, plus the
-        // `Button_Border` hover of the two page arrows.
-        "UI/Bestiary/Button_Forward",
-        "UI/Bestiary/Button_Border",
-        "UI/Bestiary/Button_Filtering",
-        "UI/Bestiary/Button_Sorting",
-        "UI/Bestiary/Button_Wide_Border",
         "UI/Bestiary/Stat_HP",
         "UI/Bestiary/Stat_Attack",
         "UI/Bestiary/Stat_Defense",
@@ -1398,15 +1389,6 @@ pub struct Lookups {
     pub ui_bestiary_slot_overlay: Option<tr_render::SheetRect>,
     pub ui_bestiary_slot_front: Option<tr_render::SheetRect>,
     pub ui_bestiary_locked: Option<tr_render::SheetRect>,
-    /// The bestiary's top-strip chrome (`UIBestiaryTest.cs:212-252`): the
-    /// page Back/Forward arrows, their `Button_Border` hover, the sort and
-    /// filter glyphs and the shared `Button_Wide_Border` hover.
-    pub ui_bestiary_btn_back: Option<tr_render::SheetRect>,
-    pub ui_bestiary_btn_forward: Option<tr_render::SheetRect>,
-    pub ui_bestiary_btn_border: Option<tr_render::SheetRect>,
-    pub ui_bestiary_btn_filtering: Option<tr_render::SheetRect>,
-    pub ui_bestiary_btn_sorting: Option<tr_render::SheetRect>,
-    pub ui_bestiary_btn_wide_border: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
     pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
     /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
@@ -1681,12 +1663,6 @@ impl Lookups {
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
             ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
             ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
-            ui_bestiary_btn_back: atlas.sheet("UI/Bestiary/Button_Back").copied(),
-            ui_bestiary_btn_forward: atlas.sheet("UI/Bestiary/Button_Forward").copied(),
-            ui_bestiary_btn_border: atlas.sheet("UI/Bestiary/Button_Border").copied(),
-            ui_bestiary_btn_filtering: atlas.sheet("UI/Bestiary/Button_Filtering").copied(),
-            ui_bestiary_btn_sorting: atlas.sheet("UI/Bestiary/Button_Sorting").copied(),
-            ui_bestiary_btn_wide_border: atlas.sheet("UI/Bestiary/Button_Wide_Border").copied(),
             ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
             ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
             ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),

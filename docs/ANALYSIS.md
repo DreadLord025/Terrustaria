@@ -9978,39 +9978,83 @@ owns the inventory click surface.
   `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
   the HUD uses the zero-anchor `text::border_string`.
 
-### The bestiary screen's component tree
 
-- **Two hand-written insets were the whole bug.** `grid_rect` derived the
-  grid from the *container* with `+6 / +40` and `-12 / -44`. The C# nests it
-  five levels deep — container → `UIPanel` (12 px padding, 8 top/bottom after
-  the `-4` trim, 90 px shorter) → inner → main area (24 top strip + 6 + 20 gap)
-  → bestiary space (`-12-230` wide, `-4` tall). The approximation left the
-  grid **116 px too tall and 24 px too wide**: it ran under the 230 px info
-  column and over the 20 px completion bar, and `GetEntriesToShow`'s
-  `width / 72` × `height / 72` therefore reported 96 cells a page instead of
-  56. `ui::bestiary::layout` now resolves the real chain, and
-  `the_component_tree_matches_the_c_sharp_chain` pins every rect at 1600×900.
-- **The grid grew rows to fake paging.** `grid_metrics` returned
-  `rows.max(ceil(count / cols))` so the whole roster stayed clickable, which is
-  not what the C# does: `UIBestiaryEntryGrid` keeps an `_atEntryIndex` and
-  walks it by `maxEntriesToHave` (`:98-140`), with Back/Forward arrows and a
-  `"{first}-{last} ({total})"` range label. `App.bestiary_page` is that
-  offset, `page_button_at` the arrows, `range_text` the label, and
-  `OnOpenPage` rewinds to page 0 (`UIBestiaryTest.cs:57-60`).
-- **The info page is a column, not a screen.** `selected` used to swap the
-  grid out for a full-width detail view. The C# appends
-  `UIBestiaryEntryInfoPage` (230 px, `Height (12, 1)`, `HAlign 1`) next to the
-  grid and fills its `UIList` (`:100-104`, `:318-330`), so the cards stay
-  visible while an entry is open. The port's portrait and text rows now live
-  inside that column.
-- **No scissor rect.** `UIBestiaryEntryButton` clips its icon with
-  `OverflowHidden` on a 68×68 inner element; `tr-render` has no clip
-  rectangle, so `draw_portrait` scales an oversized portrait into the box.
-  A clipped boss portrait (the vanilla shows the top of a tall sprite) becomes
-  a shrunk one — visible, documented, and better than the sprite covering its
-  neighbours. `every_card_portrait_stays_inside_its_cell` sweeps the roster.
-- **Named placeholders.** `Language.GetTextValueWith(key, new { Percent })`
-  builds `{Percent}`, not `{0}`; `lang::text_named` does that literal
-  substitution, so the completion label reads "12.50 % Collected" instead of
-  the raw `{Percent} Collected`.
+## The equipment-page tabs (M7-UI-3a)
 
+The three icons to the right of the inventory grid (`UI/DisplaySlots_2…10`) were
+painted by `ui/chrome.rs::draw_page_icons`, which already returned the hovered
+tab number — and **every caller threw the value away**. `App.equip_page` could
+only be set by the `TR_EQUIPPAGE` debug pin, so all three tabs were decoration.
+
+`Main.DrawPageIcons` (`Main.cs:42787-42868`) is one function with two halves; the
+port now has both.
+
+**The geometry** was already correct and stays untouched: the anchors are
+`(screenWidth - 162, yPos)` with `x += 82` for the first tab and `- 48` each
+after (`:42790-42791`), i.e. `screenWidth - 80 / -128 / -176`, drawn at scale
+`0.9` with the state-dependent sheet (`(EquipPage == 2) ? 3 : 2`, `== 1 ? 5 : 4`,
+`== 3 ? 10 : 8`, `:42792`, `:42804`, `:42816`) and the highlight sheets
+`6 / 7 / 9` at origin `(2, 2)` except tab 3's `(0, 0)`.
+
+**What was missing is the gates.** `Collision.CheckAABBvAABBCollision` runs
+against the *native* (unscaled) sheet, so the hit rect is the sheet size, not the
+0.9-scaled one — `page_tab_hit` takes the three native sizes (`page_tab_sizes`
+reads them from `Lookups::page_icons`). Each tab then applies its own
+mouse-item gate, and they are *not* the same:
+
+| tab | `EquipPageSelected` | gate (`Main.cs`) |
+|---|---|---|
+| first (`DisplaySlots_2/3`) | 2 | `mouseItem.stack < 1 \|\| mouseItem.dye > 0` (`:42793`) |
+| middle (`DisplaySlots_4/5`) | 1 | `mouseItem.stack < 1` (`:42805`) |
+| right (`DisplaySlots_8/10`) | 3 | `mouseItem.stack < 1` (`:42817`) |
+
+The first tab is the only one a held dye does not block, because that is the tab
+that reaches the dye page.
+
+**The click** (`:42828-42858`) is a toggle, not a switch: pressing the page you
+are already on falls back to page 0, pressing another selects it. `page_tab_click`
+returns exactly that, and returns `None` for tab 3 because tab 3 is the
+capture-mode entry (`:42835-42847` sets `CaptureManager.Instance.Active`), not a
+page. The sound is `SoundEngine.PlaySound(10)` (`:42857`), the ported `Menu_Open`.
+
+**The page actually drawn is not the page selected.** `Main.EquipPageSelected` is
+the player's wish; `Main.EquipPage` is what renders, and it is re-derived *every
+frame* by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) and then
+
+```csharp
+if (Main.EquipPage == -1) Main.EquipPage = Main.EquipPageSelected;   // Main.cs:42864-42866
+```
+
+`SelectEquipPage` sets `EquipPage = -1` first and then overrides it from the
+cursor stack: hooks, mounts and pets force page 2; armour, accessories and (when
+the dye page was the selection) a held dye force page 0. The port keeps that shape
+— `App::resolve_equip_page` runs from `frame()` and `select_equip_page` returns
+`-1` for "no opinion".
+
+**Deviations.**
+
+* Only the air arm and the armour/accessory arm of `SelectEquipPage` are ported.
+  The other arms need item fields `ItemDef` does not carry (`Item.shoot` for the
+  `Main.projHook` lookup, `Item.mountType`, `Item.dye`) plus the
+  `Main.vanityPet` / `Main.lightPet` buff sets. `itemdata.rs` is generated by
+  `tools/GenItemData/gen.py` and is marked "Never hand-edit", so adding them is a
+  generator change, not an addendum here. Until then a held dye is treated as an
+  ordinary held stack and the first tab is refused (`page_tab_hit`'s `has_dye`
+  argument stands in for the missing `Item.dye > 0`).
+* `Main.CaptureModeDisabled` (`:42821-42825`) is not modelled — tab 3 is drawn
+  white, and clicking it does nothing.
+* Tab 1 selects `EquipPageSelected = 1`, but the port has no page-1 draw:
+  `Main.cs:41368` hands page 1 to `DrawNPCHousesInUI`, the housing panel, which is
+  its own subsystem. Page 1 falls through to the equipment columns exactly as
+  page 3 already did.
+* `TR_EQUIPPAGE` now seeds `equip_page_selected` as well as `equip_page`, so the
+  pin survives the per-frame resolution.
+
+**Verification.** 7 new tests (the half-open edges, the per-tab gates, the toggle,
+`select_equip_page`, and two `handle_inventory_clicks` end-to-end arms including
+the held-armour auto-jump). The suite is 2027 + 18 + 1 + 1236 + 21, 0 failed. The
+hover glow is checked as a pixel statistic rather than a screenshot diff: moving
+the cursor onto the first tab raises the mean RGB of the `1516..1546 × 138..164`
+band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
+`Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
+also moves the lighting, so the diff bbox covers the whole frame.

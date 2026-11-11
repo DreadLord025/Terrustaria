@@ -314,7 +314,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name; `draw_mouse_text` is the single-line `MouseTextHackZoom` shape (the PVP/team hover) |
 | `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph — one port shared by the open grid (context 0), the closed hotbar (context 13, `GUIHotbarDrawInner`, `Main.cs:43600-43639`) and the cursor stack (context 21, `Main.cs:45173-45195`) |
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
-| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs, defence shield, guide text, the PVP toggle + six team-select cells (drawn **and** hit-tested: hover text, `teamCooldown` dim, `PVP_2` hover ring, the click chain), the four map-style icons |
+| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs (**drawn and clickable**: per-tab mouse-item gates, the same-tab→page-0 toggle, `EquipPageSelected` + `ItemSlot.SelectEquipPage`), defence shield, guide text, the PVP toggle + six team-select cells (drawn **and** hit-tested: hover text, `teamCooldown` dim, `PVP_2` hover ring, the click chain), the four map-style icons |
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
@@ -625,49 +625,4 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   | 5 | `Extra_7` | `Lang.inter[87]` Frost Legion | (173,135,140) |
   | 4 | `Extra_9` | `Lang.inter[88]` Goblin Army | (94,72,131) |
   | other | `Extra_9` | "" | White (no halving) |
-
-## The bestiary screen's component tree (`UIBestiaryTest.BuildPage`)
-
-`ui::bestiary::layout(screen)` resolves the whole chain the C# builds by hand
-(`UIBestiaryTest.cs:66-161`) instead of the two hand-written insets the port
-used before (`panel + 6/40`, `panel − 12/44`). At 1600×900:
-
-| element | rect | source |
-| --- | --- | --- |
-| container | 350, 180, 900, 680 | `Width (0, 0.875)` + `MaxWidth 900` / `MinWidth 700`, `Top 180`, `Height (-220, 1)` (`:71-77`) |
-| `UIPanel` | 350, 180, 900, 590 | `Width (0, 1)`, `Height (-90, 1)` (`:84-86`) |
-| inner | 362, 188, 876, 574 | `UIPanel`'s 12 px `cornerSize` padding (`UIPanel.cs:35`) with `PaddingTop/Bottom -= 4` (`:89-90`) |
-| top strip | 362, 188, 876, 24 | `num2 = 24` (`:91-95`) |
-| main | 362, 218, 876, 524 | `Height (-24-6-20, 1)`, `VAlign 1`, `Top -20` (`:109-117`) |
-| bottom bar | 362, 742, 876, 20 | `Height 20`, `VAlign 1` (`:120-125`) |
-| grid | 362, 222, 634, 520 | `Width (-12-230, 1)`, `Height (-4, 1)`, `VAlign 1` (`:138-146`) |
-| info page | 1008, 218, 230, 536 | `Width 230` (`UIBestiaryEntryInfoPage.cs:32`), `Height (12, 1)`, `HAlign 1` (`:100-104`) |
-
-`GetEntriesToShow` divides the grid box by the 72 px cell, so a 1600×900 window
-shows **8 columns × 7 rows = 56 entries per page** — the old insets gave 12 × 8 =
-96 and ran the grid under the info column and the completion bar.
-
-* **Paging.** `UIBestiaryEntryGrid` walks the roster by `maxEntriesToHave`
-  pages (`UIBestiaryEntryGrid.cs:98-140`). `App.bestiary_page` is the page
-  number, `ui::bestiary::page_button_at` the 24 px Back/Forward arrows
-  (`:213-236`), `range_text` the `"{first}-{last} ({total})"` label in the
-  135 px range panel (`:238-252`), and `TR_BESTIARY_PAGE=n` opens a page for
-  the screenshots. The grid used to grow extra rows to fit the whole roster,
-  which is what made the cell count (and therefore the hit lattice) wrong.
-* **Chrome.** `UIPanel`'s real 9-slice `PanelBorder` + `PanelBackground` in
-  `(33, 43, 79) * 0.8` with a black border replaces the flat quad; the top
-  strip carries the two page arrows, the range panel, the 17 px sort and
-  filter glyphs (`AddSortAndFilterButtons`, `:255-305`) with their
-  `Button_Wide_Border` hover, and the search icon at `HAlign 1`.
-* **Completion bar.** The 15 px `UIColoredSliderSimple` filled `(51, 137,
-  255)` over `(35, 43, 81)` (`FillProgressBottomBar`, `:193-208`), with
-  `BestiaryInfo.PercentCollected` — a **named** placeholder (`{Percent}`), so
-  it needs `lang::text_named`.
-* **The info page does not replace the grid.** Selecting an entry fills the
-  right-hand 230 px column and leaves the cards on screen (`:318-330`).
-* **Deviation.** The C# clips each card's icon through `OverflowHidden` on
-  its 68×68 inner element (`UIBestiaryEntryButton.cs:31-40`); the port's
-  renderer has no scissor rect, so an oversized portrait (the boss rows) is
-  scaled into the box instead of spilling across its neighbours —
-  `every_card_portrait_stays_inside_its_cell` pins that for the whole roster.
 

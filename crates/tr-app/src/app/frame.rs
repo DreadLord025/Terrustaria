@@ -109,6 +109,11 @@ impl App {
         if self.team_cooldown > 0 {
             self.team_cooldown -= 1;
         }
+        // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
+        // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
+        // page the player selected with the tabs. Recomputed every frame so the
+        // auto-jump is undone the moment the cursor stack empties.
+        self.resolve_equip_page();
         // `IngameOptions.Draw`'s per-frame hover/animation state and its
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
@@ -1361,7 +1366,6 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        self.bestiary_page,
                         &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
