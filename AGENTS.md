@@ -63,6 +63,23 @@ record of who is working on what.
    git update-ref refs/heads/main $m $(git rev-parse main)
    git push origin main
    ```
+   **Then verify the merge actually landed** — a successful push is not proof that
+   your work survives. Several agents rewrite `main` by ref update, and a later
+   merge made from a tree that predates yours silently reverts it (no merge base is
+   recorded for a `commit-tree` merge, so git cannot even show it as a conflict).
+   This has already eaten BUG-21 twice and M4-NPC-3m once. So, immediately after
+   the push:
+   ```powershell
+   git fetch origin
+   git merge-base --is-ancestor $m origin/main   # exit 0 = your merge is in
+   # and check a SYMBOL from your change, not just the commit:
+   git show origin/main:crates/tr-app/src/app/mod.rs | Select-String 'enter_loaded_world'
+   ```
+   If either check fails, your merge was overwritten: re-fetch, rebuild the merge on
+   top of the new `origin/main` (`git merge origin/main` in your worktree, then the
+   `commit-tree` above again) and push again. Re-run these two checks once more after
+   `graphify` step 7 — and re-check them if you are still around when another agent
+   pushes main.
    Conflicts (when the merge is done as `git merge origin/main` inside the branch)
    must be resolved **thoughtfully**: a conflict means two tasks touched the same
    system — re-read the C# source for that system and decide what the *port* needs,
