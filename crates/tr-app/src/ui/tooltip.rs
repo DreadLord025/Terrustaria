@@ -323,6 +323,46 @@ pub fn draw_item_tooltip(
     }
 }
 
+/// `Main.MouseTextHackZoom(text)` → `Main.MouseText` (`Main.cs:20123-20131`,
+/// `:20138-20210`) for a single uncoloured line: the bordered box at the pointer
+/// plus the white text. This is the shape the PVP/team hover uses
+/// (`Main.cs:42684`/`:42736` — `MouseTextHackZoom(Language.GetTextValue("UI.*"))`);
+/// the item tooltip above is the many-line variant of the same pass.
+pub fn draw_mouse_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    text: &str,
+    screen: Vec2,
+    pulse: UiPulse,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let lh = line_height(lookups);
+    // `Main.cs:20367-20377`: the single line's measured width, one line tall.
+    let w = hud_text_width(r, lookups, text, 1.0);
+    let rect = tooltip_box_rect(mouse, w, lh, screen);
+    draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
+    // The same `(14, 9)` inset and `mouseTextColor` tint the tooltip uses
+    // (`Main.cs:20400-20407`).
+    let tx = rect[0] + BOX_INSET.x;
+    let ty = rect[1] + BOX_INSET.y;
+    let tint = pulse.text;
+    for dir in [(-2.0f32, 0.0f32), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
+        hud_text(
+            r,
+            lookups,
+            tx + dir.0,
+            ty + dir.1,
+            1.0,
+            [0.0, 0.0, 0.0, tint],
+            text,
+        );
+    }
+    hud_text(r, lookups, tx, ty, 1.0, [tint, tint, tint, tint], text);
+}
+
 /// Index of the slot drawn under `mouse`. Open inventory: the 10x5 grid at
 /// `inventoryScale = 0.85` (`Main.DrawInventory`). Closed: the hotbar, whose slots are
 /// 52x52 scaled by `hotbarScale` and strided by 4 px (`GUIHotbarDrawInner`,

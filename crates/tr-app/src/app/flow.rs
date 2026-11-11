@@ -1875,6 +1875,11 @@ pub(crate) mod front_flow_tests {
             map_grab: None,
             minimap_hover: None,
             map_style: 1,
+            // `Main.teamCooldown` / `Main.hidePVPAndTeamIcons` start clear
+            // (`Main.cs:66781` sets only `teamCooldownLen`).
+            team_cooldown: 0,
+            hide_pvp_and_team_icons: false,
+            pvp_icons_forced: false,
             audio: audio::Audio::new(None),
             music: audio::MusicSystem::new(None),
             last_hp: 100,

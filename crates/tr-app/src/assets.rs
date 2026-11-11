@@ -514,6 +514,9 @@ pub fn load_world_images(
         "UI/DisplaySlots_10",
         "UI/PVP_0",
         "UI/PVP_1",
+        // `UI/PVP_2`: the hover ring behind a hovered team cell
+        // (`Main.cs:42771-42773`, `TextureAssets.Pvp[2]`).
+        "UI/PVP_2",
         // P3 modern crafting panel (`NewCraftingUI`): the `Inventory_Back18` craft
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
@@ -1346,8 +1349,9 @@ pub struct Lookups {
     /// `UI/DisplaySlots_0..10`: the equipment page tabs (`DrawPageIcons`,
     /// `Main.cs:42787`).
     pub page_icons: [Option<tr_render::SheetRect>; 11],
-    /// `UI/PVP_0`/`PVP_1`: the PVP toggle and team icons (`Main.cs:42654`).
-    pub pvp: [Option<tr_render::SheetRect>; 2],
+    /// `UI/PVP_0`/`PVP_1`/`PVP_2`: the PVP toggle, the team icons and the
+    /// hover highlight (`Main.cs:42654`: `TextureAssets.Pvp[0]/[1]/[2]`).
+    pub pvp: [Option<tr_render::SheetRect>; 3],
     /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
     pub ui_defense_shield: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
@@ -2019,7 +2023,7 @@ impl Lookups {
             page_icons: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
             }),
-            pvp: [0, 1].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
+            pvp: [0, 1, 2].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {

@@ -588,6 +588,13 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_OPTIONS`: opens the in-game options window at boot so
+    /// `TR_SHOT` captures the `IngameOptions` panel (M7-UI-4's fixture).
+    ingame_options_open,
+    "TR_OPTIONS"
+}
+
+pin_bool! {
     /// `TR_POSE`: keeps the capture scene empty — a contact-damage NPC
     /// would knock the pinned player off the furniture.
     pose_set,
@@ -677,6 +684,16 @@ pin_bool! {
     /// `TR_VK_GRID`: shows the virtual-keyboard grid.
     vk_grid,
     "TR_VK_GRID"
+}
+
+pin_bool! {
+    /// `TR_PVP=1` forces `Main.DrawPVPIcons`'s draw + click gates open
+    /// (`Main.netMode == 1` / `Main.ShouldTeamSelectDraw`, `Main.cs:2909-2919`)
+    /// so a single-player screenshot can capture and exercise the PVP toggle
+    /// and the six team cells. A harness pin, not a game rule — the vanilla
+    /// shows these icons only inside a multiplayer client.
+    pvp_icons,
+    "TR_PVP"
 }
 
 /// `TR_MAPSTYLE=<0|1|2>`: the minimap style (an invalid value falls back to
