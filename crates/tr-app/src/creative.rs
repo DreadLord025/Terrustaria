@@ -118,6 +118,33 @@ impl CreativePowers {
         self.slider(PowerId::TimeRate)
     }
 
+    /// `GodmodePower` (`CreativePowers.cs:692-727`): the toggle the sim reads
+    /// as `Player.creativeGodMode` (`Player.cs:25493-25497`).
+    pub fn god_mode(&self) -> bool {
+        self.toggle(PowerId::Godmode)
+    }
+
+    /// `FarPlacementRangePower` (`CreativePowers.cs:730-767`): while it is on,
+    /// `Player.ResetEffects` doubles the tile range (`Player.cs:18815-18828`).
+    pub fn far_placement_range(&self) -> bool {
+        self.toggle(PowerId::FarPlacementRange)
+    }
+
+    /// `StopBiomeSpreadPower.Enabled` (`CreativePowers.cs:1540-1571`).
+    pub fn stop_biome_spread(&self) -> bool {
+        self.toggle(PowerId::StopBiomeSpread)
+    }
+
+    /// `WorldGen.AllowedToSpreadInfections` as the growth/spread drivers see
+    /// it: `WorldGen.UpdateWorld` seeds it to `true` and then overwrites it
+    /// with `!power.Enabled` whenever the power is unlocked
+    /// (`WorldGen.cs:71502-71507`). Single-player, the power is always
+    /// unlocked (`GetIsUnlocked`'s `return true`), so the toggle is the
+    /// whole rule.
+    pub fn allowed_to_spread_infections(&self) -> bool {
+        !self.stop_biome_spread()
+    }
+
     /// `StartDayImmediately`/`StartNightImmediately`'s targets
     /// (`CreativePowers.cs:769-860`): the day and the night endpoints
     /// (`Main.time = 0` with `dayTime` flipped).
@@ -284,6 +311,26 @@ mod tests {
         p.set(PowerId::TimeRate, PowerState::Slider(5.0));
         p.set(PowerId::FreezeTime, PowerState::Toggle(false));
         assert!((p.time_rate() - 5.0).abs() < 0.001, "the rate 5x");
+    }
+
+    #[test]
+    fn the_sim_powers_read_back_through_their_accessors() {
+        // `GodmodePower`/`FarPlacementRangePower`/`StopBiomeSpreadPower` —
+        // the three toggles the sim consumes (`CreativePowers.cs:692`,
+        // `:730`, `:1540`).
+        let mut p = CreativePowers::new();
+        assert!(!p.god_mode());
+        assert!(!p.far_placement_range());
+        assert!(!p.stop_biome_spread());
+        // `AllowedToSpreadInfections` starts `true` (`WorldGen.cs:71502`).
+        assert!(p.allowed_to_spread_infections());
+        p.set(PowerId::Godmode, PowerState::Toggle(true));
+        p.set(PowerId::FarPlacementRange, PowerState::Toggle(true));
+        p.set(PowerId::StopBiomeSpread, PowerState::Toggle(true));
+        assert!(p.god_mode());
+        assert!(p.far_placement_range());
+        assert!(p.stop_biome_spread());
+        assert!(!p.allowed_to_spread_infections(), "the spread stops");
     }
 
     #[test]

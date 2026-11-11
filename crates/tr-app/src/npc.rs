@@ -12160,6 +12160,12 @@ impl Npc {
     }
 
     fn contact(&mut self, player: &mut Player) {
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before the whole collision pass — no
+        // NPC contact damage and none of the EoC shield-dash arm below.
+        if player.creative_god_mode {
+            return;
+        }
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -12732,6 +12738,18 @@ mod tests {
         player.hurt_cd = 0.0;
         bat.contact(&mut player);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before any contact arm runs.
+        let mut god = crate::player::Player::spawn(&w);
+        god.x = bat.x;
+        god.y = bat.y;
+        god.hurt_cd = 0.0;
+        god.creative_god_mode = true;
+        bat.contact(&mut god);
+        assert_eq!(
+            god.hp, god.max_hp,
+            "the godmode player takes no contact damage"
+        );
         // The bestiary entry maps.
         let e = crate::bestiary::entry_for_npc(NpcKind::CaveBat, SlimeVariant::Blue);
         assert_eq!(e.net_id, 49);
