@@ -1457,6 +1457,54 @@ NpcKind::SolarSelenian => 140,
         )
     }
 
+    /// `NPC.isLikeATownNPC` (`NPC.cs:6856-6864`: `townNPC || type == 453` —
+    /// the Skeleton Merchant, which the port does not ship): the vanilla
+    /// `townNPC` flag for every town kind the port carries — the housing set
+    /// of [`NpcKind::is_town_npc`] plus the eleven sellers that have no
+    /// ported housing entry yet (TravellingMerchant 368, Angler 369, Stylist
+    /// 353, TaxCollector 441, Golfer 588, Zoologist 633, Princess 663,
+    /// DyeTrader 207, PartyGirl 208, Wizard 108, Mechanic 124 — all
+    /// `this.townNPC = true` in `SetDefaults`, `NPC.cs:9011-17397`).
+    /// `ProcessHitAgainstNPC`'s melee exceptions read this set
+    /// (`Player.cs:44274`, `:44344`).
+    pub fn is_town_npc_like(self) -> bool {
+        self.is_town_npc()
+            || matches!(
+                self,
+                NpcKind::TravellingMerchant
+                    | NpcKind::Angler
+                    | NpcKind::Stylist
+                    | NpcKind::TaxCollector
+                    | NpcKind::Golfer
+                    | NpcKind::Zoologist
+                    | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
+                    | NpcKind::Wizard
+                    | NpcKind::Mechanic
+            )
+    }
+
+    /// `NPC.friendly` (`NPC.cs:8519`'s default `false` plus the `SetDefaults`
+    /// arms `:8983-9060`, `:10257`, `:10493-10507`, `:13502-13516`,
+    /// `:13796-13809`, `:16652-16665`): every town NPC and the six
+    /// bound/rescue forms the port ships. `ProcessHitAgainstNPC` refuses
+    /// every friendly NPC (`Player.cs:44272-44276`), and
+    /// `Damage_PVE_Inner` gates projectiles on the same flag
+    /// (`Projectile.cs:12601`).
+    pub fn is_friendly(self) -> bool {
+        self.is_town_npc_like()
+            || matches!(
+                self,
+                NpcKind::BoundGoblin
+                    | NpcKind::BoundWizard
+                    | NpcKind::BoundMechanic
+                    | NpcKind::WebbedStylist
+                    | NpcKind::SleepingAngler
+                    | NpcKind::SleepingGolfer
+            )
+    }
+
     /// `NPC.netID` as the `.wld` section writes it (`SaveNPCs:1718`): the
     /// vanilla id, which `crate::bestiary::ENTRIES` carries per kind.
     /// **Not** [`NpcKind::to_u16`] — that is the port's internal protocol id

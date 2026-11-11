@@ -958,27 +958,40 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
-            // a town NPC takes no player melee unless the hit is the explicit
-            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
-            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
-            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
-            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
-            // the crystal's spawn shield). The vanilla also skips every
-            // `friendly` NPC — the port's town set is `is_town_npc` (the
-            // Travelling Merchant/Angler ride their own easter eggs). The
-            // vanilla arms the flags when the doll/curse is EQUIPPED
-            // (`Player.cs:15123-15129`); the port has no equip slot for them,
-            // so the inventory's presence arms the same flag (the recorded
-            // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
-            // `6f9ec6f4` resolved main against a base that predated this gate
-            // and dropped it and its test.)
-            let easter_egg = matches!(held.kind, 267 | 1307)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
+            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44272-44276`):
+            // `nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
+            // (nPC.type != 54 || !this.killClothier) && (!nPC.isLikeATownNPC
+            // || (sItem.type != 5129 && sItem.type != 3351))` → `return`.
+            // So every friendly NPC (all town kinds plus the six
+            // bound/rescue forms, [`crate::npc::NpcKind::is_friendly`]) is
+            // refused except: the Guide under the Guide Voodoo Doll (267),
+            // the Clothier under the Clothier's Voodoo Doll (1307), and any
+            // town NPC under the Flymeal (5129) or the Tax Collector's Stick
+            // of Doom (3351) — the two items the C# whitelists by id.
+            // `dontTakeDamage` skips the shielded (the Brain's Creeper
+            // shield, the crystal's spawn shield). The dolls arm their flags
+            // through `ApplyEquipFunctional` (`Player.cs:14368`, the
+            // accessory slots 3..10 the `UpdateEquips` loop `:12948-12954`
+            // walks) and `ResetEffects` clears them every tick (`:18365-18366`
+            // — the port reads the per-tick `Player.equipped` snapshot, so a
+            // doll in the bag no longer counts; the pre-fix gate scanned the
+            // whole inventory).
+            let (kill_guide, kill_clothier) = app
+                .player
+                .as_ref()
+                .map(|p| {
+                    let worn = |k: u16| p.equipped[3..10].contains(&k);
+                    (worn(267), worn(1307))
+                })
+                .unwrap_or((false, false));
+            let hits_town_npc = matches!(held.kind, 5129 | 3351);
             let hit_idx = app.npcs.iter().position(|n| {
                 n.contains(ax, ay)
                     && !n.dont_take_damage
-                    && (!n.kind.is_town_npc() || easter_egg)
+                    && (!n.kind.is_friendly()
+                        || (n.kind == NpcKind::Guide && kill_guide)
+                        || (n.kind == NpcKind::Clothier && kill_clothier)
+                        || (n.kind.is_town_npc_like() && hits_town_npc))
             });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
@@ -1009,6 +1022,15 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         .as_ref()
                         .map(|p| p.weapon_damage_multiplier(class))
                         .unwrap_or(1.0);
+                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
+                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
+                // one-damage slap on the town (it showers coins on mobs,
+                // `:44362-44371` — the item drop rides the M3 item system).
+                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
+                    1.0
+                } else {
+                    raw
+                };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -1019,7 +1041,29 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     .unwrap_or((0.0, 0));
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                 let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
-                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                let mut dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
+                // (`Player.cs:44344-44353`): the Flymeal takes full armour
+                // penetration (`armorPenetrationPercent = 1f`), doubles the
+                // rolled damage and doubles it again on the Nurse (type 18).
+                // The penetration adds to the damage amount like the C#
+                // (`num2 += nPC.checkArmorPenetration(...)`, `:44383`); the
+                // player's own `GetArmorPenetration` sum is not ported yet
+                // (no prefix/accessory arpen writer — the neutral 0).
+                if held.kind == 5129 && n.kind.is_town_npc_like() {
+                    dmg *= 2;
+                    if n.kind == NpcKind::Nurse {
+                        dmg *= 2;
+                    }
+                    dmg += tr_core::damage::check_armor_penetration(
+                        0,
+                        1.0,
+                        n.defense(),
+                        false,
+                        false,
+                        false,
+                    );
+                }
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
@@ -3700,10 +3744,10 @@ mod tests {
 
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
-    /// friendly gate, `Player.cs:44261-44264`) — the voodoo doll (267) and
-    /// the Clothier's curse (1307) are the only melee exceptions.
-    /// (Re-landed with the gate — the BUG-03 merge dropped this test with
-    /// the code.)
+    /// friendly gate, `Player.cs:44272-44276`) — the Guide Voodoo Doll (267)
+    /// and the Clothier's Voodoo Doll (1307) are the melee exceptions, and
+    /// they only arm while WORN (`ApplyEquipFunctional` over the accessory
+    /// slots 3..10, `Player.cs:14368`/`:12948-12954`).
     #[test]
     fn bug_10_melee_refuses_the_town_npcs() {
         // A Guide standing on the floor at the cursor.
@@ -3717,14 +3761,34 @@ mod tests {
         mine_frames(&mut a, 1);
         assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
         assert_eq!(a.npcs[0].max_hp, hp_max);
-        // The voodoo doll arms the easter egg.
+        // The doll in the BAG arms nothing: `ResetEffects` clears the flag
+        // every tick and only `ApplyEquipFunctional` re-arms it, so the
+        // pre-fix inventory scan was over-permissive.
+        let mut bag = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&bag.world, 30).expect("the Guide spawns");
+        bag.npcs.clear();
+        bag.npcs.push(guide);
+        bag.inventory[bag.selected].kind = 24; // the sword does the hit
+        bag.inventory[0].kind = 267; // the voodoo doll in the bag
+        bag.inventory[0].count = 1;
+        bag.npcs[0].x = 30.0 * TILE_PX;
+        bag.npcs[0].y = 260.0 * TILE_PX;
+        let hp = bag.npcs[0].hp;
+        mine_frames(&mut bag, 1);
+        assert_eq!(bag.npcs[0].hp, hp, "a bagged doll does not arm the flag");
+        // The same doll WORN in an accessory slot arms it.
         let mut b = melee_app();
         let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
         b.npcs.clear();
         b.npcs.push(guide);
         b.inventory[b.selected].kind = 24; // the sword does the hit
-        b.inventory[0].kind = 267; // the voodoo doll arms the flag
-        b.inventory[0].count = 1;
+        // `Player.cs:15124` — the worn doll arms `killGuide`. The rig drives
+        // `update_editing` directly (no `update_player` tick), so the worn
+        // accessory is written into the per-tick `Player.equipped` snapshot
+        // the real loop fills from `App.equip.armor` (`world_sim/player.rs`).
+        b.player.as_mut().unwrap().equipped[3] = 267;
+        b.equip.armor[3].kind = 267;
+        b.equip.armor[3].count = 1;
         // The Guide spawns at the surface; the rig's cursor sits at
         // (30, 260) — park the Guide into the cursor's box the way the
         // slime rig does.
@@ -3733,6 +3797,95 @@ mod tests {
         let hp = b.npcs[0].hp;
         mine_frames(&mut b, 1);
         assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
+    }
+
+    /// BUG-10, the `friendly` half: the C# refuses EVERY friendly NPC, not
+    /// just the ten housing kinds — the eleven seller town NPCs
+    /// (`is_town_npc_like`, `NPC.cs:6856`) and the six bound/rescue forms
+    /// (`NPC.cs:10257`/`:10493`/`:13502`/`:13796`/`:16652`).
+    #[test]
+    fn bug_10_melee_refuses_the_sellers_and_the_bound_forms() {
+        for kind in [
+            NpcKind::Angler,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Princess,
+            NpcKind::DyeTrader,
+            NpcKind::PartyGirl,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::TravellingMerchant,
+            NpcKind::BoundGoblin,
+            NpcKind::BoundWizard,
+            NpcKind::BoundMechanic,
+            NpcKind::WebbedStylist,
+            NpcKind::SleepingAngler,
+            NpcKind::SleepingGolfer,
+        ] {
+            assert!(kind.is_friendly(), "{kind:?} is friendly in the C#");
+            let mut a = melee_app();
+            let mut npc = crate::npc::Npc::spawn_town(&a.world, 30, kind)
+                .unwrap_or_else(|| panic!("{kind:?} spawns"));
+            a.npcs.clear();
+            npc.x = 30.0 * TILE_PX;
+            npc.y = 260.0 * TILE_PX;
+            a.npcs.push(npc);
+            a.inventory[a.selected].kind = 24; // the wooden sword
+            let hp = a.npcs[0].hp;
+            mine_frames(&mut a, 1);
+            assert_eq!(a.npcs[0].hp, hp, "{kind:?} is not hurt by melee");
+        }
+    }
+
+    /// BUG-10, the two item exceptions: the Flymeal (5129) and the Tax
+    /// Collector's Stick of Doom (3351) are the only melee items the C#
+    /// lets through the friendly gate on a town NPC
+    /// (`Player.cs:44274`), and the cane's hit is forced to one damage
+    /// (`:44300-44304`) while the Flymeal doubles (x4 on the Nurse).
+    #[test]
+    fn bug_10_flymeal_and_stick_of_doom_hit_the_town() {
+        // The Flymeal on a Guide: `isLikeATownNPC`-gated, so it lands.
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].y = 260.0 * TILE_PX;
+        a.inventory[a.selected].kind = 5129;
+        a.inventory[a.selected].count = 1;
+        let hp = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // The doubled 15 plus the 100 % armour penetration clears the
+        // Guide's defence 30 by a wide margin (the sword's ~0 would not).
+        assert!(
+            hp - a.npcs[0].hp > 20,
+            "the Flymeal doubles the roll ({} dmg)",
+            hp - a.npcs[0].hp
+        );
+        // The Stick of Doom lands for exactly one: `dmg = 1` before
+        // DamageVar and the defence floor (`CalculateDamageNPCsTake`'s
+        // max(1, 1 - 15) = 1).
+        let mut b = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
+        b.npcs.clear();
+        b.npcs.push(guide);
+        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].y = 260.0 * TILE_PX;
+        b.inventory[b.selected].kind = 3351;
+        b.inventory[b.selected].count = 1;
+        let hp = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert_eq!(hp - b.npcs[0].hp, 1, "the cane slaps for one");
+        // A hostile is untouched by the friendly gate: the slime still takes
+        // the plain item damage (the sword's 6 on the rig's defence).
+        let mut c = melee_app();
+        let hp = c.npcs[0].hp;
+        c.inventory[c.selected].kind = 24;
+        mine_frames(&mut c, 1);
+        assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
     }
 
     fn melee_app() -> App {
