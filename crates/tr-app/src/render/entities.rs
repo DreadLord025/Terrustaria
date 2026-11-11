@@ -295,12 +295,26 @@ pub(crate) struct NpcAssets {
     /// its cannons (9 frames of 30x30).
     pub(crate) dutchman: Option<BgTex>,
     pub(crate) dutchman_cannon: Option<BgTex>,
-    /// `NPC_552/553/554` — the DD2 goblin attackers (14-frame strips of
-    /// 18x40; the sheets are the shared humanoid shape).
+    /// `NPC_552/553/554` — the DD2 goblin attackers' FIRST tier sheet.
+    /// The v1 read `NPC_553` for all three tiers AND for the bombers and
+    /// the javelin throwers (whose sheets are `NPC_555-557` and
+    /// `NPC_561-563`), so two thirds of the Old One's Army's goblins drew
+    /// the wrong art: `NPC_553` is the tier-2 goblin (58/66/66 px wide,
+    /// 14 rows). Each kind now loads its own sheet through the
+    /// `dd2_goblin_sheet` lookup below.
     pub(crate) dd2_goblins: Option<BgTex>,
-    /// `NPC_555-567` — the DD2 support family (the bombers/javelineers'
-    /// humanoid strips + the skeletons' 14-frame materialize sheets).
-    pub(crate) dd2_support: Option<BgTex>,
+    /// `NPC_555/556/557` — the DD2 goblin bombers (17-frame strips of
+    /// 46x58: `Main.npcFrameCount[555..557] = 17`, `Main.cs:67082`).
+    pub(crate) dd2_bombers: Option<BgTex>,
+    /// `NPC_561/562/563` — the DD2 javelin throwers (14-frame strips of
+    /// 84x76).
+    pub(crate) dd2_javelins: Option<BgTex>,
+    /// `NPC_552/554` — the DD2 goblin tiers 1 and 3 (their own sheets).
+    pub(crate) dd2_goblin_t1: Option<BgTex>,
+    pub(crate) dd2_goblin_t3: Option<BgTex>,
+    /// `NPC_566/567` — the DD2 skeletons' materialise sheets (9 and 9
+    /// frames of 48x52 — `Main.npcFrameCount[566] = [567] = 9`).
+    pub(crate) dd2_skeletons: Option<BgTex>,
     /// `NPC_564` — the Dark Mage (20-frame caster strip of 34x62).
     pub(crate) dark_mage: Option<BgTex>,
     /// `NPC_551` — Betsy (11-frame dragon strip of 190x90).
@@ -480,7 +494,11 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dutchman: sky_tex(atlas, "NPC_491", None),
         dutchman_cannon: sky_tex(atlas, "NPC_492", None),
         dd2_goblins: sky_tex(atlas, "NPC_553", None),
-        dd2_support: sky_tex(atlas, "NPC_556", None),
+        dd2_bombers: sky_tex(atlas, "NPC_555", None),
+        dd2_javelins: sky_tex(atlas, "NPC_561", None),
+        dd2_goblin_t1: sky_tex(atlas, "NPC_552", None),
+        dd2_goblin_t3: sky_tex(atlas, "NPC_554", None),
+        dd2_skeletons: sky_tex(atlas, "NPC_566", None),
         dark_mage: sky_tex(atlas, "NPC_564", None),
         betsy: sky_tex(atlas, "NPC_551", None),
         wither_beast: sky_tex(atlas, "NPC_568", None),
@@ -683,41 +701,203 @@ fn tower_draw<'a>(
     )
 }
 
-/// The halfSize override for a kind (`Main.cs:23049`'s switch): the
-/// point that lands on the NPC's anchor, so a value below the frame's
-/// centre lifts the art and one above pushes it down. The C# overrides
-/// `halfSize = (55, 107)` for the Eye of Cthulhu and the Twins — the
-/// sheet-derived half-frame for their 166-px rows is 83 (and 100 for the
-/// Twins' 200-px rows), so the override shifts the frame down by the
-/// difference. `None` = the sheet-derived value.
+/// `Main.NPCAddHeight` (`Main.cs:22002-22184`) verbatim: the per-kind
+/// pixel shift the C# adds to `num47` — the OTHER half of the NPC anchor
+/// that the port never carried (BUG-07's anchor sweep). The C# reads the
+/// NET id, not the enum, so the three ids the port reuses under a second
+/// kind (`108` = the Wizard AND the DD2 Wither Beast — the C# has 568
+/// there; `124` = the Mechanic AND the Moon Lord Core — the C# has 124;
+/// `64` = the Goblin Tinkerer AND the Golem Head) are resolved by rank:
+/// a town NPC never takes the monster row. Some kinds' rows are absent
+/// because the port has no kind for them (the snowman gangsta's 48, the
+/// celestial pillars' 141-145, the AoW's 621-623).
+fn npc_add_height(n: &Npc) -> f32 {
+    use NpcKind::*;
+    let town = n.kind.is_town_npc();
+    let v = match n.kind {
+        // `:22011` — 125/126 (the Twins) 30, `:22034` 126 again.
+        Retinazer | Spazmatism => 30.0,
+        // `:22015` 54 (the Clothier).
+        Clothier => 2.0,
+        // `:22019` 182 (the Angry Nimbus — no port kind).
+        // `:22023` 178 (the Vortex Pillar's slot in the C# is 422; 178 is
+        // the Crawltipede — no port kind).
+        // `:22031` 6/173 (the Eater of Souls / the Meteor Head).
+        EaterOfSouls | MeteorHead => 26.0,
+        // `:22035` 94 (the Goblin Archer).
+        GoblinArcher => 14.0,
+        // `:22039` 7/8/9 (the Devourer's segments + the Zombie).
+        DevourerHead | DevourerBody | DevourerTail | Zombie => 13.0,
+        // `:22043` 98/99/100 (the DD2 bombers).
+        DD2GoblinBomberT1 | DD2GoblinBomberT2 | DD2GoblinBomberT3 => 13.0,
+        // `:22049` 10/11/12 (the Giant Worm's segments).
+        GiantWormHead | GiantWormBody | GiantWormTail => 8.0,
+        // `:22055` 13/14/15 (the Eater of Worlds' segments).
+        EaterOfWorldsHead | EaterOfWorldsBody | EaterOfWorldsTail => 26.0,
+        // `:22059` 175 (the Sea Snail — no port kind).
+        // `:22063` 520 (the Martian Walker).
+        MartianWalker => 2.0,
+        // `:22067` 412-414 (the DD2 Dark Mage / T3 / the Betsy — the port's
+        // ids 564/565 are the mage, 551 the Betsy; the C# range is the
+        // mage trio's ORIGINAL ids 562-564, see `NPCID`).
+        DD2DarkMage | DD2DarkMageT3 => 18.0,
+        // `:22075` 49/51 (the cave/jungle bats — not the hellbat's 60).
+        CaveBat | JungleBat => 4.0,
+        // `:22079` 60 (the Hellbat).
+        Hellbat => 10.0,
+        // `:22083` 62/66/156 (the Demon Eye's 62 is a charm id; 66 the
+        // Voodoo Demon, 156 the Wandering Eye — no port kind for 156).
+        VoodooDemon => 14.0,
+        // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
+        // Golem Head's 64 is resolved out by the town test above.
+        BoundGoblin | GoblinTinkerer | DD2JavelinT3 => 4.0,
+        // `:22091` 65 (the Shark).
+        Shark => 5.0,
+        // `:22095` 69 (the Gray Grunt).
+        GrayGrunt => 4.0,
+        // `:22099` 70 (the Skeletron) and `:22103` 72 (the Wall of Flesh).
+        SkeletronHead => -4.0,
+        WallOfFlesh => -2.0,
+        // `:22107` 83/84 (the Skeletron's hands + the other hand id).
+        SkeletronHand => 20.0,
+        // `:22111` 150/151/158 (the Blue/Goldfish variants — the port's
+        // single 55 Goldfish keeps the vanilla 65 row), `:22125` 87-92 (the
+        // Goldfish school) 56.
+        Goldfish | Piranha => 56.0,
+        // `:22129` 134-136 (the Destroyer's segments).
+        TheDestroyer => 30.0,
+        // `:22133` 169 (the DD2 Kobold Flyer — the port's 572-575).
+        DD2KoboldFlyerT2 | DD2KoboldFlyerT3 => 8.0,
+        // `:22137` 174 (the DD2 Drakin).
+        DD2DrakinT2 | DD2DrakinT3 => 6.0,
+        // `:22141` 369 (the Angler) and `:22145` 376 (the Sleeping Angler).
+        Angler | SleepingAngler => 2.0,
+        // `:22149` 579 (the Bouncy Slime — no port kind), `:22153` 612/613
+        // (the T3 goblins' rig) 2.
+        DD2GoblinT3 => 2.0,
+        // `:22169` 269/270/271/274/277 — the Painted/vanity town ids' -2.
+        // `:22174` the `townNPC && ai[0] == 5` sitting row: -4 as a flat
+        // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
+        _ if town && n.ai[0] == 5.0 => {
+            let extra = match n.kind {
+                DyeTrader => -2.0,
+                _ => 0.0,
+            };
+            -4.0 + extra
+        }
+        // `:22178` 671-675 (the Travelling Merchant's pet trio) +10.
+        _ => 0.0,
+    };
+    v * n.scale
+}
+
+/// `Main.cs:22992-22994`'s three anchor terms for the generic NPC draw:
+/// `halfSize` (the `Main.cs:25453` sheet-derived frame centre, overridden
+/// per kind by the `:23048` switch), `halfSize.Y += …` (`:23070`/`:23074`)
+/// and a dedicated `halfSize.Y = …` (`:23077`, `:23082`).
+///
+/// Returned as the single vertical shift the C#'s formula
+/// `pos.Y + height + 4 + halfSize.Y + num47 + num46` produces relative to
+/// the port's old sheet-centred `bottom + 4 - frame_h/2` anchor — i.e.
+/// `(height + 4 + halfSize.Y + num47 + num46) - frame_h/2`.
 fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
     match kind {
+        // `:23051-23056` — the boss trio's `halfSize = (55, 107)`.
         NpcKind::EyeOfCthulhu | NpcKind::Retinazer | NpcKind::Spazmatism => 107.0,
+        // `:23077` — the Plantera head's absolute 77.
         NpcKind::Plantera => 77.0,
+        // `:23082` — the Golem head's absolute 21.
+        NpcKind::GolemHead => 21.0,
+        // `:23070` — the `halfSize.Y += 4` group (the goblin townsfolk and
+        // the javelin T3, whose frame rows are 56 px tall like every
+        // humanoid: the shift lifts the art 4 px off the ground so the
+        // spawn animation clears it).
+        NpcKind::BoundGoblin | NpcKind::GoblinTinkerer | NpcKind::DD2JavelinT3 => {
+            frame_h * 0.5 + 4.0
+        }
+        // `:23074` — the Gray Grunt's `halfSize.Y += 8`.
+        NpcKind::GrayGrunt => frame_h * 0.5 + 8.0,
+        // `:23060` — the moon/slug pair's `num46` (`626`/`627` are absent
+        // from the port) and `692`'s wet switch (`:23066`): `num46` 10 dry /
+        // 6 wet, folded into `npc_anchor_nudge` because it is a `num46`
+        // term rather than a `halfSize` one.
         _ => frame_h * 0.5,
     }
 }
 
-/// `Main.cs:23048`'s per-kind vertical anchor nudge (`num47`, plus the
-/// `num46` terms the same switch writes): a flat pixel shift added to the
-/// generic anchor's Y after the `halfSize` override's own shift.
+/// `Main.cs:22991-23115`'s `num45` / `num46` / `num47` terms for the
+/// generic NPC draw. `num47` starts at [`npc_add_height`], the `:22997`
+/// chain overwrites it or adds `num46` for a dozen ids, and the
+/// `:23048` switch adds the last few. Only the ids the port models are
+/// listed; the rest of the switch (the DD2 support ring effects, the
+/// `694`-only offsets, the `469`/`357`/`467` ids) has no port kind.
 fn npc_anchor_nudge(n: &Npc) -> f32 {
+    use NpcKind::*;
+    let mut num46 = 0.0;
+    let mut num47 = npc_add_height(n);
+    let mut num45 = 0.0;
     match n.kind {
-        // `:23077` — the Plantera head's 26 (`halfSize.Y = 77` is folded
-        // by `boss_half_size`).
-        NpcKind::Plantera => 26.0,
-        // `:23078` — the Brain of Cthulhu's `num47 += 50 * scale`.
-        NpcKind::BrainOfCthulhu => 50.0 * n.scale,
-        // `:23103`'s group — the DD2 goblins' and the Wither Beasts'
-        // negative nudges (561-563: -8; 555-557: -5; 572/573: -4;
-        // 570/571: -2; 568/569: -3).
-        NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => -8.0,
-        NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => {
-            -5.0
-        }
-        NpcKind::DD2WitherBeast => -3.0,
-        _ => 0.0,
+        // `:23026` — the id 477 group's `num47 = 22` (an absolute, not an
+        // add: the DD2 Ogre's sheet is far taller than its box).
+        DD2OgreT2 | DD2OgreT3 => num47 = 22.0,
+        // `:23022` — 483's `num46 = 14` (the DD2 Kobold Walker).
+        DD2KoboldWalkerT2 | DD2KoboldWalkerT3 => num46 = 14.0,
+        // `:23020` — 484's `num46 = 2` (the DD2 Wither Beast T3's rig).
+        DD2WitherBeastT3 => num46 = 2.0,
+        // `:23018` — 490's `num46 = 4` (the DD2 Drakin's carry).
+        // `:23014` — 581's `num46 = -6` (the DD2 Javelin T2's rig).
+        DD2JavelinT2 => num46 = -6.0,
+        // `:23010` — 537's `num46 = 2`.
+        // `:23030` — 606's `num46 -= 2`.
+        // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders).
+        DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
+        // `:23077-23091` — the `num47` adds of the same switch.
+        Plantera => num47 += 26.0,
+        BrainOfCthulhu => num47 += 50.0 * n.scale,
+        // `:23086` — the Golem head's `num47 += 16`.
+        GolemHead | GolemHeadFree => num47 += 16.0,
+        // `:23090` — 288's `num47 += 6` (the DD2 Ogre's fist ids — no port
+        // kind; 288 is the port's DD2 Ogre T2's own net id, so the row is
+        // kept for the T2 only where the port uses 288 itself).
+        // `:23106` — 688's `num46 += 10`.
+        DD2GoblinT1 => num46 += 10.0,
+        // `:23214-23243` — the DD2 support group's `num47` overwrites:
+        // the javelineers' -8, the bombers' -5, the kobold walkers' -4, the
+        // drakins' -2 and the Wither Beasts' -3.
+        DD2JavelinT1 => num47 = -8.0,
+        DD2GoblinBomberT1 | DD2GoblinBomberT2 | DD2GoblinBomberT3 => num47 = -5.0,
+        DD2KoboldWalkerT2 => num47 = -4.0,
+        DD2WitherBeast => num47 = -3.0,
+        // `:23101-23112` — the 694-only `num45`/`num46` terms (the port has
+        // no kind for 694; kept out).
+        _ => {}
     }
+    num45 + num46 + num47
+}
+
+/// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
+/// the frame is `t.w x (t.h / count)` pixels and XNA draws it with
+/// `origin = halfSize` at
+/// `position + (width/2 - W/2 + halfSize.X, height - H/count + 4 +
+/// halfSize.Y + num47 + num46)`, which collapses to the top-left
+/// `[n.x + w/2 - W/2, n.y + h + 4 - H/count]` — the form every port draw
+/// uses. The `halfSize`/`num45`/`num46`/`num47` overrides are applied once
+/// in [`draw_npcs`] so this stays the shared seam.
+fn generic_anchor<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(40.0, |t| t.h / count as f32);
+    let fw = tex.map_or(18.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
 }
 
 /// The boss draws (the Eye of Cthulhu and the Twins — the `case 4/125/126`
@@ -1435,27 +1615,32 @@ pub(crate) fn draw_npcs(
                 [30.0, 30.0],
                 [n.x, n.y],
             ),
-            // The DD2 goblins: the 14-frame NPC_552-554 strips over the
-            // 18x40 frames (the sheets are the shared humanoid shape).
-            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => (
-                assets.dd2_goblins.as_ref(),
-                assets.dd2_goblins.as_ref().map_or(40.0, |t| t.h / 14.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
-            // The support family: the bombers' 18x40 and the javelin
-            // throwers' 26x52 strips (the shared humanoid sheets), the
-            // skeletons' 18x40 strips.
-            NpcKind::DD2GoblinBomberT1
-            | NpcKind::DD2GoblinBomberT2
-            | NpcKind::DD2GoblinBomberT3
-            | NpcKind::DD2SkeletonT1
-            | NpcKind::DD2SkeletonT3 => (
-                assets.dd2_support.as_ref(),
-                assets.dd2_support.as_ref().map_or(40.0, |t| t.h / 14.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
+            // The DD2 goblin attackers: ONE sheet per tier — NPC_552 (tier
+            // 1) 58x672, NPC_553 (tier 2) 66x672, NPC_554 (tier 3) 66x672,
+            // all 14 rows (`Main.npcFrameCount[552..554] = 14`,
+            // `Main.cs:67082`). The v1 read NPC_553 for all three and drew
+            // every one inside an 18x40 box at the hitbox corner, so the
+            // tiers shared one artwork and the art sampled a 48-px slice.
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
+                let t = match n.kind {
+                    NpcKind::DD2GoblinT1 => assets.dd2_goblin_t1.as_ref(),
+                    NpcKind::DD2GoblinT3 => assets.dd2_goblin_t3.as_ref(),
+                    _ => assets.dd2_goblins.as_ref(),
+                };
+                generic_anchor(t, 14, n, w, h)
+            }
+            // The bombers: NPC_555/556/557 are 46x986 with 17 rows each
+            // (`Main.npcFrameCount[555..557] = 17`) — the v1 read NPC_556 for
+            // all three and divided by 14.
+            NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => {
+                generic_anchor(assets.dd2_bombers.as_ref(), 17, n, w, h)
+            }
+            // The skeletons' materialise strips: NPC_566/567 are 48x468 with
+            // 9 rows (`Main.npcFrameCount[566] = [567] = 9`) — the v1 read
+            // NPC_556 (a bomber) and divided by 14.
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
+                generic_anchor(assets.dd2_skeletons.as_ref(), 9, n, w, h)
+            }
             // The Dark Mage: the 20-frame NPC_564 strip over the 34x62 frames.
             NpcKind::DD2DarkMage => (
                 assets.dark_mage.as_ref(),
@@ -1741,12 +1926,13 @@ pub(crate) fn draw_npcs(
                 [30.0, 30.0],
                 [n.x, n.y],
             ),
-            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => (
-                assets.dd2_support.as_ref(),
-                assets.dd2_support.as_ref().map_or(52.0, |t| t.h / 14.0),
-                [26.0, 52.0],
-                [n.x, n.y],
-            ),
+            // The javelin throwers: NPC_561/562/563 are 84x1064 with 14 rows
+            // (`Main.npcFrameCount[561..563] = 14`) — the v1 read the
+            // bombers' NPC_556 sheet and divided by 14, drawing a 52-px
+            // slice of a 46-px-wide sheet inside a 26x52 box.
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => {
+                generic_anchor(assets.dd2_javelins.as_ref(), 14, n, w, h)
+            }
             NpcKind::MartianWalker => (
                 assets.martian_walker_big.as_ref(),
                 assets
@@ -2130,6 +2316,11 @@ pub(crate) fn draw_npcs(
         // `DrawNPCDirect` arms (the towers' Centre anchor, the saucers'
         // block, the Deerclops' Bottom anchor) compute their own
         // positions and skip both terms, as in the C#.
+        // The C#'s whole Y anchor: `pos.Y + height + 4 + halfSize.Y +
+        // num47 + num46 + gfxOffY`, drawn from `halfSize` (the frame's
+        // centre). Relative to the frame-centred `pos` the arm produced
+        // (`bottom + 4 - frame_h/2`), the missing terms are `halfSize.Y -
+        // frame_h/2` (the `:23048` overrides) plus `num45/num46/num47`.
         let anchor_shift = if uses_generic_anchor(n.kind) {
             boss_half_size(n.kind, frame_h) - frame_h * 0.5 + npc_anchor_nudge(n)
         } else {
