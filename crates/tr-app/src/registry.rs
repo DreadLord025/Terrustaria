@@ -74,6 +74,7 @@ static ITEM_CORRECTIONS: [ItemDef; 1] = [
             scale: 1.0,
             stack: 1,
             bait: 0,
+            tile_boost: 0,
             pick: 0,
             axe: 0,
             hammer: 0,

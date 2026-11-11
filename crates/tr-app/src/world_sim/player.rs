@@ -111,35 +111,69 @@ pub(crate) fn grant_ammo_mastery(
     }
 }
 
+/// The `PlayerInput` the world keyboard state resolves to: `Main.cUp`..
+/// `Main.cMount` (`Main.cs:67163-67176`) through [`crate::input_map`], plus the
+/// `TR_HOLD` screenshot hook and the port's arrow-key extras.
+///
+/// Split out of [`update_player`] so the bind table can be exercised without a
+/// live world: every branch is pure `App` state, and the fullscreen map's gate
+/// (`Player.cs:24774-24793`) is a parameter.
+pub(crate) fn player_input(
+    app: &App,
+    binds: &[String; crate::input_map::BIND_COUNT],
+    map_open: bool,
+    hold_right: bool,
+    hold_jump: bool,
+) -> PlayerInput {
+    if map_open {
+        return PlayerInput {
+            left: false,
+            right: false,
+            jump: false,
+            down: false,
+            hook: false,
+        };
+    }
+    // `Player.controlLeft`/`controlRight`/`controlJump`/`controlDown` off
+    // `Main.cLeft`/`cRight`/`cJump`/`cDown` (`Main.cs:67164-67167`). The arrow
+    // keys are kept as a port convenience — vanilla binds only the four `c*`
+    // rows — so a rebind adds a key rather than replacing the arrows.
+    let held = |action: crate::input_map::Action, arrow: KeyCode| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+            || app.keys.contains(&arrow)
+    };
+    let any = |action: crate::input_map::Action| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+    };
+    PlayerInput {
+        left: held(crate::input_map::Action::Left, KeyCode::ArrowLeft),
+        right: hold_right || held(crate::input_map::Action::Right, KeyCode::ArrowRight),
+        // `cUp` also jumps: `Player.controlUp` feeds `controlJump` in the
+        // vanilla's `Player.Update`, which is why the default `W` jumps.
+        jump: hold_jump
+            || held(crate::input_map::Action::Jump, KeyCode::ArrowUp)
+            || any(crate::input_map::Action::Up),
+        down: held(crate::input_map::Action::Down, KeyCode::ArrowDown),
+        // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
+        // the port keeps `G` as the extra quick-grapple key.
+        hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
     // `Player.cs:24772-24803`: while the map is fullscreen every movement control
     // is zeroed, so the player stands still and the WASD keys pan the map.
     let map_open = app.map.as_ref().is_some_and(|m| m.open);
-    let input = if map_open {
-        PlayerInput {
-            left: false,
-            right: false,
-            jump: false,
-            down: false,
-            hook: false,
-        }
-    } else {
-        PlayerInput {
-            left: app.keys.contains(&KeyCode::KeyA) || app.keys.contains(&KeyCode::ArrowLeft),
-            right: hold_right
-                || app.keys.contains(&KeyCode::KeyD)
-                || app.keys.contains(&KeyCode::ArrowRight),
-            jump: hold_jump
-                || app.keys.contains(&KeyCode::Space)
-                || app.keys.contains(&KeyCode::KeyW)
-                || app.keys.contains(&KeyCode::ArrowUp),
-            down: app.keys.contains(&KeyCode::KeyS) || app.keys.contains(&KeyCode::ArrowDown),
-            // `Player.controlHook` (the quick-grapple key).
-            hook: app.keys.contains(&KeyCode::KeyG),
-        }
-    };
+    // The bind table, copied out so the player borrow below does not conflict
+    // (`Main.cUp`..`Main.cMount`, `Main.cs:67163-67176`).
+    let binds = app.keybinds.clone();
+    let input = player_input(app, &binds, map_open, hold_right, hold_jump);
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -150,6 +184,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
     // `TR_HOOK` parse above, so a dismount re-mounts on the next tick.
     let cart_pin = crate::env::cart_pin();
+    // `TR_DIE`: the death-screen fixture — the local player dies on the first
+    // tick past the skip lockout so `TR_SHOT` captures the respawn prompt.
+    if crate::env::die_pin() && !app.player.as_ref().is_some_and(|p| p.dead) {
+        let world = &app.world;
+        if let Some(p) = app.player.as_mut() {
+            p.start_death(world, false, false);
+            // `Player.KillMe`'s hp clamp — the death screen's draw gate reads
+            // `hp <= 0`, not `dead`.
+            p.hp = 0;
+            p.dead_time = 100;
+            // The broadcast line (`Lang.inter[38]`, "You were slain..."),
+            // which a real `Player.KillMe` would set through the death pass.
+            app.death_text = crate::lang::inter(38);
+        }
+    }
     if let Some(p) = app.player.as_mut() {
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -196,10 +245,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // boss check reads the live NPC list; the danger-NPC gate has no
         // `DangerThatPreventsOtherDangers` members in the ported set yet.
         if p.dead {
+            // `Player.AllowsRespawnTimerSkip`'s two NPC gates (`Player.cs:38962-38987`):
+            // a boss hindering the respawn, and any NPC that blocks it
+            // (`NearAnyNPCsThatBlockRespawn` — the live invasion's members;
+            // the danger-set arm has no ported members yet).
             let boss_near = p.boss_hinders(&app.npcs);
+            let invasion_live = app.world.invasion_size > 0;
+            let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
+            app.respawn_skip_available = p.allows_respawn_timer_skip(boss_near, danger_near);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
-                respawn_now = p.update_dead(input.jump, boss_near, false) || respawn_now;
+                respawn_now =
+                    p.update_dead(input.jump, boss_near, danger_near) || respawn_now;
             });
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
@@ -222,6 +279,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                app.respawn_skip_available = false;
+                app.respawn_skip_frames = 0;
                 app.npcs.clear();
                 app.npc_timer = 4.0;
                 if app.follow_player {
@@ -234,6 +293,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
             }
             return;
+        }
+        // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the
+        // flag and the prompt's counter clear (`Main.cs:45374-45376`'s else).
+        if app.respawn_skip_available {
+            app.respawn_skip_available = false;
+            app.respawn_skip_frames = 0;
         }
         // The quick-grapple fire: the `controlHook` press edge fires
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
@@ -324,11 +389,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The quick-mount key: the `controlMount` press edge (the menu's
         // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
         // (`Player.cs:24888-24893` -> `:6045-6100`).
-        static MOUNT_PREV: std::sync::atomic::AtomicBool =
-            std::sync::atomic::AtomicBool::new(false);
-        let mount_key = app.keys.contains(&KeyCode::KeyR);
-        let mount_edge =
-            mount_key && !MOUNT_PREV.swap(mount_key, std::sync::atomic::Ordering::Relaxed);
+        // `Main.cMount` (`Main.cs:67176`, default `R`). The previous edge is an
+        // `App` field, not a `static`, so two headless apps in one test process
+        // cannot share it.
+        let mount_key = app
+            .keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Mount, *k));
+        let mount_edge = mount_key && !app.mount_prev;
+        app.mount_prev = mount_key;
         if mount_edge && !map_open {
             if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
                 // `ItemCheck_TryStartUse`'s animation (the saddle's

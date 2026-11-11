@@ -2026,6 +2026,7 @@ RUST_FIELDS = [
     ("scale", "scale", "f32"),
     ("stack", "stack", "u32"),
     ("bait", "bait", "u16"),
+    ("tile_boost", "tileBoost", "i32"),
     ("pick", "pick", "u16"),
     ("axe", "axe", "u16"),
     ("hammer", "hammer", "u16"),
@@ -2191,6 +2192,9 @@ pub struct ItemDef {
     pub stack: u32,
     /// `Item.bait` (`Item.cs:48960`, stock 0; drives the epilogue rare ladder).
     pub bait: u16,
+    /// `Item.tileBoost` (`Item.cs:49027`, stock 0) — the tool range bonus
+    /// the tooltip prints through `Lang.tip[54]` (`Main.cs:20865-20875`).
+    pub tile_boost: i32,
     /// `Item.pick` — pickaxe power (`Item.cs:49018`, stock 0).
     pub pick: u16,
     /// `Item.axe` — axe power (`Item.cs:48999`, stock 0).

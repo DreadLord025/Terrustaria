@@ -278,7 +278,9 @@ impl ApplicationHandler for App {
                         // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
                         // `Main.cs:67178`, the port's persisted
                         // `settings.smart_cursor_toggle`) is off.
-                        if code == KeyCode::ShiftLeft && !self.settings.smart_cursor_toggle {
+                        if self.is_bound(crate::input_map::Action::Smart, code)
+                            && !self.settings.smart_cursor_toggle
+                        {
                             self.smart_cursor_used = false;
                         }
                     }
@@ -510,6 +512,18 @@ impl App {
     /// delivers key repeats as separate `Pressed` events, which is the port's
     /// edge convention (the vanilla `release*` machine,
     /// `Player.cs:25075-25086`).
+    /// Is `code` the key bound to `action` (`Main.cUp`..`Main.cMount`,
+    /// `Main.cs:67163-67176`)?
+    pub(crate) fn is_bound(&self, action: crate::input_map::Action, code: KeyCode) -> bool {
+        crate::input_map::is_bound(&self.keybinds, action, code)
+    }
+
+    /// Is `code` the key bound to a fullscreen-map row (`Main.cMapStyle`..
+    /// `Main.cMapAlphaDown`, `Main.cs:67190-67195`)?
+    pub(crate) fn is_map_bound(&self, action: crate::input_map::MapAction, code: KeyCode) -> bool {
+        self.map_binds[action.index()].as_str() == crate::input_map::key_name(code)
+    }
+
     pub(crate) fn world_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Escape => {
@@ -551,9 +565,10 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
-            KeyCode::KeyM => {
-                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`):
-                // `M` only toggles the map when `Main.mapEnabled`.
+            _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
+                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
+                // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
+                // toggles the map when `Main.mapEnabled`.
                 if self.settings.map_enabled {
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
@@ -561,7 +576,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::ShiftLeft => {
+            _ if self.is_bound(crate::input_map::Action::Smart, code) => {
                 // The smart-cursor toggle (`Player.TryToToggleSmartCursor`,
                 // `Player.cs:24867`/`:28814-28820`): the press edge flips
                 // `Main.SmartCursorWanted_Mouse` while
@@ -598,6 +613,13 @@ impl App {
             KeyCode::Digit8 => self.selected = 7,
             KeyCode::Digit9 => self.selected = 8,
             KeyCode::Digit0 => self.selected = 9,
+            // `Main.cInv` (`Main.cs:67175`, default `Escape`): the rebind row
+            // for `Player.controlInv`. Escape keeps the close chain above
+            // (the vanilla's menu/map close order runs before `ToggleInv`),
+            // so only a *different* key takes this arm.
+            _ if self.is_bound(crate::input_map::Action::Inventory, code) => {
+                self.inventory_open = !self.inventory_open;
+            }
             _ => {}
         }
     }
@@ -691,16 +713,64 @@ mod tests {
 
     #[test]
     fn the_smart_cursor_toggle_flips_the_runtime_flag() {
-        // `Player.TryToToggleSmartCursor` (`Player.cs:28814-28820`) bound to
-        // left-Shift: the runtime `Main.SmartCursorWanted_Mouse` analogue
-        // starts off (the vanilla default, `Main.cs:67179`) and every press
-        // edge flips it.
+        // `Player.TryToToggleSmartCursor` (`Player.cs:28814-28820`) reads
+        // `Player.controlSmart`, i.e. `Main.cSmart` — **LeftControl**
+        // (`Main.cs:67175`), not `cTorch`'s LeftShift (`:67173`). The runtime
+        // `Main.SmartCursorWanted_Mouse` analogue starts off (the vanilla
+        // default, `Main.cs:67179`) and every press edge flips it.
         let mut app = flow_app(None, vec![], vec![]);
         assert!(!app.smart_cursor_used, "the default is off");
-        app.world_key(KeyCode::ShiftLeft);
+        app.world_key(KeyCode::ControlLeft);
         assert!(app.smart_cursor_used, "the press turns it on");
-        app.world_key(KeyCode::ShiftLeft);
+        app.world_key(KeyCode::ControlLeft);
         assert!(!app.smart_cursor_used, "the second press turns it off");
+        // The old port bound it to LeftShift, which is `cTorch` — the
+        // auto-select row, unported.
+        app.world_key(KeyCode::ShiftLeft);
+        assert!(!app.smart_cursor_used, "LeftShift is not the smart-cursor key");
+    }
+
+    #[test]
+    fn m7_ui_5_a_rebound_key_drives_the_action_and_frees_the_old_one() {
+        // `Main.cMapFull` (`Main.cs:67192`, default `M`): the row the
+        // settings screen edits is the row the input pass reads, so a rebind
+        // moves the action instead of adding a second key.
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.settings.map_binds[crate::input_map::MapAction::Full.index()] = "F".into();
+        app.apply_settings();
+        app.world_key(KeyCode::KeyM);
+        assert!(!app.map.as_ref().is_some_and(|m| m.open), "M is no longer the map key");
+        app.world_key(KeyCode::KeyF);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "F opens the map now");
+        // The inventory row (`Main.cInv`, `:67175`) works the same way.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.settings.keybinds[crate::input_map::Action::Inventory.index()] = "I".into();
+        app.apply_settings();
+        app.world_key(KeyCode::KeyI);
+        assert!(app.inventory_open, "I toggles the inventory now");
+        app.world_key(KeyCode::KeyI);
+        assert!(!app.inventory_open);
+    }
+
+    #[test]
+    fn m7_ui_5_a_movement_rebind_steers_the_player() {
+        // `Main.cRight` (`Main.cs:67166`, default `D`): the movement rows are
+        // the same table, so rebinding Right to `L` walks the player right and
+        // leaves `D` free.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.settings.keybinds[crate::input_map::Action::Right.index()] = "L".into();
+        app.apply_settings();
+        let binds = app.keybinds.clone();
+        app.keys.insert(KeyCode::KeyL);
+        let input = crate::world_sim::player::player_input(&app, &binds, false, false, false);
+        assert!(input.right, "L is the right row now");
+        app.keys.clear();
+        app.keys.insert(KeyCode::KeyD);
+        let input = crate::world_sim::player::player_input(&app, &binds, false, false, false);
+        assert!(!input.right, "D is free after the rebind");
     }
 }
 

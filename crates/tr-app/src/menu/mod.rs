@@ -369,6 +369,10 @@ impl Menu {
     /// app reads `config.json` once at startup and hands the clone in), so the
     /// menu edits the same values `close_menu`/`park_menu` copy back.
     pub fn new(settings: Settings, name: String) -> Self {
+        // The persisted bind table, taken before `settings` moves into the
+        // struct (see the field initialisers).
+        let seed_binds = settings.keybinds.clone();
+        let seed_map_binds = settings.map_binds.clone();
         let mut me = Self {
             page: Page::Main,
             selected: 0,
@@ -397,8 +401,12 @@ impl Menu {
             hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
             sel_color: [0, 0, 0, 0],
             set_key: None,
-            keybinds: default_keybinds(),
-            map_binds: default_map_binds(),
+            // Seeded from the persisted table (`Main.LoadSettings`'s `Key*`
+            // reads, `Main.cs:4582-4600`) so the settings screen shows what the
+            // input pass actually uses; `close_menu`/`park_menu` copy the edits
+            // back.
+            keybinds: seed_binds,
+            map_binds: seed_map_binds,
             screen_size: Vec2::new(1600.0, 900.0),
             hint: None,
             persist: true,
@@ -1328,6 +1336,42 @@ mod tests {
         );
     }
 
+    /// M7-UI-5: a rebind made on the settings screen reaches the input pass.
+    /// `Main.setKey`'s capture (`Main.cs:50569-50576`) writes the row, `Back`
+    /// syncs through `close_menu`, and `PlayerInput.CurrentProfile`'s re-seed
+    /// (`:4602`) makes `App.keybinds` the live table — so the new key toggles
+    /// the map and the old one does nothing.
+    #[test]
+    fn m7_ui_5_a_menu_rebind_reaches_the_input_pass() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, Vec::new(), Vec::new());
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let mut m = menu(Page::MapKeys);
+        // Row 1 is `Main.cMapFull` (`Main.cs:50425-50430` / `:50476-50479`).
+        m.activate(1);
+        assert_eq!(m.set_key, Some(1), "the row is capturing");
+        m.key(winit::keyboard::KeyCode::KeyF);
+        assert_eq!(m.map_binds[1], "F", "the capture took F");
+        app.menu = Some(m);
+        app.close_menu();
+        assert_eq!(
+            app.settings.map_binds[crate::input_map::MapAction::Full.index()],
+            "F",
+            "the master settings took the rebind"
+        );
+        app.world_key(winit::keyboard::KeyCode::KeyM);
+        assert!(!app.map.as_ref().is_some_and(|m| m.open), "M is free now");
+        app.world_key(winit::keyboard::KeyCode::KeyF);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "F opens the map");
+        // The table survives the `config.json` round trip the close writes.
+        let back = crate::settings::Settings::parse(&app.settings.to_json());
+        assert_eq!(
+            back.map_binds[crate::input_map::MapAction::Full.index()],
+            "F",
+            "the rebind is persisted"
+        );
+    }
+
     #[test]
     fn parked_confirm_pages_keep_the_app_settings() {
         // DW-3.2 — the flow hops sync through `App::park_menu`
@@ -2209,15 +2253,15 @@ mod tests {
         // `Main.cs:50565-50568` opens the capture on the clicked row, the row
         // shows `_` (`:50523-50526`), and the first pressed key is stored
         // under its name and closes it (`:50569-50576` — `string.Concat(key)`,
-        // winit's debug name here).
+        // i.e. the XNA `Keys` spelling the input map and `config.json` use).
         let mut m = menu(Page::Keybindings);
         m.activate(0);
         assert_eq!(m.set_key, Some(0));
         assert_eq!(m.items()[0].label, "Up                _");
         m.key(winit::keyboard::KeyCode::KeyG);
         assert_eq!(m.set_key, None);
-        assert_eq!(m.keybinds[0], "KeyG");
-        assert_eq!(m.items()[0].label, "Up                KeyG");
+        assert_eq!(m.keybinds[0], "G");
+        assert_eq!(m.items()[0].label, "Up                G");
         // Navigation keys are captured too — vanilla's `GetPressedKeys` sees
         // Escape before anything else, so Escape rebinding to "Escape" (the
         // Inventory default) beats closing the screen.
@@ -2233,8 +2277,8 @@ mod tests {
         assert_eq!(m.set_key, Some(3));
         assert_eq!(m.items()[3].label, "Zoom Out                    _");
         m.key(winit::keyboard::KeyCode::KeyN);
-        assert_eq!(m.map_binds[3], "KeyN");
-        assert_eq!(m.items()[3].label, "Zoom Out                    KeyN");
+        assert_eq!(m.map_binds[3], "N");
+        assert_eq!(m.items()[3].label, "Zoom Out                    N");
     }
 
     #[test]

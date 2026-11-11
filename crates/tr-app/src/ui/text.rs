@@ -267,6 +267,43 @@ pub(crate) fn draw_death_string(
     );
 }
 
+/// The death font's line height (`FontAssets.DeathText.MeasureString(...).Y`)
+/// — the unscaled box the skip prompt's baseline math reads
+/// (`Main.cs:45366`).
+pub(crate) fn death_line_height(lookups: &assets::Lookups) -> f32 {
+    lookups.death_font.as_ref().map_or(26.0, |f| f.line_spacing)
+}
+
+/// The death screen's scaled line — `ChatManager.DrawColorCodedString` at the
+/// skip prompt's `(1 + num5) * num2` scale (`Main.cs:45363-45366`), centred
+/// like [`draw_death_string`].
+pub(crate) fn draw_death_string_scaled(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen_x: f32,
+    y: f32,
+    scale: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let w = match &lookups.death_font {
+        Some(f) => font_width(f, text, scale),
+        None => r.text_width(text, scale),
+    };
+    let x = screen_x / 2.0 - w / 2.0;
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Death,
+        x,
+        y,
+        scale,
+        &[[1.0, 1.0]],
+        color,
+        text,
+    );
+}
+
 /// The death screen's small "Dropped coins" line — the `MouseText` font
 /// (`Main.cs:45336-45338`), centered like the big line above.
 pub(crate) fn draw_dropped_coins(

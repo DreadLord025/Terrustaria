@@ -246,16 +246,18 @@ mod tests {
             None,
             "the runtime state off: no re-point"
         );
-        // The press edge turns it on and the lookup runs.
-        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
-        assert!(app.smart_cursor_used, "the Shift press turns it on");
+        // The press edge turns it on and the lookup runs. `Player.controlSmart`
+        // is `Main.cSmart` — **LeftControl** (`Main.cs:67175`), not `cTorch`'s
+        // LeftShift (`:67173`).
+        app.world_key(winit::keyboard::KeyCode::ControlLeft);
+        assert!(app.smart_cursor_used, "the Control press turns it on");
         assert_eq!(
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
             Some((35, 39)),
             "the runtime state on: the torch step re-points"
         );
         // The second press turns it back off and the lookup stands down.
-        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
+        app.world_key(winit::keyboard::KeyCode::ControlLeft);
         assert!(!app.smart_cursor_used, "the second press turns it off");
         assert_eq!(
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),

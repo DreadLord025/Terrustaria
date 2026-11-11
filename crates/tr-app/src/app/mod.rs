@@ -484,6 +484,17 @@ pub(crate) struct App {
     pub(crate) zoom_pinned: bool,
     pub(crate) debug: bool,
     pub(crate) keys: HashSet<KeyCode>,
+    /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
+    /// bind table, mirrored from `settings.keybinds` so a rebind in the
+    /// settings screen changes the input pass without a relaunch
+    /// ([`App::apply_settings`]).
+    pub(crate) keybinds: [String; crate::input_map::BIND_COUNT],
+    /// `Main.cMapStyle`..`Main.cMapAlphaDown` (`Main.cs:67190-67195`).
+    pub(crate) map_binds: [String; crate::input_map::MAP_BIND_COUNT],
+    /// The `controlMount` press edge's previous state (`Player.cs:24888`'s
+    /// `releaseMount` latch). An `App` field rather than a `static` so two
+    /// headless apps in one test process cannot share it.
+    pub(crate) mount_prev: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -637,6 +648,15 @@ pub(crate) struct App {
     pub(crate) lost_coin_string: String,
     /// The full death broadcast text (`{name} {text}`).
     pub(crate) death_text: String,
+    /// `Main._framesWithRespawnSkipAvailable`: the death screen's
+    /// "{InputTrigger_Jump} to skip" prompt's ramp counter
+    /// (`Main.cs:45347-45378`) — counts up while the skip is allowed and
+    /// zeroes otherwise (the C# counts it inside `DrawDeathText`).
+    pub(crate) respawn_skip_frames: i32,
+    /// `Player.AllowsRespawnTimerSkip()` for this frame, computed on the world
+    /// tick beside `UpdateDead` (`Player.cs:16919`) — the gate the prompt's
+    /// counter follows.
+    pub(crate) respawn_skip_available: bool,
     /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
     /// state — the points, the max, the icon (the group + 3), the 160-tick
     /// display timer, the fade alpha and the near-invasion flag.
@@ -804,24 +824,45 @@ impl App {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
         let step = 16.0 / m.scale;
+        let binds = self.keybinds.clone();
+        let map_binds = self.map_binds.clone();
         let k = |code| self.keys.contains(&code);
-        if k(KeyCode::KeyW) || k(KeyCode::ArrowUp) {
+        // The pan rows are the movement binds (`Main.cUp`..`Main.cRight`,
+        // `Main.cs:67163-67166`); the arrows stay as the port's convenience.
+        let held = |action: crate::input_map::Action, arrow: KeyCode| {
+            self.keys
+                .iter()
+                .any(|k| crate::input_map::is_bound(&binds, action, *k))
+                || k(arrow)
+        };
+        if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
             m.pos[1] -= step;
         }
-        if k(KeyCode::KeyS) || k(KeyCode::ArrowDown) {
+        if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
             m.pos[1] += step;
         }
-        if k(KeyCode::KeyA) || k(KeyCode::ArrowLeft) {
+        if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
             m.pos[0] -= step;
         }
-        if k(KeyCode::KeyD) || k(KeyCode::ArrowRight) {
+        if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
             m.pos[0] += step;
         }
-        // `Main.cs:50453-50454`: `cMapZoomIn = "Add"`, `cMapZoomOut = "Subtract"`.
-        if k(KeyCode::NumpadAdd) {
+        // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
+        // "Subtract"` — the menuMode 272727 rows, not a fixed key.
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if k(KeyCode::NumpadSubtract) {
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -2635,6 +2676,9 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             keys: HashSet::new(),
+            keybinds: crate::input_map::default_binds(),
+            map_binds: crate::input_map::default_map_binds(),
+            mount_prev: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
@@ -2731,6 +2775,8 @@ impl App {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            respawn_skip_frames: 0,
+            respawn_skip_available: false,
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
