@@ -652,12 +652,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
                         tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
+                    // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
+                    // 20% roll upgrades the bolt (634→635) at triple damage —
+                    // `Damage *= 3` on the weapon-damage int (`:42653`'s
+                    // `GetWeaponDamage` truncation, so the port triples the
+                    // truncated value) — and the miss decrements the shoot
+                    // speed BEFORE the aim vector is built.
+                    let mut proj = proj;
+                    let mut shot_speed = fx_spd;
+                    let mut blaze_damage = None;
+                    if held.kind == 3542 {
+                        if loot_rng.next_range(0, 100) < 20 {
+                            proj += 1;
+                            blaze_damage = Some((raw as i32) * 3);
+                        } else {
+                            shot_speed -= 1.0;
+                        }
+                    }
                     // `Player.ItemCheck_Shoot`'s per-item spawn arms - the
                     // magic staves replace the generic `Item.shoot` firing,
                     // each `return`ing in the C#; the port folds them into
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
-                    let shot = Vec2::new(dir.x * fx_spd, dir.y * fx_spd);
+                    let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
                     if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
@@ -845,6 +862,36 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
                         }
+                    } else if held.kind == 3542 {
+                        // `Player.cs:48778-48792` - the Nebula Blaze's spawn:
+                        // the aim angle within ±(π/4 · 0.7), up to 10 retries
+                        // against the line of sight (the angle draw precedes
+                        // the loop, each failed probe re-rolls), then the
+                        // velocity at one multiplier draw `0.95 + rand·0.3`
+                        // AFTER the loop.
+                        let mut angle = (loot_rng.next_float() - 0.5)
+                            * (std::f32::consts::PI / 4.0)
+                            * 0.7;
+                        for _ in 0..10 {
+                            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
+                            if crate::projectile::can_hit_line(
+                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+                            ) {
+                                break;
+                            }
+                            angle = (loot_rng.next_float() - 0.5)
+                                * (std::f32::consts::PI / 4.0)
+                                * 0.7;
+                        }
+                        let v = shot.rotate(Vec2::from_angle(angle))
+                            * (0.95 + loot_rng.next_float() * 0.3);
+                        let damage = blaze_damage.unwrap_or(raw as i32);
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, spawn.x, spawn.y, v.x, v.y, damage, fx_kb, 0.0, 0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
                     } else {
                         // The generic `Item.shoot` firing, with the two
                         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -863,8 +910,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         } else {
                             (0.0, 0.0)
                         };
+                        // `Player.cs:49426-49429` - the Leaf Blower's spawn
+                        // jitter rides the generic shot: the point takes
+                        // `NextVector2Circular(12, 12)` minus the full
+                        // velocity vector. `Utils.cs:1266-1269`: the unit
+                        // vector of one angle draw times the half-widths times
+                        // a second radial draw — two draws, in that order.
+                        let mut leaf_spawn = spawn;
+                        if proj == crate::projectile::LEAF {
+                            let angle = loot_rng.next_float() * std::f32::consts::TAU;
+                            let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
+                            leaf_spawn += off - Vec2::new(vx, vy);
+                        }
                         let slot = app.projectiles.spawn_with_data_ai(
-                            proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+                            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
@@ -6668,7 +6727,245 @@ mod tests {
             20 - 9,
             "the corrected mana cost"
         );
-    }}
+    }
+
+    // ---- M4-PROJ-6b phase 5: the shoot-path specials -----------------------
+
+    /// The shoot path's cursor world point — the same mapping the fire block
+    /// reads (`camera + (mouse - screen/2) / zoom`, `update_editing`'s
+    /// `world_pos`).
+    fn staff_aim(app: &App) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom
+    }
+
+    /// The stream state after `n` splitmix rounds from `seed`.
+    fn draws_after(seed: u64, n: usize) -> u64 {
+        let mut state = seed;
+        for _ in 0..n {
+            crate::app::next_rand(&mut state);
+        }
+        state
+    }
+
+    #[test]
+    fn test_dw_5_1_the_leaf_blower_jitter_is_seed_deterministic() {
+        // `Player.cs:49426-49429`: the Leaf Blower's spawn point takes
+        // `NextVector2Circular(12, 12)` minus the full velocity vector —
+        // the same seed twice gives byte-equal spawns, and the displacement
+        // is the velocity's pull (3..27 px back along the aim) inside the
+        // 12 px circular jitter.
+        let run = || {
+            let mut app = staff_app(1178, "Leaf Blower");
+            app.item_rng = 0x1EAF;
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.ai))
+                .collect::<Vec<_>>()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "the jittered spawn is seed-stable");
+        assert_eq!(a.len(), 1, "one leaf puff");
+        assert_eq!(a[0].0, crate::projectile::LEAF, "the Leaf Blower's shoot");
+        // The aim and the un-jittered spawn point, from the same mapping the
+        // fire block reads; the fired app's player and cursor did not move.
+        let mut app = staff_app(1178, "Leaf Blower");
+        app.item_rng = 0x1EAF;
+        fire_once(&mut app);
+        let bolt = app.projectiles.slots().iter().find(|p| p.active).unwrap();
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        assert_eq!(bolt.vel, dir * 15.0, "the velocity keeps the full shootSpeed");
+        let offset = bolt.pos - (Vec2::new(cx, cy) + dir * 10.0);
+        let along = offset.dot(dir);
+        let perp = (offset - dir * along).length();
+        assert!(
+            (-27.0 - 1e-3..=-3.0 + 1e-3).contains(&along),
+            "the velocity vector is subtracted (along={along})"
+        );
+        assert!(
+            perp <= 12.0 + 1e-3,
+            "the circular jitter stays inside 12 (perp={perp})"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_leaf_blower_jitter_spends_two_circular_draws() {
+        // `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): one angle draw
+        // (`NextVector2Unit`'s NextFloat) then one radial draw — the whole
+        // shot spends exactly the crit's draw plus the pair.
+        let mut app = staff_app(1178, "Leaf Blower");
+        let seed = 0x1EAF_B07E;
+        app.item_rng = seed;
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "one shot"
+        );
+        assert_eq!(
+            app.item_rng,
+            draws_after(seed, 3),
+            "crit, then the circular pair in the C#'s order"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_nebula_blaze_roll_chain_is_seed_deterministic() {
+        // `Player.cs:47119-47130` + `:48778-48792`: the pre-pass roll precedes
+        // the spawn-angle rolls on one stream — the same seed twice gives
+        // byte-equal spawns.
+        let run = || {
+            let mut app = staff_app(3542, "Nebula Blaze");
+            app.item_rng = 0xB1A2E;
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.damage))
+                .collect::<Vec<_>>()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "the roll chain is seed-stable");
+        assert_eq!(a.len(), 1, "one bolt");
+    }
+
+    #[test]
+    fn test_dw_5_1_the_nebula_blaze_pre_pass_lands_on_both_sides_across_seeds() {
+        // The 20% gate splits the spawn (`Player.cs:47119-47130`): the miss
+        // keeps 634 at the plain weapon damage with the decremented speed
+        // (`else speed--`), the hit upgrades to 635 at the int ×3 with the
+        // full speed; the pre-pass is the stream's second draw (after the
+        // crit, BEFORE the spawn-angle rolls), the multiplier the fourth,
+        // and the angle stays inside ±(π/4 · 0.7) (`:48778-48792`).
+        let mut saw_miss = false;
+        let mut saw_hit = false;
+        for seed in 0..40u64 {
+            let s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            // The replay: draw 1 is the crit roll's, draw 2 is the pre-pass's
+            // `Main.rand.Next(100)` — the kind must follow it.
+            let mut state = s;
+            let _crit = crate::app::rand01(&mut state);
+            let hit = ((crate::app::rand01(&mut state) * 100.0) as i32) < 20;
+            let mut app = staff_app(3542, "Nebula Blaze");
+            app.item_rng = s;
+            fire_once(&mut app);
+            let bolts: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bolts.len(), 1, "seed {seed}: one bolt");
+            let bolt = bolts[0];
+            assert_eq!(
+                bolt.kind,
+                if hit { 635 } else { 634 },
+                "seed {seed}: the kind follows the pre-pass roll"
+            );
+            if hit {
+                saw_hit = true;
+                assert_eq!(bolt.damage, 390, "130 through the int ×3");
+            } else {
+                saw_miss = true;
+                assert_eq!(bolt.damage, 130, "the plain weapon damage");
+            }
+            // The multiplier is the stream's fourth draw (0.95 + rand·0.3)
+            // over the pre-pass's speed decision; the angle draw (third) is
+            // consumed between them.
+            let mut state = s;
+            let _ = crate::app::rand01(&mut state);
+            let _ = crate::app::rand01(&mut state);
+            let _angle = crate::app::rand01(&mut state);
+            let mult = 0.95 + crate::app::rand01(&mut state) * 0.3;
+            let want = if hit { 6.0 } else { 5.0 } * mult;
+            assert!(
+                (bolt.vel.length() - want).abs() < 1e-3,
+                "seed {seed}: |v|={} against the replayed {want}",
+                bolt.vel.length()
+            );
+            // The aim angle gate: the rotation stays inside ±(π/4 · 0.7).
+            let aim = staff_aim(&app);
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+            let cross = dir.x * bolt.vel.y - dir.y * bolt.vel.x;
+            let dot = dir.x * bolt.vel.x + dir.y * bolt.vel.y;
+            let dev = cross.atan2(dot);
+            assert!(
+                dev.abs() <= std::f32::consts::PI / 4.0 * 0.7 + 1e-3,
+                "seed {seed}: the aim angle gate (dev={dev})"
+            );
+            assert_eq!(
+                app.item_rng,
+                draws_after(s, 4),
+                "seed {seed}: exactly crit, pre-pass, angle, multiplier"
+            );
+        }
+        assert!(
+            saw_miss && saw_hit,
+            "both sides of the 20% gate across seeds (miss={saw_miss} hit={saw_hit})"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_last_prism_fires_once_per_press_and_the_channel_holds() {
+        // The Last Prism has NO shoot special — the C#'s generic spawn
+        // (`:49435`) fires once per press edge (`ItemCheck_AutoReuseLogic`
+        // `:52877` forces the re-fire only for autoReuse items; 3541 rides
+        // reuseDelay 5 + channel), and the Phase-4 holder keep-alive reads
+        // the channel the shoot block feeds (`Projectile.cs:66617`).
+        let mut app = staff_app(3541, "Last Prism");
+        let seed = 0x915E;
+        app.item_rng = seed;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // The press edge: one released tick, then the press (`:42733`'s
+        // `controlUseItem && releaseUseItem` pair).
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let holders: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(holders.len(), 1, "one holder per press");
+        assert_eq!(
+            holders[0].kind,
+            crate::projectile::LAST_PRISM,
+            "the generic spawn fires 633"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the held channel feeds the holder");
+        assert_eq!(p.channel_item, 3541, "the holder's keep-alive item");
+        // Holding the button does not re-fire (non-autoReuse) and the
+        // channel stays armed for the holder's keep-alive.
+        for _ in 0..30 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the hold does not re-fire"
+        );
+        assert!(
+            app.player.as_ref().unwrap().channel,
+            "the hold keeps the channel alive"
+        );
+        // And no special-case rolls: the whole run spends exactly the crit's
+        // draw on the item stream.
+        assert_eq!(app.item_rng, draws_after(seed, 1), "the crit's draw only");
+    }
+}
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
