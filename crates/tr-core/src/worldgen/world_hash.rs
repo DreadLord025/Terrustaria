@@ -86,6 +86,11 @@ mod tests {
     /// granite step moves after the cave carve (the vanilla order — its
     /// CanPlace gate needs the pre-carved caves). Every world on every seed
     /// changes by design (the ANALYSIS section lands with the branch).
+    /// Re-pinned for the M5-DUNGEON entrance-hall precalculation
+    /// (`MakeDungeon_GenerateNextEntranceHall_Precalculated`): the brick
+    /// shell now rides ±(strength+4) around the surface entrance, so every
+    /// world with a dungeon changes — `SEED42_512` included (the entrance
+    /// tower's shell above the shaft).
     /// `SEED42_512` is UNCHANGED by the phase-4 move: on a 512-wide world
     /// the evil pass runs nothing (the sub-vanilla width gate skips it —
     /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
@@ -156,13 +161,17 @@ mod tests {
     /// walls 48-53 and the rim conversion), the moss (the cave walls 54-58,
     /// the neon-moss biomes, the scatters) and the `Webs And Honey` cobweb
     /// pass — every world on every seed changes by design.
-    // M5-SPREAD-1 (2026-11-09): `growth::spread_grass`'s enclosure gate was
-    // inverted (it refused when the 3x3 box was all-empty instead of
-    // all-solid, `WorldGen.cs:75186-75201`), so the growth tick and the neon
-    // moss worldgen sweep converted the wrong cells; the pins are re-taken
-    // with the C# semantics.
-    const SEED42_512: u32 = 1586971478;
-    const DEFAULT_WORLD: u32 = 4240603701;
+    // M5-DUNGEON (2026-11-09): the pipeline's `Dungeon` step moved from the
+    // shape-level approximation (`biomes::pass_dungeon`) to the faithful
+    // crawler (`worldgen/dungeon.rs::generate_dungeon`), so the generated
+    // worlds carry the crawler's halls/rooms instead of the corridor
+    // approximation.
+    // Re-pinned by M5-BIOME-2's second slice: the honey patches ride the
+    // hive pass (`WorldGen.cs:15946-15968`), so every world with a hive
+    // gains its `Next(5)` pockets. The determinism half of both tests
+    // (a == b) still guards the stream.
+    const SEED42_512: u32 = 3075125982;
+    const DEFAULT_WORLD: u32 = 366022756;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

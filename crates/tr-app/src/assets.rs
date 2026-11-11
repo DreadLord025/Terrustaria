@@ -395,17 +395,78 @@ pub fn load_world_images(
         "NPC_520",
         "NPC_491",
         "NPC_492",
+        // The four Lunar pillars (`Main.cs:24159-24263`'s dedicated tower
+        // arm) — one sheet PER kind, and they were never packed: every
+        // tower drew nothing at all until this row (and the shared-field
+        // art meant the Nebula/Solar pillars showed the Stardust sheet).
+        "NPC_493",
+        "NPC_507",
+        "NPC_517",
+        "NPC_422",
         // The Prime family's glow masks (`Main.cs:25585-25642`):
         // `Bone_Eyes` over the head, `Bone_Laser` over the laser limb —
         // both ride the body's own frame rect, so they must be packed
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        // The towers' per-pillar glow masks (`Main.cs:24177-24233`): each
+        // pillar's arm draws four ghost copies of its own sheet at the
+        // velocity-rotated offsets.
+        "Glow_132",
+        "Glow_143",
+        "Glow_149",
+        "Glow_162",
         "NPC_369",
         "NPC_376",
+        "NPC_108",
+        "NPC_106",
+        "NPC_124",
+        "NPC_123",
+        "NPC_353",
+        "NPC_354",
+        "NPC_441",
+        "NPC_588",
+        "NPC_589",
+        "NPC_633",
+        "NPC_663",
+        "NPC_207",
+        "NPC_208",
         "Rain",
         "Dust",
         "Projectile_3",
+        // The yoyo string (`Main.DrawProjDirect`'s FishingLine slice,
+        // `Main.cs:28044`) and the yoyo/counterweight sprites
+        // (`DefaultToYoyo` rows 534/541-555/562-564/603/999 + the
+        // counterweights 556-561/1079) — the M4-PROJ-4c draw path.
+        "FishingLine",
+        "Projectile_534",
+        "Projectile_541",
+        "Projectile_542",
+        "Projectile_543",
+        "Projectile_544",
+        "Projectile_545",
+        "Projectile_546",
+        "Projectile_547",
+        "Projectile_548",
+        "Projectile_549",
+        "Projectile_550",
+        "Projectile_551",
+        "Projectile_552",
+        "Projectile_553",
+        "Projectile_554",
+        "Projectile_555",
+        "Projectile_562",
+        "Projectile_563",
+        "Projectile_564",
+        "Projectile_603",
+        "Projectile_999",
+        "Projectile_556",
+        "Projectile_557",
+        "Projectile_558",
+        "Projectile_559",
+        "Projectile_560",
+        "Projectile_561",
+        "Projectile_1079",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -467,7 +528,11 @@ pub fn load_world_images(
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
         "Extra_48",
+        // The two inventory button sheets (`Main.DrawInventory`'s
+        // `DrawBestiaryIcon`/`DrawEmoteBubblesButton`, `Main.cs:41012-41013`),
+        // both horizontal 2-frame strips.
         "UI/Bestiary",
+        "UI/Emotes",
         "UI/Bestiary/Slot_Back",
         "UI/Bestiary/Slot_Front",
         "UI/Bestiary/Slot_Overlay",
@@ -483,6 +548,16 @@ pub fn load_world_images(
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
+        // The achievements menu (`UIAchievementsMenu.cs`): the 8-per-row
+        // 64 px icon sheet (the locked copy rides +528 px), the icon border,
+        // the name/description inner-panel splices (the `_Large` bottom for
+        // `largeForOtherLanguages = true`) and the four category frames.
+        "UI/Achievements",
+        "UI/Achievement_Borders",
+        "UI/Achievement_InnerPanelTop",
+        "UI/Achievement_InnerPanelBottom",
+        "UI/Achievement_InnerPanelBottom_Large",
+        "UI/Achievement_Categories",
         // P4 minimap chrome (`MinimapFrameTemplate.cs:30-35`) — 9 styles x 4 sheets.
         "UI/Minimap/Default/MinimapFrame",
         "UI/Minimap/Default/MinimapButton_Reset",
@@ -1107,6 +1182,37 @@ pub struct AmbienceTex {
     pub frames: u32,
 }
 
+/// The bestiary NPC sheet slots in `bestiary_npc_sheets`'s exact order
+/// (the vanilla net ids). The ui derives a portrait's sheet index from
+/// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
+/// of a hand-maintained table — that table had drifted twice (the
+/// martian sheets' insert shifted the tower/shards rows again).
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
+        1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+        60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+        25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+        11, 12, 13, 14, 15, 20, 18, 19, 38, 227,
+        228, 54, 4, 222, 35, 5, 113, 115, 143, 144,
+        145, 383, 520, 212, 216, 117, 118, 134, 127, 125,
+        126, 262, 266, 267, 26, 27, 28, 111, 471, 105,
+        107, 245, 246, 247, 249, 668, 36, 114, 128, 129,
+        130, 131, 399, 388, 381, 382, 390, 391, 392, 393,
+        394, 395, 491, 492, 552, 553, 554, 555, 556, 557,
+        561, 562, 563, 566, 567, 564, 551, 568, 550, 548,
+        422, 493, 507, 517, 406, 407, 423, 425, 429, 426,
+        427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
+        412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
+        397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
+        353, 354, 441, 588, 589, 633, 663, 207, 208,
+        // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
+        // the earlier slots keep their indexes.
+        549,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19), appended
+        // after the lane gate so the earlier slots keep their indexes.
+        558, 559, 560, 565, 569, 570, 571,
+        572, 573, 574, 575, 576, 577,
+    ];
+
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
 pub struct Lookups {
@@ -1139,6 +1245,13 @@ pub struct Lookups {
     pub dust: Option<tr_render::SheetRect>,
     /// `Projectile_3.png`: the 22x22 shuriken frame.
     pub shuriken: Option<tr_render::SheetRect>,
+    /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
+    /// (`Main.DrawProjDirect`, `Main.cs:28044`).
+    pub fishing_line: Option<tr_render::SheetRect>,
+    /// M4-PROJ-4c: the yoyo and counterweight sprite sheets, keyed by the
+    /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
+    /// convention the `item_icons` scan uses).
+    pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// The ambient leaf gores the world's trees can shed: `Gore_910`
     /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
     /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
@@ -1234,6 +1347,12 @@ pub struct Lookups {
     /// `Images/UI/Bestiary`: the 2-frame inventory button
     /// (`DrawBestiaryIcon`, `Main.cs:42464`).
     pub ui_bestiary_button: Option<tr_render::SheetRect>,
+    /// `Images/UI/Emotes` (`TextureAssets.EmoteMenuButton`,
+    /// `AssetInitializer.cs:313`): the emote bubbles button's 2-frame sheet
+    /// (`DrawEmoteBubblesButton`, `Main.cs:42408`). The button had a hitbox
+    /// and a click handler but no sprite until §14 because the sheet was
+    /// never packed.
+    pub ui_emote_button: Option<tr_render::SheetRect>,
     /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
     /// back, the hover frame, the 60 %-white overlay, the front border and
     /// the locked portrait.
@@ -1262,6 +1381,22 @@ pub struct Lookups {
     pub bestiary_npc_sheets: Vec<Option<tr_render::SheetRect>>,
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
+    /// `UI/Achievements`: the 8-per-row 64 px icons (index
+    /// `RegisterIconIndex`), the locked column at +528 px
+    /// (`UIAchievementListItem._iconFrameLocked`).
+    pub ach_icons: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_Borders`: the icon's frame, drawn 4 px out on both axes.
+    pub ach_borders: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelTop`: the 2/2/2 px splices behind the name.
+    pub ach_inner_top: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelBottom`: the 6/7/6 px splices behind the
+    /// description (the large variant wins while `_large`).
+    pub ach_inner_bottom: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_InnerPanelBottom_Large`.
+    pub ach_inner_bottom_large: Option<tr_render::SheetRect>,
+    /// `UI/Achievement_Categories`: the four 32 px category frames at a
+    /// 34 px stride, off row 0 / on row 34.
+    pub ach_categories: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
@@ -1376,6 +1511,15 @@ pub struct Lookups {
 }
 
 impl Lookups {
+    /// The bestiary NPC sheet's slot in `bestiary_npc_sheets` for a vanilla
+    /// net id — `BESTIARY_NPC_SHEET_IDS` is the parallel order table (the
+    /// ui's portraits derive their sheet from the entry's `net_id` this
+    /// way instead of a hand-maintained index table).
+    pub fn bestiary_sheet_index(&self, net_id: u16) -> Option<usize> {
+        let slot = BESTIARY_NPC_SHEET_IDS.iter().position(|&id| id == net_id)?;
+        self.bestiary_npc_sheets.get(slot).and_then(|s| s.as_ref().map(|_| slot))
+    }
+
     pub fn build(
         atlas: &tr_render::Atlas,
         tile_names: impl Iterator<Item = (u16, String)>,
@@ -1405,6 +1549,21 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            fishing_line: atlas.sheet("FishingLine").copied(),
+            // The same prefix scan as `item_icons` — an id whose texture
+            // file never made the atlas simply stays absent.
+            yoyo_sprites: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    let id = name.strip_prefix("Projectile_")?.parse::<u16>().ok()?;
+                    if crate::yoyo_string::is_yoyo_sprite(id) {
+                        Some((id, *rect))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
@@ -1467,6 +1626,7 @@ impl Lookups {
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
+            ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
             ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
@@ -1626,10 +1786,44 @@ impl Lookups {
                 atlas.sheet("NPC_368").copied(),
                 atlas.sheet("NPC_369").copied(),
                 atlas.sheet("NPC_376").copied(),
+                atlas.sheet("NPC_108").copied(),
+                atlas.sheet("NPC_106").copied(),
+                atlas.sheet("NPC_124").copied(),
+                atlas.sheet("NPC_123").copied(),
+                atlas.sheet("NPC_353").copied(),
+                atlas.sheet("NPC_354").copied(),
+                atlas.sheet("NPC_441").copied(),
+                atlas.sheet("NPC_588").copied(),
+                atlas.sheet("NPC_589").copied(),
+                atlas.sheet("NPC_633").copied(),
+                atlas.sheet("NPC_663").copied(),
+                atlas.sheet("NPC_207").copied(),
+                atlas.sheet("NPC_208").copied(),
+                // The Old One's Army's lane gate (M4-EVENT-18).
+                atlas.sheet("NPC_549").copied(),
+                atlas.sheet("NPC_558").copied(),
+                atlas.sheet("NPC_559").copied(),
+                atlas.sheet("NPC_560").copied(),
+                atlas.sheet("NPC_565").copied(),
+                atlas.sheet("NPC_569").copied(),
+                atlas.sheet("NPC_570").copied(),
+                atlas.sheet("NPC_571").copied(),
+                atlas.sheet("NPC_572").copied(),
+                atlas.sheet("NPC_573").copied(),
+                atlas.sheet("NPC_574").copied(),
+                atlas.sheet("NPC_575").copied(),
+                atlas.sheet("NPC_576").copied(),
+                atlas.sheet("NPC_577").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
+            ach_icons: atlas.sheet("UI/Achievements").copied(),
+            ach_borders: atlas.sheet("UI/Achievement_Borders").copied(),
+            ach_inner_top: atlas.sheet("UI/Achievement_InnerPanelTop").copied(),
+            ach_inner_bottom: atlas.sheet("UI/Achievement_InnerPanelBottom").copied(),
+            ach_inner_bottom_large: atlas.sheet("UI/Achievement_InnerPanelBottom_Large").copied(),
+            ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -2216,7 +2410,7 @@ fn uv_of_size(
     ]
 }
 
-fn uv_rect(
+pub(crate) fn uv_rect(
     rect: &tr_render::SheetRect,
     atlas_size: (u32, u32),
     sx: i32,
@@ -2403,6 +2597,41 @@ mod tests {
         // their sheets now arrive through the enumeration instead of the list.
         assert!(lookups.coin_uv(0).is_some());
         assert!(lookups.shuriken_uv().is_some());
+    }
+
+    #[test]
+    fn the_two_inventory_button_sheets_pack_as_two_frame_strips() {
+        // §14: both button sheets must reach the atlas (the emote bubbles
+        // button was invisible because `Images/UI/Emotes` was never packed)
+        // and both are horizontal 2-frame strips — `DrawBestiaryIcon` and
+        // `DrawEmoteBubblesButton` slice them with
+        // `value.Frame(2, 1, flag ? 1 : 0)` (`Main.cs:42464`, `:42408`).
+        let (_, lookups) = content_lookups();
+        let bestiary = lookups
+            .ui_bestiary_button
+            .expect("UI/Bestiary must pack for the bestiary button");
+        let emote = lookups
+            .ui_emote_button
+            .expect("UI/Emotes must pack for the emote button");
+        // Both are horizontal 2-frame strips: `value.Frame(2, 1, …)`
+        // (`Main.cs:42464`, `:42408`) halves the width, so the bundled
+        // sheets are two equal columns (the retail 64-wide art; each frame
+        // then loses the 2 px inset, `rectangle2.Width -= 2`).
+        for (name, sheet) in [("UI/Bestiary", bestiary), ("UI/Emotes", emote)] {
+            assert!(sheet.width > 0 && sheet.height > 0, "{name} has a size");
+            assert_eq!(
+                sheet.width % 2,
+                0,
+                "{name} ({}x{}) is an even-width 2-column strip",
+                sheet.width,
+                sheet.height
+            );
+            assert_eq!(
+                (sheet.width, sheet.height),
+                if name == "UI/Bestiary" { (64, 30) } else { (64, 32) },
+                "{name} is the retail strip"
+            );
+        }
     }
 
     #[test]

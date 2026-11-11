@@ -27,6 +27,9 @@ const CURSOR_TO_CHEST: i32 = 9;
 /// The favorite override's cursor id — `Main.cursorOverride = 3`
 /// (`ItemSlot.cs:616-619`).
 const CURSOR_FAVORITE: i32 = 3;
+/// `AlternateClickAction.Trash`'s cursor id (`ItemSlot.cs:213`): the
+/// Shift-click quick-trash (`GetAlternateClickAction`'s tail, `:679-682`).
+const CURSOR_TRASH: i32 = 6;
 
 /// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
 /// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
@@ -247,11 +250,10 @@ impl App {
         // `SoundEngine.PlaySound(7)` — the grant sound
         // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
         self.audio.play("Grab");
-        // `AchievementsHelper.NotifyItemCraft` — the station craft feeds the
-        // ItemCraftCondition rows (BENCHED).
-        let _ = self
-            .achievements
-            .notify(achievements::CondKind::ItemCraft);
+        // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
+        // crafted item's id rides the event, so `BENCHED`'s workbench set
+        // matches the crafted item and not any craft.
+        let _ = self.achievements.notify_craft(kind);
         self.ui_left_press = false;
         true
     }
@@ -294,6 +296,24 @@ impl App {
             self.ui_left_press = false;
             return;
         }
+        // `Main.DrawSettingButton`'s click arm (`Main.cs:45532-45580`,
+        // BUG-11): the Settings button opens (and, while the window is open,
+        // closes) the in-game options window — `IngameOptions.Open` /
+        // `Close` (`IngameOptions.cs:56`/`:84`).
+        if self.ingame_options.open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            if ui::ingame_options::click(self, screen, self.mouse_pos) {
+                self.ui_left_press = false;
+                self.inventory_open = false;
+                let _ = self.settings.save();
+                return;
+            }
+        } else if self.inventory_open && ui::ingame_options::button_hit(self.mouse_pos) {
+            self.ingame_options.open = true;
+            self.ui_left_press = false;
+            return;
+        }
         // `DrawEmoteBubblesButton`'s click arm (`Main.cs:42400-42405`):
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
@@ -320,6 +340,63 @@ impl App {
                 self.ui_left_press = false;
             }
         }
+    }
+
+    /// The achievements menu's clicks (`UIAchievementsMenu`'s
+    /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
+    /// the overlay, a category toggle flips the filter, the wheel scrolls
+    /// the list. Consumes the press on every hit.
+    pub(crate) fn handle_achievements_clicks(&mut self) {
+        let left = self.ui_left_press;
+        if !left {
+            return;
+        }
+        if self.achievements_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            // `OnActivate`'s `Main.gameMenu` arm decides the container's Top.
+            let game_menu = self.menu.is_some();
+            let panel = ui::achievements::panel_rect(screen, game_menu);
+            // The Back panel closes the state (`GoBackClick` -> `IngameFancyUI.Close()`).
+            if ui::achievements::back_hit(&panel, self.mouse_pos) {
+                self.achievements_open = false;
+                self.achievements_categories = [true; 4];
+                self.achievements_scroll = 0.0;
+                self.ui_left_press = false;
+                return;
+            }
+            // `FilterList` — a toggle flips and the list rebuilds.
+            if let Some(j) = ui::achievements::category_at(&panel, self.mouse_pos) {
+                self.achievements_categories[j] = !self.achievements_categories[j];
+                self.achievements_scroll = 0.0;
+                self.ui_left_press = false;
+                return;
+            }
+            self.ui_left_press = false;
+        }
+    }
+
+    /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
+    /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
+    /// vanilla control; the port's wheel is the documented stand-in).
+    pub(crate) fn scroll_achievements(&mut self, delta: f32) {
+        if !self.achievements_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let game_menu = self.menu.is_some();
+        let panel = ui::achievements::panel_rect(screen, game_menu);
+        let list = ui::achievements::list_rect(&panel);
+        let rows = self
+            .achievements
+            .list
+            .iter()
+            .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
+            .count();
+        let max = ui::achievements::max_scroll(rows, &list);
+        self.achievements_scroll = (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0))
+            .clamp(0.0, max);
     }
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
@@ -544,7 +621,8 @@ impl App {
         // same cue the grid movement uses); the separate `TrashItem` cue
         // (`:1007`) has no port cue — the recorded gap. Right-click stays
         // unported (the Journey research arm `:940-943`).
-        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos) {
+        let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
                 self.audio.play("Grab");
@@ -570,6 +648,18 @@ impl App {
             if self.toggle_favorite(slot) != 0 {
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
+            return;
+        }
+        if left && self.cursor_override == CURSOR_TRASH {
+            // `OverrideLeftClick`'s cursor-6 arm (`ItemSlot.cs:759-775`): the
+            // stack moves to the trash (REPLACING its contents) and the slot
+            // turns to air. The research exception (`:762`) rides the Journey
+            // research (unported); the cues are `TrashItem` (`:764`, no port
+            // cue — the recorded gap) then `Grab` (`:765`).
+            self.equip.trash = self.inventory[slot].clone();
+            self.inventory[slot] = EMPTY_SLOT;
+            self.audio.play("TrashItem"); // no port cue — the recorded gap
+            self.audio.play("Grab");
             return;
         }
         let mut held = self.mouse_item;
@@ -773,6 +863,24 @@ impl App {
                 // cannot fire for one either.
                 if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
+            return;
+        }
+        // The tail arm — `GetAlternateClickAction`'s else-chain close
+        // (`ItemSlot.cs:679-682`): Shift held and no crafting/reforge/chest
+        // arm matched, so a hovered inventory slot with an item lights the
+        // quick-trash cursor (`GetSellOrTrash` → `AlternateClickAction.Trash`
+        // while no shop is open, `:198-209`; the port has no sell cursor, so
+        // the shop case stands down — the recorded gap). The head guard
+        // (`:631-634`): air or favorited slots answer null.
+        if self.shop_npc.is_none() {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                {
+                    self.cursor_override = CURSOR_TRASH;
                 }
             }
         }
@@ -1017,6 +1125,19 @@ impl App {
                     }
                 }
             }
+            // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
+            // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
+            // the legacy menu live behind the overlay (the vanilla state
+            // draws over the menu's world backdrop) and opens
+            // `UIAchievementsMenu`'s `OnActivate` state: every category
+            // toggle on, the scroll at the top.
+            Action::Achievements => {
+                self.achievements_open = true;
+                self.achievements_scroll = 0.0;
+                self.achievements_categories = [true; 4];
+                // The menu row's `SoundEngine.PlaySound(10)` already fired in
+                // `Menu::click`.
+            }
             Action::Join { addr, password } => match net::Client::connect(&addr) {
                 Ok(client) => {
                     self.net = NetRole::Client(client);
@@ -1056,6 +1177,75 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bug20_shift_click_moves_the_stack_to_the_trash() {
+        // Bug 20: `GetAlternateClickAction`'s tail + `OverrideLeftClick`'s
+        // cursor-6 arm (`ItemSlot.cs:679-682`/`:759-775`) — Shift-clicking an
+        // inventory slot REPLACES the trash with the stack and leaves the slot
+        // empty; the cues fire.
+        let mut app = inv_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3,
+            name: "Dirt",
+            count: 7,
+            prefix: 0,
+        };
+        app.equip.trash = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 2,
+            prefix: 0,
+        };
+        // Shift held over the grid's first cell.
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(20.0 + 28.0, 20.0 + 28.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        // The click pass evaluates the cursor then runs the arms.
+        app.evaluate_cursor_override();
+        assert_eq!(app.cursor_override, CURSOR_TRASH, "the trash cursor lights");
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash.kind, 3, "the trash takes the stack");
+        assert_eq!(app.equip.trash.count, 7);
+        assert_eq!(app.inventory[0].count, 0, "the slot is emptied");
+        assert!(app.audio.played_count() > before, "the cues fired");
+    }
+
+    #[test]
+    fn bug20_death_clears_the_trash() {
+        // `Player.DropItems`'s first line (`Player.cs:54304`): the trash is
+        // emptied on death.
+        let mut app = inv_app();
+        app.equip.trash = crate::item::ItemSlot {
+            kind: 3,
+            name: "Dirt",
+            count: 5,
+            prefix: 0,
+        };
+        crate::death::on_player_death(&mut app, 100.0, 100.0, "text");
+        assert_eq!(app.equip.trash.count, 0, "the trash cleared");
+    }
+
+    #[test]
+    fn bug20_the_trash_shifts_with_the_chest_open() {
+        // `Main.DrawTrashItemSlot`'s `ChestOrShopUIVisible` arm
+        // (`Main.cs:42351-42356`): the slot moves to (453, 426) at 0.755.
+        let (rect, scale) = crate::ui::inventory::trash_rect(true);
+        assert_eq!(rect[0], 453.0, "the chest-open x");
+        assert_eq!(rect[1], 426.0, "the chest-open y");
+        assert_eq!(scale, 0.755);
+        // The hit test follows the drawn rect.
+        assert!(crate::ui::inventory::trash_slot_at(
+            Vec2::new(453.0, 426.0),
+            true
+        ));
+        assert!(!crate::ui::inventory::trash_slot_at(
+            Vec2::new(448.0, 258.0),
+            true
+        ));
+    }
+
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
@@ -1096,6 +1286,8 @@ mod tests {
         app.world_chests.push(WorldChest {
             tile: (20, 10),
             slots,
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         app.player = Some(crate::player::Player::spawn(&app.world));
         let p = app.player.as_mut().unwrap();
@@ -1522,6 +1714,8 @@ mod tests {
         app.world_chests.push(WorldChest {
             tile: (40, 10),
             slots: vec![],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         app.player.as_mut().unwrap().chest = 0;
         app.mouse_pos = tile_click(40, 10);
@@ -1591,7 +1785,10 @@ mod tests {
         assert!(app.handle_chest_clicks(), "the cancel button took the click");
         assert!(!app.chest_editing(), "the editor closed");
         assert_eq!(app.front, None, "back into gameplay");
-        assert!(app.chest_names.is_empty(), "the cancel never wrote");
+        assert!(
+            app.world_chests.iter().all(|c| c.name.is_empty()),
+            "the cancel never wrote"
+        );
     }
 
     /// The editing-state Save arm (`ChestUI.RenameChest`'s else, `:834-837`):
@@ -2260,7 +2457,7 @@ mod tests {
     fn trash_cell_is_outside_the_inventory_grid() {
         let mut app = inv_app();
         app.mouse_pos = TRASH_CELL;
-        assert!(ui::inventory::trash_slot_at(TRASH_CELL));
+        assert!(ui::inventory::trash_slot_at(TRASH_CELL, false));
         assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
     }
 }

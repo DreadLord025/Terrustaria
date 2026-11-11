@@ -163,6 +163,32 @@ pub(crate) struct NpcAssets {
     pub(crate) travelling_merchant: Option<BgTex>,
     /// `NPC_369.xnb` — the Angler's town sheet (23 rows, `Main.cs:67120`).
     pub(crate) angler: Option<BgTex>,
+    /// `NPC_108.xnb` — the Wizard's town sheet (23 rows, `Main.cs:67094`).
+    pub(crate) wizard: Option<BgTex>,
+    /// `NPC_106.xnb` — the bound Wizard's single-row sheet (`:67094`).
+    pub(crate) bound_wizard: Option<BgTex>,
+    /// `NPC_124.xnb` — the Mechanic's town sheet (23 rows, `Main.cs:67096`).
+    pub(crate) mechanic: Option<BgTex>,
+    /// `NPC_123.xnb` — the bound Mechanic's single-row sheet (`:67096`).
+    pub(crate) bound_mechanic: Option<BgTex>,
+    /// `NPC_353.xnb` — the Stylist's town sheet (23 rows, `Main.cs:67119`).
+    pub(crate) stylist: Option<BgTex>,
+    /// `NPC_354.xnb` — the webbed Stylist's single-row sheet (`:67119`).
+    pub(crate) webbed_stylist: Option<BgTex>,
+    /// `NPC_441.xnb` — the Tax Collector's town sheet (25 rows, `:67128`).
+    pub(crate) tax_collector: Option<BgTex>,
+    /// `NPC_588.xnb` — the Golfer's town sheet (25 rows, `Main.cs:67142`).
+    pub(crate) golfer: Option<BgTex>,
+    /// `NPC_589.xnb` — the sleeping Golfer's sheet (`:67142`).
+    pub(crate) sleeping_golfer: Option<BgTex>,
+    /// `NPC_633.xnb` — the Zoologist's town sheet (23 rows, `Main.cs:67147`).
+    pub(crate) zoologist: Option<BgTex>,
+    /// `NPC_663.xnb` — the Princess's town sheet (`:67152`).
+    pub(crate) princess: Option<BgTex>,
+    /// `NPC_207.xnb` — the Dye Trader's town sheet (25 rows, `Main.cs:67120`).
+    pub(crate) dye_trader: Option<BgTex>,
+    /// `NPC_208.xnb` — the Party Girl's town sheet (23 rows, `:67120`).
+    pub(crate) party_girl: Option<BgTex>,
     /// `NPC_376.xnb` — the Sleeping Angler's 2-row sheet (`Main.cs:67121`).
     pub(crate) sleeping_angler: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
@@ -281,14 +307,43 @@ pub(crate) struct NpcAssets {
     pub(crate) betsy: Option<BgTex>,
     /// `NPC_568` — the Wither Beast (14-frame humanoid strip of 18x40).
     pub(crate) wither_beast: Option<BgTex>,
+    /// `NPC_558/559/560` — the etherian wyverns (5-frame strips of 38x38).
+    pub(crate) dd2_wyverns: Option<BgTex>,
+    /// `NPC_574/575` — the kobold gliders (10-frame strips of 38x38).
+    pub(crate) dd2_gliders: Option<BgTex>,
+    /// `NPC_565` — the Dark Mage T3 (the T1's 20-frame 34x62 strip).
+    pub(crate) dark_mage_t3: Option<BgTex>,
+    /// `NPC_569` — the Wither Beast T3 (17-frame humanoid strip of 18x40).
+    pub(crate) wither_beast_t3: Option<BgTex>,
+    /// `NPC_570/571` — the drakins (16-frame strips of 42x58).
+    pub(crate) dd2_drakins: Option<BgTex>,
+    /// `NPC_572/573` — the kobold walkers (18-frame strips of 18x40).
+    pub(crate) dd2_kobolds: Option<BgTex>,
+    /// `NPC_576/577` — the ogres (10-frame strips of 96x124).
+    pub(crate) dd2_ogres: Option<BgTex>,
     /// `NPC_550` — the tavernkeeper (16-frame humanoid strip of 18x40),
     /// `NPC_548` — the Etheria Crystal (40x40).
     pub(crate) tavern: Option<BgTex>,
     pub(crate) crystal: Option<BgTex>,
     /// `NPC_422` — the Ancient Cultist (1-frame strip of 130x270).
     pub(crate) cultist: Option<BgTex>,
-    /// `NPC_493/507/517` — the Lunar towers (1-frame strips of 130x270).
-    pub(crate) towers: Option<BgTex>,
+    /// `NPC_493/507/517/422` — the four Lunar pillars (single-frame
+    /// 174x364 sheets — the frame overhangs the 130x270 box on every
+    /// side, so the draw is Centre-anchored). The v1 shared one field
+    /// (`towers`, NPC_493) across all three kinds, so the Nebula and
+    /// Solar pillars rendered the Stardust artwork, and the Vortex pillar
+    /// had no kind at all.
+    pub(crate) tower_stardust: Option<BgTex>,
+    pub(crate) tower_nebula: Option<BgTex>,
+    pub(crate) tower_solar: Option<BgTex>,
+    pub(crate) tower_vortex: Option<BgTex>,
+    /// `Images/Glow_132/143/149/162` — the per-pillar glow masks
+    /// (`Main.cs:24159-24275`'s dedicated tower arm draws four ghost
+    /// copies of each at the velocity-rotated offsets).
+    pub(crate) glow_stardust: Option<BgTex>,
+    pub(crate) glow_nebula: Option<BgTex>,
+    pub(crate) glow_vortex: Option<BgTex>,
+    pub(crate) glow_solar: Option<BgTex>,
     /// `NPC_406/407/423/425/429` — the pillar shards.
     pub(crate) shards: Option<BgTex>,
     pub(crate) shard_hovers: Option<BgTex>,
@@ -350,6 +405,19 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         clothier: sky_tex(atlas, "NPC_54", None),
         travelling_merchant: sky_tex(atlas, "NPC_368", None),
         angler: sky_tex(atlas, "NPC_369", None),
+        wizard: sky_tex(atlas, "NPC_108", None),
+        bound_wizard: sky_tex(atlas, "NPC_106", None),
+        mechanic: sky_tex(atlas, "NPC_124", None),
+        bound_mechanic: sky_tex(atlas, "NPC_123", None),
+        stylist: sky_tex(atlas, "NPC_353", None),
+        webbed_stylist: sky_tex(atlas, "NPC_354", None),
+        tax_collector: sky_tex(atlas, "NPC_441", None),
+        golfer: sky_tex(atlas, "NPC_588", None),
+        sleeping_golfer: sky_tex(atlas, "NPC_589", None),
+        zoologist: sky_tex(atlas, "NPC_633", None),
+        princess: sky_tex(atlas, "NPC_663", None),
+        dye_trader: sky_tex(atlas, "NPC_207", None),
+        party_girl: sky_tex(atlas, "NPC_208", None),
         sleeping_angler: sky_tex(atlas, "NPC_376", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
@@ -416,10 +484,24 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         dark_mage: sky_tex(atlas, "NPC_564", None),
         betsy: sky_tex(atlas, "NPC_551", None),
         wither_beast: sky_tex(atlas, "NPC_568", None),
+        dd2_wyverns: sky_tex(atlas, "NPC_558", None),
+        dd2_gliders: sky_tex(atlas, "NPC_574", None),
+        dark_mage_t3: sky_tex(atlas, "NPC_565", None),
+        wither_beast_t3: sky_tex(atlas, "NPC_569", None),
+        dd2_drakins: sky_tex(atlas, "NPC_570", None),
+        dd2_kobolds: sky_tex(atlas, "NPC_572", None),
+        dd2_ogres: sky_tex(atlas, "NPC_576", None),
         tavern: sky_tex(atlas, "NPC_550", None),
         crystal: sky_tex(atlas, "NPC_548", None),
         cultist: sky_tex(atlas, "NPC_422", None),
-        towers: sky_tex(atlas, "NPC_493", None),
+        tower_stardust: sky_tex(atlas, "NPC_493", None),
+        tower_nebula: sky_tex(atlas, "NPC_507", None),
+        tower_solar: sky_tex(atlas, "NPC_517", None),
+        tower_vortex: sky_tex(atlas, "NPC_422", None),
+        glow_stardust: sky_tex(atlas, "Glow_132", None),
+        glow_nebula: sky_tex(atlas, "Glow_143", None),
+        glow_vortex: sky_tex(atlas, "Glow_149", None),
+        glow_solar: sky_tex(atlas, "Glow_162", None),
         shards: sky_tex(atlas, "NPC_406", None),
         shard_hovers: sky_tex(atlas, "NPC_425", None),
         pirates: sky_tex(atlas, "NPC_212", None),
@@ -580,9 +662,116 @@ fn prime_draw<'a>(
     )
 }
 
+/// The Lunar pillars' draw (`Main.cs:24159-24263`): the single-frame
+/// 174x364 sheet centred on the NPC's Centre (the `origin = halfSize`
+/// form — unlike the generic bottom anchor, which would sink the frame's
+/// 47-px overhang into the ground). `Main.npcFrameCount` 422/493/507/517
+/// = 1, so the row height is the whole sheet.
+fn tower_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(364.0, |t| t.h);
+    let fw = tex.map_or(174.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
+}
+
+/// The halfSize override for a kind (`Main.cs:23049`'s switch): the
+/// point that lands on the NPC's anchor, so a value below the frame's
+/// centre lifts the art and one above pushes it down. The C# overrides
+/// `halfSize = (55, 107)` for the Eye of Cthulhu and the Twins — the
+/// sheet-derived half-frame for their 166-px rows is 83 (and 100 for the
+/// Twins' 200-px rows), so the override shifts the frame down by the
+/// difference. `None` = the sheet-derived value.
+fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
+    match kind {
+        NpcKind::EyeOfCthulhu | NpcKind::Retinazer | NpcKind::Spazmatism => 107.0,
+        NpcKind::Plantera => 77.0,
+        _ => frame_h * 0.5,
+    }
+}
+
+/// `Main.cs:23048`'s per-kind vertical anchor nudge (`num47`, plus the
+/// `num46` terms the same switch writes): a flat pixel shift added to the
+/// generic anchor's Y after the `halfSize` override's own shift.
+fn npc_anchor_nudge(n: &Npc) -> f32 {
+    match n.kind {
+        // `:23077` — the Plantera head's 26 (`halfSize.Y = 77` is folded
+        // by `boss_half_size`).
+        NpcKind::Plantera => 26.0,
+        // `:23078` — the Brain of Cthulhu's `num47 += 50 * scale`.
+        NpcKind::BrainOfCthulhu => 50.0 * n.scale,
+        // `:23103`'s group — the DD2 goblins' and the Wither Beasts'
+        // negative nudges (561-563: -8; 555-557: -5; 572/573: -4;
+        // 570/571: -2; 568/569: -3).
+        NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => -8.0,
+        NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 => {
+            -5.0
+        }
+        NpcKind::DD2WitherBeast => -3.0,
+        _ => 0.0,
+    }
+}
+
+/// The boss draws (the Eye of Cthulhu and the Twins — the `case 4/125/126`
+/// family): the sheet's real rows at the generic anchor with the C#'s
+/// `halfSize` override applied as the delta it produces.
+fn boss_draw<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(166.0, |t| t.h / count as f32);
+    let fw = tex.map_or(110.0, |t| t.w);
+    // The C#'s anchor lands the frame's centre at `box_bottom + 4`; the
+    // `halfSize` override and the `num47` nudge are applied once for every
+    // generic-anchored kind after the match (see `draw_npcs`).
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+    )
+}
+
+/// The kinds whose draw rides the generic anchor (`Main.cs:25505-25512`)
+/// and therefore takes the `halfSize`/`num47` overrides. The towers'
+/// dedicated arm (`Main.cs:24159`), the saucer family's Centre-anchored
+/// block (`:24586`), the Deerclops' Bottom-anchored one (`:26338`) and the
+/// Prime masks' overlays compute their own positions and are excluded.
+fn uses_generic_anchor(kind: NpcKind) -> bool {
+    !matches!(
+        kind,
+        NpcKind::StardustTower
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower
+            | NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon
+            | NpcKind::MartianSaucerCore
+            | NpcKind::Deerclops
+    )
+}
+
 /// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
 /// the same source texels while the camera moves (no crawling pixel grid).
 #[inline]
+/// The `snap_to_screen` seam the projectile draw path uses (M4-PROJ-4c) —
+/// the same world-pixel → screen snapping the entity draws run.
+pub fn snap_to_screen_pub(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32; 2] {
+    snap_to_screen(pos, camera, zoom, screen)
+}
+
 fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32; 2] {
     let sx = (pos[0] - camera.x) * zoom + screen.x * 0.5;
     let sy = (pos[1] - camera.y) * zoom + screen.y * 0.5;
@@ -1095,6 +1284,52 @@ pub(crate) fn draw_npcs(
             // The Angler: the same humanoid shape over NPC_369 — 23 rows
             // (`Main.npcFrameCount[369]`, `Main.cs:67120`).
             NpcKind::Angler => humanoid_draw(assets.angler.as_ref(), 23, n, w, h),
+            // The Wizard/Mechanic: the same humanoid shape over
+            // NPC_108/124 — 23 rows each (`Main.cs:67094`/`:67096`).
+            NpcKind::Wizard => humanoid_draw(assets.wizard.as_ref(), 23, n, w, h),
+            NpcKind::Mechanic => humanoid_draw(assets.mechanic.as_ref(), 23, n, w, h),
+            // The Stylist (23 rows) and the Tax Collector (25 rows,
+            // `Main.cs:67128`) ride the same humanoid anchor.
+            NpcKind::Stylist => humanoid_draw(assets.stylist.as_ref(), 23, n, w, h),
+            NpcKind::TaxCollector => humanoid_draw(assets.tax_collector.as_ref(), 25, n, w, h),
+            // The Golfer: the same humanoid shape over NPC_588 — 25 rows
+            // (`Main.cs:67142`).
+            NpcKind::Golfer => humanoid_draw(assets.golfer.as_ref(), 25, n, w, h),
+            // The Zoologist and the Princess: the same humanoid shape over
+            // NPC_633/663 — 23 rows each (`Main.cs:67147`/`:67152`).
+            NpcKind::Zoologist => humanoid_draw(assets.zoologist.as_ref(), 23, n, w, h),
+            NpcKind::Princess => humanoid_draw(assets.princess.as_ref(), 23, n, w, h),
+            // The Dye Trader (25 rows) and the Party Girl (23 rows).
+            NpcKind::DyeTrader => humanoid_draw(assets.dye_trader.as_ref(), 25, n, w, h),
+            NpcKind::PartyGirl => humanoid_draw(assets.party_girl.as_ref(), 23, n, w, h),
+            // The sleeping Golfer: NPC_589's sheet over the flat 18x34
+            // body.
+            NpcKind::SleepingGolfer => (
+                assets.sleeping_golfer.as_ref(),
+                assets.sleeping_golfer.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
+            // The webbed Stylist: one row over the flat 18x34 body.
+            NpcKind::WebbedStylist => (
+                assets.webbed_stylist.as_ref(),
+                assets.webbed_stylist.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
+            // The bound forms: single-row sheets over their own boxes.
+            NpcKind::BoundWizard => (
+                assets.bound_wizard.as_ref(),
+                assets.bound_wizard.as_ref().map_or(40.0, |t| t.h),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::BoundMechanic => (
+                assets.bound_mechanic.as_ref(),
+                assets.bound_mechanic.as_ref().map_or(34.0, |t| t.h),
+                [18.0, 34.0],
+                [n.x, n.y],
+            ),
             // The Sleeping Angler: NPC_376's two rows over the flat 34x8
             // body — the sheet is 40 wide, drawn centred on the box.
             NpcKind::SleepingAngler => (
@@ -1111,40 +1346,30 @@ pub(crate) fn draw_npcs(
                 [n.x, n.y],
             ),
             // The Queen Bee: the 2-frame 66x66 sheet.
-            NpcKind::QueenBee => (
-                assets.queen_bee.as_ref(),
-                assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
-                [66.0, 66.0],
-                [n.x, n.y],
-            ),
+            // NPC_222 is 172x1824 — twelve 152-px rows
+            // (`Main.npcFrameCount[222]` = 12, `Main.cs:67082`; the v1
+            // divided by 2 and drew a 66x66 quad at the box's corner,
+            // sampling a 912-px slice of the sheet as "one frame").
+            NpcKind::QueenBee => boss_draw(assets.queen_bee.as_ref(), 12, n, w, h),
             // The Skeletron head: the single-frame 80x102 sheet.
-            NpcKind::SkeletronHead => (
-                assets.skeletron_head.as_ref(),
-                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
-                [80.0, 102.0],
-                [n.x, n.y],
-            ),
+                        // NPC_35 is 114x264 — two 132-px rows (`Main.npcFrameCount[35]` =
+            // 2: the portrait row plus the red-hat row); the v1 drew an
+            // 80x102 box quad from `t.h`.
+            NpcKind::SkeletronHead => boss_draw(assets.skeletron_head.as_ref(), 2, n, w, h),
             // The WoF: the single-frame sheet over the 120x120 hitbox.
-            NpcKind::WallOfFlesh => (
-                assets.wof.as_ref(),
-                assets.wof.as_ref().map_or(120.0, |t| t.h),
-                [120.0, 120.0],
-                [n.x, n.y],
-            ),
+                        // NPC_113 is 142x212 — two 106-px rows
+            // (`Main.npcFrameCount[113]` = 2, `Main.cs:67082`; the v1 read
+            // `t.h` as the frame height and drew a 120x120 box quad).
+            NpcKind::WallOfFlesh => boss_draw(assets.wof.as_ref(), 2, n, w, h),
             // The hungry: `Main.npcFrameCount[115] = 3` frames of 30×30; the
             // leech segments: 1 frame of 14×14.
-            NpcKind::Hungry => (
-                assets.hungry.as_ref(),
-                assets.hungry.as_ref().map_or(30.0, |t| t.h / 3.0),
-                [30.0, 30.0],
-                [n.x, n.y],
-            ),
-            NpcKind::LeechHead | NpcKind::LeechBody => (
-                assets.leech.as_ref(),
-                assets.leech.as_ref().map_or(14.0, |t| t.h),
-                [14.0, 14.0],
-                [n.x, n.y],
-            ),
+                        // NPC_115 is 44x114 — three 38-px rows
+            // (`Main.npcFrameCount[115]` = 3); the v1 kept the row height but
+            // drew a 30x30 box quad.
+            NpcKind::Hungry => boss_draw(assets.hungry.as_ref(), 3, n, w, h),
+                        // NPC_117 is 18x30 — one frame (`Main.npcFrameCount[117]` = 1); the
+            // v1 drew a 14x14 box quad.
+            NpcKind::LeechHead | NpcKind::LeechBody => boss_draw(assets.leech.as_ref(), 1, n, w, h),
             // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 let (tex, frames) = match n.kind {
@@ -1252,6 +1477,53 @@ pub(crate) fn draw_npcs(
                 [18.0, 40.0],
                 [n.x, n.y],
             ),
+            // The Old One's Army's tier-2/3 families (M4-EVENT-19): their
+            // own `Main.npcFrameCount` rows — the wyverns' 5, the gliders'
+            // 10, the Dark Mage T3's 20 (the T1's strip), the Wither Beast
+            // T3's 17, the drakins' 16, the kobold walkers' 18, the ogres'
+            // 10.
+            NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3 => (
+                assets.dd2_wyverns.as_ref(),
+                assets.dd2_wyverns.as_ref().map_or(38.0, |t| t.h / 5.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3 => (
+                assets.dd2_gliders.as_ref(),
+                assets.dd2_gliders.as_ref().map_or(38.0, |t| t.h / 10.0),
+                [38.0, 38.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2DarkMageT3 => (
+                assets.dark_mage_t3.as_ref(),
+                assets.dark_mage_t3.as_ref().map_or(62.0, |t| t.h / 20.0),
+                [34.0, 62.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2WitherBeastT3 => (
+                assets.wither_beast_t3.as_ref(),
+                assets.wither_beast_t3.as_ref().map_or(40.0, |t| t.h / 17.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => (
+                assets.dd2_drakins.as_ref(),
+                assets.dd2_drakins.as_ref().map_or(58.0, |t| t.h / 16.0),
+                [42.0, 58.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 => (
+                assets.dd2_kobolds.as_ref(),
+                assets.dd2_kobolds.as_ref().map_or(40.0, |t| t.h / 18.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 => (
+                assets.dd2_ogres.as_ref(),
+                assets.dd2_ogres.as_ref().map_or(124.0, |t| t.h / 10.0),
+                [96.0, 124.0],
+                [n.x, n.y],
+            ),
             // The tavernkeeper: the 16-frame NPC_550 strip over the 18x40.
             NpcKind::DD2Bartender => (
                 assets.tavern.as_ref(),
@@ -1273,13 +1545,23 @@ pub(crate) fn draw_npcs(
                 [130.0, 270.0],
                 [n.x, n.y],
             ),
-            // The towers: the 1-frame NPC_493/507/517 strips.
-            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower => (
-                assets.towers.as_ref(),
-                assets.towers.as_ref().map_or(270.0, |t| t.h),
-                [130.0, 270.0],
-                [n.x, n.y],
-            ),
+            // The four pillars: `Main.cs:24159-24263`'s dedicated arm
+            // centres the single 174x364 frame on the NPC's Centre with
+            // `origin = halfSize` (the generic bottom anchor would sink
+            // the overhanging art 47 px into the ground) — `tower_draw`
+            // computes it (the other agent's merge had all four kinds ride
+            // the shared `towers` sheet — NPC_493 — at the box's corner).
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower
+            | NpcKind::DD2LanePortal => {
+                let tex = match n.kind {
+                    NpcKind::StardustTower => assets.tower_stardust.as_ref(),
+                    NpcKind::NebulaTower => assets.tower_nebula.as_ref(),
+                    NpcKind::SolarTower => assets.tower_solar.as_ref(),
+                    NpcKind::VortexTower => assets.tower_vortex.as_ref(),
+                    _ => assets.tower_vortex.as_ref(),
+                };
+                tower_draw(tex, n, w, h)
+            }
             // The shards: the cell/jellyfish/beast 2-row strips + the
             // vortex walkers' 14-frame humanoid strips.
             NpcKind::StardustCellBig => (
@@ -1494,12 +1776,9 @@ pub(crate) fn draw_npcs(
                 )
             }
             // The Destroyer: the single-frame 48x48 sheet.
-            NpcKind::TheDestroyer => (
-                assets.destroyer.as_ref(),
-                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
-                [48.0, 48.0],
-                [n.x, n.y],
-            ),
+                        // NPC_134 is 50x102 — one frame (`Main.npcFrameCount[134]` = 1, no
+            // `FindFrame` case); the v1 drew a 48x48 box quad at `t.h`.
+            NpcKind::TheDestroyer => boss_draw(assets.destroyer.as_ref(), 1, n, w, h),
             // The Prime: the head's 6-row strip (NPC_127 is 140x940 —
             // 156-px rows, `Main.npcFrameCount[127]` = 6, `Main.cs:67082`;
             // the v1 read `t.h` and sampled the whole strip as one frame
@@ -1517,28 +1796,30 @@ pub(crate) fn draw_npcs(
                 } else {
                     assets.spazmatism.as_ref()
                 };
-                prime_draw(tex, 6, n, w, h)
+                boss_draw(tex, 6, n, w, h)
             }
             // The Plantera: the 5-frame 86x86 sheet.
             NpcKind::Plantera => (
-                assets.plantera.as_ref(),
-                assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
-                [86.0, 86.0],
-                [n.x, n.y],
+                // NPC_262 is 116x1232 — eight 154-px rows
+                // (`Main.npcFrameCount[262]` = 8, `Main.cs:67082`; the v1
+                // divided by 5 and drew an 86x86 box-sized quad at the
+                // box's corner).
+                boss_draw(assets.plantera.as_ref(), 8, n, w, h)
             ),
             // The Brain: the single-frame 160x110 sheet.
             NpcKind::BrainOfCthulhu => (
-                assets.brain.as_ref(),
-                assets.brain.as_ref().map_or(110.0, |t| t.h),
-                [160.0, 110.0],
-                [n.x, n.y],
+                // NPC_266 is 200x1456 — eight 182-px rows
+                // (`Main.npcFrameCount[266]` = 8; the v1 read `t.h` as the
+                // frame height, sampling the whole 8-row strip as one
+                // 160x110 quad).
+                boss_draw(assets.brain.as_ref(), 8, n, w, h)
             ),
             // The Creeper: the single-frame 30x30 sheet.
             NpcKind::Creeper => (
-                assets.creeper.as_ref(),
-                assets.creeper.as_ref().map_or(30.0, |t| t.h),
-                [30.0, 30.0],
-                [n.x, n.y],
+                // NPC_267 is 34x34 — one frame (`Main.npcFrameCount[267]`
+                // = 1; the v1's 30x30 was the Creeper's box, not the
+                // sheet's frame).
+                boss_draw(assets.creeper.as_ref(), 1, n, w, h)
             ),
             // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
             NpcKind::GoblinTinkerer => humanoid_draw(assets.goblin_tinkerer.as_ref(), 25, n, w, h),
@@ -1615,20 +1896,13 @@ pub(crate) fn draw_npcs(
                 )
             }
             // The Skeletron's hand: the 52x52 single-frame sheet.
-            NpcKind::SkeletronHand => (
-                assets.skeletron_hand.as_ref(),
-                assets.skeletron_hand.as_ref().map_or(52.0, |t| t.h),
-                [52.0, 52.0],
-                [n.x, n.y],
-            ),
+                        // NPC_36 is 58x156 — two 78-px rows (`Main.npcFrameCount[36]` = 2);
+            // the v1 drew a 52x52 box quad.
+            NpcKind::SkeletronHand => boss_draw(assets.skeletron_hand.as_ref(), 2, n, w, h),
             // The WoF's mirror eye: the 100x100 sheet (the vanilla's
             // `WorldofFleshEye` texture).
-            NpcKind::WallOfFleshEye => (
-                assets.wof_eye.as_ref(),
-                assets.wof_eye.as_ref().map_or(100.0, |t| t.h),
-                [100.0, 100.0],
-                [n.x, n.y],
-            ),
+                        // NPC_114 is 130x212 — two 106-px rows (`Main.npcFrameCount[114]` = 2).
+            NpcKind::WallOfFleshEye => boss_draw(assets.wof_eye.as_ref(), 2, n, w, h),
             // The Prime's limbs (`Main.npcFrameCount` 128/129/130/131 =
             // 1/2/2/1, `Main.cs:67082`): the cannon 38x76, the saw's 2
             // rows of 78, the vice's 2 rows of 70, the laser 40x62 — each
@@ -1829,28 +2103,39 @@ pub(crate) fn draw_npcs(
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
             ),
-            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
-            // frame == the hitbox (the `Main.DrawNPC` anchor).
-            NpcKind::EyeOfCthulhu => (
-                assets.eye_of_cthulhu.as_ref(),
-                assets.eye_of_cthulhu.as_ref().map_or(110.0, |t| t.h / 6.0),
-                [100.0, 110.0],
-                [n.x, n.y],
-            ),
+            // The Eye of Cthulhu: NPC_4 is 110x996 — six 166-px rows
+            // (`Main.npcFrameCount[4]` = 6) whose frames are LARGER than
+            // the 100x110 box; the v1 squeezed a 166-px row into a 110-px
+            // quad at the box's corner. The boss trio (4/125/126) also
+            // overrides `halfSize` to (55, 107) (`Main.cs:23051-23056`),
+            // which lands the frame's centre 24 px lower than the
+            // sheet-derived origin would (`107 - 166/2`).
+            NpcKind::EyeOfCthulhu => boss_draw(assets.eye_of_cthulhu.as_ref(), 6, n, w, h),
             // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
-            NpcKind::ServantOfCthulhu => (
-                assets.servant_of_cthulhu.as_ref(),
-                assets
-                    .servant_of_cthulhu
-                    .as_ref()
-                    .map_or(20.0, |t| t.h / 2.0),
-                [20.0, 20.0],
-                [n.x, n.y],
-            ),
+                        // NPC_5 is 20x64 — two 32-px frames
+            // (`Main.npcFrameCount[5]` = 2); the v1 kept the row height but
+            // drew a 20x20 quad.
+            NpcKind::ServantOfCthulhu => boss_draw(assets.servant_of_cthulhu.as_ref(), 2, n, w, h),
         };
         let Some(tex) = tex else {
             continue;
         };
+        // `Main.cs:23048`'s per-kind anchor nudge (`num47` + `num46`): a
+        // flat Y shift the C#'s generic draw (and the towers' dedicated
+        // arm) add to the anchor. Applied once, here, for every kind.
+        // `Main.cs:23048`'s per-kind anchor overrides, applied once here
+        // for every generic-anchored kind: the `halfSize` override shifts
+        // the frame by `override − frame_h / 2` and the `num47`/`num46`
+        // nudge adds its flat pixels. The kinds with dedicated
+        // `DrawNPCDirect` arms (the towers' Centre anchor, the saucers'
+        // block, the Deerclops' Bottom anchor) compute their own
+        // positions and skip both terms, as in the C#.
+        let anchor_shift = if uses_generic_anchor(n.kind) {
+            boss_half_size(n.kind, frame_h) - frame_h * 0.5 + npc_anchor_nudge(n)
+        } else {
+            0.0
+        };
+        let pos = [pos[0], pos[1] + anchor_shift];
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
@@ -1882,17 +2167,13 @@ pub(crate) fn draw_npcs(
         // The Deerclops' sheet is a 5x5 grid, not a column: the cell
         // index in `npc.frame` decodes as column `cell / 5`, row
         // `cell % 5`, and the C#'s `spriteEffects ^ FlipHorizontally`
-        // (Main.cs:26386) cancels the generic flip — the sheet faces
-        // RIGHT by default, so the flip rides `facing < 0`. The martians
-        // ride their own `spriteDirection` (`NPC.cs:6515`, read by
-        // `Main.cs:23124-23128`): the Scutlix family's `FindFrame` inverts
-        // it against `direction` (`NPC.cs:71746-71753`/`:71795`), so
-        // `facing` cannot stand in for them.
-        let flip_dir = if n.kind.flips_on_sprite_dir() {
-            n.sprite_dir
-        } else {
-            n.facing
-        };
+        // `Main.DrawNPC` flips on `spriteDirection == 1` for EVERY NPC
+        // (`Main.cs:23124-23128`) — BUG-07: the whitelist read `facing` for
+        // the kinds whose `spriteDirection` the AI machines do maintain (the
+        // walker's lockstep write in `npc_ai.rs`), which flipped them
+        // against the sheet whenever the body turned without moving. The
+        // whitelist is gone: one flip source, the vanilla one.
+        let flip_dir = n.sprite_dir;
         let uv = if n.kind == NpcKind::Deerclops {
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
         } else {
@@ -1966,6 +2247,52 @@ pub(crate) fn draw_npcs(
         } else {
             r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
         }
+        // The Lunar pillars' glow ghosts (`Main.cs:24177-24233`): each
+        // tower's dedicated arm draws FOUR masked copies of its own sheet
+        // at `velocity.RotatedBy(i·π/2) · offset` (the offset 4 +
+        // |light − 0.5|·4, the Solar's 2 + ·9 with the extra +X 2), tinted
+        // by the vanilla's (64,64,64,0)·Opacity mask — the port's
+        // premultiplied pipeline renders them with the glow sheets' own
+        // alpha instead (the mask tint draws nothing there).
+        if matches!(
+            n.kind,
+            NpcKind::StardustTower
+                | NpcKind::NebulaTower
+                | NpcKind::SolarTower
+                | NpcKind::VortexTower
+        ) {
+            let gtex = match n.kind {
+                NpcKind::StardustTower => assets.glow_stardust.as_ref(),
+                NpcKind::NebulaTower => assets.glow_nebula.as_ref(),
+                NpcKind::SolarTower => assets.glow_solar.as_ref(),
+                _ => assets.glow_vortex.as_ref(),
+            };
+            if let Some(gtex) = gtex {
+                let guv = npc_frame_uv(gtex, frame_h, n.frame());
+                // The C# derives the offset from `npcColor`:
+                // `4 + |light − 0.5| · 4` (the Solar's `2 + ·9`).
+                let light_len =
+                    (c[0] - 0.5).hypot(c[1] - 0.5).hypot(c[2] - 0.5);
+                let base_off = if n.kind == NpcKind::SolarTower {
+                    2.0 + light_len * 9.0
+                } else {
+                    4.0 + light_len * 4.0
+                };
+                for i in 0..4u32 {
+                    let a = i as f32 * std::f32::consts::FRAC_PI_2;
+                    let (sx, sy) = a.sin_cos();
+                    let ghost = [
+                        pos[0] + (n.vx * sy - n.vy * sx) * base_off,
+                        pos[1] + (n.vx * sx + n.vy * sy) * base_off
+                            + if n.kind == NpcKind::SolarTower { 2.0 } else { 0.0 },
+                    ];
+                    r.push_sprite(snap_to_screen(ghost, camera, zoom, screen), size, guv, [
+                        1.0, 1.0, 1.0, 1.0
+                    ]);
+                    quads += 1;
+                }
+            }
+        }
         // The Prime family's glow masks (`Main.cs:25585-25642`): the head's
         // `Bone_Eyes` and the laser limb's `Bone_Laser` ride the body's
         // OWN frame/rotation/anchor, so the same transform draws them a
@@ -2014,4 +2341,64 @@ pub(crate) fn draw_npcs(
         }
     }
     quads
+}
+
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    /// A bare NPC at the spawn point (the port's test helper).
+    fn bare(kind: NpcKind) -> Npc {
+        Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// `Main.cs:23048`'s per-kind anchor nudge (`num47`): the Plantera head's
+    /// 26, the Brain's `50 * scale`, and the DD2 group's negative shifts.
+    #[test]
+    fn the_anchor_nudges_follow_the_c_sharp_switch() {
+        let mut n = bare(NpcKind::Plantera);
+        n.scale = 1.0;
+        assert_eq!(npc_anchor_nudge(&n), 26.0, "the Plantera head's num47");
+        let mut b = bare(NpcKind::BrainOfCthulhu);
+        b.scale = 0.5;
+        assert_eq!(npc_anchor_nudge(&b), 25.0, "the Brain's 50 * scale");
+        for kind in [NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), -8.0, "{kind:?}");
+        }
+        for kind in [
+            NpcKind::DD2GoblinBomberT1,
+            NpcKind::DD2GoblinBomberT2,
+            NpcKind::DD2GoblinBomberT3,
+        ] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), -5.0, "{kind:?}");
+        }
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2WitherBeast)), -3.0);
+        // The unoverridden kinds stay at 0 (the towers/saucers/Deerclops
+        // compute their own anchors).
+        for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?}");
+        }
+    }
+
+    /// The `halfSize` override's effect on the anchor: the EoC's 107 over its
+    /// 166-px row's 83 pushes the frame 24 px lower; the Twins' 107 over the
+    /// 200-px row's 100 pushes it 7; the Plantera head's absolute 77 over its
+    /// 86-px row's 43 pushes it 34.
+    #[test]
+    fn the_half_size_override_shifts_the_anchor() {
+        for (kind, fh, want) in [
+            (NpcKind::EyeOfCthulhu, 166.0, 24.0),
+            (NpcKind::Retinazer, 200.0, 7.0),
+            (NpcKind::Spazmatism, 200.0, 7.0),
+            (NpcKind::Plantera, 86.0, 34.0),
+            (NpcKind::Slime, 48.0, 0.0),
+        ] {
+            assert_eq!(
+                boss_half_size(kind, fh) - fh * 0.5,
+                want,
+                "{kind:?}'s halfSize shift"
+            );
+        }
+    }
 }

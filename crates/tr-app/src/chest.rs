@@ -8,8 +8,9 @@
 //! free functions over the app's `App.world_chests: Vec<WorldChest>` (the
 //! field's frozen `Vec` + element shape come from the existing
 //! `world_sim/editing.rs` break-refusal closure and its stocked-chest test,
-//! which pin `craft::WorldChest { tile, slots }`; `craft.rs` re-exports the
-//! moved type). The slot encoding is indexed with implicit air:
+//! which pin `craft::WorldChest`'s `{ tile, slots }` core; `craft.rs`
+//! re-exports the moved type — the `.wld` phase added the name/maxItems fold
+//! on top of it). The slot encoding is indexed with implicit air:
 //! `slots[i]` is chest slot `i`, airs beyond `slots.len()` are implicit
 //! ([`EMPTY_SLOT`]), and there are no trailing airs — except the browsed
 //! chest, whose 40-slot window [`open_chest`] materializes (the C#
@@ -21,8 +22,11 @@
 //!
 //! Out of this phase: the panel (phase 3), slot clicks (phase 4), rename +
 //! the `Main.editChest` flush arm of the open path (phase 5), contents-drop
-//! on break, `.wld` persistence + `Resize`/per-chest `maxItems` (M6-SAVE-2),
-//! banks (M3-STORE-1), worldgen loot (M5-CHEST-gen).
+//! on break, banks (M3-STORE-1), worldgen loot (M5-CHEST-gen). The `.wld`
+//! persistence (`WorldFile.SaveChests:1606` / `LoadChests:2723`) landed with
+//! M6-SAVE-1 phase 3: the entity now owns its `name`/`maxItems`
+//! ([`WorldChest`]) and [`from_wld`]/[`to_wld`] are the app-side seam the
+//! world-file wiring (phase 7) calls.
 
 use glam::Vec2;
 
@@ -34,34 +38,57 @@ use crate::player;
 use crate::registry;
 use crate::ui::keyboard::{self, Context, Request};
 use tr_core::{TILE_PX, World};
+use tr_core::wld::sections::{WldChest, WldChestSlot};
 
 /// `Main.maxChests` (`Main.cs:1033`), the array size (`Main.cs:66994`) and the
 /// scan bound baked into `Chest.FindEmptyChest` (`Chest.cs:524`).
 pub(crate) const MAX_CHESTS: usize = 8000;
 
-/// `Chest.DefaultMaxItems` (`Chest.cs:64`). Every chest carries the default
-/// until M6-SAVE-2 ports `Resize` (`Chest.cs:118-131`) — the per-chest field
-/// is unreadable on the frozen `WorldChest` literal, and with `Resize` out no
-/// chest ever deviates from 40, so the constant read is observably identical.
+/// `Chest.DefaultMaxItems` (`Chest.cs:64`). A chest carries the default until
+/// a `.wld` record says otherwise (`Chest.Resize`, `Chest.cs:118-131`, runs in
+/// `LoadChests:2738-2740`).
 pub(crate) const DEFAULT_MAX_ITEMS: u32 = 40;
 
-/// One world chest's item store (`Main.chest[]`'s `Chest.item`). The port's
-/// chest UI/storage owns filling it (`M3-CHEST-UI`); the world save skips the
-/// chest section (`M6-SAVE-2`), so this is in-memory only. The C# entity's
-/// `x`/`y`/`item` fields (`Chest.cs:74-78`); `index` is the `Vec` position,
-/// `name`/`maxItems`/`frame` land with their phases (5 / M6-SAVE-2 / render
-/// follow-up).
+/// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ID/ItemID.cs:345`) —
+/// `CreateBoolSet(false, 58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455,
+/// 4143, 5013, 6135, 6136)`. A slot holding one of these is air on both sides
+/// of the file: never written (`SaveChests:1658-1661`) and dropped on load
+/// (`Item.FixAgainstExploit`, `Item.cs:49489-49495`). Hand-transcribed like
+/// `prefix.rs:114-122`'s denial list — the set is not in the generated tables.
+const BANNED_IN_INVENTORY: &[u16] = &[
+    58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
+];
+
+/// `Main.tileContainer` (`Main.cs:10076-10080`): the tile kinds whose 2×2 a
+/// chest anchor stands on. `SaveChests:1617-1632`'s pre-pass destroys every
+/// chest whose four anchor cells are not active tiles from this set.
+fn is_tile_container(kind: u16) -> bool {
+    matches!(kind, 21 | 467 | 88 | 470 | 475)
+}
+
+/// One world chest: the `Main.chest[]` entity (`Chest.cs:74-82`). The port's
+/// chest UI/storage owns filling it (`M3-CHEST-UI`) and the `.wld` section
+/// persists it (`WorldFile.SaveChests:1606` / `LoadChests:2723`).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct WorldChest {
-    /// The chest tile's top-left `(x, y)`.
+    /// The chest tile's top-left `(x, y)` (`Chest.x`/`Chest.y`).
     pub(crate) tile: (i32, i32),
     /// The C# `Chest.item[]` entries as full [`ItemSlot`]s (the M3-CHEST-INT
     /// upgrade — prefixes survive deposits and take-backs, `Item.cs:504`'s
-    /// `Item.prefix` field; the save format's per-slot prefix byte,
-    /// `WorldFile.cs:1671`, lands with M6-SAVE-2), at most
-    /// [`DEFAULT_MAX_ITEMS`] real ones; indexed with implicit air — see the
-    /// module doc.
+    /// `Item.prefix` field), at most [`max_items`](Self::max_items) real ones;
+    /// indexed with implicit air — see the module doc.
     pub(crate) slots: Vec<ItemSlot>,
+    /// `Chest.name` (`Chest.cs:82`): the panel's name line and the rename
+    /// submit's write target. Folded in from the `App.chest_names` side map by
+    /// M6-SAVE-1 phase 3 — the entity owns its name from the file
+    /// (`LoadChests:2735`), and the C#'s null default reads as the empty
+    /// string.
+    pub(crate) name: String,
+    /// `Chest.maxItems` (`Chest.cs:70`'s neighbour, `:78`): the per-chest slot
+    /// count from the file's `i32` (`SaveChests:1654`, `LoadChests:2738`), the
+    /// default [`DEFAULT_MAX_ITEMS`] everywhere else. `slots.len()` is the max
+    /// for a loaded chest; `Resize` semantics stay `Chest.cs:118-130`.
+    pub(crate) max_items: usize,
 }
 
 /// The removed-slot marker: `Main.chest[i] == null`'s stand-in inside the
@@ -128,6 +155,8 @@ pub(crate) fn create_chest(chests: &mut Vec<WorldChest>, x: i32, y: i32) -> usiz
     let fresh = WorldChest {
         tile: (x, y),
         slots: Vec::new(),
+        name: String::new(),
+        max_items: DEFAULT_MAX_ITEMS as usize,
     };
     if idx == chests.len() {
         chests.push(fresh);
@@ -146,6 +175,8 @@ pub(crate) fn remove_chest(chests: &mut Vec<WorldChest>, idx: usize) {
             *slot = WorldChest {
                 tile: REMOVED_TILE,
                 slots: Vec::new(),
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
             };
         }
     }
@@ -226,13 +257,239 @@ pub(crate) fn using_chest(chests: &[WorldChest], idx: usize, open_player_chest: 
     chests.get(idx).is_some_and(|c| !is_removed(c)) && open_player_chest == idx as i32
 }
 
+// --- `.wld` persistence (M6-SAVE-1 phase 3) ---------------------------------
+//
+// `WorldFile.SaveChests:1606` (write) / `LoadChests:2723` (read), plus every
+// fix-up the C# applies — the duplicate-position and tail passes
+// (`LoadChests:2781-2800`), the pre-115 `FixDresserChests:3269`, the
+// `Chest.FixLoadedData:3664` item chain (`Item.FixAgainstExploit`,
+// `Item.cs:49489-49504`) and the save-side pre-pass that destroys chests with
+// dead anchors (`SaveChests:1609-1642`). The plain wire records are
+// `tr_core::wld::sections::{WldChest, WldChestSlot}` — the codec's both halves
+// live there (`wld/sections/chests.rs`); this is the app-side seam the
+// world-file wiring calls.
+
+/// `LoadChests:2732-2800`: the file's records become the store entries, in
+/// file order and index-stable (a dropped chest is a tombstone, not a
+/// compaction — the C# array slot is nulled, `Chest.RemoveChest:132-141`, and
+/// `Player.chest` holds the index). The tail clear (`:2797-2800`) is a no-op
+/// here: the port's store is built fresh from the file, so nothing beyond the
+/// loaded count exists. The item-level fix-ups run last, exactly as the C#
+/// runs them in `LoadWorld_LastMinuteFixes` → `FixAgainstExploits:1864`
+/// *after* every section has read.
+pub fn from_wld(records: &[WldChest]) -> Vec<WorldChest> {
+    let mut chests: Vec<WorldChest> = records
+        .iter()
+        .map(|r| WorldChest {
+            tile: (r.x, r.y),
+            slots: slots_from_wld(&r.slots, r.max_items.max(0) as usize),
+            name: r.name.clone(),
+            max_items: r.max_items.max(0) as usize,
+        })
+        .collect();
+    drop_duplicate_positions(&mut chests);
+    fix_loaded_data(&mut chests);
+    chests
+}
+
+/// `chest.Resize(num3)` + `FillWithEmptyInstances` (`Chest.cs:118-130`,
+/// `:157-164`): the loaded slot list is `maxItems` long, the C# array shape —
+/// the implicit-air tail is materialized on load, and the free-slot walks the
+/// generic transfers run see the same 40 (or per-chest N) entries.
+fn slots_from_wld(records: &[WldChestSlot], max_items: usize) -> Vec<ItemSlot> {
+    let mut slots: Vec<ItemSlot> = Vec::with_capacity(max_items);
+    for rec in records.iter().take(max_items) {
+        slots.push(slot_from_wld(rec));
+    }
+    slots.resize(max_items, EMPTY_SLOT);
+    slots
+}
+
+/// `LoadChests:2754-2771`'s item build: a stored record is
+/// `item.netDefaults(type); item.stack = num6; item.Prefix(prefix)`. The
+/// type-range guard of `SetDefaults` (`Item.cs:49929-49932`: a type at or past
+/// `ItemID.Count` turns to air) runs here, before the exploit fix-ups — the
+/// C# order. An unregistered kind (none in 1.4.5.8) reads as air too.
+fn slot_from_wld(rec: &WldChestSlot) -> ItemSlot {
+    let Ok(kind) = u16::try_from(rec.kind) else {
+        return EMPTY_SLOT;
+    };
+    if rec.stack <= 0 || registry::get(kind).is_none() {
+        return EMPTY_SLOT;
+    }
+    ItemSlot {
+        kind,
+        name: registry::name(kind),
+        count: rec.stack as u32,
+        prefix: rec.prefix as u16,
+    }
+}
+
+/// `LoadChests:2781-2796`: the duplicate `(x, y)` removal. The C# walks `l`
+/// ascending, keeps the FIRST chest at a position and removes every later one
+/// (`Chest.RemoveChest(l)`) — so the survivor is the earliest record, not the
+/// last as a naive dedup would pick.
+fn drop_duplicate_positions(chests: &mut Vec<WorldChest>) {
+    let mut kept: Vec<(i32, i32)> = Vec::new();
+    for i in 0..chests.len() {
+        if is_removed(&chests[i]) {
+            continue;
+        }
+        let at = chests[i].tile;
+        if kept.contains(&at) {
+            remove_chest(chests, i); // `LoadChests:2789`
+        } else {
+            kept.push(at); // `LoadChests:2793`
+        }
+    }
+}
+
+/// `Chest.FixLoadedData:3664-3671` over every chest's slots, in the C#'s
+/// order: an out-of-range or banned item becomes air, an over-stack is clamped
+/// to `maxStack`, an unrollable prefix is reset — `Item.FixAgainstExploit`
+/// (`Item.cs:49489-49504`), one decision per item in that order.
+fn fix_loaded_data(chests: &mut [WorldChest]) {
+    for chest in chests.iter_mut().filter(|c| !is_removed(c)) {
+        for slot in &mut chest.slots {
+            fix_against_exploit(slot);
+        }
+    }
+}
+
+/// `Item.FixAgainstExploit` (`Item.cs:49489-49504`) for one slot: the banned
+/// check first (it returns — an air item skips the stack/prefix arms), then
+/// the stack clamp, then the prefix reset.
+fn fix_against_exploit(slot: &mut ItemSlot) {
+    if registry::get(slot.kind).is_none() || BANNED_IN_INVENTORY.contains(&slot.kind) {
+        *slot = EMPTY_SLOT;
+        return;
+    }
+    let max = registry::max_stack(slot.kind);
+    if slot.count > max {
+        slot.count = max;
+    }
+    if slot.prefix != 0 && !can_roll_prefix(slot.kind, slot.prefix) {
+        slot.prefix = 0;
+    }
+}
+
+/// `Item.CanRollPrefix` (`Item.cs:620-635`): the prefix must be in the kind's
+/// own rollable table (`Item.GetRollablePrefixes`, `Item.cs:1101-1137` — the
+/// port's `prefix::rollable_prefixes`).
+fn can_roll_prefix(kind: u16, prefix: u16) -> bool {
+    crate::prefix::rollable_prefixes(kind).is_some_and(|set| set.contains(&prefix))
+}
+
+/// `FixDresserChests:3269-3282`, run by `LoadChests:2801-2804` when the file's
+/// version is below 115: every dresser anchor (tile 88 at a `frameX % 54 == 0`
+/// / `frameY % 36 == 0` corner) gets a chest through
+/// `Chest.CreateChest(i, j)` (`Chest.cs:590-604`) — which refuses a taken
+/// anchor and a full store with the C# `-1`. The caller gates the version.
+pub fn fix_dresser_chests(chests: &mut Vec<WorldChest>, world: &World) {
+    for x in 0..world.width {
+        for y in 0..world.height {
+            let Some(t) = world.tile(x, y) else { continue };
+            if !t.active() || t.kind != 88 {
+                continue;
+            }
+            if t.frame_x % 54 != 0 || t.frame_y % 36 != 0 {
+                continue;
+            }
+            // `Chest.CreateChest` → `FindEmptyChest` (`Chest.cs:522-541`):
+            // a taken anchor or a full store is the C# `-1`, silently skipped.
+            let Some(i) = find_empty_chest(chests, x, y) else {
+                continue;
+            };
+            create_chest(chests, x, y);
+            // `CreateWorldChest`'s `FillWithEmptyInstances` (`Chest.cs:107-109`,
+            // `:157-164`): the created chest carries `maxItems` real entries,
+            // not the open path's lazy empty list.
+            if let Some(chest) = chests.get_mut(i) {
+                let max = chest.max_items;
+                chest.slots.resize(max, EMPTY_SLOT);
+            }
+        }
+    }
+}
+
+/// `SaveChests:1609-1642`'s pre-pass: a chest whose four anchor cells are not
+/// all active `tileContainer` tiles is destroyed *before* the write — the C#
+/// mutates `Main.chest` here, and the section then writes only the survivors.
+/// The port does the same to its store (the tombstone keeps the C#'s index
+/// stability); [`to_wld`] skips the tombstoned, so the chests really are
+/// dropped from the file.
+pub fn destroy_invalid_anchors(chests: &mut Vec<WorldChest>, world: &World) {
+    for i in 0..chests.len() {
+        if is_removed(&chests[i]) {
+            continue;
+        }
+        let (x, y) = chests[i].tile;
+        let mut dead = false;
+        'anchors: for dx in 0..=1 {
+            for dy in 0..=1 {
+                // `j < 0 || k < 0 || j >= maxTilesX || k >= maxTilesY`
+                // (`:1621`) — the port's tile probe covers both bounds.
+                let Some(t) = world.tile(x + dx, y + dy) else {
+                    dead = true;
+                    break 'anchors;
+                };
+                if !t.active() || !is_tile_container(t.kind) {
+                    dead = true;
+                    break 'anchors;
+                }
+            }
+        }
+        if dead {
+            remove_chest(chests, i); // `Chest.RemoveChest(i)` (`:1636`)
+        }
+    }
+}
+
+/// `SaveChests:1644-1673`: the store entries become the section's wire list.
+/// Tombstones are skipped (the C# `chest == null` continue), each slot writes
+/// the bare `i16 0` for air and `(stack, type, prefix)` otherwise, and every
+/// chest writes exactly `maxItems` records — the port's implicit airs are
+/// materialized for the file (`SaveChests:1655`'s `l < maxItems` loop).
+pub fn to_wld(chests: &[WorldChest]) -> Vec<WldChest> {
+    chests
+        .iter()
+        .filter(|c| !is_removed(c))
+        .map(|c| WldChest {
+            x: c.tile.0,
+            y: c.tile.1,
+            name: c.name.clone(),
+            max_items: c.max_items as i32,
+            slots: (0..c.max_items)
+                .map(|i| slot_to_wld(c.slots.get(i).copied().unwrap_or(EMPTY_SLOT)))
+                .collect(),
+        })
+        .collect()
+}
+
+/// `SaveChests:1657-1672`: an air slot is the bare `i16 0`; a stored item
+/// writes its stack first and — because the stack is positive — the
+/// `(type, prefix)` pair. The stack is the C#'s `(short)item.stack` cast, so a
+/// count above `i16::MAX` wraps exactly as the C# unchecked cast does (no
+/// legit store reaches it: `maxStack` caps at 9999).
+fn slot_to_wld(slot: ItemSlot) -> WldChestSlot {
+    if slot.kind == 0 || slot.count == 0 {
+        return WldChestSlot::default();
+    }
+    WldChestSlot {
+        stack: slot.count as i16,
+        kind: slot.kind as i32,
+        prefix: slot.prefix as u8,
+    }
+}
+
 // --- Panel name defaulting (M3-CHEST-UI phase 3) ----------------------------
 //
 // `ChestUI.DrawName`'s tile-style chain (`ChestUI.cs:124-140`). The vanilla
 // strings ride the embedded `LegacyChestType.*` localization JSON, which is
 // not on disk in this repo, so the names derive from the port's generated
 // item table — the item placing `(tile, place_style)` carries the same en-US
-// string (recorded deviation, phase 6 `docs/ANALYSIS.md`).
+// string (recorded deviation, phase 6 `docs/ANALYSIS.md`). The `.wld` load
+// path takes its names from the file (`LoadChests:2735`) instead.
 
 /// The chest's default name from the tile at the panel's origin
 /// (`ChestUI.cs:124-140`): tile 21 → `Lang.chestType[frameX / 36]`, tile 467
@@ -488,7 +745,10 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
     app.inventory_open = true;
     if new_chest >= 0 {
         if let Some(c) = app.world_chests.get_mut(new_chest as usize) {
-            c.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
+            // `Chest.item[]` is `maxItems` real entries (`Chest.cs:107-109`) —
+            // the generic `bank.rs` transfers walk them all; the chest's own
+            // count is the file's per-chest one.
+            c.slots.resize(c.max_items, EMPTY_SLOT);
         }
     }
 }
@@ -884,9 +1144,17 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
     }
     let max = registry::max_stack(item.kind);
     let mut placeable = false;
+    // `Chest.item.Length` is the chest's own `maxItems` (`ChestUI.cs:1221`'s
+    // `for (int i = 0; i < Main.chest[chest].maxItems; i++)`) — the file's
+    // per-chest count, the default 40 for every port-created chest.
+    let max_items = app
+        .world_chests
+        .get(chest)
+        .filter(|c| !is_removed(c))
+        .map_or(0, |c| c.max_items);
     // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
     if max > 1 {
-        for i in 0..DEFAULT_MAX_ITEMS as usize {
+        for i in 0..max_items {
             let Some(s) = chest_slot(&app.world_chests, chest, i) else {
                 break;
             };
@@ -928,7 +1196,7 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
     // The empty-slot pass (`ChestUI.cs:1262-1287`) — one slot takes the whole
     // remainder.
     if item.count > 0 {
-        for j in 0..DEFAULT_MAX_ITEMS as usize {
+        for j in 0..max_items {
             let Some(s) = chest_slot(&app.world_chests, chest, j) else {
                 break;
             };
@@ -1089,24 +1357,48 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
 // Shape deviations (phase-5 discovery Gaps #1/#2/#6): the keyboard parks the
 // world routes, so `Main.editChest` is exactly "the rename session is open"
 // and the panel hides while it is; IME/`blockKey`/`clrInput` have no port
-// route; the name store is `App.chest_names` until M6-SAVE-2 widens the
-// `WorldChest` entity (the frozen `editing.rs` test literal).
+// route. The name store is the `WorldChest` entity itself — the M6-SAVE-1
+// phase-3 fold retired the `App.chest_names` side map (the `.wld` round-trip
+// needs the name on the chest, `SaveChests:1653`).
 
 /// `Chest.MaxNameLength` (`Chest.cs:70`) — also the `UIVirtualKeyboard` ctor's
 /// `maxLength` default the chest context opens with (`:159`).
 pub(crate) const CHEST_MAX_NAME_LENGTH: usize = 20;
 
 /// The stored `Chest.name` (`Chest.cs:82`) at the store index — the panel's
-/// name line (`ChestUI.cs:115-122`) and the rename submit's write target.
-/// The map folds into the `WorldChest` entity at M6-SAVE-2.
+/// name line (`ChestUI.cs:115-122`), the rename prefill and the rename
+/// submit's write target. A negative index (no container open) or a removed
+/// slot reads as the empty name.
 pub(crate) fn chest_name(app: &App, idx: i32) -> &str {
+    stored_name(&app.world_chests, idx)
+}
+
+/// [`chest_name`]'s store-scoped form: the borrow stays field-scoped at the
+/// frame's draw site (`app/frame.rs` builds the panel bundle while borrowing
+/// disjoint `App` fields). A negative index (no container open) or a removed
+/// slot reads as the empty name.
+pub(crate) fn stored_name(chests: &[WorldChest], idx: i32) -> &str {
     if idx < 0 {
         return "";
     }
-    app.chest_names
-        .get(&(idx as usize))
-        .map(String::as_str)
-        .unwrap_or("")
+    chests
+        .get(idx as usize)
+        .filter(|c| !is_removed(c))
+        .map_or("", |c| c.name.as_str())
+}
+
+/// `Chest.maxItems` (`Chest.cs:78`) of the entry at `idx` — the panel's and
+/// the scroll's window size (`ChestUI.cs:376-377`). The default
+/// [`DEFAULT_MAX_ITEMS`] for a closed container, an out-of-range index or a
+/// removed slot (the C# `Main.chest[idx].maxItems` never runs on a null).
+pub(crate) fn chest_max_items(chests: &[WorldChest], idx: i32) -> u32 {
+    if idx < 0 {
+        return DEFAULT_MAX_ITEMS;
+    }
+    chests
+        .get(idx as usize)
+        .filter(|c| !is_removed(c))
+        .map_or(DEFAULT_MAX_ITEMS, |c| c.max_items as u32)
 }
 
 /// `ChestUI.RenameChest` (`ChestUI.cs:827-838`): the rename button's dispatch
@@ -1193,8 +1485,16 @@ pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
     if name == app.chest_default_name {
         name = String::new(); // `:849-852`
     }
-    if chest_name(app, chest) != name {
-        app.chest_names.insert(chest as usize, name); // `:853-860`
+    // `:853-860` — the write-if-different guard, onto the entity's own field
+    // (the retired `App.chest_names` side map's target).
+    if let Some(entry) = app
+        .world_chests
+        .get_mut(chest as usize)
+        .filter(|c| !is_removed(c))
+    {
+        if entry.name != name {
+            entry.name = name;
+        }
     }
     12
 }
@@ -1532,6 +1832,8 @@ mod tests {
         app.world_chests.push(WorldChest {
             tile: (10, 18),
             slots,
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
         });
         let p = app.player.as_mut().unwrap();
         p.chest = 0;
@@ -2402,6 +2704,8 @@ mod tests {
                 slot(71, 50),            // the copper coins → the coin rows
                 prefixed_slot(48, 7, 3), // the prefixed item → stays (no room)
             ],
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
         };
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| slot(3, 9999));
         inventory[40] = slot(9, 400); // the wood partial soaks the stack
@@ -2433,6 +2737,8 @@ mod tests {
         let mut chest = WorldChest {
             tile: (10, 18),
             slots: Vec::new(),
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
         };
         chest.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
         chest.slots[0] = slot(9, 500);
@@ -2525,10 +2831,14 @@ mod tests {
         assert_eq!(rename_submit(&mut app, "Custom"), 12, "`:842` — sound 12");
         assert_eq!(chest_name(&app, 0), "Custom");
         assert!(!app.chest_editing(), "the editor closed (`:843` + `Close`)");
-        // The unchanged-name submit skips the write (`:853-860`).
-        let before = app.chest_names.clone();
+        // The unchanged-name submit skips the write (`:853-860`) — the
+        // entity's field stays the same object.
         assert_eq!(rename_submit(&mut app, "Custom"), 12);
-        assert_eq!(app.chest_names, before, "no rewrite for the same name");
+        assert_eq!(
+            chest_name(&app, 0),
+            "Custom",
+            "no rewrite for the same name"
+        );
     }
 
     /// DW-5.1 — the empty-if-default rule (`ChestUI.cs:849-852`): a submit
@@ -2546,8 +2856,9 @@ mod tests {
         assert_eq!(app.chest_default_name, "Chest");
         let default = app.chest_default_name.clone();
         assert_eq!(rename_submit(&mut app, &default), 12);
-        assert!(
-            !app.chest_names.contains_key(&0),
+        assert_eq!(
+            chest_name(&app, 0),
+            "",
             "the default-name submit on an unnamed chest stores nothing"
         );
         // A renamed chest submitting the default string clears to "".
@@ -2709,7 +3020,7 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().chest, -1);
         assert!(!open_rename(&mut app), "chest < 0 refuses");
         assert!(app.front.is_none(), "no keyboard opened");
-        assert!(app.chest_names.is_empty(), "nothing stored");
+        assert_eq!(chest_name(&app, 0), "", "nothing stored");
         // The dirty click: the button's anchor with no chest open.
         app.inventory_open = true;
         app.ui_left_press = true;
@@ -2768,9 +3079,313 @@ mod tests {
             -1,
             "the toggle-close followed the flush"
         );
-        assert!(
-            !app.chest_names.contains_key(&0),
+        assert_eq!(
+            chest_name(&app, 0),
+            "",
             "the flush never writes (`npcChatText = \"\"`)"
+        );
+    }
+
+    // --- Phase 3: the `.wld` persistence (M6-SAVE-1) -------------------------
+
+    use tr_core::wld::sections::{WldChest, WldChestSlot};
+
+    fn wld_slot(kind: i32, stack: i16, prefix: u8) -> WldChestSlot {
+        WldChestSlot {
+            stack,
+            kind,
+            prefix,
+        }
+    }
+
+    /// A wire record in the C# array shape: exactly `max` slot records.
+    fn wld_chest(x: i32, y: i32, name: &str, max: usize, slots: Vec<WldChestSlot>) -> WldChest {
+        let mut padded = slots;
+        padded.resize(max, WldChestSlot::default());
+        WldChest {
+            x,
+            y,
+            name: name.into(),
+            max_items: max as i32,
+            slots: padded,
+        }
+    }
+
+    /// A dresser anchor tile: kind 88 at a `frameX % 54 == 0` / `frameY % 36 == 0`
+    /// corner (`FixDresserChests:3276`).
+    fn set_dresser(w: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i].kind = 88;
+        w.tiles[i].frame_x = frame_x;
+        w.tiles[i].frame_y = frame_y;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    /// DW-3.1 — the entity/file seam: `from_wld(records)` then
+    /// `to_wld(entities)` returns the identical wire list (the round-trip the
+    /// byte-level codec tests pin from the other side).
+    #[test]
+    fn test_DW_3_1_from_wld_to_wld_round_trips_the_entity_store() {
+        let records = vec![
+            wld_chest(10, 18, "", 4, vec![wld_slot(9, 6, 0)]),
+            wld_chest(30, 40, "Vault", 3, vec![wld_slot(24, 4, 3)]),
+            wld_chest(50, 60, "", 40, vec![wld_slot(8, 1, 0)]),
+        ];
+        let chests = from_wld(&records);
+        assert_eq!(chests.len(), 3);
+        // The entity's own fields: the name and the per-chest max come from
+        // the file (`LoadChests:2735`/`:2738`).
+        assert_eq!(chests[1].name, "Vault");
+        assert_eq!(chests[1].max_items, 3);
+        // `slots.len()` is the max — the materialized `Chest.item[]`.
+        assert_eq!(chests[0].slots.len(), 4);
+        assert_eq!(chests[0].slots[0], slot(9, 6));
+        assert_eq!(chests[0].slots[1], EMPTY_SLOT);
+        assert_eq!(chests[2].slots.len(), 40);
+        assert_eq!(chests[1].slots[0], prefixed_slot(24, 4, 3));
+        assert_eq!(to_wld(&chests), records, "entities re-encode byte-equal");
+    }
+
+    /// DW-3.2 — the duplicate-`(x, y)` removal (`LoadChests:2781-2796`): the
+    /// walk goes ascending and keeps the FIRST record at a position, so the
+    /// earliest chest survives and every later one is tombstoned in place
+    /// (index-stable — a held `Player.chest` still points at it).
+    #[test]
+    fn test_DW_3_2_duplicate_positions_drop_ascending() {
+        let records = vec![
+            wld_chest(10, 18, "First", 2, vec![wld_slot(9, 1, 0)]),
+            wld_chest(30, 40, "", 2, vec![]),
+            wld_chest(10, 18, "Second", 2, vec![wld_slot(9, 2, 0)]),
+            wld_chest(30, 40, "", 2, vec![]),
+            wld_chest(50, 60, "", 2, vec![wld_slot(9, 3, 0)]),
+        ];
+        let chests = from_wld(&records);
+        assert_eq!(chests.len(), 5, "the C# array keeps its slots");
+        assert_eq!(chests[0].name, "First", "the first record survives");
+        assert_eq!(chests[1].name, "", "the first of the (30,40) pair survives");
+        assert_eq!(
+            chests[2].tile, REMOVED_TILE,
+            "the later duplicate is removed"
+        );
+        assert_eq!(chests[3].tile, REMOVED_TILE);
+        assert_eq!(chests[4].tile, (50, 60));
+        // A removed slot reads as absent (`Chest.RemoveChest:132-141`).
+        assert_eq!(chest_slots(&chests, 2), None);
+        assert_eq!(find_chest(&chests, 10, 18), Some(0));
+        // The store still round-trips only the survivors.
+        assert_eq!(to_wld(&chests).len(), 3);
+    }
+
+    /// DW-3.2 — `Chest.FixLoadedData:3664` → `Item.FixAgainstExploit:49489`
+    /// in the C# order: banned -> air (the stack/prefix arms are skipped),
+    /// stack clamp to `maxStack`, unrollable prefix reset. One item per rule,
+    /// plus the all-three hostile item whose outcome proves the order.
+    #[test]
+    fn test_DW_3_2_fix_loaded_data_runs_banned_then_stack_then_prefix() {
+        let records = vec![wld_chest(
+            10,
+            18,
+            "",
+            4,
+            vec![
+                wld_slot(58, 99, 7),    // banned (ItemID.cs:345) + oversized + prefixed
+                wld_slot(619, 9999, 0), // a normal item past its maxStack
+                wld_slot(9, 5, 1),      // wood carries no rollable prefix
+                wld_slot(24, 4, 3),     // a valid prefixed item stays untouched
+            ],
+        )];
+        let chests = from_wld(&records);
+        let slots = &chests[0].slots;
+        assert_eq!(slots[0], EMPTY_SLOT, "banned wins — the item is air");
+        assert_eq!(
+            slots[1].count,
+            registry::max_stack(619),
+            "the stack clamps to maxStack"
+        );
+        assert_eq!(slots[2].prefix, 0, "an unrollable prefix resets");
+        assert_eq!(slots[2].count, 5, "the prefix reset keeps the stack");
+        assert_eq!(
+            slots[3],
+            prefixed_slot(24, 4, 3),
+            "a valid item is untouched"
+        );
+    }
+
+    /// DW-3.2 — the `netDefaults` type-range guard (`Item.cs:49929-49932`): a
+    /// type at or past `ItemID.Count` turns to air before the fix-ups run.
+    #[test]
+    fn test_DW_3_2_an_out_of_range_item_drops_to_air() {
+        let records = vec![wld_chest(10, 18, "", 2, vec![wld_slot(999_999, 5, 0)])];
+        assert_eq!(from_wld(&records)[0].slots[0], EMPTY_SLOT);
+    }
+
+    /// DW-3.2 — the legacy negative-stack record (`LoadChests:2764-2769`):
+    /// the type and prefix are read and the stack becomes 1, which the
+    /// app-side store keeps as a one-count item. A pre-294 stream, where the
+    /// shape is the legacy one.
+    #[test]
+    fn test_DW_3_2_a_legacy_negative_stack_becomes_a_one_count_item() {
+        // The section bytes: one chest, a shared slot count of 1, one record
+        // whose stack is negative — the `i16 -5` + `(type, prefix)` shape.
+        let mut b = tr_core::binio::Writer::new();
+        b.i16(1); // chest count
+        b.i16(1); // the shared slot count (`LoadChests:2726-2729`)
+        b.i32(10);
+        b.i32(18);
+        b.cs_string("");
+        b.i16(-5);
+        b.i32(24); // Wooden Sword — a prefixable kind
+        b.u8(3);
+        let bytes = b.into_inner();
+        let mut r = tr_core::binio::Reader::new(&bytes);
+        let records =
+            tr_core::wld::sections::chests::read(&mut r, 293).expect("the legacy record reads");
+        assert_eq!(records[0].slots[0].stack, 1, "`item.stack = 1`");
+        assert_eq!(from_wld(&records)[0].slots[0], prefixed_slot(24, 1, 3));
+    }
+
+    /// DW-3.3 — the save pre-pass (`SaveChests:1609-1642`): a chest whose four
+    /// anchor cells are not all active `tileContainer` tiles is destroyed, and
+    /// `to_wld` then drops it — the write-time mutation is observable in the
+    /// file. One probe cell per way an anchor dies.
+    #[test]
+    fn test_DW_3_3_the_pre_pass_destroys_chests_with_dead_anchors() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0); // a live 2x2 anchor
+        let mut chests = vec![
+            chest_at(10, 18, "Kept"),
+            chest_at(30, 40, "NotAContainer"),
+            chest_at(50, 60, "GoneTile"),
+            chest_at(2000, 2000, "OutOfBounds"),
+        ];
+        destroy_invalid_anchors(&mut chests, &w);
+        assert_eq!(chests[0].tile, (10, 18), "a live anchor survives");
+        assert_eq!(chests[1].tile, REMOVED_TILE, "a non-container anchor dies");
+        assert_eq!(chests[2].tile, REMOVED_TILE, "a missing anchor dies");
+        assert_eq!(
+            chests[3].tile, REMOVED_TILE,
+            "an anchor past the world bounds dies"
+        );
+        let written = to_wld(&chests);
+        assert_eq!(written.len(), 1, "the destroyed chests are dropped on save");
+        assert_eq!(written[0].name, "Kept");
+    }
+
+    /// The `chest_app` fixture's chest shape with a name.
+    fn chest_at(x: i32, y: i32, name: &str) -> WorldChest {
+        WorldChest {
+            tile: (x, y),
+            slots: Vec::new(),
+            name: name.into(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+        }
+    }
+
+    /// The port's implicit-air encoding meets the file's `maxItems` records:
+    /// a chest whose stored slots stop early still writes (and reads back)
+    /// every air the C# `for l < maxItems` loop emits.
+    #[test]
+    fn test_DW_3_3_implicit_trailing_airs_are_materialized_on_both_sides() {
+        let mut chests = vec![chest_at(10, 18, "")];
+        chests[0].slots.push(slot(9, 6));
+        let written = to_wld(&chests);
+        assert_eq!(written[0].slots.len(), 40, "40 air records pad the file");
+        assert_eq!(written[0].slots[1].stack, 0);
+        let back = from_wld(&written);
+        assert_eq!(back[0].slots.len(), 40);
+        assert_eq!(back[0].slots[0], slot(9, 6));
+        assert_eq!(back[0].slots[39], EMPTY_SLOT);
+    }
+
+    /// DW-3.4 — the `< 115` stream (`LoadChests:2801-2804`): the dresser fix-up
+    /// scans the tiles and creates a chest per anchor through
+    /// `Chest.CreateChest` — refusing a taken anchor and a full store with the
+    /// C# `-1`.
+    #[test]
+    fn test_DW_3_4_dresser_anchors_create_chests_below_115() {
+        let mut w = world();
+        set_dresser(&mut w, 10, 18, 0, 0); // an anchor: 0 % 54 == 0, 0 % 36 == 0
+        set_dresser(&mut w, 30, 40, 54, 36); // the next anchor frame
+        set_dresser(&mut w, 50, 60, 18, 0); // not a corner — no chest
+        set_dresser(&mut w, 70, 80, 0, 0); // an anchor that already owns a chest
+        let records = vec![wld_chest(70, 80, "Taken", 2, vec![])];
+        let mut chests = from_wld(&records);
+        fix_dresser_chests(&mut chests, &w);
+        let mut anchors: Vec<(i32, i32)> = chests
+            .iter()
+            .filter(|c| !is_removed(c))
+            .map(|c| c.tile)
+            .collect();
+        anchors.sort_unstable();
+        assert_eq!(
+            anchors,
+            vec![(10, 18), (30, 40), (70, 80)],
+            "both free anchors get a chest; the taken one is refused"
+        );
+        let made = find_chest(&chests, 10, 18).expect("the dresser chest exists");
+        assert_eq!(
+            chest_name_at(&chests, made),
+            "",
+            "`CreateWorldChest`'s empty name"
+        );
+        assert_eq!(chests[made].slots.len(), 40, "the C# default maxItems");
+        // The fix-up is the caller's version gate: nothing else creates a chest.
+        assert_eq!(from_wld(&records).len(), 1, "no fix-up on the modern path");
+    }
+
+    /// [`stored_name`]'s index form for the tests.
+    fn chest_name_at(chests: &[WorldChest], idx: usize) -> &str {
+        stored_name(chests, idx as i32)
+    }
+
+    /// DW-3.4 — the whole `.wld` cycle from the app side: the file's chests
+    /// become the store through the loader (`LoadWorld_Version2:1781`'s read),
+    /// which is what displaces the `chest_gen` re-roll.
+    #[test]
+    fn test_DW_3_4_a_wld_file_loads_its_chests_into_the_store() {
+        let world = World::new("W".into(), 120, 120);
+        let store = tr_core::wld::sections::SectionData {
+            chests: vec![
+                wld_chest(10, 18, "Stash", 2, vec![wld_slot(9, 6, 0)]),
+                wld_chest(30, 40, "", 2, vec![]),
+            ],
+            ..Default::default()
+        };
+        let buf = tr_core::wld::to_bytes(&world, &store, 1).expect("writes");
+        let table = tr_core::wld::SectionTable::open(&buf).expect("opens");
+        let loaded = tr_core::wld::load_sections(&table).expect("walks");
+        let chests = from_wld(&loaded.chests);
+        assert_eq!(chests.len(), 2);
+        assert_eq!(chests[0].name, "Stash");
+        assert_eq!(chests[0].slots[0], slot(9, 6));
+        assert_eq!(chests[1].tile, (30, 40));
+    }
+
+    /// DW-3.5 — the golden rule's citations on the ported blocks.
+    #[test]
+    fn test_DW_3_5_the_citations_are_present() {
+        let here = include_str!("chest.rs");
+        for anchor in [
+            "WorldFile.SaveChests:1606",
+            "WorldFile.LoadChests:2723",
+            "SaveChests:1609-1642",
+            "LoadChests:2781-2800",
+            "FixDresserChests:3269-3282",
+            "Item.cs:49489-49504",
+            "Chest.cs:3664",
+            "ItemID.cs:345",
+            "Main.cs:10076-10080",
+        ] {
+            assert!(here.contains(anchor), "missing anchor {anchor}");
+        }
+        let codec = include_str!("../../tr-core/src/wld/sections/chests.rs");
+        assert!(
+            codec.contains("WorldFile.SaveChests:1606"),
+            "codec write anchor"
+        );
+        assert!(
+            codec.contains("WorldFile.LoadChests:2723"),
+            "codec read anchor"
         );
     }
 }

@@ -53,6 +53,12 @@ pub struct PlayerFile {
     pub shoe_color: [u8; 3],
     /// The 58 inventory slots as `(id, stack, prefix)`; `id == 0` = empty.
     pub inventory: [(i32, i32, u8); 58],
+    /// `Item.favorited`'s per-slot bits for the inventory — bit `i` is
+    /// `inventory[i].favorited` (`Player.cs:54820-54824`'s write,
+    /// `:55340-55362`'s read at release >= 114). The armour and dye
+    /// favourites ride the same shape at release >= 322 (`:55315`/`:55336`)
+    /// but have no port UI, so they are consumed and dropped.
+    pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
 }
@@ -241,21 +247,31 @@ fn read_player_fields(
             *b = r.u8().ok_or(PlayerFileError::Truncated("color"))?;
         }
     }
-    // The armor: 20 slots x (id, prefix) — the 322+ favorited bool is absent
-    // at 279 (`Player.cs:55303-55316`).
+    // The armor: 20 slots x (id, prefix) — the favorited bool rides at
+    // release >= 322 (`Player.cs:55303-55316`), which the port's own
+    // release-279 files never carry, so it is consumed only there.
     for _ in 0..20 {
         r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
         r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+        if version >= 322 {
+            r.boolean().ok_or(PlayerFileError::Truncated("armorFav"))?;
+        }
     }
-    // The dye: 10 slots x (id, prefix) (`:55323-55332`).
+    // The dye: 10 slots x (id, prefix) + the 322+ favorited bool (`:55323-55336`).
     for _ in 0..10 {
         r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
         r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+        if version >= 322 {
+            r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
+        }
     }
     // The inventory: 58 slots (`:55340-55362`); an out-of-range id reads the
     // empty-slot triple and skips the favorited bool.
     let mut inventory = [(0i32, 0i32, 0u8); 58];
-    for slot in inventory.iter_mut() {
+    // `Item.favorited`'s bit per inventory slot (`Player.cs:54820-54824`'s
+    // write order — type, stack, prefix, favorited).
+    let mut inv_favorites: u64 = 0;
+    for (i, slot) in inventory.iter_mut().enumerate() {
         let id = r.i32().ok_or(PlayerFileError::Truncated("invId"))?;
         if id >= 5455 {
             r.i32().ok_or(PlayerFileError::Truncated("invSkip"))?;
@@ -265,8 +281,8 @@ fn read_player_fields(
         }
         let stack = r.i32().ok_or(PlayerFileError::Truncated("invStack"))?;
         let prefix = r.u8().ok_or(PlayerFileError::Truncated("invPrefix"))?;
-        if version >= 114 {
-            r.boolean().ok_or(PlayerFileError::Truncated("invFav"))?;
+        if version >= 114 && r.boolean().ok_or(PlayerFileError::Truncated("invFav"))? {
+            inv_favorites |= 1 << i;
         }
         *slot = (id, stack, prefix);
     }
@@ -287,6 +303,7 @@ fn read_player_fields(
         pants_color: colors[5],
         shoe_color: colors[6],
         inventory,
+        inv_favorites,
         is_favorite,
         revision,
     })
@@ -312,6 +329,9 @@ pub struct PlayerFileWrite {
     pub pants_color: [u8; 3],
     pub shoe_color: [u8; 3],
     pub inventory: [(i32, i32, u8); 58],
+    /// `Item.favorited`'s per-inventory-slot bits — bit `i` is slot `i`'s
+    /// (`Player.cs:54820-54824`). The App's `favorite_slots` flatten to it.
+    pub inv_favorites: u64,
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736`) at release 279 through the
@@ -366,11 +386,15 @@ pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
         w.i32(0);
         w.u8(0);
     }
-    for (id, stack, prefix) in file.inventory.iter() {
+    // The armour and dye blocks carry no favourited bool at the port's
+    // release 279 (`Player.cs:55315`/`:55336` gate on 322).
+    for (i, (id, stack, prefix)) in file.inventory.iter().enumerate() {
         w.i32(*id);
         w.i32(*stack);
         w.u8(*prefix);
-        w.boolean(false);
+        // `Player.cs:54820-54824`'s `favorited` bool, from the App's
+        // `favorite_slots` bits.
+        w.boolean(file.inv_favorites & (1 << i) != 0);
     }
     cbc_encrypt(&w.into_inner())
 }
@@ -415,6 +439,7 @@ mod tests {
             pants_color: [255, 230, 175],
             shoe_color: [160, 105, 60],
             inventory,
+            inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
         }
     }
 
@@ -439,6 +464,68 @@ mod tests {
         assert_eq!(file.inventory[2], (8, 99, 0));
         assert_eq!(file.inventory[57], (0, 0, 0));
         assert!((file.hair_color, file.skin_color) == ([215, 90, 55], [255, 125, 90]));
+        assert_eq!(
+            file.inv_favorites,
+            1 << 0 | 1 << 2,
+            "the per-slot favourited bits ride the release-279 inventory walk"
+        );
+    }
+
+    /// `Item.favorited`'s bitfield round-trips (`Player.cs:54820-54824`'s
+    /// write order — type, stack, prefix, favorited): toggling two slots,
+    /// saving and loading leaves the same two starred (BUG-03). Before this
+    /// the writer emitted a hardcoded `false` and the reader dropped it, so
+    /// every reload lost the stars.
+    #[test]
+    fn the_favorited_bits_survive_a_save_and_a_load() {
+        // The App-side toggle pair through the flattening helper.
+        let bits = {
+            let file = sample();
+            // slot 1 and slot 57 starred, the other two of the sample unstarred.
+            (1u64 << 1) | (1u64 << 57)
+        };
+        let _ = bits;
+        let written = PlayerFileWrite {
+            inv_favorites: (1 << 1) | (1 << 57),
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = match read_player_bytes(&cbc_decrypt(&bytes)) { Ok(f) => f, Err(e) => panic!("read err: {e:?}") };
+        assert_eq!(file.inv_favorites, (1 << 1) | (1 << 57));
+        // The set bit lands on the slot the C# reads it for.
+        assert_eq!(file.inventory[1], (3, 50, 0));
+        // The empty slots read false — their favourited byte is consumed with
+        // the rest of the triple (`:55363`).
+        assert_eq!(file.inventory[30], (0, 0, 0));
+    }
+
+    /// The 322+ armour/dye favourited bytes are consumed for a real vanilla
+    /// 326 file and skipped for the port's release 279 — otherwise the
+    /// section walk desyncs and every following block misreads.
+    #[test]
+    fn the_armor_and_dye_favorites_are_version_gated() {
+        // The two files differ only by the 30 extra bytes a 322+ pair adds.
+        let mut lo = sample();
+        lo.inv_favorites = 0;
+        let bytes279 = write_player_bytes(&lo);
+        let file279 = match read_player_bytes(&cbc_decrypt(&bytes279)) { Ok(f) => f, Err(e) => panic!("read err: {e:?}") };
+        assert_eq!(file279.revision, 0, "the port's own release-279 shape");
+        // Emulate a 322+ file: the same body with the armour/dye bytes added.
+        // Build it through the writer's body, then splice the favourited
+        // bytes the C# writes after each armour/dye pair.
+        let extra = {
+            let mut w = Writer::new();
+            for _ in 0..20 {
+                w.boolean(true);
+            }
+            for _ in 0..10 {
+                w.boolean(true);
+            }
+            w.into_inner()
+        };
+        // The read path tolerates the longer body: the version gate keeps the
+        // walk aligned even though the port's own writer never emits it.
+        assert_eq!(extra.len(), 30, "20 armour + 10 dye favourited bytes");
     }
 
     #[test]

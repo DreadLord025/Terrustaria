@@ -1844,6 +1844,15 @@ fn npc_seed(
         | crate::npc::NpcKind::TravellingMerchant
         | crate::npc::NpcKind::Angler
         | crate::npc::NpcKind::SleepingAngler
+        | crate::npc::NpcKind::Wizard
+        | crate::npc::NpcKind::Mechanic
+        | crate::npc::NpcKind::Stylist
+        | crate::npc::NpcKind::TaxCollector
+        | crate::npc::NpcKind::Golfer
+        | crate::npc::NpcKind::Zoologist
+        | crate::npc::NpcKind::Princess
+        | crate::npc::NpcKind::DyeTrader
+        | crate::npc::NpcKind::PartyGirl
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
@@ -1880,7 +1889,13 @@ fn npc_seed(
         | crate::npc::NpcKind::GoblinThief
         | crate::npc::NpcKind::GoblinWarrior
         | crate::npc::NpcKind::GoblinArcher
-        | crate::npc::NpcKind::BoundGoblin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::BoundGoblin
+        | crate::npc::NpcKind::BoundWizard
+        | crate::npc::NpcKind::BoundMechanic
+        | crate::npc::NpcKind::WebbedStylist
+        | crate::npc::NpcKind::SleepingGolfer => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
         crate::npc::NpcKind::EaterOfSouls
         | crate::npc::NpcKind::Hornet
         | crate::npc::NpcKind::MeteorHead => {
@@ -1949,12 +1964,26 @@ fn npc_seed(
         | crate::npc::NpcKind::DD2DarkMage
         | crate::npc::NpcKind::DD2Betsy
         | crate::npc::NpcKind::DD2WitherBeast
+        | crate::npc::NpcKind::DD2WyvernT1
+        | crate::npc::NpcKind::DD2WyvernT2
+        | crate::npc::NpcKind::DD2WyvernT3
+        | crate::npc::NpcKind::DD2DarkMageT3
+        | crate::npc::NpcKind::DD2WitherBeastT3
+        | crate::npc::NpcKind::DD2DrakinT2
+        | crate::npc::NpcKind::DD2DrakinT3
+        | crate::npc::NpcKind::DD2KoboldWalkerT2
+        | crate::npc::NpcKind::DD2KoboldWalkerT3
+        | crate::npc::NpcKind::DD2KoboldFlyerT2
+        | crate::npc::NpcKind::DD2KoboldFlyerT3
+        | crate::npc::NpcKind::DD2OgreT2
+        | crate::npc::NpcKind::DD2OgreT3
         | crate::npc::NpcKind::DD2Bartender
         | crate::npc::NpcKind::DD2EterniaCrystal
         | crate::npc::NpcKind::AncientCultist
         | crate::npc::NpcKind::StardustTower
         | crate::npc::NpcKind::NebulaTower
         | crate::npc::NpcKind::SolarTower
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::MoonLordHead
         | crate::npc::NpcKind::MoonLordHand
         | crate::npc::NpcKind::MoonLordCore
@@ -1979,7 +2008,10 @@ fn npc_seed(
         | crate::npc::NpcKind::StardustWormHead
         | crate::npc::NpcKind::SolarSpearman
         | crate::npc::NpcKind::SolarSelenian
+        | crate::npc::NpcKind::VortexTower
+        | crate::npc::NpcKind::DD2LanePortal
         | crate::npc::NpcKind::StardustCellBig
+        | crate::npc::NpcKind::VortexTower
         | crate::npc::NpcKind::StardustCellSmall
         | crate::npc::NpcKind::StardustJellyfishBig
         | crate::npc::NpcKind::NebulaBeast

@@ -214,6 +214,50 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
         .atan2((mouse_world - Vec2::new(cx, cy)).x);
 }
 
+/// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
+/// gate): 121-126 plus the amber bolt 597.
+const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
+
+use crate::projectile::GemStaffFeatures;
+
+/// `Utils.Remap` (`Utils.cs`): the value's position in [from_min, from_max]
+/// mapped onto [to_min, to_max] - the gem-staff spread's speed curve.
+fn remap_gem(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = if from_max > from_min {
+        ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    to_min + (to_max - to_min) * t
+}
+
+/// `Player.LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`): the
+/// point pulled into the 1920x1200 box centred on the player (the box itself
+/// clamped to the world borders) by the per-axis scale.
+fn limit_point_to_player_reachable_area(
+    center: Vec2,
+    point: Vec2,
+    world: &tr_core::World,
+) -> Vec2 {
+    let half = Vec2::new(1920.0 * 0.5, 1200.0 * 0.5);
+    let (world_w, world_h) = (world.width as f32 * 16.0, world.height as f32 * 16.0);
+    let bx0 = (center.x - half.x).max(0.0);
+    let bx1 = (center.x + half.x).min(world_w.max(bx0));
+    let by0 = (center.y - half.y).max(0.0);
+    let by1 = (center.y + half.y).min(world_h.max(by0));
+    let mid = Vec2::new((bx0 + bx1) * 0.5, (by0 + by1) * 0.5);
+    let off = point - mid;
+    let (hw, hh) = ((bx1 - bx0) * 0.5, (by1 - by0) * 0.5);
+    let mut scale = 1.0f32;
+    if off.x.abs() > hw {
+        scale = scale.min(hw / off.x.abs());
+    }
+    if off.y.abs() > hh {
+        scale = scale.min(hh / off.y.abs());
+    }
+    mid + off * scale
+}
+
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
@@ -238,7 +282,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42822`), so the press/release edges stay current even on
-    // frames where the cursor is over the HUD or a panel.
+    // frames where the cursor is over the HUD or a panel. The *previous*
+    // frame's edges are captured before the overwrite: the use gates below
+    // must compare this frame's press against last frame's state (the C#
+    // `controlUseItem && releaseUseItem` pair), not against the same frame's.
+    let prev_mine_down = app.mine_prev_down;
+    let prev_mine_released = app.mine_released;
+    let prev_place_down = app.place_prev_down;
+    let prev_place_released = app.place_released;
     app.place_prev_down = app.place_down;
     app.mine_prev_down = app.mine_down;
     app.place_released = !app.place_down;
@@ -321,6 +372,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
+        // 44028-44034`): the 3601 use gates on `downedGolemBoss && hardMode
+        // && !AnyDanger && !AnyoneNearCultists` and calls
+        // `WorldGen.StartImpendingDoom(720)` — the countdown's item value
+        // (`NPC.cs:6037`).
+        if held.kind == 3601 && held.count > 0 && use_celestial_sigil(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
         // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
         // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
@@ -370,6 +429,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     app.edit_target = Some((tx, ty));
+    // `Player.cs:25446` — the smart cursor re-points the tile target
+    // (`SmartCursorHelper.SmartCursorLookup`) before the mining/placement
+    // arms below run; the vanilla writeback sets `Player.tileTargetX/Y`
+    // alongside `Main.SmartCursorX/Y` (`:157-162`).
+    let (tx, ty) = match super::smart_cursor::repoint(app, tx, ty, (world_pos.x, world_pos.y)) {
+        Some((sx, sy)) => {
+            app.edit_target = Some((sx, sy));
+            (sx, sy)
+        }
+        None => (tx, ty),
+    };
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");
@@ -453,12 +523,41 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // cost, the throw damage and the crit all read the instance values.
     let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
     let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-    let held_use_ammo = shooter_use_ammo(held.kind);
-    let throw_ready = shooter_auto_reuse(held.kind) || (app.mine_released && !app.mine_prev_down);
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    // `Player.channel` (`Player.cs:52958-52968`): while the button is held
+    // on a `channel` item the aim target rides the player for the aiStyle-9
+    // spells (`AI_009_MagicMissiles`'s owner block, `Projectile.cs:43239-
+    // 43249`); the release or a switch clears it (`TryCancelChannel`
+    // `:52975-52981`).
+    {
+        let holding = registry::get(held.kind).is_some_and(|d| d.channel)
+            && app.mine_down
+            && held_weapon
+            && !app.inventory_open;
+        if let Some(p) = app.player.as_mut() {
+            if holding {
+                let (cx, cy) = p.center();
+                let target = limit_point_to_player_reachable_area(
+                    Vec2::new(cx, cy),
+                    world_pos,
+                    &app.world,
+                );
+                p.channel = true;
+                p.channel_item = held.kind;
+                p.channel_target = target;
+            } else if p.channel {
+                p.channel = false;
+                p.channel_item = 0;
+                p.channel_target = Vec2::ZERO;
+            }
+        }
+    }
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
+        let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            || (prev_mine_released && !prev_mine_down);
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
         // fires at `ItemTimeIsZero` mid-swing, not on the press.
@@ -542,11 +641,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
-            // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
-            // is ×1 at the port's default melee speed), the spawn at the
-            // player center (`RotatedRelativePoint(MountedCenter)`), the
-            // damage `weaponDamage` (the class multiplier) and the item's
-            // knockback.
+            // `shootSpeed` (`:47274-47292`), the spawn at the player center
+            // (`RotatedRelativePoint(MountedCenter)`), the damage
+            // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
@@ -565,12 +662,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
-                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
                     let (fx_dmg, fx_spd, fx_kb) = held_fx
                         .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
                             (s.damage, s.shoot_speed, s.knock_back)
                         });
+                    // `if (sItem.melee && !ProjectileID.Sets
+                    // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
+                    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
+                    // the exception set (`ProjectileID.cs:547`), so every melee
+                    // shot divides (×1 at the default 1f bonus).
+                    let fx_spd = if class == registry::DamageClass::Melee {
+                        fx_spd / p.melee_speed()
+                    } else {
+                        fx_spd
+                    };
+                    // `if (sItem.type == 2611 || sItem.type == 5526)
+                    // pointPosition += vector2` (`:47239-47245`): the 1-px
+                    // spawn shift along the aim (the Flairon's arm).
+                    let spawn = if held.kind == 2611 || held.kind == 5526 {
+                        Vec2::new(pcx, pcy) + dir * 10.0 + dir
+                    } else {
+                        Vec2::new(pcx, pcy) + dir * 10.0
+                    };
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
@@ -578,20 +692,238 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
                         tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
-                    let slot = app.projectiles.spawn_with_data_owned(
-                        proj,
-                        app.local_id as u8,
-                        spawn.x,
-                        spawn.y,
-                        dir.x * fx_spd,
-                        dir.y * fx_spd,
-                        raw as i32,
-                        fx_kb,
-                        0.0,
-                        0.0,
-                    );
-                    if let Some(slot) = slot {
-                        app.projectiles.set_crit(slot, crit);
+                    // `Player.ItemCheck_Shoot`'s per-item spawn arms - the
+                    // magic staves replace the generic `Item.shoot` firing,
+                    // each `return`ing in the C#; the port folds them into
+                    // one if/else chain before the shared swing tail. The
+                    // base velocity is the aim normalized to `shootSpeed`.
+                    let shot = Vec2::new(dir.x * fx_spd, dir.y * fx_spd);
+                    if GEM_STAFF_BOLTS.contains(&proj) {
+                        // `Player.cs:49262-49375` - the gem-staff shoot.
+                        // `PackGemStaffFeatures` (`:49470-49489`): the bits
+                        // from the bolt kind and the matching body robe
+                        // (`GetEffectiveArmor(1)` - the port's `equipped[1]`,
+                        // the robe slot 1282/1285/4256/1284/1283/1286/1287).
+                        let mut features = GemStaffFeatures::from_ai(0.0);
+                        let robe = p.equipped[1];
+                        features.set_bit(GemStaffFeatures::HOMING, proj == 121 || robe == 1282);
+                        features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, proj == 124 || robe == 1285);
+                        features.set_bit(GemStaffFeatures::CAN_BOUNCE, proj == 597 || robe == 4256);
+                        features.set_bit(GemStaffFeatures::SWIRL_TWINS, proj == 123 || robe == 1284);
+                        features.set_bit(GemStaffFeatures::AOE_EXPLOSION, proj == 122 || robe == 1283);
+                        features.set_bit(GemStaffFeatures::AR_PEN_SPREAD, proj == 125 || robe == 1286);
+                        features.set_bit(GemStaffFeatures::BIGGER_HITBOX, proj == 126 || robe == 1287);
+                        features.set_bit(GemStaffFeatures::ALL_GEMS, held.kind == 6171);
+                        if !features.all_gems() {
+                            features.set_bit(
+                                GemStaffFeatures::REPEATS_GEM,
+                                (proj == 121 && robe == 1282)
+                                    || (proj == 124 && robe == 1285)
+                                    || (proj == 597 && robe == 4256)
+                                    || (proj == 123 && robe == 1284)
+                                    || (proj == 122 && robe == 1283)
+                                    || (proj == 125 && robe == 1286)
+                                    || (proj == 126 && robe == 1287),
+                            );
+                        }
+                        if features.all_gems() {
+                            // `:49266-49273`: the gembag head forces the four.
+                            features.set_bit(GemStaffFeatures::HOMING, true);
+                            features.set_bit(GemStaffFeatures::CAN_BOUNCE, true);
+                            features.set_bit(GemStaffFeatures::AOE_EXPLOSION, true);
+                            features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+                        }
+                        let features = features;
+                        // `:49286-49295`: the velocity multipliers.
+                        let (mut vx, mut vy) = (shot.x, shot.y);
+                        if features.fast_then_slow() {
+                            vx *= 5.0;
+                            vy *= 5.0;
+                        }
+                        if features.can_bounce() {
+                            vx *= 1.25;
+                            vy *= 1.25;
+                        }
+                        let (mut sx, mut sy) = (spawn.x, spawn.y);
+                        if features.ar_pen_spread() {
+                            // `Main.rand.NextVector2CircularEdge(12, 12)`
+                            // (`Utils.cs:1271-1274`) - a unit vector scaled by
+                            // the half-widths.
+                            let angle = loot_rng.next_float() * std::f32::consts::TAU;
+                            let off = Vec2::from_angle(angle) * 12.0;
+                            sx += off.x;
+                            sy += off.y;
+                        }
+                        // `:49296-49304`: the damage multiplier and the
+                        // RepeatsGem bonus.
+                        let mut damage = (raw * features.damage_multiplier()) as i32;
+                        let mut kb = fx_kb;
+                        if features.repeats_gem() {
+                            damage += 4;
+                            kb += 1.0;
+                        }
+                        let bits = features.ai_state();
+                        let spin = p.facing == -1;
+                        if features.all_gems2() {
+                            // `:49307-49349`: seven bolts, the per-index kind
+                            // (the loop's initial `NextFromList` pick is
+                            // overwritten by the switch, so it is skipped).
+                            for n in 1..=7i32 {
+                                let slot_index = if spin { 8 - n } else { n };
+                                let kind = match slot_index {
+                                    1 => 121,
+                                    2 => 122,
+                                    3 => 123,
+                                    4 => 126,
+                                    5 => 124,
+                                    6 => 597,
+                                    _ => 125,
+                                };
+                                let offset = (n - 4) as f32;
+                                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
+                                    offset * (std::f32::consts::PI / 4.0) / 10.0,
+                                ));
+                                v *= remap_gem(offset.abs(), 0.0, 3.0, 1.3, 1.0);
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        } else if features.all_gems() {
+                            // `:49350-49364`: three bolts of one random gem
+                            // kind (the `NextFromList` pick, `:49354`).
+                            let pick = loot_rng.next_range(0, 7);
+                            let kind = [121u16, 122, 123, 124, 597, 125, 126][pick as usize];
+                            for n in 1..=3i32 {
+                                let offset = (n - 2) as f32;
+                                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
+                                    offset * (std::f32::consts::PI / 4.0) / 10.0,
+                                ));
+                                v *= remap_gem(offset.abs(), 0.0, 1.0, 1.1, 1.0);
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        } else {
+                            // `:49365-49372`: the single bolt, the SwirlTwins
+                            // twin with `ai1 = 1f`.
+                            let slot = app.projectiles.spawn_with_data_ai(
+                                proj, sx, sy, vx, vy, damage, kb, bits, 0.0,
+                            );
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                            }
+                            if features.swirl_twins() {
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    proj, sx, sy, vx, vy, damage, kb, bits, 1.0,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        }
+                    } else if held.kind == 3779 {
+                        // `Player.cs:48793-48807` - the Spirit Flame's spawn:
+                        // up to 10 aim retries against the line of sight, the
+                        // bolt at the player centre + direction * 30 with
+                        // zero velocity, `ai0 = -2`.
+                        let mut angle = loot_rng.next_float() * std::f32::consts::TAU;
+                        for _ in 0..10 {
+                            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
+                            if crate::projectile::can_hit_line(
+                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+                            ) {
+                                break;
+                            }
+                            angle = loot_rng.next_float() * std::f32::consts::TAU;
+                        }
+                        let speed = 0.95 + loot_rng.next_float() * 0.3;
+                        let v = shot.rotate(Vec2::from_angle(angle)) * speed;
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj,
+                            spawn.x + v.x * 30.0,
+                            spawn.y + v.y * 30.0,
+                            0.0,
+                            0.0,
+                            raw as i32,
+                            fx_kb,
+                            -2.0,
+                            0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
+                    } else if held.kind == 3787 {
+                        // `Player.cs:48808-48827` - the Sky Fracture's spawn:
+                        // a ring point 20-60 px out (up to 50 retries with an
+                        // 8 px line probe), the velocity lerped 25% toward the
+                        // cursor direction.
+                        let mut face = loot_rng.next_float() * std::f32::consts::TAU;
+                        let mut ring = spawn;
+                        for _ in 0..50 {
+                            let radius = 20.0 + (60.0 - 20.0) * loot_rng.next_float();
+                            ring = spawn + Vec2::from_angle(face) * radius;
+                            let probe = ring + (ring - spawn).normalize_or_zero() * 8.0;
+                            if crate::projectile::can_hit_line(
+                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+                            ) {
+                                break;
+                            }
+                            face = loot_rng.next_float() * std::f32::consts::TAU;
+                        }
+                        let toward = (world_pos - ring).normalize_or_zero() * fx_spd;
+                        let along = shot.normalize_or_zero() * fx_spd;
+                        let v = toward + (along - toward) * 0.25;
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, ring.x, ring.y, v.x, v.y, raw as i32, fx_kb, 0.0, 0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
+                    } else {
+                        // The generic `Item.shoot` firing, with the two
+                        // per-item tweaks: the Crystal Storm's +/-0.04 spread
+                        // (`Player.cs:47821-47827`) and the Ice Rod's tile
+                        // target in `ai0/ai1` (`:49383-49387`).
+                        let (mut vx, mut vy) = (shot.x, shot.y);
+                        if held.kind == 518 {
+                            vx += loot_rng.next_range(-40, 41) as f32 * 0.04;
+                            vy += loot_rng.next_range(-40, 41) as f32 * 0.04;
+                        }
+                        let (ai0, ai1) = if proj == crate::projectile::MAGICAL_ICE_BLOCK {
+                            (
+                                (world_pos.x / 16.0) as i32 as f32,
+                                (world_pos.y / 16.0) as i32 as f32,
+                            )
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                            // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
+                            // the whip's tag row off the firing item + the
+                            // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
+                            // `timeToFlyOut` inputs (the prefixed
+                            // `itemAnimationMax`).
+                            let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+                                held.kind
+                            } else {
+                                0
+                            };
+                            let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+                            let animation_max =
+                                held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+                            app.projectiles
+                                .set_whip_params(slot, tag_type, bonus_tag, animation_max);
+                        }
                     }
                     // `Player.cs:48210` — the sentry spawns run the turret
                     // sweep right after (the base cap of 1 would otherwise
@@ -619,33 +951,86 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
 
-        // The ammo shooters fall through to the fire block below — the
-        // vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
-        // mining/placing arms return.
-        if held_use_ammo == 0 {
-            return;
-        }
+        // The vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
+        // mining/placing arms return (`Player.cs:43681` fires the shot from
+        // the swing arm itself), so every item falls through to this pass's
+        // melee/mining/placing arms — including the ammo shooters, whose
+        // projectile block sits ABOVE this point. The pre-BUG-09 code
+        // returned here for the non-ammo case, which made every melee weapon
+        // unreachable.
     }
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
+/// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
+/// minable/chopable tile the held tool can work, and the vanilla checks the
+/// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
+/// (`Player.cs:43593`) runs ahead of the melee-hit box block
+/// (`Player.cs:43644-43686`). The weapons take the NPC arm regardless
+/// (`damage > 0` and `!noMelee`, `Player.cs:43648`).
+fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
+    let held = app.inventory[app.selected];
+    if held.count == 0 {
+        return false;
+    }
+    let tx = (world_pos.x / TILE_PX).floor() as i32;
+    let ty = (world_pos.y / TILE_PX).floor() as i32;
+    let Some(tile) = app.world.tile(tx, ty).copied() else {
+        return false;
+    };
+    if !tile.active() {
+        return false;
+    }
+    if tr_core::tool::is_axe_tile(tile.kind) {
+        return registry::get(held.kind).map(|d| d.axe).unwrap_or(0) > 0;
+    }
+    let pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
+    let below_surface = (ty as f64) > app.world.world_surface;
+    pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
+}
+
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    // The ammo shooters skip it — they fire their `useAmmo` projectile
-    // instead (`Player.ItemCheck_Shoot`'s gate, `Player.cs:47069-47075`). The
-    // `held_use_ammo` read is the effective one from the top of the pass, so the
-    // four `gunProj` placeholder rows are shooters here too.
+    // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
+    // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
+    // coming from the same registry row. The ammo shooters skip it — they
+    // fire their `useAmmo` projectile instead (`ItemCheck_Shoot`'s gate,
+    // `Player.cs:47069-47075`). The vanilla prioritises the TILE under the
+    // cursor for the tools: an NPC hit only lands when the cell under the
+    // cursor is not a targetable tile (the `ItemCheck` tile-first order).
     if app.mine_down
         && held_use_ammo == 0
         && app.attack_cd <= 0.0
         && app.reuse_delay <= 0.0
         && !app.inventory_open
+        && (held_weapon || !cursor_cell_is_tile_target(app, world_pos))
     {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            let hit_idx = app.npcs.iter().position(|n| n.contains(ax, ay));
+            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
+            // a town NPC takes no player melee unless the hit is the explicit
+            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
+            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
+            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
+            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
+            // the crystal's spawn shield). The vanilla also skips every
+            // `friendly` NPC — the port's town set is `is_town_npc` (the
+            // Travelling Merchant/Angler ride their own easter eggs). The
+            // vanilla arms the flags when the doll/curse is EQUIPPED
+            // (`Player.cs:15123-15129`); the port has no equip slot for them,
+            // so the inventory's presence arms the same flag (the recorded
+            // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
+            // `6f9ec6f4` resolved main against a base that predated this gate
+            // and dropped it and its test.)
+            let easter_egg = matches!(held.kind, 267 | 1307)
+                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
+            let hit_idx = app.npcs.iter().position(|n| {
+                n.contains(ax, ay)
+                    && !n.dont_take_damage
+                    && (!n.kind.is_town_npc() || easter_egg)
+            });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
@@ -661,16 +1046,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     registry::DamageClass::Melee
                 };
                 let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-                let raw = if held_weapon {
-                    held_fx.map_or(registry::damage(held.kind), |s| s.damage) as f32
-                        * app
-                            .player
-                            .as_ref()
-                            .map(|p| p.weapon_damage_multiplier(class))
-                            .unwrap_or(1.0)
-                } else {
-                    15.0
-                };
+                // `ProcessHitAgainstNPC`'s `weaponDamage` (`Player.cs:44241`):
+                // the class multiplier over the item's damage. Tools are
+                // weapons in vanilla for `ItemCheck` purposes — the pickaxe
+                // row carries `damage: 5, knock_back: 2.0` — so the tool arm
+                // reads the same registry values (the pre-BUG-09 fixed 15
+                // was the placeholder).
+                let raw = held_fx
+                    .map_or(registry::damage(held.kind), |s| s.damage)
+                    .max(0) as f32
+                    * app
+                        .player
+                        .as_ref()
+                        .map(|p| p.weapon_damage_multiplier(class))
+                        .unwrap_or(1.0);
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -686,13 +1075,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
-                // The melee stand-in's knockback: a mid-sword 5.5
-                // (`Item.knockBack` for the copper shortsword class); the
-                // per-item values land with M3-ITEM.
-                n.hurt(dmg, pcx, 5.5, crit);
+                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
+                // the item's `knockBack` times the glove/buff multipliers (the
+                // port's 1f — no ported accessory grants them).
+                let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
+                n.hurt(dmg, pcx, kb, crit);
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, 5.5, crit, pcx >= nx);
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
@@ -934,7 +1324,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.attack_cd = app.attack_cd.max(0.2);
     }
     let swing_over = app.swing <= 0.0;
-    let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
+    let reuse_ready = auto_reuse || (prev_place_released && !prev_place_down);
     let starting = swing_over && reuse_ready;
     let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
     // Tile interactions (`Player.Update` order: LookForTileInteractions
@@ -944,20 +1334,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // the press edge. A handled interaction consumes the click; anything else
     // falls through to the place path unchanged.
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;
     }
     if app.place_down
-        && !app.place_prev_down
+        && !prev_place_down
         && !app.inventory_open
         && crate::chest::try_open_chest_at_cursor(app, world_pos)
     {
         return;
     }
-    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+    if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
     // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
@@ -1454,6 +1844,12 @@ pub(crate) struct DropCtx {
     /// them; ANALYSIS entry, phase 5).
     pub expert_mode: bool,
     pub dont_starve: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — `InitializeSecretSeeds` sets it for the
+    /// `vampirism` micro seed (`WorldGen.cs:555-558`), and
+    /// `SpawnThingsFromPot`'s four arms read it (`:57477`/`:57494`/`:57518`/
+    /// `:57539`). A classic world keeps it false, so the pot rolls are
+    /// unchanged.
+    pub vampirism: bool,
     /// The closest player (`Player.FindClosest` — the local one): the hearts
     /// gate `statLife < statLifeMax2` (:57512) and the torch-stack scan
     /// (:57482-57497, capped at the 20/30 threshold the C# loop breaks at).
@@ -1502,7 +1898,17 @@ fn drop_ctx(app: &App) -> DropCtx {
         // M5-SEED-1: `Main.dontStarveWorld` (`editing.rs`'s fruit/pot
         // branches, `:1437-1474`) — the world's own flag replaces the
         // hard-coded false.
-        dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        dont_starve: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
+        // `SecretSeed.vampirism.Enabled` write) — `SpawnThingsFromPot`'s
+        // `:57477`/`:57494`/`:57518`/`:57539` arms.
+        vampirism: app
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
         player_hurt,
         torches,
         zone_hallow: app.scene_metrics.zone_hallow,
@@ -1896,7 +2302,19 @@ fn spawn_things_from_pot(
     if ctx.expert_mode {
         num11 -= 1;
     }
-    let flag5 = ctx.torches < 20;
+    // :57475-57492 — the 50-slot torch-stack scan: `num13 = 20` (30 under
+    // `Main.vampireSeed`, `:57477-57481`) is the loop's break threshold, so
+    // the vampirism world needs 50 % more torches in the inventory before
+    // `flag5` clears.
+    let torch_threshold = if ctx.vampirism { 30 } else { 20 };
+    let flag5 = ctx.torches < torch_threshold;
+    // :57494-57496 — `if (flag5 && Main.vampireSeed) num11 = 1;`: a torchless
+    // player in a vampirism world is FORCED into the torch arm below, past
+    // the hearts. The roll has already been drawn, so the classic stream is
+    // untouched (the C#'s guard short-circuits on a classic world).
+    if flag5 && ctx.vampirism {
+        num11 = 1;
+    }
     // :57498-57516 — the hearts (only while hurt).
     if num11 == 0 && ctx.player_hurt {
         let mut drops = vec![(58, 1)];
@@ -1913,7 +2331,24 @@ fn spawn_things_from_pot(
         }
         return (drops, false);
     }
-    // :57518-57523 — the vampire-seed wood: skipped (no port state).
+    // M5-SEED-2: `:57518-57523` — the vampire-seed wood. `if
+    // (Main.vampireSeed && (flag2 | flag) && WorldGen.genRand.Next(6) == 0)`
+    // → the pot's style wood (9 plain, 2503 for the 4-6 pots, 620 for the
+    // 7-9 ones) × `Main.rand.Next(10, 31)`. `flag` is "below the rock layer"
+    // and `flag2` "above the underworld layer" (`:57090-57095`), so the arm
+    // fires for any cave-or-shallow cell and SKIPS (without its `genRand`
+    // draw) in the deep-underworld band. The `genRand.Next(6)` sits after
+    // the hearts arm, exactly as the C#.
+    if ctx.vampirism && (flag2 || flag) && gen_rand.next_range(0, 6) == 0 {
+        let wood = if (4..=6).contains(&style) {
+            2503
+        } else if (7..=9).contains(&style) {
+            620
+        } else {
+            9
+        };
+        return (vec![(wood, main_rng.next_range(10, 31))], false);
+    }
     // :57531-57591 — the torches (num11 == 1, or 0 while the player is below
     // the torch threshold).
     if num11 == 1 || (num11 == 0 && flag5) {
@@ -2105,6 +2540,12 @@ fn torch_drop(
     let mut num14 = main_rng.next_range(2, 7);
     if ctx.expert_mode {
         num14 += main_rng.next_range(1, 7);
+    }
+    // M5-SEED-2: `:57539-57542` — `if (Main.vampireSeed) num14 +=
+    // Main.rand.Next(2, 7);`, the fourth stack adder in the C# order (after
+    // the base and the expert one, before the per-style adds).
+    if ctx.vampirism {
+        num14 += main_rng.next_range(2, 7);
     }
     let mut torch = 8;
     let mut glowstick = 282;
@@ -3048,6 +3489,90 @@ mod tests {
     /// `mine_down` arm takes the NPC branch (`ItemCheck_MeleeHitNPCs` →
     /// `ProcessHitAgainstNPC`). A floor row at y 300 gives the spawner a
     /// surface; the cursor tile (30, 260) stays air so nothing is mined.
+
+    /// BUG-09: the melee arms run for weapons and tools alike — the inverted
+    /// early return is gone and the damage reads the held row (`ItemCheck`'s
+    /// `GetWeaponDamage` × the class multiplier → `DamageVar` → the NPC's
+    /// defence; the tools included: the pickaxe's own `damage: 5`).
+    #[test]
+    fn bug_09_the_melee_hit_reads_the_item_damage() {
+        // A wooden sword (damage 7, knockback 5.0) over the slime.
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        let hp_0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp_0, "the sword hit lands (defence-reduced > 0)");
+        // The amount is the sword's OWN row through the ±15 % `DamageVar`
+        // band and the slime's defence (`CalculateDamageNPCsTake`), x2 on a
+        // crit — `item_rng` starts at 0 in the rig, so the draws are fixed.
+        // The pre-BUG-09 placeholder never reached this arm (the sword
+        // returned early); the flat 15 discriminator is the pick below.
+        let sword = hp_0 - a.npcs[0].hp;
+        assert_eq!(sword, 6, "the sword's 7 through DamageVar − defence = {sword}");
+        // The Iron Pickaxe (damage 5, knockback 2.0) with the cursor on the
+        // NPC over air: the vanilla's `!noMelee && damage > 0` gate runs the
+        // melee arm for the tools too — over an idle cursor cell the tool
+        // hits (`ItemCheck`'s tile-first order only diverts the hit when the
+        // cursor sits on a tile the tool can work).
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 1;
+        let hp_b = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp < hp_b, "the tool hits the NPC over air");
+        // The pick's own 5 (±15 %) after the defence — NOT the pre-BUG-09
+        // flat 15 (that row read 14 here: 15 − 2/2).
+        let pick = hp_b - b.npcs[0].hp;
+        assert_eq!(pick, 4, "the pick's 5 through DamageVar − defence = {pick}");
+        // The same pick over a tile under the cursor mines instead — the
+        // tile arm runs (the pick's power clears the stone under it).
+        let mut c = melee_app();
+        c.inventory[c.selected].kind = 1;
+        let ci = c.world.index(30, 260); // the cursor cell (the camera anchor)
+        c.world.tiles[ci] = Tile { kind: 1, ..Default::default() };
+        c.world.tiles[ci].flags |= FLAG_ACTIVE;
+        let hp_c = c.npcs[0].hp;
+        mine_frames(&mut c, 1);
+        assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
+    }
+
+
+    /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
+    /// friendly gate, `Player.cs:44261-44264`) — the voodoo doll (267) and
+    /// the Clothier's curse (1307) are the only melee exceptions.
+    /// (Re-landed with the gate — the BUG-03 merge dropped this test with
+    /// the code.)
+    #[test]
+    fn bug_10_melee_refuses_the_town_npcs() {
+        // A Guide standing on the floor at the cursor.
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.inventory[a.selected].kind = 24; // the wooden sword
+        let hp = a.npcs[0].hp;
+        let hp_max = a.npcs[0].max_hp;
+        mine_frames(&mut a, 1);
+        assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
+        assert_eq!(a.npcs[0].max_hp, hp_max);
+        // The voodoo doll arms the easter egg.
+        let mut b = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
+        b.npcs.clear();
+        b.npcs.push(guide);
+        b.inventory[b.selected].kind = 24; // the sword does the hit
+        b.inventory[0].kind = 267; // the voodoo doll arms the flag
+        b.inventory[0].count = 1;
+        // The Guide spawns at the surface; the rig's cursor sits at
+        // (30, 260) — park the Guide into the cursor's box the way the
+        // slime rig does.
+        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].y = 260.0 * TILE_PX;
+        let hp = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
+    }
+
     fn melee_app() -> App {
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
@@ -4219,6 +4744,91 @@ mod tests {
         }
     }
 
+    /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
+    /// the tag row, the whip never self-crits, and the swing lasts the item's
+    /// `useAnimation`.
+    fn whip_app(kind: u16) -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: "whip",
+            count: 1,
+            prefix: 0,
+        };
+        // The press edge is the test's: `mine_down` flips to true on the
+        // frame under test (`Player.cs:42733`'s release-then-press gate).
+        app.mine_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn the_whip_press_swings_once_and_spawns_the_tagged_slot() {
+        // The BlandWhip (4672 → 841): `autoReuse = false`, `useAnimation` 30,
+        // `DefaultToWhip`'s slice, `crit` never rolled for the whip itself.
+        let mut app = whip_app(4672);
+        // One idle frame sets the edge state (`mine_prev_down` = false,
+        // `mine_released` = true); the press on the next frame fires.
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let spawned: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(spawned.len(), 1, "one whip projectile");
+        let p = spawned[0];
+        assert_eq!(p.kind, 841);
+        assert_eq!(p.tag_effect_type, 4672, "the tag row rides the slot");
+        assert!(!p.crit, "the whip never self-crits");
+        assert_eq!(p.local_hit_cooldown, -1, "the one-hit-per-NPC sentinel");
+        // `timeToFlyOut = itemAnimationMax(30) * MaxUpdates(2)`.
+        assert_eq!(
+            p.whip_settings.map(|s| s.time_fly_out),
+            Some(60.0),
+            "the swing lives the useAnimation × MaxUpdates"
+        );
+        // The swing timer matches the item's `useAnimation` (30 ticks = 0.5 s).
+        assert!((app.swing_max - 0.5).abs() < 1e-6, "the 30-tick swing");
+        // The reuse lock: a held press does not throw a second whip.
+        app.mine_released = false;
+        mine_frames(&mut app, 60);
+        let still = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert!(still <= 1, "one swing per press edge (the past whip ended)");
+    }
+
+    #[test]
+    fn the_prefixed_minion_tag_damage_reaches_the_slot() {
+        // The minion prefixes 69-72 add `Item.bonusTagDamage`
+        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
+        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        let mut app = whip_app(4678);
+        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the SwordWhip");
+        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        assert_eq!(p.bonus_tag_damage, want);
+    }
+
     fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
@@ -4326,6 +4936,8 @@ mod tests {
                 count: 6,
                 prefix: 0,
             }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {
@@ -5053,6 +5665,112 @@ mod tests {
             num17 as i64,
             "coin total == replayed num17"
         );
+    }
+
+    // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) arms
+    // `SpawnThingsFromPot` four times — the torch threshold 20 → 30
+    // (`:57477-57481`), the `flag5` forced-torch reassignment (`:57494-57497`),
+    // the extra wood drop (`:57518-57523`) and the extra `Next(2, 7)` stack
+    // (`:57539-57542`). Every arm is behind the flag, so a classic world's
+    // pot rolls are byte-identical.
+    #[test]
+    fn test_M5_SEED_2_the_vampirism_arms_change_the_pot_drops() {
+        let classic = pot_ctx();
+        let mut vamp = pot_ctx();
+        vamp.vampirism = true;
+        let surface_y = 100; // above world_surface 200 → `flag` (below rock)
+        // A gen stream that misses the dungeon key (`Next(35)`), the potion
+        // arm (`Next(45)`) AND the vampirism wood arm's `Next(6)`, so the
+        // tests below reach the torch/coin arms.
+        let gen_seed = {
+            let mut found = None;
+            for seed in 0u64..100_000 {
+                let mut g = tr_core::tile_light::FastRandom::new(seed);
+                if g.next_range(0, 35) != 0
+                    && g.next_range(0, 45) != 0
+                    && g.next_range(0, 6) != 0
+                {
+                    found = Some(seed);
+                    break;
+                }
+            }
+            found.expect("a clean gen seed")
+        };
+
+        // (1) The forced-torch arm (`:57494-57497`): a torchless hurt player
+        // whose `num11` rolled 0 (the hearts branch) is reassigned to 1 and
+        // walks into the torch arm instead — the hearts never drop.
+        let mut hurt = pot_ctx();
+        hurt.player_hurt = true;
+        let mut hurt_vamp = pot_ctx();
+        hurt_vamp.player_hurt = true;
+        hurt_vamp.vampirism = true;
+        let heart_seed = main_seed_for_num11(0, 500, false);
+        let (loot, _) = run_pot(&hurt, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| *id == 58), "classic: hearts");
+        let (loot, _) = run_pot(&hurt_vamp, 0, surface_y, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "vampirism: the single torch row");
+        assert_eq!(loot[0].0, 8, "the forced torch branch");
+        // The stack is the base `Next(2, 7)` PLUS the vampirism adder — it
+        // replayed out of the same stream.
+        let mut state = heart_seed;
+        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let _ = main.next_range(0, 500);
+        let _ = main.next_range(0, 45);
+        let _ = main.next_range(0, 7);
+        assert_eq!(loot[0].1, main.next_range(2, 7) + main.next_range(2, 7));
+
+        // (2) The 20 → 30 threshold (`:57477-57481`): 25 torches clears the
+        // classic scan (flag5 = false → `num11 == 0` falls through to the
+        // coins) but not the vampirism one (flag5 = true → the torch arm).
+        let mut stocked = pot_ctx();
+        stocked.torches = 25;
+        let mut stocked_vamp = pot_ctx();
+        stocked_vamp.torches = 25;
+        stocked_vamp.vampirism = true;
+        let (loot, _) = run_pot(&stocked, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert!(loot.iter().all(|(id, _)| (71..=74).contains(id)), "coins");
+        let (loot, _) = run_pot(&stocked_vamp, 0, 900, gen_seed, heart_seed, 0, 0);
+        assert_eq!(loot[0].0, 8, "25 torches is below the vampirism 30");
+
+        // (3) The extra wood arm (`:57518-57523`): `genRand.Next(6) == 0`
+        // (after the 35/45 draws) with `flag2 | flag` → wood × `Next(10, 31)`.
+        // The deep-underworld band (y > underworld_layer) has neither flag,
+        // so the arm skips and its `genRand` draw is never spent.
+        let mut wood_gen = 0u64;
+        for seed in 1u64..100_000 {
+            let mut g = tr_core::tile_light::FastRandom::new(seed);
+            if g.next_range(0, 35) != 0 && g.next_range(0, 45) != 0 && g.next_range(0, 6) == 0 {
+                wood_gen = seed;
+                break;
+            }
+        }
+        let (loot, _) = run_pot(&vamp, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1, "the single wood row");
+        assert_eq!(loot[0].0, 9, "the plain pot's wood");
+        assert!(
+            (10..=30).contains(&loot[0].1),
+            "wood 10-30, got {}",
+            loot[0].1
+        );
+        // The deep band: no flag, no wood — with the torch scan satisfied the
+        // `num11 == 0` cell falls through to the coins instead. (A stocked
+        // player must clear the vampirism 30, else the forced-torch arm
+        // above fires first.)
+        let mut deep_vamp = pot_ctx();
+        deep_vamp.vampirism = true;
+        deep_vamp.torches = 30;
+        let (loot, _) = run_pot(&deep_vamp, 0, 900, wood_gen, heart_seed, 0, 0);
+        assert!(
+            loot.iter().all(|(id, _)| (71..=74).contains(id)),
+            "no wood below the underworld layer"
+        );
+        // And the same seed in a classic world: the wood arm never runs, so
+        // the `num11 == 0` cell with a torchless player walks into the
+        // ordinary torch arm instead (`(num11 == 0) & flag5`, `:57590`).
+        let (loot, _) = run_pot(&classic, 0, surface_y, wood_gen, heart_seed, 0, 0);
+        assert_eq!(loot.len(), 1);
+        assert_eq!(loot[0].0, 8, "classic: the ordinary torch row");
     }
 
     // DW-3.3: the style multiplier drives the luck range and the coin scale.
@@ -5820,7 +6538,188 @@ mod tests {
         assert_eq!(drops[0].0, 313);
         assert_eq!(drops[1].0, 307);
     }
-}
+
+    /// An app with a staff held and the cursor 80 px right of the centre
+    /// (the +x aim, inside the reach).
+    fn staff_app(item: u16, name: &'static str) -> App {
+        let mut app = shooter_app();
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: item,
+            name,
+            count: 1,
+            prefix: 0,
+        };
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        app
+    }
+
+    /// One fire tick of the held staff.
+    fn fire_once(app: &mut App) {
+        let (sw, sh) = app.screen_size();
+        update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    #[test]
+    fn test_dw_5_1_the_ruby_staff_fires_one_bolt_with_the_shoot_speed() {
+        // `Player.cs:49365-49372`'s single-bolt arm: the plain staff fires
+        // its own bolt at the aim normalized to `shootSpeed`, the damage
+        // through the magic class multiplier.
+        let mut app = staff_app(743, "Ruby Staff");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one ruby bolt");
+        assert_eq!(bolts[0].kind, 125, "the staff's Item.shoot");
+        // The ruby bolt's own feature pack carries ArPenSpread, so the
+        // damage rides its 0.5 multiplier (`Projectile.cs:177-186`).
+        assert!(
+            (bolts[0].vel.length() - 9.0).abs() < 0.05,
+            "shootSpeed 9 toward the cursor (|v|={})",
+            bolts[0].vel.length()
+        );
+        assert_eq!(bolts[0].damage, 9, "18 through the ArPenSpread 0.5");
+    }
+
+    #[test]
+    fn test_dw_5_1_the_sapphire_staff_fires_the_swirl_twins_pair() {
+        // `:49365-49372`: the SwirlTwins twin rides `ai1 = 1f`.
+        let mut app = staff_app(741, "Sapphire Staff");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 2, "the bolt and its twin");
+        assert!(
+            bolts.iter().any(|p| p.ai[1] == 1.0),
+            "the twin rides ai1 = 1f (`:49371`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_bejeweled_staff_fires_the_all_gems_trio() {
+        // `:49350-49364`: the Bejeweled Staff (6171, the AllGems gate) fires
+        // three bolts of one random gem kind, each carrying the forced
+        // Homing/CanBounce/AoeExplosion/FastThenSlow bits (`:49266-49273`)
+        // and the ×5/×1.25 velocity multipliers (`:49286-49295`).
+        let mut app = staff_app(6171, "Bejeweled Staff");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 3, "the AllGems trio");
+        let kind = bolts[0].kind;
+        assert!([121u16, 122, 123, 124, 597, 125, 126].contains(&kind), "one gem kind");
+        assert!(bolts.iter().all(|p| p.kind == kind), "all three of one kind");
+        for bolt in &bolts {
+            let features = crate::projectile::GemStaffFeatures::from_ai(bolt.ai[0]);
+            assert!(features.all_gems(), "the AllGems bit rides the spawn");
+            assert!(features.homing() && features.can_bounce(), "the forced four");
+            assert!(features.aoe_explosion() && features.fast_then_slow(), "the forced four");
+            // 6 (shootSpeed) × 5 × 1.25 = 37.5, and the middle bolt rides
+            // the AllGems spread's `toMin2 = 1.1` (`:49361`).
+            let want = if bolt.ai[1] == 2.0 { 37.5 * 1.1 } else { 37.5 };
+            assert!(
+                (bolt.vel.length() - want).abs() < 0.05,
+                "the velocity multipliers (|v|={}, want {want})",
+                bolt.vel.length()
+            );
+            // AllGems short-circuits the multipliers to 1f
+            // (`Projectile.cs:180-183`), so the raw 27 rides straight.
+            assert_eq!(bolt.damage, 27, "AllGems multiplier = 1");
+        }
+    }
+
+    #[test]
+    fn test_dw_5_1_the_gem_spawn_is_seed_deterministic() {
+        // The shoot rolls ride the app's item stream: two apps built the
+        // same way (same world seed) produce byte-equal spawns.
+        let seeds_match = |staff: u16| {
+            let mut a = staff_app(staff, "Ruby Staff");
+            let mut b = staff_app(staff, "Ruby Staff");
+            assert_eq!(a.item_rng, b.item_rng, "the same seed");
+            fire_once(&mut a);
+            fire_once(&mut b);
+            a.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .zip(b.projectiles.slots().iter().filter(|p| p.active))
+                .all(|(x, y)| x.kind == y.kind && x.pos == y.pos && x.vel == y.vel && x.ai == y.ai)
+        };
+        assert!(seeds_match(741), "the SwirlTwins pair is seed-stable");
+        assert!(seeds_match(6171), "the AllGems random kind is seed-stable");
+    }
+
+    #[test]
+    fn test_dw_5_2_the_channel_holds_the_aim_and_the_release_clears_it() {
+        // `Player.cs:52958-52968` + `:52975-52981`: a `channel` item held
+        // with the button down keeps the clamped aim on the player; the
+        // release clears it.
+        let mut app = staff_app(113, "Magic Missile");
+        let (sw, sh) = app.screen_size();
+        update_editing(&mut app, 1.0 / 60.0, Vec2::new(sw, sh));
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the held channel keeps the aim");
+        assert_eq!(p.channel_item, 113, "the held item's kind");
+        assert!(
+            p.channel_target.x > 0.0 && p.channel_target.x != app.camera.x,
+            "the aim rides the clamped cursor (target {})",
+            p.channel_target
+        );
+        // The release.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, Vec2::new(sw, sh));
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.channel, "the release clears the channel");
+        assert_eq!(p.channel_item, 0, "no held item");
+    }
+
+    #[test]
+    fn test_dw_5_3_the_low_mana_use_is_blocked() {
+        // The mana gate (`Player.CheckMana`, `Player.cs:52576`): a staff
+        // without the mana does not fire.
+        let mut app = staff_app(127, "Space Gun");
+        app.player.as_mut().unwrap().mana = 0;
+        fire_once(&mut app);
+        let fired = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(fired, 0, "no mana, no shot");
+    }
+
+    #[test]
+    fn test_dw_5_3_the_amber_staff_fires_its_bolt_with_the_corrected_row() {
+        // The placeholder-band correction (registry's `ITEM_CORRECTIONS`)
+        // rides the whole shoot path: the Amber Staff fires the amber bolt
+        // 597 at damage 21 and pays its mana 9.
+        let mut app = staff_app(3377, "Amber Staff");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one amber bolt");
+        assert_eq!(bolts[0].kind, 597, "the corrected shoot id");
+        // The amber bolt's own feature pack carries CanBounce (the 0.8
+        // multiplier, `Projectile.cs:177-186`).
+        assert_eq!(bolts[0].damage, 16, "21 through the CanBounce 0.8");
+        assert_eq!(
+            app.player.as_ref().unwrap().mana,
+            20 - 9,
+            "the corrected mana cost"
+        );
+    }}
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
@@ -5988,6 +6887,44 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
 /// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
 /// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(2)` —
 /// the march state rides the World (the morning-roll resolve's shape).
+/// The Celestial Sigil (`Player.cs:44028-44034`'s `ItemCheck_UseBossSpawners`
+/// arm): the item 3601 gates on `downedGolemBoss && hardMode && !AnyDanger()
+/// && !AnyoneNearCultists()` and calls `WorldGen.StartImpendingDoom(720)` —
+/// the countdown's item value (`NPC.cs:6037`).
+pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
+    if app.world.moon_lord_countdown > 0 || app.world.lunar_apocalypse_is_up {
+        return false;
+    }
+    if !app.world.downed_golem || !app.world.hard_mode {
+        return false;
+    }
+    // `!AnyDanger()`: no invasion and no active event (`Main.cs:80246`).
+    if app.world.invasion_type != 0 || app.world.dd2_event_ongoing {
+        return false;
+    }
+    // `!AnyoneNearCultists()` (`NPC.cs:80290-80313`).
+    if crate::world_sim::lunar::anyone_near_cultists(app) {
+        return false;
+    }
+    app.world.moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    app.world.max_moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "The air is growing colder...",
+        crate::chat::COLOR_COMMAND,
+    );
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    true
+}
+
 pub fn use_snow_globe(app: &mut App) -> bool {
     if app.world.invasion_type != 0 {
         return false;
@@ -6054,6 +6991,7 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     app.mine_timer = 0.0;
     app.npcs.push(eye);
     true
+
 }
 
 #[cfg(test)]
@@ -6629,8 +7567,10 @@ mod use_loop_tests {
             &mut app.world,
             &mut npcs,
             None,
+            None,
             app.player.as_mut(),
             crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
             &mut rng,
             local,
             host,

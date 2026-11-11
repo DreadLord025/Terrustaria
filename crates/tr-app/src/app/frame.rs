@@ -95,6 +95,14 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
+        // `UserInterface.Update`'s lockout countdown
+        // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
+        // state-change gate decays with the frame step, deterministic under
+        // `TR_SHOT` (dt pinned to 1/60 above). `Main.UpdateUIStates`
+        // (`Main.cs:17487-17491`) runs this whichever UI side is live, so it
+        // must not sit inside the in-game branch below — see
+        // [`App::tick_pointer_clock`].
+        self.tick_pointer_clock(dt);
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -242,13 +250,33 @@ impl App {
             }
         }
 
+        // `Main.UpdateAudio` runs on every frame, in the menus as well as in
+        // the world (`Main.cs:17816`); the `Main.gameMenu` arm of
+        // `UpdateAudio_DecideOnNewMusic` (`:12455`) picks the title track.
+        // The port's audio clock was wired to the world step only, so the
+        // front-end screens were silent (BUG-01).
+        if self.menu.is_some() || self.front.is_some() {
+            self.update_menu_music();
+        }
+
+        // The front end's Play tail (`UIWorldListItem.PlayGame` →
+        // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
+        // boundary — after the front screens' clicks parked it and before the
+        // world branch runs, so the swap never interleaves a half-ticked world.
+        if let Some(path) = self.play_world.take() {
+            match self.swap_world(&path) {
+                Ok(()) => log::info!("world: {}", path.display()),
+                Err(e) => {
+                    // A failed load keeps the current world: the menu stays
+                    // alive with its own world rather than a black screen (the
+                    // vanilla's `LoadWorld` failure keeps `Main.gameMenu`).
+                    log::warn!("world load failed: {e:#}");
+                    self.front_hint = Some(format!("world load failed: {e:#}"));
+                }
+            }
+        }
+
         if self.menu.is_none() && self.front.is_none() {
-            // `UserInterface.Update`'s lockout countdown
-            // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
-            // state-change gate decays with the frame step, deterministic under
-            // `TR_SHOT` (dt pinned to 1/60 above).
-            self.pointer_ms = self.anim_time as f64 * 1000.0;
-            self.pointer.tick(dt as f64 * 1000.0);
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
@@ -396,6 +424,8 @@ impl App {
                 jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
                     + screen.y * 0.5,
                 quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+                menu: false,
+                menu_flags: Default::default(),
                 music_box: self.scene_metrics.active_music_box,
                 music_box_silence: self.scene_metrics.music_box_silence,
             });
@@ -529,20 +559,18 @@ impl App {
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
-        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // (`ChestUI.cs:115-122`, the `WorldChest` entity's own field since the
+        // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
-        // reads the map field directly so the borrow stays field-scoped).
+        // reads the entity directly so the borrow stays field-scoped).
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
-        let chest_stored_name = if chest_open > -1 {
-            self.chest_names
-                .get(&(chest_open as usize))
-                .map(String::as_str)
-                .unwrap_or("")
-        } else {
-            ""
-        };
+        let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+        // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
+        // per-chest slot count from the file (`Chest.maxItems`), the default
+        // 40 for every port-created chest.
+        let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
 
         {
             let App {
@@ -1122,7 +1150,14 @@ impl App {
                     renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
-                    p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                    // The yoyo family's string anchors on the player's
+                    // centre (`Main.cs:27943-27945`'s mountedCenter +
+                    // gfxOffY) — the frame's rendered player carries both.
+                    let hand = render_player.as_ref().map(|pl| {
+                        let (cx, cy) = pl.center();
+                        (cx, cy + pl.gfx_off_y)
+                    });
+                    p.draw_with_hand(renderer, lookups, light, draw_cam, *zoom, screen, hand);
                 }
 
                 let boss = npcs
@@ -1308,9 +1343,13 @@ impl App {
                         self.map_style,
                         self.bestiary_open,
                         self.bestiary_selected,
-                        &self.kill_tracker,
+                        &self.bestiary.kills,
                         &mut self.chat,
                         &self.emotes,
+                        // BUG-11: the in-game options window's state
+                        // (`Main.ingameOptionsWindow`) — the Settings button
+                        // and the panel draw over the open inventory.
+                        Some((settings, &self.ingame_options)),
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
@@ -1339,6 +1378,7 @@ impl App {
                                 .flatten(),
                             editing: chest_editing,
                             name: chest_stored_name,
+                            max_items: chest_max_items,
                             edit_text: &chest_edit_text,
                             blinker: &mut self.text_blinker,
                             scroll_row: &mut self.chest_scroll_row,
@@ -1383,6 +1423,7 @@ impl App {
                                 &self.death_text,
                                 self.lost_coins,
                                 &self.lost_coin_string,
+                                p.respawn_timer,
                             );
                         }
                     }
@@ -1400,6 +1441,23 @@ impl App {
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
+                }
+                // `UIAchievementsMenu` (`Main.cs:48931`'s menuMode 888 +
+                // `MenuUI.SetState(Main.AchievementsMenu)`): the state draws
+                // over whatever the frame rendered — the menu's world
+                // backdrop here, the world itself in the fancy-UI arm. Its
+                // `OnActivate` picks the container's Top by `Main.gameMenu`.
+                if self.achievements_open {
+                    ui::achievements::draw_screen(
+                        renderer,
+                        lookups,
+                        screen,
+                        &self.achievements,
+                        self.achievements_scroll,
+                        &self.achievements_categories,
+                        self.mouse_pos,
+                        menu.is_some(),
+                    );
                 }
                 // Task 6b: upload the revealed tiles into the world-sized map texture
                 // and clamp/recentre the fullscreen map. Vanilla centres the recentre

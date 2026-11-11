@@ -36,10 +36,14 @@ use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::dungeon;
 use super::evil;
 use super::islands;
 use super::liquids;
 use super::living_trees;
+use super::micro_finish;
+use super::micro_grass;
+use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
@@ -1065,6 +1069,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (after TerrainPass and Dunes, both compact-model steps here) — the
     // M5-OCEAN phase-2 insertion.
     step!("ocean sand", "Ocean Sand", step_ocean_sand),
+    // The vanilla Grass slot (`WorldGen.cs:12423`): the M5-SEED-2 micro-seed
+    // bodies the C# runs there (`DoDigExtraHoles` `:12427-12430`) — a classic
+    // world's step draws nothing.
+    step!("micro grass", "Grass", step_micro_grass),
     step!("jungle", "Jungle", step_jungle),
     step!(
         "mud caves to grass",
@@ -1254,6 +1262,25 @@ fn step_seed_finish(
     if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
         finish_seeds::finish_tenth_anniversary_world(world, streams, opts);
     }
+    // M5-SEED-2: the `SecretSeed.FinalizeSecretSeeds` arms
+    // (`WorldGen.cs:589-693`) — the C# calls them from `Finish()` after the
+    // classic tails (`:22467`), the same order here. The paint/coat/trap
+    // sweeps run before the surface conversions (the C#'s dispatch order).
+    micro_finish::run(world, streams, opts);
+    micro_surface::run(world, streams, opts);
+}
+
+/// The vanilla Grass slot (`WorldGen.cs:12423`): the M5-SEED-2
+/// `DoDigExtraHoles` body the C# runs there (`:12427-12430`).
+fn step_micro_grass(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    micro_grass::run(world, streams, opts);
 }
 
 fn step_terrain_height_map(
@@ -1748,8 +1775,16 @@ fn step_dungeon(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    biomes::pass_dungeon(world, &map.heights, gv.spans(), &mut streams.rng);
+    // The faithful crawler (`DungeonCrawler.MakeDungeon` +
+    // `LegacyDungeonLayoutProvider` + the hall/room walkers,
+    // `worldgen/dungeon.rs::generate_dungeon`) replaces the shape-level
+    // approximation (`biomes::pass_dungeon` — retired with this move, its
+    // tests keep it honest). The hall seed rides the pass's own stream; the
+    // `rng → pass_rng("Dungeon")` shift is this phase's accepted world change.
+    let dungeon_x = gv.spans().dungeon_x;
+    let surface_row = gv.map().heights[dungeon_x as usize];
+    let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
+    dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
 }
 
 fn step_ocean_caves(
@@ -2502,7 +2537,7 @@ mod tests {
         // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
         // `:12500`).
         // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
-        assert_eq!(names.len(), 61);
+        assert_eq!(names.len(), 62);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2536,6 +2571,7 @@ mod tests {
                 "plan biome spans",
                 "dunes",
                 "ocean sand",
+                "micro grass",
                 "jungle",
                 "mud caves to grass",
                 "full desert",
@@ -2637,7 +2673,8 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("ocean sand"), pos("dunes") + 1);
         assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
-        assert_eq!(names[pos("ocean sand") + 1], "jungle");
+        assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
+        assert_eq!(names[pos("micro grass") + 1], "jungle");
         assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");

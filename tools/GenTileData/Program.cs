@@ -468,6 +468,9 @@ string[] wantedSets =
     "MergesWithClouds", "ForcedDirtMerging", "NeedsGrassFraming",
     "OreMergesWithMud", "tileMossBrick", "Platforms", "IsVine", "Falling", "Torches",
     "MergesWithDirtInASpecialWay", "CrackedBricks", "AllowLightInWater",
+    // The grappling hooks' latch predicate (`Projectile.cs:52868-52879`): the
+    // Squirrel Hook (865) also latches the tree trunks and the cactus (323).
+    "IsATreeTrunk",
     // Grass framing (WorldGen.TileFrameCosmetic 82143/82185/83395):
     // Conversion.Grass, Sets.Ore and ChecksForMerge gate the grass family path.
     "Grass", "Ore", "ChecksForMerge",
@@ -484,6 +487,9 @@ string[] wantedSets =
     // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),
     // so the emitted set is the complement (default-true emission, Program.cs:92-96).
     "CanBeClearedDuringGeneration",
+    // The `.wld` tile RLE batching gate (`SaveWorldTiles:1573`, `TileID.cs:484`):
+    // default-true minus 423/520/723/724, so the emitted set is near-complete.
+    "AllowsSaveCompressionBatching",
 ];
 foreach (var name in wantedSets)
 {

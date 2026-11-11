@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::inv::{ARMOR, MISC};
 use crate::item::ItemSlot;
 use crate::player::{Player, PlayerInput};
+use crate::projectile::proj_data;
 
 /// The ammo-mastery grant seam (M3-ITEM-6, Phase 3) — the port's home for the
 /// C#'s `Player.ResetEffects` clear + `UpdateBuffs`/`UpdateEquips` re-derive of
@@ -306,16 +307,77 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.try_dismount(&app.world);
         }
         if hook_edge && !p.dead {
+            // `QuickGrapple` (`Player.cs:6296-6478`): the fire-time gate first
+            // (`:6399` — the in-flight count against `num6 − num5`), then the
+            // oldest-hook recycle (`:6396`, `num7`), then the two kind cycles
+            // (the Lunar 646→…→649 walk `:6425-6456` and the Dual 73→74 swap
+            // `:6420-6424`), and only then the spawn (`:6458-6477`).
+            let owner = app.local_id as u8;
+            let (flight, attached) = app.projectiles.hook_counts(owner);
+            let mut kind = hook_type as u16;
+            if !crate::grapple::fire_allowed(flight, attached, kind) {
+                return;
+            }
+            // The Dual Hook's colour swap: a blue head already out means red.
+            let blue_out = app
+                .projectiles
+                .slots()
+                .iter()
+                .any(|pr| pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE);
+            if kind == crate::projectile::DUAL_HOOK_BLUE && blue_out {
+                kind = crate::grapple::dual_next_kind(true);
+            }
+            // The Lunar cycle: the highest-`timeLeft` in-flight kind steps.
+            if kind == crate::projectile::LUNAR_HOOK_SOLAR {
+                let best = app
+                    .projectiles
+                    .slots()
+                    .iter()
+                    .filter(|pr| {
+                        pr.active
+                            && pr.owner == owner
+                            && (crate::projectile::LUNAR_HOOK_SOLAR..=crate::projectile::LUNAR_HOOK_STARDUST)
+                                .contains(&pr.kind)
+                    })
+                    .max_by_key(|pr| pr.time_left)
+                    .map(|pr| pr.kind);
+                kind = crate::grapple::next_lunar_kind(best);
+            }
+            // The recycle: the lowest-`timeLeft` hook of this owner dies.
+            if crate::grapple::recycles_oldest(flight, attached, kind) {
+                if let Some(i) = app
+                    .projectiles
+                    .slots()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, pr)| {
+                        pr.active
+                            && pr.owner == owner
+                            && proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
+                    })
+                    .min_by_key(|(_, pr)| pr.time_left)
+                    .map(|(i, _)| i)
+                {
+                    app.projectiles.kill(i);
+                }
+            }
+            // `:6458-6477` — the aim at the mouse world position, the velocity
+            // the unit aim times `item.shootSpeed` (the vanilla 16 for the Hook;
+            // the per-item values ride with M3-EQUIP-3, `TR_HOOK` pins the kind).
             let center = Vec2::new(
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            app.grapple = Some(crate::grapple::GrappleHook::fire(
-                hook_type,
+            app.projectiles.spawn_hook(
+                kind,
                 center,
                 mouse_world,
                 16.0,
-            ));
+                0,
+                0.0,
+                owner,
+                p.facing,
+            );
         }
         // The quick-mount key: the `controlMount` press edge (the menu's
         // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
@@ -335,31 +397,24 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.attack_cd = app.attack_cd.max(secs);
             }
         }
-        // The hook AI tick (`AI_007_GrapplingHooks`): the flight, the tile
-        // latch, the retract; the attached hook feeds the pull.
-        let grapple_snapshot = app.grapple.as_mut().and_then(|h| {
-            let center = Vec2::new(
-                p.x + crate::player::WIDTH * 0.5,
-                p.y + crate::player::HEIGHT * 0.5,
-            );
-            if h.update(&app.world, center) {
-                Some((h.pos, h.hook_type, h.ai == crate::grapple::HookAi::Attached))
-            } else {
-                None
-            }
-        });
-        p.grappling_active = grapple_snapshot
-            .as_ref()
-            .is_some_and(|(_, _, attached)| *attached);
-        if let Some((pos, hook_type, _)) = grapple_snapshot {
-            p.grapple_hook_center = pos;
-            p.grapple_hook_type = hook_type;
-        } else {
-            app.grapple = None;
-        }
-        let grapple_for_tick = grapple_snapshot
-            .filter(|(_, _, attached)| *attached)
-            .map(|(pos, hook_type, _)| (pos, hook_type));
+        // The hook runs as an aiStyle-7 projectile in the pool
+        // (`AI_007_GrapplingHooks`, stepped by `update_projectiles`); this is
+        // only the bridge to `GrappleMovement`'s pull — the attached hook's
+        // center, as the vanilla's `grappling[]`/`grapCount` reader. The
+        // multi-hook registration replaces both in the next phase.
+        // `AI_007`'s `grappling[]`/`grapCount` (`Projectile.cs:52705`/`:52862`):
+        // the attached slots in slot order, handed to `GrappleMovement`.
+        // The tuple's third element is the hook's rotated direction — only the
+        // Squirrel Hook's steering reads it (`GetGrapplingForces :22803`).
+        let (reg, count) = app.projectiles.hook_reg();
+        let grapple_for_tick: Vec<(u16, Vec2, f32)> = reg[..count]
+            .iter()
+            .map(|&i| {
+                let pr = &app.projectiles.slots()[i as usize];
+                (pr.kind, pr.grapple_center, pr.rot)
+            })
+            .collect();
+        p.grappling_active = !grapple_for_tick.is_empty();
         // `Player.armor`'s kinds snapshot: the update's grant pass reads the
         // equipped kinds (`UpdateEquips`, `Player.cs:12892` — the loop runs
         // inside `Player.Update` on the vanilla's own array) plus the rolled
@@ -400,17 +455,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
             // stand-in (no `DangerThatPreventsOtherDangers` members yet).
             let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
-            p.update_with_grapple(&app.world, input, grapple_for_tick, item_in_use, false);
-            // M4-PROJ-8 phase 2 — the summon seam (the ported-order block on
+            p.update_with_grapple(&app.world, input, &grapple_for_tick, item_in_use, false);
             // `Player::update_summon_buff_arms`): the recount
-            // (`Player.cs:25565`) then the buff arms (`:10483-10947`), inside
-            // the fixed step. The C#'s `UpdateBuffs` runs the arms between its
-            // reset and its expired-buff sweep; the port's `remove_expired_buffs`
-            // runs inside `update_with_grapple`, so the arms sit after it —
-            // the cap effects (110/150/348) then land after `ResetEffects`
-            // zeroed the budgets (`Player.cs:18448`), the order that keeps
-            // them. A 0-time grant (the summon staves' `buffTime = 0` rows) is
-            // a ghost the sweep removes — verbatim, recorded in ANALYSIS.
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
@@ -458,9 +504,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
-        // The jump-off consumed the hook (`RemoveAllGrapplingHooks`).
+        // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off
+        // kills every aiStyle-7 slot this player owns. The pool-wide scan is
+        // the source's own `for (i < 1000)` loop; the multi-hook phase moves it
+        // into the pool beside the recycle tables.
         if !p.grappling_active {
-            app.grapple = None;
+            let owner = app.local_id as u8;
+            let hooks: Vec<usize> = app
+                .projectiles
+                .slots()
+                .iter()
+                .enumerate()
+                .filter(|(_, pr)| {
+                    pr.active
+                        && pr.owner == owner
+                        && crate::projectile::proj_data(pr.kind)
+                            .is_some_and(|d| d.ai_style == 7)
+                })
+                .map(|(i, _)| i)
+                .collect();
+            for i in hooks {
+                app.projectiles.kill(i);
+            }
         }
         if app.follow_player {
             // Follow the interpolated position so the camera is smooth between

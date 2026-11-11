@@ -175,6 +175,28 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // debuff (31).
         NpcKind::Angler => &[31],
         NpcKind::SleepingAngler => &[31],
+        // `NPCID.cs:8254-8308` has no `DebuffImmunitySets` row for 106/
+        // 108/123/124 — the same empty row as the rest of the town set.
+        NpcKind::Wizard => &[],
+        NpcKind::BoundWizard => &[],
+        NpcKind::Mechanic => &[],
+        NpcKind::BoundMechanic => &[],
+        // `NPCID.cs:8143-8148`/`:8604-8610`: the Stylist's, the webbed
+        // Stylist's and the Tax Collector's `SpecificallyImmuneTo` rows —
+        // the Confused debuff (31).
+        NpcKind::Stylist => &[31],
+        NpcKind::WebbedStylist => &[31],
+        NpcKind::TaxCollector => &[31],
+        // `NPCID.cs:6080-6089`: the Golfer's and the sleeping Golfer's
+        // `SpecificallyImmuneTo` rows — the Confused debuff (31).
+        NpcKind::Golfer => &[31],
+        NpcKind::SleepingGolfer => &[31],
+        // `NPCID.cs`'s DebuffImmunitySets has no row for 633/663.
+        NpcKind::Zoologist => &[],
+        NpcKind::Princess => &[],
+        // `NPCID.cs`'s DebuffImmunitySets has no row for 207/208.
+        NpcKind::DyeTrader => &[],
+        NpcKind::PartyGirl => &[],
         NpcKind::EyeOfCthulhu => &[],
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
@@ -260,12 +282,26 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DD2DarkMage
         | NpcKind::DD2Betsy
         | NpcKind::DD2WitherBeast
+        | NpcKind::DD2WyvernT1
+        | NpcKind::DD2WyvernT2
+        | NpcKind::DD2WyvernT3
+        | NpcKind::DD2DarkMageT3
+        | NpcKind::DD2WitherBeastT3
+        | NpcKind::DD2DrakinT2
+        | NpcKind::DD2DrakinT3
+        | NpcKind::DD2KoboldWalkerT2
+        | NpcKind::DD2KoboldWalkerT3
+        | NpcKind::DD2KoboldFlyerT2
+        | NpcKind::DD2KoboldFlyerT3
+        | NpcKind::DD2OgreT2
+        | NpcKind::DD2OgreT3
         | NpcKind::DD2Bartender
         | NpcKind::DD2EterniaCrystal
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
         | NpcKind::SolarTower
+        | NpcKind::VortexTower
         | NpcKind::MoonLordHead
         | NpcKind::MoonLordHand
         | NpcKind::MoonLordCore
@@ -290,7 +326,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::StardustWormHead
         | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
+        | NpcKind::VortexTower
+        | NpcKind::DD2LanePortal
         | NpcKind::StardustCellBig
+        | NpcKind::VortexTower
         | NpcKind::StardustCellSmall
         | NpcKind::StardustJellyfishBig
         | NpcKind::NebulaBeast
@@ -316,6 +355,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::PrimeLaser => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
+}
+
+/// `NPCDebuffImmunityData.ImmuneToWhips` — the 11 `NPCID.cs` rows
+/// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
+/// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
+/// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
+/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
+/// the pirate ship are on the ported roster — the whip tag gate
+/// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+pub fn whip_immune(kind: NpcKind) -> bool {
+    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
 }
 
 impl NpcBuffs {

@@ -203,6 +203,12 @@ pub static SET_ALLOW_LIGHT_IN_WATER: TileSet = TileSet(&[
     0x0000000020000000, 0x0000000000000000, 0x0000000000000000, 0x0000500000000000, 
 ]);
 
+pub static SET_IS_A_TREE_TRUNK: TileSet = TileSet(&[
+    0x0000000000000020, 0x0000000000000100, 0x0000000000000000, 0x0000000000000000, 
+    0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+    0x0000000000000000, 0x0400010000103f80, 0x0000000000000000, 0x0000000000000000, 
+]);
+
 pub static SET_GRASS: TileSet = TileSet(&[
     0x0000000000800004, 0x0000200000000000, 0x0000000000000000, 0x0000000000000080, 
     0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000100020000000, 
@@ -267,4 +273,10 @@ pub static SET_CAN_BE_CLEARED_DURING_GENERATION: TileSet = TileSet(&[
     0xffffe5ffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffdffbffffffff, 
     0xffffffffffffffff, 0xfffe7fffffffffff, 0xffffffffffec0fff, 0xfffffff1ffffffff, 
     0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffffffff, 
+]);
+
+pub static SET_ALLOWS_SAVE_COMPRESSION_BATCHING: TileSet = TileSet(&[
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 
+    0xffffffffffffffff, 0xffffffffffffffff, 0xffffff7fffffffff, 0xffffffffffffffff, 
+    0xfffffffffffffeff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0003ffffffe7ffff, 
 ]);

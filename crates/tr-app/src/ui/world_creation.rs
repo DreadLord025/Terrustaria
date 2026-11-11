@@ -722,6 +722,17 @@ pub fn seed_flags(seed_text: &str) -> tr_core::seeds::SeedFlags {
     tr_core::seeds::SeedFlags::from_seed_text(seed_text)
 }
 
+/// M5-SEED-2: the combined resolution — the classic options of the base seed
+/// text plus the 37 micro seeds the `|`-separated plaintexts unlock
+/// (`TryApplyingCopiedSeed`'s tail loop, `WorldFileData.cs:292-308`, and
+/// `FinishCreatingWorld`'s join, `UIWorldCreation.cs:988-995`). The seed the
+/// worldgen hashes is unchanged: the user's typed text IS the joined form,
+/// so [`seed_value`]'s `translate_seed` hashes exactly what vanilla stores.
+pub fn seed_identity(seed_text: &str) -> (tr_core::seeds::SeedFlags, tr_core::seeds::MicroSeedFlags) {
+    let (micro, classic, _) = tr_core::seeds::resolve_seed_text(seed_text);
+    (classic, micro)
+}
+
 /// `FinishCreatingWorld` (`UIWorldCreation.cs:845-863`) through the port's
 /// pipeline: the trimmed name, the size row's tile counts, the seed, then
 /// `worldgen::generate` + `tr_core::save::save` into `worlds_dir`. The world's
@@ -736,7 +747,7 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     let name = draft.name.trim();
     let (width, height) = size_dimensions(draft.size);
     let seed = seed_value(name, &draft.seed);
-    let flags = seed_flags(&draft.seed);
+    let (flags, micro_flags) = seed_identity(&draft.seed);
     let mut world = tr_core::worldgen::generate(&tr_core::worldgen::GenOptions {
         name: name.to_string(),
         width,
@@ -750,6 +761,7 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
             _ => tr_core::worldgen::roll_crimson(seed),
         },
         flags,
+        micro_flags,
     });
     // `generate` seeds its noise/RNG but leaves `World::new`'s `seed: 0` —
     // the header records the draft's (`save.rs:61`'s `world.seed` write).
@@ -757,7 +769,7 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     let path = worlds_dir.join(format!("{name}.trwld"));
     // A freshly generated world carries no chest records — the store rolls at
     // `App::new` (`SaveChests`'s write-side twin lives on the autosave).
-    tr_core::save::save(&path, &world, &[])?;
+    tr_core::save::save(&path, &world, &tr_core::save::WorldSide::default())?;
     Ok(path)
 }
 
@@ -1434,6 +1446,41 @@ mod tests {
         assert_eq!(&bytes[0..8], b"TRWLD01\0"); // `save.rs:16`'s magic
         let seed = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
         assert_eq!(seed, 12345);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_created_seeds_generate_two_worlds() {
+        // The report's BUG-04 criterion: two worlds created with the seeds
+        // "A" and "B" differ in their tile digests, and reloading each world
+        // reproduces the same seed — the entered text is what the generator
+        // and the header carry.
+        let dir = std::env::temp_dir().join("tr-worldcreate-seeds");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let digest = |seed_text: &str| -> (u64, u64) {
+            let mut draft = NewWorldDraft::new(0, 0);
+            draft.name = format!("W{seed_text}");
+            draft.size = 0;
+            draft.seed = seed_text.into();
+            let path = create_world_in(&dir, &draft).expect("the world saves");
+            let bytes = std::fs::read(&path).unwrap();
+            let seed = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
+            // The body digest: `FromBytes`'s simple accumulator over the tile
+            // payload past the header (`binio::Reader`'s own hash is not
+            // exposed, so the port's test-side digest stands in — the world
+            // bodies differ long before the tail).
+            let body = &bytes[20..];
+            let mut acc = 0u64;
+            for (i, b) in body.iter().enumerate() {
+                acc = acc.wrapping_add((*b as u64).wrapping_mul(i as u64 + 1));
+            }
+            (seed, acc)
+        };
+        let (seed_a, tiles_a) = digest("A");
+        let (seed_b, tiles_b) = digest("B");
+        assert_ne!(seed_a, seed_b, "the two seed texts hash differently");
+        assert_ne!(tiles_a, tiles_b, "and generate two different worlds");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

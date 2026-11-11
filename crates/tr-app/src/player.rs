@@ -287,8 +287,14 @@ pub struct Player {
     /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
     /// milestone switch, `Player.cs:56323`).
     pub angler_quests_finished: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`): the golf score
+    /// the Golfer's shop and chatter tier (`Chest.cs:3158`, `NPC.cs:94792`).
+    pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
+    /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
+    /// player applied (`tag_effects.rs`, M4-PROJ-7).
+    pub tag_effects: crate::tag_effects::TagEffectStack,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -429,6 +435,13 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
+    /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
+    /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
+    /// `drippingSlime` double is 100 instead of 8). Captured from the world at
+    /// spawn (`Player::spawn`) — the flag is immutable post-generation, exactly
+    /// like the C#'s world-level static.
+    vampirism: bool,
     /// `Player.itemRotation`'s source for useStyle 5 — the aim angle the App
     /// updates per tick (`swing_aim`), mirrored onto the player for the draw.
     pub swing_aim: f32,
@@ -496,6 +509,13 @@ pub struct Player {
     /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
     /// `RecalculateLuck` (`Player.cs:29137-29164`).
     pub luck_state: LuckState,
+    /// `Player.yoyoHitCounter` (`Player.cs:1220`: `= -1`): the lifetime
+    /// yoyo-hit counter behind `EverySomeYoyoHits` (`Player.cs:4308-4316`)
+    /// — the M4-PROJ-4b on-hit effects (the damage doublings and the
+    /// Cascade/Chik/Kraken/Eye-of-Cthulhu spawns). Vanilla never resets it
+    /// (no `ResetEffects` arm, no death/throw reset), so the port doesn't
+    /// either — the -1 start makes the first hit skip every effect.
+    pub yoyo_hit_counter: i32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -522,11 +542,6 @@ pub struct Player {
     /// `Player.GoingDownWithGrapple` (`Player.cs:808`): the pull points
     /// downward — the platforms fall through.
     pub going_down_with_grapple: bool,
-    /// The grapple hook's attached center, set by the caller per tick (the
-    /// vanilla `GrappleMovement` reads `Main.projectile` directly).
-    pub grapple_hook_center: Vec2,
-    /// The attached hook's type (the pull-speed table lookup).
-    pub grapple_hook_type: i32,
     /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
     /// budget in ticks and its refill cap.
     pub wing_time: f32,
@@ -690,6 +705,23 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
+    /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
+    /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
+    /// Missile / Flamelash / Rainbow Rod) read it while aiming
+    /// (`Projectile.cs`'s `AI_009_MagicMissiles` owner block).
+    /// Written by the item-use path (M4-PROJ-6 Phase 5), read by the arm
+    /// (Phase 4); default off.
+    pub channel: bool,
+    /// The shooting item's kind while `channel` — the C# block only holds the
+    /// aim while `HeldItem.shoot == type` (`AI_009_MagicMissiles`'s owner
+    /// block, `Projectile.cs:43239-43249`); 0 = no item.
+    pub channel_item: u16,
+    /// The aim target the channel feeds the spell: `MouseWorld` clamped by
+    /// `LimitPointToPlayerReachableArea` (`Projectile.cs:43241-43249`'s
+    /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
+    /// pixels. `Vec2::ZERO` while not channelling.
+    pub channel_target: Vec2,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -724,12 +756,13 @@ pub struct Player {
     /// `Player.archery` (`Player.cs:2286`): buff 16, the Archery Potion
     /// (`:10018`) — the ×1.2 speed fuse capped at 20 (`:53560`).
     pub archery: bool,
-    /// `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
-    /// (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
-    /// granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
-    /// the offset/cooldown are written inside a successful pick (`:53569-53577`)
-    /// and ticked down every tick (`Update_AmmoCycler` `:28419-28426`).
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state.
     pub ammo_cycling: crate::ammo::AmmoCycling,
+    // `Player.ammoCyclingMode`/`ammoCyclingOffset`/`ammoCyclingCooldown`
+    // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
+    // granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
+    // the offset/cooldown are written inside a successful pick (`:53569-53577`)
 }
 
 /// One summon keep-alive arm of `Player.UpdateBuffs`' chain
@@ -982,6 +1015,20 @@ const SUMMON_BUFF_ARMS: [SummonBuffArm; 29] = [
 ];
 
 impl Player {
+    /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the counter's
+    /// modulo against `amount` (C#'s truncated remainder, so the -1 start
+    /// skips the very first hit) plus the optional bump. The one caller
+    /// pair is `Projectile`'s on-hit arms: the damage doublings peek
+    /// (`countUp = false`) before the strike, the spawns increment after
+    /// it — both on the same hit, in that order.
+    pub fn every_some_yoyo_hits(&mut self, amount: i32, count_up: bool) -> bool {
+        let hit = self.yoyo_hit_counter % amount == 0;
+        if count_up {
+            self.yoyo_hit_counter += 1;
+        }
+        hit
+    }
+
     pub fn spawn(world: &World) -> Self {
         // `FindSpawn` (`Player.cs:54592-54609`): the bed spawn — the port's
         // `World::bed_spawn` — overrides the world spawn when it validates
@@ -1007,9 +1054,12 @@ impl Player {
             dead: false,
             deaths_pve: 0,
             angler_quests_finished: 0,
+            golfer_score: 0,
             deaths_pvp: 0,
             dead_time: 0,
             respawn_timer: 0,
+            minion_attack_target_npc: -1,
+            tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -1035,7 +1085,6 @@ impl Player {
             slots_minions: 0.0,
             max_turrets: 1,
             max_turrets_old: 1,
-            minion_attack_target_npc: -1,
             owned_projectile_counts: [0; PROJ_COUNT],
             highest_storm_tiger_gem_original_damage: 0,
             highest_abigail_counter_original_damage: 0,
@@ -1093,6 +1142,11 @@ impl Player {
             seat_pos_offset: (0.0, 0.0),
             seat_y_offset: 0,
             no_knockback: false,
+            // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
+            // OnFire regen row's source (`Player.cs:18983-18992`).
+            vampirism: world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
@@ -1143,8 +1197,6 @@ impl Player {
             has_wings: false,
             grappling_active: false,
             going_down_with_grapple: false,
-            grapple_hook_center: Vec2::ZERO,
-            grapple_hook_type: 13,
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
@@ -1211,10 +1263,11 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
-            // The ammo-mastery flags start false and the cycler None/0/0 — the
-            // per-tick grant seam in `world_sim/player.rs` re-derives them from
-            // the equipment and the buffs, exactly like the C#'s
-            // `ResetEffects` clear (`Player.cs:18390-18664`).
+            // `Player.channel` is off until a `channel` item is held
+            // (`Player.cs:52958-52968`).
+            channel: false,
+            channel_item: 0,
+            channel_target: Vec2::ZERO,
             magic_quiver: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
@@ -1226,27 +1279,7 @@ impl Player {
             ammo_cost75: false,
             archery: false,
             ammo_cycling: crate::ammo::AmmoCycling::default(),
-        }
-    }
-
-    /// The ten ammo flags this phase re-derives per tick, as the pure data
-    /// `ammo::resolve_projectile` / `ammo::not_consume` read (`Player.cs:53537`,
-    /// `:53543`, `:53548`, `:53560`, `:53595`, `:53599`, `:53603`, `:53643`,
-    /// `:53647`, `:53651`, `:53655`). The struct lives in `ammo.rs` so the ammo
-    /// module stays the single owner of the flag SHAPE; this is the Player-side
-    /// projection the shooter wire (Phase 4) feeds it.
-    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
-        crate::ammo::AmmoFlags {
-            has_molten_quiver: self.has_molten_quiver,
-            magic_quiver: self.magic_quiver,
-            acc_sharp_barb: self.acc_sharp_barb,
-            archery: self.archery,
-            ammo_box: self.ammo_box,
-            ammo_potion: self.ammo_potion,
-            huntress_ammo_cost90: self.huntress_ammo_cost90,
-            chloro_ammo_cost80: self.chloro_ammo_cost80,
-            ammo_cost80: self.ammo_cost80,
-            ammo_cost75: self.ammo_cost75,
+            yoyo_hit_counter: -1,
         }
     }
 
@@ -2057,6 +2090,27 @@ impl Player {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
 
+    /// `Player.meleeSpeed` (`Player.cs:2458`, reset to 1f at `:18335`): the
+    /// base 1f plus the accumulator the equipment/buff grants write
+    /// (`meleeSpeedBonus`; the C# folds its flat `+=` arms straight into
+    /// `meleeSpeed`, the port keeps the same sum). The flail family scales
+    /// its per-kind speeds and its 900-px leash by `1 / meleeSpeed`
+    /// (`AI_015_Flails` `Projectile.cs:43824-43831`, `:43727`), and the
+    /// melee shoot path's `speed /= meleeSpeed` (`Player.cs:47063`) reads it.
+    pub fn melee_speed(&self) -> f32 {
+        1.0 + self.melee_speed_bonus
+    }
+
+    /// `Player.MountedCenter` (`Player.cs:3335-3343`):
+    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
+    /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
+    /// offsets (no mounts yet), so both fold to 0 and the vector equals
+    /// `center()` — kept as its own accessor so the flail chain anchor cites
+    /// the C# point and survives the mount port.
+    pub fn mounted_center(&self) -> (f32, f32) {
+        self.center()
+    }
+
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
     /// the ported classes: the classless items pass the 1f default.
     pub fn weapon_damage_multiplier(&self, class: registry::DamageClass) -> f32 {
@@ -2125,7 +2179,7 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, None, false, false)
+        self.update_with_grapple(world, input, &[], false, false)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -2137,14 +2191,18 @@ impl Player {
         &mut self,
         world: &World,
         input: PlayerInput,
-        grapple: Option<(Vec2, i32)>,
+        // `Player.grappling[]`/`grapCount` as a `(ProjectileID, center,
+        // rotation)` triple per registered hook (`Player.cs:2742`/`:2744`) —
+        // the pool rebuilds it on its own pass, so the caller only hands the
+        // set over. The rotation is read by the Squirrel Hook's steering alone.
+        grapple: &[(u16, Vec2, f32)],
         item_in_use: bool,
         danger_near: bool,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
-        // caller passes the attached state, so derive it here.
-        self.grappling_active = grapple.is_some();
+        // caller passes the registered set, so derive it here.
+        self.grappling_active = !grapple.is_empty();
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -2152,6 +2210,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:24591`: the tag stack's update right after the buff head —
+        // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
+        self.tag_effects.update_tick();
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
@@ -2747,7 +2808,7 @@ impl Player {
         // vector to the attached hook center clamped to the pull speed. The
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
-            self.grapple_movement(grapple, input);
+            self.grapple_movement(grapple, input, item_in_use);
         }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
@@ -3327,6 +3388,7 @@ impl Player {
     /// regen ← 0; resets_time ← false
     /// poisoned(20): −4 | venom(70): −30 | chlorophyteSpore(397): −30
     /// onFire(24): −8, ×2 while drippingSlime(137)
+    ///             (−100/×−100 while `Main.vampireSeed`, the `vampirism` micro seed)
     /// onFire3(323): −8 ×2 | frostburn(44): −16 ×2 | frostburn2(324): −16 ×2
     /// cursedInferno(39): −24 ×2 | burned(67): −60 ×2
     /// suffocating(68): −40
@@ -3363,12 +3425,21 @@ impl Player {
         }
         let drip = self.holding(137); // drippingSlime doubles the fire family
         if self.holding(24) {
-            // OnFire — `:18976-18998` (the vampireSeed −100 variant has no
-            // source and stays out per plan).
+            // OnFire — `:18976-18998`. M5-SEED-2: the `vampirism` world trades
+            // the drain for its own (`Main.vampireSeed` → −100, and the
+            // `drippingSlime` double is −100 instead of −8, `:18983-18992`) —
+            // the flag comes from the world's micro seeds (`WorldGen.cs:555-558`).
             resets_time = true;
-            regen -= 8;
-            if drip {
+            if self.vampirism {
+                regen -= 100;
+                if drip {
+                    regen -= 100;
+                }
+            } else {
                 regen -= 8;
+                if drip {
+                    regen -= 8;
+                }
             }
         }
         if self.holding(323) {
@@ -3745,7 +3816,7 @@ impl Player {
     }
 
     /// `Player.CCed` (`Player.cs:3377-3385`): frozen, webbed or stoned.
-    fn cced(&self) -> bool {
+    pub fn cced(&self) -> bool {
         self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
     }
 
@@ -4211,10 +4282,17 @@ impl Player {
     /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
     /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
     /// attached hook (the param already filters to the attached state).
-    fn grapple_movement(&mut self, hook: Option<(Vec2, i32)>, input: PlayerInput) {
-        let Some((hook_center, hook_type)) = hook else {
+    fn grapple_movement(
+        &mut self,
+        hooks: &[(u16, Vec2, f32)],
+        input: PlayerInput,
+        item_in_use: bool,
+    ) {
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): zero registered hooks
+        // carries the current velocity through untouched.
+        if hooks.is_empty() {
             return;
-        };
+        }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
         // budgets refill every tick while grappling.
         self.wing_time = self.wing_time_max as f32;
@@ -4224,33 +4302,45 @@ impl Player {
         // `:22645`: the fall origin refreshes per tick — no fall damage.
         self.fall_start = (self.y / TILE_PX) as i32;
 
-        // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
-        // vector to the hook center clamped to the per-type pull speed.
-        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5);
-        let dist = to_hook.length();
-        let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
-        let pull = if dist > 0.001 {
-            to_hook * (pull_speed / dist).min(1.0)
-        } else {
-            Vec2::ZERO
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): the steering-adjusted
+        // average of every registered hook's center, clamped to
+        // `grappling[0]`'s type pull speed. The tuple's third element is the
+        // hook's rotation (only the Squirrel Hook reads it).
+        let pull = crate::grapple::grapple_pull(
+            hooks,
+            Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5),
+            // `PlayerInput` has no `up` arm (nothing consumes it in the
+            // port); the C# reads `controlUp` here.
+            crate::grapple::steering_stick(input.left, input.right, false, input.down),
+        );
+        let Some(pull) = pull else {
+            // `:22845-22847`: no registered hook carries the velocity through.
+            return;
         };
-        // `:22659`: `flag3` = the pull points down while the CURRENT velocity
-        // is zero (a grounded pull) — read before the replacement.
-        let flag3 = pull.y > 0.0 && self.vy == 0.0;
+        // `:22659`: `flag3` = the pull points down while the CURRENT velocity is
+        // zero (a grounded pull) — read before the replacement.
+        let flag3 = pull.vel.y > 0.0 && self.vy == 0.0;
         // `:22660-22661`: the pull replaces the velocity outright.
-        self.vx = pull.x;
-        self.vy = pull.y;
+        self.vx = pull.vel.x;
+        self.vy = pull.vel.y;
         // `:22655-22658`: the pull points downward → the platforms fall
         // through (`GoingDownWithGrapple`).
-        self.going_down_with_grapple = pull.y > 0.0;
-        // `:22655-22658`: the pull points downward → the platforms fall
-        // through (`GoingDownWithGrapple`).
+        self.going_down_with_grapple = pull.going_down;
 
-        // `:22670-22673`: the direction follows the pull.
-        if self.vx > 0.0 {
-            self.facing = 1;
-        } else if self.vx < 0.0 {
-            self.facing = -1;
+        // `:22670-22676`: the direction follows the pull; an exactly-zero X
+        // takes the Squirrel Hook's preferred direction instead. The C# gates
+        // the block on `itemAnimation == 0`, which the sim passes in.
+        if !item_in_use {
+            if self.vx == 0.0 {
+                if let Some(d) = pull.dir {
+                    self.facing = d;
+                }
+            }
+            if self.vx > 0.0 {
+                self.facing = 1;
+            } else if self.vx < 0.0 {
+                self.facing = -1;
+            }
         }
 
         // `:22705-22739`: the jump-off.
@@ -4850,6 +4940,21 @@ impl Player {
         out.prev_gfx_off_y = 0.0;
         out
     }
+    pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
+        crate::ammo::AmmoFlags {
+            has_molten_quiver: self.has_molten_quiver,
+            magic_quiver: self.magic_quiver,
+            acc_sharp_barb: self.acc_sharp_barb,
+            archery: self.archery,
+            ammo_box: self.ammo_box,
+            ammo_potion: self.ammo_potion,
+            huntress_ammo_cost90: self.huntress_ammo_cost90,
+            chloro_ammo_cost80: self.chloro_ammo_cost80,
+            ammo_cost80: self.ammo_cost80,
+            ammo_cost75: self.ammo_cost75,
+        }
+    }
+
 
     /// Deterministic identity for the G6 world-range cache.
     pub fn render_key(&self) -> u32 {
@@ -5680,7 +5785,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
-        let grapple = Some((hook_center, 13));
+        // One registered Hook — the multi-hook seam's single-member case.
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -5701,7 +5807,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let start_row = (p.y / TILE_PX) as i32;
-        let grapple = Some((Vec2::new(p.x, p.y - 300.0), 13));
+        let center = Vec2::new(p.x, p.y - 300.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
             p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
             // GrappleMovement refreshes the origin BEFORE the position
@@ -5727,10 +5834,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         // The press edge: the jump-off.
         p.update_with_grapple(
             &w,
@@ -5755,10 +5861,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(
             &w,
             PlayerInput {
@@ -5783,10 +5888,9 @@ mod tests {
     fn downward_pull_sets_going_down() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // One attached Hook below the player.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         assert!(p.going_down_with_grapple, "the pull points down");
     }
@@ -6825,7 +6929,13 @@ mod tests {
     /// A player with a large life pool for 300-tick drain runs; `update_survival`
     /// only (the buff timers are not decremented there, so the buff holds).
     fn drain_rig() -> Player {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        drain_rig_in(&World::new("t".into(), 64, 800))
+    }
+
+    /// The world-parameterized twin (M5-SEED-2's vampirism rigs pass a world
+    /// whose micro seeds carry `Main.vampireSeed`'s bit).
+    fn drain_rig_in(world: &World) -> Player {
+        let mut p = Player::spawn(world);
         p.max_hp = 1000;
         p.hp = 1000;
         p
@@ -7202,6 +7312,39 @@ mod tests {
         p.buffs.add_buff(137, 600);
         p.update_survival();
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
+    }
+
+    // M5-SEED-2: the `vampirism` world's OnFire row (`Player.cs:18983-18992`)
+    // drains −100 instead of −8, with the drippingSlime double at −100.
+    #[test]
+    fn the_vampirism_world_trades_the_on_fire_drain_for_its_own() {
+        // The classic row first — the flag is off on a classic world.
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -8);
+        // The seeded world: the flag rides the world's micro seeds, captured
+        // at `Player::spawn` (`WorldGen.cs:555-558`).
+        let mut w = World::new("t".into(), 64, 800);
+        w.micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        let mut p = drain_rig_in(&w);
+        assert!(p.vampirism, "the flag reaches the player");
+        p.buffs.add_buff(24, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
+        // The drip double is 100 too, and only the fire family is affected.
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
+        let mut p = drain_rig_in(&w);
+        p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
+        p.buffs.add_buff(24, 600); // OnFire −100
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
     #[test]
