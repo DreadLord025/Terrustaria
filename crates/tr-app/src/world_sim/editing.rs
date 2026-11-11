@@ -419,7 +419,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let (pcx, pcy) = p.center();
         let dx = tx as f32 * TILE_PX + 8.0 - pcx;
         let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-        let reach = 6.0 * TILE_PX;
+        // The port's circular gate is the documented stand-in for the C#'s
+        // `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)`
+        // rectangle (`TileReachCheckSettings.cs:22-70`, X 5 / Y 3) — and its
+        // radius now tracks `Player.tileRangeX` (`Player.cs:2496`), so the
+        // journey `FarPlacementRangePower`'s doubling (`:18815-18828`) widens
+        // the reach exactly as it does in the vanilla. Base 5 + 1 = the
+        // previous 6-tile constant, so nothing off the power moves.
+        let reach = (p.tile_range_x() + 1.0) * TILE_PX;
         dx * dx + dy * dy <= reach * reach
     });
     if !player_in_reach {
@@ -979,10 +986,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             let (kill_guide, kill_clothier) = app
                 .player
                 .as_ref()
-                .map(|p| {
-                    let worn = |k: u16| p.equipped[3..10].contains(&k);
-                    (worn(267), worn(1307))
-                })
+                .map(|p| p.doll_flags())
                 .unwrap_or((false, false));
             let hits_town_npc = matches!(held.kind, 5129 | 3351);
             let hit_idx = app.npcs.iter().position(|n| {
@@ -5058,6 +5062,38 @@ mod tests {
         for _ in 0..n {
             update_editing(app, 1.0 / 60.0, MINE_SCREEN);
         }
+    }
+
+    #[test]
+    fn the_far_placement_power_widens_the_edit_reach() {
+        // `FarPlacementRangePower` (`CreativePowers.cs:730-767`) doubles
+        // `Player.tileRangeX/Y` (`Player.cs:18815-18828`); the reach gate in
+        // `update_editing` tracks `tile_range_x` (its documented stand-in for
+        // `TileReachCheckSettings.Simple`).
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 260);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        // The target 13 tiles left of the player: outside the base 6-tile
+        // reach, inside the doubled 19.
+        app.player.as_mut().unwrap().x = 17.0 * TILE_PX;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.edit_target.is_none(), "out of the base reach");
+        assert!(app.mine_target.is_none(), "and nothing is mined");
+        app.player.as_mut().unwrap().far_placement_range = true;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.edit_target,
+            Some((30, 260)),
+            "the power widens the reach to the cursor's tile"
+        );
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries

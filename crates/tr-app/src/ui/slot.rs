@@ -18,7 +18,7 @@ use crate::item::ItemSlot;
 /// The numbers are indices into this port's sheet set: `0` `Inventory_Back`,
 /// `1` `Inventory_Back9`, `2` `Inventory_Back4`, `3` `Inventory_Back7`,
 /// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`,
-/// `7` `Inventory_Back18`, `8` `Inventory_Back5`.
+/// `7` `Inventory_Back18`, `8` `Inventory_Back5`, `9` `Inventory_Back10`.
 /// Tests assert on this because `SheetRect` has no `PartialEq`.
 fn context_texture_index(context: i32, index: i32) -> u8 {
     match context {
@@ -63,6 +63,7 @@ pub(crate) fn background_for(
         6 => lookups.ui_back12,      // Inventory_Back12
         7 => lookups.ui_back18,      // Inventory_Back18
         8 => lookups.ui_back5,       // Inventory_Back5
+        9 => lookups.ui_back10,      // Inventory_Back10
         _ => lookups.ui_back,        // Inventory_Back
     }
 }
@@ -88,23 +89,15 @@ pub(crate) fn favorited_background_active(context: i32, favorited: bool, item: &
     favorited && item.count > 0 && crate::chest::retain_favorite_on_move_at(context)
 }
 
-/// The favorited slot's draw tint — the fallback for `ItemSlot.cs:2149-2156`'s
-/// gold `Inventory_Back10` background (32 → `Inventory_Back19`). The port's
-/// atlas packs neither sheet (`assets.rs`'s sheet list has Back 2/3/4/5/6/7/9/
-/// 12/13/14/18 only), so the arm tints the slot's own background with
-/// `Main.OurFavoriteColor` = `Color(255, 231, 69)` (`Main.cs:66748`) — the
-/// plan-authorized fallback, recorded in Phase 5's ANALYSIS entry.
-pub(crate) fn favorited_slot_tint(inv_back: [f32; 4]) -> [f32; 4] {
-    // `Main.OurFavoriteColor` (`Main.cs:66748`), XNA byte-multiplied into the
-    // caller's `Main.inventoryBack` tint (the C# keeps `color2 =
-    // Main.inventoryBack` on the favorited arm and swaps the sheet instead).
-    let favorite = [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 1.0];
-    [
-        favorite[0] * inv_back[0],
-        favorite[1] * inv_back[1],
-        favorite[2] * inv_back[2],
-        favorite[3] * inv_back[3],
-    ]
+/// `ItemSlot.cs:2154-2158`: the sheet the favorited arm swaps in — the gold
+/// `Inventory_Back10`, or `Inventory_Back19` for context 32 (the loadout
+/// panel, not ported, so the base sheet stands in for it). The tint stays
+/// `Main.inventoryBack`; `Main.OurFavoriteColor` (`Main.cs:66748`) colours the
+/// tooltip name, not the frame.
+pub(crate) fn favorited_background_for(
+    lookups: &assets::Lookups,
+) -> Option<SheetRect> {
+    lookups.ui_back10
 }
 
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
@@ -358,6 +351,42 @@ pub(crate) fn draw_slot(
     scale: f32,
     tint: [f32; 4],
 ) {
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false);
+}
+
+/// [`draw_slot`] with the favorite flag the C# reads from the item
+/// (`item.favorited`): the port keeps favorites in a side set (`App`'s
+/// `favorites`), so the caller passes the bit in.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_slot_favorited(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    index: i32,
+    selected: bool,
+    scale: f32,
+    tint: [f32; 4],
+) {
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_slot_flagged(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    index: i32,
+    selected: bool,
+    scale: f32,
+    tint: [f32; 4],
+    favorite: bool,
+) {
     // `ItemSlot.cs:2109-2112` + `Main.cs:43615`: the derived `lightColor`.
     let light_color = if context == 13 {
         closed_hotbar_light_color(scale)
@@ -368,6 +397,11 @@ pub(crate) fn draw_slot(
     // background and hardcodes the tint, ignoring `Main.inventoryBack`.
     let (back, tint) = if context == 13 {
         closed_hotbar_background(lookups, selected)
+    } else if favorited_background_active(context, favorite, item) {
+        // `ItemSlot.cs:2149-2156`: the favorited arm sits at the head of the
+        // C# sheet chain — it beats the hotbar row frame (`context == 0 && slot
+        // < 10` → `Inventory_Back9`) too.
+        (favorited_background_for(lookups), tint)
     } else {
         (background_for(lookups, context, index), tint)
     };
@@ -709,14 +743,29 @@ mod tests {
     }
 
     #[test]
-    fn test_DW_4_5_favorited_tint_is_our_favorite_color() {
-        // `Main.OurFavoriteColor = Color(255, 231, 69)` (`Main.cs:66748`)
-        // composed over `Main.inventoryBack` (220, 220, 220, 220) — the
-        // fallback for the `Inventory_Back10` sheet the atlas lacks.
-        let tint = favorited_slot_tint([220.0 / 255.0; 4]);
-        assert_eq!(tint[0], 220.0 / 255.0);
-        assert_eq!(tint[1], (231.0 / 255.0) * (220.0 / 255.0));
-        assert_eq!(tint[2], (69.0 / 255.0) * (220.0 / 255.0));
-        assert_eq!(tint[3], 220.0 / 255.0);
+    fn test_DW_4_5_favorited_slot_uses_the_gold_sheet() {
+        // `ItemSlot.cs:2149-2158`: the favorited arm swaps the sheet to the
+        // gold `Inventory_Back10` and keeps `Main.inventoryBack` as the tint.
+        let mut lk = assets::Lookups::default();
+        lk.ui_back = Some(rect(0));
+        lk.ui_back_hotbar = Some(rect(9));
+        lk.ui_back10 = Some(rect(10));
+        let favorited = ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 3,
+            prefix: 0,
+        };
+        let pick = |c, f| {
+            if favorited_background_active(c, f, &favorited) {
+                favorited_background_for(&lk)
+            } else {
+                background_for(&lk, c, 0)
+            }
+        };
+        assert_eq!(pick(0, true).map(|r| r.x), Some(10), "gold, not the hotbar row");
+        assert_eq!(pick(1, true).map(|r| r.x), Some(10));
+        assert_eq!(pick(5, true).map(|r| r.x), Some(10));
+        assert_eq!(pick(0, false).map(|r| r.x), Some(9), "unfavorited hotbar row");
     }
 }

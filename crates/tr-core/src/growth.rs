@@ -1853,6 +1853,10 @@ pub fn update_world(
     day_rate: i32,
     raining: bool,
     freeze_time: bool,
+    // `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`): true
+    // unless the journey `StopBiomeSpreadPower` is enabled. The underground
+    // dispatcher's infection rows and wall arms read it.
+    allowed_to_spread: bool,
     day_time: bool,
     max_raining: f32,
     wind_speed: f32,
@@ -1863,9 +1867,9 @@ pub fn update_world(
         return 0;
     }
     // `WorldGen.UpdateWorld`'s setup (`:71503`, `:71508`): the infection
-    // spread is allowed (the creative-power override parks with M6-CREATIVE)
-    // and the wall-arm box radius is the constant 3.
-    let allowed_to_spread = true;
+    // spread flag comes in from the caller (`AllowedToSpreadInfections`, set
+    // from the journey `StopBiomeSpreadPower`) and the wall-arm box radius is
+    // the constant 3.
     let wall_dist = 3;
     let mut picks = 0u32;
     let mut overground_count =
@@ -3161,13 +3165,48 @@ mod tests {
         // ×1.5 raining = 75; the underground 1.5e-5·tiles = 25.
         let mut w = world();
         let mut rng = FastRandom::new(9);
-        let picks = update_world(&mut w, 1, false, false, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, false, false, true, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 50 + 25);
-        let picks = update_world(&mut w, 1, true, false, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, true, false, true, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 75 + 25);
         // The frozen time picks nothing.
-        let picks = update_world(&mut w, 1, false, true, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, false, true, true, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 0);
+        // The spread-stop flag changes no pick budget — `WorldGen.UpdateWorld`
+        // only hands `AllowedToSpreadInfections` to the tile arms
+        // (`:71502-71507`).
+        let picks = update_world(&mut w, 1, false, false, false, true, 0.0, 0.0, &mut rng);
+        assert_eq!(picks, 50 + 25);
+    }
+
+    #[test]
+    fn the_spread_stop_flag_freezes_the_infection_rows() {
+        // The journey `StopBiomeSpreadPower` clears
+        // `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`);
+        // the grass-growth infection rows sit behind it (`:74293-74329`).
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 200, 23, 0); // the corrupt-grass source
+        put(&mut w, 101, 200, 0, 0); // the dirt neighbour
+        let mut rng = FastRandom::new(7);
+        for _ in 0..50 {
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, false, &mut rng);
+        }
+        assert_eq!(
+            w.tile(101, 200).unwrap().kind,
+            0,
+            "the dirt stays dirt while the spread is stopped"
+        );
+        // With the flag back on the same arm converts the dirt.
+        let mut rng = FastRandom::new(7);
+        for _ in 0..50 {
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        }
+        assert_eq!(
+            w.tile(101, 200).unwrap().kind,
+            23,
+            "the corruption converts the dirt"
+        );
     }
 
     #[test]

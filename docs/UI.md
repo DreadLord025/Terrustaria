@@ -421,8 +421,10 @@ gets none; Loot All routes its overflow into the void vault when it is enabled
 Favorites and trash: hovering an inventory slot with LeftAlt held turns left-click
 into the favorite toggle (the `ItemSlot.cs:602-625` cursorOverride-3 arm, sound 12,
 the `can_favorite_at` gate — the C# binding; the row sketch's right-click wording was
-wrong); favorited slots tint `OurFavoriteColor` (255, 231, 69 — the tint fallback,
-`Inventory_Back10/17` are not in the packed atlas) and shift-transfer refuses them
+wrong); favorited slots swap their background to the gold `Inventory_Back10`
+(`ItemSlot.cs:2149-2156`, packed as `lookups.ui_back10`, tint still
+`Main.inventoryBack`; `Inventory_Back17`/`_19` are the gamepad-highlight and
+loadout variants — neither surface is ported) and shift-transfer refuses them
 (`:631-634`). The trash slot at `(448, 258)` is clickable: left-click swaps held ↔
 trash (`MouseItemSwap` `ItemSlot.cs:1255-1263`, the Grab cue).
 

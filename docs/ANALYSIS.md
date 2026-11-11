@@ -7001,10 +7001,14 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
   (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
   `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
-  favorited slots (`:631-634`); the favorited visual is the
-  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
-  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
-  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  favorited slots (`:631-634`); the favorited visual is the real gold sheet —
+  `Inventory_Back10` (`:2152-2156`) now packs into the content atlas and
+  `ui::slot::draw_slot_favorited` swaps it in ahead of the context table (the
+  C# chain puts the favorite arm before the hotbar-row `_9` arm), tinted
+  `Main.inventoryBack` as the C# leaves it; the old `OurFavoriteColor` tint
+  stand-in is gone. Out of scope: `Inventory_Back17` (`:2331-2335`, the gamepad
+  UI-point highlight) and `_19` (context 32, the loadout panel) — neither
+  surface is ported; the trash slot (448, 258) is clickable — left-click
   swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
   `:1008-1011`).
 
@@ -10273,6 +10277,60 @@ band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
 `Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
 also moves the lighting, so the diff bbox covers the whole frame.
 
+### The journey powers' sim wiring (M6-CREATIVE-1c)
+
+The registry from M6-CREATIVE-1 already owned the states and the clock
+multiplier; this pass gives the three sim-facing powers their consumers,
+ported from the same `CreativePowers.cs` classes:
+
+- **`GodmodePower`** (`:692-727`) → `Player.creative_god_mode`. The vanilla
+  clears `Player.creativeGodMode` in `ResetEffects` (`Player.cs:18789`) and
+  re-reads the manager a few lines later (`:25493-25497`); the port refreshes
+  the flag at the head of its fixed step (`world_sim::player::update_player`),
+  which is the same "reset, then read the power" order. Consumers:
+  `Player::hurt_inner` returns before the iframes/defense/knockback
+  (`:38203-38206`), `Player::start_death` refuses outright
+  (`:38809-38812`), `Npc::contact` returns before the whole
+  `Update_NPCCollision` body — including the EoC shield-dash arm
+  (`:31321-31324`) — and the fixed step refills `hp`/`mana`/`breath` to
+  their maxima (`Main.UpdateWorld_Players`, `Main.cs:17869-17873`).
+- **`FarPlacementRangePower`** (`:730-767`) → `Player::far_placement_range`,
+  which makes `Player::tile_range_x/y` return the C#'s
+  `DefaultTileRangeX/Y` (`5`/`3`, `:57113-57114`) or the journey form
+  `* 2 + 8` (`18`/`14`, `:18815-18828`). The `update_editing` reach gate —
+  the port's documented circular stand-in for
+  `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)` — now
+  derives its radius from `tile_range_x() + 1`, so the base gate is the
+  previous 6-tile constant unchanged and the power widens it exactly as the
+  C# widens the rectangle.
+- **`StopBiomeSpreadPower`** (`:1540-1571`) →
+  `CreativePowers::allowed_to_spread_infections`) =
+  `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`);
+  `tr_core::growth::update_world` gained the flag as an explicit parameter
+  (it had been hardcoded `true`) and `world_sim::growth::update_growth`
+  feeds it to both `update_world` and `spread::hard_update_world`, which
+  already carried it.
+
+Deliberate deviations:
+
+- The port has no journey-difficulty flag (`Main.IsJourneyMode`), so the
+  `FarPlacementRangePower` toggle alone is the gate, and its registry
+  default stays `false` — in the vanilla `_defaultToggleState = true` is only
+  reachable inside a journey world, whose creation screen the port does not
+  have. Enabling the power from the (unported) powers UI or a load is what
+  turns it on.
+- The godmode refill runs inside the fixed step instead of
+  `Main.UpdateWorld_Players`' frame tail; the two coincide at 60 Hz and the
+  pools are only ever read after the step.
+- The C# NPC-side gates (`NPC.cs:37157`, `:44305`, `:56483`, `:63404`,
+  `Projectile.cs:12110`, `:31804`) only stop bosses/minions from *targeting*
+  a godmode player. They are not ported: the damage and death arms above
+  already make the player invulnerable, and the targeting arms change no
+  observable state the port models.
+- Still open on the row: the powers UI (`UICreativePowersMenu`) and the
+  per-player persistence (`IPersistentPerPlayerContent`, `godmodePowerEnabled`/
+  `farPlacementRangePowerEnabled` in the `.plr`).
+
 ## The friendly-fire melee gate (BUG-10)
 
 `ProcessHitAgainstNPC` (`Player.cs:44262-44304`) is the one place the player's
@@ -10332,3 +10390,46 @@ NPC. Tracked as BUG-23 in the catalog.
 worn doll arming the hit while the bagged doll does not; the 17 seller/bound
 kinds refused through `is_friendly`; the two item exceptions (the Flymeal's
 doubled roll, the cane's exact one damage) and the hostile still hittable.
+
+### The projectile half (BUG-23)
+
+`Damage_PVE_Inner`'s refusal (`Projectile.cs:12601-12608`) is the projectile
+twin of the melee gate, and it reads the same two doll flags — the port now
+shares them through `Player::doll_flags` (the melee arm and the pool both call
+it). The C# expression is ported verbatim:
+
+```csharp
+bool flag = !targetNPC.friendly | (this.type == 318) |
+    (targetNPC.type == 22 && this.owner < 255 && Main.player[this.owner].killGuide) |
+    (targetNPC.type == 54 && this.owner < 255 && Main.player[this.owner].killClothier);
+if (this.owner < 255 && !Main.player[this.owner].CanNPCBeHitByPlayerOrPlayerProjectile(targetNPC, this))
+    flag = false;
+...
+if ((!this.friendly || (!flag && !NPCID.Sets.ZappingJellyfish[targetNPC.type])) && !(this.hostile & flag2))
+    return;
+```
+
+The gate runs in **both** PVE walks: the plain point walk (`damage_pve`) and the
+resized death bursts (`damage_pve_boxed` — the gem bolts' AoE and the bombs'
+`PrepareBombToBlow` walk), because the C# funnels all of them through
+`Projectile.Damage()` → `Damage_PVE` → `Damage_PVE_Inner`. The refusal sits
+ahead of the per-owner immunity gate, matching the C# early `return`.
+
+Neutral arms (no ported system to read):
+
+* `NPCID.Sets.ZappingJellyfish` — 63/64/103/242; no jellyfish kind is ported, so
+  the "poke the jellyfish and get zapped instead" arm has nothing to act on.
+* `this.hostile & flag2` — hostile projectiles damaging friendly NPCs (the
+  invasion flavour). The port's hostile shots (`friendly == false`) run the
+  player-contact pass only, so there is no hostile-vs-town path to gate yet.
+* `CanNPCBeHitByPlayerOrPlayerProjectile`'s critter block (`:20513-20529`) — it
+  needs `dontHurtCritters` (the Guide to Critter Companionship item) or a
+  minion/sentry shot; neither exists in the port (the summon system is the
+  blocked M4-PROJ-8 row). With both false the function returns `true`, so
+  `flag` is unchanged — the port passing the critter kinds is faithful.
+
+**Verification.** 1 test (`projectile::tests::bug_23_…`): a shuriken passes a
+Guide without consuming itself, the same shot lands once the Guide Voodoo Doll
+sits in accessory slot 3, and the `refuses_friendly` matrix is pinned for the
+Rotten Egg (318), the Clothier-with-curse arm, the bound goblin (no arm — the
+C# `isLikeATownNPC` excludes it) and a hostile slime.
