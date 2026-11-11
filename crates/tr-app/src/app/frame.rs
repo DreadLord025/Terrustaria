@@ -103,6 +103,26 @@ impl App {
         // must not sit inside the in-game branch below — see
         // [`App::tick_pointer_clock`].
         self.tick_pointer_clock(dt);
+        // `Main.cs:17048-17051`: the PVP/team-change lockout counts down once per
+        // update, beside the UI-state tick (`UpdateAudio`/`ItemSlot.UpdateInterface`
+        // neighbours) — not on the fixed world step.
+        if self.team_cooldown > 0 {
+            self.team_cooldown -= 1;
+        }
+        // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
+        // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
+        // page the player selected with the tabs. Recomputed every frame so the
+        // auto-jump is undone the moment the cursor stack empties.
+        self.resolve_equip_page();
+        // `IngameOptions.Draw`'s per-frame hover/animation state and its
+        // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
+        // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
+        // like the vanilla's, and before the HUD borrows the state.
+        if let Some(cue) =
+            crate::ui::ingame_options::update(self, self.pointer.left_held())
+        {
+            self.audio.play(cue);
+        }
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -571,6 +591,9 @@ impl App {
         // per-chest slot count from the file (`Chest.maxItems`), the default
         // 40 for every port-created chest.
         let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
+        // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
+        // borrow below (it reads `self.player` / `self.net`).
+        let pvp_icon_state = self.pvp_icon_state();
 
         {
             let App {
@@ -1410,6 +1433,10 @@ impl App {
                             crate::bank::bank_for_chest(p.chest)
                                 .map(|bi| (&p.banks[bi][..], p.chest))
                         }),
+                        // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
+                        // net-mode / team-based-spawns gates, the local
+                        // player's `hostile` + `team` and `Main.teamCooldown`.
+                        &pvp_icon_state,
                     );
                     // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                     // the death broadcast + the softcore "Dropped coins"
@@ -1437,6 +1464,7 @@ impl App {
                         self.invasion_progress,
                         self.invasion_progress_max,
                         self.invasion_progress_icon,
+                        self.invasion_progress_wave,
                         self.invasion_progress_alpha,
                     );
                 } else if let Some(menu) = menu.as_mut() {

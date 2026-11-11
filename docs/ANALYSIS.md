@@ -1887,7 +1887,8 @@ directly — the word aliases `settings|general|interface|video|multiplayer` and
 numeric `menuMode` of every P5 sub-screen: 26, 28, 25, 252, 1125, 111, 2008, 1212,
 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889), `TR_MENU=1` (keep the menu on
 screen), `TR_INV=1` (open the inventory),
-`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
+`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off), `TR_PVP=1`
+(open `DrawPVPIcons`'s multiplayer-only draw/click gates),
 `TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_MAPSTYLE=0|1|2` (select
 `Main.mapStyle`; invalid/missing → 1, `Main.cs:66750`), `TR_BOSS` (spawn King
 Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap),
@@ -9782,3 +9783,278 @@ the branch mechanics below; every C# site is in the report itself.
   All literal sheet indices are gone from the code (doc comments keep the
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
+
+## The in-game options window (M7-UI-4)
+
+`IngameOptions.Draw` (`IngameOptions.cs:103-1441`) is the vanilla's in-game
+settings window: a 670x480 panel (`:125-129`) split into a **left navigation
+column** and a **right page of setting rows**, both animated per row.
+
+**What landed.** The window is now the C#'s two-column shape instead of the
+port's flat six-row list:
+
+- the left column is the eight navigation rows — `Lang.menu[114]` General,
+  `[210]` Interface, `[63]` Video, `[218]` Controls, `[66]` Controls→keybinds,
+  `[131]` Achievements, `[118]` Close Menu and `Lang.inter[35]` Save & Exit
+  (`:214-330`). The `Invite Friends` row (`:257-270`) is the social-API arm and
+  stays out (AGENTS.md non-goals), so `num7 + 1 = 8` slots;
+- the right column carries the four pages as static tables — 17/14/15/15 rows
+  (`page()`, the C#'s `:400-1441` sequential `DrawRightSide` calls). Each row
+  is a `RowAct`: a header, a value bar, an on/off toggle, a multi-state cycle,
+  or a `Parked` row for a vanilla setting the port does not model;
+- both columns reproduce `DrawLeftSide`/`DrawRightSide` (`:1457-1504`): the row
+  position is `anchor + offset * (1 + i)`, the label is **centred** on it
+  (`origin 0.5, 0.5`), the tint is `Color.Lerp(Gray, White, scaleFraction)`
+  with **Gold** for the selected category, and the per-row scale animates at
+  `0.01`/frame in the left column (`0.7..0.8`, `:157-199`) and at
+  `0.001`/frame on the right (`1.0..1.001`, `:333-390`) — including the
+  culture shrink for the long translated labels (`:167-185`, `:345-357`:
+  ru/pt/pl/fr shrink the left to `0.4..0.44` and pull the right column to the
+  2/3 mark; German `0.55..0.6`; the It/Sp and German deltas are
+  category-bound);
+- the hover pass emits the vanilla's cues — `SoundEngine.PlaySound(12)` on a
+  hover change (`:187`, `:191`) and `(10)` on a category click (`:222`) —
+  through `App::audio` from the frame loop (`update()`, called beside
+  `tick_pointer_clock`), and clears `rightLock` on the button release
+  (`:385-388`);
+- the value bars drag while locked (`Main.musicVolume = ...`, `:424`) and the
+  geometry is the C#'s `valuePosition.X = vector3.X + vector2.X - num3/2 - 20`
+  (`:437`) with the label hanging 70 px left (`vector6.X -= num`, `:417`).
+
+**Deviations (all deliberate, each row cited in `page()`):**
+
+1. **Parked rows.** A vanilla row whose state the port has no field for is
+   drawn dimmed and inert rather than invented: the UI scale (`:561`), the
+   door-opening preference (`:644`), auto-reuse-all (`:677`), the map frame /
+   health style / portrait preference / opaque tooltip box (`:751-840`), the
+   window mode + resolution (`:876-910`), the cursor/border colour pickers
+   (`:1075-1371`). Their settings are the named follow-ups of M7-UI-3
+   (equipment/dye), M7-UI-5 (keybinds) and the window backend row.
+2. **The video page's slot count.** The C# sets `num11 = 14` for the video
+   category but draws 15 rows and compensates with `vector7.Y -= 2f`
+   (`:362-365`); the port keeps both verbatim (`right_slots(2) == 14`,
+   `right_pitch(2) - 2`).
+3. **The wave-quality label.** `:1022-1036` switches on the level with a
+   per-level `GameUI.*` key; the port renders `GameUI.WaveQuality` plus the
+   level ordinal instead of inventing key names.
+4. **Keybinds / Save & Exit.** The C# calls `IngameFancyUI.OpenKeybinds()` and
+   `WorldGen.SaveAndQuit()` inline (`:252-256`, `:300-310`); the port records
+   the action on `IngameOptions::pending` and closes, because the keybinding
+   screen is M7-UI-5 and the quit path belongs to the front-end flow.
+5. **Text metrics.** The vanilla measures with the retail font
+   (`DrawBorderStringBig`); the port centres with `text::hud_text_width` and
+   the font's `line_spacing`, which is the same box within a pixel.
+
+**Verification.** 13 new tests (the slot counts, the two books' pitches and the
+`1 + i` anchor, the eight navigation rows, the four pages' row counts, the
+scale bands and their clamps, the bar/toggle/cycle round trips, the label
+resolution of every row on every page, and the in-panel bounds of every row).
+The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
+captured 1600x900 frame shows the title, the eight left rows (the selected
+category in gold) at the 42.3 px pitch and the seventeen General rows inside
+the panel.
+## The PVP toggle + team select cells (M7-UI-7)
+
+`Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:
+the toggle was always frame `(false, 0)` and both icon groups had no hit test,
+hover text, click or cooldown, so the two controls the user pointed at (the PVP
+toggle and the six team cells beside the accessory columns) were decorative.
+
+The port now covers the whole function:
+
+- **Gates.** `ShouldPVPDraw` (`Main.cs:2909`) is the port's `App::is_client()`
+  (`Main.netMode == 1`); `ShouldTeamSelectDraw` (`:2911-2919`) is that same
+  client gate, since `Main.teamBasedSpawnsSeed` (`:351`) is not ported (no
+  team-spawn seeds until the M5-seed rows) and its single-player arm therefore
+  reads `false`. `Main.hidePVPAndTeamIcons` (`:2357`) is a new `App` field: the
+  C# sets it from the NPC-heads column overflow (`:42046`) and clears it on
+  every non-`EquipPage == 1` draw (`:42656-42659`) — the port does not draw the
+  NPC-heads column yet, so the flag only ever arrives `false`, but the early
+  return and the clear site are ported so the wiring exists when that panel
+  lands.
+- **Frames.** `PVP_0.Frame(2, 7)` is sliced at `(hostile, team)` (`:42664`,
+  `:42688`) and the hovered toggle swaps to the row-`PlayerTeamID.Count` (6)
+  cell at full white (`:42696-42700`); the six `PVP_1` cells narrow to
+  `rectangle2.Width - 2` and the `PVP_2` ring draws at `Location + (-2, 0)`
+  (`:42770-42773`).
+- **`teamCooldown`.** `Main.teamCooldown` / `teamCooldownLen = 300`
+  (`:965`/`:66781`) are `App::team_cooldown` / `chrome::TEAM_COOLDOWN_LEN`; the
+  timer decays once per update (`:17048-17051`) in `frame()` beside
+  `tick_pointer_clock`, **not** on the fixed world step — the C# decrements it
+  in `Update()`. While it runs both icon groups draw at `White * 0.25`
+  (`:42672`) and every hover/click is refused.
+- **Hover.** The text keys are the vanilla ones and needed no new
+  localization work: `UI.PvpIcon_Active`/`_Inactive` (`:42685`) and
+  `UI.TeamIcon{None,Red,Green,Blue,Yellow,Pink}_{Active,Inactive}`
+  (`:42734-42758`), all already present in
+  `Terraria.Localization.Content.en-US.json:348-360`. They are drawn through a
+  new `ui::tooltip::draw_mouse_text` (the single-line
+  `MouseTextHackZoom`/`MouseText` shape, same box + shadow + `mouseTextColor`
+  tint as the item tooltip). The C# also sets `player.mouseInterface = true`
+  while an icon is hovered, which suppresses the slot hover underneath; the
+  port mirrors that by skipping the item tooltip when a PVP hit is live.
+- **Clicks.** `App::handle_inventory_clicks` routes a press through
+  `chrome::pvp_hit` (same geometry as the draw) and applies
+  `chrome::pvp_click`'s gate chain: `teamCooldown == 0` for both, plus
+  `player.team != i` for a team cell (`:42689`, `:42753`). The effect is
+  `teamCooldown = 300` + `SoundEngine.PlaySound(12)` (the ported `Menu_Tick`
+  cue, `audio.rs`'s `SFX_CUES`) + the `hostile` flip / `team` write.
+
+**Deviations (all recorded as unported, not approximated):**
+
+- `NetMessage.SendData(30)` (the PVP-state broadcast, `:42694`) and
+  `SendData(157)` (the team change, `:42766`) have no counterpart — M6-NET's
+  message table carries neither id. The local state change is the whole visible
+  effect in single player; the MP broadcast rides M6-NET when those ids land.
+- `Player.TeamChangeAllowed()` (`Player.cs:4517-4520`) is a literal
+  `return true` in 1.4.5.8, so the `Lang.misc[84]` "cannot change team" refusal
+  (`:42757-42759`) is unreachable dead code and is not ported. If a future
+  patch gives the method a body, the arm comes back here.
+- `Main.teamBasedSpawnsSeed`'s `Spawn(PlayerSpawnContext.TeamSwap)` arm
+  (`:42768-42769`) has no port counterpart (no team-based spawn seeds), so a
+  team change on a seedless world does not respawn the player.
+- `PlayerInput.UsingGamepad` hovers the icons during the cooldown in the C#
+  (`:42680`, `:42725`); the port's pointer-driven hit test has no gamepad
+  branch, so a cooled-down icon reports no hover for either input.
+- The `UILinkPointNavigator.SetPosition(1550..1556, …)` registrations
+  (`:42703`, `:42781`) belong to the gamepad link graph, which the port does
+  not model.
+
+**Screenshot harness.** `TR_PVP=1` (`env::pvp_icons`) opens the two
+multiplayer-only gates so a single-player capture can show the icons: without
+it nothing draws, because the vanilla only shows them inside a client. The pin
+is resolved once into `App::pvp_icons_forced` (a field, so tests can open the
+gate without racing the `OnceLock`). The A/B proof: with the pin the
+capture differs from the unpinned one over exactly `(1371, 437)-(1523, 555)`
+— the toggle at `(1373, 435)`, the team grid below it and the hover tooltip
+box — and two pinned runs are SHA256-equal (`e2cbe1ef…` at 1600x900,
+`TR_MOUSE=1380,500`, i.e. team cell 0 hovered).
+
+**Finding (pre-existing, not fixed here).** The older inventory HUD hit tests
+in `app/clicks.rs` (the bank transfer buttons, `bank_button_at(mouse, m_h)`)
+compute `m_h` as `(screenH - 600) / 2`, while the draw path uses `Main.mH`
+(`ui::minimap::main_m_h`, 256 or `screenH - 600`). At 720 px those are 60 and
+120, so a live minimap puts those hit regions 60 px off the drawn buttons.
+This task added `App::main_m_h()` (the draw path's own value) and used it for
+the new PVP icons; converting the older call sites belongs to M7-UI-2, which
+owns the inventory click surface.
+### BUG-08 — the invasion progress bar (`DrawInvasionProgress`)
+
+- **Where the fade head lives.** The C# runs `Main.invasionProgressDisplayLeft`'
+  decay and the `invasionProgressAlpha` ramp **inside the draw function**
+  (`Main.cs:47700-47728`), so the fade is per rendered frame. The port keeps
+  the head in `world_sim::npcs::update_invasion_state` on the fixed step, so
+  the ramp is deterministic and framerate-independent (the BUG-11-15 merge
+  had dropped that arm once already; the test now pins it). The two gates
+  that the C# puts *after* the ramp — `invasionProgress == -1` (`:47698`) and
+  `alpha <= 0` (`:47729`) — are ported verbatim in the draw
+  (`ui::invasion_bar_alpha`), which is what actually stops the panel from
+  being permanently on screen.
+- **`invasionProgressMode`.** The C#'s mode 0 (Off) zeroes the timer and the
+  alpha (`:47718-47722`); modes 1 (Timed) and 2 (On) are the same to the
+  draw, and the difference lives in `CheckInvasionProgressDisplay`, which the
+  C# gates on `mode == 2` before scanning for nearby invasion NPCs. The port
+  reads the same setting through `Settings::event_progress`.
+- **The DD2 wave report.** `DD2Event.CheckProgress` calls
+  `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
+  currentWave)` (`DD2Event.cs:376-392`); the port's `dd2_report_kill` now
+  reports through the same four values, so the Old One's Army draws with the
+  `Extra[79]` icon and the `Game.WaveMessage` arm. The moon events' waves are
+  still the parked half of that row (no Frost/Pumpkin Moon wave driver).
+- **The group plate.** The C# draws a **second** panel at
+  `(screenWidth - num13, screenHeight - 80)` with the group's `Extra` icon and
+  its `* 0.5f`-tinted `Inventory_Back13` plate (`:47831-47845`). The port had
+  only a flat label line under the bar; it now draws the plate, the icon
+  (`num * 0.8`, origin `(0, h/2)` so the icon straddles the plate's top edge —
+  the C#'s own geometry) and the right-aligned label (`num * 0.9`, anchor
+  `(1, 0.4)`).
+- **The label table.** The pre-BUG-08 draw had icons 5 and 6 swapped (icon 5
+  is `Lang.inter[87]` "Frost Legion", icon 6 `Lang.inter[86]` "Pirate
+  Invasion") and no Martian row at all. Both are fixed and pinned by
+  `bug_08_the_icon_dispatch_matches_the_source_table`.
+- **`Utils.DrawBorderString`'s anchor.** The C# origin is
+  `(anchorx, anchory) * MeasureString(text)` in **unscaled** pixels, then the
+  sprite batch scales it, so the destination top-left is
+  `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
+  the HUD uses the zero-anchor `text::border_string`.
+
+
+## The equipment-page tabs (M7-UI-3a)
+
+The three icons to the right of the inventory grid (`UI/DisplaySlots_2…10`) were
+painted by `ui/chrome.rs::draw_page_icons`, which already returned the hovered
+tab number — and **every caller threw the value away**. `App.equip_page` could
+only be set by the `TR_EQUIPPAGE` debug pin, so all three tabs were decoration.
+
+`Main.DrawPageIcons` (`Main.cs:42787-42868`) is one function with two halves; the
+port now has both.
+
+**The geometry** was already correct and stays untouched: the anchors are
+`(screenWidth - 162, yPos)` with `x += 82` for the first tab and `- 48` each
+after (`:42790-42791`), i.e. `screenWidth - 80 / -128 / -176`, drawn at scale
+`0.9` with the state-dependent sheet (`(EquipPage == 2) ? 3 : 2`, `== 1 ? 5 : 4`,
+`== 3 ? 10 : 8`, `:42792`, `:42804`, `:42816`) and the highlight sheets
+`6 / 7 / 9` at origin `(2, 2)` except tab 3's `(0, 0)`.
+
+**What was missing is the gates.** `Collision.CheckAABBvAABBCollision` runs
+against the *native* (unscaled) sheet, so the hit rect is the sheet size, not the
+0.9-scaled one — `page_tab_hit` takes the three native sizes (`page_tab_sizes`
+reads them from `Lookups::page_icons`). Each tab then applies its own
+mouse-item gate, and they are *not* the same:
+
+| tab | `EquipPageSelected` | gate (`Main.cs`) |
+|---|---|---|
+| first (`DisplaySlots_2/3`) | 2 | `mouseItem.stack < 1 \|\| mouseItem.dye > 0` (`:42793`) |
+| middle (`DisplaySlots_4/5`) | 1 | `mouseItem.stack < 1` (`:42805`) |
+| right (`DisplaySlots_8/10`) | 3 | `mouseItem.stack < 1` (`:42817`) |
+
+The first tab is the only one a held dye does not block, because that is the tab
+that reaches the dye page.
+
+**The click** (`:42828-42858`) is a toggle, not a switch: pressing the page you
+are already on falls back to page 0, pressing another selects it. `page_tab_click`
+returns exactly that, and returns `None` for tab 3 because tab 3 is the
+capture-mode entry (`:42835-42847` sets `CaptureManager.Instance.Active`), not a
+page. The sound is `SoundEngine.PlaySound(10)` (`:42857`), the ported `Menu_Open`.
+
+**The page actually drawn is not the page selected.** `Main.EquipPageSelected` is
+the player's wish; `Main.EquipPage` is what renders, and it is re-derived *every
+frame* by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) and then
+
+```csharp
+if (Main.EquipPage == -1) Main.EquipPage = Main.EquipPageSelected;   // Main.cs:42864-42866
+```
+
+`SelectEquipPage` sets `EquipPage = -1` first and then overrides it from the
+cursor stack: hooks, mounts and pets force page 2; armour, accessories and (when
+the dye page was the selection) a held dye force page 0. The port keeps that shape
+— `App::resolve_equip_page` runs from `frame()` and `select_equip_page` returns
+`-1` for "no opinion".
+
+**Deviations.**
+
+* Only the air arm and the armour/accessory arm of `SelectEquipPage` are ported.
+  The other arms need item fields `ItemDef` does not carry (`Item.shoot` for the
+  `Main.projHook` lookup, `Item.mountType`, `Item.dye`) plus the
+  `Main.vanityPet` / `Main.lightPet` buff sets. `itemdata.rs` is generated by
+  `tools/GenItemData/gen.py` and is marked "Never hand-edit", so adding them is a
+  generator change, not an addendum here. Until then a held dye is treated as an
+  ordinary held stack and the first tab is refused (`page_tab_hit`'s `has_dye`
+  argument stands in for the missing `Item.dye > 0`).
+* `Main.CaptureModeDisabled` (`:42821-42825`) is not modelled — tab 3 is drawn
+  white, and clicking it does nothing.
+* Tab 1 selects `EquipPageSelected = 1`, but the port has no page-1 draw:
+  `Main.cs:41368` hands page 1 to `DrawNPCHousesInUI`, the housing panel, which is
+  its own subsystem. Page 1 falls through to the equipment columns exactly as
+  page 3 already did.
+* `TR_EQUIPPAGE` now seeds `equip_page_selected` as well as `equip_page`, so the
+  pin survives the per-frame resolution.
+
+**Verification.** 7 new tests (the half-open edges, the per-tab gates, the toggle,
+`select_equip_page`, and two `handle_inventory_clicks` end-to-end arms including
+the held-armour auto-jump). The suite is 2027 + 18 + 1 + 1236 + 21, 0 failed. The
+hover glow is checked as a pixel statistic rather than a screenshot diff: moving
+the cursor onto the first tab raises the mean RGB of the `1516..1546 × 138..164`
+band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
+`Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
+also moves the lighting, so the diff bbox covers the whole frame.

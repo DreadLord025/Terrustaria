@@ -730,6 +730,25 @@ helper.
 3. Test: the emote Back label equality with the bestiary Back label in the
    non-English locale fixture.
 
+**Status: FIXED 2026-11-11** (`BUG-18-emote-back-lang`).
+
+The label was the literal `"Back"`: `UIEmotesMenu.cs:78` builds the panel as
+`UITextPanel<LocalizedText>(Language.GetText("UI.Back"), 0.7f, large: true)`,
+so the port now reads `lang::text(BACK_KEY)` (`BACK_KEY = "UI.Back"`, the same
+key the bestiary's `UIBestiaryTest.cs:366` and achievements' back panels use)
+and no literal remains. The mis-centring had a second, separate cause the
+report's plan did not name: `back_hit`/the draw borrowed
+`bestiary::back_rect`, whose `Top(-25)` is the **bestiary's**
+(`UIBestiaryTest.cs:371`) — the emote wheel's own panel is `Top(-45)`
+(`UIEmotesMenu.cs:82`), so the button sat 20 px too low. `ui/emotes.rs` now
+owns `back_rect` with the wheel's `-45` and `back_hit` reads it. 2 tests: the
+ru-RU label resolves to "Назад" (never the English literal) through the
+shared language fixture, and the wheel's Back box is centred with its own
+`-45` box 20 px above the bestiary's. Found on the way (not fixed, out of
+this row's scope): the port draws a bespoke `"Emotes"` panel title that has
+no C# counterpart — the vanilla shows the `UI.EmoteCategory*` group headers
+(`UIEmotesMenu.cs:91-97`) instead.
+
 ---
 
 ## 19. Corrupt/hallowed/crimson cactus renders the wrong frame — S3 / Medium

@@ -108,6 +108,15 @@ pub(super) fn hud_item_text(
     }
 }
 
+/// One `MouseText` line height (`DynamicSpriteFont.MeasureString(text).Y`): the
+/// retail sheet's `line_spacing`, or the built-in bitmap fallback's 8 px.
+pub(crate) fn line_height(lookups: &assets::Lookups) -> f32 {
+    match &lookups.ui_font {
+        Some(f) => f.line_spacing,
+        None => 8.0,
+    }
+}
+
 pub(crate) fn hud_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str, scale: f32) -> f32 {
     match &lookups.ui_font {
         Some(f) => font_width(f, text, scale),
