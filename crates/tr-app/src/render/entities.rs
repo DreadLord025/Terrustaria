@@ -3,7 +3,7 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell,
+    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
     swing_stand_in,
 };
 use super::sky::sky_tex;
@@ -32,6 +32,10 @@ pub(crate) struct PlayerAssets {
     /// `Player_0_5`: the under-skin torso layer drawn behind the back arm
     /// (`TextureAssets.Players[skinVar, 5]`, `PlayerDrawLayers.cs:1345`).
     pub(crate) undershirt: Option<BgTex>,
+    /// `Player_0_8`: the under-shirt sleeve on both arm stacks
+    /// (`TextureAssets.Players[skinVar, 8]`, `PlayerDrawLayers.cs:1357` and
+    /// `:3698`, tinted `colorUnderShirt`).
+    pub(crate) under_arm: Option<BgTex>,
     /// `Player_0_13`: the shirt sleeve over the back arm
     /// (`TextureAssets.Players[skinVar, 13]`, `PlayerDrawLayers.cs:1362`).
     pub(crate) arm_shirt: Option<BgTex>,
@@ -63,6 +67,7 @@ impl Default for PlayerAssets {
             shirt: None,
             arm: None,
             undershirt: None,
+            under_arm: None,
             arm_shirt: None,
             legs: None,
             pants: None,
@@ -96,11 +101,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
         eyes: sky_tex(atlas, "Player_0_2", None),
-        // Torso and shirt sheets are 9 columns wide; keep only the first column.
-        torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
-        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
+        // Torso and shirt sheets are 9 columns wide (`Player_0_3`/`_0_6` are
+        // 360x224 = 9x4 cells); keep the two columns `torso_cell` can reach,
+        // cell (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:
+        // 1940,1975`). The old 40-px crop clamped the override back to 0.
+        torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 80, 224))),
+        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 80, 224))),
         arm: sky_tex(atlas, "Player_0_7", None),
         undershirt: sky_tex(atlas, "Player_0_5", None),
+        under_arm: sky_tex(atlas, "Player_0_8", None),
         arm_shirt: sky_tex(atlas, "Player_0_13", None),
         legs: sky_tex(atlas, "Player_0_10", None),
         pants: sky_tex(atlas, "Player_0_11", None),
@@ -1314,11 +1323,15 @@ pub(crate) fn draw_player_preview(
         frame_uv(assets.eyes.as_ref(), body),
         eye,
     );
-    part(
-        assets.hair.as_ref(),
-        frame_uv(assets.hair.as_ref(), body),
-        hair,
-    );
+    // The hair rides its own trimmed frame (`PlayerDrawSet.cs:1770-1786`:
+    // `Height -= 2`, `Y -= 336` = six body rows up) — the preview animates rows
+    // 6..19 (`ui::char_creation::animated_frame_row`), which the body row would
+    // map straight past `Player_Hair_*`'s 14 rows.
+    if let Some(tex) = assets.hair.as_ref() {
+        let uv = flip_uv(hair_uv(tex, body), false);
+        r.push_ui_sprite(pos, [40.0 * scale, 54.0 * scale], uv, hair);
+        quads += 1;
+    }
     quads
 }
 
