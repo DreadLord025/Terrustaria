@@ -174,14 +174,24 @@ pub(crate) fn draw_death_screen(
     }
 }
 
-/// The invasion progress bar — `Main.DrawInvasionProgress`'s non-wave arm
-/// (`Main.cs:47807-47830`): the 200x45 `DrawInvBG` panel at
-/// `(screenWidth - 120, screenHeight - 40)` (the centre-anchored rect), the
-/// `ColorBar` track, the yellow fill (255,241,51), the orange edge
-/// (255,165,0,127), the black rest, and the `{label}` + `{percent}%` text
-/// through `DrawBorderString`. The alpha ramps 0.05 per tick toward the
-/// display timer; the icon's texture row is the group's Extra sheet (the
-/// port draws the label only — the Extra sheets land with the icon row).
+/// The invasion progress bar — a faithful port of `Main.DrawInvasionProgress`
+/// (`Main.cs:47696-47845`).
+///
+/// Three gates close the whole function, and they are what stops the bar from
+/// being drawn permanently (`BUG_REPORT.md` §8):
+/// 1. `Main.invasionProgress == -1` — no invasion is being tracked (`:47698`);
+/// 2. the fade alpha clamped to `0..=1` is still `0` (`:47729`).
+///
+/// The fade head itself (`:47700-47728`) rides the world tick instead of the
+/// draw (`world_sim::npcs::update_invasion_state`) so the alpha ramp is
+/// deterministic — the only deliberate structural deviation.
+///
+/// The rest is 1:1: the per-icon sheet/label/colour pick (`:47733-47780`), the
+/// `invasionProgressWave > 0` arm versus the `WaveCleared` arm (both with the
+/// `ColorBar` track and the yellow / orange / black `MagicPixel` fills), and
+/// the shared group plate at `(screenWidth - num13, screenHeight - 80)` with
+/// the `Extra` icon and the group label (`:47831-47845`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_invasion_progress(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -189,86 +199,351 @@ pub(crate) fn draw_invasion_progress(
     progress: i32,
     progress_max: i32,
     progress_icon: i32,
+    progress_wave: i32,
     alpha: f32,
 ) {
-    // The label: `Lang.inter[88]` (the goblins) / `[85]` (the pirates) /
-    // `[86]` (the frost) — the en literals stand in.
-    let label = match progress_icon {
-        4 => "Goblin Army",
-        5 => "Pirate Invasion",
-        6 => "Frost Legion",
-        _ => "Invasion",
+    // The two early returns (`:47698` and `:47729`), factored out so the gate
+    // can be unit-tested without a renderer.
+    let Some(alpha) = invasion_bar_alpha(progress, alpha) else {
+        return;
     };
+    // `float num = 0.5f + Main.invasionProgressAlpha * 0.5f;` (`:47730`).
     let num = 0.5 + alpha * 0.5;
-    let num7 = (200.0 * num) as i32;
-    let num8 = (45.0 * num) as i32;
-    // The panel centre: `(screenWidth - 120, screenHeight - 40)`.
-    let cx = screen.x - 120.0;
-    let cy = screen.y - 40.0;
-    let px = cx - num7 as f32 / 2.0;
-    let py = cy - num8 as f32 / 2.0;
-    // `Utils.DrawInvBG`'s fill (the (63,65,151,255) * 0.785 backdrop).
-    r.push_fx_rect(
-        [px, py],
-        [num7 as f32, num8 as f32],
-        [
-            63.0 / 255.0 * 0.785,
-            65.0 / 255.0 * 0.785,
-            151.0 / 255.0 * 0.785,
-            255.0 / 255.0 * 0.785,
-        ],
-    );
-    if progress_max != 0 {
-        let frac = (progress as f32 / progress_max as f32).clamp(0.0, 1.0);
-        let num11 = 169.0 * num;
-        let num12 = 8.0 * num;
-        // The `ColorBar` track.
-        r.push_fx_rect(
-            [cx - num11 / 2.0, cy - num12 / 2.0],
-            [num11, num12],
-            [1.0, 1.0, 1.0, alpha],
-        );
-        let fill_x = cx - num11 / 2.0 + (frac - 0.5) * num11;
-        let fill_w = num11 * frac;
-        // The yellow fill.
-        r.push_fx_rect(
-            [fill_x, cy - num12 / 2.0],
-            [fill_w, num12],
-            [1.0, 241.0 / 255.0, 51.0 / 255.0, alpha],
-        );
-        // The orange edge (the 2-px strip).
-        r.push_fx_rect(
-            [fill_x, cy - num12 / 2.0],
-            [2.0, num12],
-            [1.0, 165.0 / 255.0, 0.0, 127.0 / 255.0 * alpha],
-        );
-        // The black rest.
-        r.push_fx_rect(
-            [fill_x + fill_w, cy - num12 / 2.0],
-            [num11 * (1.0 - frac), num12],
-            [0.0, 0.0, 0.0, alpha],
-        );
-        // The percent line above the bar (`DrawBorderString`, the MouseText).
-        let percent = format!("{}%", (progress as f32 * 100.0 / progress_max as f32) as i32);
-        let w = text::hud_text_width(r, lookups, &percent, num);
-        text::border_string(
+
+    // The icon/label/colour pick (`:47733-47780`). `value` defaults to
+    // `Extra[9]`, `text` to "" and `c` to White.
+    let (icon_sheet, label, panel_color) = invasion_group(lookups, progress_icon);
+
+    // The bar panel's anchor (`:47784`, `:47810`): both arms share it.
+    let vector3 = [screen.x - 120.0, screen.y - 40.0];
+    // `Utils.DrawInvBG`'s tint (`:47786`, `:47811`):
+    // `new Color(63, 65, 151, 255) * 0.785f`.
+    let panel_tint = color::tint(color::mul([63, 65, 151, 255], 0.785));
+
+    if progress_wave > 0 {
+        // --- the wave arm (`:47782-47808`) --------------------------------
+        let num2 = (200.0 * num) as i32;
+        let num3 = (45.0 * num) as i32;
+        tooltip::draw_inv_bg(
             r,
             lookups,
-            cx - w / 2.0,
-            cy - num12 / 2.0 - 14.0,
+            [
+                (vector3[0] as i32 - num2 / 2) as f32,
+                (vector3[1] as i32 - num3 / 2) as f32,
+                num2 as f32,
+                num3 as f32,
+            ],
+            panel_tint,
+        );
+        // `Game.WaveMessage` = "Wave {0}: {1}" where `{1}` is the percent (or
+        // the `Game.InvasionPoints` fallback when the max is 0) (`:47789`).
+        let arg1 = if progress_max != 0 {
+            format!(
+                "{}%",
+                (progress as f32 * 100.0 / progress_max as f32) as i32
+            )
+        } else {
+            crate::lang::text_args("Game.InvasionPoints", &[progress.to_string()])
+        };
+        let text = crate::lang::text_args("Game.WaveMessage", &[progress_wave.to_string(), arg1]);
+        // `float num4 = MathHelper.Clamp(progress/max, 0, 1); if (max == 0)
+        // num4 = 1f;` (`:47791-47795`).
+        let num4 = if progress_max != 0 {
+            (progress as f32 / progress_max as f32).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let num5 = 169.0 * num;
+        let num6 = 8.0 * num;
+        // `vector2 = vector + UnitY*num6 + UnitX*1f` (`:47796`).
+        let mut vector2 = [vector3[0] + 1.0, vector3[1] + num6];
+        // `Utils.DrawBorderString(text2, vector2, White*alpha, num, 0.5f, 1f)`:
+        // the origin is `(0.5, 1) * MeasureString(text)` at scale `num`, so the
+        // string is centred on `vector2.x` and its bottom sits on `vector2.y`.
+        draw_anchored_text(r, lookups, &text, vector2, num, alpha, 0.5, 1.0);
+        // The `ColorBar` track: `Draw(value2, vector, null, White*alpha, 0,
+        // new Vector2(value2.Width/2, 0f), num, ...)` (`:47798`).
+        push_color_bar(r, lookups, vector3, num, alpha);
+        // `vector2 += UnitX * (num4 - 0.5f) * num5` (`:47799`).
+        vector2[0] += (num4 - 0.5) * num5;
+        // The yellow / orange / black `MagicPixel` fills (`:47800-47802`).
+        push_inv_fill(
+            r,
+            [vector2[0] - num5 * num4, vector2[1] - num6 / 2.0],
+            [num5 * num4, num6],
+            color::tint(color::mul([255, 241, 51, 255], alpha)),
+        );
+        push_inv_fill(
+            r,
+            [vector2[0] - 2.0, vector2[1] - num6 / 2.0],
+            [2.0, num6],
+            color::tint(color::mul([255, 165, 0, 127], alpha)),
+        );
+        push_inv_fill(
+            r,
+            [vector2[0], vector2[1] - num6 / 2.0],
+            [num5 * (1.0 - num4), num6],
+            [0.0, 0.0, 0.0, alpha],
+        );
+    } else {
+        // --- the `WaveCleared` arm (`:47806-47829`) ------------------------
+        let num7 = (200.0 * num) as i32;
+        let num8 = (45.0 * num) as i32;
+        tooltip::draw_inv_bg(
+            r,
+            lookups,
+            [
+                (vector3[0] as i32 - num7 / 2) as f32,
+                (vector3[1] as i32 - num8 / 2) as f32,
+                num7 as f32,
+                num8 as f32,
+            ],
+            panel_tint,
+        );
+        let text = crate::lang::text_args(
+            "Game.WaveCleared",
+            &[if progress_max != 0 {
+                format!(
+                    "{}%",
+                    (progress as f32 * 100.0 / progress_max as f32) as i32
+                )
+            } else {
+                progress.to_string()
+            }],
+        );
+        if progress_max != 0 {
+            push_color_bar(r, lookups, vector3, num, alpha);
+            let num9 = (progress as f32 / progress_max as f32).clamp(0.0, 1.0);
+            // `float num10 = num; if (MeasureString(text3).Y > 22f) num10 *=
+            // 22f / that.Y;` (`:47817-47821`).
+            let text_h = text::line_height(lookups);
+            let num10 = if text_h > 22.0 {
+                num * (22.0 / text_h)
+            } else {
+                num
+            };
+            let num11 = 169.0 * num;
+            let num12 = 8.0 * num;
+            // `vector5 = vector3 + UnitY*num12 + UnitX*1f` (`:47824`).
+            let mut vector5 = [vector3[0] + 1.0, vector3[1] + num12];
+            // `DrawBorderString(text3, vector5 + (0,-4), White*alpha, num10,
+            // 0.5f, 1f)` (`:47826`).
+            draw_anchored_text(
+                r,
+                lookups,
+                &text,
+                [vector5[0], vector5[1] - 4.0],
+                num10,
+                alpha,
+                0.5,
+                1.0,
+            );
+            // `vector5 += UnitX * (num9 - 0.5f) * num11` (`:47827`).
+            vector5[0] += (num9 - 0.5) * num11;
+            push_inv_fill(
+                r,
+                [vector5[0] - num11 * num9, vector5[1] - num12 / 2.0],
+                [num11 * num9, num12],
+                color::tint(color::mul([255, 241, 51, 255], alpha)),
+            );
+            push_inv_fill(
+                r,
+                [vector5[0] - 2.0, vector5[1] - num12 / 2.0],
+                [2.0, num12],
+                color::tint(color::mul([255, 165, 0, 127], alpha)),
+            );
+            push_inv_fill(
+                r,
+                [vector5[0], vector5[1] - num12 / 2.0],
+                [num11 * (1.0 - num9), num12],
+                [0.0, 0.0, 0.0, alpha],
+            );
+        }
+    }
+
+    // --- the shared group plate (`:47831-47845`) ---------------------------
+    // `vector6 = MouseText.MeasureString(text); num13 = 120f; if (vector6.X >
+    // 200f) num13 += vector6.X - 200f;` (`:47831-47835`).
+    let label_w = text::hud_text_width(r, lookups, &label, 1.0);
+    let mut num13 = 120.0;
+    if label_w > 200.0 {
+        num13 += label_w - 200.0;
+    }
+    // `r = Utils.CenteredRectangle(new Vector2(screenWidth - num13,
+    // screenHeight - 80), (vector6 + new Vector2(value.Width + 12, 6f)) * num)`
+    // (`:47836`).
+    let icon_w = icon_sheet
+        .as_ref()
+        .map(|s| s.width as f32)
+        .unwrap_or(32.0);
+    let icon_h = icon_sheet
+        .as_ref()
+        .map(|s| s.height as f32)
+        .unwrap_or(32.0);
+    let plate_w = (label_w + icon_w + 12.0) * num;
+    let plate_h = (text::line_height(lookups) + 6.0) * num;
+    let plate = [
+        screen.x - num13 - plate_w / 2.0,
+        screen.y - 80.0 - plate_h / 2.0,
+        plate_w,
+        plate_h,
+    ];
+    // `Utils.DrawInvBG(sb, r, c)` (`:47837`) — the group-coloured plate.
+    tooltip::draw_inv_bg(r, lookups, plate, panel_color);
+    // `sb.Draw(value, Utils.Left(r) + UnitX * num * 8f, null, White*alpha, 0f,
+    // new Vector2(0f, value.Height / 2), num * 0.8f, ...)` (`:47838`): the icon's
+    // origin is `(0, h/2)`, so its vertical centre sits on the plate's top edge.
+    if let Some(uv) = lookups.hud_uv(icon_sheet.as_ref()) {
+        let icon_scale = num * 0.8;
+        r.push_ui_sprite(
+            [plate[0] + num * 8.0, plate[1] - icon_h / 2.0 * icon_scale],
+            [icon_w * icon_scale, icon_h * icon_scale],
+            uv,
             [1.0, 1.0, 1.0, alpha],
-            &percent,
         );
     }
-    // The label line under the bar (`DrawBorderString`).
-    let w = text::hud_text_width(r, lookups, label, num);
-    text::border_string(
+    // `DrawBorderString(text, Utils.Right(r) + UnitX * num * -22f, White*alpha,
+    // num * 0.9f, 1f, 0.4f)` (`:47839`): right-aligned, 40% of the height above
+    // the anchor y.
+    let right = plate[0] + plate[2] - num * 22.0;
+    draw_anchored_text(r, lookups, &label, [right, plate[1]], num * 0.9, alpha, 1.0, 0.4);
+}
+
+/// `Main.DrawInvasionProgress`'s two early returns (`Main.cs:47698` and
+/// `:47729`): `invasionProgress == -1` means no invasion is tracked, and an
+/// alpha clamped to `0..=1` that is still `0` means the bar has finished
+/// fading. Returns the clamped alpha when the bar should draw.
+pub(crate) fn invasion_bar_alpha(progress: i32, alpha: f32) -> Option<f32> {
+    if progress == -1 {
+        return None;
+    }
+    let alpha = alpha.clamp(0.0, 1.0);
+    if alpha <= 0.0 {
+        return None;
+    }
+    Some(alpha)
+}
+
+/// The `ColorBar` track of both arms: `Draw(value, vector, null, White*alpha,
+/// 0f, new Vector2(value.Width / 2, 0f), num, ...)` (`Main.cs:47798`,
+/// `:47814`) — the 178x16 sheet centred on `vector.x`, its top edge at
+/// `vector.y`, scaled by `num`.
+fn push_color_bar(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    vector: [f32; 2],
+    num: f32,
+    alpha: f32,
+) {
+    let bar_w = lookups
+        .ui_color_bar
+        .as_ref()
+        .map(|s| s.width as f32)
+        .unwrap_or(178.0);
+    let bar_h = lookups
+        .ui_color_bar
+        .as_ref()
+        .map(|s| s.height as f32)
+        .unwrap_or(16.0);
+    if let Some(uv) = lookups.hud_uv(lookups.ui_color_bar.as_ref()) {
+        r.push_ui_sprite(
+            [vector[0] - bar_w / 2.0 * num, vector[1]],
+            [bar_w * num, bar_h * num],
+            uv,
+            [1.0, 1.0, 1.0, alpha],
+        );
+    }
+}
+
+/// The icon/label/colour pick dispatch (`Main.cs:47734-47780`), separated so
+/// the arms can be unit-tested without a renderer.
+///
+/// The labels are the localized strings the C# pulls: `Lang.inter[83..88]` for
+/// the six legacy events and `DungeonDefenders2.InvasionProgressTitle` for the
+/// Old One's Army.
+fn invasion_group(
+    lookups: &assets::Lookups,
+    icon: i32,
+) -> (Option<tr_render::SheetRect>, String, [f32; 4]) {
+    // The index order is `assets::INVASION_ICON_EXTRAS`:
+    // [0]=Extra_7 [1]=Extra_8 [2]=Extra_9 [3]=Extra_10 [4]=Extra_11
+    // [5]=Extra_12 [6]=Extra_79.
+    //
+    // The colour is the group RGB `* 0.5f` for the seven mapped icons and the
+    // untouched `Color.White` for the default (`:47731-47732` vs
+    // `:47736-47779`), so the halving lives in each arm rather than outside.
+    let (sheet_idx, label, plate): (usize, String, [f32; 4]) = match icon {
+        // `Lang.inter[83]` — "Frost Moon" (`:47735-47739`).
+        1 => (1, crate::lang::inter(83), half([64, 109, 164])),
+        // `Lang.inter[84]` — "Pumpkin Moon" (`:47740-47744`).
+        2 => (5, crate::lang::inter(84), half([112, 86, 114])),
+        // `DungeonDefenders2.InvasionProgressTitle` — "Old One's Army"
+        // (`:47745-47749`).
+        3 => (
+            6,
+            crate::lang::text("DungeonDefenders2.InvasionProgressTitle"),
+            half([88, 0, 160]),
+        ),
+        // `Lang.inter[85]` — "Martian Madness" (`:47750-47754`).
+        7 => (3, crate::lang::inter(85), half([165, 160, 155])),
+        // `Lang.inter[86]` — "Pirate Invasion" (`:47755-47759`).
+        6 => (4, crate::lang::inter(86), half([148, 122, 72])),
+        // `Lang.inter[87]` — "Frost Legion" (`:47760-47764`).
+        5 => (0, crate::lang::inter(87), half([173, 135, 140])),
+        // `Lang.inter[88]` — "Goblin Army" (`:47765-47769`).
+        4 => (2, crate::lang::inter(88), half([94, 72, 131])),
+        // The default: `Extra[9]`, empty text, `Color.White` (`:47731-47732`).
+        _ => (2, String::new(), [1.0, 1.0, 1.0, 1.0]),
+    };
+    (
+        lookups.invasion_icons.get(sheet_idx).copied().flatten(),
+        label,
+        plate,
+    )
+}
+
+/// `new Color(r, g, b) * 0.5f` — XNA truncates every channel
+/// (`(byte)(c * 0.5)`, alpha included).
+fn half(rgb: [u8; 3]) -> [f32; 4] {
+    color::tint(color::mul([rgb[0], rgb[1], rgb[2], 255], 0.5))
+}
+
+/// One `MagicPixel` fill of the invasion bar: `new Rectangle(0, 0, 1, 1)` of the
+/// 1x1 sheet stretched to `size`.
+fn push_inv_fill(r: &mut SpriteRenderer, pos: [f32; 2], size: [f32; 2], color: [f32; 4]) {
+    if size[0] <= 0.0 || size[1] <= 0.0 {
+        return;
+    }
+    r.push_fx_rect(pos, size, color);
+}
+
+/// `Utils.DrawBorderString` (`Utils.cs:2510-2518`) with a fractional anchor:
+/// the origin is `(anchor_x, anchor_y) * MeasureString(text)` in **unscaled**
+/// pixels, so the destination top-left is `pos - origin * scale`.
+fn draw_anchored_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    text: &str,
+    pos: [f32; 2],
+    scale: f32,
+    alpha: f32,
+    anchor_x: f32,
+    anchor_y: f32,
+) {
+    let w = text::hud_text_width(r, lookups, text, 1.0);
+    let h = text::line_height(lookups);
+    let x = pos[0] - anchor_x * w * scale;
+    let y = pos[1] - anchor_y * h * scale;
+    text::draw_border_string(
         r,
         lookups,
-        cx - w / 2.0,
-        cy + num8 as f32 / 2.0,
+        text::BorderFont::Ui,
+        x,
+        y,
+        scale,
+        &[[1.0, 1.0]],
         [1.0, 1.0, 1.0, alpha],
-        label,
+        text,
     );
 }
 
@@ -646,6 +921,73 @@ mod tests {
             Some(true),
             "the line rides the builder"
         );
+    }
+
+    /// BUG-08: the `Main.invasionProgressIcon` dispatch (`Main.cs:47734-47780`)
+    /// — each of the seven icons maps to its own `Extra` sheet and its own
+    /// `* 0.5f` plate colour, and the unmapped default is `Extra[9]` with an
+    /// empty label and the untouched `Color.White`.
+    ///
+    /// The table is pinned against the C# — note in particular that icon `5`
+    /// is the **Frost Legion** (`Lang.inter[87]`) and icon `6` the **Pirate
+    /// Invasion** (`Lang.inter[86]`); the pre-BUG-08 draw had those two labels
+    /// swapped and had no Martian row at all.
+    #[test]
+    fn bug_08_the_icon_dispatch_matches_the_source_table() {
+        // (icon, Extra sheet name, the plate RGB before the `* 0.5f`).
+        let rows: [(i32, &str, [u8; 3]); 7] = [
+            (1, "Extra_8", [64, 109, 164]),   // Frost Moon,      inter[83]
+            (2, "Extra_12", [112, 86, 114]),  // Pumpkin Moon,    inter[84]
+            (3, "Extra_79", [88, 0, 160]),    // Old One's Army,  DD2 key
+            (7, "Extra_10", [165, 160, 155]), // Martian Madness, inter[85]
+            (6, "Extra_11", [148, 122, 72]),  // Pirate Invasion, inter[86]
+            (5, "Extra_7", [173, 135, 140]),  // Frost Legion,    inter[87]
+            (4, "Extra_9", [94, 72, 131]),    // Goblin Army,     inter[88]
+        ];
+        let lookups = assets::Lookups::default();
+        for (icon, sheet_name, rgb) in rows {
+            assert!(
+                assets::INVASION_ICON_EXTRAS.contains(&sheet_name),
+                "icon {icon}: {sheet_name} must be packed into the atlas"
+            );
+            let (_, _label, plate) = invasion_group(&lookups, icon);
+            // `new Color(r, g, b) * 0.5f` truncates every channel.
+            let expected = color::tint(color::mul([rgb[0], rgb[1], rgb[2], 255], 0.5));
+            assert_eq!(plate, expected, "icon {icon} ({sheet_name}): the plate colour");
+        }
+        // The label rows resolve through the live tables; the test binary's
+        // unloaded manager echoes the key, so the DD2 row is matched by either
+        // form. Pin the KEY the C# formats, not the English string.
+        let (_, dd2_label, _) = invasion_group(&lookups, 3);
+        assert!(
+            dd2_label == "Old One's Army"
+                || dd2_label == "DungeonDefenders2.InvasionProgressTitle",
+            "icon 3 rides the DD2 InvasionProgressTitle key, got {dd2_label}"
+        );
+        // The default arm: `Extra[9]`, "", and `Color.White` WITHOUT the
+        // halving (`:47731-47732`).
+        let (_, default_label, default_color) = invasion_group(&lookups, 0);
+        assert_eq!(default_label, "", "the default label is empty");
+        assert_eq!(default_color, [1.0, 1.0, 1.0, 1.0], "the default is White");
+    }
+
+    /// BUG-08: the two gates that close `Main.DrawInvasionProgress`
+    /// (`Main.cs:47698` and `:47729`) — with `invasionProgress == -1` or a
+    /// zero alpha the function returns before drawing anything, which is what
+    /// stops the panel from being permanently on screen.
+    #[test]
+    fn bug_08_the_bar_is_gated_on_progress_and_alpha() {
+        // `Main.invasionProgress == -1` -> nothing (`:47698`), whatever the
+        // alpha says.
+        assert_eq!(invasion_bar_alpha(-1, 1.0), None);
+        assert_eq!(invasion_bar_alpha(-1, 0.5), None);
+        // `if (Main.invasionProgressAlpha <= 0f) return;` (`:47729`).
+        assert_eq!(invasion_bar_alpha(50, 0.0), None);
+        assert_eq!(invasion_bar_alpha(50, -0.3), None);
+        // The clamp to `0..=1` (`:47726-47727`) and the live arm.
+        assert_eq!(invasion_bar_alpha(50, 1.7), Some(1.0));
+        assert_eq!(invasion_bar_alpha(50, 0.4), Some(0.4));
+        assert_eq!(invasion_bar_alpha(0, 1.0), Some(1.0), "a zero-point bar still draws");
     }
 }
 

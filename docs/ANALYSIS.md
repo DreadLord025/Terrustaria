@@ -9782,3 +9782,44 @@ the branch mechanics below; every C# site is in the report itself.
   All literal sheet indices are gone from the code (doc comments keep the
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
+
+### BUG-08 — the invasion progress bar (`DrawInvasionProgress`)
+
+- **Where the fade head lives.** The C# runs `Main.invasionProgressDisplayLeft`'
+  decay and the `invasionProgressAlpha` ramp **inside the draw function**
+  (`Main.cs:47700-47728`), so the fade is per rendered frame. The port keeps
+  the head in `world_sim::npcs::update_invasion_state` on the fixed step, so
+  the ramp is deterministic and framerate-independent (the BUG-11-15 merge
+  had dropped that arm once already; the test now pins it). The two gates
+  that the C# puts *after* the ramp — `invasionProgress == -1` (`:47698`) and
+  `alpha <= 0` (`:47729`) — are ported verbatim in the draw
+  (`ui::invasion_bar_alpha`), which is what actually stops the panel from
+  being permanently on screen.
+- **`invasionProgressMode`.** The C#'s mode 0 (Off) zeroes the timer and the
+  alpha (`:47718-47722`); modes 1 (Timed) and 2 (On) are the same to the
+  draw, and the difference lives in `CheckInvasionProgressDisplay`, which the
+  C# gates on `mode == 2` before scanning for nearby invasion NPCs. The port
+  reads the same setting through `Settings::event_progress`.
+- **The DD2 wave report.** `DD2Event.CheckProgress` calls
+  `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
+  currentWave)` (`DD2Event.cs:376-392`); the port's `dd2_report_kill` now
+  reports through the same four values, so the Old One's Army draws with the
+  `Extra[79]` icon and the `Game.WaveMessage` arm. The moon events' waves are
+  still the parked half of that row (no Frost/Pumpkin Moon wave driver).
+- **The group plate.** The C# draws a **second** panel at
+  `(screenWidth - num13, screenHeight - 80)` with the group's `Extra` icon and
+  its `* 0.5f`-tinted `Inventory_Back13` plate (`:47831-47845`). The port had
+  only a flat label line under the bar; it now draws the plate, the icon
+  (`num * 0.8`, origin `(0, h/2)` so the icon straddles the plate's top edge —
+  the C#'s own geometry) and the right-aligned label (`num * 0.9`, anchor
+  `(1, 0.4)`).
+- **The label table.** The pre-BUG-08 draw had icons 5 and 6 swapped (icon 5
+  is `Lang.inter[87]` "Frost Legion", icon 6 `Lang.inter[86]` "Pirate
+  Invasion") and no Martian row at all. Both are fixed and pinned by
+  `bug_08_the_icon_dispatch_matches_the_source_table`.
+- **`Utils.DrawBorderString`'s anchor.** The C# origin is
+  `(anchorx, anchory) * MeasureString(text)` in **unscaled** pixels, then the
+  sprite batch scales it, so the destination top-left is
+  `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
+  the HUD uses the zero-anchor `text::border_string`.
+

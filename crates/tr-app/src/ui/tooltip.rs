@@ -153,10 +153,7 @@ pub fn tooltip_box_rect(mouse: Vec2, w: f32, h: f32, screen: Vec2) -> [f32; 4] {
 /// One `MouseText` line height (`DynamicSpriteFont.MeasureString(...).Y`). The built-in
 /// bitmap fallback draws 8 px glyphs (`SpriteRenderer::push_text`).
 fn line_height(lookups: &assets::Lookups) -> f32 {
-    match &lookups.ui_font {
-        Some(f) => f.line_spacing,
-        None => 8.0,
-    }
+    super::text::line_height(lookups)
 }
 
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
