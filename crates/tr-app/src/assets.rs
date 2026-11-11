@@ -53,8 +53,34 @@ fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
-/// Loads only the sheets referenced by the world (plus a dirt fallback).
+/// The two halves of the atlas content: the world-derived sheets (the tile and
+/// wall sheets this world's usage scan asked for) and the world-independent
+/// ones (backgrounds, NPCs, items, UI, …).
+///
+/// The split exists so a world swap can re-decode only the small world half and
+/// re-pack the previous static half: the static sheets are the bulk of the
+/// decode time (a full boot decode measured ~1.4 s with the retail content) and
+/// none of them depend on the world. Concatenating `world ++ static` reproduces
+/// the pre-split list's order exactly, so the atlas layout — and every UV — is
+/// unchanged.
+pub type WorldSheets = (Vec<AtlasImage>, Vec<AtlasImage>);
+
+/// Every sheet the atlas needs for `world`, as `(world_half, static_half)` —
+/// concatenate the two in that order to get the pre-split list.
 pub fn load_world_images(
+    dir: &Path,
+    tiles: &BTreeSet<u16>,
+    walls: &BTreeSet<u16>,
+) -> Result<WorldSheets> {
+    Ok((
+        load_world_sheets(dir, tiles, walls)?,
+        load_static_sheets(dir),
+    ))
+}
+
+/// The world-dependent half of [`load_world_images`]: the tile and wall sheets
+/// the usage scan asked for, plus the dirt fallback.
+pub fn load_world_sheets(
     dir: &Path,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
@@ -103,6 +129,24 @@ pub fn load_world_images(
             images.push(img);
         }
     }
+
+    if !missing.is_empty() {
+        log::warn!(
+            "{} world sheets have no matching texture (first 10: {:?})",
+            missing.len(),
+            &missing[..missing.len().min(10)]
+        );
+    }
+
+    Ok(images)
+}
+
+/// The world-independent half of [`load_world_images`]: the backgrounds, the
+/// player/NPC/armor/mount/projectile sheets, every item icon and the tile-side
+/// overlays. Reused as-is across a world swap (the content dir is fixed for a
+/// process, so the decoded pixels cannot go stale).
+pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
+    let mut images = Vec::new();
 
     // Whole-image sheets used by the sky/background pass.
     for name in [
@@ -825,15 +869,7 @@ pub fn load_world_images(
         }
     }
 
-    if !missing.is_empty() {
-        log::warn!(
-            "{} world sheets have no matching texture (first 10: {:?})",
-            missing.len(),
-            &missing[..missing.len().min(10)]
-        );
-    }
-
-    Ok(images)
+    images
 }
 
 /// `Content` directory bundled with the project (the retail `.xnb` files copied into
@@ -927,6 +963,33 @@ pub struct LoadedFonts {
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death: Option<UiFont>,
     /// `Fonts/Combat_Text`/`Combat_Crit`: damage numbers (`FontAssets.CombatText`).
+    pub combat_text: Option<UiFont>,
+    pub combat_crit: Option<UiFont>,
+}
+
+impl LoadedFonts {
+    /// The glyph tables alone, without the BC2 page array — cheap to clone
+    /// relative to a decode (the world swap re-derives `Lookups` from these on
+    /// every load, and re-decoding ~38 636 glyphs costs ~1–2 s).
+    pub fn tables(&self) -> FontTables {
+        FontTables {
+            ui: self.ui.clone(),
+            item: self.item.clone(),
+            death: self.death.clone(),
+            combat_text: self.combat_text.clone(),
+            combat_crit: self.combat_crit.clone(),
+        }
+    }
+}
+
+/// The world-independent glyph tables [`LoadedFonts`] carries, cached on the App
+/// so a world swap does not re-decode the five retail fonts (the other ~1–2 s of
+/// a load, measured with the retail content).
+#[derive(Clone, Default)]
+pub struct FontTables {
+    pub ui: Option<UiFont>,
+    pub item: Option<UiFont>,
+    pub death: Option<UiFont>,
     pub combat_text: Option<UiFont>,
     pub combat_crit: Option<UiFont>,
 }
@@ -2453,8 +2516,9 @@ mod tests {
             let images_dir = content.join("Images");
             let tiles = BTreeSet::new();
             let walls = BTreeSet::new();
-            let images =
+            let (mut images, static_sheets) =
                 load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+            images.extend(static_sheets);
             let atlas = tr_render::Atlas::build(images, 8192);
             let lookups = Lookups::build(
                 &atlas,
@@ -2541,6 +2605,91 @@ mod tests {
         assert!(
             lookups.plain_tex(0).is_some(),
             "Tiles_0 feeds the tile fallback"
+        );
+    }
+
+    /// The world-swap fast path splits the sheet list in two (`world ++ static`)
+    /// so the static half can be cached across swaps. The concatenation must be
+    /// the pre-split list, in order — `Atlas::build`'s shelf sort breaks size ties
+    /// by input order, so a reordering would move every UV.
+    #[test]
+    fn test_the_world_and_static_split_concatenates_to_the_full_list() {
+        let content = crate::app::find_content_dir().unwrap();
+        // `load_png` resolves names through the process-global images dir, so the
+        // test must seed it exactly like startup does.
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let tiles: BTreeSet<u16> = [1u16, 2, 30].into_iter().collect();
+        let walls: BTreeSet<u16> = [1u16, 4].into_iter().collect();
+
+        let (world_half, static_half) = load_world_images(&images_dir, &tiles, &walls).unwrap();
+        let joined: Vec<String> = world_half
+            .iter()
+            .chain(static_half.iter())
+            .map(|i| i.name.clone())
+            .collect();
+
+        // The halves are exactly the two loaders, in the same order.
+        let world_only = load_world_sheets(&images_dir, &tiles, &walls).unwrap();
+        let static_only = load_static_sheets(&images_dir);
+        assert_eq!(
+            joined,
+            world_only
+                .iter()
+                .chain(static_only.iter())
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>(),
+            "split order"
+        );
+        // The world half holds only this world's sheets (plus the Tiles_0
+        // fallback); the static half carries the content-wide ones.
+        assert!(
+            world_half.len() < static_half.len(),
+            "{} world vs {} static",
+            world_half.len(),
+            static_half.len()
+        );
+        assert!(static_half.iter().any(|i| i.name.starts_with("Item_")));
+    }
+
+    /// The world-swap fast path: the second build reuses the decoded static half
+    /// and the font tables, so only the world's own sheets are re-decoded. Pinned
+    /// here because a regression (a fresh `App::new` dropping the caches) would
+    /// bring the multi-second Play freeze back.
+    #[test]
+    fn test_the_second_atlas_build_reuses_the_static_half() {
+        let content = crate::app::find_content_dir().unwrap();
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let world = tr_core::world::World::new("bench".into(), 64, 64);
+
+        let mut cache = None;
+        let mut fonts = None;
+        let t0 = std::time::Instant::now();
+        let first =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let first_ms = t0.elapsed().as_millis();
+        assert!(first.is_ok(), "boot build");
+        assert!(cache.is_some(), "the boot build caches the static half");
+        assert!(fonts.is_some(), "the boot build caches the font tables");
+
+        let t1 = std::time::Instant::now();
+        let second =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let second_ms = t1.elapsed().as_millis();
+        assert!(second.is_ok(), "swap build");
+        assert!(cache.is_some(), "the swap keeps the cache for the next one");
+        assert!(fonts.is_some(), "and the font tables");
+
+        // Same atlas either way — the swap must not change what is drawn.
+        let (a, _, _, sa) = first.unwrap();
+        let (b, _, _, sb) = second.unwrap();
+        assert_eq!(sa, sb, "identical atlas stats");
+        assert_eq!(a.pixels, b.pixels, "identical atlas pixels");
+
+        assert!(
+            second_ms * 2 < first_ms.max(1),
+            "the reuse must be markedly faster: {first_ms} ms then {second_ms} ms"
         );
     }
 
