@@ -7807,6 +7807,18 @@ impl ProjectilePool {
 
     /// The target-selection gate of `Damage_PVE` (`:12577-12583`): the slot's
     /// immunity system must allow a hit on NPC `npc` right now.
+    /// The projectile-side half of the friendly gate. `Player.cs:20513`:
+    /// `flag = dontHurtCritters || projectile.minion || MinionShot ||
+    /// projectile.sentry || SentryShot` — the port's `is_summon_shot`
+    /// carries the last four — and `CountsAsCritter[type] & flag`
+    /// refuses the shot. The port folds the whole town/critter set into
+    /// `Npc.friendly` (no `dontHurtCritters` toggle yet — the vanilla's
+    /// default is false), so a plain player shot at a friendly npc is spent
+    /// exactly where the vanilla spends it.
+    fn npc_friendly_refuses_projectile(n: &Npc, summon_shot: bool) -> bool {
+        n.friendly && !summon_shot
+    }
+
     fn target_allowed(&self, slot: usize, p: &Projectile, npc: u16) -> bool {
         if !p.uses_local_immunity && !p.uses_id_static_immunity {
             return true;
@@ -8031,6 +8043,9 @@ impl ProjectilePool {
                     dmg = ((dmg as f32) * 2.0) as i32;
                 }
             }
+            if Self::npc_friendly_refuses_projectile(n, self.slots[slot].is_summon_shot) {
+                continue;
+            }
             let landed = n.hurt_from_projectile(dmg, from_x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
@@ -8127,6 +8142,16 @@ impl ProjectilePool {
             // rectangle overlap of the slot's box with the NPC's.
             let hit = px < n.x + nw && px + pw > n.x && py < n.y + nh && py + ph > n.y;
             if !hit {
+                continue;
+            }
+            // `Damage`'s friendly gate (`Projectile.cs:12577-12624` +
+            // `Player.CanNPCBeHitByPlayerOrPlayerProjectile`,
+            // `Player.cs:20513-20529`): a `friendly` npc takes nothing from
+            // a plain player projectile — the town/critter set — while a
+            // MINION/sentry shot opens it (the flag's `projectile.minion ||
+            // MinionShot || sentry || SentryShot` term). `trap` clears the
+            // flag again; the port has no trap projectiles.
+            if Self::npc_friendly_refuses_projectile(n, self.slots[slot].is_summon_shot) {
                 continue;
             }
             let (cx, cy) = (px + pw * 0.5, py + ph * 0.5);
@@ -12696,6 +12721,28 @@ mod magic_ai_tests {
     use super::*;
     use crate::npc::SlimeVariant;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// BUG-10: the projectile half of the friendly gate
+    /// (`Player.CanNPCBeHitByPlayerOrPlayerProjectile`, `Player.cs:20513-20529`
+    /// over `Projectile.Damage`'s refusal): a plain player shot spends itself
+    /// on a friendly npc with no damage, a minion/sentry shot lands.
+    #[test]
+    fn bug_10_a_plain_shot_spends_itself_on_a_friendly_npc() {
+        let guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 0.0, 0.0, 1, 0.0);
+        let zombie = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        assert!(
+            ProjectilePool::npc_friendly_refuses_projectile(&guide, false),
+            "a plain shot cannot hit the Guide"
+        );
+        assert!(
+            !ProjectilePool::npc_friendly_refuses_projectile(&guide, true),
+            "the doll's shot opens it (`CountsAsCritter & flag` has no town row)"
+        );
+        assert!(
+            !ProjectilePool::npc_friendly_refuses_projectile(&zombie, false),
+            "a monster always takes the shot"
+        );
+    }
 
     /// A tile-free world: the flight tests run in open air, so the only
     /// collision that can trigger is the one the test places itself.
