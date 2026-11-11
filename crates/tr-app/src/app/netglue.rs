@@ -1282,9 +1282,10 @@ impl App {
             // spawn is the world header's spawn tile (`Player.cs:594`).
             self.player = Some(player::Player::spawn(&self.world));
         }
-        // The net install enters the world exactly like the single-player
-        // `Main.LoadWorld` tail does (`App::enter_loaded_world`).
-        self.enter_loaded_world();
+        if self.menu.is_some() {
+            self.close_menu();
+        }
+        self.front = None;
         log::info!(
             "world installed: {}x{}",
             self.world.width,

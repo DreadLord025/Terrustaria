@@ -136,14 +136,7 @@ fn main() -> Result<()> {
 
     app::log_world_diagnostics(&world);
 
-    // The decoded static atlas half and the retail font tables are carried onto
-    // the App so the first world swap (`App::swap_world`) repacks them instead of
-    // re-reading ~7 000 sheets and re-decoding ~38 636 glyphs (BUG-21: the
-    // select-world Play froze for seconds on that work).
-    let mut boot_static: Option<Vec<tr_render::atlas::AtlasImage>> = None;
-    let mut boot_fonts: Option<assets::FontTables> = None;
-    let (atlas, font_atlas, lookups, atlas_stats) =
-        app::build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
+    let (atlas, font_atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 
@@ -163,8 +156,6 @@ fn main() -> Result<()> {
         atlas_stats,
     );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
-    app.static_sheets = boot_static;
-    app.fonts_cache = boot_fonts;
     app.load_map();
     event_loop.run_app(&mut app)?;
     Ok(())

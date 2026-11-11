@@ -1465,6 +1465,21 @@ NpcKind::SolarSelenian => 140,
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
+    /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
+    /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
+    pub fn is_invasion_npc(self) -> bool {
+        matches!(
+            self,
+            NpcKind::GoblinThief
+                | NpcKind::GoblinWarrior
+                | NpcKind::GoblinArcher
+                | NpcKind::GoblinSorcerer
+                | NpcKind::GoblinPeon
+                | NpcKind::GoblinSummoner
+        )
+    }
+
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
     /// and Wandering Eye 30x32 (`NPC.cs` cases 2/133), zombie 18x40.
     pub fn size(self) -> (f32, f32) {

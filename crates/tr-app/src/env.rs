@@ -588,6 +588,14 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_DIE`: kills the local player on the first world tick with the
+    /// respawn-skip lockout already spent — the death-screen fixture for
+    /// `TR_SHOT` (BUG-06b's skip prompt).
+    die_pin,
+    "TR_DIE"
+}
+
+pin_bool! {
     /// `TR_OPTIONS`: opens the in-game options window at boot so
     /// `TR_SHOT` captures the `IngameOptions` panel (M7-UI-4's fixture).
     ingame_options_open,

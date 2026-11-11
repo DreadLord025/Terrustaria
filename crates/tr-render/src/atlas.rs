@@ -61,8 +61,7 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn build(images: Vec<AtlasImage>, max_width: u32) -> Self {
-        let mut images = images;
+    pub fn build(mut images: Vec<AtlasImage>, max_width: u32) -> Self {
         if !images.iter().any(|i| i.name == "__white") {
             images.push(AtlasImage {
                 name: "__white".into(),
@@ -72,35 +71,15 @@ impl Atlas {
                 layout: SheetLayout::Tile,
             });
         }
-        Self::build_ref(&images, max_width)
-    }
-
-    /// [`Atlas::build`] over borrowed sheets: the pixels are copied out of
-    /// `images` and the list stays owned by the caller. The world swap uses
-    /// this to pack the same decoded static sheets into every new world's
-    /// atlas without a second decode (the layout is identical to `build`'s —
-    /// the same sort and shelf pass over the same input).
-    pub fn build_ref(images: &[AtlasImage], max_width: u32) -> Self {
-        let mut order: Vec<&AtlasImage> = images.iter().collect();
-        let white = AtlasImage {
-            name: "__white".into(),
-            width: 4,
-            height: 4,
-            rgba: vec![255; 4 * 4 * 4],
-            layout: SheetLayout::Tile,
-        };
-        if !order.iter().any(|i| i.name == "__white") {
-            order.push(&white);
-        }
         // Tallest first keeps the shelf count low.
-        order.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
+        images.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
 
         let mut x = PAD;
         let mut y = PAD;
         let mut shelf_height = 0;
-        let mut layout = Vec::with_capacity(order.len());
+        let mut layout = Vec::with_capacity(images.len());
 
-        for img in &order {
+        for img in &images {
             if x + img.width + PAD > max_width {
                 x = PAD;
                 y += shelf_height + PAD;
@@ -114,9 +93,9 @@ impl Atlas {
         let width = max_width;
 
         let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
-        let mut sheets = HashMap::with_capacity(order.len());
+        let mut sheets = HashMap::with_capacity(images.len());
 
-        for (img, (px, py)) in order.iter().zip(layout) {
+        for (img, (px, py)) in images.iter().zip(layout) {
             let plain = pick_plain_frame(&img.name, &img.rgba, img.width, img.height, img.layout);
             log::debug!(
                 "sheet {} {}x{} {:?} plain {:?}",
@@ -289,56 +268,4 @@ pub fn font_sheet() -> (AtlasImage, u32) {
         },
         gw,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sheet(name: &str, w: u32, h: u32, seed: u8) -> AtlasImage {
-        AtlasImage {
-            name: name.into(),
-            width: w,
-            height: h,
-            rgba: (0..(w * h * 4))
-                .map(|i| (i as u8).wrapping_add(seed))
-                .collect(),
-            layout: SheetLayout::Raw,
-        }
-    }
-
-    /// `build_ref` is the world swap's packing path (it borrows the sheets so the
-    /// decoded static half stays cached): it must place every sheet exactly where
-    /// `build` would, pixel for pixel — otherwise a swapped world would draw with
-    /// the boot world's UVs.
-    #[test]
-    fn build_ref_matches_build_bit_for_bit() {
-        // `AtlasImage` is not `Clone` (the pixels are tens of MB), so the list
-        // is built twice from the same recipe.
-        let recipe = || {
-            vec![
-                sheet("Tiles_1", 16, 16, 1),
-                sheet("Tiles_2", 32, 48, 2),
-                sheet("Wall_3", 36, 36, 3),
-                sheet("Item_4", 20, 20, 4),
-                sheet("Tall_5", 8, 200, 5),
-            ]
-        };
-        let sheets = recipe();
-        let owned = Atlas::build(recipe(), 512);
-        let borrowed = Atlas::build_ref(&sheets, 512);
-
-        assert_eq!(owned.width, borrowed.width);
-        assert_eq!(owned.height, borrowed.height);
-        assert_eq!(owned.pixels, borrowed.pixels, "the packed pixels must match");
-        assert_eq!(owned.sheets.len(), borrowed.sheets.len());
-        for (name, rect) in &owned.sheets {
-            let other = borrowed.sheets.get(name).expect("same sheet set");
-            assert_eq!((rect.x, rect.y), (other.x, other.y), "{name} placement");
-            assert_eq!(rect.plain_frame, other.plain_frame, "{name} plain frame");
-        }
-        // The synthetic white sheet both paths add is not in the caller's list.
-        assert!(!sheets.iter().any(|s| s.name == "__white"));
-        assert!(borrowed.sheets.contains_key("__white"));
-    }
 }

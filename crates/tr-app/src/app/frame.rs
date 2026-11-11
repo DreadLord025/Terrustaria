@@ -109,11 +109,6 @@ impl App {
         if self.team_cooldown > 0 {
             self.team_cooldown -= 1;
         }
-        // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
-        // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
-        // page the player selected with the tabs. Recomputed every frame so the
-        // auto-jump is undone the moment the cursor stack empties.
-        self.resolve_equip_page();
         // `IngameOptions.Draw`'s per-frame hover/animation state and its
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
@@ -1443,6 +1438,16 @@ impl App {
                     // line while the respawn timer runs.
                     if let Some(p) = player.as_ref() {
                         if p.hp <= 0 {
+                            // `Main._framesWithRespawnSkipAvailable`
+                            // (`Main.cs:45348-45376`): the counter the C#
+                            // ticks inside `DrawDeathText` — up while the skip
+                            // is allowed, zeroed otherwise.
+                            if self.respawn_skip_available {
+                                self.respawn_skip_frames =
+                                    self.respawn_skip_frames.saturating_add(1);
+                            } else {
+                                self.respawn_skip_frames = 0;
+                            }
                             ui::draw_death_screen(
                                 renderer,
                                 lookups,
@@ -1451,6 +1456,7 @@ impl App {
                                 self.lost_coins,
                                 &self.lost_coin_string,
                                 p.respawn_timer,
+                                self.respawn_skip_frames,
                             );
                         }
                     }
