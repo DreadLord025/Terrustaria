@@ -1215,10 +1215,9 @@ The character is composed from the original 40×56 part strips (`Player_0_0` hea
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and a faithful `Player.PlayerFrame` port
 (`player.rs::update_frames`). The legs and body each carry a frame row (`leg_frame`/
-`body_frame`): idle is row 0 (the rest pose), airborne (`velocity.Y != 0`) is row 5, and
-walking advances one row per `8.0` of `legFrameCounter += |velocity.X| * 1.3`, cycling the
-walk band `7..=19` with the body copying the leg row; during an item swing the app applies
-the `useStyle 1` body rows `1 -> 2 -> 3` via `apply_item_use_frame`. (An earlier version
+`body_frame`), and since M2-DRAW-3 the whole of `PlayerFrame()` (`Player.cs:35755-36647`)
+is ported arm for arm (see "The full PlayerFrame chain" below) rather than the three-arm
+approximation this paragraph used to describe. (An earlier version
 returned row 5 at rest, which made the idle character look like it was about to jump, and
 used an unrelated `walk_time` counter that flickered between rows.) The legs/pants/shoes
 draw with `leg_frame`, the torso/arms/head/eyes/hair with `body_frame`. Torso and undershirt
@@ -9744,6 +9743,59 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 hold→throw→bounce→reel lifecycle.
+## The full `PlayerFrame` chain (M2-DRAW-3, 2026-11-11)
+
+`Player::update_frames` now ports `PlayerFrame()` (`Player.cs:35755-36647`) arm for arm
+instead of the three-branch approximation (idle / air / walk) it started with. The chain
+order is the vanilla `else if` ladder, and that order is the point: the item-use arm comes
+BEFORE the rope/hold/shield/mount/grapple/water/air/walk arms, so a swing no longer leaks
+the walk row, and the held-item rows no longer have to be patched in at draw time (the old
+`apply_item_use_frame` + `frame.rs` post-pass are gone; the app feeds the same inputs in
+through `player::FrameInputs` before the fixed step, beside `swing_aim`).
+
+Legs (`:36219-36291`): the swim paddle (`swimTime > 0`, a flat `+2.0` counter with no
+velocity term), the jump/fall/hang row 5 (`velocity.Y != 0 || grappling[0] > -1`) with the
+three always-animated wing sets (22/28/45 inside `ShouldDrawWingsThatAreAlwaysAnimated`)
+keeping row 0, the walk cycle with the slippery no-input and roller-skate
+(`MountID.Sets.IsRollerSkates` = 57-60) rest-row pins and the skates' `num19 = 2f` lock at
+`maxRunSpeed`, the rest row, then the Magic-Carpet (`carpetFrame >= 0`) and sandstorm
+pins and the post-chain Moon Lord legs (`legs == 140`: `velocity.Y != 0 ? 5 : 0`, row 7
+when `Main.OffsetsPlayerHeadgear[bodyRow].Y == 0`, row 0 for wings 22/28) and the sitting
+legs (`legs == 217`) row 5.
+
+Body (`:36312-36633`): the full useStyle table (1/0, 7, 2, 11, 9, 6, 3, 4, 8, 12, 13, 5
+with the `type == 281/986` carve-out and the `gravDir`-flipped aim rows), the rope pose
+(`pulleyDir == 2 ? 1 : 2`), holdStyles 1/2/3/5/7 and 4 (row 3/2/3/3/11/0 with the
+`CanVisuallyHoldItem` and dry-torch gates), the raised shield row 10, the mount body row,
+the grapple lean (the hooks' centroid vs the body centre → rows 2/4/3), the water float row
+10, the swim window (>20 → 0, >10 → 5, else 0), the airborne rows (sliding 3, sandstorm /
+carpet 6, EOC dash 6, wings: 22/28/45 → 0 and otherwise 6 rising / 6 under thrust / 5
+falling, plain 5), the walk rows (`legs == 140` runs its own `|velocity.X| * 0.5` counter,
+everything else copies the leg row after a `|velocity.X| * 1.5` body counter) and the rest
+row 0.
+
+The draw side needed no new offsets. The port's part tables were audited against the C#
+and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
+(`PlayerDrawSet.cs:1952-2023`), the back arm's `+2` rows (`:2034`), the
+`compShoulderOverFrontArm` clears at rows 1/2/5 (`:1961,1966,1976`), the torso column-1
+override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
+`GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
+the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
+`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+chain fed those tables wrong rows; with the rows correct the existing tables are correct
+too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
+duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+
+Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
+whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
+Bottle (`sand_storm`), the Magic Carpet (`carpet_frame`), flippers/merman
+(`ShouldFloatInWater` returns false), the pulley/rope item (`pulley`) and the raised shield
+(`shield_raised`). `Player.sliding` exists as a field nothing sets yet (the slope/ice slide
+pose). `Item.noWet` and `happyFunTorchTime` have no item-table columns, so the two held-item
+dry gates are always open. `gravDir == -1` arms are coded as the `== 1` value only — the
+port has no gravity flip. The armour-set dust/VFX side effects inside `PlayerFrame`
+(`:35819-36140`, ~400 lines of per-set particles) stay with the armour tasks.
+
 ## The player-audit fixes 11-15 (2026-11-10)
 
 The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:

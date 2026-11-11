@@ -456,6 +456,72 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
         }
         p.swing_aim = app.swing_aim;
+        // `PlayerFrame()`'s held-item inputs (`Player.cs:36143-36146`): the C#
+        // reads `inventory[selectedItem]` straight out of the player, the port
+        // hands the summary in before the fixed step.
+        {
+            let held = app.inventory[app.selected];
+            let kind = held.kind;
+            let use_style = crate::item::use_style(kind);
+            let hold_style = crate::item::hold_style(kind);
+            let swinging = app.swing > 0.0 && held.count > 0;
+            // `ItemCanBeVisuallyHeld`'s two reachable gates: the 55/56/61
+            // mounts hold nothing (`MountID.Sets.DontHoldItems`,
+            // `MountID.cs:46`) and the umbrella hold (4) is off while
+            // mounted, roped or airborne (`Player.cs:50209-50224`).
+            let mounted_blocks_hold =
+                p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let can_visually_hold = !mounted_blocks_hold
+                && (hold_style != 4
+                    || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
+            // The hooks' centroid relative to the body centre
+            // (`Player.cs:36502-36520`): only the body row leans on it.
+            let mut dx = 0.0f32;
+            let mut dy = 0.0f32;
+            if p.grappling_active {
+                let owner = app.local_id as u8;
+                let mut n = 0.0f32;
+                for pr in app.projectiles.slots() {
+                    if !pr.active
+                        || pr.owner != owner
+                        || !crate::projectile::proj_data(pr.kind)
+                            .is_some_and(|d| d.ai_style == 7)
+                    {
+                        continue;
+                    }
+                    dx += pr.pos.x + pr.w * 0.5;
+                    dy += pr.pos.y + pr.h * 0.5;
+                    n += 1.0;
+                }
+                if n > 0.0 {
+                    dx = dx / n - (p.x + crate::player::WIDTH * 0.5);
+                    dy = dy / n - (p.y + p.height * 0.5);
+                }
+            }
+            p.frame_inputs = crate::player::FrameInputs {
+                use_style,
+                // `flag6` (`Player.cs:36146`): the hidden/raise-lamp/hold-orb
+                // styles keep the locomotion rows.
+                use_style_blocks_frames: !matches!(use_style, 10 | 14 | 15),
+                item_type: kind as i32,
+                hold_style: hold_style as i32,
+                can_visually_hold,
+                swing_active: swinging,
+                swing_remaining: if swinging {
+                    app.swing / app.swing_max.max(f32::EPSILON)
+                } else {
+                    0.0
+                },
+                aim_relative: app.swing_aim * p.facing as f32,
+                // `!wet || !item.noWet` and `!happyFunTorchTime ||
+                // createTile != 4` — the port has neither item field, so both
+                // gates are open (documented in ANALYSIS).
+                hold_style_dry: true,
+                torch_hold_ok: true,
+                grapple_dx: dx,
+                grapple_dy: dy,
+            };
+        }
         let step = 1.0 / 60.0;
         if cart_pin && !p.cart_mounted {
             p.mount_cart();
@@ -466,6 +532,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
             // stand-in (no `DangerThatPreventsOtherDangers` members yet).
             let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
+            // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
+            // pose's 4-tick turn cadence reads it.
+            p.misc_counter = p.misc_counter.wrapping_add(1);
             p.update_with_grapple(&app.world, input, &grapple_for_tick, item_in_use, false);
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
