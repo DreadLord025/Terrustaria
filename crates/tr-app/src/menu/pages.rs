@@ -109,17 +109,16 @@ pub(super) fn cycle_previous(order: &[&str], current: &str) -> String {
 /// static initializer (`Main.cs:67163-67176`) and restored by
 /// `ResetKeyBindings` (`Main.cs:52459-52475`).
 pub(super) fn default_keybinds() -> [String; 14] {
-    [
-        "W", "S", "A", "D", "Space", "T", "Escape", "H", "J", "B", "E", "LeftShift",
-        "LeftControl", "R",
-    ]
-    .map(String::from)
+    // The one table (`Main.cs:67163-67176` seeded into the menuMode 27 row
+    // order, `:50505-50520`) — `crate::input_map` owns it so the Reset row and
+    // the input pass cannot drift.
+    crate::input_map::default_binds()
 }
 
 /// The `Main.cMap*` defaults (`Main.cs:67190-67195`), restored inline by the
 /// menuMode 272727 Reset row (`Main.cs:50451-50456`).
 pub(super) fn default_map_binds() -> [String; 6] {
-    ["Tab", "M", "Add", "Subtract", "PageUp", "PageDown"].map(String::from)
+    crate::input_map::default_map_binds()
 }
 
 

@@ -21,6 +21,7 @@ mod death;
 mod dye;
 mod emotes;
 mod env;
+mod input_map;
 mod inv;
 mod luck;
 mod wiring_stub;
@@ -157,6 +158,9 @@ fn main() -> Result<()> {
     );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
+    // The bind table the `config.json` we just read carries (`Main.cs:4582`,
+    // `PlayerInput.CurrentProfile`'s re-seed at `:4602`).
+    app.apply_settings();
     event_loop.run_app(&mut app)?;
     Ok(())
 }
