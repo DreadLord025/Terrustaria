@@ -361,6 +361,10 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
 /// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
+/// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
+/// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
+pub const LEAF_BLOWER: u16 = 206;
+
 pub const POISON_DART: u16 = 645;
 /// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
 pub const ENCHANTED_BOOMERANG: u16 = 6;
@@ -425,6 +429,7 @@ pub const fn proj_frames(kind: u16) -> u32 {
         462 => 5,
         519 => 4,
         574 => 2,
+        206 => 5,
         601 => 2,
         645 => 7,
         652 => 6,
@@ -962,6 +967,13 @@ fn set_defaults_scale(kind: u16) -> f32 {
 /// vanishes (Phase 1's deviation, fixed by this block). Their aiStyles
 /// 16 dispatch to `ai_bomb`; 147/75/10/181 stay unported stand-ins (the rows
 /// carry the vanilla value for the later AI port — M4-PROJ).
+/// `Main.rand.Next(min, maxExclusive)` over the pool's shared stream: the
+/// half-open range, mapped like the port's other `next_rand` consumers.
+fn rand_range(state: &mut u64, min: i32, max_excl: i32) -> f32 {
+    let span = (max_excl - min).max(1) as u64;
+    min as f32 + (crate::app::frame::next_rand(state) % span) as f32
+}
+
 /// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
 /// angle in radians.
 fn rotate(v: Vec2, angle: f32) -> Vec2 {
@@ -1128,6 +1140,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
             // `extraUpdates = 5`, the local immunity cooldown −1.
+            // `Projectile.cs:2937-2945` — the Leaf Blower petal: 14x14,
+            // aiStyle 40, penetrate 1, `alpha = 255` (the AI fades it in) and
+            // the 360-tick lifetime.
+            LEAF_BLOWER => (
+                14.0,
+                14.0,
+                40,
+                1,
+                360,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             POISON_DART => (
                 10.0,
                 10.0,
@@ -2233,6 +2260,9 @@ pub struct Projectile {
     /// of the `proj_frames`-many strip. The per-family animators that advance
     /// it land with their AI arms.
     pub frame: u32,
+    /// `Projectile.frameCounter` (`:452`, reset `:806`) — the per-family
+    /// cadence that advances [`Self::frame`].
+    pub frame_counter: u32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2317,6 +2347,7 @@ impl Default for Projectile {
             id_static_hit_cooldown: -1,
             extra_updates: 0,
             frame: 0,
+            frame_counter: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
@@ -4786,6 +4817,71 @@ impl Projectile {
     /// and the `SoundID.Item28` cue are SKIPPED (no dust or sound layer in
     /// the pool), as are the other kinds' frame animations (no ported row,
     /// no `frame`/`frameCounter` slot fields).
+    /// `AI_040_LeafBlower` (`Projectile.cs:38003-38082`): the petal's fade-in /
+    /// fade-out life, its 5-frame flap and the drifting flight. The dust calls
+    /// (`:38040-38043`, `:38050-38054`) and the `Main.rand` dust jitter are
+    /// SKIPPED — no dust layer in the pool — while the drift draw
+    /// `Main.rand.Next(-100, 101) * 6E-05f` (`:38038-38039`) **is** drawn from
+    /// the pool's shared `Main.rand` stand-in (`hook_rng`), because it steers
+    /// the flight and skipping it would change the trajectory.
+    fn ai_leaf_blower(&mut self, rng: &mut u64) {
+        // `localAI[0]++` and the two-sided alpha ramp: fade in at 50/tick once
+        // the first 3 ticks are past, fade out at 2/tick after tick 50.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] > 50.0 {
+            self.alpha += 2;
+            if self.alpha >= 255 {
+                self.active = false;
+                return;
+            }
+        } else if self.local_ai[0] > 3.0 {
+            self.alpha -= 50;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+        }
+        // `:38024-38032` — the flap: 3 ticks per frame, 5 frames.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 5 {
+            self.frame = 0;
+        }
+        // `:38034-38035` — the per-shot drift acceleration.
+        self.vel.x += self.ai[0];
+        self.vel.y += self.ai[1];
+        if self.local_ai[1] == 0.0 {
+            // `:38036-38037`: the turn direction follows the launch velocity.
+            self.local_ai[2] = if self.vel.x > 0.0 { -1.0 } else { 1.0 };
+        }
+        self.local_ai[1] += 1.0;
+        if self.local_ai[1] == 1.0 {
+            // `:38039-38040` — one RNG draw pair per petal, ±0.006/tick².
+            self.ai[0] = rand_range(rng, -100, 101) * 6E-05;
+            self.ai[1] = rand_range(rng, -100, 101) * 6E-05;
+        }
+        // `:38058-38062` — after the 10-tick grace the flight curves: the
+        // velocity is rotated by the signed |ai[0]| ramp and damped 3%/tick.
+        if self.local_ai[1] > 10.0 {
+            let angle = self.local_ai[2] * self.ai[0].abs() * self.local_ai[1] * 0.35;
+            self.vel = rotate(self.vel, angle);
+            self.vel *= 0.97;
+        }
+        // `:38063-38069` — the speed band: never above 16 px/tick of steering
+        // (0.95/tick) and never below 12 (1.05/tick).
+        let (ax, ay) = (self.vel.x.abs(), self.vel.y.abs());
+        if ax + ay > 16.0 {
+            self.vel *= 0.95;
+        }
+        if ax + ay < 12.0 {
+            self.vel *= 1.05;
+        }
+        // `:38080` — the sprite faces along the flight, flipped 180°.
+        self.rot = self.vel.y.atan2(self.vel.x) + 3.14;
+    }
+
     fn ai_frost_bolt(&mut self, world: &World) {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
@@ -7287,6 +7383,13 @@ impl ProjectilePool {
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
                         // `AI_007_GrapplingHooks` — the grappling hooks.
+                        // `AI()`'s `else if (this.aiStyle == 40)`
+                        // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
+                        40 => {
+                            let mut rng = self.hook_rng;
+                            self.slots[i].ai_leaf_blower(&mut rng);
+                            self.hook_rng = rng;
+                        }
                         7 => {
                             let dead = player.as_ref().is_some_and(|p| p.dead);
                             let local = self.slots[i].owner == local_owner;
@@ -8256,6 +8359,76 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the
+    /// petal's alpha ramp, the 5-frame flap, the per-shot drift draw, the
+    /// rotation and the speed band.
+    #[test]
+    fn ai_040_leaf_blower_fades_flaps_and_drifts() {
+        let mut p = Projectile {
+            active: true,
+            kind: LEAF_BLOWER,
+            // The item's `shootSpeed` 14 (`Item.cs:14224`) — the band is only
+            // meaningful for a shot that starts at the muzzle speed.
+            vel: Vec2::new(14.0, 0.0),
+            alpha: 255,
+            time_left: 360,
+            ..Default::default()
+        };
+        let mut rng = 12345u64;
+        // Ticks 1-3: the alpha holds at 255 (the `> 3f` gate at `:38017`).
+        for _ in 0..3 {
+            p.ai_leaf_blower(&mut rng);
+        }
+        assert_eq!(p.alpha, 255);
+        assert_eq!(p.local_ai[0], 3.0);
+        // Tick 4 on fades 50/tick, so by tick 10 the alpha is zero.
+        for _ in 0..7 {
+            p.ai_leaf_blower(&mut rng);
+        }
+        assert_eq!(p.alpha, 0, "the fade-in lands on 0 by localAI[0] = 10");
+        // The flap: 3 ticks per frame, wrapping at 5 (`:38024-38032`).
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..30 {
+            p.ai_leaf_blower(&mut rng);
+            seen.insert(p.frame);
+        }
+        assert_eq!(seen.len(), 5, "all 5 frames of projFrames[206] ride");
+        assert!(p.frame_counter < 3);
+        // The drift draw stays inside `Next(-100, 101) * 6E-05`.
+        assert!(p.ai[0].abs() <= 100.0 * 6E-05);
+        assert!(p.ai[1].abs() <= 100.0 * 6E-05);
+        // The turn direction follows the launch velocity (`:38036-38037`).
+        assert!(p.local_ai[2] == 1.0 || p.local_ai[2] == -1.0);
+        // The speed band keeps |vx|+|vy| between 12 and 16 whatever the drift.
+        let band = p.vel.x.abs() + p.vel.y.abs();
+        assert!((11.0..=17.0).contains(&band), "the speed band holds ({band})");
+        // The sprite faces along the flight (`:38080`).
+        assert!((p.rot - (p.vel.y.atan2(p.vel.x) + 3.14)).abs() < 1e-4);
+        // Past tick 50 the alpha ramps back up 2/tick and kills at 255.
+        let mut ticks = 0;
+        while p.active && ticks < 400 {
+            p.ai_leaf_blower(&mut rng);
+            ticks += 1;
+        }
+        assert!(!p.active, "the petal fades out and dies");
+        assert!(ticks < 200, "the fade-out takes under 200 ticks ({ticks})");
+    }
+
+    /// The row: `Projectile.cs:2937-2945` — 14x14, aiStyle 40, penetrate 1,
+    /// alpha 255, 360 ticks; and the 5-frame strip the draw slices.
+    #[test]
+    fn leaf_blower_row_and_frames() {
+        let d = proj_data(LEAF_BLOWER).expect("the row exists");
+        assert_eq!((d.w, d.h), (14.0, 14.0));
+        assert_eq!(d.ai_style, 40);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 360);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(proj_frames(LEAF_BLOWER), 5);
+        // The item that fires it is already wired (`Item.cs:14223-14224`).
+        assert_eq!(crate::registry::projectile(1178), Some(LEAF_BLOWER));
     }
 
     fn one_npc(world: &World) -> Npc {
@@ -11894,6 +12067,7 @@ mod phasmal_projectile_tests {
             damage: 30,
             knock_back: 0.0,
             frame: 0,
+            frame_counter: 0,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -12119,6 +12293,7 @@ mod ritual_projectile_tests {
             damage: 0,
             knock_back: 0.0,
             frame: 0,
+            frame_counter: 0,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -12732,9 +12907,12 @@ mod magic_data_tests {
         // list — the follow-up row and the hostile riders; the Golem's
         // fireball 258 already rides a pre-existing row, the hostile
         // style-8 rider of the same kind, and keeps it).
-        for kind in [114u16, 116, 206, 297, 356, 409, 502, 617, 633] {
+        // 206 left the list with M4-PROJ-6b: the Leaf Blower's petal now
+        // carries its own row and `AI_040_LeafBlower`.
+        for kind in [114u16, 116, 297, 356, 409, 502, 617, 633] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        assert_eq!(proj_data(LEAF_BLOWER).unwrap().ai_style, 40);
         assert!(proj_data(GOLEM_FIREBALL).is_some(), "the Golem's 258 row stays");
         // The saucer stand-ins (447/450, aiStyle 79/80 as style numbers) are
         // distinct from the magic kinds 79/80 — no collision.
