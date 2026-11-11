@@ -714,8 +714,15 @@ pub fn draw_hud(
     // the `IngameOptions` window draws over the open inventory
     // (`DrawInterface_11_IngameOptionsMenu`, `Main.cs:46160-46168`).
     if let Some((_settings, options)) = ingame_options {
-        if inventory_open {
-            ingame_options::draw_settings_button(r, lookups, mouse_pos);
+        // `Main.cs:45511`: the button draws while the inventory **or** the
+        // options window is up (`|| Main.ingameOptionsWindow || dead`).
+        if inventory_open || options.open {
+            ingame_options::draw_settings_button(
+                r,
+                lookups,
+                &options.button_layout,
+                options.button_scale,
+            );
         }
         if options.open {
             ingame_options::draw_options(r, lookups, _settings, options, screen, mouse_pos);

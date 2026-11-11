@@ -194,6 +194,9 @@ pub enum Toggle {
     BossBarText,
     /// `Main.FlashyEffectsInterface` (`:863-871`) → `flashy_effects_interface`.
     FlashyEffectsInterface,
+    /// `UI.AutoReuseAll{On,Off}` + `Main.SettingsEnabled_AutoReuseAllItems`
+    /// (`:677-684`) → `auto_reuse_all`.
+    AutoReuseAll,
     /// `Lang.menu[100]/[101]` + `Main.BackgroundEnabled` (`:977-985`).
     Background,
     /// `Lang.menu[132]/[133]` + `ChildSafety.Disabled` (`:986-994`).
@@ -231,6 +234,12 @@ pub enum Cycle {
     SmartCursorMode,
     /// `Lang.menu[214/213]` — the smart-cursor priority (`:1399-1440`).
     SmartCursorPriority,
+    /// `UI.SmartDoors{Disabled,Gamepad,Enabled}` — `DoorOpeningHelper`'s
+    /// `PreferenceSettings` (`:644-657`, `DoorOpeningHelper.cs:262-276`).
+    SmartDoors,
+    /// `UI.HoverControlSettingIs{Hold,Click}` — `Player.Settings.HoverControl`
+    /// (`:659-675`, `Player.cs:379-383`).
+    HoverControl,
 }
 
 /// The page table for a category (`:400-1441`). Rows are in the vanilla order and
@@ -277,10 +286,13 @@ static GENERAL: &[Row] = &[
     },
     // 13 set-bonus direction (`:635`).
     Row { label: Label::Menu(220), act: RowAct::Toggle(Toggle::ReversedArmorBonuses) },
-    // 14 the door-opening preference (`:644-676`) — no port field.
-    Row { label: Label::Text("UI.DoorOpeningPreference"), act: RowAct::Parked },
-    // 15 auto-reuse-all (`:677-685`) — no port field.
-    Row { label: Label::Text("UI.AutoReuseAllOn"), act: RowAct::Parked },
+    // 14 the door-opening preference (`:644-657`) — a cycle over
+    // `DoorAutoOpeningMode`.
+    Row { label: Label::Blank, act: RowAct::Cycle(Cycle::SmartDoors) },
+    // 15 hover control (`:659-675`).
+    Row { label: Label::Blank, act: RowAct::Cycle(Cycle::HoverControl) },
+    // 16 autofire-all (`:677-684`).
+    Row { label: Label::Blank, act: RowAct::Toggle(Toggle::AutoReuseAll) },
     // 16 `""` spacer (`:686`).
     Row { label: Label::Blank, act: RowAct::Header },
 ];
@@ -410,6 +422,17 @@ pub struct IngameOptions {
     /// The action a left row asked for, drained by the caller (the vanilla calls
     /// `IngameFancyUI.OpenKeybinds`/`OpenAchievements`/`SaveAndQuit` inline).
     pub pending: Option<LeftAction>,
+    /// `Main.exitScale` (`Main.cs:45541`): the Settings button's animated scale,
+    /// `0.8` at rest and `0.96` hovered.
+    pub button_scale: f32,
+    /// `Main.mouseExit` (`:45540`): whether the button was hovered last frame.
+    pub button_mouse_over: bool,
+    /// `Main._settingsButtonIsPushedToSide` (`:45520`), refreshed every frame by
+    /// [`refresh_button`] and read by the inventory's accessory column count.
+    pub button_pushed_to_side: bool,
+    /// The button geometry [`refresh_button`] measured this frame — the draw and
+    /// the click hit test both read it, so neither can drift from the other.
+    pub button_layout: ButtonLayout,
     old_left_hover: i32,
     old_right_hover: i32,
 }
@@ -427,6 +450,16 @@ impl Default for IngameOptions {
             left_scale: [LEFT_SCALE_MIN; LEFT_SLOTS],
             right_scale: [0.0; 17],
             pending: None,
+            button_scale: BUTTON_SCALE_MIN,
+            button_mouse_over: false,
+            button_pushed_to_side: false,
+            button_layout: ButtonLayout {
+                pos: [0.0; 2],
+                w: 0.0,
+                h: 0.0,
+                word_scale: 1.0,
+                pushed_to_side: false,
+            },
             old_left_hover: -1,
             old_right_hover: -1,
         }
@@ -596,9 +629,24 @@ pub fn right_pitch(category: u8) -> f32 {
 
 /// Row `i`'s label anchor in the right column — `anchor + offset * (1 + i)`
 /// (`DrawRightSide`'s `anchor + offset * (1 + i)`, `:1488`).
+///
+/// A **bar** row's anchor is `BAR_SHIFT` (`num = 70`) further left: the C# moves
+/// the shared `vector6.X` before a bar group and restores it before the next
+/// non-bar row (`:406`/`:506`/`:513` on General, `:760`/`:798` on Interface,
+/// `:911`/`:926` etc. on Video). Every row inside a shifted span turns out to be
+/// the bar itself, so "bars shift, everything else does not" reproduces the
+/// vanilla layout without replaying the anchor's state machine.
 pub fn right_row_anchor(screen: Vec2, category: u8, i: usize) -> [f32; 2] {
     let a = right_anchor(screen, category);
-    [a[0], a[1] + right_pitch(category) * (1 + i) as f32]
+    let shift = if matches!(page(category)[i].act, RowAct::Bar(_)) {
+        BAR_SHIFT
+    } else {
+        0.0
+    };
+    [
+        a[0] - shift,
+        a[1] + right_pitch(category) * (1 + i) as f32,
+    ]
 }
 
 /// `Color.Lerp(Color.Gray, Color.White, t)` (`:1465`, `:1485`).
@@ -637,16 +685,12 @@ fn centred_text(
     );
 }
 
-/// The right row's hover rect.
+/// The right row's hover rect — centred on the **drawn** anchor, so the bar
+/// rows' box follows them left (`DrawRightSide` hit-tests the string it draws).
 pub fn right_row_rect(screen: Vec2, category: u8, i: usize) -> [f32; 4] {
     let a = right_row_anchor(screen, category, i);
-    let shift = if matches!(page(category)[i].act, RowAct::Bar(_)) {
-        BAR_SHIFT
-    } else {
-        0.0
-    };
     [
-        a[0] - shift - 60.0,
+        a[0] - 120.0,
         a[1] - right_pitch(category) * 0.5,
         240.0,
         right_pitch(category),
@@ -729,6 +773,8 @@ pub fn toggle_state(settings: &Settings, t: Toggle) -> bool {
         Toggle::TilesSway => settings.tiles_sway,
         Toggle::ScreenShake => settings.use_screen_shake,
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world,
+        // `Main.SettingsEnabled_AutoReuseAllItems` (`:677-684`).
+        Toggle::AutoReuseAll => settings.auto_reuse_all,
     }
 }
 
@@ -756,6 +802,7 @@ pub fn flip_toggle(settings: &mut Settings, t: Toggle) {
         Toggle::TilesSway => settings.tiles_sway = on,
         Toggle::ScreenShake => settings.use_screen_shake = on,
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world = on,
+        Toggle::AutoReuseAll => settings.auto_reuse_all = on,
     }
 }
 
@@ -815,6 +862,13 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
             "UI.FlashyEffectsWorld",
             &[enabled_word(on)],
         ),
+        // `Main.SettingsEnabled_AutoReuseAllItems ? "UI.AutoReuseAllOn" :
+        // "UI.AutoReuseAllOff"` (`:677`).
+        Toggle::AutoReuseAll => crate::lang::text(if on {
+            "UI.AutoReuseAllOn"
+        } else {
+            "UI.AutoReuseAllOff"
+        }),
     }
 }
 
@@ -857,6 +911,20 @@ pub fn cycle_label(settings: &Settings, c: Cycle) -> String {
         Cycle::SmartCursorPriority => {
             crate::lang::menu(if settings.smart_axe_first { 214 } else { 213 })
         }
+        // `:644-657`'s `PreferenceSettings switch` → `UI.SmartDoorsDisabled`
+        // for `_`, `UI.SmartDoorsGamepad` for `EnabledForGamepadOnly` and
+        // `UI.SmartDoorsEnabled` for `EnabledForEverything`.
+        Cycle::SmartDoors => crate::lang::text(match settings.smart_doors {
+            2 => "UI.SmartDoorsEnabled",
+            1 => "UI.SmartDoorsGamepad",
+            _ => "UI.SmartDoorsDisabled",
+        }),
+        // `:659-675`: `HoverControl != Hold` picks the Click wording.
+        Cycle::HoverControl => crate::lang::text(if settings.hover_control == 0 {
+            "UI.HoverControlSettingIsHold"
+        } else {
+            "UI.HoverControlSettingIsClick"
+        }),
     }
 }
 
@@ -885,6 +953,18 @@ pub fn advance_cycle(settings: &mut Settings, c: Cycle) {
             settings.smart_cursor_toggle = !settings.smart_cursor_toggle;
         }
         Cycle::SmartCursorPriority => settings.smart_axe_first = !settings.smart_axe_first,
+        // `DoorOpeningHelper.CyclePreferences` (`DoorOpeningHelper.cs:262-276`):
+        // Disabled -> EnabledForEverything -> EnabledForGamepadOnly -> Disabled.
+        Cycle::SmartDoors => {
+            settings.smart_doors = match settings.smart_doors {
+                0 => 2,
+                2 => 1,
+                _ => 0,
+            }
+        }
+        // `Player.Settings.CycleHoverControl` (`Player.cs:379-383`) — the row
+        // only distinguishes Hold from everything else (`IngameOptions.cs:660`).
+        Cycle::HoverControl => settings.hover_control = if settings.hover_control == 0 { 1 } else { 0 },
     }
 }
 
@@ -898,11 +978,20 @@ pub fn row_label(row: &Row, settings: &Settings) -> String {
         RowAct::Bar(bar) => {
             let pct = (bar_value(settings, bar) * 100.0).round();
             match bar {
-                // `GameUI.GameZoom` takes the target and the live zoom (`:512`).
-                Bar::Zoom => crate::lang::text_args(
-                    "GameUI.GameZoom",
-                    &[format!("{pct}"), format!("{pct}")],
-                ),
+                // `GameUI.GameZoom` takes the **target zoom in percent**, not the
+                // bar's fraction (`:512`:
+                // `Language.GetTextValue("GameUI.GameZoom",
+                // Math.Round(Main.GameZoomTarget * 100f),
+                // Math.Round(Main.GameViewMatrix.Zoom.X * 100f))`) while the bar
+                // itself is fed `GameZoomTarget - 1f` (`:529`). The port has no
+                // separate live matrix zoom, so both numbers are the target.
+                Bar::Zoom => {
+                    let zoom_pct = (settings.zoom * 100.0).round();
+                    crate::lang::text_args(
+                        "GameUI.GameZoom",
+                        &[format!("{zoom_pct}"), format!("{zoom_pct}")],
+                    )
+                }
                 // `GameUI.UIScale` takes the provisional and the applied scale.
                 Bar::UiScale => crate::lang::text_args(
                     "GameUI.UIScale",
@@ -1092,31 +1181,224 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
     true
 }
 
-/// The "Settings" button (`Main.DrawSettingButton`, `Main.cs:45532-45580`) — the
-/// fixed 850/580 rect over the open inventory (`RefreshSettingsButtonStatus`).
-pub const BUTTON_POS: [f32; 2] = [850.0, 580.0];
-pub const BUTTON_SIZE: [f32; 2] = [30.0, 30.0];
+// ---------------------------------------------------------------------------
+// The Settings button — `Main.DrawSettingButton` (`Main.cs:45532-45580`)
+// ---------------------------------------------------------------------------
+//
+// The button is **not** a framed box: it is a bare word in the death font with
+// a 4-way black outline (`:45562-45584`), its scale animating `0.8 -> 0.96`
+// while hovered (`:45547-45555`), positioned by `RefreshSettingsButtonStatus`
+// (`:45492-45527`) — bottom-right, pushed left/up when it would collide with the
+// accessory column. The port used to draw a 30x30 `Inventory_Back` box at a
+// hard-coded `(850, 580)`, which is what made its placement wrong at every
+// resolution but 1600x900.
 
-/// The button's hover rect — XNA `Rectangle.Contains` (`:1557`).
-pub fn button_hit(mouse: Vec2) -> bool {
-    let (x, y) = (BUTTON_POS[0], BUTTON_POS[1]);
-    let (w, h) = (BUTTON_SIZE[0], BUTTON_SIZE[1]);
-    (mouse.x >= x) && (mouse.x < x + w) && (mouse.y >= y) && (mouse.y < y + h)
+/// `Main.exitScale`'s resting value (`:45547-45555`).
+pub const BUTTON_SCALE_MIN: f32 = 0.8;
+/// ... and its hovered value.
+pub const BUTTON_SCALE_MAX: f32 = 0.96;
+/// The per-frame step between them (`:45551`, `:45555`).
+pub const BUTTON_SCALE_STEP: f32 = 0.02;
+
+/// `Main.DrawSettingButton`'s `ref float scale` step (`:45547-45555`): up while
+/// hovered, down while not, clamped to `[0.8, 0.96]`.
+pub fn advance_button_scale(scale: &mut f32, over: bool) {
+    if over {
+        if *scale < BUTTON_SCALE_MAX {
+            *scale += BUTTON_SCALE_STEP;
+        }
+    } else if *scale > BUTTON_SCALE_MIN {
+        *scale -= BUTTON_SCALE_STEP;
+    }
+    *scale = scale.clamp(BUTTON_SCALE_MIN, BUTTON_SCALE_MAX);
 }
 
-/// `Main.DrawSettingButton`: the frame and its label, hover-brightened.
-pub fn draw_settings_button(r: &mut SpriteRenderer, lookups: &Lookups, mouse: Vec2) {
-    let (x, y) = (BUTTON_POS[0], BUTTON_POS[1]);
-    let (w, h) = (BUTTON_SIZE[0], BUTTON_SIZE[1]);
-    if let Some(uv) = lookups.hud_uv(lookups.ui_back.as_ref()) {
-        let tint = if button_hit(mouse) {
-            [200.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0, 1.0]
-        } else {
-            [120.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0]
-        };
-        r.push_ui_sprite([x, y], [w, h], uv, tint);
-        text::hud_text(r, lookups, x + w * 0.5, y + h * 0.5, 0.75, [1.0; 4], "Settings");
+/// `Main.RefreshSettingsButtonStatus` (`Main.cs:45492-45527`): the label's centre
+/// and whether the button had to be pushed beside the accessory column.
+///
+/// `extra_accessory` is `Player.GetAmountOfExtraAccessorySlotsToShow()` (0 in the
+/// port — `EXTRA_ACCESSORY_SLOTS`) and `push_equipment_up` is
+/// `PlayerInput.SettingsForUI.PushEquipmentAreaUp` (not modelled), both kept as
+/// parameters so the branches stay faithful.
+pub fn settings_button_pos(
+    screen: Vec2,
+    m_h: f32,
+    dead: bool,
+    options_open: bool,
+    extra_accessory: i32,
+    push_equipment_up: bool,
+) -> ([f32; 2], bool) {
+    let mut pos_x = screen.x - 110.0; // `:45496`
+    let mut pos_y = screen.y - 20.0; // `:45497`
+    if dead {
+        pos_x += 40.0; // `:45499-45503`
+        return ([pos_x, pos_y], false);
     }
+    if push_equipment_up {
+        pos_y -= 30.0; // `:45506`
+    }
+    if options_open {
+        // `:45507`'s `if (!Main.ingameOptionsWindow)`: the column-avoidance
+        // branch runs only while the window is closed.
+        return ([pos_x, pos_y], false);
+    }
+    // `:45509-45514`: the accessory column's bottom row, in ints like the C#.
+    let mut num = 174 + m_h as i32;
+    if screen.y < 950.0 && extra_accessory == 2 {
+        num -= (47.600_002f32 * (extra_accessory - 1) as f32) as i32;
+    }
+    let num2 = num + (47.600_002f32 * (8 + extra_accessory) as f32) as i32;
+    if pos_y - 28.0 <= num2 as f32 {
+        // `:45516-45521`: the button would sit on the last accessory row, so it
+        // moves left of the column and up onto it.
+        pos_x -= 140.0;
+        pos_y = (num2 - 47 + 30) as f32;
+        return ([pos_x, pos_y], true);
+    }
+    ([pos_x, pos_y], false)
+}
+
+/// Everything the button's draw and hit test need. The three sizes are the
+/// *unscaled* `MeasureString` results the C# keeps in `vector3` (the death-font
+/// label) and `vector` (the mouse-font "Settings" matcher, `:45535-45537`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ButtonLayout {
+    /// The label's centre (`posX`, `posY`).
+    pub pos: [f32; 2],
+    /// `DeathText.MeasureString(Lang.inter[62])` — width.
+    pub w: f32,
+    /// ... and height.
+    pub h: f32,
+    /// `vector.X / vector2.X` (`:45538`): the death-font scale that makes the
+    /// label as wide as the mouse-font "Settings" matcher.
+    pub word_scale: f32,
+    /// `Main._settingsButtonIsPushedToSide` (`:45520`).
+    pub pushed_to_side: bool,
+}
+
+impl ButtonLayout {
+    /// `posX > x - w/2 < posX + w/2`, `posY - h/2 < y < posY + h/2 - 10`
+    /// (`:45589`) — note the `- 10` on the bottom edge and the strict compares.
+    pub fn hit(&self, mouse: Vec2) -> bool {
+        mouse.x > self.pos[0] - self.w * 0.5
+            && mouse.x < self.pos[0] + self.w * 0.5
+            && mouse.y > self.pos[1] - self.h * 0.5
+            && mouse.y < self.pos[1] + self.h * 0.5 - 10.0
+    }
+}
+
+/// [`settings_button_pos`] plus the measurements of [`crate::lang::inter`]`(62)`.
+pub fn button_layout(
+    screen: Vec2,
+    m_h: f32,
+    dead: bool,
+    options_open: bool,
+    extra_accessory: i32,
+    push_equipment_up: bool,
+    measure: (f32, f32, f32),
+) -> ButtonLayout {
+    let (pos, pushed_to_side) = settings_button_pos(
+        screen,
+        m_h,
+        dead,
+        options_open,
+        extra_accessory,
+        push_equipment_up,
+    );
+    let (w, h, word_w) = measure;
+    let word_scale = if w > 0.0 && word_w > 0.0 {
+        word_w / w
+    } else {
+        1.0
+    };
+    ButtonLayout {
+        pos,
+        w,
+        h,
+        word_scale,
+        pushed_to_side,
+    }
+}
+
+/// `vector3`/`vector`/`vector2` (`:45535-45537`) from the loaded fonts. The
+/// bitmap fallbacks keep the button usable in the PNG-only runs; the estimate is
+/// `Mouse_Text`'s 7 px advance at scale 1 (`text::font_width`'s average).
+pub fn measure_button(lookups: &Lookups) -> (f32, f32, f32) {
+    let label = crate::lang::inter(62);
+    let w = text::death_font_width(lookups, &label).unwrap_or(7.0 * label.chars().count() as f32);
+    let h = lookups.death_font.as_ref().map_or(17.0, |f| f.line_spacing);
+    let word = text::ui_font_width(lookups, "Settings", 1.0).unwrap_or(7.0 * 8.0);
+    (w, h, word)
+}
+
+/// The per-frame half of `Main.DrawInterface_29_SettingsButton`
+/// (`Main.cs:45512-45527`) and of `DrawSettingButton`'s `ref` state
+/// (`:45547-45555`, `:45589-45613`): recompute the position, step `exitScale`
+/// from the *previous* frame's hover and latch this frame's for the next, and
+/// remember the geometry so the draw and the click agree.
+///
+/// The C# does all of this inside the draw; the port splits it out because the
+/// click pass runs before the HUD is built (`App::frame`), and because the
+/// inventory's accessory column count reads `_settingsButtonIsPushedToSide`.
+pub fn refresh_button(
+    state: &mut IngameOptions,
+    lookups: &Lookups,
+    screen: Vec2,
+    m_h: f32,
+    dead: bool,
+    mouse: Vec2,
+    extra_accessory: i32,
+    push_equipment_up: bool,
+) -> ButtonLayout {
+    let layout = button_layout(
+        screen,
+        m_h,
+        dead,
+        state.open,
+        extra_accessory,
+        push_equipment_up,
+        measure_button(lookups),
+    );
+    state.button_layout = layout;
+    state.button_pushed_to_side = layout.pushed_to_side;
+    // `:45547-45555`: the scale steps from last frame's `mouseExit`, so the
+    // value the draw reads is the one this frame's hover just produced.
+    advance_button_scale(&mut state.button_scale, state.button_mouse_over);
+    state.button_mouse_over = layout.hit(mouse);
+    layout
+}
+
+/// `Main.DrawSettingButton`'s text (`:45562-45584`): the death-font label drawn
+/// five times — four black passes at `(+-2, +-2)` and the white pass on top —
+/// at `(scale - 0.2) * num`, centred on `pos` (the XNA origin is
+/// `MeasureString(label) / 2` in *texture* units, so the top-left moves by half
+/// the **scaled** size).
+pub fn draw_settings_button(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    layout: &ButtonLayout,
+    scale: f32,
+) {
+    let label = crate::lang::inter(62);
+    let s = (scale - 0.2) * layout.word_scale;
+    let x = layout.pos[0] - layout.w * 0.5 * s;
+    let y = layout.pos[1] - layout.h * 0.5 * s;
+    text::draw_border_string(
+        r,
+        lookups,
+        text::BorderFont::Death,
+        x,
+        y,
+        s,
+        &[
+            [-2.0, 0.0],
+            [2.0, 0.0],
+            [0.0, -2.0],
+            [0.0, 2.0],
+        ],
+        [1.0; 4],
+        &label,
+    );
 }
 
 /// `IngameOptions.Draw` (`:103-1441`): the panel, the title, the two column
@@ -1133,24 +1415,33 @@ pub fn draw_options(
         return;
     }
     let origin = panel_origin(screen);
-    // `Utils.DrawInvBG(..., new Color(33, 15, 91, 255) * 0.685f)` (`:130`).
-    if let Some(uv) = lookups.hud_uv(lookups.ui_back.as_ref()) {
-        r.push_ui_sprite(
-            [origin[0] - PAD, origin[1] - PAD],
-            [PANEL_W + PAD * 2.0, PANEL_H + PAD * 2.0],
-            uv,
-            [33.0 / 255.0, 15.0 / 255.0, 91.0 / 255.0, 0.685],
-        );
-    }
-    // `Language.GetTextValue("GameUI.SettingsMenu")` (`:134`).
-    text::hud_text(
+    // `Utils.DrawInvBG(sb, x - 20, y - 20, w + 40, h + 40,
+    // new Color(33, 15, 91, 255) * 0.685f)` (`:130`) — a nine-slice of
+    // `Inventory_Back13` (`Utils.cs:2548-2572`), not a stretched back sheet.
+    crate::ui::tooltip::draw_inv_bg(
         r,
         lookups,
-        origin[0] + PANEL_W * 0.5,
-        origin[1] + PAD * 0.5,
-        1.0,
+        [
+            origin[0] - PAD,
+            origin[1] - PAD,
+            PANEL_W + PAD * 2.0,
+            PANEL_H + PAD * 2.0,
+        ],
+        [33.0 / 255.0, 15.0 / 255.0, 91.0 / 255.0, 0.685],
+    );
+    // `Utils.DrawBorderString(sb, Language.GetTextValue("GameUI.SettingsMenu"),
+    // vector3 + vector2 * new Vector2(0.5f, 0f), Color.White, 1f, 0.5f)`
+    // (`:134`): anchored `0.5` in X, so the title is **centred** on the panel's
+    // top edge — the old code left-aligned it at the panel centre.
+    let title = crate::lang::text("GameUI.SettingsMenu");
+    let title_w = text::hud_text_width(r, lookups, &title, 1.0);
+    text::border_string(
+        r,
+        lookups,
+        origin[0] + PANEL_W * 0.5 - title_w * 0.5,
+        origin[1],
         [1.0; 4],
-        &crate::lang::text("GameUI.SettingsMenu"),
+        &title,
     );
     // The two column backdrops (`:136-146`): the long cultures split them 1/3+2/3.
     let (left_w, right_x) = if long_label_culture() {
@@ -1158,22 +1449,23 @@ pub fn draw_options(
     } else {
         (PANEL_W / 2.0 - PAD, origin[0] + PANEL_W / 2.0 + PAD)
     };
-    if let Some(uv) = lookups.hud_uv(lookups.ui_back.as_ref()) {
-        let top = origin[1] + PAD * 5.0 / 2.0;
-        let h = PANEL_H - PAD * 3.0;
-        r.push_ui_sprite(
-            [origin[0] + PAD * 0.5, top],
-            [left_w, h],
-            uv,
-            [0.0, 0.0, 0.0, 0.5],
-        );
-        r.push_ui_sprite(
-            [right_x, top],
-            [origin[0] + PANEL_W - right_x - PAD * 0.5, h],
-            uv,
-            [0.0, 0.0, 0.0, 0.5],
-        );
-    }
+    // `:136-146`: both column backdrops are plain `Utils.DrawInvBG(..)` calls,
+    // i.e. the default `(63, 65, 151, 255) * 0.785` tint of the same nine-slice.
+    let top = origin[1] + PAD * 5.0 / 2.0;
+    let h = PANEL_H - PAD * 3.0;
+    let column_tint = [63.0 / 255.0, 65.0 / 255.0, 151.0 / 255.0, 0.785];
+    crate::ui::tooltip::draw_inv_bg(r, lookups, [origin[0] + PAD * 0.5, top, left_w, h], column_tint);
+    crate::ui::tooltip::draw_inv_bg(
+        r,
+        lookups,
+        [
+            right_x,
+            top,
+            origin[0] + PANEL_W - right_x - PAD * 0.5,
+            h,
+        ],
+        column_tint,
+    );
     // The left column (`:214-330`): `DrawLeftSide` centres each label on its
     // anchor, lerps Gray->White by the scale fraction and paints the selected
     // category Gold (`:1465-1470`).
@@ -1236,17 +1528,135 @@ pub fn persist() {}
 mod tests {
     use super::*;
 
-    /// The button's rect is the C#'s `RefreshSettingsButtonStatus` fixed branch
-    /// (`Main.cs:45496-45497`): 30x30 at the canvas's bottom-right.
+    /// `Main.cs:45496-45497`: `posX = uIScreenWidth - 110`, `posY = uIScreenHeight - 20`,
+    /// with no collision at 1600x900 (`posY - 28 = 852` clears `num2 = 554`).
     #[test]
-    fn the_button_sits_at_the_vanillas_fixed_position() {
-        assert_eq!(BUTTON_POS, [850.0, 580.0]);
-        assert_eq!(BUTTON_SIZE, [30.0, 30.0]);
-        assert!(button_hit(Vec2::new(850.0, 580.0)));
-        assert!(button_hit(Vec2::new(879.0, 609.0)));
-        assert!(!button_hit(Vec2::new(880.0, 580.0)), "the right edge is exclusive");
-        assert!(!button_hit(Vec2::new(850.0, 610.0)), "the bottom edge is exclusive");
-        assert!(!button_hit(Vec2::new(849.0, 580.0)), "the left edge is exclusive");
+    fn the_button_sits_at_the_vanillas_bottom_right() {
+        let (pos, pushed) = settings_button_pos(Vec2::new(1600.0, 900.0), 0.0, false, false, 0, false);
+        assert_eq!(pos, [1490.0, 880.0]);
+        assert!(!pushed);
+        // A taller screen moves it with the edge, not to a fixed spot.
+        let (pos, _) = settings_button_pos(Vec2::new(1920.0, 1080.0), 0.0, false, false, 0, false);
+        assert_eq!(pos, [1810.0, 1060.0]);
+    }
+
+    /// `Main.cs:45516-45521`: when `posY - 28 <= num2` the label is pushed left
+    /// of the accessory column and up onto its last row.
+    ///
+    /// At 1600x1024 with the minimap up (`m_h = 424`) `num = 598` and
+    /// `num2 = 978`, so `1060 - 28 = 1032 > 978` — still no push. At 1600x800
+    /// with `m_h = 200`: `num = 374`, `num2 = 754`, `780 - 28 = 752 <= 754`,
+    /// which pushes.
+    #[test]
+    fn the_button_is_pushed_beside_the_accessory_column_when_it_would_collide() {
+        let (pos, pushed) = settings_button_pos(Vec2::new(1600.0, 800.0), 200.0, false, false, 0, false);
+        assert!(pushed, "`_settingsButtonIsPushedToSide` (`:45520`)");
+        assert_eq!(pos, [1490.0 - 140.0, 754.0 - 47.0 + 30.0]);
+        // With the options window open the branch is skipped (`:45507`).
+        let (pos, pushed) = settings_button_pos(Vec2::new(1600.0, 800.0), 200.0, false, true, 0, false);
+        assert!(!pushed);
+        assert_eq!(pos, [1490.0, 780.0]);
+    }
+
+    /// `Main.cs:45499-45503`: a dead player's label moves right and skips the
+    /// column arithmetic entirely.
+    #[test]
+    fn a_dead_players_button_moves_right() {
+        let (pos, pushed) = settings_button_pos(Vec2::new(1600.0, 900.0), 300.0, true, false, 0, false);
+        assert_eq!(pos, [1530.0, 880.0]);
+        assert!(!pushed);
+    }
+
+    /// `PushEquipmentAreaUp` shifts the label up by 30 (`:45506`).
+    #[test]
+    fn pushing_the_equipment_area_up_lifts_the_button() {
+        let (pos, _) = settings_button_pos(Vec2::new(1600.0, 900.0), 0.0, false, false, 0, true);
+        assert_eq!(pos, [1490.0, 850.0]);
+    }
+
+    /// `Main.cs:45547-45555`: `0.02` per frame toward `0.96`/`0.8`.
+    #[test]
+    fn the_hover_scale_ramps_and_clamps() {
+        let mut s = BUTTON_SCALE_MIN;
+        advance_button_scale(&mut s, true);
+        assert_eq!(s, 0.82);
+        for _ in 0..20 {
+            advance_button_scale(&mut s, true);
+        }
+        assert_eq!(s, BUTTON_SCALE_MAX, "clamped at 0.96");
+        for _ in 0..20 {
+            advance_button_scale(&mut s, false);
+        }
+        assert_eq!(s, BUTTON_SCALE_MIN, "clamped at 0.8");
+    }
+
+    /// `Main.cs:45589`: strict `>`/`<` box, `- 10` on the bottom edge, and the
+    /// measure is the *unscaled* death-font size.
+    #[test]
+    fn the_button_hit_box_is_strict_and_shaved_at_the_bottom() {
+        let l = ButtonLayout {
+            pos: [1490.0, 880.0],
+            w: 60.0,
+            h: 17.0,
+            word_scale: 1.0,
+            pushed_to_side: false,
+        };
+        assert!(l.hit(Vec2::new(1490.0, 875.0)), "inside");
+        assert!(!l.hit(Vec2::new(1490.0, 880.0 - 8.5)), "the top edge is exclusive");
+        assert!(!l.hit(Vec2::new(1460.0, 875.0)), "the left edge is exclusive");
+        // The bottom edge is `posY + h/2 - 10 = 878.5`, so the lower third of
+        // the drawn word is not clickable — exactly the C# rule.
+        assert!(l.hit(Vec2::new(1490.0, 878.0)));
+        assert!(!l.hit(Vec2::new(1490.0, 878.5)));
+        assert!(!l.hit(Vec2::new(1490.0, 884.0)), "the drawn descender is dead");
+    }
+
+    /// `vector.X / vector2.X` (`:45538`) normalises the death-font label to the
+    /// mouse-font "Settings" width.
+    #[test]
+    fn the_button_normalises_the_label_to_the_settings_matcher() {
+        let l = button_layout(
+            Vec2::new(1600.0, 900.0),
+            0.0,
+            false,
+            false,
+            0,
+            false,
+            (120.0, 34.0, 60.0),
+        );
+        assert_eq!(l.word_scale, 0.5);
+        // A zero measure must not divide by zero.
+        let l = button_layout(Vec2::new(1600.0, 900.0), 0.0, false, false, 0, false, (0.0, 0.0, 0.0));
+        assert_eq!(l.word_scale, 1.0);
+    }
+
+    /// [`refresh_button`] latches the hover for the *next* frame and records the
+    /// geometry the draw and the click share.
+    #[test]
+    fn refresh_button_latches_the_hover_and_the_layout() {
+        let lookups = Lookups::default();
+        let mut st = IngameOptions::new();
+        let screen = Vec2::new(1600.0, 900.0);
+        // Frame 1: the cursor is on the label; the scale steps from the *old*
+        // hover (false), so it stays at 0.8 and the latch turns on.
+        let l = refresh_button(&mut st, &lookups, screen, 0.0, false, Vec2::new(1490.0, 875.0), 0, false);
+        assert_eq!(st.button_scale, BUTTON_SCALE_MIN, "`mouseExit` was false on entry");
+        assert!(st.button_mouse_over);
+        assert_eq!(st.button_layout, l, "the click reads the draw's geometry");
+        // Frame 2 now steps up.
+        refresh_button(&mut st, &lookups, screen, 0.0, false, Vec2::new(1490.0, 875.0), 0, false);
+        assert_eq!(st.button_scale, 0.82);
+        // Off the label the scale steps *up* one more frame (the latch still
+        // read `true` on entry — the C# has the same one-frame lag) and then
+        // ramps back down.
+        refresh_button(&mut st, &lookups, screen, 0.0, false, Vec2::new(400.0, 400.0), 0, false);
+        assert_eq!(st.button_scale, 0.84, "one frame of lag, like `Main.exitScale`");
+        for _ in 0..10 {
+            refresh_button(&mut st, &lookups, screen, 0.0, false, Vec2::new(400.0, 400.0), 0, false);
+        }
+        assert_eq!(st.button_scale, BUTTON_SCALE_MIN);
+        assert!(!st.button_mouse_over);
+        assert!(!st.button_pushed_to_side);
     }
 
     /// `vector3 = vector / 2f - vector2 / 2f` (`:125-126`) and the 20 px `num3`
@@ -1298,16 +1708,21 @@ mod tests {
     /// `:400-1441` sequential `DrawRightSide` calls.
     #[test]
     fn every_page_draws_the_vanillas_row_count() {
-        assert_eq!(page(0).len(), 17, "General (`:400-689`)");
+        // `General` ends with the `""` separator at index 17 (`:685-689`), so it
+        // draws 18 rows over `num11 = 17` — the same "last index" shape as the
+        // video page.
+        assert_eq!(page(0).len(), 18, "General (`:400-689`)");
         assert_eq!(page(1).len(), 14, "Interface (`:690-872`)");
         assert_eq!(page(2).len(), 15, "Video draws 15 rows (`:873-1064`)");
         assert_eq!(page(3).len(), 15, "Controls (`:1065-1441`)");
-        // The drawn count is what the pitch divides by, except the video page's
-        // documented `num11 = 14` quirk.
-        for cat in [0u8, 1, 3] {
+        // The drawn count is what the pitch divides by, except the pages whose
+        // `num11` is the *last index* (the video page's documented quirk and
+        // General's trailing separator).
+        for cat in [1u8, 3] {
             assert_eq!(page(cat).len(), right_slots(cat), "category {cat}");
         }
         assert_eq!(page(2).len(), right_slots(2) + 1, "the video quirk");
+        assert_eq!(page(0).len(), right_slots(0) + 1, "General's trailing spacer");
     }
 
     /// The left column's labels and actions are the C#'s (`:214-330`): the four
@@ -1560,12 +1975,18 @@ mod tests {
         let label = row_label(row, &s);
         assert!(label.ends_with(" 42%"), "{label}");
         assert!(label.starts_with(&crate::lang::menu(99)));
-        // The zoom row is the `GameUI.GameZoom` template with its two args.
+        // The zoom row is the `GameUI.GameZoom` template with its two args —
+        // the **target percent** (`:512`), not the bar's `- 1f` fraction.
         s.zoom = 1.5;
         let zoom = &page(0)[6];
         assert_eq!(zoom.act, RowAct::Bar(Bar::Zoom));
         let label = row_label(zoom, &s);
-        assert!(label.contains("50"), "{label}");
+        assert!(
+            label.contains("150") && !label.contains(" 50%"),
+            "the zoom label is `round(zoom * 100)`, not `round((zoom - 1) * 100)`: {label}"
+        );
+        // ... while the bar's own fraction is still `zoom - 1` (`:529`).
+        assert_eq!(bar_value(&s, Bar::Zoom), 0.5);
     }
 
     /// A category click resets the right scales, the C#'s `:307-311`.
@@ -1604,20 +2025,77 @@ mod tests {
         }
     }
 
-    /// Every row of every page resolves a non-empty label except the two
-    /// explicit spacers, so no page draws a blank setting line.
+    /// Every row of every page resolves a non-empty label except the explicit
+    /// `""` spacers (a `Header` row with a `Blank` label), so no page draws a
+    /// blank setting line.
     #[test]
     fn every_row_resolves_a_label() {
         let s = Settings::default();
         for cat in 0..4u8 {
             for (i, row) in page(cat).iter().enumerate() {
                 let label = row_label(row, &s);
-                if row.label == Label::Blank {
+                let spacer = row.label == Label::Blank
+                    && matches!(row.act, RowAct::Header | RowAct::Parked);
+                if spacer {
                     assert!(label.is_empty(), "cat {cat} row {i} is a spacer");
                 } else {
                     assert!(!label.is_empty(), "cat {cat} row {i} must have a label");
                 }
             }
+        }
+    }
+
+    /// The `General` page's three "parked" rows are real now: the doors, hover
+    /// and autofire preferences carry the vanilla keys (`:644-684`) instead of a
+    /// raw `UI.DoorOpeningPreference`, which the language files do not have and
+    /// which therefore drew as the key itself.
+    #[test]
+    fn the_general_preferences_are_localised_and_clickable() {
+        let mut s = Settings::default();
+        let rows = page(0);
+        // `:644-657`: the doors row cycles Disabled -> Everything -> Gamepad.
+        assert_eq!(
+            row_label(&rows[14], &s),
+            crate::lang::text("UI.SmartDoorsDisabled")
+        );
+        advance_cycle(&mut s, Cycle::SmartDoors);
+        assert_eq!(s.smart_doors, 2);
+        assert_eq!(
+            row_label(&rows[14], &s),
+            crate::lang::text("UI.SmartDoorsEnabled")
+        );
+        advance_cycle(&mut s, Cycle::SmartDoors);
+        assert_eq!(s.smart_doors, 1, "EnabledForGamepadOnly");
+        assert_eq!(
+            row_label(&rows[14], &s),
+            crate::lang::text("UI.SmartDoorsGamepad")
+        );
+        advance_cycle(&mut s, Cycle::SmartDoors);
+        assert_eq!(s.smart_doors, 0, "back to Disabled");
+        // `:659-675`: Hold <-> Click.
+        assert_eq!(
+            row_label(&rows[15], &s),
+            crate::lang::text("UI.HoverControlSettingIsHold")
+        );
+        advance_cycle(&mut s, Cycle::HoverControl);
+        assert_eq!(
+            row_label(&rows[15], &s),
+            crate::lang::text("UI.HoverControlSettingIsClick")
+        );
+        // `:677-684`: the autofire toggle.
+        assert_eq!(
+            row_label(&rows[16], &s),
+            crate::lang::text("UI.AutoReuseAllOff")
+        );
+        flip_toggle(&mut s, Toggle::AutoReuseAll);
+        assert_eq!(
+            row_label(&rows[16], &s),
+            crate::lang::text("UI.AutoReuseAllOn")
+        );
+        // None of the three is a raw, unresolvable key.
+        for i in [14usize, 15, 16] {
+            let l = row_label(&rows[i], &s);
+            assert!(!l.starts_with("UI."), "row {i} still draws a bare key: {l}");
         }
     }
 }

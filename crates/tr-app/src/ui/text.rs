@@ -228,6 +228,18 @@ pub(crate) fn border_string(
     );
 }
 
+/// `FontAssets.MouseText.MeasureString(text).X` at `scale` when the retail sheet
+/// is loaded (the renderer-free twin of [`hud_text_width`]).
+pub(crate) fn ui_font_width(lookups: &assets::Lookups, text: &str, scale: f32) -> Option<f32> {
+    lookups.ui_font.as_ref().map(|f| font_width(f, text, scale))
+}
+
+/// `FontAssets.DeathText.MeasureString(text).X` (`Main.DrawSettingButton`'s
+/// `vector3.X`, `Main.cs:45536`) when the retail sheet is loaded.
+pub(crate) fn death_font_width(lookups: &assets::Lookups, text: &str) -> Option<f32> {
+    lookups.death_font.as_ref().map(|f| font_width(f, text, 1.0))
+}
+
 /// The Death-font width a large `UITextPanel` measures (`UITextPanel.cs:126-131`),
 /// or the bitmap fallback's.
 pub(crate) fn large_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -> f32 {
