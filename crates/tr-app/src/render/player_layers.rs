@@ -303,10 +303,7 @@ pub(crate) fn shoulder_over_front_arm(frame: u32) -> bool {
 /// The raw `OffsetsPlayerHeadgear` table row — Y is 0 exactly at rows 7-9 and
 /// 14-16, 2 elsewhere (`Main.cs:66638-66662`).
 pub(crate) fn headgear_offset(frame: u32) -> f32 {
-    match frame {
-        7..=9 | 14..=16 => 0.0,
-        _ => 2.0,
-    }
+    crate::player::offsets_player_headgear_y(frame as usize)
 }
 
 /// The shift the composite consumers apply: `vector2.Y -= 2; vector += vector2
@@ -1297,6 +1294,54 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_row_the_frame_chain_can_emit_has_draw_tables() {
+        // M2-DRAW-3 made the chain emit rows the old three-arm approximation
+        // never produced (1, 2, 4, 6, 10, 11, 19 ...). Every consumer table is
+        // keyed on the row, so walk all 20 `PlayerFrame` rows and pin the C#
+        // values: the front-arm switch (`PlayerDrawSet.cs:1952-2023`), the
+        // shoulder-over-arm clears at 1/2/5 (`:1961,1966,1976`), the torso
+        // column-1 override at row 5 (`:1975`) and the headgear Y table
+        // (`Main.cs:66638-66660`).
+        for row in 0..=19u32 {
+            let (col, line) = front_arm_cell(row);
+            assert!(col >= 2 && col <= 6, "row {row} arm column {col}");
+            assert!(line <= 1, "row {row} arm line {line}");
+            let (bcol, bline) = back_arm_cell(row);
+            assert_eq!((bcol, bline), (col, line + 2), "row {row} back arm");
+            assert_eq!(
+                shoulder_over_front_arm(row),
+                !matches!(row, 1 | 2 | 5),
+                "row {row} shoulder order"
+            );
+            assert_eq!(
+                torso_cell(row),
+                if row == 5 { (1, 0) } else { (0, 0) },
+                "row {row} torso cell"
+            );
+            let expect_y = if matches!(row, 7..=9 | 14..=16) { 0.0 } else { 2.0 };
+            assert_eq!(headgear_offset(row), expect_y, "row {row} headgear Y");
+            assert_eq!(
+                headgear_composite_shift(row),
+                2.0 - expect_y,
+                "row {row} composite shift"
+            );
+        }
+    }
+
+    #[test]
+    fn the_composite_pivots_and_offsets_are_the_c_sharp_pairs() {
+        // `GetCompositeOffset_BackArm` (`PlayerDrawLayers.cs:4082-4085`) and
+        // `_FrontArm` (`:4087-4090`) applied to both the position and the
+        // origin (`:1272-1277`, `:1296-1298`), so the arm anchor rides the
+        // unrotated pivot — the port's `part_pos` adds `origin_c` to the
+        // position on purpose.
+        assert_eq!(composite_pivot(true, 1.0), [6.0, 2.0]);
+        assert_eq!(composite_pivot(true, -1.0), [-6.0, 2.0]);
+        assert_eq!(composite_pivot(false, 1.0), [-5.0, 0.0]);
+        assert_eq!(composite_pivot(false, -1.0), [5.0, 0.0]);
+    }
 
     #[test]
     fn test_dw_1_2_front_arm_cell_matches_c_switch() {

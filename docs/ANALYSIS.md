@@ -9774,6 +9774,18 @@ falling, plain 5), the walk rows (`legs == 140` runs its own `|velocity.X| * 0.5
 everything else copies the leg row after a `|velocity.X| * 1.5` body counter) and the rest
 row 0.
 
+The draw side needed no new offsets. The port's part tables were audited against the C#
+and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
+(`PlayerDrawSet.cs:1952-2023`), the back arm's `+2` rows (`:2034`), the
+`compShoulderOverFrontArm` clears at rows 1/2/5 (`:1961,1966,1976`), the torso column-1
+override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
+`GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
+the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
+`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+chain fed those tables wrong rows; with the rows correct the existing tables are correct
+too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
+duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+
 Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
 whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
 Bottle (`sand_storm`), the Magic Carpet (`carpet_frame`), flippers/merman
