@@ -7,8 +7,8 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightParams, LightStyle};
+use tr_core::TILE_PX;
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
@@ -138,6 +138,11 @@ impl App {
                 false,
             );
         }
+        // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
+        // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
+        // page the player selected with the tabs. Recomputed every frame so the
+        // auto-jump is undone the moment the cursor stack empties.
+        self.resolve_equip_page();
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -163,10 +168,7 @@ impl App {
                 // boundaries read the same stream), drawn once per advance.
                 let roll01 = f64::from(rand01(&mut self.clock_rng));
                 // `Main.cs:65342-65349`'s player gate.
-                let any_over_120 = self
-                    .player
-                    .as_ref()
-                    .is_some_and(|p| p.max_hp > 120);
+                let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
                 let (blood_moon, eclipse) =
                     advance_time(&mut self.world, dt * rate, roll01, any_over_120);
                 if blood_moon {
@@ -1101,10 +1103,13 @@ impl App {
                         // `Player.armor[0..3]`'s item kinds — the armor draw
                         // input (head/body/legs, 0 = the empty slot).
                         [
-                            self.equip
-                                .armor
-                                .first()
-                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                            self.equip.armor.first().map_or(0, |s| {
+                                if s.count > 0 {
+                                    s.kind
+                                } else {
+                                    0
+                                }
+                            }),
                             self.equip
                                 .armor
                                 .get(1)
@@ -1181,13 +1186,10 @@ impl App {
 
                 let boss = npcs
                     .iter()
-                    .find(
-                        |n| {
-                            (n.kind == NpcKind::KingSlime
-                                || n.kind == NpcKind::EyeOfCthulhu)
-                                && n.hp > 0
-                        },
-                    )
+                    .find(|n| {
+                        (n.kind == NpcKind::KingSlime || n.kind == NpcKind::EyeOfCthulhu)
+                            && n.hp > 0
+                    })
                     .map(|n| (n.hp, n.max_hp));
                 // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
                 // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
@@ -1584,14 +1586,15 @@ impl App {
                         rain.drop_count(),
                         rain.snow_count(),
                     );
-
                 }
 
                 // The debug cheat-sheet panel (the self-contained
                 // debug_panel.rs) — independent of F1.
                 if self.debug_panel.open {
                     crate::debug_panel::draw(
-                        renderer, lookups, screen,
+                        renderer,
+                        lookups,
+                        screen,
                         &self.debug_panel,
                         npcs,
                         world,

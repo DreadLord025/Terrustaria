@@ -66,7 +66,7 @@ const PAGE_TABS: [i32; 3] = [2, 1, 3];
 
 /// `Main.cs:42790-42803`: `vector = (screenWidth - 162, yPos); vector.X += 82f`
 /// → the first tab is at `screenWidth - 80`, each following tab `- 48`.
-fn page_tab_x(screen_w: f32, index: usize) -> f32 {
+pub fn page_tab_x(screen_w: f32, index: usize) -> f32 {
     (screen_w - 162.0 + 82.0) - index as f32 * 48.0
 }
 
@@ -157,6 +157,97 @@ pub fn draw_page_icons(
         r.push_ui_sprite([x, y_pos], [f.w * 0.9, f.h * 0.9], f.uv, WHITE);
     }
     hovered
+}
+
+/// `Main.DrawPageIcons`' hit test (`Main.cs:42793`, `:42805`, `:42817`): the
+/// tab rectangle is the *native* (unscaled) `EquipPage` sheet at
+/// `(page_tab_x(..), yPos)`, and each tab carries its own mouse-item gate:
+///
+/// * tab 2 — `Main.mouseItem.stack < 1 || Main.mouseItem.dye > 0` (`:42793`),
+/// * tab 1 — `Main.mouseItem.stack < 1` (`:42805`),
+/// * tab 3 — `Main.mouseItem.stack < 1` (`:42817`).
+///
+/// All three are unconditional on `!PlayerInput.IgnoreMouseInterface`.
+///
+/// `mouse_item` is `(kind, count)`; the `dye > 0` half of tab 2's gate needs
+/// `Item.dye`, which `ItemDef` does not carry yet (see [`select_equip_page`]),
+/// so a held dye is treated as a plain held stack — the tab is refused instead
+/// of highlighted.
+pub fn page_tab_hit(
+    screen: Vec2,
+    y_pos: f32,
+    mouse: Vec2,
+    mouse_item: (u16, u32),
+    has_dye: bool,
+    sizes: [(f32, f32); 3],
+) -> Option<i32> {
+    let (_, count) = mouse_item;
+    for (i, &tab) in PAGE_TABS.iter().enumerate() {
+        let x = page_tab_x(screen.x, i);
+        // `Collision.CheckAABBvAABBCollision` against `value.Size()` at `vector`:
+        // a half-open native rect (the sheet size, drawn at 0.9).
+        let (w, h) = sizes[i];
+        let hit = mouse.x >= x && mouse.x < x + w && mouse.y >= y_pos && mouse.y < y_pos + h;
+        if !hit {
+            continue;
+        }
+        let gate = match tab {
+            2 => count == 0 || has_dye,
+            _ => count == 0,
+        };
+        if gate {
+            return Some(tab);
+        }
+    }
+    None
+}
+
+/// The three tab sheets' native sizes, for [`page_tab_hit`]. `Main.cs:42792`,
+/// `:42804`, `:42816` read `TextureAssets.EquipPage` at fixed indices for each
+/// tab, and every state of one tab shares its size, so the plain form is used.
+pub fn page_tab_sizes(lookups: &assets::Lookups) -> [(f32, f32); 3] {
+    let pick = |i: usize| {
+        lookups.page_icons[i]
+            .map(|s| (s.width as f32, s.height as f32))
+            .unwrap_or((0.0, 0.0))
+    };
+    [pick(2), pick(4), pick(8)]
+}
+
+/// The click arm of `Main.DrawPageIcons` (`Main.cs:42828-42858`): the newly
+/// selected page, or `None` when the press is not a page switch.
+///
+/// The C# toggles: pressing the already-selected tab falls back to page 0
+/// (`:42853-42857`), otherwise the pressed tab becomes the selection. Tab 3 is
+/// the capture-mode entry (`:42835-42847`) and is **not** a page switch, so it
+/// returns `None` here — capture mode is unported.
+pub fn page_tab_click(tab: i32, selected: i32) -> Option<i32> {
+    if tab == 3 {
+        return None;
+    }
+    Some(if selected == tab { 0 } else { tab })
+}
+
+/// `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`): the page the held item
+/// forces, or `-1` for "no opinion" — in which case `Main.cs:42864-42866` falls
+/// back to `Main.EquipPageSelected`.
+///
+/// Ported arms: air (`:4625` → `-1`) and armour / accessory (`:4647-4650` → 0).
+/// The remaining arms need item data `ItemDef` does not carry yet: `Item.shoot`
+/// against `Main.projHook` (`:4627`), `Item.mountType` (`:4631`), the
+/// `Main.vanityPet` / `Main.lightPet` buff sets (`:4635-4642`) and `Item.dye`
+/// for the `EquipPageSelected == 1` arm (`:4643-4646`). All of them resolve to
+/// page 2 or 0; until the generator emits those fields the misc page is reached
+/// by its tab alone.
+pub fn select_equip_page(kind: u16, count: u32, _selected: i32) -> i32 {
+    if count == 0 || kind == 0 {
+        return -1; // `item.IsAir` (`:4625`)
+    }
+    let d = &crate::itemdata::ITEMS[kind as usize];
+    if d.head_slot != -1 || d.body_slot != -1 || d.leg_slot != -1 || d.accessory {
+        return 0; // `:4647-4650`
+    }
+    -1
 }
 
 // ---------------------------------------------------------------------------
@@ -702,6 +793,88 @@ mod tests {
         assert_eq!(page_tab_x(1600.0, 0), 1520.0);
         assert_eq!(page_tab_x(1600.0, 1), 1472.0);
         assert_eq!(page_tab_x(1600.0, 2), 1424.0);
+    }
+
+    /// `Main.cs:42793/42805/42817`: a native 22x18 sheet at `(x, yPos)`, half-open.
+    const SIZES: [(f32, f32); 3] = [(22.0, 18.0), (22.0, 18.0), (22.0, 18.0)];
+
+    #[test]
+    fn page_tab_hit_finds_each_tab_and_respects_the_half_open_edges() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let y = 300.0;
+        // (x, yPos) is the top-left; `+w` and `+h` are already outside.
+        for (i, want) in [2, 1, 3].iter().enumerate() {
+            let x = page_tab_x(screen.x, i);
+            let inside = Vec2::new(x + 1.0, y + 1.0);
+            assert_eq!(
+                page_tab_hit(screen, y, inside, (0, 0), false, SIZES),
+                Some(*want)
+            );
+            let corner = Vec2::new(x, y);
+            assert_eq!(
+                page_tab_hit(screen, y, corner, (0, 0), false, SIZES),
+                Some(*want),
+                "`Collision.CheckAABBvAABBCollision` is inclusive at the min corner"
+            );
+            let past = Vec2::new(x + 22.0, y + 1.0);
+            assert_eq!(
+                page_tab_hit(screen, y, past, (0, 0), false, SIZES),
+                None,
+                "... and exclusive at the max edge"
+            );
+            let below = Vec2::new(x + 1.0, y + 18.0);
+            assert_eq!(page_tab_hit(screen, y, below, (0, 0), false, SIZES), None);
+        }
+    }
+
+    #[test]
+    fn page_tab_hit_gates_on_the_held_stack() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let y = 300.0;
+        let tab2 = Vec2::new(page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        let tab1 = Vec2::new(page_tab_x(screen.x, 1) + 4.0, y + 4.0);
+        // Anything held refuses every tab (`:42805`/`:42817`).
+        assert_eq!(page_tab_hit(screen, y, tab2, (74, 3), false, SIZES), None);
+        assert_eq!(page_tab_hit(screen, y, tab1, (74, 3), false, SIZES), None);
+        // ... except tab 2 for a dye (`:42793` `Main.mouseItem.dye > 0`).
+        assert_eq!(
+            page_tab_hit(screen, y, tab2, (1007, 3), true, SIZES),
+            Some(2)
+        );
+        assert_eq!(page_tab_hit(screen, y, tab1, (1007, 3), true, SIZES), None);
+    }
+
+    #[test]
+    fn page_tab_click_toggles_back_to_page_zero() {
+        // `:42846-42858`: a different tab selects it, the same tab clears to 0.
+        assert_eq!(page_tab_click(2, 0), Some(2));
+        assert_eq!(page_tab_click(2, 2), Some(0));
+        assert_eq!(page_tab_click(1, 0), Some(1));
+        assert_eq!(page_tab_click(1, 1), Some(0));
+        assert_eq!(page_tab_click(2, 1), Some(2));
+        // Tab 3 is the capture-mode entry, not a page switch (`:42835-42847`).
+        assert_eq!(page_tab_click(3, 0), None);
+        assert_eq!(page_tab_click(3, 3), None);
+    }
+
+    #[test]
+    fn select_equip_page_follows_the_held_item() {
+        // Air has no opinion (`ItemSlot.cs:4625`), so `Main.cs:42864-42866`
+        // falls back to `EquipPageSelected`.
+        assert_eq!(select_equip_page(0, 0, 2), -1);
+        assert_eq!(select_equip_page(1, 0, 1), -1);
+        // Armour and accessories force the equipment columns (`:4647-4650`).
+        // 1 = Iron Pickaxe (not equipment), 4 = Iron Broadsword-equivalent
+        // picks are data-driven below rather than hard-coded.
+        let armour = (0u16..6196)
+            .find(|&k| crate::itemdata::ITEMS[k as usize].head_slot != -1)
+            .expect("a helmet exists");
+        let acc = (0u16..6196)
+            .find(|&k| crate::itemdata::ITEMS[k as usize].accessory)
+            .expect("an accessory exists");
+        assert_eq!(select_equip_page(armour, 1, 2), 0);
+        assert_eq!(select_equip_page(acc, 1, 2), 0);
+        assert_eq!(select_equip_page(1, 1, 2), -1, "a pickaxe forces nothing");
     }
 
     #[test]
