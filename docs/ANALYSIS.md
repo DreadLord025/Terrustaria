@@ -10712,5 +10712,9 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
-  still lacks (the same reason the grid's `_17` highlight is open); and
-  `Main.hidePVPAndTeamIcons` on a third column.
+  still lacks (the same reason the grid's `_17` highlight is open).
+* **The PVP-icon cut** (`:42050-42056`, M7-UI-3d): a wrap that pushes the column
+  offset to `-144` sets `Main.hidePVPAndTeamIcons`, and `DrawPVPIcons` — which
+  runs after the housing page in the same frame — then draws nothing.
+  `housing::hide_pvp_icons` reports it on `InventoryHit` and `ui::draw_hud` skips
+  the icons. Only reachable in a world with ~30 town NPCs (three columns).
