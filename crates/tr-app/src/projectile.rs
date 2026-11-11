@@ -2189,6 +2189,13 @@ pub struct Projectile {
     pub alpha: i32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
+    /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
+    /// per-type arms index into `Main.projFrames[type]` and the render pass
+    /// slices by. Only the Typhoon's `localAI[1] / 3 % 3` writes it today
+    /// (`:30381`); its per-tick counter rides `local_ai[1]`, so the slot field
+    /// is the one thing Phase 6's frame-sliced draw needs from this phase.
+    /// `frameCounter` joins it with the animating kinds 206/633 (Phase 6).
+    pub frame: i32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2271,6 +2278,7 @@ impl Default for Projectile {
             local_ai: [0.0; 3],
             alpha: 0,
             scale: 1.0,
+            frame: 0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -3218,6 +3226,331 @@ impl Projectile {
             }
         }
         false
+    }
+
+    /// `AI()`'s aiStyle-27 block (`Projectile.cs:26420-26548`) — the Unholy
+    /// Trident (114) with its riders (116 the Sword Beam, 132 the Terra Beam,
+    /// 156 the Light Beam, 157 the Night Beam, 173 the Enchanted Beam) and the
+    /// hostile twin (115). The family's dust (114's trail `:26459-26467`, the
+    /// 19-step 115 trail `:26471-26485`, the 173/132 riders `:26486-26506`, the
+    /// post-15 pulse dust `:26512-26524`) and the one-shot sound latch
+    /// `:26526-26535` have no layer in the pool — documented skips whose state
+    /// markers (`ai[1]`) are kept so the first tick stays a silent no-op.
+    ///
+    /// The AI body carries no movement of its own — `HandleMovement`
+    /// (`:17469`) integrates the position, so the per-kind collision arms of
+    /// that half close the arm here (see `unholy_step`).
+    fn ai_unholy_trident(&mut self, world: &World) {
+        // `:26422-26429` — the hostile twin: `ai[0]++` and the ×1.125 while
+        // `ai[0] < 30f`, freezing the speed from the 30th sub-step on.
+        if self.kind == UNHOLY_TRIDENT_HOSTILE {
+            self.ai[0] += 1.0;
+            if self.ai[0] < 30.0 {
+                self.vel *= 1.125;
+            }
+        }
+        // `:26430-26458` — the friendly Trident: the fixed 1.5 scale, the spawn
+        // speed cached into `localAI[0]` on the first tick, the ×0.98 decay of
+        // both the flight and the cache past `ai[0] >= 20f`, the kill when the
+        // cached speed falls under 1, and the alpha read back off the cache
+        // through the descending 2 → 0 `Remap`. The C# `Kill()` does not abort
+        // the body (and `Update`'s `Damage()` at `:17078` is not gated on
+        // `active` either), so the arm keeps running after the kill.
+        if self.kind == UNHOLY_TRIDENT {
+            self.scale = 1.5;
+            self.ai[0] += 1.0;
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = self.vel.length();
+            }
+            if self.ai[0] >= 20.0 {
+                self.vel *= 0.98;
+                self.local_ai[0] *= 0.98;
+                if self.local_ai[0] < 1.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+            let cached_speed = remap(self.local_ai[0], 2.0, 0.0, 1.0, 0.0);
+            self.alpha = (cached_speed * 255.0) as i32;
+        }
+        // `:26468-26470` — the hostile twin's first-hit trail latch: the pulse
+        // counter is pinned to 5 on the first sub-step (the 19-step dust
+        // skipped), so the shared pulse starts a full 15 away from the cap.
+        if self.kind == UNHOLY_TRIDENT_HOSTILE && self.local_ai[1] < 5.0 {
+            self.local_ai[1] = 5.0;
+        }
+        // `:26507-26525` — the shared pulse: `localAI[1]` counts up to 15 and
+        // holds there; past it every non-114 kind oscillates its scale ±0.02
+        // against alpha ±30, flipping phase through `localAI[0]` at the 250
+        // ceiling and the 0 floor. 114 spends `localAI[0]` on its cached speed,
+        // so it never enters the oscillation — the C# `type != 114` guard.
+        if self.local_ai[1] < 15.0 {
+            self.local_ai[1] += 1.0;
+        } else if self.kind != UNHOLY_TRIDENT {
+            if self.local_ai[0] == 0.0 {
+                self.scale -= 0.02;
+                self.alpha += 30;
+                if self.alpha >= 250 {
+                    self.alpha = 255;
+                    self.local_ai[0] = 1.0;
+                }
+            } else if self.local_ai[0] == 1.0 {
+                self.scale += 0.02;
+                self.alpha -= 30;
+                if self.alpha <= 0 {
+                    self.alpha = 0;
+                    self.local_ai[0] = 0.0;
+                }
+            }
+        }
+        // `:26536-26544` — the rotation: the 157 spins on its `direction` (and
+        // carries it into `spriteDirection`), every other kind faces the
+        // flight at `atan2(velocity.Y, velocity.X) + 0.785f`.
+        if self.kind == NIGHT_BEAM {
+            self.rot += self.direction as f32 * 0.4;
+            self.sprite_direction = self.direction;
+        } else {
+            self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
+        }
+        // `:26545-26548` — the fall clamp at 16 px per sub-step.
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.unholy_step(world);
+    }
+
+    /// `HandleMovement`'s half for the aiStyle-27 family
+    /// (`Projectile.cs:17469-17890`): the C#'s AI body carries no movement, so
+    /// the position integrates here with the per-kind arms of the blocked-move
+    /// chain (`:18136-19851`). The port's probe is the per-axis
+    /// destination-box test the arrow/bomb arms use (`kill_step`), standing in
+    /// for the C#'s swept `Collision.TileCollision`.
+    fn unholy_step(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last = self.vel;
+        let nx = self.pos.x + self.vel.x;
+        let ny = self.pos.y + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        if hit_x || hit_y {
+            match self.kind {
+                // `:18081-18086` — the Trident stops dead on contact: a last
+                // 0.99-scaled step into the tile, then the flight falls to the
+                // normalised pre-collision direction at 0.0001 px per tick.
+                UNHOLY_TRIDENT => {
+                    self.pos += self.vel * 0.99;
+                    self.vel = safe_normalize(last) * 0.0001;
+                    return;
+                }
+                // `:19803-19827` — the Sword Beam reflects full-axis for three
+                // impacts (`ai[2] < 4f`) and dies on the fourth; its sound and
+                // 30-dust burst are skipped.
+                SWORD_BEAM => {
+                    self.ai[2] += 1.0;
+                    if self.ai[2] < 4.0 {
+                        if hit_x {
+                            self.vel.x = -last.x;
+                        }
+                        if hit_y {
+                            self.vel.y = -last.y;
+                        }
+                        self.pos += self.vel;
+                        return;
+                    }
+                }
+                // Every other kind of the family (115, 132, 156, 157, 173)
+                // has no arm of its own and falls to the chain's terminal
+                // default `:19848-19851` — `position += velocity; Kill()`.
+                _ => {}
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-51 block (`Projectile.cs:28402-28503`) — the Spectre
+    /// Staff's Lost Soul. The 297 branch is this phase's; the 293 hostile twin's
+    /// player hunt (its `num362 = 200f` scan over `Main.player` and the
+    /// `(v * 100 + d) / 101` blend, `:28448-28475`) is Phase 3's, which widens
+    /// the signature with the owner centre the way the other owner-aware arms
+    /// do. Until then the 293 stays inert, as every kind whose arm has not
+    /// landed.
+    fn ai_spectre_shot(&mut self, world: &World, npcs: &[Npc]) {
+        if self.kind != LOST_SOUL {
+            return;
+        }
+        // `:28404-28412` — the dust latch: `localAI[0]++` gates the burst that
+        // only opens past 4 (the five no-gravity dust SKIPPED, no dust layer).
+        self.local_ai[0] += 1.0;
+        // `:28413-28474` — the acquire scan. `num362` opens at 400 and carries
+        // the *running minimum*, which both of the C#'s tests read: the
+        // centre-to-centre `Distance` gate and the Manhattan tie-break that
+        // replaces it — so the scan keeps the tightest Manhattan target among
+        // the NPCs that pass both gates, not the first, and not the closest by
+        // Euclid alone.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut scan = 400.0f32;
+        let mut target = center;
+        let mut found = false;
+        for n in npcs {
+            // `:28425` `Main.npc[i].CanBeChasedBy(this)` — the chaseable gate.
+            if !chaseable(n) {
+                continue;
+            }
+            let n_center = npc_center(n);
+            if center.distance(n_center) >= scan {
+                continue;
+            }
+            // `:28426` `Collision.CanHit(...)` — the tile line of sight.
+            let (nw, nh) = n.size();
+            if !can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh) {
+                continue;
+            }
+            let manhattan = (center.x - n_center.x).abs() + (center.y - n_center.y).abs();
+            if manhattan < scan {
+                scan = manhattan;
+                target = n_center;
+                found = true;
+            }
+        }
+        // `:28476-28497` — the steering blend: the flight steers one part in 21
+        // toward a unit vector at the turn speed 6 (`num372`, the 297 value —
+        // the 293 arm reads 3). The C# divides by the unscaled length without a
+        // guard, which an exactly-coincident centre would turn into NaN; the
+        // pool's other scans clamp the divisor (`gem_bolt_steer`), so the same
+        // epsilon stands in here.
+        if found {
+            let turn_speed = 6.0f32;
+            let delta = target - center;
+            let length = delta.length().max(f32::EPSILON);
+            let step = delta * (turn_speed / length);
+            self.vel.x = (self.vel.x * 20.0 + step.x) / 21.0;
+            self.vel.y = (self.vel.y * 20.0 + step.y) / 21.0;
+        }
+        // `HandleMovement`'s terminal default (`:19848-19851`): the 297 keeps
+        // its row's `tileCollide`, so a blocked move steps into the tile and
+        // dies — what `kill_step` models.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-71 block (`Projectile.cs:30355-30454`) — the Razorblade
+    /// Typhoon (409). The six-dust ring (`:30359-30375`) and the
+    /// `Lighting.AddLight` (`:30382`) have no layer in the pool — documented
+    /// skips.
+    ///
+    /// Deviation from the source: the C# opens the whole fade/spin/frame block
+    /// with `Main.rand.Next(3) == 0` (`:30358`) as well as `localAI[1] > 10f`,
+    /// because the dust that block ends with is rolled on the same branch. The
+    /// pool takes no RNG this phase, so the port runs it every sub-step past
+    /// the 10th (the alpha reaches its 50 floor sooner and the frame advances
+    /// three times as fast as the source's average). The slot's `alpha` has no
+    /// draw consumer yet (`draw_with_hand` ignores it), so nothing visible
+    /// moves; the roll is a follow-up row.
+    fn ai_typhoon(&mut self, world: &World, npcs: &[Npc]) {
+        // `:30357-30383` — the age counter and the fade: past its 10th sub-step
+        // the alpha loses 5 with the 50 floor, the rotation spins by the
+        // flight's own X and the frame rides `localAI[1] / 3 % 3` — the slot's
+        // `frame` field this phase adds, with `localAI[1]` as its counter.
+        self.local_ai[1] += 1.0;
+        if self.local_ai[1] > 10.0 {
+            self.alpha -= 5;
+            if self.alpha < 50 {
+                self.alpha = 50;
+            }
+            self.rot += self.vel.x * 0.1;
+            self.frame = (self.local_ai[1] / 3.0) as i32 % 3;
+        }
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut target = center;
+        // `:30385-30399` — the re-acquire cooldown: `localAI[0]` counts down,
+        // and while it has spent with no lock held the scan takes the nearest
+        // chaseable NPC within 500f with a clear `Collision.CanHit` line,
+        // committing `ai[0] = index + 1`.
+        if self.local_ai[0] > 0.0 {
+            self.local_ai[0] -= 1.0;
+        }
+        if self.ai[0] == 0.0 && self.local_ai[0] == 0.0 {
+            let mut scan = 500.0f32;
+            let mut best: i32 = -1;
+            for (i, n) in npcs.iter().enumerate() {
+                if !chaseable(n) {
+                    continue;
+                }
+                let n_center = npc_center(n);
+                let distance = n_center.distance(target);
+                if distance < scan {
+                    let (nw, nh) = n.size();
+                    if can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh) {
+                        scan = distance;
+                        target = n_center;
+                        best = i as i32;
+                    }
+                }
+            }
+            if best >= 0 {
+                self.ai[0] = (best + 1) as f32;
+            }
+            // `:30400-30403` — a fruitless scan arms the 30-sub-step cooldown,
+            // so the typhoon flies blind (and unsteered) until it has spent.
+            if self.ai[0] == 0.0 {
+                self.local_ai[0] = 30.0;
+            }
+        }
+        // `:30404-30418` — the lock validity: the held index must still name a
+        // live NPC that takes damage and carries no owner i-frame for this
+        // slot, and its Manhattan distance must stay under 1000f. The C# clears
+        // `ai[0]` only for a dead / invulnerable / immune target — a merely
+        // distant one keeps its index and re-steers when it comes back (the
+        // same nuance the Book of Skulls tests pin).
+        let mut locked = false;
+        if self.ai[0] != 0.0 {
+            let held = (self.ai[0] - 1.0) as usize;
+            if let Some(n) = npcs.get(held) {
+                if !n.dont_take_damage && n.immune[self.owner as usize] == 0 {
+                    let n_center = npc_center(n);
+                    let manhattan = (center.x - n_center.x).abs() + (center.y - n_center.y).abs();
+                    if manhattan < 1000.0 {
+                        locked = true;
+                        target = n_center;
+                    }
+                }
+            }
+            if !locked {
+                self.ai[0] = 0.0;
+            }
+        }
+        // `:30419-30430` — the turn: 0.1 rad toward the target per sub-step,
+        // the wrapped difference of the two rotations (the length survives the
+        // rotation, as the C#'s `RotatedBy` keeps it).
+        if locked {
+            let delta = wrap_angle((target - center).to_angle() - self.vel.to_angle());
+            self.vel = rotate(self.vel, delta * 0.1);
+        }
+        // `:30431-30435` — the accel: the speed grows by 0.0025 per sub-step,
+        // the direction untouched.
+        let speed = self.vel.length();
+        self.vel = safe_normalize(self.vel) * (speed + 0.0025);
+        // `HandleMovement`'s 409 arm (`:18517-18525`): the typhoon bounces off a
+        // blocked tile at full strength on every axis that caught, the pre-
+        // collision velocity negated. The port's per-axis destination-box probe
+        // stands in for the C#'s swept `Collision.TileCollision`, which snaps
+        // the blocked axis and leaves the other one sliding.
+        if self.tile_collide {
+            let last = self.vel;
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.vel.x = -last.x;
+            }
+            if hit_y {
+                self.vel.y = -last.y;
+            }
+        }
+        self.pos += self.vel;
     }
 
     /// The approach helper shared by the eye machines (`:31282-31313`'s
@@ -7116,6 +7449,20 @@ impl ProjectilePool {
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
+                        // The aiStyle-27 followup caster family
+                        // (`Projectile.cs:26420-26554`): the Unholy Trident
+                        // plus its riders and the hostile twin. The arm reads
+                        // only the tiles, so it rides the plain
+                        // `(world)` shape.
+                        27 => self.slots[i].ai_unholy_trident(world),
+                        // The aiStyle-51 Spectre Staff (`:28402-28503`): the
+                        // 297's NPC scan and blend. Phase 3 adds the 293's
+                        // player hunt, which widens the signature with the
+                        // owner centre.
+                        51 => self.slots[i].ai_spectre_shot(world, &npcs[..]),
+                        // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
+                        // the turn, the accel and the full tile reflect.
+                        71 => self.slots[i].ai_typhoon(world, &npcs[..]),
                         // The aiStyle-29 gem bolts (`Projectile.cs:37643-38001`):
                         // the owner-aware arm of the family signature — its
                         // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
@@ -11678,6 +12025,7 @@ mod phasmal_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            frame: 0,
             falling_tile: None,
             detonated: false,
             wants_mark_spawn: None,
@@ -11901,6 +12249,7 @@ mod ritual_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            frame: 0,
             falling_tile: None,
             detonated: false,
             wants_mark_spawn: None,
