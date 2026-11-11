@@ -268,30 +268,39 @@ pub fn draw(
             let slot_idx = i + j * GRID_COLS;
             let p = grid_pos(i, j, INVENTORY_SCALE);
             // `ItemSlot.cs:2149-2156`: the favorited arm swaps the slot's
-            // background to the gold `Inventory_Back10`; the port's atlas
-            // lacks the sheet, so the fallback tints the default one
-            // (`slot::favorited_slot_tint` — the plan-authorized fallback).
-            let tint = if slot::favorited_background_active(
+            // background to the gold `Inventory_Back10` (`slot::draw_slot_favorited`)
+            // and keeps `Main.inventoryBack` as the tint.
+            if slot::favorited_background_active(
                 0,
                 favorites.contains(&slot_idx),
                 &inventory[slot_idx],
             ) {
-                slot::favorited_slot_tint(INVENTORY_BACK)
+                slot::draw_slot_favorited(
+                    r,
+                    lookups,
+                    &inventory[slot_idx],
+                    p.x,
+                    p.y,
+                    0,
+                    slot_idx as i32,
+                    slot_idx == selected,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                );
             } else {
-                INVENTORY_BACK
-            };
-            slot::draw_slot(
-                r,
-                lookups,
-                &inventory[slot_idx],
-                p.x,
-                p.y,
-                0,
-                slot_idx as i32,
-                slot_idx == selected,
-                INVENTORY_SCALE,
-                tint,
-            );
+                slot::draw_slot(
+                    r,
+                    lookups,
+                    &inventory[slot_idx],
+                    p.x,
+                    p.y,
+                    0,
+                    slot_idx as i32,
+                    slot_idx == selected,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                );
+            }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Grid(slot_idx));
             }
