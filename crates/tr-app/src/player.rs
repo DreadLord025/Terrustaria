@@ -515,6 +515,16 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
+    /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
+    /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
+    /// `Update_NPCCollision` (`:31321`) all return early while it is set, and
+    /// `Main.UpdateWorld_Players` refills the three pools
+    /// (`Main.cs:17869-17873`).
+    pub creative_god_mode: bool,
+    /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
+    /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
+    pub far_placement_range: bool,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
     breath_cd: i32,
@@ -934,6 +944,8 @@ impl Player {
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
+            creative_god_mode: false,
+            far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
             luck_state: LuckState::default(),
@@ -1488,6 +1500,11 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s head (`Player.cs:38809-38812`): the godmode power
+        // (and an already-dead player) refuses the death entirely.
+        if self.creative_god_mode || self.dead {
+            return;
+        }
         // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
@@ -1607,6 +1624,12 @@ impl Player {
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+        // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
+        // journey godmode power swallows the hit outright — before the
+        // iframes, the defense reduction and the knockback.
+        if self.creative_god_mode {
+            return false;
+        }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -1642,6 +1665,32 @@ impl Player {
         self.hurt_cd = 0.0;
         let cx = self.x + WIDTH * 0.5;
         self.hurt_inner(amount, cx, false)
+    }
+
+    /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
+    /// `:57113`) after `Player.ResetEffects`' journey block
+    /// (`:18815-18828`): the base 5, or `5 * 2 + 8 = 18` while the
+    /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
+    /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
+    /// power's own toggle is the gate.
+    pub fn tile_range_x(&self) -> f32 {
+        let base = 5.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
+    /// `Player.tileRangeY` (`DefaultTileRangeY = 3`, `Player.cs:57114`) with
+    /// the same journey doubling (`:18823-18825`): `3` or `14`.
+    pub fn tile_range_y(&self) -> f32 {
+        let base = 3.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -5749,6 +5798,46 @@ mod tests {
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_godmode_power_swallows_hits_death_and_refills() {
+        // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
+        // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
+        // refuses outright (`:38809-38812`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.creative_god_mode = true;
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        assert!(!p.hurt(50, p.x + 100.0), "the hit is swallowed");
+        assert_eq!(p.hp, hp, "no damage");
+        assert_eq!(p.vx, 0.0, "no knockback");
+        p.start_death(&w, false, false);
+        assert!(!p.dead, "KillMe refuses while the power is on");
+        // Switching the power off restores both arms.
+        p.creative_god_mode = false;
+        assert!(p.hurt(10, p.x + 100.0));
+        p.hp = 0;
+        p.start_death(&w, false, false);
+        assert!(p.dead);
+    }
+
+    #[test]
+    fn the_far_placement_power_doubles_the_tile_range() {
+        // `Player.ResetEffects` (`Player.cs:18815-18828`): the default
+        // `tileRangeX/Y` 5/3 (`:57113-57114`) become `* 2 + 8` = 18/14 while
+        // `FarPlacementRangePower` is enabled (`CreativePowers.cs:730-767`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.tile_range_x(), 5.0);
+        assert_eq!(p.tile_range_y(), 3.0);
+        p.far_placement_range = true;
+        assert_eq!(p.tile_range_x(), 18.0);
+        assert_eq!(p.tile_range_y(), 14.0);
     }
 
     #[test]
