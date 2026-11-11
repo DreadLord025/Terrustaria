@@ -7033,10 +7033,14 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
   (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
   `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
-  favorited slots (`:631-634`); the favorited visual is the
-  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
-  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
-  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  favorited slots (`:631-634`); the favorited visual is the real gold sheet —
+  `Inventory_Back10` (`:2152-2156`) now packs into the content atlas and
+  `ui::slot::draw_slot_favorited` swaps it in ahead of the context table (the
+  C# chain puts the favorite arm before the hotbar-row `_9` arm), tinted
+  `Main.inventoryBack` as the C# leaves it; the old `OurFavoriteColor` tint
+  stand-in is gone. Out of scope: `Inventory_Back17` (`:2331-2335`, the gamepad
+  UI-point highlight) and `_19` (context 32, the loadout panel) — neither
+  surface is ported; the trash slot (448, 258) is clickable — left-click
   swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
   `:1008-1011`).
 
@@ -7081,8 +7085,11 @@ Deviations (deliberate, in plan order):
   range-closed; `tick_open` now covers banks (the `HandleBeingInChestRange`
   port) — out of range or a dead tile closes with sound 11.
 - **The coin-row favorite gap.** `toggle_favorite`'s `idx >= INV` guard
-  keeps the coin/ammo rows unfavoritable; the favorited sell/drop pass or
-  M7-UI-2 rides it.
+  keeps the coin/ammo rows unfavoritable: the port keys favorites by grid
+  index (`App.favorite_slots`), so `canFavoriteAt[1]/[2]` has no key space
+  until the flag moves onto the item (the BUG-03 `.plr` side is already
+  slot-keyed). The rows' *movement* landed in M7-UI-2b (below); the favorite
+  toggle and the shift-into-chest transfer still need that move.
 - **The trash swap is a plain swap.** `trash_swap`'s doc claimed a
   favorited guard; the C# swap (`MouseItemSwap` `ItemSlot.cs:1255-1263`)
   has none — favorited held items CAN be trashed there; the can't-drop rule
@@ -10461,3 +10468,33 @@ Guide without consuming itself, the same shot lands once the Guide Voodoo Doll
 sits in accessory slot 3, and the `refuses_friendly` matrix is pinned for the
 Rotten Egg (318), the Clothier-with-curse arm, the bound goblin (no arm — the
 C# `isLikeATownNPC` excludes it) and a hostile slime.
+
+### The coin and ammo rows (M7-UI-2b)
+
+`Main.DrawInventory` draws the coin row (context 1) and the ammo row (context
+2) with `ItemSlot.Handle` over every cell it draws (`Main.cs:41752-41782`), so
+the port's draw-only rows were dead to the pointer — the click pass only knew
+the 10×5 grid (`slot_at_mouse`) and the closed hotbar.
+
+The rows now resolve through one shared geometry, `ui::inventory::coin_ammo_hit`
+(x 497 / 534, scale 0.6, `(int)(85 + row·56·0.6 + 20)`), which the draw pass
+also hovers with — the two copies of the formula cannot drift. The click path
+(`App::coin_ammo_click`) is the C# cell handler with the C# gates:
+
+* left → the shared action-0 move (`left_click_movement`), behind
+  `PickItemMovementAction`'s accepted-kind gate (`ItemSlot.cs:1369-1374`): the
+  coin row takes air and 71-74 only, the ammo row takes `FitsAmmoSlot`;
+* right → the `ItemSlot.cs:1700-1772` stack split (half up, one down);
+* the rows are inert while the inventory is closed (they draw only in the open
+  panel).
+
+`FitsAmmoSlot` (`Item.cs:1369-1376`) is ported over the flags the port carries —
+air, `ammo > 0`, `bait > 0`. Deviations: the `PaintOrCoating` arm, `notAmmo`,
+and the three literal exceptions (353/530/849) have no port counterpart, so a
+held paint bucket is refused where vanilla takes it.
+
+Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
+flag to move from `App.favorite_slots` (a grid index set) onto the item, and the
+shift-into-chest transfer needs `chest::try_placing_in_chest` to accept the coin
+and ammo arrays instead of a grid index (it copies `app.inventory[slot]`). Both
+are named in ROADMAP's M7-UI-2 remainder.

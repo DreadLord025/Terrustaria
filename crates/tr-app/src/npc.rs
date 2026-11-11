@@ -4417,6 +4417,41 @@ impl Npc {
         }
     }
 
+    /// `FindFrame`'s plain walker arm (`case 3` and its 20-sibling group,
+    /// `NPC.cs`): the ground flip, row 2 while airborne or turning, row 0
+    /// standing, and the `|vx|` accumulator's 8/16/24/32 bands stepping
+    /// rows 0/1/2/1 on the strip's three rows.
+    fn walker_frame(&mut self) {
+        if self.vy == 0.0 {
+            self.sprite_dir = self.facing;
+        }
+        if self.vy != 0.0
+            || (self.facing == -1 && self.vx > 0.0)
+            || (self.facing == 1 && self.vx < 0.0)
+        {
+            self.frame_counter = 0.0;
+            self.frame = 2;
+        } else if self.vx == 0.0 {
+            self.frame_counter = 0.0;
+            self.frame = 0;
+        } else {
+            // The C# leaves `frame.Y` alone in the last branch (its 0..32
+            // accumulator laps at row 1), so the row is not written there.
+            self.frame_counter += self.vx.abs();
+            if self.frame_counter < 8.0 {
+                self.frame = 0;
+            } else if self.frame_counter < 16.0 {
+                self.frame = 1;
+            } else if self.frame_counter < 24.0 {
+                self.frame = 2;
+            } else if self.frame_counter < 32.0 {
+                self.frame = 1;
+            } else {
+                self.frame_counter = 0.0;
+            }
+        }
+    }
+
     /// The shared `case 266`/`case 262` machine (the Brain of Cthulhu and
     /// Plantera, `NPC.cs`'s two identical arms): the frame advances every
     /// 6 ticks; `first_phase` (the shield-down / above-half-life gate) wraps
@@ -5240,13 +5275,16 @@ impl Npc {
                 }
             }
             NpcKind::Zombie => {
-                // `FindFrame` has no case 9: the vanilla zombie's
-                // `frame.Y` stays at its `SetFrameSize` 0 — the NPC_9 sheet
-                // is a single 30x48 frame (`Main.npcFrameCount[9] = 1`,
-                // `Main.cs:67082`). The port's v1 ran a 3-frame walker
-                // (the case-3 group's idiom) whose rows 1/2 sampled past
-                // the sheet.
-                self.frame = 0;
+                // `FindFrame`'s walker arm (`case 3` — a member of the
+                // `case 3/52/53/132/161/186-189/200/223/251/254/255/319-321/
+                // 331/332/342/536/590/691` group, `NPC.cs`): NPC_3 is
+                // 38x144 with `Main.npcFrameCount[3]` = 3 (`Main.cs:67082`),
+                // i.e. three 48-px rows — the stand (row 0) and the two walk
+                // poses. The v1 pinned row 0 and cited `npcFrameCount[9]`
+                // (the Devourer tail's single frame), so the most common
+                // night enemy never animated; and the draw divided the sheet
+                // by 1, so all three rows were squeezed into one 48-px quad.
+                self.walker_frame();
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
@@ -13195,26 +13233,23 @@ mod tests {
     }
 
     #[test]
-    fn the_zombie_sheet_is_a_single_static_frame() {
-        // `FindFrame` has no case 9: the vanilla zombie's `frame.Y` stays
-        // at its `SetFrameSize` 0 — the NPC_9 sheet is one 30x48 frame
-        // (`Main.npcFrameCount[9] = 1`, `Main.cs:67082`). The port's v1
-        // ran the case-3 group's walker (rows 0/1/2 sampled past the
-        // sheet); the town machine's rows 2.. belong to the humanoids
-        // (26-frame Guide et al.), never the zombie.
+    fn the_zombie_is_not_pinned_to_one_row() {
+        // The v1 read `FindFrame`'s missing `case 9` as "the zombie is a
+        // single NPC_9 frame". The zombie is type 3 and its arm IS in the
+        // walker group (`case 3` of `case 3/52/53/132/…`), over NPC_3 —
+        // 38x144, three 48-px rows (`Main.npcFrameCount[3]` = 3,
+        // `Main.cs:67082`). `the_zombie_walks_its_three_rows` pins the
+        // machine; this one keeps the sheet's row count honest.
         let mut z = bare(NpcKind::Zombie);
         z.vx = 0.9;
         z.frame = 5;
+        let mut seen = [false; 3];
         for _ in 0..40 {
             z.find_frame();
-            assert_eq!(z.frame, 0, "the zombie never animates");
+            assert!(z.frame < 3, "the zombie never leaves its three rows");
+            seen[z.frame as usize] = true;
         }
-        // The air and the backpedal do not move it either.
-        z.vy = 0.1;
-        z.facing = 1;
-        z.vx = -0.5;
-        z.find_frame();
-        assert_eq!(z.frame, 0, "airborne/backpedal holds the single frame");
+        assert_eq!(seen, [true, true, true], "all three rows animate");
     }
 
     #[test]
@@ -15724,6 +15759,56 @@ mod tests {
         m.vx = 0.0;
         m.find_frame();
         assert_eq!(m.frame, 0, "standing still is row 0");
+    }
+
+    #[test]
+    fn the_zombie_walks_its_three_rows() {
+        // `FindFrame`'s walker arm (`case 3` of the
+        // `case 3/52/53/132/161/186-189/…` group, `NPC.cs`): NPC_3 is
+        // 38x144 with `Main.npcFrameCount[3]` = 3, so the strip is the
+        // stand row plus two walk poses. The v1 pinned row 0 and its draw
+        // divided the sheet by 1 (all three rows in one quad).
+        let mut z = bare(NpcKind::Zombie);
+        // Standing still: row 0.
+        z.vx = 0.0;
+        z.vy = 0.0;
+        z.frame = 7;
+        z.frame_counter = 5.0;
+        z.find_frame();
+        assert_eq!(z.frame, 0, "idle is row 0");
+        assert_eq!(z.frame_counter, 0.0, "and the accumulator resets");
+        // Walking: the `|vx|` bands 0..8 / 8..16 / 16..24 / 24..32.
+        let mut bands = Vec::new();
+        z.vx = 4.0;
+        z.frame_counter = 0.0;
+        for _ in 0..10 {
+            z.find_frame();
+            bands.push(z.frame);
+        }
+        // 4 px/tick: rows 0 (counter 4), 1 (8), 1 (12), 2 (16), 2 (20),
+        // 1 (24), 1 (28), then the lap back through 0.
+        assert_eq!(&bands[..7], &[0, 1, 1, 2, 2, 1, 1], "the four bands");
+        assert!(bands.iter().all(|f| *f < 3), "no row past the strip");
+        // Airborne and turning both hold row 2 and clear the accumulator.
+        z.vy = -1.0;
+        z.frame = 1;
+        z.frame_counter = 12.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "airborne holds the jump row");
+        assert_eq!(z.frame_counter, 0.0);
+        z.vy = 0.0;
+        z.facing = -1;
+        z.vx = 3.0;
+        z.frame_counter = 9.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "facing away from the motion");
+        // Grounded on the motion: the sprite faces the walk.
+        z.facing = 1;
+        z.vx = 3.0;
+        z.find_frame();
+        assert_eq!(z.sprite_dir, 1, "the ground flip");
+        // The drawn strip is three rows: the frame height is sheet / 3.
+        assert_eq!(z.kind.humanoid_frame_count(), 1, "not a town sheet");
     }
 
     #[test]
