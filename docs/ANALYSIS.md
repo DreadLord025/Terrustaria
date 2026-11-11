@@ -296,6 +296,38 @@ biome comes from the ground tile under the trunk. Top and branch tiles (`frameX`
 the tile pass. Forest world-style randomisation (`TreeTops.GetTreeStyle`, a later save
 section we do not parse) is approximated as style 0; gem/vanity/palm trees are not composed.
 
+### The tree kill cascade (BUG-16, 2026-11-11)
+
+`TileFrameImportant` dispatches the tree kinds to `WorldGen.CheckTree` (the forest
+tree 5), `CheckTreeWithSettings` (the gem/vanity/ash variants) and `CheckPalmTree`
+(323) — `WorldGen.cs:85876-85911`. Those routines kill the tree cells that lost
+their support; the `KillTile` chain is what makes a felled tree fall instead of
+floating. The port's `tr-core/src/edit.rs::check_tree` / `check_palm_tree` run the
+same machine; the ground test is the only parameter (`TreeVariant::ground_type` /
+`ground_valid` — the forest tree folds the grass family onto plain dirt, the
+variants use `GemTreeGroundTest`/`VanityTreeGroundTest`/`AshTreeGroundTest`).
+
+Two deviations:
+
+- **The palm's canopy re-roll** (`CheckPalmTree`, `:54385-54388`) draws
+  `genRand.Next(7, 10) * 22` into the cell's `frameX`. The core has no RNG
+  stream, so `TileKill::palm_frame_rolls` records the request and the app
+  resolves it after the cascade. The C#'s neighbour ring does not fire for that
+  arm (`frameY` is unchanged), so the deferral changes nothing but the moment
+  the frame is written.
+- **`noItem`.** The C#'s `CheckTree` calls `WorldGen.KillTile(i, j)` with the
+  default `noItem: false`, so a tree cell killed by the cascade always drops
+  its wood. The port propagates the ambient `noItem` like the other `Check*`
+  kills, so the worldgen pass (which suppresses the drops) stays quiet. In
+  play `noItem` is false either way.
+
+The drop rolls follow the house RNG seam: one `item_rng` throw per event seeds
+the `FastRandom` that stands in for the C#'s `genRand` stream and the
+`Main.rand` roll spends the item stream directly. Note that in the C#
+`WorldGen.genRand` **is** `Main.rand` (a property, `WorldGen.cs:4445`), so the
+C# draws its four tree-drop rolls from one stream and the port draws them from
+two — the same approximation the pot and pile loot already use.
+
 ## Lighting
 
 Terraria's light is a **tile light map**, not a per-vertex shader effect:
