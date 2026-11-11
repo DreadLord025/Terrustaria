@@ -15,6 +15,7 @@ pub mod color;
 pub mod crafting;
 pub mod cursor;
 pub mod ingame_options;
+pub mod housing;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -650,6 +651,8 @@ pub fn draw_hud(
     equip_page: i32,
     selected: usize,
     hotbar_scales: &[f32; HOTBAR],
+    // `Main.npc[]` — the housing page's source (`Main.cs:42008-42023`).
+    npcs: &[crate::npc::Npc],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
     // `BigProgressBarSystem.ShowText` — the `ShowBossBarHealthText` key
@@ -751,6 +754,7 @@ pub fn draw_hud(
             equip,
             selected,
             equip_page,
+            npcs,
             mouse_pos,
             m_h,
             bank,

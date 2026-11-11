@@ -2,8 +2,9 @@
 //! (`decompiled/Terraria/Main.cs:41001-42367`).
 //!
 //! Covers the 10x5 main grid, the coin and ammo columns, the three equipment
-//! columns (`EquipPage == 0`), the misc-equip / misc-dye page (`EquipPage == 2`),
-//! the trash slot and the three `Lang.inter` labels. The interaction
+//! columns (`EquipPage == 0`), the NPC housing page (`EquipPage == 1`, see
+//! `ui::housing`), the misc-equip / misc-dye page (`EquipPage == 2`), the trash
+//! slot and the three `Lang.inter` labels. The interaction
 //! (`ItemSlot.Handle`) lives elsewhere; this module only resolves the hovered
 //! slot so the controller can wire tooltips (`InventoryHit`).
 //!
@@ -13,6 +14,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::housing;
 use super::{bestiary, slot, text};
 use crate::assets;
 use crate::inv::EquipSlots;
@@ -74,6 +76,8 @@ pub fn extra_accessory_slots() -> i32 {
 
 /// `Main.EquipPage == 2`: the misc-equip / misc-dye page.
 const EQUIP_PAGE_MISC: i32 = 2;
+/// `EquipPage == 1` (`Main.cs:41368`): the NPC housing page.
+const EQUIP_PAGE_HOUSING: i32 = 1;
 
 /// `ItemSlot.LoadoutSlotColors[0, 0..2]` (`ItemSlot.cs:365-371`) — the loadout-1
 /// (green) palette. `TryGetSlotColor` (`ItemSlot.cs:2807-2819`) maps context 8/10
@@ -258,6 +262,7 @@ pub fn draw(
     equip: &EquipSlots,
     selected: usize,
     equip_page: i32,
+    npcs: &[crate::npc::Npc],
     mouse: Vec2,
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
@@ -423,6 +428,25 @@ pub fn draw(
                 }
             }
         }
+    } else if equip_page == EQUIP_PAGE_HOUSING {
+        // `Main.cs:41993-42107`: the housing page — one `Inventory_Back11` cell
+        // per town NPC type the world holds, in `NPCHeadID.Sets.HeadListOrder`,
+        // starting at the equipment columns' top row (`inventoryTop`) on the
+        // right edge. Vanilla draws no armour on this page, so the `else` arm
+        // below stays page 0/3.
+        let base_y = equip_base_y(
+            screen.y,
+            m_h,
+            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            INVENTORY_SCALE,
+        );
+        let cells = housing::layout(
+            &housing::heads_for(npcs),
+            [screen.x, screen.y],
+            base_y,
+            INVENTORY_SCALE,
+        );
+        housing::draw(r, lookups, &cells, INVENTORY_SCALE);
     } else {
         // `Main.cs:41372-41524`: equipment columns (`EquipPage == 0`, and the
         // page-3 fallthrough).
