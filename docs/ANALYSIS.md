@@ -10824,3 +10824,74 @@ Not ported yet, and why: buff 28 (Werewolf, +3) needs the `wolfAcc` item flag th
 port does not carry; the `/2` halvings at `:26021-26025` belong to armor-set
 abilities that are still unported (see M3-EQUIP-2's early-metal-only set table),
 as does the `:25716` +20 row.
+
+## The mob draw audit (M4-NPC-3t)
+
+The lunar-event families were the worst-served art in the port: the
+`NpcAssets` struct loaded **one shared sheet per family** and pointed every
+member at it, so eight different mobs drew the same strip —
+
+| family field (v1) | sheet | member kinds |
+| --- | --- | --- |
+| `tower_mobs` | `NPC_409` | all eleven stardust/solar tower mobs |
+| `nebula_trio` | `NPC_420` | floater, brain suckler, predictor |
+| `vortex_trio` | `NPC_426` | hunter, alien, headcrab |
+| `shards` | `NPC_406` | big/small star cell, jellyfish |
+| `shard_hovers` | `NPC_425` | nebula beast, vortex soldier/rifleman |
+| `moon_lord_parts` | `NPC_396` | all five Moon Lord parts |
+
+Vanilla gives every one of them its own `TextureAssets.Npc[type]`
+(`NPCID.cs:11481-11533`, `:11713`) and slices it by
+`Main.npcFrameCount[type]` (`Main.cs:67082-67131`, the divisor
+`NPC.SetFrameSize` uses, `NPC.cs:90780-90800`). The port now ports that
+table (`render/entities.rs`'s `NPC_FRAME_COUNT`), loads `NPC_402-407`,
+`NPC_409-414`, `NPC_415-421`, `NPC_423-429` and `NPC_518` into
+`NpcAssets::npc_sheets`, and every arm reads `npc_sheet(texture_net_id(kind))`
+at `npc_rows(...)` rows.
+
+`texture_net_id` exists because the port's `NpcKind::net_id` is
+**bestiary-driven** (`bestiary::entry_for_npc(...).net_id`) and several of the
+lunar rows were keyed on the art's first member rather than the drawn kind
+(`MoonLordHead` resolves to 397, `MoonLordLeechBlob` to 212). Those bestiary
+ids are a separate audit; the draw uses the vanilla texture ids.
+
+**The generic anchor was wrong for every generic-anchored kind.** The C#'s
+generic path draws with `origin = halfSize` at
+`position = Center - frame.Size()/2 + halfSize + offsets`
+(`Main.cs:25505-25516`), so with the default `halfSize = frame.Size()/2` the
+frame's **centre lands on the NPC's Centre**. The v1 put the frame's centre at
+`box_bottom + 4`, i.e. `h/2 - 4` (≈ 24 px on a 40-px humanoid) too low — every
+humanoid's feet were buried in the grass (the TR_NPC lineup screenshot was the
+give-away). All twelve such arms (the humanoid/martian/prime/boss/generic
+helpers plus the inline arms) now use `n.y + h * 0.5 - fh * 0.5`; the
+half-`Size` overrides (`boss_half_size`, `npc_anchor_nudge`) still apply after
+the match, as in the C#.
+
+**The Moon Lord head is a grid, not a strip.** `Main.npcFrameCount[396]` is 1,
+which only means the dead generic path would show the whole 573x804 sheet;
+the real draw is `Main.cs:24846-24927`:
+`value40.Frame(3, 3, frame.Y / 3, frame.Y % 3)` at `scale = 2` from the origin
+`(191, 130) / 2` — a 3x3 grid of 191x268 cells with the **column** indexed by
+`frame.Y / 3` and the **row** by `frame.Y % 3` (so `FindFrame`'s 0..8 cell
+counter is right). `moon_lord_head_draw`/`moon_lord_head_uv` port exactly that.
+
+**Row-count fixes.** `FindFrame`'s arms for the shards/towers/nebula/vortex
+groups were placeholders with hand-written counts (`StardustSpiderSmall` walked
+11 rows over a 5-row sheet, five rows of which do not exist). They now ride
+`npc_rows(texture_net_id(kind))`. The DD2 rows were corrected against
+`Main.npcFrameCount`: the Dark Mage 20 → 9 (564-567), the Bartender 16 → 25
+(550), the Wither Beast 14 → 17 (568/569).
+
+**Parked (documented follow-ups).**
+* The per-kind `FindFrame` cadences: the port still shares one
+  `frame_counter += |vx| + 0.6` accumulator across each family (the C# has a
+  distinct machine per id — the 409's 6-tick walk, the 415's ride/attack
+  bands, the 419's `direction` sprite flip, the 416 riding its 415's row…).
+  The rows are now inside the sheet, the animation *timing* is not faithful.
+* The Moon Lord hand (397), core (398) and free eye (400) custom blocks
+  (`Main.cs:24701-24951`) — their extra parts (the arms, the tail, the eye's
+  laser sprites) stay undrawn; the parts draw one frame each at the generic
+  anchor.
+* `spriteDirection` write sites (`NPC.cs`'s 24 `spriteDirection =` sites) — the
+  flip still rides `n.sprite_dir`, which several machines never write.
+* The kinds whose bestiary `net_id` disagrees with their texture id.
