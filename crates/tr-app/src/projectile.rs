@@ -571,6 +571,47 @@ pub const TIME_LEFT_DEFAULT: i32 = 3600;
 const OWNER_IMMUNE_TICKS: i32 = 10;
 const SIZE: f32 = 6.0;
 
+/// `ProjectileID.RottenEgg` (318) — the one thrown projectile the C# lets hit
+/// a friendly NPC (`Damage_PVE_Inner`'s `this.type == 318` arm,
+/// `Projectile.cs:12601`).
+const ROTTEN_EGG: u16 = 318;
+
+/// The pool's view of [`crate::player::Player::doll_flags`] — the worn
+/// Guide/Clothier Voodoo Doll pair `Damage_PVE_Inner` reads
+/// (`Player.cs:15124`/`:15128`). No player (the bomb path) means no doll.
+fn doll_flags(player: Option<&crate::player::Player>) -> (bool, bool) {
+    player.map_or((false, false), |p| p.doll_flags())
+}
+
+/// `Damage_PVE_Inner`'s friendly refusal (`Projectile.cs:12601-12608`):
+/// `flag = !targetNPC.friendly | (this.type == 318) |
+/// (targetNPC.type == 22 && killGuide) | (targetNPC.type == 54 &&
+/// killClothier)`, and a friendly projectile whose `flag` is false returns
+/// without touching the NPC.
+///
+/// The C# arms that stay neutral here: `NPCID.Sets.ZappingJellyfish`
+/// (63/64/103/242 — no jellyfish kind is ported),
+/// `this.hostile & flag2` (the hostile shots' friendly-NPC damage — the
+/// port's hostile shots ride the player-contact pass instead), and
+/// `CanNPCBeHitByPlayerOrPlayerProjectile`'s critter block
+/// (`:20513-20529` — the Guide to Critter Companionship item and the
+/// minion/sentry shot flags are both unported).
+fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -> bool {
+    if !n.kind.is_friendly() {
+        return false;
+    }
+    if kind == ROTTEN_EGG {
+        return false;
+    }
+    if n.kind == NpcKind::Guide && kill_guide {
+        return false;
+    }
+    if n.kind == NpcKind::Clothier && kill_clothier {
+        return false;
+    }
+    true
+}
+
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
 /// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed —
@@ -7696,7 +7737,7 @@ impl ProjectilePool {
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
-                self.gem_bolt_aoe(i, npcs);
+                self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()));
             }
         }
     }
@@ -7712,7 +7753,7 @@ impl ProjectilePool {
     /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
     /// it and the burst fires at most once per bolt (a dead slot never returns
     /// to `active`).
-    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc]) {
+    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
         let (kind, ai0) = match self.slots.get(slot) {
             Some(p) => (p.kind, p.ai[0]),
             None => return,
@@ -7761,7 +7802,7 @@ impl ProjectilePool {
         // rectangle against the NPC's, so the AoE rides the box walk, not
         // `damage_pve`'s fixed centre point (the point test would sit on
         // the already-hit centre NPC and the burst would deal nothing).
-        self.damage_pve_boxed(slot, npcs);
+        self.damage_pve_boxed(slot, npcs, dolls);
         // `:75483`: the trailing `Resize(22, 22)`.
         let (cx, cy) = {
             let p = &self.slots[slot];
@@ -8083,6 +8124,9 @@ impl ProjectilePool {
                 p.pos + Vec2::splat(SIZE * 0.5),
             )
         };
+        // `Player.killGuide`/`killClothier` — the worn-doll flags the friendly
+        // gate reads (`Player.cs:15124`/`:15128`).
+        let (kill_guide, kill_clothier) = doll_flags(player.as_deref());
         // The whip sweep — `FillWhipControlPoints`' live and previous frames
         // (`frameOffset` 0 / −1, `Projectile.cs:15718-15722`), filled once per
         // tick off the owner's arm anchor.
@@ -8121,6 +8165,11 @@ impl ProjectilePool {
             }
             let p = &self.slots[slot];
             if !self.target_allowed(slot, p, idx as u16) {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12608`) — ahead of
+            // the immunity gate, exactly like the C#'s early `return`.
+            if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
@@ -8247,7 +8296,7 @@ impl ProjectilePool {
     /// the normal PVE pass uses is the port's simplification for the
     /// flight-size boxes; the resized death bursts (the gem bolts' AoE)
     /// need the rectangle, or the burst's damage lands nowhere.
-    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc]) {
+    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
         let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -8273,6 +8322,11 @@ impl ProjectilePool {
             }
             let p = &self.slots[slot];
             if !self.target_allowed(slot, p, idx as u16) {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12608`): the
+            // resized death bursts obey the same gate as the plain walk.
+            if refuses_friendly(n, p.kind, dolls.0, dolls.1) {
                 continue;
             }
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
@@ -8490,6 +8544,80 @@ mod tests {
             true,
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
+    }
+
+    /// BUG-23: the friendly refusal on the player's shots —
+    /// `Damage_PVE_Inner` (`Projectile.cs:12601-12608`). A shot passes a town
+    /// NPC, the doll-owned Guide arm lets it through, and the helper's arm
+    /// matrix covers the Rotten Egg and the bound forms.
+    #[test]
+    fn bug_23_projectiles_refuse_the_friendly_npcs() {
+        let w = ground();
+        let mut guide = Npc::spawn_guide(&w, 30).expect("the Guide spawns");
+        guide.x = 100.0;
+        guide.y = 100.0;
+        // The Guide's box is 18x40 at (100, 100); the shot's centre sits at
+        // `pos + 3` — (108, 108) puts it inside.
+        let mut npcs = vec![guide];
+        let mut player = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(SHURIKEN, 0, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0, false)
+            .expect("the slot");
+        let hp = npcs[0].hp;
+        pool.update(
+            &mut w.clone(),
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(npcs[0].hp, hp, "the shot passes through the Guide");
+        assert!(pool.slots[slot].active, "and the shot is not consumed");
+        // The worn Guide Voodoo Doll arms the arm (`Player.cs:15124`).
+        let mut npcs2 = vec![Npc::spawn_guide(&w, 30).expect("the Guide spawns")];
+        npcs2[0].x = 100.0;
+        npcs2[0].y = 100.0;
+        let mut player2 = crate::player::Player::spawn(&w);
+        player2.equipped[3] = 267;
+        let mut pool2 = ProjectilePool::new();
+        pool2
+            .spawn(SHURIKEN, 0, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0, false)
+            .expect("the slot");
+        let hp = npcs2[0].hp;
+        pool2.update(
+            &mut w.clone(),
+            &mut npcs2,
+            None,
+            None,
+            Some(&mut player2),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(npcs2[0].hp < hp, "the doll-armed Guide takes the shot");
+        // The helper's matrix: every friendly kind refuses a plain shot, the
+        // Rotten Egg (318) gets through everything, the doll arms only cover
+        // the Guide (22) and the Clothier (54), and the six bound forms have
+        // no arm at all (`isLikeATownNPC` does not cover them).
+        let bound = Npc::spawn_town(&w, 30, NpcKind::BoundGoblin).expect("the bound goblin spawns");
+        let clothier = Npc::spawn_town(&w, 30, NpcKind::Clothier).expect("the Clothier spawns");
+        let slime = one_npc(&w);
+        assert!(refuses_friendly(&npcs[0], SHURIKEN, false, false));
+        assert!(!refuses_friendly(&npcs[0], ROTTEN_EGG, false, false));
+        assert!(!refuses_friendly(&npcs[0], SHURIKEN, true, false));
+        assert!(!refuses_friendly(&clothier, SHURIKEN, false, true));
+        assert!(refuses_friendly(&clothier, SHURIKEN, true, false));
+        assert!(refuses_friendly(&bound, SHURIKEN, true, true));
+        assert!(!refuses_friendly(&bound, ROTTEN_EGG, false, false));
+        assert!(!refuses_friendly(&slime, SHURIKEN, false, false));
     }
 
     /// One pool update plus the per-NPC decay the NPC update would run
