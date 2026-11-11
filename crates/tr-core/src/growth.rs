@@ -1666,6 +1666,12 @@ pub fn update_world_overground_tile(
         grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
         return;
     }
+    // `:72063-72067`: the tombstone arm — a grave cell rolls
+    // `TryGrowingAbigailsFlower` once per update, ahead of the alch/beach
+    // chain the C# walks next.
+    if kind == 85 {
+        try_growing_abigails_flower(world, x, y, rng);
+    }
     // `:72219-72228`: the dye-plant head — one `Main.rand.Next(3000)` behind
     // every `nactive` pick, the exotic arm at `Next(15000)` when the cell
     // stands outside the middle 40..60 % of the world and hardmode is on.
@@ -3171,6 +3177,115 @@ mod tests {
             }
         }
         assert!(seen, "the overground dye head plants a 227");
+    }
+
+    #[test]
+    fn the_tombstone_grows_abigails_flower() {
+        // `WorldGen.TryGrowingAbigailsFlower` (`:73049-73073`) from the
+        // tombstone arm of `UpdateWorld` (`:72063-72067`): a 1/30 gate, then a
+        // spot in the 20x20 box around the grave whose ground is
+        // mushroom/ash/conversion grass and which holds no flower within 120.
+        let mut w = world();
+        for x in 100..=140 {
+            put(&mut w, x, 150, 2, 0); // the grass floor
+        }
+        put(&mut w, 120, 149, 85, 0); // the grave
+        let mut flower = None;
+        for k in 0..40000u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
+            flower = flower.or((110..130).find_map(|x| {
+                (140..160)
+                    .find(|&y| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 624))
+                    .map(|y| (x, y))
+            }));
+            if flower.is_some() {
+                break;
+            }
+        }
+        let (fx, fy) = flower.expect("the grave grows a flower");
+        // The 20x20 draw box (`Math.Max(10, i - 10) .. Math.Min(maxX - 10, i + 10)`).
+        assert!((110..130).contains(&fx), "x {fx} inside the draw box");
+        assert!((140..160).contains(&fy), "y {fy} inside the draw box");
+        // The flower sits ON the grass row, never inside it.
+        assert_eq!(fy, 149, "the flower stands above the grass");
+        assert!(
+            w.tile(fx, fy + 1).is_some_and(|t| t.kind == 2),
+            "the flower's ground is grass"
+        );
+        // Frame 0/0 (`WorldGen.cs:59488-59493`), not an autotile frame.
+        let t = *w.tile(fx, fy).unwrap();
+        assert_eq!((t.frame_x, t.frame_y), (0, 0), "the flower stays unframed");
+        // One grave, one flower: the 120-tile box refuses a second.
+        let before = (100..160)
+            .flat_map(|x| (140..160).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 624))
+            .count();
+        assert_eq!(before, 1);
+        for k in 0..20000u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(7);
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
+        }
+        let after = (100..160)
+            .flat_map(|x| (140..160).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 624))
+            .count();
+        assert_eq!(after, 1, "the nearby-flower rule blocks the second");
+    }
+
+    #[test]
+    fn the_abigails_flower_ground_and_distance_rules() {
+        // `HasValidGroundForAbigailsFlowerBelowSpot` (`:73026-73046`): the
+        // mushroom grass 70, the ash grass 633 and every `Conversion.Grass`
+        // member pass; dirt, sand and air do not.
+        let mut w = world();
+        for (kind, ok) in [(2u16, true), (70, true), (633, true), (199, true), (0, false), (53, false), (1, false)]
+        {
+            let i = w.index(200, 151);
+            w.tiles[i] = Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            assert_eq!(
+                has_valid_ground_for_abigails_flower_below_spot(&w, 200, 150),
+                ok,
+                "ground kind {kind}"
+            );
+        }
+        // Air below is no ground, and the 2-tile margin is refused
+        // (`WorldGen.InWorld(x, y, 2)`).
+        let i = w.index(200, 151);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(!has_valid_ground_for_abigails_flower_below_spot(&w, 200, 150));
+        put(&mut w, 200, 151, 2, 0);
+        assert!(!has_valid_ground_for_abigails_flower_below_spot(&w, 1, 150));
+        assert!(!has_valid_ground_for_abigails_flower_below_spot(&w, 200, 1));
+        // `NoNearbyAbigailsFlower` (`:73076-73095`): the 120-tile box.
+        put(&mut w, 300, 150, 624, 0);
+        assert!(!no_nearby_abigails_flower(&w, 200, 150), "100 away is too close");
+        assert!(no_nearby_abigails_flower(&w, 100, 150), "200 away is clear");
+        // The gate: a non-zero `Main.rand.Next(30)` draws once and writes
+        // nothing.
+        let mut w2 = world();
+        for x in 100..=140 {
+            put(&mut w2, x, 150, 2, 0);
+        }
+        let mut rng = FastRandom::new(4);
+        let before = rng.seed;
+        let placed = try_growing_abigails_flower(&mut w2, 120, 149, &mut rng);
+        if !placed {
+            assert_ne!(rng.seed, before, "the gate always draws");
+        }
+        assert!(
+            (100..160)
+                .flat_map(|x| (140..160).map(move |y| (x, y)))
+                .filter(|&(x, y)| w2.tile(x, y).is_some_and(|t| t.active() && t.kind == 624))
+                .count()
+                <= 1
+        );
     }
 
     #[test]
@@ -4972,6 +5087,96 @@ pub fn place_dye(world: &mut World, x: i32, y: i32, style: i32) -> bool {
         t.set_slope(0);
         t.frame_y = 0;
         t.frame_x = (34 * style) as i16;
+    }
+    true
+}
+
+/// `WorldGen.TryGrowingAbigailsFlower` (`WorldGen.cs:73049-73073`): the
+/// tombstone arm of `UpdateWorld` (`:72063-72067`). One `Main.rand.Next(30)`
+/// gates it, then one or two spots are drawn in the 20x20 box around the grave
+/// (`Math.Max(10, i - 10) .. Math.Min(maxTilesX - 10, i + 10)`, the same shape
+/// on `j`) and the first one with valid Abigail ground, no flower within
+/// `120` tiles and a successful `PlaceTile(624)` takes the flower. A Don't
+/// Starve world rolls twice (`Main.dontStarveWorld`).
+///
+/// Deviation: the C# mixes `Main.rand` (the gate) with `WorldGen.genRand` (the
+/// two spot draws); the port's single `rng` stream feeds both, like every other
+/// growth arm (ANALYSIS, M5-SPREAD-1).
+fn try_growing_abigails_flower(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) -> bool {
+    if rng.next(30) != 0 {
+        return false;
+    }
+    let rolls = if world.seeds.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        2
+    } else {
+        1
+    };
+    let max_x = world.width - 10;
+    let max_y = world.height - 10;
+    for _ in 0..rolls {
+        let lo_x = (i - 10).max(10);
+        let hi_x = (i + 10).min(max_x);
+        let lo_y = (j - 10).max(10);
+        let hi_y = (j + 10).min(max_y);
+        // `genRand.Next(min, max)` needs `max > min`; a grave in the world's
+        // clamp corner can collapse the box, and the C# would throw there.
+        if hi_x <= lo_x || hi_y <= lo_y {
+            return false;
+        }
+        let nx = rng.next_range(lo_x, hi_x);
+        let ny = rng.next_range(lo_y, hi_y);
+        if has_valid_ground_for_abigails_flower_below_spot(world, nx, ny)
+            && no_nearby_abigails_flower(world, nx, ny)
+            && crate::edit::place_tile(world, nx, ny, 624)
+        {
+            // `PlaceTile` clears the cell first, so the fresh flower carries
+            // frame 0/0 (`WorldGen.cs:59488-59493`'s write for the 624/700
+            // placement arm); nothing else frames a 1x1 flower.
+            if let Some(t) = world.tile_mut(nx, ny) {
+                t.frame_x = 0;
+                t.frame_y = 0;
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.HasValidGroundForAbigailsFlowerBelowSpot`
+/// (`WorldGen.cs:73026-73046`): the spot is in-world with a 2-tile margin, the
+/// tile below is active, its type is the mushroom grass 70, the ash grass 633
+/// or a `Conversion.Grass` member, and that tile is solid allowing a bottom
+/// slope.
+fn has_valid_ground_for_abigails_flower_below_spot(world: &World, x: i32, y: i32) -> bool {
+    // `WorldGen.InWorld(x, y, 2)` (`WorldGen.cs:3106-3115`).
+    if x < 2 || x > world.width - 3 || y < 2 || y > world.height - 3 {
+        return false;
+    }
+    let Some(below) = world.tile(x, y + 1) else {
+        return false;
+    };
+    if !below.active() {
+        return false;
+    }
+    if !(below.kind == 70 || below.kind == 633 || crate::tiledata::SET_GRASS.has(below.kind)) {
+        return false;
+    }
+    crate::edit::solid_tile_allow_bottom_slope(world, x, y + 1)
+}
+
+/// `WorldGen.NoNearbyAbigailsFlower` (`WorldGen.cs:73076-73095`): no active
+/// flower 624 in the `120`-tile box, clamped to the world's `10`-tile margin.
+fn no_nearby_abigails_flower(world: &World, i: i32, j: i32) -> bool {
+    let lo_x = (i - 120).clamp(10, world.width - 11);
+    let hi_x = (i + 120).clamp(10, world.width - 11);
+    let lo_y = (j - 120).clamp(10, world.height - 11);
+    let hi_y = (j + 120).clamp(10, world.height - 11);
+    for x in lo_x..=hi_x {
+        for y in lo_y..=hi_y {
+            if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 624) {
+                return false;
+            }
+        }
     }
     true
 }

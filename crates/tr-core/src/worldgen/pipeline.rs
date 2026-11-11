@@ -2468,6 +2468,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[495] = true;
     world.frame_important[529] = true;
     world.frame_important[530] = true;
+    // Abigail's flower 624 (`Main.cs:7366-7378`'s frame-important list): the
+    // M5-SPREAD-1e growth arm writes its 0/0 frame
+    // (`WorldGen.TryGrowingAbigailsFlower`, `WorldGen.cs:73049-73073`), and the
+    // framer must keep it instead of autotiling a 1x1 flower.
+    world.frame_important[624] = true;
     world.frame_important[549] = true;
     // The chest family — the sapling 20, the chest 21, the golden-chest style
     // 467 and the two container kinds 441/468 (`Main.cs:7655-7659`; the

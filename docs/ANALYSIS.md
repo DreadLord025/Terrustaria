@@ -5518,8 +5518,9 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   the creative stop-spread gate into the hard-mode head (`allowed_to_spread`
   had been hardcoded `true` there, so `M6-CREATIVE-1c`'s power never reached
   the dispatcher). The seaweed and web arms landed on top of it (the
-  M5-SPREAD-1c bullet below). The dye-plant head landed last (the
-  M5-SPREAD-1d bullet below). Parked arms: the 655 life-fruit
+  M5-SPREAD-1c bullet below). The dye-plant head landed 4th (the
+  M5-SPREAD-1d bullet below) and the tombstone arm 5th (the M5-SPREAD-1e
+  bullet below). Parked arms: the 655 life-fruit
   kill (the NPC store), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
   `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
@@ -5528,6 +5529,29 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw — the dye head's `Main.rand.Next(2500)`/`Next(10000)`
   now draw from it too).
+
+- **Abigail's flower** (`TryGrowingAbigailsFlower` `WorldGen.cs:73049-73073`,
+  `HasValidGroundForAbigailsFlowerBelowSpot` `:73026-73046`,
+  `NoNearbyAbigailsFlower` `:73076-73095`, and the tombstone arm of
+  `UpdateWorld` `:72063-72067` — the M5-SPREAD-1e slice): a grave cell (85)
+  rolls `Main.rand.Next(30)`; on a hit the arm draws one spot in the 20x20 box
+  around the grave (`max(10, i − 10) .. min(maxTilesX − 10, i + 10)`, same on
+  `j`) — twice on a Don't Starve world (`Main.dontStarveWorld` →
+  `world.seeds`' `DONT_STARVE`) — and the first spot whose tile below is a
+  mushroom grass 70 / ash grass 633 / `Conversion.Grass` member
+  (`SET_GRASS`/`SolidTileAllowBottomSlope`) and which holds no active 624
+  within the 120-tile box (clamped to the 10-tile margin) takes
+  `PlaceTile(624)` with frame 0/0. The flower is now in the boot
+  frame-important statics (`pipeline.rs`, `Main.cs:7366-7378`), so `reframe_area`
+  keeps the 0/0 frame instead of autotiling a 1x1 flower. Deviations: the gate
+  and the two spot draws share the port's single `rng` stream (the vanilla
+  splits `Main.rand`/`WorldGen.genRand`), and `Check1x1`
+  (`WorldGen.cs:45237-45252`, the "flower dies when its ground is converted"
+  arm) is not ported — no 1x1 framing port exists yet, so a 624 whose ground
+  goes away floats. Tests: `the_tombstone_grows_abigails_flower` (the box, the
+  grass seat, the 0/0 frame, the no-second-flower rule) and
+  `the_abigails_flower_ground_and_distance_rules` (the ground table, the
+  2-tile margin, the 120-tile box).
 
 - **The dye plants** (`plantDye` `WorldGen.cs:71286-71436`, `PlaceDye`
   `:53988-54065`, and both dispatchers' heads — the M5-SPREAD-1d slice):
