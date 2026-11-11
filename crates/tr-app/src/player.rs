@@ -575,6 +575,12 @@ pub struct Player {
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
     pub mana: i32,
+    /// `Player.manaCost` (`Player.cs:1884`): the magic items' cost
+    /// multiplier — `ResetEffects` sets 1f (`:18334`) and the armor pieces,
+    /// the accessory rows, the casters' set bonuses and `BuffID.MagicPower`
+    /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
+    /// (`:5881-5884`).
+    pub mana_cost: f32,
     pub mana_max: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
@@ -1290,6 +1296,7 @@ impl Player {
             hp: 100,
             max_hp: 100,
             mana: 20,
+            mana_cost: 1.0,
             mana_max: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
@@ -2559,6 +2566,8 @@ impl Player {
         // was assigned *outside* the tick (from `world_sim`), which silently
         // dropped every buff and prefix defense arm.
         self.stat_defense = 0;
+        // `:18334`: `manaCost = 1f` — the reductions re-apply below.
+        self.mana_cost = 1.0;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2582,6 +2591,25 @@ impl Player {
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
             }
+            // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
+            // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
+            // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
+            // Assassin head (4982, −0.1), the Spectre hood/mask (1003 −0.17,
+            // 2189 −0.13), the Mystic Robe (2279, −0.1), the Apprentice/
+            // Dark Artist rows (3797 −0.1, 3875 −0.15).
+            self.mana_cost -= match kind {
+                1282 => 0.05,
+                1283 => 0.07,
+                1284 => 0.09,
+                1285 => 0.11,
+                1286 => 0.13,
+                1287 => 0.15,
+                2279 | 3797 | 4982 => 0.1,
+                2189 => 0.13,
+                3875 => 0.15,
+                1003 => 0.17,
+                _ => 0.0,
+            };
         }
         let (armor_head, armor_body, armor_legs) = (
             self.equipped[0] as i32,
@@ -2610,6 +2638,7 @@ impl Player {
             self.pick_speed_bonus += set.pick_speed;
             self.mana_max += set.mana_max;
             self.max_minions += set.max_minions;
+            self.mana_cost += set.mana_cost;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -2618,6 +2647,14 @@ impl Player {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
+                // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
+                // damage, the 20 mana and the −0.02 cost.
+                29 => {
+                    self.magic_crit += 2;
+                    self.magic_damage += 0.05;
+                    self.mana_max += 20;
+                    self.mana_cost -= 0.02;
+                }
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
@@ -2861,6 +2898,10 @@ impl Player {
                 // The Titan Glove's melee-speed row (`:15103-15107`); its
                 // `autoReuseGlove` flag has no port consumer yet.
                 211 => self.melee_speed_bonus += 0.12,
+                // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
+                // Nature's Gift (`:15110-15113`, −0.06).
+                555 => self.mana_cost -= 0.08,
+                223 => self.mana_cost -= 0.06,
                 // The Ice Skates (`:15089-15092`).
                 950 => self.ice_skate = true,
                 // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -5751,6 +5792,39 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-9 — `manaCost` folds the armor pieces, the accessories, the
+    /// casters' sets and Magic Power.
+    #[test]
+    fn the_mana_cost_multiplier_folds_every_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 1.0).abs() < 1e-4);
+        // Nature's Gift (223) −0.06 and the Mana Flower (555) −0.08.
+        p.equipped[3] = 223;
+        p.equipped[4] = 555;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.86).abs() < 1e-4);
+        // The Mystic Robe (2279) −0.1 as an armor piece.
+        p.equipped[1] = 2279;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.76).abs() < 1e-4);
+        // Magic Power (buff 29) −0.02 plus its other rows.
+        p.buffs.add_buff(29, 3600);
+        let mana_max_before = p.mana_max;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.74).abs() < 1e-4);
+        assert!(p.mana_max > mana_max_before, "the 20-mana row");
+        // The Mythril Caster set (376/379/380) −0.17.
+        p.equipped[0] = 376;
+        p.equipped[1] = 379;
+        p.equipped[2] = 380;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - (1.0 - 0.17 - 0.02)).abs() < 1e-4);
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the

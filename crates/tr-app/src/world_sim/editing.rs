@@ -625,16 +625,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
-            // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
-            // `item.mana * manaCost` (the multiplier is the 1f base — the
-            // accessories fold out); a failed check blocks the use. The pay
-            // resets the mana regen delay (`apply_mana_regen_delay`).
-            let mana_cost = held_fx.map(|s| s.mana).unwrap_or(0);
+            // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
+            // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
+            // the accessories, the casters' sets and Magic Power lower (M3-
+            // EQUIP-9). A failed check blocks the use; the pay resets the mana
+            // regen delay (`apply_mana_regen_delay`).
+            let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
             let Some(p) = app.player.as_mut() else {
                 unreachable!()
             };
+            let mana_cost = (base_mana as f32 * p.mana_cost) as i32;
             if mana_cost > 0 {
                 // `Player.CheckMana`'s pay arm: a failed check blocks the use.
                 if p.mana < mana_cost {
