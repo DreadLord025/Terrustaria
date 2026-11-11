@@ -678,6 +678,16 @@ pin_bool! {
     "TR_VK_GRID"
 }
 
+pin_bool! {
+    /// `TR_PVP=1` forces `Main.DrawPVPIcons`'s draw + click gates open
+    /// (`Main.netMode == 1` / `Main.ShouldTeamSelectDraw`, `Main.cs:2909-2919`)
+    /// so a single-player screenshot can capture and exercise the PVP toggle
+    /// and the six team cells. A harness pin, not a game rule — the vanilla
+    /// shows these icons only inside a multiplayer client.
+    pvp_icons,
+    "TR_PVP"
+}
+
 /// `TR_MAPSTYLE=<0|1|2>`: the minimap style (an invalid value falls back to
 /// `Main.mapStyle`'s default 1).
 pub(crate) fn map_style() -> i32 {

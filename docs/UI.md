@@ -123,7 +123,7 @@ row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89
 | Controls | `1127` | 250 / 52 / 0.78 | Set Bonuses @250, Quick Trash @302, Keybindings @354 (notice — the original opens the 888 UIState), Back @424 |
 | Keybindings | `27` | 176 / 22 / 0.45 | 14 left-aligned bind rows (`array5 = −80`) + Reset + Back, both scale 0.8 |
 | Map Keys | `272727` | 200 / 30 / 0.55 | 6 left-aligned bind rows (`array5 = −140`) + Reset (0.8) + Back (scale **1.0** — the branch never sets `array7[7]`) |
-| Multiplayer | `12` | 250 / 80 / 1.0 | Join @250, Host & Play @330, Back @410 — "Join via Steam" is overwritten without `SocialAPI.Network`, so Join is first |
+| Multiplayer | `12` | 250 / 80 / 1.0 | Join via IP @250, Join via Steam @330, Host & Play @410, Back @490 — `num41 = 1` (the retail build ships Steam), so `num5 = 3 + num41` = 4 rows; the `num41 == 0` build overwrites row 1 and drops to three |
 | Join IP | `13` | 180 / 30 / 1.0 | header @180, input @229 (`array4 = 19`), 7 blank recent rows @280..460 (scale 0.6), Accept @494, Back @544 |
 | Join Port | `131` | 250 / 80 / 1.0 | header @250, input @310, Accept @430 (disabled unless the text parses to 1..=65535), Back @490 |
 | Host Password | `30` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Host (fixed port 7777), Back @490 |
@@ -246,9 +246,11 @@ The pages the flow parks onto are still legacy `Main.DrawMenu` branches: `menuMo
 with Yes/No rows — `Action::{ConfirmYes, ConfirmNo}` run the erase and re-open the
 screen the confirm came from — and `menuMode` 3000 credits, a single Back row at y 500
 (scale 0.9) over the world backdrop; the `SkyManager.Activate("CreditsRoll")` cinematic
-is not ported (documented deviation). Multiplayer "Join"/"Host & Play" still open the
-input screens directly (the P5 shortcut) — the join/host paths through the character
-select stay with a future multiplayer-flow task.
+is not ported (documented deviation). Multiplayer's "Join via IP" and "Host & Play" still
+open the input screens directly (the P5 shortcut) — the join/host paths through the
+character select stay with a future multiplayer-flow task — and "Join via Steam" reports
+the not-ported notice because the port has no `SocialAPI`/Steam session to hand
+`SocialAPI.Friends.OpenJoinInterface()` to (`Main.cs:50726-50730`).
 
 ### Front-end dev hooks
 
@@ -309,10 +311,10 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | --- | --- | --- |
 | `ui/resources.rs` | `ClassicPlayerResourcesDisplaySet.DrawLife/DrawMana` | hearts, mana stars, "Life x/y" / "Mana" text, breath bubbles |
 | `ui/cursor.rs` | `Main.DrawCursor` | the vanilla `Cursor_0` at its pulse scale |
-| `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name |
+| `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name; `draw_mouse_text` is the single-line `MouseTextHackZoom` shape (the PVP/team hover) |
 | `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph — one port shared by the open grid (context 0), the closed hotbar (context 13, `GUIHotbarDrawInner`, `Main.cs:43600-43639`) and the cursor stack (context 21, `Main.cs:45173-45195`) |
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
-| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs, defence shield, guide text, PVP icons, the four map-style icons |
+| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs, defence shield, guide text, the PVP toggle + six team-select cells (drawn **and** hit-tested: hover text, `teamCooldown` dim, `PVP_2` hover ring, the click chain), the four map-style icons |
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
@@ -585,3 +587,42 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   single-mode invariant.
 * Screenshots at 1600×900: `.qoder_tmp/ui_{main,settings,general,interface,video}.png`
   (local; regenerate with the hooks above).
+
+## The invasion progress bar (`Main.DrawInvasionProgress`)
+
+`ui::draw_invasion_progress` is a full port of `Main.cs:47696-47845`.
+
+* **Gates.** The function returns before drawing anything when
+  `invasion_progress == -1` (no invasion tracked, `:47698`) or when the fade
+  alpha clamps to `0` (`:47729`). Those two returns are
+  `ui::invasion_bar_alpha`, unit-tested without a renderer — they are what
+  keeps the panel off screen outside an event (BUG-08).
+* **The fade.** `world_sim::npcs::update_invasion_state` is the head: the
+  160-tick display timer decays, the alpha ramps ±0.05 per tick, the
+  `EventProgress` setting's Off mode zeroes both, and the near-invasion flag
+  holds the timer at 160. `num = 0.5 + alpha * 0.5` is the panel scale.
+* **Two arms.** `invasion_progress_wave > 0` (the moon events and the Old
+  One's Army) draws `Game.WaveMessage` — "Wave {0}: {1}"; the other arm draws
+  `Game.WaveCleared` — "Cleared {0}", where `{0}` is the percent (or the raw
+  points when the max is 0). Both arms draw the same 200x45
+  `Inventory_Back13` panel at `(screenWidth - 120, screenHeight - 40)` with the
+  `(63,65,151,255) * 0.785` tint, the 178x16 `ColorBar` track, and the
+  yellow `(255,241,51)` / orange `(255,165,0,127)` / black fills; every
+  colour is multiplied by the fade alpha with XNA's byte truncation.
+* **The group plate.** A second, group-tinted `Inventory_Back13` box centred
+  at `(screenWidth - num13, screenHeight - 80)` carries the `Extra` icon
+  (`num * 0.8`, its centre on the plate's top edge) and the right-aligned
+  label (`num * 0.9`).
+* **The icon table** (`Main.cs:47734-47780`), all localised:
+
+  | icon | `Extra` | label | plate colour |
+  | --- | --- | --- | --- |
+  | 1 | `Extra_8` | `Lang.inter[83]` Frost Moon | (64,109,164) |
+  | 2 | `Extra_12` | `Lang.inter[84]` Pumpkin Moon | (112,86,114) |
+  | 3 | `Extra_79` | `DungeonDefenders2.InvasionProgressTitle` | (88,0,160) |
+  | 7 | `Extra_10` | `Lang.inter[85]` Martian Madness | (165,160,155) |
+  | 6 | `Extra_11` | `Lang.inter[86]` Pirate Invasion | (148,122,72) |
+  | 5 | `Extra_7` | `Lang.inter[87]` Frost Legion | (173,135,140) |
+  | 4 | `Extra_9` | `Lang.inter[88]` Goblin Army | (94,72,131) |
+  | other | `Extra_9` | "" | White (no halving) |
+

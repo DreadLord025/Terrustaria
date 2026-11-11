@@ -1874,6 +1874,11 @@ pub(crate) mod front_flow_tests {
             map_grab: None,
             minimap_hover: None,
             map_style: 1,
+            // `Main.teamCooldown` / `Main.hidePVPAndTeamIcons` start clear
+            // (`Main.cs:66781` sets only `teamCooldownLen`).
+            team_cooldown: 0,
+            hide_pvp_and_team_icons: false,
+            pvp_icons_forced: false,
             audio: audio::Audio::new(None),
             music: audio::MusicSystem::new(None),
             last_hp: 100,
@@ -1979,6 +1984,7 @@ pub(crate) mod front_flow_tests {
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
+            invasion_progress_wave: 0,
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
