@@ -2499,35 +2499,6 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   they keep drawing in the tile pass (deviation). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
-- **The minecart track draw** (`TileDrawing.cs:3786-3824`, landed as
-  TILE-DRAW-7): `DrawSingleTile` hands kind 314 to `DrawTile_MinecartTrack`
-  (`:1166-1169`) instead of the generic path — the stored `frameX`/`frameY`
-  are **frame ids** (0..39), not autotile frames, so before this landing every
-  rail in the world sampled the plain sheet fallback (all track shapes looked
-  like the same sprite). `minecart::source_rect` ports
-  `Minecart.GetSourceRect` (`Minecart.cs:1519-1532`) over the existing
-  `TEXTURE_POSITION` table (`_texturePosition` ×18, `:129-436`): the 16×16
-  cell of the id, +18 px per `Main.tileFrame[314]` for the booster frames
-  (`frameID < 36 && _trackType == 2` = 30..35). `minecart::track_layers`
-  emits the vanilla order: the back layer (`frameY != -1`, `:3793`), the front
-  layer (`frameX`), the hanging ties (frames 36/37) one row **below** for the
-  "down" side connections, and the bumper (39, or the bouncy 38) one row
-  **above** (`:3797-3824`). `minecart::track_colors` ports
-  `Minecart.TrackColors` (`:1321-1437`): the front/back layer paints come from
-  the two frames' left/right connection rows, walking the four neighbours
-  (`(i∓1, j + connection-offset)`) and picking per the C#'s branch order, so a
-  painted line keeps one colour while an unpainted layer keeps the track's own
-  paint. Parked: `DrawTile_BackRope` (`:3766-3784`) — the rope strand a
-  hanging track hangs from; it needs `WorldGen.IsRope`/`GetRopeEnds`
-  (`WorldGen.cs:70074-70104`), which the port does not have, and the strand is
-  cosmetic (the `Main.tileRope[type]` fast path plus the 314/380/platform
-  `GetRopeEnds` walk). Also parked: `Main.tileFrame[314]` — the tile animator
-  is not ported, so the vanilla `t = 0` frame is passed (every other kind does
-  the same). Tests: `minecart::tests::the_track_frames_map_onto_the_sheet_cells`,
-  `only_the_booster_frames_animate`,
-  `the_track_decorations_and_bumpers_follow_the_frame_table`,
-  `the_track_layers_take_the_neighbour_paint` and
-  `the_track_arm_emits_the_vanilla_layers`.
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -9074,6 +9045,47 @@ Deviations: the dust arms, the ground-avoidance tile scan
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
 
+## Minions & sentries (M4-PROJ-8)
+
+The summon system's harness: the per-player slot budget (`maxMinions`/`numMinions`/
+`slotsMinions`, `Player.cs:1260-1264`), the keep-alive buff arms, `AI_062`'s
+follow/target/return machine and the sentry cap/lifetime/targeting.
+
+Deviations and notes:
+
+- **The 0-time summon grant is a ghost.** The summon staves' `Item.buffTime` rows are 0
+  (itemdata, the C# `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s grant
+  (`Player.cs:42879`) adds a 0-time buff — and the C#'s arm guard (`Player.cs:9868`,
+  `buffTime[j] <= 0` skips) plus the expired sweep (`:25611`) drop it on the next tick.
+  The port repeats this verbatim: a freshly-granted minion buff is swept one tick later,
+  and the arm's 18000 refresh only reaches buffs that entered with a non-zero time (the
+  regression tests seed one). The minion itself lives on its row's `timeLeft * 5` and the
+  pool's cap check either way.
+- **The port's arms run after the player tick's expiry sweep** (the Phase-2 seam): the C#
+  runs them inside `UpdateBuffs` between the reset and the sweep. The consequence is the
+  ghost above; the cap effects (110/150/348) still land after `ResetEffects` zeroed the
+  budgets, the order that keeps them.
+- **The Stardust Dragon chain (625-628) is excluded** — the relink arms in the kill-oldest
+  and the free-up are stubbed; the kinds carry rows only where the summon slice needs them.
+- **DD2 persistence stubbed**: `tr_core::dd2::event_ongoing()` reports false until
+  M4-EVENT-5, so the O'A towers (663-693) are wipable like the vanilla sentries.
+- **Dust, sound, light and frame machines unported**: `AI_062`'s dust spawns and their
+  `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
+  `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) —
+  the port has no general `Main.dust` pool and the projectile slot carries no frame
+  fields. The cooldown machines' `rand(1,4)`/`rand(3)` extra increments stand at their
+  deterministic minimum.
+- **LOS approximation**: `ai_flying_minion`/`sentry_npc_targeting` route `CanHitLine`/
+  `CanHit` through the shared tile walk (`can_hit_line`, the yoyo's `yoyo_can_hit`
+  renamed) and `SolidCollision` through a five-point box test (`box_solid`) — the C#'s
+  exact Bresenham+rect semantics differ at the sub-tile margins.
+- **The attack shots ride back as `MinionShot`** and drop until the shot families
+  (374/376/408/433/614) have `proj_data` rows; the state machines run either way.
+- **261/266 note**: the Slime minion (266) lands its row with aiStyle 26 (the hop family
+  unported — the dispatch no-ops like the other unported styles), 24x16, `penetrate = -1`,
+  `timeLeft * 5` and the idStatic-12 pair.
+- **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
+  the whip target supplied no answer (`if (!flag)`) — ported verbatim.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
