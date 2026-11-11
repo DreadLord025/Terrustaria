@@ -2459,6 +2459,21 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   (`:5063-5078`, WorldGen.cs:47687), cactus 80 source-Y +54/108/162 for
   corrupt/hallowed/crimson ground (`:1132-1147`, kind 80 only — 142/143 are
   pumps), cog 272 parity shift ×90 (`:1125-1131`).
+- **Bug 19b (the cactus shift's real consumer)**: the corrected offsets above
+  are folded into `TileDrawData::src_y_shift` (renamed from
+  `half_brick_src_y`) and the renderer applies them to the PLAIN flat draw
+  only, via `flat_src_uv` (`render/tiles.rs`). The C# builds one local
+  `rectangle` from `tileFrameX/Y + addFrX/addFrY` (`TileDrawing.cs:1007`),
+  the switch mutates its `Y` (`:1129`, `:1137-1145`, `:1162`), and the plain
+  arm of `DrawBasicTile` is the consumer (`normalTileRect`, `:1523`); the
+  half-brick (`:1298`), slice (`:1560`), slope and edge arms rebuild their own
+  rects and therefore drop the shift. The BUG-19 landing had the consumer
+  backwards (half-brick only), so every standard cactus in the corrupt/
+  hallowed/crimson desert drew the wrong row (0 px instead of 54/108/162).
+  Tests: `drawdata::tests::bug19_the_cactus_shift_lands_on_the_flat_draw_rect`
+  and `render::tiles::tests::test_BUG19b_the_cactus_flat_draw_carries_the_biome_row_shift`
+  (the UV moves by ≥ 50 sheet px while the unshifted case reproduces the
+  frame exactly).
 - `solid_above` on the Rust call site is `active && TILE_SOLID &&
   !TILE_SOLID_TOP` at `(x, y-1)` (`render/tiles.rs`); the C# analogue probed
   by case 4 is `WorldGen.SolidTile(x, y-1)` (`:4672-4679`). The predicate
