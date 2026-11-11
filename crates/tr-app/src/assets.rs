@@ -228,6 +228,16 @@ pub fn load_world_images(
         "Extra_164",
         "Extra_169",
         "Extra_204",
+        // BUG-08: the invasion progress bar's icon sheets (`TextureAssets.Extra`
+        // rows, each 32x32): frost moon 8, pumpkin moon 12, Old One's Army 79,
+        // martians 10, pirates 11, frost legion 7, goblins 9 (`Main.cs:47737-47780`).
+        "Extra_7",
+        "Extra_8",
+        "Extra_9",
+        "Extra_10",
+        "Extra_11",
+        "Extra_12",
+        "Extra_79",
         // The M2-MOUNT-2 hover/flyer set (`Mount.cs:1163-2532`): Pigron, the
         // Bee + its wing strip, the UFO + its glow, the Drill's three parts,
         // CuteFishron, Witch Broom (Extra_113), Pirate Ship (166), Dark Mage
@@ -504,6 +514,9 @@ pub fn load_world_images(
         "UI/DisplaySlots_10",
         "UI/PVP_0",
         "UI/PVP_1",
+        // `UI/PVP_2`: the hover ring behind a hovered team cell
+        // (`Main.cs:42771-42773`, `TextureAssets.Pvp[2]`).
+        "UI/PVP_2",
         // P3 modern crafting panel (`NewCraftingUI`): the `Inventory_Back18` craft
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
@@ -1096,6 +1109,20 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "jellyfishBowl3",
 ];
 
+/// The invasion progress bar's icon sheets in the order
+/// `TextureAssets.Extra[7], [8], [9], [10], [11], [12], [79]`
+/// (`Main.cs:47737-47780`): frost legion, frost moon, goblins/pirate/etc.,
+/// martians, pirates, pumpkin moon, Old One's Army.
+pub(crate) const INVASION_ICON_EXTRAS: [&str; 7] = [
+    "Extra_7",
+    "Extra_8",
+    "Extra_9",
+    "Extra_10",
+    "Extra_11",
+    "Extra_12",
+    "Extra_79",
+];
+
 /// The ambient-sky creature sheets with their `SpriteFrame(1, rows)` row
 /// counts (`AmbientSky.cs`, one entry per `Main.Assets.Request`).
 const AMBIENCE_SHEETS: &[(&str, u32)] = &[
@@ -1313,8 +1340,9 @@ pub struct Lookups {
     /// `UI/DisplaySlots_0..10`: the equipment page tabs (`DrawPageIcons`,
     /// `Main.cs:42787`).
     pub page_icons: [Option<tr_render::SheetRect>; 11],
-    /// `UI/PVP_0`/`PVP_1`: the PVP toggle and team icons (`Main.cs:42654`).
-    pub pvp: [Option<tr_render::SheetRect>; 2],
+    /// `UI/PVP_0`/`PVP_1`/`PVP_2`: the PVP toggle, the team icons and the
+    /// hover highlight (`Main.cs:42654`: `TextureAssets.Pvp[0]/[1]/[2]`).
+    pub pvp: [Option<tr_render::SheetRect>; 3],
     /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
     pub ui_defense_shield: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
@@ -1410,6 +1438,9 @@ pub struct Lookups {
     pub ui_color_blip: Option<tr_render::SheetRect>,
     /// `Images/ColorSlider`: the 11x25 slider knob (`IngameOptions.cs:1566`).
     pub ui_color_slider: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[7,8,9,10,11,12,79]` — the invasion progress bar's
+    /// icon sheets, indexed by [`INVASION_ICON_EXTRAS`] (`Main.cs:47737-47780`).
+    pub invasion_icons: [Option<tr_render::SheetRect>; 7],
     /// `Images/UI/Slider_Highlight`: the hover overlay — `TextureAssets.ColorHighlight`
     /// (`AssetInitializer.cs:349`; NOT `Images/ColorHighlight`), 178x16.
     pub ui_slider_highlight: Option<tr_render::SheetRect>,
@@ -1830,6 +1861,7 @@ impl Lookups {
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),
             ui_color_slider: atlas.sheet("ColorSlider").copied(),
+            invasion_icons: INVASION_ICON_EXTRAS.map(|n| atlas.sheet(n).copied()),
             ui_slider_highlight: atlas.sheet("UI/Slider_Highlight").copied(),
             // P6 card buttons (`UICharacterListItem.cs:52-60` — cloud sheets
             // loaded for completeness but unused: SocialAPI.Cloud is null, plan §J.2).
@@ -1967,7 +1999,7 @@ impl Lookups {
             page_icons: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
             }),
-            pvp: [0, 1].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
+            pvp: [0, 1, 2].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
