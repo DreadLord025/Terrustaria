@@ -2753,6 +2753,12 @@ impl Player {
         self.rocket_boots = 0;
         self.no_knockback = false;
         self.has_jump_options = [false; 9];
+        // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
+        // — the granting wing re-sets all three below, so taking the wings off
+        // ends the flight (and its budget) on the next tick.
+        self.wings_logic = 0;
+        self.has_wings = false;
+        self.wing_time_max = 0;
         self.accessory_life_regen = 0;
         let (kinds, prefixes) = (self.equipped, self.equipped_prefix);
         for (slot, prefix) in kinds[3..10].iter().zip(&prefixes[3..10]) {
@@ -2841,6 +2847,16 @@ impl Player {
                 4874 => {
                     self.acc_run_speed = 6.0;
                     self.rocket_boots = 5;
+                }
+                _ if Self::wing_slot(*slot as i32) > 0 => {
+                    // `:15593-15602`: the accessory's `wingSlot` is both the
+                    // gameplay wing (`wingsLogic`) and the look (`wings`, same
+                    // field in the port), and `:15453` takes the flight budget
+                    // from the same id's `ArmorIDs.Wing.Sets.Stats`.
+                    let slot_id = Self::wing_slot(*slot as i32);
+                    self.wings_logic = slot_id;
+                    self.has_wings = true;
+                    self.wing_time_max = Self::wing_stats(slot_id).0;
                 }
                 // The Titan Glove's melee-speed row (`:15103-15107`); its
                 // `autoReuseGlove` flag has no port consumer yet.
@@ -4287,6 +4303,63 @@ impl Player {
         })
     }
 
+    /// `Item.wingSlot` (`Item.cs`'s `SetDefaults` cases — the 47 wings whose
+    /// `case` carries the assignment; the three that set it from a shared
+    /// helper stay 0 for now). The port reads it where the C# reads
+    /// `currentItem.wingSlot` (`Player.cs:15593-15602`).
+    pub fn wing_slot(item: i32) -> i32 {
+        match item {
+            492 => 1,
+            493 => 2,
+            665 => 3,
+            748 => 4,
+            749 => 5,
+            761 => 6,
+            785 => 7,
+            786 => 8,
+            821 => 9,
+            822 => 10,
+            823 => 11,
+            948 => 12,
+            1162 => 13,
+            1165 => 14,
+            1515 => 15,
+            1583 => 16,
+            1584 => 17,
+            1585 => 18,
+            1586 => 19,
+            1797 => 20,
+            1830 => 21,
+            1866 => 22,
+            1871 => 23,
+            2280 => 24,
+            2494 => 25,
+            2609 => 26,
+            2770 => 27,
+            3228 => 28,
+            3580 => 33,
+            3582 => 34,
+            3588 => 35,
+            3592 => 36,
+            3883 => 37,
+            3924 => 38,
+            3928 => 39,
+            4730 => 40,
+            4746 => 41,
+            4750 => 42,
+            4754 => 43,
+            4823 => 44,
+            4954 => 45,
+            4978 => 46,
+            5586 => 47,
+            5627 => 48,
+            5659 => 49,
+            5686 => 50,
+            6140 => 51,
+            _ => 0,
+        }
+    }
+
     /// `ArmorIDs.Wing.Sets.Stats` via `WingStatsInitializer.cs:11-61`:
     /// `(fly_time, acc_run_override, accel_mult, has_hover, hover_speed,
     /// hover_accel)`. `-1` = no run-speed override. The dev/misc wings share
@@ -5680,6 +5753,36 @@ mod tests {
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
     }
 
+    /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
+    /// `TR_WINGS` pin is no longer the only source).
+    #[test]
+    fn the_wing_accessories_grant_flight() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        // Demon Wings (492 → `ArmorIDs.Wing` 1): 100 ticks of flight.
+        p.equipped[3] = 492;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 1);
+        assert!(p.has_wings);
+        assert_eq!(p.wing_time_max, Player::wing_stats(1).0);
+        // Bee Wings (1866 → 22) is the hover row: its stats carry the hover
+        // speeds, and the budget is its own.
+        p.equipped[3] = 1866;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 22);
+        assert_eq!(p.wing_time_max, Player::wing_stats(22).0);
+        assert!(Player::wing_stats(22).3, "the hover flag");
+        // Taking the wings off ends both.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        assert!(!p.has_wings);
+    }
+
     /// M3-EQUIP-7 — the movement accessories grant the live flags (the
     /// `TR_JUMPS`/`TR_BOOTS` pins stop being the only source).
     #[test]
@@ -6378,9 +6481,8 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let ground_y = p.y;
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 100.0;
         let held = PlayerInput {
             jump: true,
@@ -6410,9 +6512,8 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 30.0;
         // Land and release: the refill.
         p.update(&w, PlayerInput::default());
@@ -6471,10 +6572,10 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
-        p.wing_time = 0.0;
+        // The wings come from the item now (Demon Wings = `ArmorIDs.Wing` 1,
+        // 100 ticks): the grant runs inside the tick, so the budget starts
+        // empty and the rocket fuel is the only source this tick.
+        p.equipped[3] = 492;
         p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
@@ -6610,8 +6711,7 @@ mod tests {
     fn no_input_acceleration_while_dashing() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.fall_start = 40;
         p.vy = 5.0;
         let held = PlayerInput {
@@ -6629,8 +6729,7 @@ mod tests {
     fn wings_nullify_the_fall_damage() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.y = 25.0 * TILE_PX;
         p.fall_start = 25;
         for _ in 0..300 {
@@ -6648,9 +6747,8 @@ mod tests {
     fn hover_wings_dampen_the_descent() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 22; // Hoverboard: HasDownHoverStats
-        p.has_wings = true;
-        p.wing_time_max = 170;
+        // Bee Wings (1866 → `ArmorIDs.Wing` 22, the `HasDownHoverStats` row).
+        p.equipped[3] = 1866;
         p.wing_time = 170.0;
         p.vy = 3.0;
         let held = PlayerInput {
