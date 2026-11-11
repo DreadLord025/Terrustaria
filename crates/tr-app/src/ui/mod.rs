@@ -127,6 +127,91 @@ impl Default for UiPulse {
 /// `BigProgressBarSystem.ShowText` (`BigProgressBarSystem.cs:231`/`:236`), the
 /// gate on the boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
 #[allow(clippy::too_many_arguments)]
+/// `Utils.Remap` (`Utils.cs`) — the skip prompt's two ramps.
+fn remap(v: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (v - from_min) / (from_max - from_min) * (to_max - to_min)
+}
+
+/// `Main.DrawDeathText`'s skip-prompt ramps (`Main.cs:45350-45358`):
+/// `num4 = Remap(frames, 0, 60, 0, 1)` (the alpha and the 70 → 20 px slide) and
+/// `num5 = Remap(frames, 0, 30, 0.5, 0)^2` (the scale pulse). Both come from
+/// the vanilla's **unclamped** `Utils.Remap`, ported verbatim: past frame 60
+/// `num4 > 1` and past 30 `num5` breathes back up, which the real game only
+/// sees if the gate stays open that long (a danger NPC usually resets the
+/// counter first). Returns `(num4, num5)`.
+pub(crate) fn respawn_skip_ramp(frames: i32) -> (f32, f32) {
+    let frames = frames as f32;
+    let num4 = remap(frames, 0.0, 60.0, 0.0, 1.0);
+    let mut num5 = remap(frames, 0.0, 30.0, 0.5, 0.0);
+    num5 *= num5;
+    (num4, num5)
+}
+
+/// `Game.RespawnSkip` ("{InputTrigger_Jump} to skip", `:832`) with the trigger
+/// tag resolved. The port has no input-binding table yet (M7-UI-5), so the
+/// jump trigger renders as its default key, `Space` — the same key
+/// `world_sim::player` reads for `PlayerInput::jump`.
+pub(crate) fn respawn_skip_text() -> String {
+    crate::lang::text("Game.RespawnSkip").replace("{InputTrigger_Jump}", "Space")
+}
+
+/// `Main.DrawDeathText`'s row arithmetic (`Main.cs:45328-45386`) as a pure
+/// layout: the broadcast's top, the optional coins line, the optional skip
+/// prompt (its y, scale and alpha) and the optional countdown. `num` is the
+/// C#'s running offset from the screen's midpoint.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DeathLayout {
+    pub broadcast_y: f32,
+    pub coins_y: Option<f32>,
+    pub prompt_y: Option<f32>,
+    pub prompt_scale: f32,
+    pub prompt_alpha: f32,
+    pub countdown_y: Option<f32>,
+}
+
+/// The C#'s `num` walk: `-60`, `+50`/`-26` for the coins line, the skip
+/// prompt's `Remap(num4, 0, 1, 70, 20) * num4` slide, then `+70` for the
+/// countdown (`Main.cs:45328-45386`).
+pub(crate) fn death_layout(
+    screen_y: f32,
+    lost_coins: u64,
+    respawn_timer: i32,
+    skip_frames: i32,
+) -> DeathLayout {
+    let mid = screen_y / 2.0;
+    let mut num = -60.0;
+    let mut coins_y = None;
+    if lost_coins > 0 {
+        coins_y = Some(mid + num + 50.0);
+        num += 24.0;
+    }
+    let mut prompt_y = None;
+    let mut prompt_scale = 0.7;
+    let mut prompt_alpha = 0.0;
+    if skip_frames > 0 {
+        let (num4, num5) = respawn_skip_ramp(skip_frames);
+        num += remap(num4, 0.0, 1.0, 70.0, 20.0) * num4;
+        prompt_scale = (1.0 + num5) * 0.7;
+        prompt_alpha = num4;
+        // `+ stringSize.Y * 0.5f * num2` (`:45366`) — the caller adds the
+        // font's half line height, so the layout carries the bare `num`.
+        prompt_y = Some(mid + num);
+    }
+    let mut countdown_y = None;
+    if respawn_timer > 1 {
+        num += 70.0;
+        countdown_y = Some(mid + num);
+    }
+    DeathLayout {
+        broadcast_y: mid - 60.0,
+        coins_y,
+        prompt_y,
+        prompt_scale,
+        prompt_alpha,
+        countdown_y,
+    }
+}
+
 /// The death screen's text block — `Main.DrawDeathText`'s shape
 /// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
 /// centered 60 px above the screen's midpoint), the softcore
@@ -144,33 +229,39 @@ pub(crate) fn draw_death_screen(
     lost_coins: u64,
     lost_coin_string: &str,
     respawn_timer: i32,
+    skip_frames: i32,
 ) {
     let color = [1.0, 1.0, 1.0, 1.0];
-    text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
-    // `num` in the C#: +50 for the coins line then -26, so the countdown
-    // lands 70 px below the broadcast with coins and 24 px below without.
-    let mut num = -60.0;
-    if lost_coins > 0 {
+    let layout = death_layout(screen.y, lost_coins, respawn_timer, skip_frames);
+    text::draw_death_string(r, lookups, screen.x, layout.broadcast_y, color, death_text);
+    if let Some(y) = layout.coins_y {
         // `Game.DroppedCoins` ("dropped {0}") with the `ValueToCoins` string.
         let line = crate::lang::text_args("Game.DroppedCoins", &[lost_coin_string.to_string()]);
-        text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
-        num += 24.0;
+        text::draw_dropped_coins(r, lookups, screen.x, y, color, &line);
     }
-    // `if (Main.player[Main.myPlayer].respawnTimer > 1)` (`Main.cs:45380`):
-    // the ceil'ed seconds through the suffix key, drawn at the 0.7 scale.
-    if respawn_timer > 1 {
-        num += 70.0;
-        let seconds = (1 + respawn_timer / 60).to_string();
-        let suffix = crate::lang::text_args("Game.RespawnInSuffix", &[seconds]);
-        let line = format!("Respawn in {suffix}");
-        text::draw_death_string(
+    // `if (Main.LocalPlayer.AllowsRespawnTimerSkip())` (`Main.cs:45348-45378`):
+    // the "{InputTrigger_Jump} to skip" prompt, ramped in by
+    // `_framesWithRespawnSkipAvailable` (see [`respawn_skip_ramp`]).
+    if let Some(y) = layout.prompt_y {
+        let label = respawn_skip_text();
+        let y = y + text::death_line_height(lookups) * 0.5 * 0.7;
+        text::draw_death_string_scaled(
             r,
             lookups,
             screen.x,
-            screen.y / 2.0 + num,
-            color,
-            &line,
+            y,
+            layout.prompt_scale,
+            [1.0, 1.0, 1.0, layout.prompt_alpha],
+            &label,
         );
+    }
+    // `if (Main.player[Main.myPlayer].respawnTimer > 1)` (`Main.cs:45380`):
+    // the ceil'ed seconds through the suffix key, drawn at the 0.7 scale.
+    if let Some(y) = layout.countdown_y {
+        let seconds = (1 + respawn_timer / 60).to_string();
+        let suffix = crate::lang::text_args("Game.RespawnInSuffix", &[seconds]);
+        let line = format!("Respawn in {suffix}");
+        text::draw_death_string(r, lookups, screen.x, y, color, &line);
     }
 }
 
@@ -954,6 +1045,71 @@ mod tests {
             Some(true),
             "the line rides the builder"
         );
+    }
+
+    /// BUG-06b: the death screen's row arithmetic (`Main.cs:45328-45386`) —
+    /// the broadcast 60 px above the midpoint, the coins line 50 px below it
+    /// (then `-26`), the skip prompt sliding 70 → 20 px below the broadcast,
+    /// and the countdown 70 px below whatever came before it.
+    #[test]
+    fn bug_06b_the_death_rows_walk_the_c_sharp_num() {
+        let mid = 450.0;
+        // No coins, no skip, a live timer: broadcast -60, countdown +10.
+        let l = death_layout(900.0, 0, 600, 0);
+        assert_eq!(l.broadcast_y, mid - 60.0);
+        assert_eq!(l.coins_y, None);
+        assert_eq!(l.prompt_y, None);
+        assert_eq!(l.countdown_y, Some(mid + 10.0));
+        // Coins: the line at -10 and the countdown 24 px lower than without.
+        let l = death_layout(900.0, 5, 600, 0);
+        assert_eq!(l.coins_y, Some(mid - 10.0));
+        assert_eq!(l.countdown_y, Some(mid + 34.0));
+        // The skip prompt at frame 0 sits 70 px below the broadcast and pushes
+        // the countdown down with it; at frame 60 it has slid to 20 px.
+        let l = death_layout(900.0, 0, 600, 1);
+        // `num` starts at -60 and the slide adds `Remap(num4,0,1,70,20)*num4`
+        // on top of it: ~1.15 px on the first frame, 20 by frame 60.
+        assert!((l.prompt_y.unwrap() - (mid - 58.846_7)).abs() < 1e-3);
+        assert!((l.countdown_y.unwrap() - (mid + 11.153_3)).abs() < 1e-3);
+        assert_eq!(l.prompt_alpha, 1.0 / 60.0);
+        let l = death_layout(900.0, 0, 600, 60);
+        assert_eq!(l.prompt_y, Some(mid - 40.0));
+        assert_eq!(l.countdown_y, Some(mid + 30.0));
+        assert_eq!(l.prompt_alpha, 1.0);
+        // The unclamped pulse: `num5 = 0.25` at frame 60, so `(1 + 0.25) * 0.7`.
+        assert_eq!(l.prompt_scale, 0.875);
+        assert_eq!(death_layout(900.0, 0, 600, 30).prompt_scale, 0.7);
+        // The spent timer draws no countdown at all.
+        assert_eq!(death_layout(900.0, 0, 1, 0).countdown_y, None);
+    }
+
+    /// BUG-06b: the skip prompt's two ramps (`Main.cs:45352-45358`) and the
+    /// localized label — `Game.RespawnSkip` carries the `{InputTrigger_Jump}`
+    /// glyph tag the C# resolves through `ChatManager.ParseMessage`; the port
+    /// substitutes its default jump key.
+    #[test]
+    fn bug_06b_the_respawn_skip_prompt_ramps_and_names_the_jump_key() {
+        // `num4 = Remap(frames, 0, 60, 0, 1)` and `num5 = Remap(frames, 0, 30,
+        // 0.5, 0)^2` — the alpha reaches 1 at frame 60, the pulse dies at 30.
+        assert_eq!(respawn_skip_ramp(0), (0.0, 0.25));
+        assert_eq!(respawn_skip_ramp(30), (0.5, 0.0));
+        assert_eq!(respawn_skip_ramp(60), (1.0, 0.25));
+        // `Utils.Remap` is unclamped in the C#, so the ramp keeps going.
+        assert_eq!(respawn_skip_ramp(120), (2.0, 2.25));
+        let (alpha_mid, pulse_mid) = respawn_skip_ramp(15);
+        assert!((alpha_mid - 0.25).abs() < 1e-6);
+        assert!((pulse_mid - 0.0625).abs() < 1e-6, "0.25^2 at the midpoint");
+        // The row slides 70 -> 20 px below the broadcast as the ramp fills.
+        assert_eq!(remap(0.0, 0.0, 1.0, 70.0, 20.0), 70.0);
+        assert_eq!(remap(1.0, 0.0, 1.0, 70.0, 20.0), 20.0);
+
+        // The label: the loaded en-US table resolves the trigger tag to the
+        // port's default jump key.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        assert_eq!(respawn_skip_text(), "Space to skip");
     }
 
     /// BUG-08: the `Main.invasionProgressIcon` dispatch (`Main.cs:47734-47780`)

@@ -303,6 +303,39 @@ never stored on the `App` nor drawn.
    `lang::misc` (localization is already wired).
 4. Test: kill the player, advance 60 ticks, the drawn string contains "9".
 
+**Status: FIXED 2026-11-11** (`BUG-06b-respawn-skip-prompt`).
+
+The countdown half had already landed (`ui::draw_death_screen`'s
+`Game.RespawnInSuffix` tail, `Player::update_dead`'s tick and the
+`GetRespawnTime` ladder). What was still missing was the **skip prompt** and the
+gate that feeds it:
+
+- `Main.DrawDeathText`'s `AllowsRespawnTimerSkip` block (`Main.cs:45347-45378`):
+  the `Game.RespawnSkip` line ("{InputTrigger_Jump} to skip"), ramped in by
+  `Main._framesWithRespawnSkipAvailable` — `num4 = Remap(frames, 0, 60, 0, 1)`
+  for the alpha and the 70 → 20 px slide, `num5 = Remap(frames, 0, 30, 0.5, 0)^2`
+  for the scale pulse. Both ramps are the vanilla's **unclamped** `Utils.Remap`,
+  ported verbatim (past frame 60 the prompt breathes back up; the gate normally
+  resets first). The trigger tag resolves to `Space`, the port's jump key — the
+  input-binding table is M7-UI-5.
+- The gate itself: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
+  — a live invasion NPC inside the centred 1920x1080 view rect inflated by
+  320 px vetoes the skip. The world tick now passes that `danger_near` into
+  `update_dead` (it was hardcoded `false`), so a goblin army around the corpse
+  no longer lets the player skip the timer. The
+  `DangerThatPreventsOtherDangers` arm has no ported members and stays empty.
+- `App::respawn_skip_frames` / `respawn_skip_available` carry the counter and the
+  gate; the frame's death arm ticks the counter exactly where the C# does
+  (inside the draw pass), and the revive path clears both.
+- `ui::death_layout` is the C#'s `num` walk as a pure function (broadcast −60,
+  coins +50/−26, the prompt's slide, the countdown +70), so the row arithmetic is
+  testable without a GPU.
+
+4 tests (the ramp values and the localized label, the row walk, the NPC gate).
+`TR_DIE=1` kills the player on the first tick with the lockout spent — the
+`TR_SHOT` fixture; `docs/screenshots/bug-06b-death-skip-prompt.png` shows the
+three centred lines (broadcast, "Space to skip", "Respawn in 11").
+
 ---
 
 ## 7. NPC/boss sprite facing is wrong, and parts of the animation set are missing — S2 / High

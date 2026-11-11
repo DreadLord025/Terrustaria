@@ -637,6 +637,15 @@ pub(crate) struct App {
     pub(crate) lost_coin_string: String,
     /// The full death broadcast text (`{name} {text}`).
     pub(crate) death_text: String,
+    /// `Main._framesWithRespawnSkipAvailable`: the death screen's
+    /// "{InputTrigger_Jump} to skip" prompt's ramp counter
+    /// (`Main.cs:45347-45378`) — counts up while the skip is allowed and
+    /// zeroes otherwise (the C# counts it inside `DrawDeathText`).
+    pub(crate) respawn_skip_frames: i32,
+    /// `Player.AllowsRespawnTimerSkip()` for this frame, computed on the world
+    /// tick beside `UpdateDead` (`Player.cs:16919`) — the gate the prompt's
+    /// counter follows.
+    pub(crate) respawn_skip_available: bool,
     /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
     /// state — the points, the max, the icon (the group + 3), the 160-tick
     /// display timer, the fade alpha and the near-invasion flag.
@@ -2731,6 +2740,8 @@ impl App {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            respawn_skip_frames: 0,
+            respawn_skip_available: false,
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,

@@ -1981,6 +1981,8 @@ pub(crate) mod front_flow_tests {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            respawn_skip_frames: 0,
+            respawn_skip_available: false,
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,

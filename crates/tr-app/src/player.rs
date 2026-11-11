@@ -1428,6 +1428,40 @@ impl Player {
         })
     }
 
+    /// `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`): a live
+    /// NPC inside the centred `Main.MaxWorldViewSize` (1920x1080) rect inflated
+    /// by 320 px blocks the respawn skip — an invasion NPC while its invasion
+    /// runs (`NPC.GetNPCInvasionGroup(type) == Main.invasionType`), or a
+    /// `NPCID.Sets.DangerThatPreventsOtherDangers` member (the port has none
+    /// yet, so only the invasion arm fires).
+    pub fn near_any_npcs_that_block_respawn(
+        &self,
+        npcs: &[crate::npc::Npc],
+        invasion_live: bool,
+    ) -> bool {
+        // `Utils.CenteredRectangle(Center, Main.MaxWorldViewSize)` then
+        // `Inflate(320, 320)` (`:38992-38998`).
+        const VIEW_W: f32 = 1920.0;
+        const VIEW_H: f32 = 1080.0;
+        const INFLATE: f32 = 320.0;
+        let (cx, cy) = self.center();
+        let half_w = VIEW_W * 0.5 + INFLATE;
+        let half_h = VIEW_H * 0.5 + INFLATE;
+        npcs.iter().any(|n| {
+            let (nx, ny) = n.center();
+            let (w, h) = n.size();
+            let overlaps = (nx - cx).abs() <= half_w + w * 0.5
+                && (ny - cy).abs() <= half_h + h * 0.5;
+            if !overlaps {
+                return false;
+            }
+            // `NPC.GetNPCInvasionGroup(nPC.type) > 0 && == Main.invasionType`
+            // (`:39005-39008`); the danger-set arm (`:39009-39012`) has no
+            // ported members.
+            invasion_live && n.kind.is_invasion_npc()
+        })
+    }
+
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
     /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
@@ -4637,6 +4671,38 @@ mod tests {
         p.update_dead(false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
+    }
+
+    /// BUG-06b: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
+    /// — the live invasion's members inside the view rect inflated by 320 px
+    /// block the skip; the same NPCs do not while the invasion is over, and a
+    /// non-invasion NPC never does (the danger-set arm has no ported members).
+    #[test]
+    fn bug_06b_only_the_live_invasions_npcs_block_the_respawn_skip() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let (px, py) = p.center();
+        let goblin = crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 200.0, py, 1, 0.0);
+        let slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, px + 200.0, py, 1, 0.0);
+        // Inside the rect while the invasion runs — blocked.
+        assert!(p.near_any_npcs_that_block_respawn(&[goblin.clone()], true));
+        // The invasion ended: the same goblin no longer blocks.
+        assert!(!p.near_any_npcs_that_block_respawn(&[goblin.clone()], false));
+        // A commoner NPC is not an invasion group member.
+        assert!(!p.near_any_npcs_that_block_respawn(&[slime], true));
+        // Out of the inflated view rect (1920x1080 + 320 px): no block.
+        let far = crate::npc::Npc::new(
+            crate::npc::NpcKind::GoblinWarrior,
+            px + 4000.0,
+            py,
+            1,
+            0.0,
+        );
+        assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
+        // The gate itself: a nearby danger NPC vetoes the skip.
+        p.dead_time = 200;
+        assert!(p.allows_respawn_timer_skip(false, false));
+        assert!(!p.allows_respawn_timer_skip(false, true));
     }
 
     #[test]
