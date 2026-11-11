@@ -573,6 +573,12 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 * Front-end (P6) deviations are collected in `docs/ANALYSIS.md` →
   "Front-end screens (P6)" (no `.plr` writer, no cloud buttons, fixed world
   metadata, no gamepad snap points, no UI click sounds, no credits cinematic …).
+* The housing page (`EquipPage == 1`) is `ui::housing`: `Main.DrawNPCHousesInUI`
+  (`Main.cs:41993-42107`) with `NPCHeadID.Sets.HeadListOrder`, the vanilla
+  `NPC.TypeToDefaultHeadIndex` table and the column wrap at `screenHeight - 80`.
+  Not ported yet: the hover name + `SetMouseNPC` click (`:42059-42071`, the port
+  has no `Main.mouseNPC` housing query), the `Inventory_Back14` white gamepad
+  highlight and the `hidePVPAndTeamIcons` third-column suppression.
 * Chest panel (M3-CHEST-UI) deviations are collected in `docs/ANALYSIS.md` →
   "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no lid animation,
   the rename keyboard pauses the sim, the cursor-override textures deferred …);

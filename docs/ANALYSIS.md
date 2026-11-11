@@ -10605,3 +10605,42 @@ first (`App::chest_transfer_source`).
 Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
 flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
 in ROADMAP's M7-UI-2 remainder.
+
+## The housing page (M7-UI-3b)
+
+The inventory's second tab (`EquipPage == 1`) is `Main.DrawNPCHousesInUI`
+(`Main.cs:41993-42107`). The port drew the armour columns there instead — the
+`if equip_page == 2 { misc } else { armour }` shape had no page-1 arm, so the tab
+showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
+
+* **Which heads** (`:42008-42023`): the C# walks `Main.maxNPCs`, resolves every
+  active NPC's head through `TownNPCProfiles.GetHeadIndexSafe` →
+  `NPC.TypeToDefaultHeadIndex` (`NPC.cs:7510-7553`), drops a head that is `<= 0`,
+  out of range or in `NPCHeadID.Sets.CannotBeDrawnInHousingUI` (21, 80), and keeps
+  only the first *type* it sees per head. `housing::heads_for` does the same over
+  `App::npcs`, which is the port's `Main.npc[]`. Two port-specific traps: the
+  bound forms (`BoundGoblin`/`BoundWizard`/`BoundMechanic`) borrow the freed
+  row's `net_id` for the bestiary (`bestiary.rs:1502-1506`), so they would inherit
+  a housing cell vanilla never gives them — `housing::head_of` rejects them
+  explicitly; and the sheets are packed per head id, so `Lookups::npc_heads` is a
+  0-based table of 81 entries with `None` where the port ships no NPC.
+* **Order and layout** (`:42044-42058`): `NPCHeadID.Sets.HeadListOrder` is the
+  draw order (Guide first, "?" fifth in the array but drawn per its position), not
+  the head numbering. The cell pitch is `56 * inventoryScale`, the origin is
+  `(screenWidth - 64 - 28, inventoryTop)` where `inventoryTop = 174 + m_h`, and a
+  row that would land past `screenHeight - 80` starts a new column 48 px to the
+  left, re-based on `inventoryTop` (`num3 -= 48; num2 -= num9 - inventoryTop`).
+  The C# truncates the row to an int *before* adding that offset, so the port's
+  `layout` does the same — a float version drifts the wrapped column by up to a
+  pixel.
+* **Draw** (`:42079-42095`): `Inventory_Back11` tinted `Main.inventoryBack`
+  (0.863 grey, like every other inventory background), then the head sheet
+  centred on `(x + 26*scale, y + 26*scale)` and shrunk to `36 / max(w, h)` when it
+  is larger than 36 px. The shipped content pack's heads are 24x22, so they draw
+  1:1.
+* **Not ported**: the hover name (`Main.npc[num].FullName`, `Lang.inter[8]` for the
+  query cell) and the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
+  because the port has no `Main.mouseNPC` housing query at all; the
+  `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
+  still lacks (the same reason the grid's `_17` highlight is open); and
+  `Main.hidePVPAndTeamIcons` on a third column.
