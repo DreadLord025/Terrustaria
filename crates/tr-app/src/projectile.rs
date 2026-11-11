@@ -2242,6 +2242,21 @@ pub struct Projectile {
     /// `local_ai` — the leaf's C# arm owns all three `localAI` slots (the age,
     /// the tick counter, the spin-sign latch).
     pub frame_counter: i32,
+    /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
+    /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
+    /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
+    /// trail quads walk it (`Main.DrawTrail`'s cheap fallback,
+    /// `Main.cs:27886-27905`); an unwritten slot reads `Vec2::ZERO`, the C#'s
+    /// "no entry" marker.
+    pub old_pos: [Vec2; 10],
+    /// `Projectile.oldRot` (`:390`) — the rotations the modes 2-5 record beside
+    /// the ring positions (the C# orients the strip's width axis by them,
+    /// `VertexStrip.cs:151-156`; the quad approximation orients by the segment
+    /// direction instead, so the ring's rotations are state only here).
+    pub old_rot: [f32; 10],
+    /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
+    /// modes 2-5 records beside the ring positions.
+    pub old_sprite_direction: [i32; 10],
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2326,6 +2341,9 @@ impl Default for Projectile {
             scale: 1.0,
             frame: 0,
             frame_counter: 0,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -6662,6 +6680,56 @@ impl Projectile {
         }
     }
 
+    /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
+    /// rings shift **once per update call** — after the AI sub-steps, ahead of
+    /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
+    /// per tick, not one per sub-step. The modes 4/5 arms (`:17168-17196`) are
+    /// absent: their kinds (933/1100/106) are not ported.
+    fn shift_trailing_history(&mut self) {
+        let mode = trailing_mode(self.kind);
+        if mode < 0 {
+            return;
+        }
+        // `:17101`: mode 1's animation-boundary gate. The 466/580 dust spawns
+        // that share the branch (`:17108-17125`) are SKIPPED (no dust layer).
+        if mode == 1 && self.frame_counter != 0 && self.old_pos[0] != Vec2::ZERO {
+            return;
+        }
+        // Modes 2-5 record the rotations and the sprite directions beside the
+        // positions; modes 0/1 the positions only.
+        let with_rotations = mode >= 2;
+        shift_ring(&mut self.old_pos);
+        if with_rotations {
+            shift_ring(&mut self.old_rot);
+            shift_ring(&mut self.old_sprite_direction);
+        }
+        self.old_pos[0] = self.pos;
+        if with_rotations {
+            self.old_rot[0] = self.rot;
+            self.old_sprite_direction[0] = self.sprite_direction;
+        }
+        if mode == 3 {
+            // `:17151-17166`: the 0.65 smoothing pass — every filled entry
+            // walks toward its newer neighbour when the pair is more than 2 px
+            // apart — then the rotations recomputed from the smoothed positions
+            // (`SafeNormalize(Vector2.Zero).ToRotation()`; a zero delta reads 0).
+            const PASSES: usize = 1; // `num25` (`:17152`)
+            const AMOUNT: f32 = 0.65; // `amount` (`:17151`)
+            for _ in 0..PASSES {
+                for i in (1..self.old_pos.len()).rev() {
+                    if self.old_pos[i] != Vec2::ZERO {
+                        if self.old_pos[i].distance(self.old_pos[i - 1]) > 2.0 {
+                            self.old_pos[i] =
+                                Vec2::lerp(self.old_pos[i], self.old_pos[i - 1], AMOUNT);
+                        }
+                        self.old_rot[i] =
+                            (self.old_pos[i - 1] - self.old_pos[i]).normalize_or_zero().to_angle();
+                    }
+                }
+            }
+        }
+    }
+
     /// The per-slot draw (unchanged from the first pass).
 
     /// `Main.cs:27941`'s `proj.aiStyle == 99` gate — the string's own
@@ -6775,13 +6843,16 @@ impl Projectile {
         camera: Vec2,
         zoom: f32,
         screen: Vec2,
+        global_time: f32,
     ) {
-        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None);
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time);
     }
 
     /// The draw entry the frame calls with the player in scope: the yoyo
     /// family takes the string path (`Main.DrawProjDirect`'s aiStyle-99 arm),
-    /// everything else keeps the shuriken stub.
+    /// the trail families their quad-ribbon trails, the rest keep the
+    /// shuriken stub. `global_time` is the frame's `Main.GlobalTimeWrappedHourly`
+    /// analogue — the Rainbow Rod's trail hue scrolls by it.
     pub fn draw_with_hand(
         &self,
         r: &mut SpriteRenderer,
@@ -6791,10 +6862,19 @@ impl Projectile {
         zoom: f32,
         screen: Vec2,
         owner_hand: Option<(f32, f32)>,
+        global_time: f32,
     ) {
         if crate::yoyo_string::is_yoyo_sprite(self.kind) {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
+        }
+        // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
+        // the C# draws the strip ahead of the sprite (`Main.cs:28182-28243`'s
+        // drawers, before the emit at `:30857-30909`), so the quads push first
+        // and the sprite arm below runs unchanged behind them.
+        let white = r.white_uv();
+        for q in self.trail_quads(camera, zoom, screen, global_time) {
+            r.push_ui_sprite_rot(q.tl, q.size, white, q.tint, q.rot);
         }
         // The followup caster families' frame-sliced sheet (M4-PROJ-6b Phase
         // 6): the kind-gated arm pushes into the ui range like the stub below
@@ -6897,6 +6977,55 @@ impl Projectile {
             tint: [c[0] * fade, c[1] * fade, c[2] * fade, fade],
         }
     }
+
+    /// The trail quads in the ui range's screen pixels ([`Projectile::draw_with_hand`]'s
+    /// trail pass): the `trail_segments` walk converted like `frame_quad`'s anchor
+    /// (the ui batch's globals run cam `[w/2, h/2]`, zoom 1, so its positions are
+    /// screen pixels) and shifted by `origin − R·origin` — the C#'s
+    /// `origin = (W / 2, H)` of `Main.cs:27902`, the anchor's own bottom-centre,
+    /// which the instance pipeline rotates about the top-left instead.
+    ///
+    /// The drawers draw their strip from `-Main.screenPosition + proj.Size / 2`
+    /// (`MagicMissileDrawer.cs:18` and its peers), which `trail_segments` folds
+    /// into each anchor; `global_time` is the `Main.GlobalTimeWrappedHourly` the
+    /// Rainbow Rod's hue scrolls by.
+    fn trail_quads(
+        &self,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        global_time: f32,
+    ) -> Vec<TrailQuad> {
+        trail_segments(
+            self.kind,
+            self.w,
+            self.h,
+            self.local_ai[0],
+            &self.old_pos,
+            global_time,
+        )
+        .into_iter()
+        .map(|seg| {
+            let anchor = [
+                (seg.x - camera.x) * zoom + screen.x * 0.5,
+                (seg.y - camera.y) * zoom + screen.y * 0.5,
+            ];
+            let size = [seg.width * zoom, seg.len * zoom];
+            // `Main.cs:27902`'s `origin = (W / 2, Height)` over the scaled quad.
+            let origin = [size[0] * 0.5, size[1]];
+            let (s, c) = seg.rot.sin_cos();
+            TrailQuad {
+                tl: [
+                    anchor[0] - (origin[0] * c - origin[1] * s),
+                    anchor[1] - (origin[0] * s + origin[1] * c),
+                ],
+                size,
+                tint: seg.tint,
+                rot: seg.rot,
+            }
+        })
+        .collect()
+    }
 }
 
 /// The followup kinds' frame-sliced draw quad ([`Projectile::frame_quad`]'s
@@ -6909,6 +7038,17 @@ struct FrameQuad {
     tint: [f32; 4],
 }
 
+/// One trail quad in screen space (`trail_segments`' output after the ui
+/// range's conversion): the pipeline's unrotated top-left — already shifted by
+/// `origin − R·origin` the way `frame_quad` does — the scaled size, the tint and
+/// the rotation to hand `push_ui_sprite_rot`.
+struct TrailQuad {
+    tl: [f32; 2],
+    size: [f32; 2],
+    tint: [f32; 4],
+    rot: f32,
+}
+
 /// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
 /// `TileID.MagicalIceBlock` (`TileID.cs:883`) — the block the Ice Rod places
 /// from its own projectile (`Projectile.cs:25842`).
@@ -6918,9 +7058,10 @@ const WIND_PHYSICS_STRENGTH: f32 = 0.1;
 
 /// The followup caster families the frame-sliced draw arm serves (M4-PROJ-6b
 /// Phase 6): the aiStyle-27 family, the leaf, the Spectre pair, the Typhoon,
-/// the Arcanum pair, the Last Prism pair and the Nebula Blaze pair. The
-/// ported trail families are absent — their draw (the quad-ribbon trails) is
-/// Phase 7's, and kind 3 keeps the shuriken stub exactly as it shipped.
+/// the Arcanum pair, the Last Prism pair and the Nebula Blaze pair. The ported
+/// trail families stay absent: Phase 7 draws only their quad-ribbon trail ahead
+/// of the shuriken stub their sprite keeps, and kind 3 keeps that stub exactly
+/// as it shipped.
 fn is_followup_draw(kind: u16) -> bool {
     matches!(
         kind,
@@ -6954,7 +7095,10 @@ fn is_followup_draw(kind: u16) -> bool {
 /// every id the slice omits reads 1, as the source's init sets.
 pub(crate) fn proj_frames(kind: u16) -> u32 {
     match kind {
-        // `Main.cs:8454` — the gem bolt's 6-frame sheet (the Phase-7 trail's).
+        // `Main.cs:8454` — the Flamelash's 6-frame sheet. Its AI's
+        // `frameCounter++`/`frame` writes (`Projectile.cs:43216-43222`) are a
+        // Phase-6 documented skip, so `frame` stays 0 and the slice reads the
+        // top row; the trail Phase 7 draws does not key on it.
         34 => 6,
         // `Main.cs:8596` — the Leaf Blower's 5-frame puff (`ai_leaf` wraps 5).
         LEAF => 5,
@@ -6994,6 +7138,273 @@ pub(crate) fn frame_slice_uv(
         sheet.width,
         frame_h,
     )
+}
+
+/// `Projectile.cs:17093-17096`'s ring shift (and `:17131-17134`'s for the
+/// rotation rings): every entry takes its newer neighbour's value, which frees
+/// index 0 for the current one.
+fn shift_ring<T: Copy>(ring: &mut [T]) {
+    for i in (1..ring.len()).rev() {
+        ring[i] = ring[i - 1];
+    }
+}
+
+/// `ProjectileID.Sets.TrailingMode` (`ProjectileID.cs:521`) — the history-ring
+/// mode per kind: 0 records `oldPos` only, 1 the same gated on `frameCounter ==
+/// 0`, 2/3 record the rotations and the sprite directions beside them (3 then
+/// smooths), 4/5 the same with an owner-delta / velocity rotation. The C#'s
+/// `CreateIntSet(-1, …)` default −1 records nothing.
+///
+/// The table is the in-scope slice over the ported kinds (`Projectile.cs`
+/// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
+/// rest of the unported kinds default to −1 here, as the source's factory
+/// default does for every id the set omits. Modes 4/5 have no ported kind
+/// (933/1100/106) and no arm.
+pub(crate) fn trailing_mode(kind: u16) -> i32 {
+    match kind {
+        // `:17091`'s mode-0 kinds among the ported rows (the positions only;
+        // no trail drawer reads them yet — the after-image path is its own row).
+        CRYSTAL_STORM | TYPHOON | BRAIN_SCRAMBLER | RAY_GUNNER | PHANTASMAL_EYE
+        | PHANTASMAL_BOLT | CANNON_EXPLOSIVE | NEBULA_ARCANUM | SKY_FRACTURE
+        | DARK_MAGE_FLAME | SHADOW_HAND => 0,
+        // `:17099`'s mode 1 — the Vortex Ritual's bolt.
+        VORTEX_RITUAL_BOLT => 1,
+        // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
+        // Betsy's fireball.
+        GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
+        | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
+        | GEM_BOLT_AMBER => 2,
+        // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
+        MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
+        _ => -1,
+    }
+}
+
+/// The four C# trail drawers (`Main.cs:28182-28243`'s call site) the port's
+/// quad-ribbon approximation serves: the gem bolts ride `GemStaffShotDrawer`
+/// with their per-kind colour triple, the three aimed spells their own drawer.
+/// The true VertexStrip pipeline (the shader pass) is the follow-up render row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TrailFamily {
+    /// `GemStaffShotDrawer`'s three `Color` inputs, in 0..1 — `Main.cs:28193-28229`'s
+    /// per-kind table (`trailColor1`, `trailColor2`, `trailColor3`).
+    Gem { c1: [f32; 3], c2: [f32; 3], c3: [f32; 3] },
+    /// `MagicMissileDrawer`'s White → Violet.
+    MagicMissile,
+    /// `RainbowRodDrawer`'s HSL sweep.
+    RainbowRod,
+    /// `FlameLashDrawer`'s White → Orange → Red.
+    FlameLash,
+}
+
+/// The XNA `Color` constants the drawers name, in 0..1 (the gem table's
+/// `Main.cs:28193-28229` values).
+const VIOLET: [f32; 3] = [0xEE as f32 / 255.0, 0x82 as f32 / 255.0, 0xEE as f32 / 255.0];
+const PURPLE: [f32; 3] = [0x80 as f32 / 255.0, 0.0, 0x80 as f32 / 255.0];
+const ORANGE: [f32; 3] = [1.0, 0xA5 as f32 / 255.0, 0.0];
+const ORANGE_RED: [f32; 3] = [1.0, 0x45 as f32 / 255.0, 0.0];
+const DARK_ORANGE: [f32; 3] = [1.0, 0x8C as f32 / 255.0, 0.0];
+const LIME_GREEN: [f32; 3] = [0x32 as f32 / 255.0, 0xCD as f32 / 255.0, 0x32 as f32 / 255.0];
+const GREEN: [f32; 3] = [0.0, 0x80 as f32 / 255.0, 0.0];
+const RED: [f32; 3] = [1.0, 0.0, 0.0];
+const SILVER: [f32; 3] = [0xC0 as f32 / 255.0, 0xC0 as f32 / 255.0, 0xC0 as f32 / 255.0];
+/// `Main.cs:28205`'s `new Color(60, 90, 255)` — the sapphire bolt's triple (its
+/// per-channel `A /= 2` writes are the VertexStrip alpha the approximation drops).
+const SAPPHIRE_GEM: [f32; 3] = [60.0 / 255.0, 90.0 / 255.0, 1.0];
+
+/// `Main.cs:28182-28243`'s trail-drawing kinds and the drawer that serves them.
+/// Every kind the C# has no drawer call for draws no trail, however its ring
+/// may be recorded (`trailing_mode`).
+fn trail_family(kind: u16) -> Option<TrailFamily> {
+    let gem = |c1, c2, c3| Some(TrailFamily::Gem { c1, c2, c3 });
+    match kind {
+        // `:28197-28229`'s switch: the amethyst (121) keeps the call site's
+        // default Violet/Purple/White, and 1120 (unported) would take it too.
+        GEM_BOLT_AMETHYST => gem(VIOLET, PURPLE, [1.0; 3]),
+        // `:28199-28203`.
+        GEM_BOLT_TOPAZ => gem(ORANGE, ORANGE, [1.0; 3]),
+        // `:28204-28212`.
+        GEM_BOLT_SAPPHIRE => gem(SAPPHIRE_GEM, SAPPHIRE_GEM, SAPPHIRE_GEM),
+        // `:28213-28216`.
+        GEM_BOLT_EMERALD => gem(LIME_GREEN, GREEN, [1.0; 3]),
+        // `:28217-28220`.
+        GEM_BOLT_AMBER => gem(ORANGE_RED, DARK_ORANGE, [1.0; 3]),
+        // `:28221-28224`.
+        GEM_BOLT_RUBY => gem(RED, RED, [1.0; 3]),
+        // `:28225-28228`.
+        GEM_BOLT_DIAMOND => gem(SILVER, SILVER, [1.0; 3]),
+        // `:28188`, `:28184`, `:28242`.
+        MAGIC_MISSILE => Some(TrailFamily::MagicMissile),
+        FLAMELASH => Some(TrailFamily::FlameLash),
+        RAINBOW_ROD_BULLET => Some(TrailFamily::RainbowRod),
+        _ => None,
+    }
+}
+
+/// `FlameLashDrawer.Draw`'s `transitToDark` (`FlameLashDrawer.cs:14`) — the
+/// `localAI[0]`-driven 0..1 ramp the family's colours and width read. Every
+/// other family leaves it at 0.
+fn flame_transit(local_ai0: f32) -> f32 {
+    get_lerp_value(0.0, 6.0, local_ai0)
+}
+
+/// The drawers' `StripWidth` — the C# `StripHalfWidthFunction`'s value, so the
+/// quad spans twice it (`VertexStrip.cs:151-156`'s `± vector` pair).
+fn trail_half_width(family: TrailFamily, progress: f32, transit: f32) -> f32 {
+    match family {
+        // `GemStaffShotDrawer.cs:35-38` — the constant 16.
+        TrailFamily::Gem { .. } => 16.0,
+        // `MagicMissileDrawer.cs:31-33`.
+        TrailFamily::MagicMissile => {
+            remap(progress, 0.0, 0.2, 26.0, 32.0) * get_lerp_value(0.0, 0.07, progress)
+        }
+        // `RainbowRodDrawer.cs:32-35` — `Lerp(0, 32, 1 - (1 - t)^2)`.
+        TrailFamily::RainbowRod => {
+            let t = get_lerp_value(0.0, 0.2, progress);
+            remap(1.0 - (1.0 - t) * (1.0 - t), 0.0, 1.0, 0.0, 32.0)
+        }
+        // `FlameLashDrawer.cs:33-35`.
+        TrailFamily::FlameLash => {
+            let t = get_lerp_value(0.0, 0.06 + transit * 0.01, progress);
+            remap(progress, 0.0, 1.0, 24.0 + transit * 16.0, 8.0)
+                * (1.0 - (1.0 - t) * (1.0 - t))
+        }
+    }
+}
+
+/// The drawers' `StripColors` (`GemStaffShotDrawer.cs:30-33`,
+/// `MagicMissileDrawer.cs:23-28`, `RainbowRodDrawer.cs:23-28`,
+/// `FlameLashDrawer.cs:25-29`) — the RGB lerp chain times the C#'s end fade
+/// `(1 - GetLerpValue(0, 0.98, progress))`. `global_time` is the caller's
+/// `Main.GlobalTimeWrappedHourly` (the Rainbow Rod's hue offset).
+///
+/// The C#'s alpha writes on the same colours (the MagicMissile's `A /= 2`, the
+/// FlameLash's `A /= 8`, the RainbowRod's `A = 0`) feed the VertexStrip and the
+/// misc shaders the approximation has no path for: carrying them verbatim would
+/// blank the Rainbow Rod's strip, so the tint's alpha rides the end fade alone
+/// (recorded deviation — the true strip's row carries them).
+fn trail_strip_color(
+    family: TrailFamily,
+    progress: f32,
+    transit: f32,
+    global_time: f32,
+) -> [f32; 4] {
+    // `(1 - GetLerpValue(0, 0.98, progress))` — every drawer's tail fade.
+    let fade = 1.0 - get_lerp_value(0.0, 0.98, progress);
+    let rgb = match family {
+        // `GemStaffShotDrawer.cs:32` — `Lerp(Lerp(c1, c2, p), c3, GetLerpValue(-0.2, 0.5, p))`.
+        TrailFamily::Gem { c1, c2, c3 } => {
+            let inner = lerp_rgb(c1, c2, progress);
+            lerp_rgb(inner, c3, get_lerp_value(-0.2, 0.5, progress))
+        }
+        // `MagicMissileDrawer.cs:25` — `Lerp(White, Violet, GetLerpValue(0, 0.7, p))`.
+        TrailFamily::MagicMissile => {
+            lerp_rgb([1.0; 3], VIOLET, get_lerp_value(0.0, 0.7, progress))
+        }
+        // `RainbowRodDrawer.cs:25` — the HSL hue at `(p * 1.6 - GlobalTimeWrappedHourly) % 1`
+        // (`Main.hslToRgb`, `Main.cs:47890`), lerped toward White.
+        TrailFamily::RainbowRod => {
+            let hsl =
+                tr_core::tile_light::hsl_to_rgb((progress * 1.6 - global_time) % 1.0, 1.0, 0.5);
+            lerp_rgb(hsl, [1.0; 3], get_lerp_value(-0.2, 0.5, progress))
+        }
+        // `FlameLashDrawer.cs:26` — `Lerp(Lerp(White, Orange, transit * 0.5), Red, GetLerpValue(-0.1 * transit, 0.7 - 0.2 * transit, p))`.
+        TrailFamily::FlameLash => {
+            let base = lerp_rgb([1.0; 3], ORANGE, transit * 0.5);
+            let t = get_lerp_value(-0.1 * transit, 0.7 - 0.2 * transit, progress);
+            lerp_rgb(base, RED, t)
+        }
+    };
+    [
+        rgb[0] * fade,
+        rgb[1] * fade,
+        rgb[2] * fade,
+        fade,
+    ]
+}
+
+/// `Color.Lerp(value1, value2, amount)` — XNA's per-channel lerp, the drawers'
+/// colour ramp.
+fn lerp_rgb(a: [f32; 3], b: [f32; 3], amount: f32) -> [f32; 3] {
+    [
+        lerp(a[0], b[0], amount),
+        lerp(a[1], b[1], amount),
+        lerp(a[2], b[2], amount),
+    ]
+}
+
+/// `MathHelper.Lerp(a, b, amount)` — XNA's `a + (b − a) * amount`.
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// One trail segment's quad — `Main.DrawTrail`'s cheap fallback shape
+/// (`Main.cs:27894-27902`): a stretched quad anchored at the history ring entry
+/// (the C# anchors at the *older* end of the pair, and its `rotation + π/2`
+/// swings the length axis 180° off the flight direction — a verbatim quirk of
+/// the pet-trail fallback the port keeps rather than corrects).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TrailSegment {
+    /// The anchor's world position — `oldPos[i] + proj.Size / 2` (`:27888`/
+    /// `:27898`), the box centre of that history entry.
+    x: f32,
+    y: f32,
+    /// The rotation to hand the pipeline — `v.ToRotation() + π/2` (`:27902`).
+    rot: f32,
+    /// The quad's length — `v.Length()` (`:27900`), the pair's distance.
+    len: f32,
+    /// The quad's width — twice the drawer's half-width, the C#'s `scale.X`.
+    width: f32,
+    /// The drawer's `StripColors` at this segment's progress.
+    tint: [f32; 4],
+}
+
+/// The trail walk (`Main.DrawTrail`, `Main.cs:27886-27905`): one segment per
+/// pair of adjacent filled ring entries, **oldest pair first** — the C#'s
+/// `num2` walks from the ring's last index down to 1, skipping the unwritten
+/// zero entries (`:27896`). Each carries the C#'s anchor, rotation and length,
+/// the family's width and the drawer's colour at the segment's progress —
+/// `progress = i / (count − 1)` over the filled depth, the VertexStrip's own
+/// mapping (`VertexStrip.cs:113-116`) minus its CatmullRom procedural padding.
+///
+/// A kind with no drawer (`trail_family`), a ring with a single filled entry
+/// (the first frame's partial strip) or an empty ring returns no segments.
+fn trail_segments(
+    kind: u16,
+    box_w: f32,
+    box_h: f32,
+    local_ai0: f32,
+    old_pos: &[Vec2],
+    global_time: f32,
+) -> Vec<TrailSegment> {
+    let Some(family) = trail_family(kind) else {
+        return Vec::new();
+    };
+    // `:27896`'s zero-skip: the ring fills from index 0 downward, so the filled
+    // depth is the leading run of non-zero entries.
+    let count = old_pos.iter().take_while(|p| **p != Vec2::ZERO).count();
+    if count < 2 {
+        return Vec::new();
+    }
+    let transit = flame_transit(local_ai0);
+    let mut segments = Vec::with_capacity(count - 1);
+    for i in (1..count).rev() {
+        let anchor = old_pos[i] + Vec2::new(box_w * 0.5, box_h * 0.5);
+        let delta = old_pos[i - 1] - old_pos[i];
+        let len = delta.length();
+        // `:27901`'s `ToRotation()` — a zero delta reads 0 (`Atan2(0, 0)`).
+        let dir = if len > 0.0 { delta.to_angle() } else { 0.0 };
+        let progress = i as f32 / (count - 1) as f32;
+        segments.push(TrailSegment {
+            x: anchor.x,
+            y: anchor.y,
+            rot: dir + std::f32::consts::FRAC_PI_2,
+            len,
+            width: trail_half_width(family, progress, transit) * 2.0,
+            tint: trail_strip_color(family, progress, transit, global_time),
+        });
+    }
+    segments
 }
 
 /// The aiStyle-1 rider kinds of M4-PROJ-6 Phase 3 (`AI_001`'s per-type hooks):
@@ -8807,6 +9218,10 @@ impl ProjectilePool {
             if self.slots[i].active && !self.slots[i].friendly {
                 self.damage_player(i, player.as_deref_mut());
             }
+            // `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`), the
+            // last statement ahead of the `timeLeft--` the C# runs at `:17201`:
+            // the history rings shift once per update call, after the sub-steps.
+            self.slots[i].shift_trailing_history();
             // `:17199-17208`.
             let (time_left, penetrate) = {
                 let p = &self.slots[i];
@@ -13160,6 +13575,9 @@ mod phasmal_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
         }
     }
 
@@ -13385,6 +13803,9 @@ mod ritual_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
         }
     }
 
@@ -17371,4 +17792,370 @@ mod magic_ai_tests {
         assert!((full[3] - full[1] - 90.0 / 512.0).abs() < 1e-6, "one frame = the sheet");
     }
 
+    // ---- DW-7: the render pass — trails ------------------------------------
+
+    /// A `spawn_with_data` + `step` drive for the ring tests: the tile-free
+    /// world keeps the flight straight, so the ring's positions are exact.
+    fn drive(kind: u16, x: f32, y: f32, vx: f32, vy: f32, ticks: usize) -> (ProjectilePool, usize) {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(kind, x, y, vx, vy, 20, 0.0)
+            .expect("the row");
+        let mut w = world();
+        for _ in 0..ticks {
+            step(&mut pool, &mut w);
+        }
+        (pool, slot)
+    }
+
+    #[test]
+    fn test_dw_7_1_the_gem_bolt_history_ring_records_the_mode_2_shift() {
+        // `Projectile.cs:17091-17195`'s chain: mode 2 (`ProjectileID.cs:521`'s
+        // `121, 2`) shifts all three rings once per update call, newest first.
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        assert_eq!(trailing_mode(GEM_BOLT_AMETHYST), 2, "the gem bolt's mode");
+        // The flight's `pos += vel` runs once per tick (`extraUpdates = 0`), so
+        // the ring holds the five post-tick positions, oldest last.
+        for (i, want) in [120.0, 116.0, 112.0, 108.0, 104.0].iter().enumerate() {
+            assert_eq!(p.old_pos[i], Vec2::new(*want, 100.0), "ring entry {i}");
+            assert_eq!(p.old_rot[i], 0.0, "the flight's rotation rides along");
+            assert_eq!(p.old_sprite_direction[i], 1, "and the sprite direction");
+        }
+        assert_eq!(p.old_pos[5], Vec2::ZERO, "the ring is 10 deep (`:388`)");
+        assert_eq!(p.old_rot[5], 0.0, "an unwritten rotation reads 0");
+        // A kind the C#'s set omits records nothing at all.
+        let (arrow_pool, arrow) = drive(WOODEN_ARROW, 100.0, 100.0, 4.0, 0.0, 3);
+        assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the set's default");
+        assert_eq!(arrow_pool.slots()[arrow].old_pos[0], Vec2::ZERO);
+    }
+
+    #[test]
+    fn test_dw_7_1_the_gem_bolt_strip_is_one_quad_per_history_segment() {
+        // The strip's shape (`Main.DrawTrail`, `Main.cs:27894-27902`): one
+        // segment per pair of filled ring entries, anchored at the older end's
+        // box centre, the gem's 16 half-width (`GemStaffShotDrawer.cs:37`) drawn
+        // as a 32-wide quad (`VertexStrip.cs:151-156`'s ±half-width pair).
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        let segs = trail_segments(p.kind, p.w, p.h, p.local_ai[0], &p.old_pos, 0.0);
+        assert_eq!(segs.len(), 4, "five filled entries make four segments");
+        // The C#'s downward loop (`:27894`) walks the oldest pair first: the
+        // anchor is that pair's older end, `oldPos[4] + Size/2` — the 10x10
+        // box's centre.
+        assert_eq!((segs[0].x, segs[0].y), (109.0, 105.0), "the oldest pair's anchor");
+        assert_eq!(segs[0].len, 4.0, "the pair's distance (`:27900`)");
+        // A +X flight: `v.ToRotation() + π/2` (`:27902`).
+        assert!(
+            (segs[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the rotation swings the length axis 90° off the flight"
+        );
+        assert_eq!(segs[0].width, 32.0, "twice the 16 half-width");
+        // The oldest pair's progress is 1, so the tail fade blanks it.
+        assert_eq!(segs[0].tint, [0.0, 0.0, 0.0, 0.0], "progress 1 fades out");
+        // The newest pair's progress is 1/4: the amethyst's Violet→Purple lerp
+        // at 0.25, 0.2857 toward White, times `1 - 0.25/0.98`
+        // (`GemStaffShotDrawer.cs:32`).
+        assert_eq!((segs[3].x, segs[3].y), (121.0, 105.0), "the newest pair's anchor");
+        assert!((segs[3].tint[3] - 0.7448980).abs() < 1e-3, "the end fade");
+        assert!((segs[3].tint[0] - 0.6984725).abs() < 1e-3, "the violet-red");
+        assert!((segs[3].tint[1] - 0.5805822).abs() < 1e-3, "the green dip");
+        assert!((segs[3].tint[2] - segs[3].tint[0]).abs() < 1e-6, "the gem's r == b");
+    }
+
+    #[test]
+    fn test_dw_7_1_the_trail_quads_keep_the_anchor_in_screen_space() {
+        // The ui range's screen-px conversion (`frame_quad`'s shape) plus the
+        // `origin − R·origin` shift that keeps `Main.cs:27902`'s bottom-centre
+        // origin pinned under the pipeline's top-left rotation.
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        let quads = p.trail_quads(Vec2::ZERO, 1.0, Vec2::new(100.0, 100.0), 0.0);
+        assert_eq!(quads.len(), 4, "the same walk");
+        // The oldest pair's anchor (109, 105) → screen (159, 155); size
+        // (32, 4); origin (16, 4); rot π/2 → the top-left shifts to
+        // (159 + 4, 155 − 16).
+        assert!((quads[0].tl[0] - 163.0).abs() < 1e-4, "the shifted top-left x");
+        assert!((quads[0].tl[1] - 139.0).abs() < 1e-4, "the shifted top-left y");
+        assert_eq!(quads[0].size, [32.0, 4.0], "width × segment length");
+        assert_eq!(quads[0].tint, [0.0, 0.0, 0.0, 0.0], "progress 1 draws nothing");
+        assert!(quads[3].tint[3] > 0.0, "the newest pair draws");
+    }
+
+    #[test]
+    fn test_the_trailing_mode_table_matches_the_c_sharp_set() {
+        // `ProjectileID.cs:521`'s `CreateIntSet(-1, …)` over the ported kinds.
+        for kind in [MAGIC_MISSILE, FLAMELASH, RAINBOW_ROD_BULLET] {
+            assert_eq!(trailing_mode(kind), 3, "kind {kind} records the rotations");
+        }
+        for kind in [
+            GEM_BOLT_AMETHYST,
+            GEM_BOLT_TOPAZ,
+            GEM_BOLT_SAPPHIRE,
+            GEM_BOLT_EMERALD,
+            GEM_BOLT_RUBY,
+            GEM_BOLT_DIAMOND,
+            GEM_BOLT_AMBER,
+            GRADIENT_YOYO,
+            BETSY_FIREBALL,
+        ] {
+            assert_eq!(trailing_mode(kind), 2, "kind {kind} records the triple");
+        }
+        assert_eq!(trailing_mode(VORTEX_RITUAL_BOLT), 1, "the animated-boundary mode");
+        for kind in [CRYSTAL_STORM, TYPHOON, NEBULA_ARCANUM, SKY_FRACTURE] {
+            assert_eq!(trailing_mode(kind), 0, "kind {kind} records the positions only");
+        }
+        // 1120 is in the C#'s set but its row is out of scope, and every kind
+        // the set omits reads the −1 factory default.
+        assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
+        assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
+    }
+
+    #[test]
+    fn test_the_typhoon_records_one_history_slot_per_update_call() {
+        // The chain runs once per update call (`Projectile.cs:17091`), not per
+        // sub-step: the Typhoon's `extraUpdates = 2` runs the AI three times per
+        // tick, yet five ticks fill five ring entries.
+        let (pool, slot) = drive(TYPHOON, 100.0, 100.0, 2.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        assert_eq!(trailing_mode(TYPHOON), 0, "the mode-0 kind");
+        assert_eq!(p.local_ai[1], 15.0, "the sub-stepped tick counter");
+        for i in 0..5 {
+            assert_ne!(p.old_pos[i], Vec2::ZERO, "one entry per tick");
+        }
+        assert_eq!(p.old_pos[5], Vec2::ZERO, "and no more than one");
+        // Mode 0 records the positions only (`:17093-17097`).
+        assert_eq!(p.old_rot[0], 0.0, "no rotation ring");
+        assert_eq!(p.old_sprite_direction[0], 0, "no sprite-direction ring");
+    }
+
+    #[test]
+    fn test_the_mode_3_chain_smooths_the_ring_and_recomputes_old_rot() {
+        // `Projectile.cs:17151-17166`: the 0.65 smoothing walk toward the newer
+        // neighbour, then the rotations recomputed from the smoothed positions
+        // (`SafeNormalize(Zero).ToRotation()`) — not the projectile's own one.
+        let (mut pool, slot) = drive(MAGIC_MISSILE, 100.0, 100.0, 8.0, 0.0, 2);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.pos.x, 116.0, "the cruise's two ticks");
+        // The second entry walked 0.65 of the way from 108 toward 116.
+        assert!((p.old_pos[1].x - 113.2).abs() < 1e-4, "the 0.65 lerp");
+        assert_eq!(p.old_pos[2], Vec2::ZERO, "only two entries after two ticks");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!((p.old_pos[0].x - 124.0).abs() < 1e-4, "the head rides the flight");
+        assert!((p.old_pos[1].x - 121.2).abs() < 1e-4, "the second lerp");
+        assert!((p.old_pos[2].x - 115.02).abs() < 1e-4, "the third, from the smoothed 113.2");
+        // A diagonal flight recomputes the stored rotation from the pair's
+        // direction — the arm itself keeps `rot` at 0.
+        let (pool, slot) = drive(MAGIC_MISSILE, 100.0, 100.0, 6.0, 6.0, 2);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.rot, 0.0, "the aimed spell's own rotation stays 0");
+        assert!((p.old_rot[0] - 0.0).abs() < 1e-6, "the slot's rotation is recorded");
+        assert!(
+            (p.old_rot[1] - std::f32::consts::FRAC_PI_4).abs() < 1e-4,
+            "the smoothed pair's 45° direction"
+        );
+    }
+
+    #[test]
+    fn test_the_mode_1_gate_records_only_on_the_frame_counter_boundary() {
+        // `Projectile.cs:17101`: mode 1 records when `frameCounter == 0` (or the
+        // ring is empty) — the Vortex Ritual bolt (580) is the ported kind.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(VORTEX_RITUAL_BOLT, 100.0, 100.0, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_ne!(pool.slots()[slot].old_pos[0], Vec2::ZERO, "the first frame records");
+        assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "one entry");
+        pool.slots_mut()[slot].frame_counter = 1;
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the gate blocks the tick");
+        pool.slots_mut()[slot].frame_counter = 0;
+        step(&mut pool, &mut w);
+        assert_ne!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the boundary records");
+        assert_eq!(pool.slots()[slot].old_rot[1], 0.0, "mode 1 records positions only");
+    }
+
+    #[test]
+    fn test_the_trail_family_table_matches_the_c_sharp_drawers() {
+        // `Main.cs:28197-28229`'s per-kind gem table, the three aimed spells'
+        // own drawers (`:28188`/`:28184`/`:28242`).
+        assert_eq!(
+            trail_family(GEM_BOLT_AMETHYST),
+            Some(TrailFamily::Gem { c1: VIOLET, c2: PURPLE, c3: [1.0; 3] }),
+            "the default Violet/Purple/White"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_TOPAZ),
+            Some(TrailFamily::Gem { c1: ORANGE, c2: ORANGE, c3: [1.0; 3] }),
+            "the topaz's orange pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_SAPPHIRE),
+            Some(TrailFamily::Gem { c1: SAPPHIRE_GEM, c2: SAPPHIRE_GEM, c3: SAPPHIRE_GEM }),
+            "the sapphire's (60, 90, 255) triple"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_AMBER),
+            Some(TrailFamily::Gem { c1: ORANGE_RED, c2: DARK_ORANGE, c3: [1.0; 3] }),
+            "the amber's OrangeRed/DarkOrange pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_RUBY),
+            Some(TrailFamily::Gem { c1: RED, c2: RED, c3: [1.0; 3] }),
+            "the ruby's red pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_DIAMOND),
+            Some(TrailFamily::Gem { c1: SILVER, c2: SILVER, c3: [1.0; 3] }),
+            "the diamond's silver pair"
+        );
+        assert_eq!(trail_family(MAGIC_MISSILE), Some(TrailFamily::MagicMissile));
+        assert_eq!(trail_family(FLAMELASH), Some(TrailFamily::FlameLash));
+        assert_eq!(trail_family(RAINBOW_ROD_BULLET), Some(TrailFamily::RainbowRod));
+        // The Gradient yoyo records a mode-2 ring but has no drawer call, so it
+        // draws no trail — the yoyo path keeps its shipped output.
+        assert_eq!(trail_family(GRADIENT_YOYO), None, "no drawer, no trail");
+        assert_eq!(trail_family(TYPHOON), None, "nor the mode-0 kinds");
+        assert_eq!(trail_family(SHURIKEN), None);
+    }
+
+    #[test]
+    fn test_the_gem_strip_colours_lerp_through_the_per_kind_table() {
+        // `GemStaffShotDrawer.cs:32`: `Lerp(Lerp(c1, c2, p), c3, GetLerpValue(-0.2,
+        // 0.5, p)) * (1 - GetLerpValue(0, 0.98, p))`.
+        let gem = |kind| trail_family(kind).unwrap();
+        // Progress 0: the call site's colour, 0.2857 toward White, no fade.
+        let head = trail_strip_color(gem(GEM_BOLT_AMETHYST), 0.0, 0.0, 0.0);
+        assert!((head[3] - 1.0).abs() < 1e-6, "no fade at the head");
+        assert!((head[0] - 0.9523810).abs() < 1e-3, "violet lifted toward white");
+        assert!((head[1] - 0.6498599).abs() < 1e-3, "the green channel's dip");
+        // Progress 1: the tail fade blanks the strip.
+        assert_eq!(trail_strip_color(gem(GEM_BOLT_AMETHYST), 1.0, 0.0, 0.0), [0.0; 4]);
+        // The topaz's pair is constant across the strip's first ramp.
+        let mid = trail_strip_color(gem(GEM_BOLT_TOPAZ), 0.5, 0.0, 0.0);
+        let fade = 1.0 - 0.5 / 0.98;
+        let t = get_lerp_value(-0.2, 0.5, 0.5);
+        for c in 0..3 {
+            let want = (ORANGE[c] + (1.0 - ORANGE[c]) * t) * fade;
+            assert!((mid[c] - want).abs() < 1e-3, "channel {c}");
+        }
+        assert!((mid[3] - fade).abs() < 1e-6, "the fade rides the alpha");
+    }
+
+    #[test]
+    fn test_the_magic_missile_width_ramps_and_colour_lerp() {
+        // `MagicMissileDrawer.cs:23-33`: the width ramps 26 → 32 over the first
+        // 0.2 of the strip and is scaled to 0 at the head by the 0.07 ramp; the
+        // colours run White → Violet.
+        let family = trail_family(MAGIC_MISSILE).unwrap();
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head tapers to nothing");
+        assert!((trail_half_width(family, 0.07, 0.0) - 28.1).abs() < 1e-4, "26 + 6·0.35");
+        assert!((trail_half_width(family, 0.2, 0.0) - 32.0).abs() < 1e-4, "the 32 end");
+        assert!((trail_half_width(family, 0.5, 0.0) - 32.0).abs() < 1e-4, "held past 0.2");
+        // White at the head (`:25`'s Lerp amount is 0), Violet by 0.7.
+        assert_eq!(trail_strip_color(family, 0.0, 0.0, 0.0), [1.0, 1.0, 1.0, 1.0]);
+        let violet = trail_strip_color(family, 0.7, 0.0, 0.0);
+        let fade = 1.0 - 0.7 / 0.98;
+        assert!((violet[0] - VIOLET[0] * fade).abs() < 1e-4, "violet-red");
+        assert!((violet[1] - VIOLET[1] * fade).abs() < 1e-4, "violet-green");
+        assert!((violet[3] - fade).abs() < 1e-6, "the tail fade");
+    }
+
+    #[test]
+    fn test_the_rainbow_rod_width_and_hsl_hue() {
+        // `RainbowRodDrawer.cs:25`/`:32-35`: the width eases 0 → 32 over the
+        // first 0.2 (`Lerp(0, 32, 1 - (1 - t)^2)`), the hue rides
+        // `(p * 1.6 - GlobalTimeWrappedHourly) % 1`.
+        let family = trail_family(RAINBOW_ROD_BULLET).unwrap();
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head starts at 0");
+        assert!((trail_half_width(family, 0.1, 0.0) - 24.0).abs() < 1e-4, "the ease's midpoint");
+        assert!((trail_half_width(family, 0.2, 0.0) - 32.0).abs() < 1e-4, "the 32 end");
+        // Hue 0 at time 0 is pure red, 0.2857 toward White (no fade at the head).
+        let red = trail_strip_color(family, 0.0, 0.0, 0.0);
+        assert!((red[3] - 1.0).abs() < 1e-6, "the head is opaque");
+        assert!((red[0] - 1.0).abs() < 1e-4, "red stays red");
+        assert!((red[1] - 0.2857143).abs() < 1e-3, "green lifts toward white");
+        // The time scroll: a half-hour shift moves the hue off red.
+        let scrolled = trail_strip_color(family, 0.0, 0.0, 0.5);
+        assert!((scrolled[1] - red[1]).abs() > 1e-3, "the hue scrolled");
+        assert!((scrolled[3] - 1.0).abs() < 1e-6, "the head is still opaque");
+    }
+
+    #[test]
+    fn test_the_flame_lash_width_and_transit_colour() {
+        // `FlameLashDrawer.cs:12-35`: `transitToDark` from `localAI[0]` widens
+        // the head (24 → 40) and darkens the colours toward red.
+        let family = trail_family(FLAMELASH).unwrap();
+        assert!((flame_transit(0.0) - 0.0).abs() < 1e-6, "no transit at the spawn");
+        assert!((flame_transit(3.0) - 0.5).abs() < 1e-6, "half the ramp");
+        assert!((flame_transit(6.0) - 1.0).abs() < 1e-6, "full transit");
+        assert!((flame_transit(12.0) - 1.0).abs() < 1e-6, "clamped past 6");
+        // `Lerp(24 + transit*16, 8, p) * (1 - (1 - t)^2)`.
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head tapers");
+        assert!((trail_half_width(family, 1.0, 0.0) - 8.0).abs() < 1e-4, "the 8 tail");
+        assert!((trail_half_width(family, 0.5, 1.0) - 24.0).abs() < 1e-4, "the widened 40 → 24 head");
+        // White at the spawn, red at full transit mid-strip, both faded.
+        let birth = trail_strip_color(family, 0.0, 0.0, 0.0);
+        assert_eq!(birth, [1.0, 1.0, 1.0, 1.0], "the white birth end");
+        let dark = trail_strip_color(family, 0.5, 1.0, 0.0);
+        let fade = 1.0 - 0.5 / 0.98;
+        assert!((dark[0] - fade).abs() < 1e-4, "the red ramp at the midpoint");
+        assert!(dark[1] < 1e-6, "green is gone");
+        assert!((dark[3] - fade).abs() < 1e-6, "the tail fade rides the alpha");
+    }
+
+    #[test]
+    fn test_the_trail_segments_walk_the_filled_depth_only() {
+        // `Main.cs:27896`'s zero-skip and the ring's contiguous fill: only the
+        // leading non-zero entries walk, so a single entry (the first frame's
+        // partial strip) draws nothing.
+        let empty = [Vec2::ZERO; 10];
+        assert!(trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &empty, 0.0).is_empty());
+        let one = {
+            let mut ring = [Vec2::ZERO; 10];
+            ring[0] = Vec2::new(4.0, 4.0);
+            ring
+        };
+        assert!(
+            trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &one, 0.0).is_empty(),
+            "one filled entry is the first frame's partial strip"
+        );
+        assert!(
+            trail_segments(SHURIKEN, 10.0, 10.0, 0.0, &one, 0.0).is_empty(),
+            "no drawer, no quads"
+        );
+        // Three entries moving −X: two segments (backwards flight), anchored at
+        // the older ends and rotated 180° off the +X case. The entries avoid
+        // the exact origin — `Main.cs:27896`'s zero-skip reads an entry at
+        // (0, 0) as unfilled, as the C#'s own marker does.
+        let mut ring = [Vec2::ZERO; 10];
+        ring[0] = Vec2::new(0.0, 10.0);
+        ring[1] = Vec2::new(10.0, 10.0);
+        ring[2] = Vec2::new(20.0, 10.0);
+        let segs = trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &ring, 0.0);
+        assert_eq!(segs.len(), 2, "three entries make two segments");
+        assert_eq!((segs[0].x, segs[0].y), (25.0, 15.0), "the oldest pair's anchor");
+        assert_eq!((segs[1].x, segs[1].y), (15.0, 15.0), "the newest pair's anchor");
+        assert_eq!(segs[0].len, 10.0, "the pair's distance");
+        let want_rot = std::f32::consts::PI + std::f32::consts::FRAC_PI_2;
+        for s in &segs {
+            assert!((s.rot - want_rot).abs() < 1e-6, "the −X flight's rotation");
+        }
+        // A parked projectile: every pair is degenerate, so the segments keep
+        // their count with a zero length — and `Atan2(0, 0)` reads 0, so the
+        // rotation is the same π/2 as every other segment's (the C#'s verbatim
+        // `ToRotation()` on a zero vector).
+        let parked = [Vec2::new(50.0, 50.0); 3];
+        let still = trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &parked, 0.0);
+        assert_eq!(still.len(), 2, "the degenerate pairs still walk");
+        assert_eq!(still[0].len, 0.0, "a zero-length segment");
+        assert!(
+            (still[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the zero vector's rotation"
+        );
+    }
 }

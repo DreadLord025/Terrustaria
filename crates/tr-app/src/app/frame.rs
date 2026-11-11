@@ -1157,7 +1157,19 @@ impl App {
                         let (cx, cy) = pl.center();
                         (cx, cy + pl.gfx_off_y)
                     });
-                    p.draw_with_hand(renderer, lookups, light, draw_cam, *zoom, screen, hand);
+                    // `Main.GlobalTimeWrappedHourly` (`anim_time % 3600`, the
+                    // same wrapped value the world pass keys on) — the Rainbow
+                    // Rod's trail hue scrolls by it (`RainbowRodDrawer.cs:25`).
+                    p.draw_with_hand(
+                        renderer,
+                        lookups,
+                        light,
+                        draw_cam,
+                        *zoom,
+                        screen,
+                        hand,
+                        anim_time % 3600.0,
+                    );
                 }
 
                 let boss = npcs
