@@ -762,6 +762,32 @@ struct NebulaSubshot {
     damage: i32,
 }
 
+/// The Last Prism holder's 6× laser spawn (`Projectile.cs:66622-66626`:
+/// kind 632 at `this.damage`, `this.knockBack`, `ai0 = m` (0..5), `ai1 =
+/// this.key`). The six shots share everything but `ai[0]`, so the arm hands
+/// back one shape and the dispatch rides the loop out (the NebulaSubshot
+/// pattern, with the knock back the C# passes through).
+struct PrismLasers {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+    knock_back: f32,
+}
+
+/// The laser's read-only view of its holder 633 — the fields the
+/// aiStyle-84 arm consumes per tick (`Projectile.cs:31427-31509`: the
+/// velocity for the direction/angle, `ai[0]` for the charge envelope, the
+/// damage the beam copies). Resolved through the slot key (`TryGetActive`
+/// shape, `prism_parent`).
+struct PrismParent {
+    center: Vec2,
+    vel: Vec2,
+    charge: f32,
+    damage: i32,
+}
+
 /// One flail hit-side decision — the multipliers plus whether the
 /// state-0 ellipse stood in for the box test.
 struct FlailHit {
@@ -4072,6 +4098,247 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI()`'s aiStyle-75 block's Last Prism arm (`Projectile.cs:66539-66637`)
+    /// — the channel holder: the per-tick damage re-read, the charge counters,
+    /// the mouse retarget at the 0.92 hold, the 30/15/5 shot interval with
+    /// `CheckMana`'s pay arm, the frame animation, the 6× laser spawn at
+    /// `ai[0] == 1` and the Kill the moment the channel gate drops.
+    ///
+    /// Folds (recorded): the `soundDelay`/`SoundEngine` block
+    /// (`:66588-66598`) and the `netUpdate` writes have no port arms; the
+    /// `!player.noItems` gate has no port field (`:4364`'s fold).
+    fn ai_last_prism(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        mut player: Option<&mut crate::player::Player>,
+    ) -> Option<PrismLasers> {
+        // `:66540-66546` — the shot interval thresholds read the
+        // PRE-increment charge (30, 15 past 90, 5 past 120), and the damage
+        // re-reads `item.damage * player.magicDamage` every tick. The port
+        // reads the held item through the channel (`channel_item` is the
+        // shoot path's held kind, `world_sim/editing.rs`), falling back to
+        // the spawn damage when the row is missing.
+        let interval = if self.ai[0] > 120.0 {
+            5.0
+        } else if self.ai[0] > 90.0 {
+            15.0
+        } else {
+            30.0
+        };
+        let item = player
+            .as_deref()
+            .and_then(|p| crate::registry::item(p.channel_item));
+        if let (Some(p), Some(item)) = (player.as_deref(), item) {
+            self.damage = (item.damage as f32 * p.magic_damage) as i32;
+        }
+        self.ai[0] += 1.0;
+        self.ai[1] += 1.0;
+        let interval_tick = self.ai[0] % interval == 0.0;
+        // `:66563-66590` — `ai[1]` resets every tick, so `flag9` holds every
+        // tick and the retarget runs per tick: the mouse direction held 8%
+        // against the current heading (the `Lerp(aim, dir, 0.92)` hold) at
+        // the item's shoot speed times the scale. The origin is
+        // `RotatedRelativePoint`'s hand stand-in (the owner centre); the
+        // NaN/zero guard is the C#'s `-Vector2.UnitY`, and the C#'s
+        // unguarded second `Normalize` is made NaN-safe here.
+        let mut fire_window = interval_tick;
+        if self.ai[1] >= 1.0 {
+            self.ai[1] = 0.0;
+            fire_window = true;
+            // `Main.myPlayer == this.owner` — the port's local player is
+            // owner 0 (the magic-missile arm's fold).
+            if self.owner == 0 {
+                if let Some(p) = player.as_deref() {
+                    if let Some(item) = item {
+                        let hand = match owner {
+                            Some(h) => h,
+                            None => p.center(),
+                        };
+                        let aim = safe_normalize(Vec2::new(
+                            p.channel_target.x - hand.0,
+                            p.channel_target.y - hand.1,
+                        ));
+                        let aim = if aim == Vec2::ZERO {
+                            Vec2::new(0.0, -1.0)
+                        } else {
+                            aim
+                        };
+                        let held = safe_normalize(self.vel);
+                        let blend = aim + (held - aim) * 0.92;
+                        self.vel = safe_normalize(blend) * (item.shoot_speed * self.scale);
+                    }
+                }
+            }
+        }
+        // `:66599-66610` — the frame animation: 4 ticks per frame while
+        // charging, 1 per frame once past 120.
+        self.frame_counter += 1;
+        let rate = if self.ai[0] < 120.0 { 4 } else { 1 };
+        if self.frame_counter >= rate {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 5 {
+                self.frame = 0;
+            }
+        }
+        // `:66615-66636` — the fire window: the mana pays only on the
+        // interval ticks (`flag10 = !flag8 || CheckMana(mana, pay: true)`,
+        // `Player.cs:52576-52594`'s pay arm at the 1f multiplier), and the
+        // channel gate spawns the six beams at `ai[0] == 1` or kills.
+        let mut spawn = None;
+        if fire_window && self.owner == 0 {
+            if let Some(p) = player.as_deref_mut() {
+                let mana_ok = !interval_tick
+                    || match item {
+                        Some(item) => {
+                            if p.mana >= item.mana {
+                                p.mana -= item.mana;
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        None => true,
+                    };
+                if p.channel && mana_ok && !p.cced() {
+                    if self.ai[0] == 1.0 {
+                        // `:66617-66620` — the beam direction, NaN-guarded.
+                        let mut dir = safe_normalize(self.vel);
+                        if dir == Vec2::ZERO {
+                            dir = Vec2::new(0.0, -1.0);
+                        }
+                        let center =
+                            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                        spawn = Some(PrismLasers {
+                            x: center.x,
+                            y: center.y,
+                            vx: dir.x,
+                            vy: dir.y,
+                            damage: self.damage,
+                            knock_back: self.knock_back,
+                        });
+                    }
+                } else {
+                    // `this.Kill()` (`:66635-66636`).
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+        }
+        // `Projectile.UpdatePosition` (`Projectile.cs:20433-20438`): the
+        // holder's aiStyle 75 is not in the skip list, so the generic
+        // `position += velocity` rides every tick (the aiStyle-84 lasers
+        // are skipped there — their position is AI-set).
+        self.pos += self.vel;
+        spawn
+    }
+
+    /// `AI()`'s aiStyle-84 block's Last Prism laser arm
+    /// (`Projectile.cs:31424-31509` + the shared tail `:31542-31550` and the
+    /// LaserScan smoothing `:31552-31632`) — the hexagon orbit around the
+    /// holder 633, the charge envelope (spacing 20→1.75, reach 20→6, push
+    /// −22→−2), the scale ramp with the ×3 damage past charge 180, the
+    /// friendly flip at charge 30 and the beam-length lerp.
+    ///
+    /// Folds (recorded): the `Opacity` writes (`:31448/:31453/:31458/:31462`)
+    /// and the dust/shader tail (`:31707-31757`) have no port fields/arms;
+    /// `proj.gfxOffY` is 0. The C#'s dead `num662 = num661 * π/6` initial
+    /// (`:31434`, unconditionally overwritten at `:31464`) is not carried.
+    fn ai_last_prism_laser(
+        &mut self,
+        world: &World,
+        owner: (f32, f32),
+        parent: Option<PrismParent>,
+    ) {
+        // `:31379-31382` — the aiStyle-84 head guard (`HasNaNs || Zero`).
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        let Some(par) = parent else {
+            // `:31429-31433` — `TryGetActive(633)` failing kills.
+            self.active = false;
+            self.time_left = 0;
+            return;
+        };
+        // `:31425-31427` — the beam's ordinal (`ai[0] = m`, 0..5, the
+        // spawn's `ai0`) and the holder's unit direction.
+        let m = self.ai[0] as i32 as f32 - 2.5;
+        let dir = safe_normalize(par.vel);
+        // `:31435-31462` — the charge envelope.
+        let mut spacing = 20.0f32;
+        let mut fade = 1.0f32;
+        let mut reach = 15.0f32;
+        let mut push = -2.0f32;
+        if par.charge < 180.0 {
+            fade = 1.0 - par.charge / 180.0;
+            reach = 20.0 - par.charge / 180.0 * 14.0;
+            if par.charge < 120.0 {
+                spacing = 20.0 - 4.0 * (par.charge / 120.0);
+            } else {
+                spacing = 16.0 - 10.0 * ((par.charge - 120.0) / 60.0);
+            }
+            push = -22.0 + par.charge / 180.0 * 20.0;
+        } else {
+            fade = 0.0;
+            spacing = 1.75;
+            reach = 6.0;
+            push = -2.0;
+        }
+        // `:31463-31466` — the hexagon phase, the wobble
+        // (`UnitY.RotatedBy(hex).Y`, i.e. `cos(hex)`) and the orbit offset.
+        let hex = (par.charge + m * spacing) / (spacing * 6.0) * std::f32::consts::TAU;
+        let wobble = rotate(Vec2::new(0.0, 1.0), hex).y * std::f32::consts::FRAC_PI_6 * fade;
+        let orbit = rotate(
+            rotate(Vec2::new(0.0, 1.0), hex) * Vec2::new(4.0, reach),
+            par.vel.to_angle(),
+        );
+        // `:31467-31471` — the position: 16 px off the holder along its
+        // heading, the push-off along the same heading, then the orbit.
+        self.pos = par.center + dir * 16.0 - Vec2::new(self.w * 0.5, self.h * 0.5)
+            + Vec2::new(par.vel.to_angle().cos(), par.vel.to_angle().sin()) * push
+            + orbit;
+        // `:31472` — the beam heading, wobbled off the holder's direction.
+        self.vel = rotate(dir, wobble);
+        // `:31473-31481` — the ramps and the copies.
+        self.scale = 1.4 * (1.0 - fade);
+        self.damage = par.damage;
+        let mut sampling = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        if par.charge >= 180.0 {
+            self.damage *= 3;
+            sampling = par.center;
+        }
+        // `:31506-31509` — a blocked line to the holder re-samples the beam
+        // from the owner's centre (`CanHitLine`'s 0-sized boxes).
+        if !can_hit_line(
+            world,
+            owner.0,
+            owner.1,
+            0.0,
+            0.0,
+            par.center.x,
+            par.center.y,
+            0.0,
+            0.0,
+        ) {
+            sampling = Vec2::new(owner.0, owner.1);
+        }
+        // `:31616-31621` — `friendly = projectile2.ai[0] > 30f` (strict).
+        self.friendly = par.charge > 30.0;
+        // `:31540-31550` — the second NaN/zero guard, then the rotation
+        // re-normalise the family tail runs.
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        let heading = self.vel.to_angle();
+        self.rot = heading - std::f32::consts::FRAC_PI_2;
+        self.vel = Vec2::new(heading.cos(), heading.sin());
+        // `:31573/:31591/:31598-31606/:31629-31632` — the beam length: the
+        // width-0 LaserScan fold (one tile ray, `laser_ray_len`) smoothed at
+        // the 0.75 lerp.
+        let len = laser_ray_len(world, sampling, self.vel, 2400.0);
+        self.local_ai[1] += (len - self.local_ai[1]) * 0.75;
+    }
+
     /// The approach helper shared by the eye machines (`:31282-31313`'s
     /// per-axis accel with the cross-zero double-step).
     fn approach(current: f32, target: f32, acc: f32) -> f32 {
@@ -6941,6 +7208,30 @@ fn safe_normalize(v: Vec2) -> Vec2 {
     }
 }
 
+/// The width-0 `Collision.LaserScan` fold (`Collision.cs:4568-4582`): with
+/// `samplingWidth = 0` the Last Prism laser's two samples trace the same
+/// ray, so the scan's average is one tile walk — the deathray arm's
+/// 32-px-step shape (`ai_phasmal_deathray`), capped at `max`.
+fn laser_ray_len(world: &World, from: Vec2, dir: Vec2, max: f32) -> f32 {
+    let mut hit = max;
+    let mut steps = 0;
+    while (steps as f32) * 32.0 < max {
+        let sx = from.x + dir.x * (steps as f32 * 32.0);
+        let sy = from.y + dir.y * (steps as f32 * 32.0);
+        let tx = (sx / TILE_PX) as i32;
+        let ty = (sy / TILE_PX) as i32;
+        if world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        {
+            hit = steps as f32 * 32.0;
+            break;
+        }
+        steps += 1;
+    }
+    hit
+}
+
 /// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
 /// `from` walks toward `target` by at most `max`, snapping on arrival.
 fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
@@ -7100,21 +7391,41 @@ impl ProjectilePool {
     /// lookup validates the packed slot's active + owner + generation and the
     /// expected kind; a recycled slot fails the generation match and the
     /// caller's arm kills, exactly as `TryLookup` (`Projectile.cs:632-639`)
-    /// answers through the key equality. Returns the parent's position and
-    /// centre — the 618 arm shifts by the position and steers by the centre.
-    pub fn nebula_parent(&self, key: f32) -> Option<(Vec2, Vec2)> {
+    /// answers through the key equality. Shared by the key-linked pairs (the
+    /// Nebula 617→618 pair and the Last Prism 633→632 pair, whose C# arms run
+    /// the identical `TryGetActive` shape).
+    fn key_parent(&self, key: f32, kind: u16) -> Option<&Projectile> {
         let (owner, slot, generation) = crate::net::projectile_key_parts(key.to_bits() as i32);
         let p = self.slots.get(slot)?;
         if p.active
-            && p.kind == NEBULA_ARCANUM
+            && p.kind == kind
             && p.owner == owner
             && p.generation == generation
             && crate::net::projectile_key(p.owner, slot, p.generation) == key.to_bits() as i32
         {
-            Some((p.pos, Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)))
+            Some(p)
         } else {
             None
         }
+    }
+
+    /// The 618 arm's view of its parent 617 — the position and centre the
+    /// arm shifts by and steers toward (`Projectile.cs:34827-34852`).
+    pub fn nebula_parent(&self, key: f32) -> Option<(Vec2, Vec2)> {
+        self.key_parent(key, NEBULA_ARCANUM)
+            .map(|p| (p.pos, Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)))
+    }
+
+    /// The 632 laser's view of its holder 633 (`((ProjectileKey)this.ai[1])
+    /// .TryGetActive(633, out proj)`, `Projectile.cs:31428-31430`) — the
+    /// snapshot the arm's envelope reads each tick.
+    fn prism_parent(&self, key: f32) -> Option<PrismParent> {
+        self.key_parent(key, LAST_PRISM).map(|p| PrismParent {
+            center: Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+            vel: p.vel,
+            charge: p.ai[0],
+            damage: p.damage,
+        })
     }
 
     /// The `29` despawn: the slot dies only when the key matches its current
@@ -8066,6 +8377,34 @@ impl ProjectilePool {
                             let parent = self.nebula_parent(self.slots[i].ai[1]);
                             self.slots[i].ai_nebula_arm(parent, rng);
                         }
+                        // The Last Prism holder (`:66539-66637`): the channel
+                        // gate, the mana pay and the per-tick damage re-read
+                        // ride the player arg; the 6× laser 632 spawn rides
+                        // back out (the 118 shape) with `ai0 = m` and `ai1 =
+                        // this.key`'s raw bits (`:66622-66626`).
+                        75 => {
+                            let spawn =
+                                self.slots[i]
+                                    .ai_last_prism(owner, player.as_deref_mut());
+                            if let Some(s) = spawn {
+                                let owner_id = self.slots[i].owner;
+                                let key = self.key_of(i) as u32;
+                                for m in 0..6u32 {
+                                    self.spawn_with_data_ai_owned(
+                                        LAST_PRISM_LASER,
+                                        owner_id,
+                                        s.x,
+                                        s.y,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        m as f32,
+                                        f32::from_bits(key),
+                                    );
+                                }
+                            }
+                        }
                         // The aiStyle-29 gem bolts (`Projectile.cs:37643-38001`):
                         // the owner-aware arm of the family signature — its
                         // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
@@ -8102,7 +8441,21 @@ impl ProjectilePool {
                             self.slots[i].ai_phasmal_eye(npcs, player)
                         }
                         83 => self.slots[i].ai_phasmal_sphere(&npcs[..]),
-                        84 => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        // The aiStyle-84 laser family, split by kind: the
+                        // Last Prism beam (632) resolves its holder through
+                        // the slot key (`prism_parent`'s `TryGetActive`
+                        // shape) and runs the orbit/envelope arm; every
+                        // other kind in the family (455 today) keeps the
+                        // PhantasmalDeathray arm (`:31385-31639`).
+                        84 => match self.slots[i].kind {
+                            LAST_PRISM_LASER => {
+                                let parent = self.prism_parent(self.slots[i].ai[1]);
+                                let origin = owner.unwrap_or((0.0, 0.0));
+                                self.slots[i]
+                                    .ai_last_prism_laser(&*world, origin, parent);
+                            }
+                            _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        },
                         85 => {
                             if let Some(p) = player.as_deref_mut() {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
@@ -16346,5 +16699,442 @@ mod magic_ai_tests {
         assert_eq!(p.ai[1], 1.0, "a dead hold keeps its index (no reset arm)");
         assert!(p.vel == held_vel, "no steering on a dead hold");
         assert!(p.active, "the arcanum flies on regardless");
+    }
+
+    // ---------------------------------------------------------------- DW-4.1
+    // The Last Prism pair: the holder's cadence + the 6-beam spawn + the
+    // release kill, the laser's orbit/envelope + the ramps + the ×3 + the
+    // parent-missing kill. Every assertion names its `Projectile.cs` lines.
+
+    /// One pool update with the local player driving — the channel arms
+    /// read `channel`/`channel_item`/`channel_target` and pay the mana
+    /// (the `:15300` fixture shape of the main `mod tests`).
+    fn step_player(pool: &mut ProjectilePool, w: &mut World, player: &mut crate::player::Player) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = player.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+    }
+
+    /// The Last Prism rig: player 0 parked at (100, 100) mid-channel on the
+    /// Last Prism row (item 3541: damage 100, mana 12, shoot_speed 30), the
+    /// holder spawned at centre (800, 160) heading east at the shoot speed
+    /// with the item's knock back, `friendly` as the C# `SetDefaults` sets
+    /// it (`:6793-6804`), aiming east of its centre.
+    fn prism_rig() -> (World, ProjectilePool, crate::player::Player, usize) {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        player.channel = true;
+        player.channel_item = 3541;
+        player.mana = 120;
+        let center = player.center();
+        player.channel_target = Vec2::new(center.0 + 1040.0, center.1);
+        let holder = pool
+            .spawn_with_data_ai_owned(LAST_PRISM, 0, 793.0, 151.0, 30.0, 0.0, 100, 0.25, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[holder].friendly = true;
+        (w, pool, player, holder)
+    }
+
+    /// `Projectile.cs:31424-31509` transcribed with the C#'s names — the
+    /// expected-value oracle for the laser tests. The rig's holder heads
+    /// east (`velocity.ToRotation() == 0`, the unit vector `(1, 0)`), so the
+    /// `vector76`-driven terms reduce to their x-forms; the laser copies the
+    /// holder's 100 damage (the rig's `item.damage · magicDamage`).
+    #[allow(clippy::many_single_char_names)]
+    fn csharp_laser(charge: f32, m: i32, holder_center: (f32, f32)) -> (Vec2, Vec2, f32, f32, i32, bool) {
+        // `:31425-31427` — the ordinal and the holder's unit direction.
+        let num661 = m as f32 - 2.5;
+        // `:31435-31462` — the charge envelope.
+        let (num663, num664, num665, num666) = if charge < 180.0 {
+            let fade = 1.0 - charge / 180.0;
+            let reach = 20.0 - charge / 180.0 * 14.0;
+            let spacing = if charge < 120.0 {
+                20.0 - 4.0 * (charge / 120.0)
+            } else {
+                16.0 - 10.0 * ((charge - 120.0) / 60.0)
+            };
+            let push = -22.0 + charge / 180.0 * 20.0;
+            (spacing, fade, reach, push)
+        } else {
+            (1.75, 0.0, 6.0, -2.0)
+        };
+        // `:31463-31466` — the hexagon phase, the wobble, the orbit.
+        let num667 = (charge + num661 * num663) / (num663 * 6.0) * std::f32::consts::TAU;
+        let num662 = rotate(Vec2::new(0.0, 1.0), num667).y
+            * (std::f32::consts::PI / 6.0)
+            * num664;
+        let zero2 = rotate(
+            rotate(Vec2::new(0.0, 1.0), num667) * Vec2::new(4.0, num665),
+            0.0,
+        );
+        // `:31467-31472` — the position (the push rides the heading's unit).
+        let position = Vec2::new(holder_center.0, holder_center.1)
+            + Vec2::new(16.0, 0.0)
+            - Vec2::new(9.0, 9.0)
+            + Vec2::new(num666, 0.0)
+            + zero2;
+        let velocity = rotate(Vec2::new(1.0, 0.0), num662);
+        // `:31473-31481` — the ramps and the copies; `friendly` is strict.
+        let mut damage = 100;
+        if charge >= 180.0 {
+            damage *= 3;
+        }
+        let friendly = charge > 30.0;
+        (position, velocity, 1.4 * (1.0 - num664), num662, damage, friendly)
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_charges_and_retargets() {
+        // `:66540-66578`: the charge counters, the per-tick damage re-read
+        // and the 0.92 mouse hold; `:66599-66610` the frame rate 4 below
+        // charge 120.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        {
+            let p = &pool.slots()[holder];
+            assert_eq!(p.ai[0], 1.0, "the charge ticks once");
+            assert_eq!(p.ai[1], 0.0, "the retarget flag resets every tick");
+            assert_eq!(p.damage, 100, "the re-read: item 100 × magicDamage 1.0");
+            assert!(p.vel == Vec2::new(30.0, 0.0), "the aim east held east is exact");
+            assert_eq!(p.pos.x, 823.0, "`UpdatePosition` integrates the holder");
+            assert!(p.friendly, "the holder's friendly is untouched by the arm");
+            assert_eq!(p.frame_counter, 1, "the frame accumulator runs at rate 4");
+        }
+        // The aim 45° up-east: the hold keeps 92% of the heading.
+        let center = player.center();
+        player.channel_target = Vec2::new(center.0 + 1120.0, center.1 - 1120.0);
+        player.magic_damage = 1.5;
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[holder];
+        assert_eq!(p.damage, 150, "the re-read tracks the magic multiplier");
+        assert!((p.vel.x - 29.949819).abs() < 1e-3, "the 0.92 hold, x");
+        assert!((p.vel.y - -1.7347650).abs() < 1e-3, "the 0.92 hold, y");
+        assert_eq!(p.frame_counter, 2, "still at rate 4 (charge 2)");
+        for _ in 0..2 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        let p = &pool.slots()[holder];
+        assert_eq!(p.frame, 1, "the 5-frame sheet advances after 4 ticks");
+        assert_eq!(p.frame_counter, 0, "the accumulator reset with the frame");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_spawns_six_lasers_at_ai_0_1() {
+        // `:66617-66630`: the first tick spawns six 632 beams at the
+        // holder's centre, `ai0 = m` (0..5), `ai1 = this.key`'s raw bits,
+        // the holder's damage and knock back, the normalised direction.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        let key = pool.key_of(holder) as u32;
+        for m in 0..6usize {
+            let laser = &pool.slots()[m + 1];
+            assert!(laser.active, "laser {m} spawned");
+            assert_eq!(laser.kind, LAST_PRISM_LASER);
+            assert_eq!(laser.ai[0], m as f32, "ai0 = m (`:66626`)");
+            assert_eq!(
+                laser.ai[1].to_bits(),
+                key,
+                "ai1 carries the key's bit pattern"
+            );
+            assert_eq!(laser.damage, 100, "the spawn rides the holder's damage");
+            assert_eq!(laser.knock_back, 0.25, "the C# passes this.knockBack");
+            // The spawn direction itself is pinned by the orbit test below:
+            // the beams' first AI tick runs in this same pass and overwrites
+            // `vel` with the wobbled heading (`:31472`).
+        }
+        assert!(!pool.slots()[7].active, "exactly six beams spawn");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_kills_on_release_and_cc() {
+        // `:66615-66636`: the gate fails the moment `channel` drops or the
+        // player is CCed (`noItems` has no port field, `:4364`'s fold).
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(pool.slots()[holder].active);
+        player.channel = false;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "the release kills");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.frozen = true;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "CCed kills");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana = 11;
+        for _ in 0..29 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "no interval tick yet");
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(
+            !pool.slots()[holder].active,
+            "the 30th tick's failed `CheckMana` kills (`:66617-66621`)"
+        );
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana = 12;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        let p = &pool.slots()[holder];
+        assert!(p.active, "12 mana pays exactly (`statMana >= num`)");
+        assert_eq!(player.mana, 0, "the pay zeroes the mana");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_pays_mana_on_the_interval_cadence() {
+        // `:66540-66546` + `:66617-66621`: the interval reads the
+        // PRE-increment charge — 30, 15 past 90, 5 past 120 — so the pays
+        // land at posts 30/60/90, then 105/120, then 125/130/135. 8 pays ×
+        // the item's mana 12 = 96 of the 120 pool.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        for _ in 0..29 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 120, "no interval tick before post 30");
+        assert!(pool.slots()[holder].active);
+        for _ in 0..(135 - 29) {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 24, "8 interval pays of 12");
+        assert!(pool.slots()[holder].active, "mana never ran short");
+    }
+    #[test]
+    fn test_dw_4_1_the_laser_orbits_on_the_csharp_envelope() {
+        // `:31424-31481`: the six beams' first AI tick (the same pass that
+        // spawns them — the holder's tick-1 charge is 1 and its centre has
+        // integrated to (830, 160)) rides the C# hexagon envelope. The
+        // oracle is the transcribed C# (`csharp_laser`); the structural
+        // pins are the m=0/m=3 phase opposition and the hexagon centroid.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        let holder_center = (830.0, 160.0);
+        let mut sum = Vec2::ZERO;
+        for m in 0..6i32 {
+            let laser = &pool.slots()[(m + 1) as usize];
+            let (pos, vel, scale, wobble, damage, friendly) =
+                csharp_laser(1.0, m, holder_center);
+            assert!(
+                (laser.pos - pos).length() < 1e-3,
+                "laser {m} rides the C# position (`:31467-31471`)"
+            );
+            assert!(
+                (laser.vel - vel).length() < 1e-4,
+                "laser {m} wobbles off the heading (`:31472`)"
+            );
+            assert!(
+                (laser.rot - (wobble - std::f32::consts::FRAC_PI_2)).abs() < 1e-4,
+                "laser {m} rotation = heading − π/2 (`:31543-31550`)"
+            );
+            assert!((laser.scale - scale).abs() < 1e-6, "laser {m} scale ramp");
+            assert_eq!(laser.damage, damage, "laser {m} copies the holder");
+            assert!(!friendly && !laser.friendly, "charge 1 is unfriendly");
+            sum += laser.pos;
+        }
+        // The opposite-phase pair (hex differs by TAU/2) averages to the
+        // envelope centre: `holder.center + dir·16 − size/2 + push`.
+        let common = Vec2::new(830.0 + 16.0 - 9.0 + -21.888889, 160.0 - 9.0);
+        assert!(
+            ((pool.slots()[1].pos + pool.slots()[4].pos) * 0.5 - common).length() < 1e-3,
+            "m=0 and m=3 oppose in phase (`:31464`)"
+        );
+        assert!(
+            (sum / 6.0 - common).length() < 1e-3,
+            "the hexagon centroids on the envelope centre"
+        );
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_envelope_ramps_reach_the_charged_state() {
+        // `:31435-31462`: at charge 180 the envelope snaps (fade 0, spacing
+        // 1.75, reach 6, push −2, wobble 0) and the beam sampling moves to
+        // the holder's centre (`:31501-31505`); mid-charge 90 pins the fade
+        // ramp's scale 0.7.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].ai[0] = 179.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(player.mana, 108, "post 180 is an interval tick (5)");
+        let holder_center = (860.0, 160.0);
+        for m in 0..6i32 {
+            let laser = &pool.slots()[(m + 1) as usize];
+            let (pos, vel, scale, _wobble, damage, friendly) =
+                csharp_laser(180.0, m, holder_center);
+            assert!((laser.pos - pos).length() < 1e-3, "laser {m} charged pos");
+            assert!((laser.vel - vel).length() < 1e-5, "the wobble died at 180");
+            assert!((laser.rot - -std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+            assert!((laser.scale - scale).abs() < 1e-6, "scale 1.4 charged");
+            assert_eq!(laser.damage, damage, "the ×3 damage (`:31476-31479`)");
+            assert!(laser.friendly && friendly, "charge 180 is friendly");
+        }
+        // Mid-charge: the fade ramp's half-way scale.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].ai[0] = 89.0;
+        step_player(&mut pool, &mut w, &mut player);
+        let laser = &pool.slots()[1];
+        assert!((laser.scale - 0.7).abs() < 1e-6, "charge 90 → fade 0.5");
+        let (pos, _, _, _, _, _) = csharp_laser(90.0, 0, (860.0, 160.0));
+        assert!((laser.pos - pos).length() < 1e-3, "the mid envelope");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_damage_follows_the_holder_and_triples_at_180() {
+        // `:31475-31479`: the laser copies the holder's per-tick re-read
+        // (`item.damage · magicDamage`) and triples once charged.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.magic_damage = 2.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[holder].damage, 200, "the re-read × 2.0");
+        assert_eq!(pool.slots()[1].damage, 200, "the laser copied it");
+        pool.slots_mut()[holder].ai[0] = 179.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[1].damage, 600, "200 × 3 at charge ≥ 180");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_friendly_flips_at_charge_30() {
+        // `:31616-31621`: `friendly = projectile2.ai[0] > 30f` — strictly
+        // past 30, so the flip lands between charge 30 and 31.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[1].friendly, "charge 1 unfriendly");
+        pool.slots_mut()[holder].ai[0] = 29.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(
+            !pool.slots()[1].friendly,
+            "charge 30 is still unfriendly (strict `>`)"
+        );
+        pool.slots_mut()[holder].ai[0] = 30.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(pool.slots()[1].friendly, "charge 31 flips friendly");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_kills_when_the_parent_is_gone() {
+        // `:31429-31433`: a `TryGetActive(633)` miss (dead slot, recycled
+        // generation or the wrong kind behind the key) kills the beam.
+        let mut pool = ProjectilePool::new();
+        let holder = pool
+            .spawn_with_data(LAST_PRISM, 100.0, 100.0, 30.0, 0.0, 100, 0.25)
+            .unwrap();
+        let key = pool.key_of(holder) as u32;
+        pool.slots_mut()[holder].active = false;
+        pool.spawn_with_data_ai_owned(
+            LAST_PRISM_LASER, 0, 100.0, 100.0, 1.0, 0.0, 100, 0.25, 0.0,
+            f32::from_bits(key),
+        )
+        .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[1].active, "a dead holder's key fails");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].active = false;
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(!pool.slots()[m].active, "the pair dies with its holder");
+        }
+
+        let mut pool = ProjectilePool::new();
+        let other = pool
+            .spawn_with_data(NEBULA_ARCANUM, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = pool.key_of(other) as u32;
+        pool.spawn_with_data_ai_owned(
+            LAST_PRISM_LASER, 0, 100.0, 100.0, 1.0, 0.0, 100, 0.25, 0.0,
+            f32::from_bits(key),
+        )
+        .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[1].active, "a non-633 key fails the lookup");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_beam_length_lerps_and_falls_back_to_the_owner() {
+        // `:31598-31606` + `:31629-31632`: the beam length lerps at 0.75
+        // toward the width-0 LaserScan (2400 open-air → 1800 on the first
+        // tick); `:31506-31509`: a blocked line re-samples from the owner's
+        // centre, whose ray the wall cuts short.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(
+                (pool.slots()[m].local_ai[1] - 1800.0).abs() < 1e-4,
+                "the 0.75 lerp from 0 toward 2400"
+            );
+        }
+        // The wall between the owner and the holder: columns 29-31, rows
+        // 2-20. The m=4 beam's wobble is near zero, so its owner-sampled
+        // ray walks east into the wall well before 2400.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        for x in 29..=31 {
+            for y in 2..=20 {
+                put_tile(&mut w, x, y, 1);
+            }
+        }
+        step_player(&mut pool, &mut w, &mut player);
+        let len = pool.slots()[5].local_ai[1];
+        assert!(
+            len > 0.0 && len < 1800.0,
+            "the owner-sampled ray hit the wall ({len})"
+        );
+    }
+
+    #[test]
+    fn test_edge_style_84_the_deathray_kind_keeps_its_arm() {
+        // The style-84 split by kind: 455 keeps the PhantasmalDeathray arm
+        // (its lifetime counter `localAI[0]` runs), only 632 takes the
+        // prism laser arm.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(PHANTASMAL_DEATHRAY, 200.0, 100.0, 1.0, 0.0, 50, 0.0)
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert!(p.active, "the deathray flies on without a host");
+        assert_eq!(p.local_ai[0], 1.0, "the deathray lifetime counter ran");
+    }
+
+    #[test]
+    fn test_edge_style_75_the_release_mid_beam_ends_the_pair() {
+        // The Test Plan's dirty row: a release mid-beam kills the holder,
+        // and the beams die on the next tick through the parent-missing
+        // kill (`:31429-31433`).
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        for _ in 0..5 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "channelled through tick 5");
+        for m in 1..7usize {
+            assert!(pool.slots()[m].active, "the beams orbit");
+        }
+        player.channel = false;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "the release kills");
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(!pool.slots()[m].active, "the beams follow (`:31429`)");
+        }
     }
 }
