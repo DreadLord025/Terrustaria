@@ -1128,7 +1128,59 @@ pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
 /// The bank containers (`chest < -1`) are M3-STORE-1;
 /// `IsBlockedFromTransferIntoChest` (`:1291-1302`) is a bank-only rule —
 /// noted for STORE-1.
+/// The source slot of a `TryPlacingInChest` walk. The C# reads and writes
+/// through the `inv[slot]` reference of one `Player.inventory[0..58]` array; the
+/// port keeps the 10x5 grid in `App.inventory` and the coin (ctx 1) / ammo
+/// (ctx 2) rows in `App.equip` (`inv.rs:27-28`), so the placer takes the
+/// reference shape instead of a bare index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Source {
+    /// `Player.inventory[0..49]`.
+    Inv(usize),
+    /// `Player.inventory[50..53]`.
+    Coin(usize),
+    /// `Player.inventory[54..57]`.
+    Ammo(usize),
+}
+
+impl Source {
+    fn read(self, app: &App) -> ItemSlot {
+        match self {
+            Source::Inv(i) => app.inventory.get(i).copied().unwrap_or(EMPTY_SLOT),
+            Source::Coin(k) => app.equip.coins.get(k).copied().unwrap_or(EMPTY_SLOT),
+            Source::Ammo(k) => app.equip.ammo.get(k).copied().unwrap_or(EMPTY_SLOT),
+        }
+    }
+
+    fn write(self, app: &mut App, item: ItemSlot) {
+        match self {
+            Source::Inv(i) => {
+                if let Some(s) = app.inventory.get_mut(i) {
+                    *s = item;
+                }
+            }
+            Source::Coin(k) => {
+                if let Some(s) = app.equip.coins.get_mut(k) {
+                    *s = item;
+                }
+            }
+            Source::Ammo(k) => {
+                if let Some(s) = app.equip.ammo.get_mut(k) {
+                    *s = item;
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool) -> bool {
+    try_placing_from(app, Source::Inv(slot), just_check)
+}
+
+/// [`try_placing_in_chest`] over any [`Source`] — the ctx-1/ctx-2 shift arms
+/// (`ItemSlot.cs:680-686` passes the context to `TryPlacingInChest`, which
+/// reads that context's array).
+pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) -> bool {
     let chest = match app.player.as_ref() {
         Some(p) if p.chest >= 0 => p.chest as usize,
         _ => return false, // `GetCurrentContainer`'s world-chest arm (`:1213`)
@@ -1138,7 +1190,7 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
     // `inv[slot]` — the port's copy + write-back replicates that, keeping
     // kind, name AND prefix on the drained remainder (the M3-CHEST-INT
     // deposit-prefix fix).
-    let mut item = app.inventory[slot];
+    let mut item = from.read(app);
     if item.kind == 0 || item.count == 0 {
         return false; // an air item never merges and never fills (`item.maxStack` 0)
     }
@@ -1216,7 +1268,7 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
     if !just_check {
         // The drained slot's remainder — air when fully moved
         // (`:1244`/:1278's `SetDefaults(0)` write-through).
-        app.inventory[slot] = item;
+        from.write(app, item);
     }
     placeable
 }

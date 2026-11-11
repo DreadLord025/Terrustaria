@@ -162,6 +162,28 @@ impl App {
         ui::inventory::coin_ammo_hit(self.mouse_pos, cell)
     }
 
+    /// The [`chest::Source`] under the cursor for the shift-transfer arms: the
+    /// coin/ammo rows resolve through their own cells, everything else through
+    /// the grid. `None` when the pointer is over neither.
+    fn chest_transfer_source(&self) -> Option<chest::Source> {
+        // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`): air or
+        // a favorited slot answers null for every context. The rows keep no
+        // favorites yet, so only the air half is theirs (`try_placing_from`
+        // refuses an empty source).
+        if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
+            return Some(if ctx == 1 {
+                chest::Source::Coin(k)
+            } else {
+                chest::Source::Ammo(k)
+            });
+        }
+        let slot = self.slot_at_mouse()?;
+        if self.is_favorite(slot) {
+            return None;
+        }
+        Some(chest::Source::Inv(slot))
+    }
+
     /// One coin/ammo cell's press — `ItemSlot.Handle` over the ctx-1/ctx-2
     /// cells: left runs the shared action-0 move behind
     /// `PickItemMovementAction`'s gate, right the `:1700-1772` split. The Alt
@@ -926,6 +948,13 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The ctx-1/ctx-2 rows ride the same cursor (`ItemSlot.cs:680-686`
+            // covers 0/1/2), so the source resolves before the grid probe.
+            if let Some(src) = self.chest_transfer_source() {
+                chest::try_placing_from(self, src, false);
+                self.ui_left_press = false;
+                return true;
+            }
             let Some(slot) = self.slot_at_mouse() else {
                 return false;
             };
@@ -1046,12 +1075,11 @@ impl App {
             }
         }
         if chest >= 0 {
-            if let Some(slot) = self.slot_at_mouse() {
-                // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`):
-                // `item.IsAir || item.favorited` → null — a favorited slot
-                // never lights the shift cursor, so the cursor-9 click arm
-                // cannot fire for one either.
-                if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
+            // `ItemSlot.cs:657-665`: the ctx-1/ctx-2 arms reach the same
+            // `TryPlacingInChest` check, so a hovered coin/ammo cell lights the
+            // transfer cursor exactly like a grid slot.
+            if let Some(src) = self.chest_transfer_source() {
+                if chest::try_placing_from(self, src, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
                 }
             }
@@ -2486,6 +2514,68 @@ mod tests {
         app.handle_inventory_clicks();
         assert_eq!(app.mouse_item, slot(72, 6), "the half rounded up");
         assert_eq!(app.equip.coins[1], slot(72, 5), "the cell keeps the rest");
+    }
+
+    /// M7-UI-2c — shift+click on a coin/ammo cell transfers into the open
+    /// chest: `GetAlternateClickAction`'s ctx-1/ctx-2 arms (`ItemSlot.cs:657-665`)
+    /// reach the same `TryPlacingInChest` check and the cursor-9 click arm
+    /// carries the context's array into the merge/empty passes.
+    #[test]
+    fn ui_2c_shift_click_sends_the_coin_row_to_the_chest() {
+        let mut app = chest_app(vec![slot(71, 5)]);
+        app.equip.coins[0] = slot(71, 20);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = COIN_SLOT_0;
+        app.ui_left_press = true;
+        // The chest handler owns the cursor-9 arm (`OverrideLeftClick`
+        // `ItemSlot.cs:813-850`) and consumes the press.
+        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert_eq!(app.cursor_override, CURSOR_TO_CHEST, "the cursor lit");
+        assert_eq!(
+            crate::chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(71, 25)),
+            "the merge pass poured the coins in"
+        );
+        assert_eq!(app.equip.coins[0].count, 0, "the cell drained");
+    }
+
+    #[test]
+    fn ui_2c_shift_click_sends_the_ammo_row_to_the_chest() {
+        let mut app = chest_app(vec![]);
+        app.equip.ammo[1] = slot(40, 60);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(540.0, 145.0); // ammo row 1
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert_eq!(app.cursor_override, CURSOR_TO_CHEST);
+        assert_eq!(
+            crate::chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(40, 60)),
+            "the empty pass took the whole stack"
+        );
+        assert_eq!(app.equip.ammo[1].count, 0);
+    }
+
+    /// The placer's `Source` keeps the two arrays apart: a coin transfer writes
+    /// the coin cell, never the grid slot with the same index.
+    #[test]
+    fn ui_2c_the_transfer_source_keeps_the_arrays_apart() {
+        let mut app = chest_app(vec![]);
+        app.inventory[0] = slot(9, 3);
+        app.equip.coins[0] = slot(72, 4);
+        assert!(crate::chest::try_placing_from(
+            &mut app,
+            crate::chest::Source::Coin(0),
+            true
+        ));
+        assert!(!crate::chest::try_placing_from(
+            &mut app,
+            crate::chest::Source::Coin(0),
+            false
+        ));
+        assert_eq!(crate::chest::chest_slot(&app.world_chests, 0, 0), Some(slot(72, 4)));
+        assert_eq!(app.equip.coins[0].count, 0, "the coin cell drained");
+        assert_eq!(app.inventory[0], slot(9, 3), "the grid slot is untouched");
     }
 
     #[test]
