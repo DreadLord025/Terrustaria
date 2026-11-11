@@ -2448,35 +2448,51 @@ mod tests {
     }
 
     #[test]
-    fn multiplayer_screen_shows_join_first() {
+    fn multiplayer_screen_shows_the_four_steam_rows() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
-        // `Main.cs:50699-50736` with `num41 = 0` (no Steam network): the
-        // `Lang.menu[145]` "Join via Steam" row stored at index 1 (`:50704`)
-        // is overwritten by "Host & Play" (`:50705`), so the screen is
-        // Join / Host & Play / Back over the 250/80 defaults — Join first
-        // (Review Focus 6; the old port showed Host & Play first).
+        // `Main.cs:50699-50736` with `num41 = 1` (the retail PC build ships
+        // Steam, so `SocialAPI.Network != null`):
+        //   0         `Lang.menu[146]` "Join via IP"
+        //   1         `Lang.menu[145]` "Join via Steam"
+        //   1 + num41 `Lang.menu[88]`  "Host & Play"
+        //   2 + num41 `Lang.menu[5]`   "Back"
+        // `num5 = 3 + num41` = 4 over the 250/80 defaults. The `num41 == 0`
+        // three-row variant is what the port used to draw; it is a different
+        // label for row 0 (`menu[87]` "Join") *and* a different row count, so
+        // the row order the owner reported is this table.
         let m = menu(Page::Multiplayer);
         let items = m.items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        let expected = [crate::lang::menu(87), crate::lang::menu(88), crate::lang::menu(5)];
+        let expected: Vec<String> = [146, 145, 88, 5]
+            .iter()
+            .map(|i| crate::lang::menu(*i))
+            .collect();
         let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
         assert_eq!(labels, expected);
+        assert_eq!(items.len(), 4, "`num5 = 3 + num41` (`:50735`)");
         assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0 && !i.header));
         let layout = Page::Multiplayer.layout();
         let draw_y = |i: usize| layout.y0 + layout.row * i as f32;
-        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (250.0, 330.0, 410.0));
-        // Join opens the IP screen (vanilla `:50714-50718` routes through the
-        // character select, then `:66241` opens 13); Host & Play the host
-        // password screen (plan deviation); Back the main menu
-        // (`:50732-50735`).
+        assert_eq!(
+            (draw_y(0), draw_y(1), draw_y(2), draw_y(3)),
+            (250.0, 330.0, 410.0, 490.0)
+        );
+        // Row 0 opens the IP screen (vanilla `:50710-50718` routes through the
+        // character select, then `:66241` opens 13), row 1 is the Steam join
+        // interface the port has no session for (`:50726-50730`), row 2 the
+        // host password screen (plan deviation), row 3 the main menu
+        // (`:50731-50734`).
         let mut m = menu(Page::Multiplayer);
         m.activate(0);
         assert_eq!(m.page, Page::JoinIp);
         let mut m = menu(Page::Multiplayer);
         m.activate(1);
-        assert_eq!(m.page, Page::HostPassword);
+        assert_eq!(m.page, Page::Multiplayer, "the Steam row only reports");
+        assert!(m.hint.is_some());
         let mut m = menu(Page::Multiplayer);
         m.activate(2);
+        assert_eq!(m.page, Page::HostPassword);
+        let mut m = menu(Page::Multiplayer);
+        m.activate(3);
         assert_eq!(m.page, Page::Main);
     }
 
@@ -2598,7 +2614,9 @@ mod tests {
         // :2212-2214` for 31, `Main.cs:48797-48799` for 30).
         let mut m = menu(Page::Multiplayer);
         m.server_password = "leak".into();
-        m.activate(1);
+        // Row 2 is "Host & Play" (`1 + num41` with `num41 = 1`, `:50704`);
+        // rows 0/1 are the two joins.
+        m.activate(2);
         assert_eq!(m.page, Page::HostPassword);
         assert!(m.server_password.is_empty());
         let mut m = menu(Page::JoinPort);
@@ -2714,7 +2732,7 @@ mod tests {
         // `Main.HostAndPlay` fixes the listen port at 7777 (`Main.cs:52011`);
         // the typed password rides along.
         let mut m = menu(Page::Multiplayer);
-        m.activate(1);
+        m.activate(2); // "Host & Play" (`1 + num41`, `:50704`)
         assert_eq!(m.page, Page::HostPassword);
         m.character('p');
         match m.activate(2) {

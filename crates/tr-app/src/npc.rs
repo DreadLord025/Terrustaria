@@ -1465,6 +1465,21 @@ NpcKind::SolarSelenian => 140,
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
+    /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
+    /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
+    pub fn is_invasion_npc(self) -> bool {
+        matches!(
+            self,
+            NpcKind::GoblinThief
+                | NpcKind::GoblinWarrior
+                | NpcKind::GoblinArcher
+                | NpcKind::GoblinSorcerer
+                | NpcKind::GoblinPeon
+                | NpcKind::GoblinSummoner
+        )
+    }
+
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
     /// and Wandering Eye 30x32 (`NPC.cs` cases 2/133), zombie 18x40.
     pub fn size(self) -> (f32, f32) {
@@ -5765,7 +5780,12 @@ impl Npc {
             self.vy = -self.vy * 0.5;
         }
         self.facing = if dx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
+        // `:22740-22752` (aiStyle 13) — the eye flips on the SAME
+        // `num215 = player.Center.X - width/2 - center.X` the rotation
+        // uses (its own aim, not the body's), and the write is inside the
+        // two one-sided `if`s, so a dead-centre aim keeps the previous
+        // flip.
+        self.sprite_dir = if dx != 0.0 { self.facing } else { self.sprite_dir };
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -11019,7 +11039,11 @@ impl Npc {
         // The life mirror (`:26061-26064`) + the X/direction mirror.
         self.x = world.wof_x - w * 0.5;
         self.facing = if world.wof_x >= pcx { 1 } else { -1 };
-        self.sprite_dir = self.facing;
+        // `:26393-26403` (aiStyle 29) — the eye's flip is its own
+        // `num391 = player.Center.X - width/2 - eye.Center.X`, NOT the
+        // wall's `direction` the `:26068` body mirror reads: `a.frame 29`
+        // flips the iris toward the target even when the wall faces away.
+        self.sprite_dir = if pcx - w * 0.5 - (self.x + w * 0.5) > 0.0 { 1 } else { -1 };
         let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
         let top_half = self.ai[0] > 0.0;
         let target_y = if top_half {
@@ -11190,7 +11214,10 @@ impl Npc {
                 }
             }
             self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-            self.sprite_dir = self.facing;
+            // `:26416-26432` (aiStyle 29 is the WoF eye — the Deerclops
+            // rides aiStyle 40, `:29716`, which pins the flip at -1 and
+            // carries the aim in `rotation` instead).
+            self.sprite_dir = -1;
             self.vy = (self.vy + 0.4).clamp(-8.0, 16.0);
             if self.on_ground {
                 self.vy = 0.0;
@@ -17009,6 +17036,53 @@ mod tests {
         );
         assert_eq!(n.facing, -1);
         assert_eq!(n.sprite_dir, -1, "the flip carries both fields");
+    }
+
+    /// BUG-07: aiStyle 13's two one-sided `if (num215 > 0)` /
+    /// `if (num215 < 0)` arms (`NPC.cs:22740-22752`) — the eye flips on its
+    /// OWN aim, so a target dead-centre (`num215 == 0`) leaves the previous
+    /// flip in place instead of snapping to the body's facing.
+    #[test]
+    fn bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim() {
+        let w = World::new("t".into(), 200, 100);
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 50.0 * 16.0;
+        n.y = 50.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        // A target to the left flips the eye left.
+        player.x = n.x - 120.0;
+        player.y = n.y;
+        n.update_eye(&w, &mut player, 0.0);
+        assert_eq!(n.sprite_dir, -1, "the eye aims left");
+        // Snap the player onto the eye's centre: `num215 == 0` writes
+        // nothing, so the flip is preserved.
+        player.x = n.x + n.size().0 * 0.5 - crate::player::WIDTH * 0.5;
+        player.y = n.y;
+        n.update_eye(&w, &mut player, 0.0);
+        assert_eq!(n.sprite_dir, -1, "a dead-centre aim keeps the flip");
+    }
+
+    /// BUG-07: aiStyle 29 (the WoF eye, `NPC.cs:26393-26403`) flips on its
+    /// own `num391` — the distance from the EYE to the player — not on the
+    /// wall body's `direction` the `:26068` mirror writes.
+    #[test]
+    fn bug_07_the_wof_eye_flips_on_its_own_aim() {
+        let mut w = World::new("t".into(), 200, 100);
+        w.wof_present = true;
+        w.wof_x = 100.0 * 16.0;
+        w.wof_draw_top = 400.0;
+        w.wof_draw_bottom = 900.0;
+        let mut n = bare(NpcKind::WallOfFleshEye);
+        n.x = w.wof_x - n.size().0 * 0.5;
+        let mut player = crate::player::Player::spawn(&w);
+        // The iris sits at the wall's X; the player is 300 px to its right.
+        player.x = w.wof_x + 300.0 - crate::player::WIDTH * 0.5;
+        player.y = 600.0;
+        n.update_wof_eye(&w, &player);
+        assert_eq!(n.sprite_dir, 1, "the target is right of the iris");
+        player.x = w.wof_x - 300.0 - crate::player::WIDTH * 0.5;
+        n.update_wof_eye(&w, &player);
+        assert_eq!(n.sprite_dir, -1, "the target is left of the iris");
     }
 }
 
