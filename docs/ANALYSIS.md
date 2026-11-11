@@ -10493,8 +10493,15 @@ air, `ammo > 0`, `bait > 0`. Deviations: the `PaintOrCoating` arm, `notAmmo`,
 and the three literal exceptions (353/530/849) have no port counterpart, so a
 held paint bucket is refused where vanilla takes it.
 
+The shift arms landed in **M7-UI-2c**: `ItemSlot.GetAlternateClickAction`'s
+ctx-1/ctx-2 cases (`ItemSlot.cs:657-665`) call the same `TryPlacingInChest` with
+the context's array, so `chest::try_placing_in_chest` was split into
+`try_placing_from(app, Source, just_check)` with `Source::Inv | Coin | Ammo`
+reading and writing the right array (`App.inventory` vs `App.equip.coins`/`ammo`
+— the C# has one `Player.inventory[0..58]`), and the old signature delegates with
+`Source::Inv`. The cursor-9 light and the cursor-9 click both resolve the row
+first (`App::chest_transfer_source`).
+
 Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
-flag to move from `App.favorite_slots` (a grid index set) onto the item, and the
-shift-into-chest transfer needs `chest::try_placing_in_chest` to accept the coin
-and ammo arrays instead of a grid index (it copies `app.inventory[slot]`). Both
-are named in ROADMAP's M7-UI-2 remainder.
+flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
+in ROADMAP's M7-UI-2 remainder.

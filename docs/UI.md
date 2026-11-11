@@ -430,9 +430,12 @@ The coin (ctx 1) and ammo (ctx 2) rows are click surfaces too
 action-0 move behind `PickItemMovementAction`'s gate (coins 71-74 only; the
 ammo row takes `Item.FitsAmmoSlot`'s `ammo`/`bait` set), right splits the stack,
 and `ui::inventory::coin_ammo_hit` gives the draw pass and the click pass one
-geometry (x 497/534, `(int)(85 + row·56·0.6 + 20)`). Still open on those rows:
-the Alt favorite toggle (the port keys favorites by grid index) and the shift
-transfer into an open chest (`TryPlacingInChest` takes a grid slot)
+geometry (x 497/534, `(int)(85 + row·56·0.6 + 20)`). Shift+click transfers either
+row into the open chest (`GetAlternateClickAction`'s ctx-1/ctx-2 arms reach the
+same `TryPlacingInChest` check, `ItemSlot.cs:657-665`) through
+`chest::try_placing_from`/`chest::Source`, which reads the row's own array where
+the C# reads one `Player.inventory[0..58]`. Still open on those rows: the Alt
+favorite toggle (the port keys favorites by grid index)
 (`:631-634`). The trash slot at `(448, 258)` is clickable: left-click swaps held ↔
 trash (`MouseItemSwap` `ItemSlot.cs:1255-1263`, the Grab cue).
 
