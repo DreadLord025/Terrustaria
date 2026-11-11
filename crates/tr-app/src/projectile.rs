@@ -405,6 +405,44 @@ pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// The whole aiStyle-99 weapon set — the kinds `DefaultToYoyo` covers.
+/// `Main.projFrames[type]` (`Main.cs:8441-8816`) for the kinds the port can
+/// spawn: every row defaults to 1 (`:8441`) and only these exceed it. The draw
+/// slices the sheet into `frames` equal rows and picks `Projectile.frame`
+/// (`Main.DrawProj`'s `Frame(1, projFrames[type], 0, frame)`); the per-family
+/// animators that advance `frame`/`frameCounter` land with their AI arms, so a
+/// row here without one draws frame 0.
+pub const fn proj_frames(kind: u16) -> u32 {
+    match kind {
+        34 => 6,
+        102 => 2,
+        254 => 5,
+        436 => 4,
+        447 => 4,
+        448 => 3,
+        450 => 5,
+        454 => 2,
+        456 => 4,
+        462 => 5,
+        519 => 4,
+        574 => 2,
+        601 => 2,
+        645 => 7,
+        652 => 6,
+        659 => 4,
+        837 => 3,
+        1130 => 6,
+        _ => 1,
+    }
+}
+
+/// The projectile kinds `proj_data` carries — the set the atlas packs
+/// `Images/Projectile_{id}` for. Derived from the table itself rather than a
+/// second hand-maintained list: the id space above the port's highest row is
+/// empty, so the probe stops at 1200.
+pub fn spawnable_kinds() -> Vec<u16> {
+    (0..=1200u16).filter(|k| proj_data(*k).is_some()).collect()
+}
+
 pub const YOYO_KINDS: [u16; 21] = [
     CODE1_YOYO,
     WOOD_YOYO,
@@ -2191,6 +2229,10 @@ pub struct Projectile {
     pub alpha: i32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
+    /// `Projectile.frame` (`:451`, reset `:805`) — the row the draw slices out
+    /// of the `proj_frames`-many strip. The per-family animators that advance
+    /// it land with their AI arms.
+    pub frame: u32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2274,6 +2316,7 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            frame: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
@@ -5702,8 +5745,15 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
-        let Some(uv) = lookups.shuriken_uv() else {
-            return;
+        // `Main.DrawProj`'s sprite: the kind's own sheet at
+        // `Frame(1, projFrames[type], 0, frame)` (`Main.cs:27929-27943`), or the
+        // shuriken stand-in when the sheet is not packed.
+        let (uv, sprite_w, sprite_h) = match lookups.proj_frame(self.kind, self.frame) {
+            Some((uv, w, h)) => (uv, w, h),
+            None => match lookups.shuriken_uv() {
+                Some(uv) => (uv, SIZE, SIZE),
+                None => return,
+            },
         };
         let tx = (self.pos.x / TILE_PX) as i32;
         let ty = (self.pos.y / TILE_PX) as i32;
@@ -5719,9 +5769,13 @@ impl Projectile {
             self.pos.x - (camera.x - screen.x * 0.5 / zoom),
             self.pos.y - (camera.y - screen.y * 0.5 / zoom),
         ];
+        // `Projectile.scale` multiplies the sprite (`Main.DrawProj`'s
+        // `float scale = projectile.scale`), and the sheet's own frame size is
+        // the quad — not the 16 px hitbox stand-in.
+        let scale = self.scale.max(0.0) * zoom;
         r.push_ui_sprite_rot(
             pos,
-            [SIZE * zoom, SIZE * zoom],
+            [sprite_w * scale, sprite_h * scale],
             uv,
             [c[0], c[1], c[2], 1.0],
             self.rot,
@@ -11839,6 +11893,7 @@ mod phasmal_projectile_tests {
             rot: 0.0,
             damage: 30,
             knock_back: 0.0,
+            frame: 0,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -12063,6 +12118,7 @@ mod ritual_projectile_tests {
             rot: 0.0,
             damage: 0,
             knock_back: 0.0,
+            frame: 0,
             crit: false,
             friendly: false,
             time_left: 600,
