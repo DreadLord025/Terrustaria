@@ -115,6 +115,8 @@ pub struct SetStats {
     pub mana_max: i32,
     pub max_minions: i32,
     pub dash_type: i32,
+    /// `Player.manaCost -= x` (the casters' set bonuses).
+    pub mana_cost: f32,
 }
 
 const fn stats() -> SetStats {
@@ -132,6 +134,7 @@ const fn stats() -> SetStats {
         mana_max: 0,
         max_minions: 0,
         dash_type: 0,
+        mana_cost: 0.0,
     }
 }
 
@@ -335,6 +338,35 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         "Spider",
         (2370, 2371, 2372),
         SetStats { minion_damage: 0.12, ..stats() },
+    ),
+    // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
+    (
+        "Jungle",
+        (228, 229, 230),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (960, 961, 962),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    // `:466` Benefits.CobaltCaster — `manaCost -= 0.14f`.
+    (
+        "CobaltCaster",
+        (371, 374, 375),
+        SetStats { mana_cost: -0.14, ..stats() },
+    ),
+    // `:474` Benefits.MythrilCaster — `manaCost -= 0.17f`.
+    (
+        "MythrilCaster",
+        (376, 379, 380),
+        SetStats { mana_cost: -0.17, ..stats() },
+    ),
+    // `:480` Benefits.AdamantiteCaster — `manaCost -= 0.19f`.
+    (
+        "AdamantiteCaster",
+        (400, 403, 404),
+        SetStats { mana_cost: -0.19, ..stats() },
     ),
     // `:477` Benefits.Bee — `minionDamage += 0.1f`.
     (
