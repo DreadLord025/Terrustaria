@@ -2583,11 +2583,37 @@ impl Player {
                 self.stat_defense += def.defense as i32;
             }
         }
-        self.stat_defense += tr_core::armor_sets::set_bonus_defense(
+        let (armor_head, armor_body, armor_legs) = (
             self.equipped[0] as i32,
             self.equipped[1] as i32,
             self.equipped[2] as i32,
         );
+        self.stat_defense +=
+            tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
+        // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
+        // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
+        // Molten, Frost, Mining, the Cobalt/Mythril/Adamantite head variants,
+        // Crystal Assassin, Tiki, Spooky, Spider and Bee.
+        if let Some((_set, set)) =
+            tr_core::armor_sets::set_stats(armor_head, armor_body, armor_legs)
+        {
+            self.melee_damage += set.melee_damage;
+            self.ranged_damage += set.ranged_damage;
+            self.magic_damage += set.magic_damage;
+            self.minion_damage += set.minion_damage;
+            self.melee_crit += set.melee_crit;
+            self.ranged_crit += set.ranged_crit;
+            self.magic_crit += set.magic_crit;
+            self.move_speed += set.move_speed;
+            self.melee_speed_bonus += set.melee_speed;
+            self.pick_speed_bonus += set.pick_speed;
+            self.mana_max += set.mana_max;
+            self.max_minions += set.max_minions;
+            if set.dash_type != 0 {
+                self.dash_type = set.dash_type;
+            }
+        }
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
@@ -5585,6 +5611,44 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-5 — `ArmorSetBonuses.Benefits`' scalar rows ride the same pass.
+    #[test]
+    fn the_completed_set_grants_its_stat_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Crystal Assassin (4982/4983/4984): +10% every damage, +10 every crit,
+        // `dashType = 5`. The crit bases are 4 (`ResetEffects`), so 14.
+        p.equipped[0] = 4982;
+        p.equipped[1] = 4983;
+        p.equipped[2] = 4984;
+        p.update(&w, PlayerInput::default());
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`), so the
+        // set's `+= 0.1f` reads as 1.1.
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
+        assert_eq!(p.dash_type, 5);
+        // Swapping to the Ninja set (256/257/258) keeps only its own row:
+        // `moveSpeed += 0.2f`.
+        p.equipped[0] = 256;
+        p.equipped[1] = 257;
+        p.equipped[2] = 258;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.0).abs() < 1e-4, "the base 1.0, no add");
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        // The Mining set (88/410/411) is the `pickSpeed -= 0.1f` negation.
+        p.equipped[0] = 88;
+        p.equipped[1] = 410;
+        p.equipped[2] = 411;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-4);
+        // A partial set grants nothing.
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-4);
     }
 
     #[test]
