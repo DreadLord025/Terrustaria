@@ -17,6 +17,11 @@ pub const CELL: f32 = 36.0;
 /// ctor (`:25`).
 pub const COLS: usize = 14;
 
+/// `UI.Back` — the Back panel's label key (`UIEmotesMenu.cs:78`'s
+/// `UITextPanel<LocalizedText>(Language.GetText("UI.Back"), …)`), the same key
+/// the bestiary (`UIBestiaryTest.cs:366`) and achievements panels read.
+pub const BACK_KEY: &str = "UI.Back";
+
 /// How many wheel rows the panel's grid fits (`GetEntriesToShow`'s
 /// `rectangle.Height / 72` analogue, `UIBestiaryTest.cs:357-362` — here the
 /// 36 px cell).
@@ -80,10 +85,24 @@ pub fn card_at(screen: Vec2, mouse: Vec2, scroll: i32) -> Option<i32> {
     (idx < crate::emotes::EMOTE_COUNT as usize).then_some(idx as i32)
 }
 
-/// `back_hit` against *this* panel (`UIEmotesMenu.cs:59-69`'s Back) — the
+/// The wheel's Back panel — `UIEmotesMenu.cs:78-84`: `Width(-10, 0.5)`,
+/// `Height(50, 0)`, `VAlign 1`, `HAlign 0.5`, `Top(-45)`. The bestiary's
+/// `back_rect` is the same box with `Top(-25)` (`UIBestiaryTest.cs:371`), so
+/// the wheel keeps its own — reusing the bestiary's put the label 20 px low.
+pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
+    let w = (panel[2] - 10.0) * 0.5;
+    [
+        panel[0] + panel[2] * 0.5 - w * 0.5,
+        panel[1] + panel[3] - 45.0 - 50.0,
+        w,
+        50.0,
+    ]
+}
+
+/// `back_hit` against *this* panel (`UIEmotesMenu.cs:78-86`'s Back) — the
 /// bestiary twin reads the bestiary container, so the wheel keeps its own.
 fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
-    let r = super::bestiary::back_rect(panel);
+    let r = back_rect(panel);
     mouse.x >= r[0] && mouse.x <= r[0] + r[2] && mouse.y >= r[1] && mouse.y <= r[1] + r[3]
 }
 
@@ -170,16 +189,22 @@ pub fn draw(
             }
         }
     }
-    // The Back panel (`MakeExitButton`'s shared style).
-    let back = super::bestiary::back_rect(&panel);
+    // The Back panel (`UIEmotesMenu.cs:78-87`): `UITextPanel<LocalizedText>(
+    // Language.GetText("UI.Back"), 0.7f, large: true)` with
+    // `Width(-10, 0.5)`, `Height(50, 0)`, `VAlign 1`, `HAlign 0.5` and
+    // **`Top(-45)`** — the wheel's own -45, not the bestiary's -25, which is
+    // what made the label sit off-centre. The label goes through `lang::text`
+    // like the bestiary's and the achievements' panels do, never a literal.
+    let back = back_rect(&panel);
     let style = super::cards::fat_button_style();
-    let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
+    let label = crate::lang::text(BACK_KEY);
+    let text_w = text::hud_text_width(r, lookups, &label, style.text_scale);
     super::uistate::draw_text_panel(
         r,
         lookups,
         back,
         &style,
-        "Back",
+        &label,
         text_w,
         back_hit(&panel, mouse),
     );
@@ -277,11 +302,55 @@ mod tests {
     #[test]
     fn dw_4_3_the_back_row_hangs_off_the_wheel_container() {
         // The wheel's Back is half the *wheel* container's width, not the
-        // bestiary panel's it used to borrow.
+        // bestiary panel's it used to borrow, and it hangs at its own
+        // `Top(-45)` (`UIEmotesMenu.cs:82`) — not the bestiary's -25
+        // (`UIBestiaryTest.cs:371`).
         let panel = panel_rect(Vec2::new(1600.0, 900.0), true);
-        let back = crate::ui::bestiary::back_rect(&panel);
+        let back = back_rect(&panel);
         assert_eq!(back[2], (590.0 - 10.0) * 0.5);
+        assert_eq!(back[3], 50.0);
+        assert_eq!(back[1], panel[1] + panel[3] - 95.0); // -45 top, 50 tall
+        // Centred: the box's midpoint is the panel's midpoint.
+        assert_eq!(back[0] + back[2] * 0.5, panel[0] + panel[2] * 0.5);
         assert!(back_hit(&panel, Vec2::new(back[0] + 10.0, back[1] + 10.0)));
         assert!(!back_hit(&panel, Vec2::new(back[0] - 10.0, back[1] + 10.0)));
+        // The old bestiary borrow (`Top(-25)`, `UIBestiaryTest.cs:371`) spans
+        // `bottom-75 .. bottom-25`; the wheel's own (`Top(-45)`,
+        // `UIEmotesMenu.cs:82`) spans `bottom-95 .. bottom-45`. A point in the
+        // bestiary's lower half — below the wheel's own bottom edge — is NOT a
+        // wheel-Back hit, which is what pinned the 20 px mis-centring.
+        let bestiary = crate::ui::bestiary::back_rect(&panel);
+        assert!(
+            !back_hit(&panel, Vec2::new(bestiary[0] + 10.0, bestiary[3] + bestiary[1] - 10.0)),
+            "the bestiary's lower row sits below the wheel's own Back"
+        );
+        // And the wheel's own box is 20 px above the bestiary's top edge.
+        assert_eq!(bestiary[1] - back[1], 20.0);
+    }
+
+    #[test]
+    fn bug_18_the_back_label_is_the_ui_back_localized_text() {
+        // `UIEmotesMenu.cs:78`: the Back panel is a
+        // `UITextPanel<LocalizedText>(Language.GetText("UI.Back"), …)`, so the
+        // label is the localized value — never the literal "Back".
+        assert_eq!(BACK_KEY, "UI.Back");
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // The ru-RU `UI` group carries `Back` (`Content.ru-RU.json`); with no
+        // localization sources the manager answers the key itself, in which
+        // case this test only pins the key spelling.
+        crate::lang::init(tr_core::localization::GameCulture::Russian);
+        let ru = crate::lang::text(BACK_KEY);
+        if ru == BACK_KEY {
+            eprintln!("skipping the localization half: no sources");
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            return;
+        }
+        assert_ne!(ru, "Back", "ru-RU must not read the English literal");
+        assert_eq!(ru, "Назад", "the ru-RU `UI.Back` row");
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let en = crate::lang::text(BACK_KEY);
+        assert_eq!(en, "Back", "the en-US `UI.Back` row");
     }
 }
