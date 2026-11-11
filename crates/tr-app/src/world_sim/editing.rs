@@ -558,7 +558,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     p.buffs.add_buff(def.buff_type, def.buff_time);
                 }
                 if proj > 0 {
-                    app.projectiles.free_up_pets_and_minions(p, held.kind, app.local_id as u8);
+                    // The C# gates on `sItem.shoot` (`Player.cs:42780`) — the
+                    // projectile id, never the item type.
+                    app.projectiles.free_up_pets_and_minions(p, proj, app.local_id as u8);
                 }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
@@ -590,6 +592,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
+                    }
+                    // `Player.cs:48210` — the sentry spawns run the turret
+                    // sweep right after (the base cap of 1 would otherwise
+                    // accumulate unbounded sentries; the budget-change sweep
+                    // in the player tick only catches cap drops).
+                    if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
+                        app.projectiles.update_max_turrets(
+                            p.max_turrets,
+                            app.local_id as u8,
+                            tr_core::dd2::event_ongoing(),
+                        );
                     }
                     if def.consumable {
                         app.inventory[app.selected].count =

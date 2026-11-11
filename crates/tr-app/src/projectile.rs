@@ -2078,9 +2078,12 @@ impl Projectile {
             }
         }
         // The NPC aim point: `position + Size * 0.5`.
+        // `Projectile.cs:65323-65334` — the Tempest/UFO/Cell branch aims at
+        // `position + Size * (0.5, 0)`; the generic branch's `Center` is the
+        // same point for the ported boxes.
         let npc_aim = |n: &Npc| {
             let (w, h) = n.size();
-            Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5
+            Vec2::new(n.x + w * 0.5, n.y)
         };
         let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
         let owner_center = Vec2::new(ocx, ocy);
@@ -2318,7 +2321,9 @@ impl Projectile {
                 v2 = owner_center - center;
                 let dir = owner.as_ref().map_or(1.0, |p| p.facing as f32);
                 v2.x -= 10.0 * dir;
-                v2.x -= queue as f32 * 40.0 * dir;
+                // The C#'s `num28` starts at 1: the queue offset counts from
+                // one, not zero.
+                v2.x -= (queue as f32 + 1.0) * 40.0 * dir;
                 v2.y -= 10.0;
             }
             let num30 = v2.length();
@@ -2514,9 +2519,11 @@ impl Projectile {
                 target: num13,
             })
         } else if self.ai[1] == 0.0 {
-            // `:66119-66128` — the generic fire.
+            // `:66119-66128` — the generic fire: the cooldown increments
+            // before the spawn.
             let mut v = (vector - center).normalize_or_zero();
             v *= num41;
+            self.ai[1] += 1.0;
             Some(MinionShot {
                 kind: num42,
                 vx: v.x,
@@ -2731,19 +2738,43 @@ impl ProjectilePool {
     /// `maxMinions - StaffMinionSlotsRequired[staff]` (the const 1,
     /// `ItemID.cs:1322`). The Stardust Dragon kinds drop out of the list and
     /// the relink arms are stubbed per the exclusion.
+    /// `staff` is the item's `shoot` id — the C# gates on `sItem.shoot`
+    /// (`Player.cs:51734`), never the item type.
     pub fn free_up_pets_and_minions(&mut self, p: &crate::player::Player, staff: u16, owner: u8) {
         // `:51704-51727` — the two pet pairs die outright when their staff is
-        // re-used.
-        for pair in [(1093u16, 1112u16), (1094, 1113)] {
-            if staff != pair.0 && staff != pair.1 {
-                continue;
-            }
-            let target = if staff == pair.0 { pair.0 } else { pair.1 };
+        // re-used: the first pair kills BOTH its kinds, the second
+        // cross-kills (a used 1094 kills the 1113s and vice versa).
+        if staff == 1093 || staff == 1112 {
             for s in self.slots.iter_mut() {
-                if s.active && s.owner == owner && s.minion && s.kind == target {
+                if s.active && s.owner == owner && s.minion && matches!(s.kind, 1093 | 1112) {
                     s.active = false;
                     s.time_left = 0;
                 }
+            }
+        }
+        if staff == 1094 || staff == 1113 {
+            let cross = if staff == 1094 { 1113 } else { 1094 };
+            for s in self.slots.iter_mut() {
+                if s.active && s.owner == owner && s.minion && s.kind == cross {
+                    s.active = false;
+                    s.time_left = 0;
+                }
+            }
+        }
+        // `:51828-51849` — the non-sacrificable tail: every minion of THIS
+        // shoot kind dies on a re-use (the sentry staves' own refresh), plus
+        // the two pet specials (the Slime Staff's 72 → the 86/87 pair, the
+        // 5131 → the 881/934 pair).
+        for s in self.slots.iter_mut() {
+            if !s.active || s.owner != owner {
+                continue;
+            }
+            let kill = (s.minion && s.kind == staff)
+                || (staff == 72 && matches!(s.kind, 86 | 87))
+                || (staff == 5131 && matches!(s.kind, 881 | 934));
+            if kill {
+                s.active = false;
+                s.time_left = 0;
             }
         }
         if !MINION_SACRIFICABLE.contains(&staff) {
@@ -7316,9 +7347,11 @@ mod use_path_tests {
         pool.slots.iter().filter(|s| s.active && s.minion).count()
     }
 
-    /// DW-6.1 — the sacrifice: over the budget, the *lowest-slot* full minion
-    /// dies first (the descending `minionSlots` sort,
-    /// `Projectile.cs:51738-51746`) and the newest spawn survives.
+    /// DW-6.1 — the sacrifice: over the budget, the descending-`minionSlots`
+    /// order kills the OTHER kinds' minions (`Projectile.cs:51738-51827`) so
+    /// the new spawn fits, while the same-shoot-kind minions die outright in
+    /// the verbatim tail (`:51828-51849` — re-using a staff never stacks its
+    /// own kind).
     #[test]
     fn test_DW_6_1_the_sacrifice_frees_the_budget() {
         let mut pool = ProjectilePool::new();
@@ -7326,52 +7359,51 @@ mod use_path_tests {
         let mut p = player(&w);
         p.max_minions = 2;
         let a = spawn_minion(&mut pool, HORNET, 100.0);
-        let b = spawn_minion(&mut pool, HORNET, 200.0);
+        let b = spawn_minion(&mut pool, FLYING_IMP, 200.0);
         assert_eq!(live_minions(&pool), 2);
-        // The third staff use over the cap: the free-up kills one Hornet
-        // before the spawn lands.
-        pool.free_up_pets_and_minions(&p, 373, 0);
+        // A third staff (the Slime Staff's shoot 266) has no kind in the pool:
+        // the tail kills nothing, the sacrifice frees one slot.
+        pool.free_up_pets_and_minions(&p, 266, 0);
         assert_eq!(live_minions(&pool), 1, "one sacrificed");
         assert!(
             !pool.slots[a].active || !pool.slots[b].active,
-            "an existing Hornet died"
+            "an existing minion died"
         );
-        // At the base cap of 1 the free-up empties the budget so the new
-        // spawn fits: `total(1.0) > maxMinions(1) - 1 = 0` still holds.
+        // At the base cap of 1 the same use empties the budget: `total(2.0) -
+        // freed > 1 - 1 = 0` holds twice.
         p.max_minions = 1;
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        assert_eq!(live_minions(&pool), 0, "both make room");
+        // The verbatim tail: re-using the Hornet Staff (shoot 373) kills the
+        // Hornets outright — the same kind never stacks.
+        let hornet = spawn_minion(&mut pool, HORNET, 300.0);
         pool.free_up_pets_and_minions(&p, 373, 0);
-        assert_eq!(live_minions(&pool), 0, "the old minion makes room");
+        assert!(!pool.slots[hornet].active, "the same-shoot kind dies");
     }
 
     /// DW-6.2 — the ordering: the half-slot spiders sort after the full-slot
-    /// minions (they die first only once the full ones are gone), and the
-    /// protected kinds (623) never die.
+    /// minions (the descending `minionSlots` sort) and the protected kinds
+    /// (623) never die.
     #[test]
     fn test_DW_6_2_the_sacrifice_order_and_protected_kinds() {
         let mut pool = ProjectilePool::new();
         let w = world();
         let mut p = player(&w);
-        p.max_minions = 1;
+        p.max_minions = 2;
         let spider = spawn_minion(&mut pool, RETANIMINI, 100.0); // 0.5 slots
-        let guardian = spawn_minion(&mut pool, STARDUST_GUARDIAN, 200.0); // 0 slots — never counted
+        let guardian = spawn_minion(&mut pool, STARDUST_GUARDIAN, 200.0); // 0 slots — protected
         let hornet = spawn_minion(&mut pool, HORNET, 300.0); // 1.0 slot
-        let _ = guardian;
-        pool.free_up_pets_and_minions(&p, 373, 0);
-        // `total(1.5) > maxMinions(1) - 1 = 0` holds twice: the descending
-        // sort takes the full-slot Hornet first, then the half slot.
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        // `total(1.5) > maxMinions(2) - 1 = 1` once: the full-slot Hornet dies.
         assert!(!pool.slots[hornet].active, "the full-slot minion dies first");
-        assert!(!pool.slots[spider].active, "the half slot follows");
+        assert!(pool.slots[spider].active, "the half slot survives at cap 2");
         assert!(pool.slots[guardian].active, "the protected kind survives");
-        // At cap 2 the same set keeps the half slot: `1.5 - 1.0 = 0.5 <= 1`.
-        let mut pool = ProjectilePool::new();
-        let mut p2 = player(&w);
-        p2.max_minions = 2;
-        let spider2 = spawn_minion(&mut pool, RETANIMINI, 100.0);
-        let hornet2 = spawn_minion(&mut pool, HORNET, 300.0);
-        pool.free_up_pets_and_minions(&p2, 373, 0);
-        assert!(!pool.slots[hornet2].active, "the full slot dies");
-        assert!(pool.slots[spider2].active, "the half slot survives at cap 2");
-        let _ = spider;
+        // At cap 1 the half slot follows; the 0-slot protected kind still
+        // never dies and never counts.
+        p.max_minions = 1;
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        assert!(!pool.slots[spider].active, "the half slot follows at cap 1");
+        assert!(pool.slots[guardian].active, "the protected kind holds");
     }
 
     /// DW-6.3 — the right-click aim: the nearest chaseable NPC to the mouse
