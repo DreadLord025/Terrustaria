@@ -2410,6 +2410,18 @@ fn step_world_tail(
 pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important = vec![false; td::TILE_COUNT];
     world.frame_important[tree::TREE as usize] = true;
+    // The rest of the tree trunks (`Main.cs:7678/:7760-7775`): the ash trunk
+    // 72 and the variant kinds 583-589 (the gem trees), 596/616 (the vanity
+    // trees) and 634 (the ash tree). All of them are frame-important, so the
+    // framer keeps their stored frames and the kill cascade reaches them
+    // (`TileFrameImportant`'s tree arms, `WorldGen.cs:85876-85911`).
+    world.frame_important[72] = true;
+    for kind in 583..=589 {
+        world.frame_important[kind] = true;
+    }
+    world.frame_important[596] = true;
+    world.frame_important[616] = true;
+    world.frame_important[634] = true;
     world.frame_important[3] = true;
     world.frame_important[4] = true;
     // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families

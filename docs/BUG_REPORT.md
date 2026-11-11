@@ -635,6 +635,38 @@ generic single-tile kill exists.
    trunk cell + the acorn roll; a world-hash/determinism test is unaffected
    (runtime only).
 
+**Status: FIXED 2026-11-11 (`BUG-16-tree-collapse`).**
+
+What landed: the cascade arm `TileFrameImportant` dispatches for the tree
+kinds (`WorldGen.cs:85876-85911`) was missing — the port's `square_tile_frame`
+only ran the multi-tile `Check*` object routines, so a tree cell that lost its
+ground stayed in the air and the trunk never collapsed. `tr-core/src/edit.rs`
+now carries `check_tree` (the forest tree 5 — `WorldGen.CheckTree`,
+`WorldGen.cs:54570-54780`) and `check_palm_tree` (323 — `WorldGen.CheckPalmTree`,
+`:54346-54400`), with `CheckTreeWithSettings`'s variant kinds
+(`:54402-54568`) parameterised by their ground test
+(`GemTreeGroundTest`/`VanityTreeGroundTest`/`AshTreeGroundTest`, `:30304-30341`).
+The routine's `KillTile` chain is what makes the trunk fall: the cell above a
+missing ground dies, and its own `TileFrame` ring reaches the next one up.
+
+The drop layer: `tr-core/src/tree.rs` gained `GetTreeType` (`:63075-63110`),
+`GetTreeBottom` (`:63436-63482`), `GetTreeTypeAndTreeBottom` (`:63055-63066`),
+`TreeTypeDropsAcorns` (`:63112-63119`) and the wood table; `edit::TreeDropEvent`
+carries the per-cell record (the core has no RNG stream) and the app resolves
+the C#'s roll order — `KillTile_GetTreeDrops` (`:66189-66261`): the canopy
+marker's acorn `Next(2)`, the mushroom's `Next(2)`, the bonus wood
+`Next(35) <= axe` and its `Main.rand.Next(3)` second chance; the palm's
+`case 323` arm of `KillTile_GetItemDrops` (`:65232-65266`) with the biome
+ground walk. The tree kinds 72/583-589/596/616/634 are now frame-important
+like the C# (`Main.cs:7678/:7760-7775`), so the cascade reaches them.
+
+Deviations: the palm's canopy re-roll (`CheckPalmTree`, `:54385-54388`) needs
+the `genRand` stream, so the core records the request and the app resolves it
+after the cascade (the C#'s ring does not fire for that arm — `frameY` is
+unchanged); the `Check*` kills propagate the ambient `noItem` like the other
+object checks (the C#'s `KillTile(i, j)` defaults to `noItem: false`, so the
+worldgen pass drops no wood here). 5 tests.
+
 ---
 
 ## 17. Front-end clicks are silent (no UI sounds) — S3 / High

@@ -1723,15 +1723,41 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // path sets for held 213/5295): the port reads the held slot at the
     // break moment.
     let staff_bonus = staff_of_regrowth(app.inventory[app.selected].kind);
+    // `Player.FindClosest` (`WorldGen.cs:66255-66256`) picks the player
+    // nearest the tree's ground cell and reads their held item's axe power —
+    // the bonus-wood roll's threshold. The port has one player.
+    let axe_power = registry::get(app.inventory[app.selected].kind)
+        .map(|d| i32::from(d.axe))
+        .unwrap_or(0);
     let ctx = drop_ctx(app);
     let (drops, portals) = {
         let mut main_rng = super::npcs::LootRng(&mut app.item_rng);
-        break_drop_events(&kill, &app.world, hit, staff_bonus, &mut main_rng, &ctx)
+        break_drop_events(
+            &kill,
+            &app.world,
+            hit,
+            staff_bonus,
+            axe_power,
+            &mut main_rng,
+            &ctx,
+        )
     };
     for (id, count, x, y) in drops {
         spawn_item_drop(app, id, count, x, y);
         app.audio
             .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
+    }
+    // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
+    // cells whose cell above is gone take a fresh canopy frame. The roll
+    // needs the `genRand` stream, so the core recorded the request and the
+    // app resolves it here (one `item_rng` throw seeds the `FastRandom`).
+    for (px, py) in &kill.palm_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(crate::app::next_rand(&mut app.item_rng));
+        let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
+        if let Some(cell) = app.world.tile_mut(*px, *py) {
+            cell.frame_x = frame_x;
+        }
     }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
@@ -1891,6 +1917,7 @@ fn break_drop_events(
     world: &World,
     hit: Option<HitCell>,
     staff_of_regrowth: bool,
+    axe_power: i32,
     main_rng: &mut super::npcs::LootRng<'_>,
     ctx: &DropCtx,
 ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
@@ -1910,6 +1937,49 @@ fn break_drop_events(
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
             events.push((id, 1, drop.x, drop.y));
+        }
+    }
+    // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
+    // `WorldGen.cs:66189-66261`, and the palm arm of `KillTile_GetItemDrops`,
+    // `:65232-65266`).
+    for event in &kill.tree_events {
+        match event {
+            edit::TreeDropEvent::Palm {
+                x,
+                y,
+                frame_x,
+                item,
+            } => {
+                if *item != 0 {
+                    events.push((*item, 1, *x, *y));
+                }
+                // `if (tileCache.frameX <= 132 && tileCache.frameX >= 88)
+                // secondaryItem = 27;` (`:65239-65242`).
+                if (88..=132).contains(frame_x) {
+                    events.push((27, 1, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Trunk {
+                x,
+                y,
+                frame_x,
+                frame_y,
+                tree_type,
+                ..
+            } => {
+                let mut gen_stream =
+                    tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
+                for (id, count) in trunk_tree_drops(
+                    *tree_type,
+                    *frame_x,
+                    *frame_y,
+                    axe_power,
+                    &mut gen_stream,
+                    main_rng,
+                ) {
+                    events.push((id, count, *x, *y));
+                }
+            }
         }
     }
     // `SpawnThingsFromPot` per pot event: one `item_rng` throw seeds the
@@ -1974,6 +2044,71 @@ fn break_drop_events(
         }
     }
     (events, portals)
+}
+
+/// `WorldGen.KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`) — the killed
+/// trunk cell's wood and the canopy marker's acorn.
+///
+/// The C# rolls in this order: the acorn roll (`genRand.Next(2)`, the canopy
+/// marker cell only — `frameX >= 22 && frameY >= 198`), the mushroom roll
+/// (`genRand.Next(2)`), the bonus wood (`genRand.Next(35) <= axe`) and its
+/// second chance (`Main.rand.Next(3) == 0`, short-circuited). The port's
+/// seam: one `item_rng` throw seeds the `FastRandom` that stands in for the
+/// C#'s `genRand` stream, and the `Main.rand` roll spends the item stream
+/// directly — the house convention (PORT_MAP's "the RNG seam").
+fn trunk_tree_drops(
+    tree_type: tr_core::tree::TreeType,
+    frame_x: i16,
+    frame_y: i16,
+    axe_power: i32,
+    gen_stream: &mut tr_core::tile_light::FastRandom,
+    main_rng: &mut super::npcs::LootRng<'_>,
+) -> Vec<(u16, u32)> {
+    let mut drop_item = 0u16;
+    let mut secondary_item = 0u16;
+    // The canopy marker's acorn roll (`:66191-66212`).
+    if frame_x >= 22 && frame_y >= 198 {
+        if gen_stream.next(2) == 0 {
+            drop_item = 9;
+            if tr_core::tree::tree_type_drops_acorns(tree_type) {
+                secondary_item = 27;
+            }
+        } else {
+            drop_item = 9;
+        }
+    } else {
+        drop_item = 9;
+    }
+    if drop_item != 9 {
+        return Vec::new();
+    }
+    // The family's wood (`:66224-66254`).
+    match tree_type {
+        tr_core::tree::TreeType::Ash => drop_item = 5215,
+        tr_core::tree::TreeType::Corrupt => drop_item = 619,
+        tr_core::tree::TreeType::Crimson => drop_item = 911,
+        tr_core::tree::TreeType::Jungle => drop_item = 620,
+        tr_core::tree::TreeType::Hallowed => drop_item = 621,
+        tr_core::tree::TreeType::Snow => drop_item = 2503,
+        // The glowing mushroom drops the mushroom itself half the time and
+        // nothing the other half (`:66241-66250`).
+        tr_core::tree::TreeType::Mushroom => {
+            drop_item = if gen_stream.next(2) == 0 { 183 } else { 0 };
+        }
+        _ => {}
+    }
+    // The bonus wood (`:66255-66260`): the held axe's power against a 1-in-35
+    // roll, with a 1-in-3 roll as the second chance.
+    let bonus = gen_stream.next(35) <= axe_power || main_rng.next_range(0, 3) == 0;
+    let stack = if bonus { 2u32 } else { 1u32 };
+    let mut drops = Vec::new();
+    if drop_item != 0 {
+        drops.push((drop_item, stack));
+    }
+    if secondary_item != 0 {
+        drops.push((secondary_item, 1));
+    }
+    drops
 }
 
 /// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
@@ -3433,6 +3568,84 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// BUG-16: the killed trunk cell's drop — the wood of the tree's family
+    /// and the canopy marker's acorn (`WorldGen.KillTile_GetTreeDrops`,
+    /// `WorldGen.cs:66189-66261`).
+    #[test]
+    fn bug_16_the_trunk_drop_is_the_family_wood_and_the_acorn() {
+        let mut state = 0u64;
+        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(1);
+        // A plain trunk cell: the wood of the tree's family, no acorn (the
+        // acorn roll is the canopy marker's only — `frameX >= 22 && frameY >= 198`).
+        let drops = trunk_tree_drops(
+            tr_core::tree::TreeType::Forest,
+            0,
+            0,
+            0,
+            &mut gen_stream,
+            &mut rng,
+        );
+        assert_eq!(drops[0].0, 9, "the forest tree drops Wood");
+        assert!(
+            !drops.iter().any(|(id, _)| *id == 27),
+            "a plain trunk cell never drops an acorn"
+        );
+        // The jungle family drops Rich Mahogany (`GetTreeType`'s switch).
+        let mut state = 0u64;
+        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(3);
+        let drops = trunk_tree_drops(
+            tr_core::tree::TreeType::Jungle,
+            0,
+            0,
+            0,
+            &mut gen_stream,
+            &mut rng,
+        );
+        assert_eq!(drops[0].0, 620, "the jungle tree drops Rich Mahogany");
+        // The canopy marker rolls the acorn (half the time, for every family
+        // but the mushroom and the jungle).
+        let mut acorns = 0;
+        for seed in 0..24u64 {
+            let mut state = 0u64;
+            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
+            let drops = trunk_tree_drops(
+                tr_core::tree::TreeType::Forest,
+                22,
+                198,
+                0,
+                &mut gen_stream,
+                &mut rng,
+            );
+            assert_eq!(drops[0].0, 9, "the canopy cell drops wood too");
+            if drops.iter().any(|(id, _)| *id == 27) {
+                acorns += 1;
+            }
+        }
+        assert!(acorns > 0, "the canopy marker rolls acorns");
+        // The jungle never does (`TreeTypeDropsAcorns`, `WorldGen.cs:63112`).
+        let mut jungle_acorns = 0;
+        for seed in 0..24u64 {
+            let mut state = 0u64;
+            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
+            let drops = trunk_tree_drops(
+                tr_core::tree::TreeType::Jungle,
+                22,
+                198,
+                0,
+                &mut gen_stream,
+                &mut rng,
+            );
+            if drops.iter().any(|(id, _)| *id == 27) {
+                jungle_acorns += 1;
+            }
+        }
+        assert_eq!(jungle_acorns, 0, "the jungle tree never drops acorns");
+    }
+
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
     /// parked under the screen-centre cursor and no tile there, so the
     /// `mine_down` arm takes the NPC branch (`ItemCheck_MeleeHitNPCs` →
@@ -3694,6 +3907,7 @@ mod tests {
             &object_world(),
             hit,
             false,
+            0,
             &mut main,
             &DropCtx::default(),
         )
