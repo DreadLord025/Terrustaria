@@ -1811,6 +1811,10 @@ pub(crate) mod front_flow_tests {
             inventory: std::array::from_fn(|_| EMPTY_SLOT),
             equip: inv::EquipSlots::empty(),
             equip_page: 0,
+            // `Main.EquipPageSelected` (`Main.cs:42846-42858`) — the page the
+            // player picked with the tabs, which `resolve_equip_page()` feeds
+            // back into `equip_page` every frame.
+            equip_page_selected: 0,
             selected: 0,
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,

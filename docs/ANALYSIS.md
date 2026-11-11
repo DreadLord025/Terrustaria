@@ -1215,10 +1215,9 @@ The character is composed from the original 40×56 part strips (`Player_0_0` hea
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and a faithful `Player.PlayerFrame` port
 (`player.rs::update_frames`). The legs and body each carry a frame row (`leg_frame`/
-`body_frame`): idle is row 0 (the rest pose), airborne (`velocity.Y != 0`) is row 5, and
-walking advances one row per `8.0` of `legFrameCounter += |velocity.X| * 1.3`, cycling the
-walk band `7..=19` with the body copying the leg row; during an item swing the app applies
-the `useStyle 1` body rows `1 -> 2 -> 3` via `apply_item_use_frame`. (An earlier version
+`body_frame`), and since M2-DRAW-3 the whole of `PlayerFrame()` (`Player.cs:35755-36647`)
+is ported arm for arm (see "The full PlayerFrame chain" below) rather than the three-arm
+approximation this paragraph used to describe. (An earlier version
 returned row 5 at rest, which made the idle character look like it was about to jump, and
 used an unrelated `walk_time` counter that flickered between rows.) The legs/pants/shoes
 draw with `leg_frame`, the torso/arms/head/eyes/hair with `body_frame`. Torso and undershirt
@@ -9744,6 +9743,59 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 hold→throw→bounce→reel lifecycle.
+## The full `PlayerFrame` chain (M2-DRAW-3, 2026-11-11)
+
+`Player::update_frames` now ports `PlayerFrame()` (`Player.cs:35755-36647`) arm for arm
+instead of the three-branch approximation (idle / air / walk) it started with. The chain
+order is the vanilla `else if` ladder, and that order is the point: the item-use arm comes
+BEFORE the rope/hold/shield/mount/grapple/water/air/walk arms, so a swing no longer leaks
+the walk row, and the held-item rows no longer have to be patched in at draw time (the old
+`apply_item_use_frame` + `frame.rs` post-pass are gone; the app feeds the same inputs in
+through `player::FrameInputs` before the fixed step, beside `swing_aim`).
+
+Legs (`:36219-36291`): the swim paddle (`swimTime > 0`, a flat `+2.0` counter with no
+velocity term), the jump/fall/hang row 5 (`velocity.Y != 0 || grappling[0] > -1`) with the
+three always-animated wing sets (22/28/45 inside `ShouldDrawWingsThatAreAlwaysAnimated`)
+keeping row 0, the walk cycle with the slippery no-input and roller-skate
+(`MountID.Sets.IsRollerSkates` = 57-60) rest-row pins and the skates' `num19 = 2f` lock at
+`maxRunSpeed`, the rest row, then the Magic-Carpet (`carpetFrame >= 0`) and sandstorm
+pins and the post-chain Moon Lord legs (`legs == 140`: `velocity.Y != 0 ? 5 : 0`, row 7
+when `Main.OffsetsPlayerHeadgear[bodyRow].Y == 0`, row 0 for wings 22/28) and the sitting
+legs (`legs == 217`) row 5.
+
+Body (`:36312-36633`): the full useStyle table (1/0, 7, 2, 11, 9, 6, 3, 4, 8, 12, 13, 5
+with the `type == 281/986` carve-out and the `gravDir`-flipped aim rows), the rope pose
+(`pulleyDir == 2 ? 1 : 2`), holdStyles 1/2/3/5/7 and 4 (row 3/2/3/3/11/0 with the
+`CanVisuallyHoldItem` and dry-torch gates), the raised shield row 10, the mount body row,
+the grapple lean (the hooks' centroid vs the body centre → rows 2/4/3), the water float row
+10, the swim window (>20 → 0, >10 → 5, else 0), the airborne rows (sliding 3, sandstorm /
+carpet 6, EOC dash 6, wings: 22/28/45 → 0 and otherwise 6 rising / 6 under thrust / 5
+falling, plain 5), the walk rows (`legs == 140` runs its own `|velocity.X| * 0.5` counter,
+everything else copies the leg row after a `|velocity.X| * 1.5` body counter) and the rest
+row 0.
+
+The draw side needed no new offsets. The port's part tables were audited against the C#
+and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
+(`PlayerDrawSet.cs:1952-2023`), the back arm's `+2` rows (`:2034`), the
+`compShoulderOverFrontArm` clears at rows 1/2/5 (`:1961,1966,1976`), the torso column-1
+override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
+`GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
+the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
+`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+chain fed those tables wrong rows; with the rows correct the existing tables are correct
+too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
+duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+
+Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
+whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
+Bottle (`sand_storm`), the Magic Carpet (`carpet_frame`), flippers/merman
+(`ShouldFloatInWater` returns false), the pulley/rope item (`pulley`) and the raised shield
+(`shield_raised`). `Player.sliding` exists as a field nothing sets yet (the slope/ice slide
+pose). `Item.noWet` and `happyFunTorchTime` have no item-table columns, so the two held-item
+dry gates are always open. `gravDir == -1` arms are coded as the `== 1` value only — the
+port has no gravity flip. The armour-set dust/VFX side effects inside `PlayerFrame`
+(`:35819-36140`, ~400 lines of per-set particles) stay with the armour tasks.
+
 ## The player-audit fixes 11-15 (2026-11-10)
 
 The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
@@ -9853,6 +9905,92 @@ The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
 captured 1600x900 frame shows the title, the eight left rows (the selected
 category in gold) at the 42.3 px pitch and the seventeen General rows inside
 the panel.
+## The Settings button and window redraw (M7-UI-4b)
+
+`M7-UI-4` gave the in-game options window its vanilla *content*; the *chrome*
+was still the port's own. Three things were wrong and are now the C#'s.
+
+### The button is text, not a box
+
+`ui/ingame_options.rs` used to draw a 30x30 `Inventory_Back` sheet at a
+hard-coded `(850, 580)`, which is the vanilla's spot at 1600x900 and nowhere
+else. Vanilla never draws a box at all: `Main.DrawSettingButton`
+(`Main.cs:45532-45544`) draws the localised `Lang.inter[62]` ("Settings") in the
+**death font** with a four-way black outline, at scale `0.8`, growing to a cap
+of `0.96` by `0.02` a frame while the mouse is over it. `App` now stores that
+scale (`IngameOptions::button_scale`) and the previous frame's `mouseOver`
+latch (`button_mouse_over`), so the ramp starts one frame after the hover — the
+C#'s own lag.
+
+The **position** is `Main.RefreshSettingsButtonStatus` (`:45492-45511`), whose
+whole point is to keep the word clear of the equipment column:
+
+| condition | effect |
+| --- | --- |
+| always | `posX = UIScreenWidth - 110`, `posY = UIScreenHeight - 20` |
+| `player.dead` | `posX += 40` |
+| `PushEquipmentAreaUp` | `posY -= 30` |
+| options window **closed** | `num = 174 + Main.mH` (+ the extra-accessory slop), `num2 = num + 47.6 * (8 + extra)`; if `posY - 28 <= num2` then `posX -= 140`, `posY = num2 - 47 + 30`, `_settingsButtonIsPushedToSide = true` |
+
+`settings_button_pos` returns the point and the pushed flag; `button_layout`
+resolves it against `measure_button` (the death-font width of the word) and
+`ButtonLayout::hit` is the strict `x > pos[0] && x < pos[0] + w && y > pos[1] &&
+y < pos[1] + h / 2 - 10` box of `:17018-17026` — note the shaved bottom third.
+`app/clicks.rs` tests that box instead of the old constant rect, and
+`ui/mod.rs` draws the button from the stored layout both while the inventory is
+open and while the window is.
+
+### The panel is the nine-slice
+
+The window's background was a stretched `Inventory_Back` sheet; the vanilla uses
+`Utils.DrawInvBG(Main.spriteBatch, new Rectangle(x - 20, y - 20, 670 + 40,
+480 + 40), new Color(33, 15, 91, 255) * 0.685f)` (`IngameOptions.cs:127`), i.e.
+`Inventory_Back13` cut into nine. Both columns are `DrawInvBG` too, at the
+default tint `(63, 65, 151, 255) * 0.785f`. `ui/tooltip::draw_inv_bg` already
+ported that helper, so the window and its columns now call it.
+
+The title is `GameUI.SettingsMenu` ("Settings Menu") **centred** on the panel's
+top edge — `vector2.X = (screenWidth / 2 - 670 / 2) ... DrawString(...,
+vector2 - font.MeasureString(text) / 2 + new Vector2(0, -4), ...)`
+(`:132-137`) — where the port had left-aligned it. And the right column's **bar
+rows only** are shifted 70 px left (`vector6.X -= num`, `:417`); the port now
+applies the shift in `right_row_anchor` and centres `right_row_rect` on the
+drawn anchor.
+
+### Three rows that were placeholders
+
+The `General` page drew `UI.DoorOpeningPreference` and `UI.AutoReuseAllOn` as
+dimmed, inert `Parked` rows — and `UI.DoorOpeningPreference` is **not a key in
+the en-US file at all**, so it rendered as the literal string. The vanilla's
+three rows are back to being settings:
+
+| row | C# source | port field | save key |
+| --- | --- | --- | --- |
+| Smart Doors | `IngameOptions.cs:644-657`, cycling `DoorOpeningHelper.PreferenceSettings` (`DoorOpeningHelper.cs:262-276`: `Disabled -> EnabledForEverything -> EnabledForGamepadOnly`) | `Settings.smart_doors: u8` | `DoorAutoOpeningMode` (`Main.cs:4208`/`:4545`) |
+| Hover Controls | `:659-675`, `Player.Settings.CycleHoverControl` (`Player.cs:379-383`); the label is `Hold` only for `ButtonControlMode.Hold`, else `Click` | `Settings.hover_control: u8` | `HoverControlMode` (`:4209`/`:4546`) |
+| Autofire | `:677-684`, toggling `Main.SettingsEnabled_AutoReuseAllItems` | `Settings.auto_reuse_all: bool` | `SettingsEnabled_AutoReuseAllItems` (`:4158`/`:4544`) |
+
+That also corrected `General`'s row count: the port had merged the doors and
+hover preferences into one row, so it drew 17 rows where the C# draws 18
+(`num11 = 17` is the *last index*, exactly like the video page's quirk).
+
+### Other fixes in the same pass
+
+- `GameUI.GameZoom` takes `Math.Round(Main.GameZoomTarget * 100f)`, not the
+  bar's fraction, so the row reads "Zoom: 100%" instead of "Zoom: 0%"
+  (`:512` vs `:529`).
+- `ui/text.rs` grew `ui_font_width` / `death_font_width`, needed by
+  `measure_button` and by the title's centring.
+- `ui/inventory.rs::extra_accessory_slots()` exposes `EXTRA_ACCESSORY_SLOTS` for
+  the button's column-overlap test.
+
+**Deviations.** The port has no `PlayerInput.UsingGamepad`, so the
+`EnabledForGamepadOnly` state behaves as plain "smart doors on" would not —
+it is stored and named faithfully but nothing reads it yet (the door-opening
+helper itself is unported). `HoverControlMode` is likewise stored and named but
+unread, since the port's hover control is implicitly "hold". Both are recorded
+here rather than silently wired to a guess.
+
 ## The PVP toggle + team select cells (M7-UI-7)
 
 `Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:
@@ -9978,3 +10116,159 @@ owns the inventory click surface.
   `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
   the HUD uses the zero-anchor `text::border_string`.
 
+## The projectile sprites (M4-PROJ-6b render)
+
+The AI port drew every non-yoyo projectile with the same sprite: `draw_with_hand`
+asked `Lookups::shuriken_uv()` for the 22x22 `Projectile_3` frame and stamped it at
+a fixed `SIZE x SIZE` quad. The vanilla instead draws
+`TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0, frame)`
+(`Main.cs:27929-27943`) at `projectile.scale`. That gap is now closed for the kinds
+the port can spawn:
+
+- **Sheets.** `assets.rs` packs `Images/Projectile_{id}` for every kind
+  `projectile::spawnable_kinds()` reports — the set derived from the `proj_data`
+  rows themselves (a probe over the id space, `0..=1200`) rather than a second
+  hand-maintained list. ~180 small sheets; a missing file just leaves the kind
+  unpacked and the shuriken fallback covers it (the `SHURIKEN` 3 dev shot has no
+  `proj_data` row and stays on the stand-in).
+- **Frames.** `projectile::proj_frames(kind)` carries the `Main.projFrames[type]`
+  rows (`Main.cs:8441-8816`): every type defaults to 1 and only 18 of the spawned
+  ids exceed it (34 → 6, 645 → 7, 254 → 5, …). `Lookups::proj_frame` slices the
+  packed sheet into that many equal rows, clamps the frame index and returns the
+  frame's **own** pixel size, so the quad is the art's size, not the shuriken's.
+- **State.** `Projectile.frame` (`:451`, reset at `SetDefaults` `:805`) exists so
+  the AI arms can advance it; the vanilla advances `frame`/`frameCounter` per
+  family (there is no generic animator: `:23477`, `:25213`, …), so each ported AI
+  arm owns its own cadence — until one lands, a multi-frame kind draws frame 0.
+- **Scale.** The draw multiplies the frame size by `Projectile.scale` (the C#
+  `float scale = projectile.scale`), which the yoyo family already set and the
+  rest now honour.
+
+**Verification.** One test asserts that >100 sheets pack, that each kind's slice
+height equals `sheet_height / proj_frames`, that frame `frames-1` stays inside the
+sheet, that the 34/645 rows hold, and that an unpacked kind answers `None` while
+`shuriken_uv` stays live. The screenshot fixture is `TR_THROW=<id>` (one shot from
+the player's centre on the first tick, re-armed when the pool empties); a
+pixel-diff of `TR_THROW=645` against the same frame without it isolates a 35x28
+sprite in the poison dart's greens `(34,221,151)`/`(208,253,235)` at the spot the
+22 px grey shuriken used to be — `docs/screenshots/m4-proj-6b-poison-dart.png`.
+
+**Still open** (`M4-PROJ-6b`): the caster AI families themselves (Unholy Trident
+27, Spectre 59/51, Leaf Blower 40, Razorblade Typhoon 71, Nebula Arcanum 118/119,
+Last Prism 75/84) and the GemStaff/MagicMissile/RainbowRod/FlameLash trail
+shaders.
+
+## The Leaf Blower petal (M4-PROJ-6b-leaf)
+
+The first of the leftover caster families. `ProjectileID.LeafBlower` (206,
+`Projectile.cs:2937-2945`) is the 14x14 petal the Leaf Blower (item 1178, whose
+registry row already carried `projectile: Some(206)`) fires at `shootSpeed` 14;
+`AI_040_LeafBlower` (`:38003-38082`) is a compact, self-contained arm, so it landed
+whole:
+
+- **The row.** 14x14, aiStyle 40, penetrate 1, `timeLeft` 360, `tileCollide` true
+  and the `alpha = 255` the AI fades in — the state group carries that override.
+- **The fade.** `localAI[0]` counts up; the alpha holds for the first 3 ticks,
+  drops 50/tick to 0, then from tick 50 rises 2/tick and `Kill()`s at 255 — the
+  petal is visible ~50 ticks and gone by ~153.
+- **The flap.** 3 ticks per frame over `projFrames[206] = 5` (`Main.cs:8596`),
+  which the sprite pass' `proj_frames` table now carries.
+- **The flight.** `ai[0]`/`ai[1]` are drawn once, at tick 1, as
+  `Main.rand.Next(-100, 101) * 6E-05`; `localAI[2]` stores the launch-direction
+  sign; past tick 10 the velocity is rotated by
+  `localAI[2]·|ai[0]|·localAI[1]·0.35` and damped 0.97/tick, and the
+  `|vx|+|vy|` band clamps it into 12..16 px/tick (×1.05 below, ×0.95 above).
+- **The two RNG draws ride the pool's shared `Main.rand` stand-in** (`hook_rng`,
+  the stream the hook family's cracked-brick roll already uses): they steer the
+  trajectory, so skipping them would desync the flight; dust — which they *also*
+  gate in the C# — is SKIPPED, as in the other M4-PROJ-6 arms (the pool draws no
+  dust).
+
+**Verification.** Two tests: the row/frames/registry wiring, and a 100-tick walk
+of the AI that pins the alpha on 255 through tick 3 and 0 by tick 10, sees all 5
+frames within 30 ticks with `frame_counter < 3`, keeps `ai*` inside
+`±100·6E-05`, holds the speed band, matches the `+3.14` rotation, and then runs
+the petal to its fade-out kill in under 200 ticks. The screenshot fixture
+`TR_THROW=206` isolates a 20x16 sprite in the petal's greens
+`(40,146,96)`/`(113,168,24)`/`(63,116,7)` against the same frame without it —
+`docs/screenshots/m4-proj-6b-leaf-blower.png`.
+
+## The equipment-page tabs (M7-UI-3a)
+
+The three icons to the right of the inventory grid (`UI/DisplaySlots_2…10`) were
+painted by `ui/chrome.rs::draw_page_icons`, which already returned the hovered
+tab number — and **every caller threw the value away**. `App.equip_page` could
+only be set by the `TR_EQUIPPAGE` debug pin, so all three tabs were decoration.
+
+`Main.DrawPageIcons` (`Main.cs:42787-42868`) is one function with two halves; the
+port now has both.
+
+**The geometry** was already correct and stays untouched: the anchors are
+`(screenWidth - 162, yPos)` with `x += 82` for the first tab and `- 48` each
+after (`:42790-42791`), i.e. `screenWidth - 80 / -128 / -176`, drawn at scale
+`0.9` with the state-dependent sheet (`(EquipPage == 2) ? 3 : 2`, `== 1 ? 5 : 4`,
+`== 3 ? 10 : 8`, `:42792`, `:42804`, `:42816`) and the highlight sheets
+`6 / 7 / 9` at origin `(2, 2)` except tab 3's `(0, 0)`.
+
+**What was missing is the gates.** `Collision.CheckAABBvAABBCollision` runs
+against the *native* (unscaled) sheet, so the hit rect is the sheet size, not the
+0.9-scaled one — `page_tab_hit` takes the three native sizes (`page_tab_sizes`
+reads them from `Lookups::page_icons`). Each tab then applies its own
+mouse-item gate, and they are *not* the same:
+
+| tab | `EquipPageSelected` | gate (`Main.cs`) |
+|---|---|---|
+| first (`DisplaySlots_2/3`) | 2 | `mouseItem.stack < 1 \|\| mouseItem.dye > 0` (`:42793`) |
+| middle (`DisplaySlots_4/5`) | 1 | `mouseItem.stack < 1` (`:42805`) |
+| right (`DisplaySlots_8/10`) | 3 | `mouseItem.stack < 1` (`:42817`) |
+
+The first tab is the only one a held dye does not block, because that is the tab
+that reaches the dye page.
+
+**The click** (`:42828-42858`) is a toggle, not a switch: pressing the page you
+are already on falls back to page 0, pressing another selects it. `page_tab_click`
+returns exactly that, and returns `None` for tab 3 because tab 3 is the
+capture-mode entry (`:42835-42847` sets `CaptureManager.Instance.Active`), not a
+page. The sound is `SoundEngine.PlaySound(10)` (`:42857`), the ported `Menu_Open`.
+
+**The page actually drawn is not the page selected.** `Main.EquipPageSelected` is
+the player's wish; `Main.EquipPage` is what renders, and it is re-derived *every
+frame* by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) and then
+
+```csharp
+if (Main.EquipPage == -1) Main.EquipPage = Main.EquipPageSelected;   // Main.cs:42864-42866
+```
+
+`SelectEquipPage` sets `EquipPage = -1` first and then overrides it from the
+cursor stack: hooks, mounts and pets force page 2; armour, accessories and (when
+the dye page was the selection) a held dye force page 0. The port keeps that shape
+— `App::resolve_equip_page` runs from `frame()` and `select_equip_page` returns
+`-1` for "no opinion".
+
+**Deviations.**
+
+* Only the air arm and the armour/accessory arm of `SelectEquipPage` are ported.
+  The other arms need item fields `ItemDef` does not carry (`Item.shoot` for the
+  `Main.projHook` lookup, `Item.mountType`, `Item.dye`) plus the
+  `Main.vanityPet` / `Main.lightPet` buff sets. `itemdata.rs` is generated by
+  `tools/GenItemData/gen.py` and is marked "Never hand-edit", so adding them is a
+  generator change, not an addendum here. Until then a held dye is treated as an
+  ordinary held stack and the first tab is refused (`page_tab_hit`'s `has_dye`
+  argument stands in for the missing `Item.dye > 0`).
+* `Main.CaptureModeDisabled` (`:42821-42825`) is not modelled — tab 3 is drawn
+  white, and clicking it does nothing.
+* Tab 1 selects `EquipPageSelected = 1`, but the port has no page-1 draw:
+  `Main.cs:41368` hands page 1 to `DrawNPCHousesInUI`, the housing panel, which is
+  its own subsystem. Page 1 falls through to the equipment columns exactly as
+  page 3 already did.
+* `TR_EQUIPPAGE` now seeds `equip_page_selected` as well as `equip_page`, so the
+  pin survives the per-frame resolution.
+
+**Verification.** 7 new tests (the half-open edges, the per-tab gates, the toggle,
+`select_equip_page`, and two `handle_inventory_clicks` end-to-end arms including
+the held-armour auto-jump). The suite is 2027 + 18 + 1 + 1236 + 21, 0 failed. The
+hover glow is checked as a pixel statistic rather than a screenshot diff: moving
+the cursor onto the first tab raises the mean RGB of the `1516..1546 × 138..164`
+band from `(3.1, 2.5, 2.1)` to `(24.6, 5.9, 9.5)`, the red-dominant
+`Main.OurFavoriteColor`. A whole-frame A/B is useless here because `TR_MOUSE`
+also moves the lighting, so the diff bbox covers the whole frame.

@@ -309,7 +309,9 @@ impl App {
                 let _ = self.settings.save();
                 return;
             }
-        } else if self.inventory_open && ui::ingame_options::button_hit(self.mouse_pos) {
+        } else if self.inventory_open
+            && self.ingame_options.button_layout.hit(self.mouse_pos)
+        {
             self.ingame_options.open = true;
             self.ui_left_press = false;
             return;
@@ -454,6 +456,27 @@ impl App {
                         // is not ported — no team spawn seeds yet).
                     }
                     None => {}
+                }
+                return;
+            }
+            // `Main.DrawPageIcons`' click handling (`Main.cs:42828-42858`): the
+            // three equipment-page tabs. Pressing the selected tab falls back to
+            // page 0; pressing another selects it. The effect is scoped to
+            // `Main.EquipPageSelected` — `Main.EquipPage` is re-derived every
+            // frame in `frame()` (`:42864-42867`).
+            let num20 = 174.0 + m_h;
+            if let Some(tab) = ui::chrome::page_tab_hit(
+                screen,
+                num20 - 32.0,
+                self.mouse_pos,
+                (self.mouse_item.kind, self.mouse_item.count),
+                false,
+                ui::chrome::page_tab_sizes(&self.lookups),
+            ) {
+                if let Some(sel) = ui::chrome::page_tab_click(tab, self.equip_page_selected) {
+                    self.equip_page_selected = sel;
+                    // `SoundEngine.PlaySound(10)` (`:42857`) — the port's cue.
+                    self.audio.play("Menu_Open");
                 }
                 return;
             }
@@ -2542,6 +2565,82 @@ mod tests {
         let mut app = inv_app();
         app.pvp_icons_forced = true;
         app
+    }
+
+    /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets
+    /// `EquipPageSelected`, the drawn page follows it on the next frame, and the
+    /// next frame's `SelectEquipPage` joins in without an item held.
+    #[test]
+    fn page_tab_click_switches_the_equipment_page() {
+        let mut app = inv_app();
+        let (sw, _sh) = app.screen_size();
+        let screen = Vec2::new(sw, app.screen_size().1);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        // The test harness loads no atlas, so stand in the native tab sheet
+        // (the `UI/DisplaySlots_*` cells are 22x18 in the retail XNB).
+        for i in [2usize, 4, 8] {
+            app.lookups.page_icons[i] = Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: 22,
+                height: 18,
+                plain_frame: (0, 0),
+            });
+        }
+        let sizes = ui::chrome::page_tab_sizes(&app.lookups);
+        assert_eq!(sizes[0], (22.0, 18.0));
+        // Tab index 0 is `EquipPageSelected = 2` (the misc page).
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_pos = tab2;
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 2);
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(10)`");
+        // The frame tail resolves `EquipPage` from the empty cursor stack.
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2, "`:42866` falls back to the selection");
+        // Pressing the same tab again falls back to page 0 (`:42853-42857`).
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0);
+    }
+
+    /// `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4647-4650`): holding a piece of
+    /// armour forces page 0 even when the misc page was selected.
+    #[test]
+    fn held_armour_forces_the_equipment_page() {
+        let mut app = inv_app();
+        app.equip_page_selected = 2;
+        let armour = (0u16..6196)
+            .find(|&k| crate::itemdata::ITEMS[k as usize].head_slot != -1)
+            .expect("a helmet exists");
+        app.mouse_item = slot(armour, 1);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0, "`:4647-4650`");
+        // Dropping the stack restores the selection.
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2);
+    }
+
+    /// `Main.cs:42793`: with the `dye > 0` half of tab 2's gate unported a held
+    /// dye is refused like any other stack — the documented deviation.
+    #[test]
+    fn a_held_stack_refuses_the_page_tabs() {
+        let mut app = inv_app();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0, "the press was refused");
     }
 
     /// `Main.cs:42689-42694`: a press on the toggle flips `hostile`, arms the

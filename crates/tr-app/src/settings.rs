@@ -135,6 +135,20 @@ pub struct Settings {
     /// plain static: default false): the "Smart Block Placement" row
     /// (`Main.cs:50286-50293`).
     pub smart_blocks: bool,
+    /// `DoorOpeningHelper.PreferenceSettings` (`DoorOpeningHelper.cs:216`,
+    /// default `Disabled` = 0): the "Smart Doors" row of the in-game options
+    /// (`IngameOptions.cs:644-657`). Persisted as `"DoorAutoOpeningMode"`
+    /// (`Main.cs:4208`/`:4545`).
+    pub smart_doors: u8,
+    /// `Player.Settings.HoverControl` (`Player.cs:362`, default
+    /// `ButtonControlMode.Hold` = 0 at `Player.cs:407`): the "Hover Controls"
+    /// row (`IngameOptions.cs:659-675`). Persisted as `"HoverControlMode"`
+    /// (`Main.cs:4209`/`:4546`).
+    pub hover_control: u8,
+    /// `Main.SettingsEnabled_AutoReuseAllItems` (`Main.cs:261`, default false):
+    /// the "Autofire" row (`IngameOptions.cs:677-684`). Persisted as
+    /// `"SettingsEnabled_AutoReuseAllItems"` (`Main.cs:4158`/`:4544`).
+    pub auto_reuse_all: bool,
     /// `LockOnHelper.UseMode` (`LockOnHelper.cs:24`): 0 FocusTarget,
     /// 1 TargetClosest, 2 ThreeDS. Default **2**, not the enum's 0:
     /// `LoadSettings` runs the `"LockOnPriority"` chain on every boot
@@ -266,6 +280,9 @@ impl Default for Settings {
             smart_cursor_toggle: true,            // Main.cs:67178
             smart_axe_first: false,               // Player.cs:334
             smart_blocks: false,                  // Player.cs:331
+            smart_doors: 0,                       // DoorOpeningHelper.cs:216 (Disabled)
+            hover_control: 0,                     // Player.cs:407 (Hold)
+            auto_reuse_all: false,                // Main.cs:261
             lock_on_priority: 2,                  // Main.cs:4496-4505
             use_storm_effects: true,              // Main.cs:66572
             foreground_sunlight: true,            // Main.cs:66574
@@ -519,6 +536,24 @@ impl Settings {
                 // Player.SmartCursorSettings.SmartBlocksEnabled)`
                 // (`Main.cs:4138`, read back at `:4411`).
                 "UseSmartCursorForCommonBlocks" => me.smart_blocks = boolean(value),
+                // `configuration.Put("DoorAutoOpeningMode",
+                // DoorOpeningHelper.PreferenceSettings)` (`Main.cs:4208`, read
+                // back at `:4545`); the enum is Disabled/GamepadOnly/Everything.
+                "DoorAutoOpeningMode" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        me.smart_doors = v.clamp(0, 2) as u8;
+                    }
+                }
+                // `configuration.Put("HoverControlMode",
+                // Player.Settings.HoverControl)` (`Main.cs:4209`/`:4546`).
+                "HoverControlMode" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        me.hover_control = v.clamp(0, 3) as u8;
+                    }
+                }
+                // `configuration.Put("SettingsEnabled_AutoReuseAllItems",
+                // Main.SettingsEnabled_AutoReuseAllItems)` (`Main.cs:4158`).
+                "SettingsEnabled_AutoReuseAllItems" => me.auto_reuse_all = boolean(value),
                 // `configuration.Put("CraftFromNearbyChests",
                 // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`), the
                 // `Player.Settings` control pair read back through the same
@@ -632,7 +667,9 @@ impl Settings {
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
              \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
-             \"UseSmartCursorForCommonBlocks\": {},\n  \"CraftFromNearbyChests\": {},\n  \
+             \"UseSmartCursorForCommonBlocks\": {},\n  \"DoorAutoOpeningMode\": {},\n  \
+             \"HoverControlMode\": {},\n  \"SettingsEnabled_AutoReuseAllItems\": {},\n  \
+             \"CraftFromNearbyChests\": {},\n  \
              \"LockOnPriority\": {},\n  \
              \"ReverseUpDownForArmorSetBonuses\": {},\n  \
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
@@ -688,6 +725,13 @@ impl Settings {
             self.smart_cursor_toggle,
             self.smart_axe_first,
             self.smart_blocks,
+            // `DoorOpeningHelper.PreferenceSettings`, `Player.Settings.HoverControl`
+            // and `Main.SettingsEnabled_AutoReuseAllItems` (`Main.cs:4208`,
+            // `:4209`, `:4158`) — the three rows the options window drew as
+            // "Parked" because the port carried no field for them.
+            self.smart_doors,
+            self.hover_control,
+            self.auto_reuse_all,
             // `configuration.Put("CraftFromNearbyChests",
             // Player.Settings.CraftFromNearbyChests)` (`Main.cs:4213`); the port
             // keeps its own position in this list (Phase 2 only renames keys, it
