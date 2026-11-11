@@ -10071,3 +10071,38 @@ sprite in the poison dart's greens `(34,221,151)`/`(208,253,235)` at the spot th
 27, Spectre 59/51, Leaf Blower 40, Razorblade Typhoon 71, Nebula Arcanum 118/119,
 Last Prism 75/84) and the GemStaff/MagicMissile/RainbowRod/FlameLash trail
 shaders.
+
+## The Leaf Blower petal (M4-PROJ-6b-leaf)
+
+The first of the leftover caster families. `ProjectileID.LeafBlower` (206,
+`Projectile.cs:2937-2945`) is the 14x14 petal the Leaf Blower (item 1178, whose
+registry row already carried `projectile: Some(206)`) fires at `shootSpeed` 14;
+`AI_040_LeafBlower` (`:38003-38082`) is a compact, self-contained arm, so it landed
+whole:
+
+- **The row.** 14x14, aiStyle 40, penetrate 1, `timeLeft` 360, `tileCollide` true
+  and the `alpha = 255` the AI fades in — the state group carries that override.
+- **The fade.** `localAI[0]` counts up; the alpha holds for the first 3 ticks,
+  drops 50/tick to 0, then from tick 50 rises 2/tick and `Kill()`s at 255 — the
+  petal is visible ~50 ticks and gone by ~153.
+- **The flap.** 3 ticks per frame over `projFrames[206] = 5` (`Main.cs:8596`),
+  which the sprite pass' `proj_frames` table now carries.
+- **The flight.** `ai[0]`/`ai[1]` are drawn once, at tick 1, as
+  `Main.rand.Next(-100, 101) * 6E-05`; `localAI[2]` stores the launch-direction
+  sign; past tick 10 the velocity is rotated by
+  `localAI[2]·|ai[0]|·localAI[1]·0.35` and damped 0.97/tick, and the
+  `|vx|+|vy|` band clamps it into 12..16 px/tick (×1.05 below, ×0.95 above).
+- **The two RNG draws ride the pool's shared `Main.rand` stand-in** (`hook_rng`,
+  the stream the hook family's cracked-brick roll already uses): they steer the
+  trajectory, so skipping them would desync the flight; dust — which they *also*
+  gate in the C# — is SKIPPED, as in the other M4-PROJ-6 arms (the pool draws no
+  dust).
+
+**Verification.** Two tests: the row/frames/registry wiring, and a 100-tick walk
+of the AI that pins the alpha on 255 through tick 3 and 0 by tick 10, sees all 5
+frames within 30 ticks with `frame_counter < 3`, keeps `ai*` inside
+`±100·6E-05`, holds the speed band, matches the `+3.14` rotation, and then runs
+the petal to its fade-out kill in under 200 ticks. The screenshot fixture
+`TR_THROW=206` isolates a 20x16 sprite in the petal's greens
+`(40,146,96)`/`(113,168,24)`/`(63,116,7)` against the same frame without it —
+`docs/screenshots/m4-proj-6b-leaf-blower.png`.
