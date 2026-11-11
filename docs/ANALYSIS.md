@@ -1163,8 +1163,23 @@ The player composition is pure data: `render/player_layers.rs` builds a
   come from `ItemCheck_*` and belong to M2-ANIM. The item's grip origin is
   already the C# rule (`PlayerDrawLayers.cs:3161-3188`: bottom corner mirrored by
   direction; useStyle 8/9 handled), so the old centre-pivot arc pass is gone.
-- The `Players[8]` undershirt passes (back arm, front arm/shoulder) are skipped:
-  the starter skin has no underShirt colour; the palette lands with M3-EQUIP.
+- The `Players[8]` undershirt passes (back arm, front arm/shoulder) draw with
+  the vanilla `underShirtColor` (160,180,215) (`Player.cs:2562`); they are
+  layered exactly as `PlayerDrawLayers.cs:1353-1362` (back arm 5, 8, 13) and
+  `:3661-3706` (arm 7, 8, 13, 6; shoulder 7, 8, 13, 6) — M2-DRAW-4.
+- Source-rect fidelity (M2-DRAW-4). The hair rides its own trimmed frame
+  (`PlayerDrawSet.cs:1770-1786`: `Height -= 2`, `Y -= 336` = six body rows up,
+  clamped at 0) instead of the body frame, so the art stays inside
+  `Player_Hair_*`'s 14 rows on every pose; the helmet takes the normal-hat
+  branch's `Height -= 4` crop (`PlayerDrawLayers.cs:2254-2261`). The row count
+  of a part strip rounds up: `Player_0_0`/`_0_1`/`_0_2` are 1118 px = 19 full
+  rows plus a 54-px row 19, and the walk cycle's fastest band is row 19 — a
+  `floor` count clamped it back onto row 18 (the head lagged the legs by one
+  frame). The one deliberate deviation: the quad's bottom UV is clamped to the
+  sheet, so row 19 draws its 54 art px into a 56-px quad (a 2-px stretch) rather
+  than sampling the neighbouring atlas sheet the way a packed atlas would.
+  The torso/shirt sheets stay cropped to the two columns the draw can reach
+  (`torso_cell`'s row-5 override is column 1, `PlayerDrawSet.cs:1940,1975`).
 - Shoulder cells are constants ((0,1)/(1,1), `PlayerDrawSet.cs:1938-1939`) and
   the shoulder offset is assumed zero without body armour
   (`DetermineShoulderOffsets` is armour-driven); the composite is male-only
