@@ -103,6 +103,15 @@ impl App {
         // must not sit inside the in-game branch below — see
         // [`App::tick_pointer_clock`].
         self.tick_pointer_clock(dt);
+        // `IngameOptions.Draw`'s per-frame hover/animation state and its
+        // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
+        // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
+        // like the vanilla's, and before the HUD borrows the state.
+        if let Some(cue) =
+            crate::ui::ingame_options::update(self, self.pointer.left_held())
+        {
+            self.audio.play(cue);
+        }
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
