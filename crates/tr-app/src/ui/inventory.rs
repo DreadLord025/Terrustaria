@@ -229,6 +229,25 @@ fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
     mouse.x >= x && mouse.x <= x + cell * scale && mouse.y >= y && mouse.y <= y + cell * scale
 }
 
+/// One coin/ammo cell through the shared draw path: the favorited arm swaps the
+/// gold sheet, everything else keeps `Main.inventoryBack`.
+fn draw_row_slot(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &crate::item::ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    scale: f32,
+    favored: bool,
+) {
+    if favored {
+        slot::draw_slot_favorited(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+    } else {
+        slot::draw_slot(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+    }
+}
+
 /// The ctx-1 (coin) and ctx-2 (ammo) cells as `(context, index)`:
 /// `Main.cs:41752-41782` draws the four coins at x 497 and the four ammo cells
 /// at x 534, both `inventoryScale` 0.6 with the shared `coin_ammo_y` rows. The
@@ -340,17 +359,22 @@ pub fn draw(
     // `Main.cs:41752-41764`: coins at x 497, context 1, scale 0.6, index -1.
     for k in 0..crate::inv::COINS {
         let y = coin_ammo_y(k, COIN_SCALE);
-        slot::draw_slot(
+        // `ItemSlot.cs:2149-2156`: a favorited stack draws the gold sheet; the
+        // row's key is its vanilla inventory index (`inv::coin_slot_index`).
+        let favored = slot::favorited_background_active(
+            1,
+            favorites.contains(&crate::inv::coin_slot_index(k)),
+            &equip.coins[k],
+        );
+        draw_row_slot(
             r,
             lookups,
             &equip.coins[k],
             497.0,
             y,
             1,
-            -1,
-            false,
             COIN_SCALE,
-            INVENTORY_BACK,
+            favored,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((1, k)) {
             hit.hovered = Some(HoverRef::Coin(k));
@@ -362,17 +386,20 @@ pub fn draw(
     // `Main.cs:41770-41782`: ammo at x 534, context 2, scale 0.6, index -1.
     for k in 0..crate::inv::AMMO {
         let y = coin_ammo_y(k, AMMO_SCALE);
-        slot::draw_slot(
+        let favored = slot::favorited_background_active(
+            2,
+            favorites.contains(&crate::inv::ammo_slot_index(k)),
+            &equip.ammo[k],
+        );
+        draw_row_slot(
             r,
             lookups,
             &equip.ammo[k],
             534.0,
             y,
             2,
-            -1,
-            false,
             AMMO_SCALE,
-            INVENTORY_BACK,
+            favored,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((2, k)) {
             hit.hovered = Some(HoverRef::Ammo(k));

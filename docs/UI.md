@@ -434,8 +434,10 @@ geometry (x 497/534, `(int)(85 + row·56·0.6 + 20)`). Shift+click transfers eit
 row into the open chest (`GetAlternateClickAction`'s ctx-1/ctx-2 arms reach the
 same `TryPlacingInChest` check, `ItemSlot.cs:657-665`) through
 `chest::try_placing_from`/`chest::Source`, which reads the row's own array where
-the C# reads one `Player.inventory[0..58]`. Still open on those rows: the Alt
-favorite toggle (the port keys favorites by grid index)
+the C# reads one `Player.inventory[0..58]`. Alt+left-click favorites either row
+(`canFavoriteAt`'s contexts 1/2) in the vanilla key space — grid `0..50`, coins
+`50..54`, ammo `54..58` (`inv::INV_SLOTS`) — so a row favorite draws the gold
+sheet, refuses the shift transfer and rides the `.plr` bitfield like a grid one
 (`:631-634`). The trash slot at `(448, 258)` is clickable: left-click swaps held ↔
 trash (`MouseItemSwap` `ItemSlot.cs:1255-1263`, the Grab cue).
 
@@ -590,6 +592,17 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 
 ## Dev hooks and verification
 
+* **`TR_SHOT` reaches the world but not (always) the interface — re-check
+  2026-11-12.** Four captures taken on a clean `main`: `TR_SHOT_FRAME=20/60/300`
+  with `TR_INV`, `TR_CHEST` and `TR_NOMENU` set in turn. Every one came back
+  byte-identical (254 538 B) and pixel-checked as world-only — the inventory
+  slot, the coin/ammo cells and the chest panel regions all sample the sky
+  behind them (e.g. grid cell 0 mean RGB `(72, 92, 127)`), i.e. no HUD layer was
+  drawn at all, while the log line `shot camera px …` shows a camera inside the
+  world. `no_hud` was never set. So the HUD-screenshot recipes below are
+  **unverified in that state**: before trusting a visual check, stage one shot
+  that you can prove contains the panel (a known label pixel), and if the HUD
+  still misses, treat the capture path itself as broken rather than the UI.
 * `TR_MENU=1` keeps the menu on screen even with `TR_SHOT` (screenshots skip it by
   default), `TR_PAGE=name` opens a screen directly — the word aliases
   (`settings|general|interface|video|multiplayer`) plus the numeric `menuMode` of

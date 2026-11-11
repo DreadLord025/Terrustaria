@@ -10658,9 +10658,18 @@ reading and writing the right array (`App.inventory` vs `App.equip.coins`/`ammo`
 `Source::Inv`. The cursor-9 light and the cursor-9 click both resolve the row
 first (`App::chest_transfer_source`).
 
-Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
-flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
-in ROADMAP's M7-UI-2 remainder.
+The Alt favorite toggle landed in **M7-UI-2d**: the port keeps favorites as a
+slot-index set (`App.favorite_slots`), so the rows borrow the vanilla numbering
+instead of a flag on the item — `inv::INV_SLOTS` (58), `inv::coin_slot_index`
+(50+k) and `inv::ammo_slot_index` (54+k), which is exactly what
+`Player.inventory[0..58]` gives the C#. `toggle_favorite`'s guard moved from
+`INV` to `INV_SLOTS`, `hydrate_favorites`/`favorite_bits` cover the row band (the
+`.plr` reader already collected 58 bools, `player_file.rs:275-291`, so the
+round-trip is now consistent), the Alt gate and the click arm cover contexts 1/2,
+and a favorited row draws the gold sheet and refuses the shift transfer
+(`:631-634`). Known limit: the port's `.plr` writer still stores zeros for the
+coin/ammo rows' items, so a row favorite is session-only until that writer lands
+— the grid favorites have the same shape.
 
 ## The housing page (M7-UI-3b)
 
