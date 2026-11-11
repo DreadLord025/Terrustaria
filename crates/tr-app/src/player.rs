@@ -1718,6 +1718,18 @@ impl Player {
         self.center()
     }
 
+    /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
+    /// `ApplyEquipFunctional` arms them for the worn accessory slots 3..10
+    /// (`:14368`, the `UpdateEquips` loop `:12948-12954` — `IsItemSlotUnlockedAndUsable`
+    /// is not modelled, every slot counts as unlocked) and `ResetEffects`
+    /// clears them every tick (`:18365-18366`). The melee gate
+    /// (`ProcessHitAgainstNPC` `:44274`) and the projectile gate
+    /// (`Damage_PVE_Inner` `:12601`) both read this pair.
+    pub fn doll_flags(&self) -> (bool, bool) {
+        let worn = |k: u16| self.equipped[3..10].contains(&k);
+        (worn(267), worn(1307))
+    }
+
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
     /// the ported classes: the classless items pass the 1f default.
     pub fn weapon_damage_multiplier(&self, class: registry::DamageClass) -> f32 {

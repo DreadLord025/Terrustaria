@@ -10386,3 +10386,46 @@ NPC. Tracked as BUG-23 in the catalog.
 worn doll arming the hit while the bagged doll does not; the 17 seller/bound
 kinds refused through `is_friendly`; the two item exceptions (the Flymeal's
 doubled roll, the cane's exact one damage) and the hostile still hittable.
+
+### The projectile half (BUG-23)
+
+`Damage_PVE_Inner`'s refusal (`Projectile.cs:12601-12608`) is the projectile
+twin of the melee gate, and it reads the same two doll flags — the port now
+shares them through `Player::doll_flags` (the melee arm and the pool both call
+it). The C# expression is ported verbatim:
+
+```csharp
+bool flag = !targetNPC.friendly | (this.type == 318) |
+    (targetNPC.type == 22 && this.owner < 255 && Main.player[this.owner].killGuide) |
+    (targetNPC.type == 54 && this.owner < 255 && Main.player[this.owner].killClothier);
+if (this.owner < 255 && !Main.player[this.owner].CanNPCBeHitByPlayerOrPlayerProjectile(targetNPC, this))
+    flag = false;
+...
+if ((!this.friendly || (!flag && !NPCID.Sets.ZappingJellyfish[targetNPC.type])) && !(this.hostile & flag2))
+    return;
+```
+
+The gate runs in **both** PVE walks: the plain point walk (`damage_pve`) and the
+resized death bursts (`damage_pve_boxed` — the gem bolts' AoE and the bombs'
+`PrepareBombToBlow` walk), because the C# funnels all of them through
+`Projectile.Damage()` → `Damage_PVE` → `Damage_PVE_Inner`. The refusal sits
+ahead of the per-owner immunity gate, matching the C# early `return`.
+
+Neutral arms (no ported system to read):
+
+* `NPCID.Sets.ZappingJellyfish` — 63/64/103/242; no jellyfish kind is ported, so
+  the "poke the jellyfish and get zapped instead" arm has nothing to act on.
+* `this.hostile & flag2` — hostile projectiles damaging friendly NPCs (the
+  invasion flavour). The port's hostile shots (`friendly == false`) run the
+  player-contact pass only, so there is no hostile-vs-town path to gate yet.
+* `CanNPCBeHitByPlayerOrPlayerProjectile`'s critter block (`:20513-20529`) — it
+  needs `dontHurtCritters` (the Guide to Critter Companionship item) or a
+  minion/sentry shot; neither exists in the port (the summon system is the
+  blocked M4-PROJ-8 row). With both false the function returns `true`, so
+  `flag` is unchanged — the port passing the critter kinds is faithful.
+
+**Verification.** 1 test (`projectile::tests::bug_23_…`): a shuriken passes a
+Guide without consuming itself, the same shot lands once the Guide Voodoo Doll
+sits in accessory slot 3, and the `refuses_friendly` matrix is pinned for the
+Rotten Egg (318), the Clothier-with-curse arm, the bound goblin (no arm — the
+C# `isLikeATownNPC` excludes it) and a hostile slime.

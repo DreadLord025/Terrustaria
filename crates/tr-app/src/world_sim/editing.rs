@@ -986,10 +986,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             let (kill_guide, kill_clothier) = app
                 .player
                 .as_ref()
-                .map(|p| {
-                    let worn = |k: u16| p.equipped[3..10].contains(&k);
-                    (worn(267), worn(1307))
-                })
+                .map(|p| p.doll_flags())
                 .unwrap_or((false, false));
             let hits_town_npc = matches!(held.kind, 5129 | 3351);
             let hit_idx = app.npcs.iter().position(|n| {
