@@ -2034,6 +2034,11 @@ impl App {
                 for name in v.split(',').map(|s| s.trim()) {
                     let kind = match name {
                         "guide" => NpcKind::Guide,
+                        // The Eye of Cthulhu's six-row strip (BUG-22's
+                        // shadowed arm) and the Travelling Merchant's shared
+                        // walk band.
+                        "eoc" => NpcKind::EyeOfCthulhu,
+                        "travellingmerchant" => NpcKind::TravellingMerchant,
                         "zombie" => NpcKind::Zombie,
                         "skeleton" => NpcKind::Skeleton,
                         "peon" => NpcKind::GoblinPeon,
