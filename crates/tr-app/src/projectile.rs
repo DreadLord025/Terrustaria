@@ -2706,6 +2706,24 @@ fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     })
 }
 
+/// The ported sentry-aim seam: the target search's result rides the slot's
+/// `local_ai` ([aim_x, aim_y, target_slot]) until the per-kind shot machines
+/// land (ANALYSIS "Minions & sentries (M4-PROJ-8)").
+fn store_sentry_aim(p: &mut Projectile, aim: Option<(usize, f32, f32)>) {
+    match aim {
+        Some((t, x, y)) => {
+            p.local_ai[0] = x;
+            p.local_ai[1] = y;
+            p.local_ai[2] = t as f32;
+        }
+        None => {
+            p.local_ai[0] = p.pos.x + p.w * 0.5;
+            p.local_ai[1] = p.pos.y + p.h * 0.5;
+            p.local_ai[2] = -1.0;
+        }
+    }
+}
+
 /// `AI_062`'s attack-shot request — the shot rides back to the pool (the AI
 /// runs on one slot and cannot reach the pool's array, the `YoyoBeamRequest`
 /// pattern). The spawn drops when the shot family (374/376/408/433/614) has no
@@ -3414,24 +3432,25 @@ impl ProjectilePool {
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
-                        53 | 197 => {
-                            // The whip target rides the threaded player (the
-                            // C# reads `Main.player[owner]` inside the arm).
+                        53 => {
+                            // `AI_053_FrostHydra`'s targeting call
+                            // (`Projectile.cs:37345-37353`): the firing offset
+                            // is `Vector2.Zero`, the Houndius' `-16` Y. The
+                            // per-kind shot machines are the unported half
+                            // (ANALYSIS), so the aim rides `local_ai` as the
+                            // ported seam: [aim_x, aim_y, target_slot].
                             let player_target =
                                 player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
-                            // `AI_053_FrostHydra`'s targeting call
-                            // (`Projectile.cs:37353`) and `AI_197`'s
-                            // (`:40449`) — the shared
-                            // `AI_053_HandleSentryNPCTargeting` runs on the
-                            // slot; the per-kind shot machines (the Hydra's
-                            // breath, the barnacle's shots) are the unported
-                            // half (ANALYSIS), so the aim rides `local_ai` as
-                            // the ported seam: [aim_x, aim_y, target_slot].
+                            let offset = if self.slots[i].kind == HOUNDIUS_SHOOTIUS {
+                                Vec2::new(0.0, -16.0)
+                            } else {
+                                Vec2::ZERO
+                            };
                             let aim = {
                                 let p = &self.slots[i];
                                 p.sentry_npc_targeting(
                                     world,
-                                    Vec2::new(0.0, -12.0),
+                                    offset,
                                     false,
                                     1000.0,
                                     player_target,
@@ -3439,18 +3458,29 @@ impl ProjectilePool {
                                 )
                             };
                             let p = &mut self.slots[i];
-                            match aim {
-                                Some((t, x, y)) => {
-                                    p.local_ai[0] = x;
-                                    p.local_ai[1] = y;
-                                    p.local_ai[2] = t as f32;
-                                }
-                                None => {
-                                    p.local_ai[0] = p.pos.x + p.w * 0.5;
-                                    p.local_ai[1] = p.pos.y + p.h * 0.5;
-                                    p.local_ai[2] = -1.0;
-                                }
-                            }
+                            store_sentry_aim(p, aim);
+                        }
+                        197 => {
+                            // `AI_197`'s targeting call
+                            // (`Projectile.cs:40435-40449`): the `(0, 10)`
+                            // firing offset and the `1000 + num3*16` reach (the
+                            // barnacle's own `num3` rides its unported body —
+                            // ANALYSIS).
+                            let player_target =
+                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                            let aim = {
+                                let p = &self.slots[i];
+                                p.sentry_npc_targeting(
+                                    world,
+                                    Vec2::new(0.0, 10.0),
+                                    false,
+                                    1000.0,
+                                    player_target,
+                                    npcs,
+                                )
+                            };
+                            let p = &mut self.slots[i];
+                            store_sentry_aim(p, aim);
                         }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {

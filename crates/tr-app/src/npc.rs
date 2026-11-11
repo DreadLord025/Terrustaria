@@ -2700,10 +2700,11 @@ impl Npc {
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
             // `chaseable`'s stock true (the false writers are the unported
             // case-345 family), `immortal`'s stock false, `friendly` the town
-            // residents' `friendly = true` write (`NPC.cs:8983+`).
+            // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
+            // Sleeping Angler's own arm (`:13798`).
             chaseable: true,
             immortal: false,
-            friendly: kind.is_town_resident(),
+            friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
             swarm_done: false,
             moon_local: [0.0; 3],
             moon_core_alive: false,
