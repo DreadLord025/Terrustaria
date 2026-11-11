@@ -302,7 +302,19 @@ impl App {
         // world branch runs, so the swap never interleaves a half-ticked world.
         if let Some(path) = self.play_world.take() {
             match self.swap_world(&path) {
-                Ok(()) => log::info!("world: {}", path.display()),
+                Ok(()) => {
+                    // `Main.LoadWorld` leaves `Main.gameMenu` false, so nothing
+                    // may draw over the world the swap just installed (BUG-21:
+                    // the lobby used to come back and the Play looked like it
+                    // "dropped back" to the menu). `swap_world` ends on
+                    // `enter_loaded_world`; this is the tripwire for any path
+                    // that reinstates an overlay after it.
+                    debug_assert!(
+                        self.menu.is_none() && self.front.is_none(),
+                        "the world swap must close both front-end sides"
+                    );
+                    log::info!("world: {}", path.display())
+                }
                 Err(e) => {
                     // A failed load keeps the current world: the menu stays
                     // alive with its own world rather than a black screen (the
