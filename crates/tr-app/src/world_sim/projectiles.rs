@@ -11,6 +11,26 @@ use crate::registry;
 /// knockback chain is shared with melee; the immunity bookkeeping is the
 /// pool's (`localNPCImmunity` / `perIDStaticNPCImmunity` / `NPC.immune`).
 pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
+    // `TR_THROW`: the projectile-sprite fixture — one shot of the pinned kind
+    // from the player's centre, through the same `spawn` the items use.
+    // One shot only: the fixture re-arms when the pool empties.
+    if let Some(kind) = crate::env::throw_kind() {
+        let empty = app.projectiles.slots().iter().all(|p| !p.active);
+        if empty {
+            if let Some(p) = &app.player {
+            let (cx, cy) = p.center();
+                app.projectiles.spawn(
+                    kind,
+                    0,
+                    Vec2::new(cx - 3.0, cy - 3.0),
+                    Vec2::new(3.0, 0.0),
+                    10,
+                    4.0,
+                    false,
+                );
+            }
+        }
+    }
     if app.dev_throw {
         if let Some(p) = &app.player {
             let (cx, cy) = p.center();

@@ -565,27 +565,8 @@ impl App {
             .as_ref()
             .filter(|p| !p.dead)
             .map(|p| p.interpolated(player_alpha));
-        // `PlayerFrame` item-use branch: while a swing is active the body shows the use
-        // rows instead of the idle/air pose; `swing / swing_max` is
-        // `itemAnimation / itemAnimationMax`. At rest a `holdStyle == 1` item
-        // (the torch) pins the body to row 3 (`Player.cs:36455-36459`).
-        let held_hold_style = self
-            .inventory
-            .get(self.selected)
-            .filter(|s| s.count > 0)
-            .map_or(0, |s| item::hold_style(s.kind));
-        if let Some(p) = render_player.as_mut() {
-            if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                let aim_relative = self.swing_aim * p.facing as f32;
-                p.apply_item_use_frame(
-                    self.swing / self.swing_max.max(f32::EPSILON),
-                    self.swing_style,
-                    aim_relative,
-                );
-            } else if held_hold_style == 1 {
-                p.body_frame = 3;
-            }
-        }
+        // The body rows — the item-use rows included — are all computed by
+        // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
         let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
         let mut stats = tr_render::sprite::RenderStats::default();

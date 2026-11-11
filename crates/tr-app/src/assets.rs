@@ -728,6 +728,17 @@ pub fn load_world_images(
             Err(_) => log::warn!("missing background texture {name}"),
         }
     }
+    // The projectile sprites (`TextureAssets.Projectile[type]`, the
+    // `"Images/Projectile_" + type` initializer): the `Main.DrawProj` frame
+    // source. Packed for every kind `proj_data` carries — the extra decode is
+    // ~180 small sheets and a missing file keeps the shuriken fallback.
+    for kind in crate::projectile::spawnable_kinds() {
+        let name = format!("Projectile_{kind}");
+        match load_png(dir, &name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => { /* the shuriken fallback covers it */ }
+        }
+    }
 
     // Every item icon the content carries: `AssetInitializer.cs:111-125` fills
     // `TextureAssets.Item[i]` with `Images/Item_<i>` for the whole `ItemID`
@@ -1270,8 +1281,13 @@ pub struct Lookups {
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
     pub dust: Option<tr_render::SheetRect>,
-    /// `Projectile_3.png`: the 22x22 shuriken frame.
+    /// `Projectile_3.png`: the 22x22 shuriken frame (the fallback sprite for
+    /// kinds whose own sheet is absent).
     pub shuriken: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Projectile[type]` — one packed sheet per kind
+    /// [`crate::projectile::spawnable_kinds`] reports (absent when the file is
+    /// missing).
+    pub proj_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
     /// (`Main.DrawProjDirect`, `Main.cs:28044`).
     pub fishing_line: Option<tr_render::SheetRect>,
@@ -1580,6 +1596,15 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            proj_sheets: crate::projectile::spawnable_kinds()
+                .into_iter()
+                .filter_map(|k| {
+                    atlas
+                        .sheet(&format!("Projectile_{k}"))
+                        .copied()
+                        .map(|r| (k, r))
+                })
+                .collect(),
             fishing_line: atlas.sheet("FishingLine").copied(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
@@ -2174,6 +2199,23 @@ impl Lookups {
         Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
     }
 
+    /// UV and frame size of a projectile sprite — `Main.DrawProj`'s
+    /// `TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0,
+    /// frame)` (`Main.cs:27929-27943`): the sheet sliced into `frames` equal
+    /// rows. `None` when the kind's sheet is not packed (the shuriken fallback
+    /// covers it).
+    pub fn proj_frame(&self, kind: u16, frame: u32) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.proj_sheets.get(&kind)?;
+        let frames = crate::projectile::proj_frames(kind).max(1);
+        let h = (rect.height / frames).max(1);
+        let frame = frame.min(frames - 1);
+        Some((
+            uv_rect(rect, self.atlas_size, 0, (frame * h) as i32, rect.width, h),
+            rect.width as f32,
+            h as f32,
+        ))
+    }
+
     /// UV of the shuriken projectile/item sprite.
     pub fn shuriken_uv(&self) -> Option<[f32; 4]> {
         let rect = self.shuriken.as_ref()?;
@@ -2596,6 +2638,46 @@ mod tests {
             registered, enumerated,
             "item_icons == the enumerated file set"
         );
+    }
+
+    /// M4-PROJ-6b: the projectile sprites — every kind `proj_data` carries
+    /// packs its `Projectile_{id}` sheet, and [`Lookups::proj_frame`] slices it
+    /// into the `Main.projFrames[type]` rows (`Main.cs:8441-8816`), returning
+    /// the frame's own pixel size so the draw no longer falls back to the
+    /// 16 px shuriken quad.
+    #[test]
+    fn m4_proj_6b_proj_sheets_pack_and_slice_by_proj_frames() {
+        let (_, lookups) = content_lookups();
+        let mut packed = 0;
+        for kind in crate::projectile::spawnable_kinds() {
+            if let Some((_, w, h)) = lookups.proj_frame(kind, 0) {
+                packed += 1;
+                let frames = crate::projectile::proj_frames(kind);
+                let rect = lookups.proj_sheets.get(&kind).expect("the sheet packs");
+                assert_eq!(
+                    h,
+                    (rect.height / frames.max(1)).max(1) as f32,
+                    "kind {kind}: {frames} frames slice the sheet's {} px",
+                    rect.height
+                );
+                assert_eq!(w, rect.width as f32);
+                // Every frame stays inside the sheet.
+                if let Some((_, _, last)) = lookups.proj_frame(kind, frames - 1) {
+                    assert!(last <= h);
+                }
+            }
+        }
+        assert!(packed > 100, "only {packed} projectile sheets packed");
+        // The multi-frame table itself: the C# rows the port's ids reach.
+        assert_eq!(crate::projectile::proj_frames(34), 6);
+        assert_eq!(crate::projectile::proj_frames(645), 7);
+        assert_eq!(crate::projectile::proj_frames(0), 1, "the default row");
+        // The fallback seam: a kind with no packed sheet answers `None`, which
+        // is what keeps the 22x22 shuriken stand-in reachable (`SHURIKEN` 3 is
+        // spawned by the dev path but carries no `proj_data` row).
+        assert!(lookups.proj_frame(3, 0).is_none());
+        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite exists");
+        assert!(lookups.proj_frame(65_000, 0).is_none());
     }
 
     #[test]
