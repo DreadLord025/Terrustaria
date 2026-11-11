@@ -231,6 +231,10 @@ pub(crate) struct App {
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
+    /// `Main.checkForSpawns` + `Main.townNPCCanSpawn` +
+    /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
+    /// NPC arrival gates (M4-TOWN-1b).
+    pub(crate) town_arrival: crate::town_arrival::ArrivalState,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
@@ -2642,6 +2646,7 @@ impl App {
                 banners
             },
             town_look_timer: 0.0,
+            town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

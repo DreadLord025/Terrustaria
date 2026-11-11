@@ -68,6 +68,7 @@ mod shimmer;
 mod sound;
 mod test_world_helpers;
 mod town;
+mod town_arrival;
 mod ui;
 mod world_sim;
 

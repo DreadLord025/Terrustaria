@@ -3004,6 +3004,20 @@ impl Npc {
         Some(npc)
     }
 
+    /// A town NPC standing on the given tile — `WorldGen.SpawnTownNPC`'s
+    /// `NewNPC` at the room position (`WorldGen.cs:5409-5500`), which is a
+    /// *room* tile, not the outdoor surface [`Self::spawn_guide`] uses for the
+    /// world-spawn Guide.
+    pub fn spawn_town_at(world: &World, tile_x: i32, tile_y: i32, kind: NpcKind) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = tile_x as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = tile_y as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, 1, 0.0))
+    }
+
     pub fn spawn_guide(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {

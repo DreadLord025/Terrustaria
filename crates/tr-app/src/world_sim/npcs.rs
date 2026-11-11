@@ -2295,183 +2295,60 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
-    // The town-NPC arrival (`NPC.SpawnAllowed_Merchant`, `NPC.cs:7175`):
-    // the money condition + the absence check — the port's cadence rides
-    // the 2-second town pass (the vanilla checks through UpdateWorld; the
-    // dawn-gating lands with the clock events).
-    if app.town_look_timer == 0.0 {
-        // The Dye Trader (`NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`):
-        // the inventory carries a dye item (`item.dye > 0`, the dye
-        /// materials 1107-1120 or the Strange Plants 3385-3388) or a
-        /// loaded dye equipment slot; `unlockedDyeTraderSpawn` overrides.
-        // The C#'s `item.dye > 0` scan covers the finished dyes; the port's
-        // `ItemSlot` carries no `dye` field, so the scan reads the two
-        // material bands the C# names literally (the dye materials
-        // 1107-1120 and the Strange Plants 3385-3388) — the equipment's
-        // dye-slot half (`GetEffectiveDye`) has no ported equipment slots.
-        let dye_held = app
-            .inventory
+    // `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`, M4-TOWN-1b):
+    // the 7200-tick gate, the resident counts, the `townNPCCanSpawn` table and
+    // the fixed priority ladder — one arrival per check, in the vanilla's
+    // order. The placement tail is `WorldGen.SpawnTownNPC`'s: the kind lands in
+    // a furnished room found from the player (`WorldGen.cs:5409-5500`).
+    //
+    // The ad-hoc per-2-second gates this replaces (a separate `if` per kind,
+    // each with its own magic ±offset off the player and no ordering) could
+    // not express "one arrival per check" or the ladder, and gave the Nurse a
+    // Merchant-absence gate the vanilla does not have.
+    {
+        // `:65763-65784` — the five SpawnAllowed_* flags read the inventory,
+        // and the Party Girl's roll is drawn once per check, like the C#
+        // `Main.rand.Next(40) == 0`. The equipped-dye half of the Dye Trader's
+        // gate has no ported equipment slots yet (the materials band stands in).
+        let party_roll = rand01(&mut app.npc_rng) < 1.0 / 40.0;
+        let max_hp = app.player.as_ref().map_or(0, |p| p.max_hp);
+        let residents = app
+            .npcs
             .iter()
-            .any(|s| {
-                s.count > 0
-                    && ((1009..=1120).contains(&s.kind)
-                        || (3385..=3388).contains(&s.kind))
-            });
-        if dye_held && !app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader) {
+            .filter(|n| n.hp > 0 && n.kind.is_town_resident())
+            .count() as i32;
+        let no_dyes: [crate::item::ItemSlot; 0] = [];
+        let chosen = {
+            let ctx = crate::town_arrival::ArrivalContext {
+                world: &app.world,
+                inventory: &app.inventory,
+                equipped_dyes: &no_dyes,
+                max_hp,
+                party_roll,
+                residents,
+            };
+            // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
+            // needs its room ready, and the port's rooms are found by the same
+            // scan `quick_find_home` runs — the closure only rules out the
+            // kinds that cannot be placed at all (no sheet / no housing set).
+            crate::town_arrival::update_time_spawn_town_npcs(
+                &mut app.town_arrival,
+                &ctx,
+                &app.npcs,
+                &|kind| kind.is_town_npc_like(),
+            )
+        };
+        if let Some(kind) = chosen {
             if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::DyeTrader) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Party Girl (`Main.cs:65785-65793`'s flag7): the
-        /// `Next(40) == 0` chance AND the ≥ 20-town-NPC count, or
-        /// `unlockedPartyGirlSpawn`. The port's cadence folds the per-day
-        /// roll to the same per-pass chance.
-        let town_count = app.npcs.iter().filter(|n| n.kind.is_town_resident()).count();
-        if (rand01(&mut app.npc_rng) < 1.0 / 40.0 && town_count >= 20)
-            || app.world.unlocked_party_girl
-        {
-            if !app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl) {
-                if let Some(player) = app.player.as_ref() {
-                    let xt = ((player.x / TILE_PX) as i32 - 13).clamp(2, app.world.width - 3);
-                    if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::PartyGirl) {
-                        n.home =
-                            crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                let xt = (player.x / TILE_PX) as i32;
+                let yt = (player.y / TILE_PX) as i32;
+                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, xt, yt) {
+                    if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
+                        // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
+                        // the room assigns and the homeless flag clears.
+                        n.home = Some((hx, hy));
                         app.npcs.push(n);
                     }
-                }
-            }
-        }
-        // The Zoologist (`Main.cs:65896`'s `townNPCCanSpawn` arm):
-        // the bestiary completion ≥ 10 % — the same gate the C# reads
-        // through `GetBestiaryProgressReport()`.
-        if crate::bestiary::completion_percent(&app.bestiary.kills) >= 0.10
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::Zoologist)
-        {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 10).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Zoologist) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Princess (`Main.cs:65944-65955`'s flag9): EVERY other town
-        // NPC present — the C#'s 24 counters fold to the port's town
-        // roster (the kinds the port lacks sit in their own tasks), and
-        // `unlockedPrincessSpawn` opens it without the roster.
-        if (app.world.unlocked_princess
-            || crate::bestiary::all_town_kinds_present(&app.npcs))
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::Princess)
-        {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 - 12).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Princess) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Golfer: `NPC.savedGolfer` (`Main.cs:65892`'s        // `townNPCCanSpawn` arm collapsed into the port's 2-second pass).
-        if app.world.saved_golfer && !app.npcs.iter().any(|n| n.kind == NpcKind::Golfer) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 - 11).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Golfer) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Stylist and the Tax Collector: `NPC.savedStylist`/
-        // `savedTaxCollector` (`Main.cs:65824`/`:65840`'s `townNPCCanSpawn`
-        // arms collapsed into the port's 2-second pass).
-        if app.world.saved_stylist && !app.npcs.iter().any(|n| n.kind == NpcKind::Stylist) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Stylist) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        if app.world.saved_tax_collector
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::TaxCollector)
-        {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 - 10).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::TaxCollector) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Clothier: the downedSkeletron gate.
-        if app.world.downed_skeletron && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Clothier) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Witch Doctor: the downedQueenBee gate.
-        if app.world.downed_queen_bee && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 - 9).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::WitchDoctor) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Wizard: `NPC.savedWizard` (`NPC.cs:6289`), raised by the
-        // bound-Wizard talk (`UpdateSavedStates`, `:52948`).
-        if app.world.saved_wizard && !app.npcs.iter().any(|n| n.kind == NpcKind::Wizard) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 - 8).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Wizard) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Mechanic: `NPC.savedMech` (`NPC.cs:6291`).
-        if app.world.saved_mech && !app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 7).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Mechanic) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s        // downedBoss1 — the port's downed_eoc).
-        if app.world.downed_eoc && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad) {
-            if let Some(player) = app.player.as_ref() {
-                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Dryad) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
-                }
-            }
-        }
-        if let Some(player) = app.player.as_ref() {
-            if player.max_hp > 100
-                && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
-                && !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant)
-            {
-                // The Nurse arrives when the life maximum grew past 100
-                // (`SpawnAllowed_Nurse`) — the port gates her behind the
-                // Merchant's absence (the vanilla arrival picks one town
-                // NPC per pass).
-                let xt = ((player.x / TILE_PX) as i32 - 6).clamp(2, app.world.width - 3);
-                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Nurse) {
-                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
-                    app.npcs.push(n);
                 }
             }
         }
@@ -2489,24 +2366,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         try_spawn_webbed_stylist(app);
         // The sleeping Golfer's world spawn (`NPC.cs:1691`).
         try_spawn_sleeping_golfer(app);
-        if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
-            let inv: Vec<(u16, u32)> = app
-                .inventory
-                .iter()
-                .filter(|s| s.kind != 0 && s.count > 0)
-                .map(|s| (s.kind, s.count))
-                .collect();
-            if crate::spawner::spawn_allowed_merchant(&inv) {
-                if let Some(player) = app.player.as_ref() {
-                    let xt = ((player.x / TILE_PX) as i32 + 6).clamp(2, app.world.width - 3);
-                    if let Some(mut m) = Npc::spawn_town(&app.world, xt, NpcKind::Merchant) {
-                        m.home =
-                            crate::town::quick_find_home(&app.world, xt, (m.y / TILE_PX) as i32);
-                        app.npcs.push(m);
-                    }
-                }
-            }
-        }
+        // The Merchant is NOT spawned here any more: he is ladder arm
+        // `Main.cs:65806` (5000 copper, `NPC.SpawnAllowed_Merchant`), so the
+        // faithful gate above owns him (M4-TOWN-1b).
     }
     // The revenge cache (`NPC.CheckActive` :78000-78002 -> CacheEnemy
     // :347-371): a despawning carrier caches its marker. The port's removal
@@ -3759,25 +3621,30 @@ mod tests {
     /// port's `ItemSlot` has no `dye` field, so the bands carry the gate.
     #[test]
     fn the_dye_trader_arrives_with_the_dye_materials() {
-        let mut world = World::new("t".into(), 200, 300);
-        for x in 0..200 {
-            for y in 40..300 {
-                let i = world.index(x, y);
-                world.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        world.compute_column_surface();
+        // `WorldGen.SpawnTownNPC` needs a finished, furnished room
+        // (`WorldGen.cs:5409-5500'): the faithful gate above only hands the
+        // kind over, the room is the placement's own precondition.
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&world);
-        player.x = 32.0 * 16.0;
+        // Beside the room: the arrival's scan is `quick_find_home`'s ±10
+        // (`WorldGen.cs:5759-5805`).
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
         app.player = Some(player);
         app.world = world;
         // No dye: no arrival.
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         app.npc_rng = 999;
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(
@@ -3791,7 +3658,16 @@ mod tests {
         slot.count = 1;
         let _ = &mut slot;
         // The 2-second town gate: the first pass consumed it, so re-arm.
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         app.npc_rng = 999;
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(
@@ -3805,21 +3681,17 @@ mod tests {
     /// override opens her without the roster.
     #[test]
     fn the_party_girl_gate_needs_twenty_town_npcs_or_the_override() {
-        let mut world = World::new("t".into(), 200, 300);
-        for x in 0..200 {
-            for y in 40..300 {
-                let i = world.index(x, y);
-                world.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        world.compute_column_surface();
+        // `WorldGen.SpawnTownNPC` needs a finished, furnished room
+        // (`WorldGen.cs:5409-5500'): the faithful gate above only hands the
+        // kind over, the room is the placement's own precondition.
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&world);
-        player.x = 32.0 * 16.0;
+        // Beside the room: the arrival's scan is `quick_find_home`'s ±10
+        // (`WorldGen.cs:5759-5805`).
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
         app.player = Some(player);
         app.world = world;
         // 20 residents but no roll and no override: she stays away (the roll
@@ -3853,7 +3725,16 @@ mod tests {
             app.npcs.push(n);
         }
         app.npc_rng = 12345;
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
         // The override half opens her regardless.
         assert!(
@@ -3863,7 +3744,16 @@ mod tests {
         app.world.unlocked_party_girl = true;
         app.npc_rng = 12345;
         // Re-arm the 2-second gate (the previous pass consumed it).
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(
             app.npcs.iter().any(|n| n.kind == NpcKind::PartyGirl),
@@ -3873,21 +3763,17 @@ mod tests {
 
     #[test]
     fn the_talk_wakes_the_sleeping_golfer() {
-        let mut world = World::new("t".into(), 200, 300);
-        for x in 0..200 {
-            for y in 40..300 {
-                let i = world.index(x, y);
-                world.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        world.compute_column_surface();
+        // `WorldGen.SpawnTownNPC` needs a finished, furnished room
+        // (`WorldGen.cs:5409-5500'): the faithful gate above only hands the
+        // kind over, the room is the placement's own precondition.
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&world);
-        player.x = 32.0 * 16.0;
+        // Beside the room: the arrival's scan is `quick_find_home`'s ±10
+        // (`WorldGen.cs:5759-5805`).
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
         app.player = Some(player);
         app.world = world;
         let mut g = Npc::new(NpcKind::SleepingGolfer, 32.0 * 16.0, 100.0, 1, 0.0);
@@ -3906,25 +3792,30 @@ mod tests {
     /// arm collapsed into the 2-second town pass).
     #[test]
     fn the_saved_golfer_flag_opens_the_town_arrival() {
-        let mut world = World::new("t".into(), 200, 300);
-        for x in 0..200 {
-            for y in 40..300 {
-                let i = world.index(x, y);
-                world.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        world.compute_column_surface();
+        // `WorldGen.SpawnTownNPC` needs a finished, furnished room
+        // (`WorldGen.cs:5409-5500'): the faithful gate above only hands the
+        // kind over, the room is the placement's own precondition.
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&world);
-        player.x = 32.0 * 16.0;
+        // Beside the room: the arrival's scan is `quick_find_home`'s ±10
+        // (`WorldGen.cs:5759-5805`).
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
         app.player = Some(player);
         app.world = world;
         app.world.saved_golfer = true;
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Golfer), "he arrives");
         let count = app.npcs.len();
@@ -4046,40 +3937,55 @@ mod tests {
     /// flag spawns the town NPC once and never again.
     #[test]
     fn the_saved_flags_open_the_town_arrival() {
-        let mut world = World::new("t".into(), 200, 300);
-        for x in 0..200 {
-            for y in 40..300 {
-                let i = world.index(x, y);
-                world.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        world.compute_column_surface();
+        // `WorldGen.SpawnTownNPC` needs a finished, furnished room
+        // (`WorldGen.cs:5409-5500'): the faithful gate above only hands the
+        // kind over, the room is the placement's own precondition.
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&world);
-        player.x = 32.0 * 16.0;
+        // Beside the room: the arrival's scan is `quick_find_home`'s ±10
+        // (`WorldGen.cs:5759-5805`).
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
         app.player = Some(player);
         app.world = world;
         app.world.saved_wizard = true;
         app.world.saved_mech = true;
         // One town pass.
-        app.town_look_timer = 2.0;
+        // The Guide is resident from the world spawn (`NPC.cs:1775`), and the
+        // ladder stops at him while he is missing — seed the roster the game
+        // actually starts with.
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the vanilla arrival gate: the C# checks every 7200 ticks
+        // (`Main.cs:65548-65555`), so the next update is a check.
+        app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
+        // One arrival per check (`Main.cs:65957`: the ladder picks a single
+        // type), and the ladder puts the Wizard ahead of the Mechanic.
         assert!(
             app.npcs.iter().any(|n| n.kind == NpcKind::Wizard),
-            "the Wizard arrives"
+            "the Wizard wins the ladder"
         );
         assert!(
-            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
-            "the Mechanic arrives"
+            !app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic waits for the next check"
         );
-        // A second pass adds nothing.
-        let count = app.npcs.len();
+        // The next check (the 7200-tick gate re-armed) takes the Mechanic.
+        app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
-        assert_eq!(app.npcs.len(), count, "one arrival only");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Mechanic),
+            "the Mechanic arrives on the next check"
+        );
+        // With both resident, a further check adds nothing.
+        let count = app.npcs.len();
+        app.town_arrival.check_for_spawns = 7199;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), count, "no duplicate arrivals");
     }
 
     /// `NPC.cs:2088`'s hardmode guard: the bound Wizard's ladder arm needs

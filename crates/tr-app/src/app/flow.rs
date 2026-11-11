@@ -1760,6 +1760,7 @@ pub(crate) mod front_flow_tests {
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),
             town_look_timer: 0.0,
+            town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
             window: None,
             gpu: None,
