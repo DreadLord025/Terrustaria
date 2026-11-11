@@ -310,6 +310,9 @@ pub fn draw_hud(
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
+    // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
+    // the local player's `hostile` + `team` and the `teamCooldown` timer.
+    pvp: &chrome::PvpIconState,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -457,7 +460,7 @@ pub fn draw_hud(
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.
-        chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h);
+        chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
         chrome::draw_hotbar_lock(r, lookups, false);
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
@@ -555,13 +558,43 @@ pub fn draw_hud(
     // the hovered slot's item tooltip, drawn over the interface just before the
     // cursor. With the inventory open the hover comes from the panel layout
     // (`inventory::draw`); closed, only the hotbar row is hoverable.
-    let hover_item: Option<&ItemSlot> = if inventory_open {
+    // `Main.cs:42678-42686` / `:42724-42731`: the PVP/team hover text
+    // (`MouseTextHackZoom`) and the `player.mouseInterface = true` that suppresses
+    // the slot hover under this pointer. The C# icon pass runs inside
+    // `DrawInventory` (before `DrawPendingMouseText`), so its text is the one on
+    // screen for those cells.
+    let pvp_hover_text = if inventory_open {
+        chrome::pvp_hit(
+            screen,
+            equip_page,
+            m_h,
+            pvp,
+            mouse_pos,
+            chrome::pvp_team_cell(lookups),
+        )
+        .map(|hit| match hit {
+            chrome::PvpHit::PvpToggle => {
+                crate::lang::text(chrome::pvp_hover_key(pvp.hostile))
+            }
+            chrome::PvpHit::Team(i) => {
+                crate::lang::text(&chrome::team_hover_key(i, pvp.team))
+            }
+        })
+    } else {
+        None
+    };
+    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() {
+        None
+    } else if inventory_open {
         open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
     };
     tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
+    if let Some(text) = pvp_hover_text {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
+    }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is

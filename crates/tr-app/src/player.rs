@@ -210,6 +210,13 @@ pub struct Player {
     /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
     /// counter `/pvpdeath` reads (`PVPDeathCommand`).
     pub deaths_pvp: u32,
+    /// `Player.hostile` (`Player.cs:2570`): the PVP toggle the inventory's
+    /// `DrawPVPIcons` reads and toggles (`Main.cs:42664`, `:42692`). Gates the
+    /// PVP damage rules (`damage::*`, `Player.Damage_PVP`).
+    pub hostile: bool,
+    /// `Player.team` (`Player.cs:1430`): 0 = none, 1..=5 = Red/Green/Blue/
+    /// Yellow/Pink (`PlayerTeamID`). The `DrawPVPIcons` row index.
+    pub team: i32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -742,6 +749,8 @@ impl Player {
             angler_quests_finished: 0,
             golfer_score: 0,
             deaths_pvp: 0,
+            hostile: false,
+            team: 0,
             dead_time: 0,
             respawn_timer: 0,
             minion_attack_target_npc: -1,
