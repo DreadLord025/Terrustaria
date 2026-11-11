@@ -170,8 +170,14 @@ mod tests {
     // hive pass (`WorldGen.cs:15946-15968`), so every world with a hive
     // gains its `Next(5)` pockets. The determinism half of both tests
     // (a == b) still guards the stream.
-    const SEED42_512: u32 = 3075125982;
-    const DEFAULT_WORLD: u32 = 366022756;
+    // Re-pinned by M5-DUNGEON's spike pass (`worldgen/dungeon_features.rs`:
+    // `DungeonGlobalSpikes` at `MakeDungeon`'s `:0.75` step): every world
+    // with a dungeon now carries its `42 * maxTilesX / 4200` spike runs (two
+    // halves, floors and ceilings), so every hash moves — `SEED42_512`
+    // included (a 512-wide world draws 5 runs per half and lands at least
+    // one).
+    const SEED42_512: u32 = 242229417;
+    const DEFAULT_WORLD: u32 = 2185958840;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
