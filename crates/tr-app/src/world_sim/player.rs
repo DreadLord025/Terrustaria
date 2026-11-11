@@ -275,28 +275,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT
             })
             .map(|def| def.place_style as u8);
-        // `Player.statDefense` (`Player.UpdateEquips`): the equipped
-        // pieces' defense plus the set bonus (M3-EQUIP-2).
-        let armor_kinds: Vec<i32> = app
-            .equip
-            .armor
-            .iter()
-            .map(|slot| slot.kind as i32)
-            .collect();
-        let piece_def: i32 = app
-            .equip
-            .armor
-            .iter()
-            .filter(|slot| slot.kind != 0)
-            .filter_map(|slot| crate::registry::get(slot.kind))
-            .map(|d| d.defense as i32)
-            .sum();
-        let set = tr_core::armor_sets::set_bonus_defense(
-            armor_kinds.first().copied().unwrap_or(0),
-            armor_kinds.get(1).copied().unwrap_or(0),
-            armor_kinds.get(2).copied().unwrap_or(0),
-        );
-        p.stat_defense = piece_def + set;
+        // `Player.statDefense` is derived inside `Player.Update` now
+        // (`Player::update`'s reset block: `GrantArmorBenefits`' piece rows +
+        // the set bonus + the buff arms, M3-EQUIP-5). Assigning it here used to
+        // overwrite the buff and prefix arms the tick had just added, so an
+        // Ironskin potion or a Warding accessory changed nothing.
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no

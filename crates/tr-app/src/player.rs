@@ -2553,6 +2553,12 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
+        // below and `GrantArmorBenefits` (`:13121`, the equipment pass at the
+        // bottom of this block) re-add per tick. Before M3-EQUIP-5 the field
+        // was assigned *outside* the tick (from `world_sim`), which silently
+        // dropped every buff and prefix defense arm.
+        self.stat_defense = 0;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2564,6 +2570,50 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `GrantArmorBenefits` (' armor/accessory rows, `Player.cs:13121`):
+        // every equipped wearable's `Item.defense` — the three armor slots AND
+        // the seven functional accessory slots (Shackle +1, Cobalt Shield +1,
+        // Ankh Shield +4, …), then the completed set's bonus
+        // (`ArmorSetBonuses.GetCompleteSet(...).Effect`).
+        for &kind in self.equipped[..10].iter() {
+            if kind == 0 {
+                continue;
+            }
+            if let Some(def) = crate::registry::get(kind) {
+                self.stat_defense += def.defense as i32;
+            }
+        }
+        let (armor_head, armor_body, armor_legs) = (
+            self.equipped[0] as i32,
+            self.equipped[1] as i32,
+            self.equipped[2] as i32,
+        );
+        self.stat_defense +=
+            tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
+        // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
+        // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
+        // Molten, Frost, Mining, the Cobalt/Mythril/Adamantite head variants,
+        // Crystal Assassin, Tiki, Spooky, Spider and Bee.
+        if let Some((_set, set)) =
+            tr_core::armor_sets::set_stats(armor_head, armor_body, armor_legs)
+        {
+            self.melee_damage += set.melee_damage;
+            self.ranged_damage += set.ranged_damage;
+            self.magic_damage += set.magic_damage;
+            self.minion_damage += set.minion_damage;
+            self.melee_crit += set.melee_crit;
+            self.ranged_crit += set.ranged_crit;
+            self.magic_crit += set.magic_crit;
+            self.move_speed += set.move_speed;
+            self.melee_speed_bonus += set.melee_speed;
+            self.pick_speed_bonus += set.pick_speed;
+            self.mana_max += set.mana_max;
+            self.max_minions += set.max_minions;
+            if set.dash_type != 0 {
+                self.dash_type = set.dash_type;
+            }
+        }
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
@@ -2572,7 +2622,22 @@ impl Player {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
                     self.move_speed -= 0.1;
+                    // `:11915`: `statDefense -= 4` per Weak slot.
+                    self.stat_defense -= 4;
                 }
+                // `:9962` — `BuffID.Ironskin`: `statDefense += 8`.
+                5 => self.stat_defense += 8,
+                // `:10064` — `BuffID.Ichor`: `statDefense -= 15`.
+                69 => self.stat_defense -= 15,
+                // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
+                // C#: `statDefense += 5`).
+                215 => self.stat_defense += 5,
+                // `:10306` — `BuffID.DryadsWard`: `statDefense += 8`
+                // (the `lifeRegen += 6` / `thorns += 0.5` halves wait for
+                // their systems).
+                165 => self.stat_defense += 8,
+                // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
+                25 => self.stat_defense -= 4,
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -2583,11 +2648,13 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
-                // The WellFed tiers (`:11931-11969`): the per-slot stat adds.
-                // The `statDefense` half waits for the player-defense
-                // consumer (M3-EQUIP-3); the minion halves for M4-MINION.
+                // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
+                // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
+                // the minion halves wait for M4-MINION.
                 26 => {
                     self.well_fed = true;
+                    // `:11934`: `statDefense += 2`.
+                    self.stat_defense += 2;
                     self.melee_crit += 2;
                     self.melee_damage += 0.05;
                     self.melee_speed_bonus += 0.05;
@@ -2600,6 +2667,8 @@ impl Player {
                 }
                 206 => {
                     self.well_fed = true;
+                    // `:11950`: `statDefense += 3`.
+                    self.stat_defense += 3;
                     self.melee_crit += 3;
                     self.melee_damage += 0.075;
                     self.melee_speed_bonus += 0.075;
@@ -2612,6 +2681,8 @@ impl Player {
                 }
                 207 => {
                     self.well_fed = true;
+                    // `:11966`: `statDefense += 4`.
+                    self.stat_defense += 4;
                     self.melee_crit += 4;
                     self.melee_damage += 0.1;
                     self.melee_speed_bonus += 0.1;
@@ -2696,17 +2767,84 @@ impl Player {
                 987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
                 1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
                 3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-                // The balloons (`:14806/:15093-15101`, :14820 - the combos
-                // carry their bottle's option + jumpBoost; the horseshoe
-                // balloons add noFallDmg + the luck flag):
-                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                // The bottle combos (`:14822-14835`): 1164 (Bundle of
+                // Balloons) and 5331 (its Amber/Glass variant) carry all three
+                // bottles at once.
+                1164 | 5331 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                     self.jump_boost = true;
                 }
-                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
-                // Flurry variant `:15013-15016`):
-                54 | 1579 => self.acc_run_speed = 6.0,
+                // Every other bottle/balloon carries its own option *and*
+                // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
+                // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
+                // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
+                // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
+                // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
+                // Comb) carry only the boost, and so does `159`/`3225` (the
+                // Aglet-style `jumpSpeedBoost` rows).
+                399 | 1250 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.jump_boost = true;
+                }
+                1251 | 1163 => {
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                    self.jump_boost = true;
+                }
+                983 | 1252 => {
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.jump_boost = true;
+                }
+                1863 | 3250 => {
+                    self.has_jump_options[ExtraJump::Fart.index()] = true;
+                    self.jump_boost = true;
+                }
+                3252 | 3241 => {
+                    self.has_jump_options[ExtraJump::Sail.index()] = true;
+                    self.jump_boost = true;
+                }
+                159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+                // The boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
+                // `:15017-15020` Amphibian — `accRunSpeed = 6f`):
+                54 | 1579 | 3200 => self.acc_run_speed = 6.0,
                 // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
                 128 => self.rocket_boots = 1,
+                // The Spectre Boots (`:15213-15216` - tier 2).
+                405 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 2;
+                }
+                // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
+                // +8% move).
+                898 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 2;
+                    self.move_speed += 0.08;
+                }
+                // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
+                // skates).
+                1862 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 3;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Terraspark Boots (`:15390-15396` - tier 4).
+                5000 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 4;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
+                4874 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 5;
+                }
+                // The Titan Glove's melee-speed row (`:15103-15107`); its
+                // `autoReuseGlove` flag has no port consumer yet.
+                211 => self.melee_speed_bonus += 0.12,
                 // The Ice Skates (`:15089-15092`).
                 950 => self.ice_skate = true,
                 // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -2723,6 +2861,11 @@ impl Player {
                 _ => {}
             }
         }
+        // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
+        // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
+        // the C# never lets `statDefense` go negative (a negative value would
+        // *raise* incoming damage through `CalculateDamagePlayersTake`).
+        self.stat_defense = self.stat_defense.max(0);
         // The debug pins stand in for the granting equipment - re-applied
         // after the clear (the vanilla: the grants re-set per tick).
         for i in 0..9 {
@@ -5491,6 +5634,124 @@ mod tests {
         p.update_dye_cache();
         assert!(p.c_pet > 0);
         assert_eq!(p.c_light, 0);
+    }
+
+    /// M3-EQUIP-5 — `Player.statDefense` is derived inside the tick, in the
+    /// vanilla order: `ResetEffects` zeroes it (`Player.cs:18327`), the buff
+    /// arms add, `GrantArmorBenefits` adds the piece rows (`:13121`) and the
+    /// set bonus, `GrantPrefixBenefits` the accessory prefixes, then the floor
+    /// (`:25927`).
+    #[test]
+    fn stat_defense_sums_pieces_set_bonus_and_buffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Nothing worn, nothing buffed: 0.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0);
+        // The copper set (89/80/76): 1 + 2 + 1 pieces + the MetalTier1 bonus 2.
+        p.equipped[0] = 89;
+        p.equipped[1] = 80;
+        p.equipped[2] = 76;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 6, "copper set: 4 pieces + 2");
+        // The accessories count too (`GetEffectiveArmor(0..10)`): the Shackle
+        // (216) +1 and the Ankh Shield (1613) +5 sit in slots 3/4.
+        p.equipped[3] = 216;
+        p.equipped[4] = 1613;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 12, "12 = 4 + 2 + 1 + 5");
+        // Ironskin (buff 5) +8 and the fed tier (26) +2.
+        p.buffs.add_buff(5, 3600);
+        p.buffs.add_buff(26, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 22, "12 + 8 + 2");
+        // Ichor (69) −15 and Weak (33) −4: the sum can go below the armor, and
+        // the floor clamps it at 0 (`:25927`) instead of inflating damage.
+        p.buffs.add_buff(69, 3600);
+        p.buffs.add_buff(33, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 3, "22 - 15 - 4 = 3");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-7 — the movement accessories grant the live flags (the
+    /// `TR_JUMPS`/`TR_BOOTS` pins stop being the only source).
+    #[test]
+    fn the_movement_accessories_grant_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Bundle of Balloons (1164): Cloud + Sandstorm + Blizzard + jumpBoost.
+        // Before M3-EQUIP-7 only the jump boost was ported, so the item gave
+        // one extra jump instead of three.
+        p.equipped[3] = 1164;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        assert!(p.jump_boost);
+        // Frostspark Boots (1862): tier 3, 6.75 accel, +8% move, ice skates.
+        p.equipped[3] = 1862;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 3);
+        assert!((p.acc_run_speed_value() - 6.75).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        assert!(p.ice_skate);
+        assert!(!p.has_jump_options[ExtraJump::Cloud.index()]);
+        // Hellfire Treads (4874): the tier-5 boots at the plain 6f.
+        p.equipped[3] = 4874;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 5);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        // A Sandstorm balloon (1252): the bottle's option and the boost.
+        p.equipped[3] = 0;
+        p.equipped[4] = 1252;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.jump_boost);
+    }
+
+    /// M3-EQUIP-5 — `ArmorSetBonuses.Benefits`' scalar rows ride the same pass.
+    #[test]
+    fn the_completed_set_grants_its_stat_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Crystal Assassin (4982/4983/4984): +10% every damage, +10 every crit,
+        // `dashType = 5`. The crit bases are 4 (`ResetEffects`), so 14.
+        p.equipped[0] = 4982;
+        p.equipped[1] = 4983;
+        p.equipped[2] = 4984;
+        p.update(&w, PlayerInput::default());
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`), so the
+        // set's `+= 0.1f` reads as 1.1.
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
+        assert_eq!(p.dash_type, 5);
+        // Swapping to the Ninja set (256/257/258) keeps only its own row:
+        // `moveSpeed += 0.2f`.
+        p.equipped[0] = 256;
+        p.equipped[1] = 257;
+        p.equipped[2] = 258;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.0).abs() < 1e-4, "the base 1.0, no add");
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        // The Mining set (88/410/411) is the `pickSpeed -= 0.1f` negation.
+        p.equipped[0] = 88;
+        p.equipped[1] = 410;
+        p.equipped[2] = 411;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-4);
+        // A partial set grants nothing.
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-4);
     }
 
     #[test]

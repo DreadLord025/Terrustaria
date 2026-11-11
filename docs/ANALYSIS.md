@@ -10718,3 +10718,29 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   runs after the housing page in the same frame — then draws nothing.
   `housing::hide_pvp_icons` reports it on `InventoryHit` and `ui::draw_hud` skips
   the icons. Only reachable in a world with ~30 town NPCs (three columns).
+
+## The defense stat (M3-EQUIP-5)
+
+`Player.statDefense` had a consumer since M3-EQUIP-2 (the `Hurt` reduction) but
+two writers that disagreed: `Player::update`'s buff/prefix/equipment passes added
+into it, and `world_sim::player` then **assigned** `pieces + set` over the result
+right before the tick ran. So the armor pieces worked, and every other contributor
+was silently thrown away: Ironskin (buff 5, +8), Ichor (69, −15), the Cat
+Bastet's Blessing (215, +5), the Dryad's Ward (165, +8), Tipsy (25, −4), Weak
+(33, −4 per slot), the fed tiers (26/206/207 = +2/+3/+4) and the accessory
+prefixes 62-65 (`GrantPrefixBenefits`, +1..+4).
+
+The fix is an ordering fix, not a new table: the field is now derived entirely
+inside `Player::update`, in the C#'s own order — `ResetEffects` zeroes it
+(`:18327`), `UpdateBuffs` adds its arms (`:9962`, `:10064`, `:10108`, `:10306`,
+`:11915`, `:11921`, `:11934`, `:11950`, `:11966`), `UpdateEquips`'s
+`GrantArmorBenefits` adds every wearable's `Item.defense` over the ten functional
+slots (`:13121`, so the seven accessories count — a Shackle +1, an Ankh Shield
++4) plus the completed set's bonus, `GrantPrefixBenefits` adds the accessory
+prefix rows, and the tail clamps `statDefense < 0` to 0 (`:25927`) so a stack of
+debuffs can never *raise* incoming damage.
+
+Not ported yet, and why: buff 28 (Werewolf, +3) needs the `wolfAcc` item flag the
+port does not carry; the `/2` halvings at `:26021-26025` belong to armor-set
+abilities that are still unported (see M3-EQUIP-2's early-metal-only set table),
+as does the `:25716` +20 row.
