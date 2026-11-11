@@ -1163,8 +1163,23 @@ The player composition is pure data: `render/player_layers.rs` builds a
   come from `ItemCheck_*` and belong to M2-ANIM. The item's grip origin is
   already the C# rule (`PlayerDrawLayers.cs:3161-3188`: bottom corner mirrored by
   direction; useStyle 8/9 handled), so the old centre-pivot arc pass is gone.
-- The `Players[8]` undershirt passes (back arm, front arm/shoulder) are skipped:
-  the starter skin has no underShirt colour; the palette lands with M3-EQUIP.
+- The `Players[8]` undershirt passes (back arm, front arm/shoulder) draw with
+  the vanilla `underShirtColor` (160,180,215) (`Player.cs:2562`); they are
+  layered exactly as `PlayerDrawLayers.cs:1353-1362` (back arm 5, 8, 13) and
+  `:3661-3706` (arm 7, 8, 13, 6; shoulder 7, 8, 13, 6) — M2-DRAW-4.
+- Source-rect fidelity (M2-DRAW-4). The hair rides its own trimmed frame
+  (`PlayerDrawSet.cs:1770-1786`: `Height -= 2`, `Y -= 336` = six body rows up,
+  clamped at 0) instead of the body frame, so the art stays inside
+  `Player_Hair_*`'s 14 rows on every pose; the helmet takes the normal-hat
+  branch's `Height -= 4` crop (`PlayerDrawLayers.cs:2254-2261`). The row count
+  of a part strip rounds up: `Player_0_0`/`_0_1`/`_0_2` are 1118 px = 19 full
+  rows plus a 54-px row 19, and the walk cycle's fastest band is row 19 — a
+  `floor` count clamped it back onto row 18 (the head lagged the legs by one
+  frame). The one deliberate deviation: the quad's bottom UV is clamped to the
+  sheet, so row 19 draws its 54 art px into a 56-px quad (a 2-px stretch) rather
+  than sampling the neighbouring atlas sheet the way a packed atlas would.
+  The torso/shirt sheets stay cropped to the two columns the draw can reach
+  (`torso_cell`'s row-5 override is column 1, `PlayerDrawSet.cs:1940,1975`).
 - Shoulder cells are constants ((0,1)/(1,1), `PlayerDrawSet.cs:1938-1939`) and
   the shoulder offset is assumed zero without body armour
   (`DetermineShoulderOffsets` is armour-driven); the composite is male-only
@@ -2478,8 +2493,27 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   !TILE_SOLID_TOP` at `(x, y-1)` (`render/tiles.rs`); the C# analogue probed
   by case 4 is `WorldGen.SolidTile(x, y-1)` (`:4672-4679`). The predicate
   delta is a follow-up, documented on `draw_data` (Phase 4).
-- `DoNotAdjustDrawPositionBasedOnTileWidth = {711}` and the positional switch
-  of `DrawSingleTile` (`:1020-1159`) remain follow-ups (out of TILE-DRAW-1).
+- **The positional switch** (`DrawSingleTile` `:1020-1159`, landed as
+  TILE-DRAW-5): `apply_world_corrections` now carries the switch's draw-local
+  revisions on `TileDrawData` — `draw_dx`/`draw_dy` (the `vector` nudges: 751
+  (+11, −8), 752 (+8), 136 (±2 by `frameX / 18`), 442 (`frameX / 22 == 3` →
+  +2), 726 (−2 then the `Tile.blockType()` ledges ±6 and +2 for the
+  half-brick/slope arms), 723/724 (the four anchor sides), 129 (the 2 px nudge
+  away from the shard's cell) and 323 (`vector.X += frameY` for the palm
+  rows)), `skip_draw` (751/752 off their `(0, 0)` frame), `light_scale` (51/697
+  `finalColor = tileLight * 0.5`), `src_alpha` (129's 100/255, and 0 for the
+  big `frameX >= 324` shards) and `no_width_adjust`
+  (`TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth = {711}`). The
+  renderer adds the offsets to the cell origin before dispatching (every C#
+  arm shares `vector`), honours `skip_draw` before the sprite (the `return`
+  arms), folds `light_scale`/`src_alpha` into `push_lit`'s colour, and skips
+  the `(tileWidth − 16) / 2` centring for 711. Parked: the disco arms
+  (160/692, they need `Main.DiscoR/G/B` in the draw data), case 83's texture
+  override, and case 323's `return` for the frond columns 88..=132 — the port
+  has no palm canopy pass, so hiding those columns would delete the palm tops;
+  they keep drawing in the tile pass (deviation). Test:
+  `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
+  arm, the half-brick/slope `blockType` table of 726, the shard alphas).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -9026,6 +9060,47 @@ Deviations: the dust arms, the ground-avoidance tile scan
 unmodelled (the port's worm pass has its own steering), the 540
 projectile hop and the mark's 3-5 chain-length roll are unmodelled.
 
+## Minions & sentries (M4-PROJ-8)
+
+The summon system's harness: the per-player slot budget (`maxMinions`/`numMinions`/
+`slotsMinions`, `Player.cs:1260-1264`), the keep-alive buff arms, `AI_062`'s
+follow/target/return machine and the sentry cap/lifetime/targeting.
+
+Deviations and notes:
+
+- **The 0-time summon grant is a ghost.** The summon staves' `Item.buffTime` rows are 0
+  (itemdata, the C# `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s grant
+  (`Player.cs:42879`) adds a 0-time buff — and the C#'s arm guard (`Player.cs:9868`,
+  `buffTime[j] <= 0` skips) plus the expired sweep (`:25611`) drop it on the next tick.
+  The port repeats this verbatim: a freshly-granted minion buff is swept one tick later,
+  and the arm's 18000 refresh only reaches buffs that entered with a non-zero time (the
+  regression tests seed one). The minion itself lives on its row's `timeLeft * 5` and the
+  pool's cap check either way.
+- **The port's arms run after the player tick's expiry sweep** (the Phase-2 seam): the C#
+  runs them inside `UpdateBuffs` between the reset and the sweep. The consequence is the
+  ghost above; the cap effects (110/150/348) still land after `ResetEffects` zeroed the
+  budgets, the order that keeps them.
+- **The Stardust Dragon chain (625-628) is excluded** — the relink arms in the kill-oldest
+  and the free-up are stubbed; the kinds carry rows only where the summon slice needs them.
+- **DD2 persistence stubbed**: `tr_core::dd2::event_ongoing()` reports false until
+  M4-EVENT-5, so the O'A towers (663-693) are wipable like the vanilla sentries.
+- **Dust, sound, light and frame machines unported**: `AI_062`'s dust spawns and their
+  `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
+  `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) —
+  the port has no general `Main.dust` pool and the projectile slot carries no frame
+  fields. The cooldown machines' `rand(1,4)`/`rand(3)` extra increments stand at their
+  deterministic minimum.
+- **LOS approximation**: `ai_flying_minion`/`sentry_npc_targeting` route `CanHitLine`/
+  `CanHit` through the shared tile walk (`can_hit_line`, the yoyo's `yoyo_can_hit`
+  renamed) and `SolidCollision` through a five-point box test (`box_solid`) — the C#'s
+  exact Bresenham+rect semantics differ at the sub-tile margins.
+- **The attack shots ride back as `MinionShot`** and drop until the shot families
+  (374/376/408/433/614) have `proj_data` rows; the state machines run either way.
+- **261/266 note**: the Slime minion (266) lands its row with aiStyle 26 (the hop family
+  unported — the dispatch no-ops like the other unported styles), 24x16, `penetrate = -1`,
+  `timeLeft * 5` and the idStatic-12 pair.
+- **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
+  the whip target supplied no answer (`if (!flag)`) — ported verbatim.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -10586,3 +10661,47 @@ first (`App::chest_transfer_source`).
 Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
 flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
 in ROADMAP's M7-UI-2 remainder.
+
+## The housing page (M7-UI-3b)
+
+The inventory's second tab (`EquipPage == 1`) is `Main.DrawNPCHousesInUI`
+(`Main.cs:41993-42107`). The port drew the armour columns there instead — the
+`if equip_page == 2 { misc } else { armour }` shape had no page-1 arm, so the tab
+showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
+
+* **Which heads** (`:42008-42023`): the C# walks `Main.maxNPCs`, resolves every
+  active NPC's head through `TownNPCProfiles.GetHeadIndexSafe` →
+  `NPC.TypeToDefaultHeadIndex` (`NPC.cs:7510-7553`), drops a head that is `<= 0`,
+  out of range or in `NPCHeadID.Sets.CannotBeDrawnInHousingUI` (21, 80), and keeps
+  only the first *type* it sees per head. `housing::heads_for` does the same over
+  `App::npcs`, which is the port's `Main.npc[]`. Two port-specific traps: the
+  bound forms (`BoundGoblin`/`BoundWizard`/`BoundMechanic`) borrow the freed
+  row's `net_id` for the bestiary (`bestiary.rs:1502-1506`), so they would inherit
+  a housing cell vanilla never gives them — `housing::head_of` rejects them
+  explicitly; and the sheets are packed per head id, so `Lookups::npc_heads` is a
+  0-based table of 81 entries with `None` where the port ships no NPC.
+* **Order and layout** (`:42044-42058`): `NPCHeadID.Sets.HeadListOrder` is the
+  draw order (Guide first, "?" fifth in the array but drawn per its position), not
+  the head numbering. The cell pitch is `56 * inventoryScale`, the origin is
+  `(screenWidth - 64 - 28, inventoryTop)` where `inventoryTop = 174 + m_h`, and a
+  row that would land past `screenHeight - 80` starts a new column 48 px to the
+  left, re-based on `inventoryTop` (`num3 -= 48; num2 -= num9 - inventoryTop`).
+  The C# truncates the row to an int *before* adding that offset, so the port's
+  `layout` does the same — a float version drifts the wrapped column by up to a
+  pixel.
+* **Draw** (`:42079-42095`): `Inventory_Back11` tinted `Main.inventoryBack`
+  (0.863 grey, like every other inventory background), then the head sheet
+  centred on `(x + 26*scale, y + 26*scale)` and shrunk to `36 / max(w, h)` when it
+  is larger than 36 px. The shipped content pack's heads are 24x22, so they draw
+  1:1.
+* **Hover** (`:42059-42065`, M7-UI-3c): the cell under the pointer prints a
+  name through the tooltip layer — `Lang.inter[8]` for the query cell, the NPC's
+  name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
+  plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
+  it prints the type name from the `NPCName.<Kind>` localization key
+  (`housing::name_key`) — the same string the bestiary entry carries.
+* **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
+  because the port has no `Main.mouseNPC` housing query at all; the
+  `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
+  still lacks (the same reason the grid's `_17` highlight is open); and
+  `Main.hidePVPAndTeamIcons` on a third column.

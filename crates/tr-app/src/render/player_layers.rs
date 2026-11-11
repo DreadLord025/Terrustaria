@@ -10,6 +10,9 @@ use super::entities::PlayerAssets;
 /// the default skin; the M3-EQUIP equipment palette will replace these).
 pub(crate) const SKIN: [f32; 3] = [1.0, 125.0 / 255.0, 90.0 / 255.0];
 pub(crate) const SHIRT: [f32; 3] = [175.0 / 255.0, 165.0 / 255.0, 140.0 / 255.0];
+/// `underShirtColor` (`Player.cs:2562`, (160,180,215)): the under-shirt sleeve
+/// `Players[8]` on both arm stacks.
+pub(crate) const UNDER_SHIRT: [f32; 3] = [160.0 / 255.0, 180.0 / 255.0, 215.0 / 255.0];
 pub(crate) const PANTS: [f32; 3] = [1.0, 230.0 / 255.0, 175.0 / 255.0];
 pub(crate) const SHOES: [f32; 3] = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
 /// `colorArmorHead/Body/Legs` with empty dye slots (`PlayerDrawSet.cs:860` and
@@ -28,6 +31,9 @@ pub(crate) enum PlayerPart {
     LegsSkin,
     BackArmSkin,
     BackUnder,
+    /// `Players[8]` on the back arm, the under-shirt sleeve
+    /// (`PlayerDrawLayers.cs:1357`, `colorUnderShirt`).
+    BackUnderArm,
     BackSleeve,
     Pants,
     Shoes,
@@ -48,9 +54,13 @@ pub(crate) enum PlayerPart {
     FrontArmArmor,
     FrontShoulderArmor,
     FrontArmSkin,
+    /// `Players[8]` between the skin arm and the sleeve
+    /// (`PlayerDrawLayers.cs:3698`).
+    FrontArmUnder,
     FrontSleeve,
     FrontShirt,
     FrontShoulderSkin,
+    FrontShoulderUnder,
     FrontShoulderSleeve,
     FrontShoulderShirt,
     HeldItem,
@@ -321,16 +331,41 @@ pub(crate) fn weapon_draw_order() -> WeaponDrawOrder {
 }
 
 /// UV of one 40x56 frame in a player part strip.
+///
+/// The row count rounds **up**: the head/eye-whites/eyes strips are 1118 px
+/// tall, i.e. 19 full rows plus a 54-px row 19 (`Player_0_0`), so a `floor`
+/// count clamped the walk cycle's fastest band (row 19) back onto row 18 and
+/// the head lagged the legs by one frame. The quad's bottom edge is clamped to
+/// the sheet so the short last row never samples the neighbouring atlas sheet.
 pub(crate) fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
-    let rows = (tex.h / 56.0).floor().max(1.0);
+    let rows = (tex.h / 56.0).ceil().max(1.0);
     let r = (row as f32).min(rows - 1.0);
     let dv = (tex.uv[3] - tex.uv[1]) * (56.0 / tex.h);
-    [
-        tex.uv[0],
-        tex.uv[1] + dv * r,
-        tex.uv[2],
-        tex.uv[1] + dv * (r + 1.0),
-    ]
+    let v0 = tex.uv[1] + dv * r;
+    [tex.uv[0], v0, tex.uv[2], (v0 + dv).min(tex.uv[3])]
+}
+
+/// `PlayerDrawSet.cs:1766-1786`: the hair frame is the body frame shifted up
+/// six rows (`bodyFrame.Y -= 336`) and cropped 2 px (`Height -= 2`). The
+/// `Player_Hair_*` strips are 14 rows (784 px), so body rows 0..6 land on hair
+/// row 0 and rows 7..19 on hair rows 1..13.
+pub(crate) fn hair_row(body_frame: u32) -> u32 {
+    body_frame.saturating_sub(6)
+}
+
+/// The hair source rect: one 40x54 frame at [`hair_row`].
+pub(crate) fn hair_uv(tex: &BgTex, body_frame: u32) -> [f32; 4] {
+    let uv = player_frame_uv(tex, hair_row(body_frame));
+    let dv = (uv[3] - uv[1]) * (2.0 / 56.0);
+    [uv[0], uv[1], uv[2], uv[3] - dv]
+}
+
+/// The helmet source rect: the normal-hat branch draws `bodyFrame` with
+/// `Height -= 4` (`PlayerDrawLayers.cs:2254-2261`), a 40x52 crop.
+pub(crate) fn helmet_uv(tex: &BgTex, body_frame: u32) -> [f32; 4] {
+    let uv = player_frame_uv(tex, body_frame);
+    let dv = (uv[3] - uv[1]) * (4.0 / 56.0);
+    [uv[0], uv[1], uv[2], uv[3] - dv]
 }
 
 /// UV of a 40x56 composite cell in a 9x4 player part sheet.
@@ -397,11 +432,28 @@ fn push_part(
     rotation: f32,
     color: [f32; 4],
 ) {
+    push_part_h(out, part, tex, uv, pos, rotation, color, 56.0);
+}
+
+/// [`push_part`] for the two layers the C# crops: the hair (`Height -= 2`) and
+/// the helmet (`Height -= 4`). The quad takes the cropped height so the art
+/// keeps its 1:1 pixel scale.
+#[allow(clippy::too_many_arguments)]
+fn push_part_h(
+    out: &mut Vec<LayerSprite>,
+    part: PlayerPart,
+    tex: Option<BgTex>,
+    uv: impl Fn(&BgTex) -> [f32; 4],
+    pos: [f32; 2],
+    rotation: f32,
+    color: [f32; 4],
+    height: f32,
+) {
     if let Some(tex) = tex {
         out.push(LayerSprite {
             part,
             pos,
-            size: [40.0, 56.0],
+            size: [40.0, height],
             uv: uv(&tex),
             color,
             rotation,
@@ -591,9 +643,10 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         back_rotation,
         tint(s.light, SKIN),
     );
-    // `DrawPlayer_12_SkinComposite_BackArmShirt`: under-skin arm layer (5) and
-    // shirt sleeve (13); the undershirt-tinted `Players[8]` pass is skipped —
-    // the starter skin has no underShirt colour (M3-EQUIP palette).
+    // `DrawPlayer_12_SkinComposite_BackArmShirt`'s `!flag3` block
+    // (`PlayerDrawLayers.cs:1353-1362`): the under-skin layer (5, body skin)
+    // then the under-shirt sleeve (8, `colorUnderShirt`). The pre-fix draw
+    // skipped `Players[8]`, so the sleeve area showed skin instead.
     push_part(
         &mut out,
         PlayerPart::BackUnder,
@@ -606,6 +659,15 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         back_pos,
         back_rotation,
         tint(s.light, SKIN),
+    );
+    push_part(
+        &mut out,
+        PlayerPart::BackUnderArm,
+        if s.body_armor >= 0 { None } else { a.under_arm },
+        |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
+        back_pos,
+        back_rotation,
+        tint(s.light, UNDER_SHIRT),
     );
     // With chest armor the sleeve is not drawn (`if (!flag3)`): the armor
     // pieces replace it — back shoulder at the body anchor, back arm over the
@@ -749,27 +811,31 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         0.0,
         tint(s.light, EYES),
     );
-    // 21_Head: head, eye whites, eyes, hair — the hair suppressed while a
-    // helmet covers it (`Head.Sets.HidesHead`, `PlayerDrawLayers.cs:2512`), the
-    // helmet branch drawn instead (`:2264-2276`, bodyFrame source over the
-    // face anchor).
-    push_part(
+    // 21_Head: head, eye whites, eyes, hair. The hair rides its own trimmed
+    // frame (`hairFrontFrame`, `PlayerDrawSet.cs:1766-1786`); the helmet the
+    // normal-hat branch's 52-px crop (`PlayerDrawLayers.cs:2254-2261`). The
+    // hair stays suppressed while a helmet covers it: the ported metal sets
+    // are plain normal hats (neither `fullHair` nor `hatHair`), and that
+    // branch draws no hair at all (`:2262-2380`).
+    push_part_h(
         &mut out,
         PlayerPart::Hair,
         if s.head_armor >= 0 { None } else { a.hair },
-        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        |t| flip_uv(hair_uv(t, s.body_frame), flip),
         part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, HAIR),
+        54.0,
     );
-    push_part(
+    push_part_h(
         &mut out,
         PlayerPart::Helmet,
         a.armor_head.get(s.head_armor as usize).copied().flatten(),
-        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        |t| flip_uv(helmet_uv(t, s.body_frame), flip),
         part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
         tint(s.light, ARMOR_WHITE),
+        52.0,
     );
     out
 }
@@ -870,7 +936,7 @@ fn arm_stack(
     } else {
         None
     };
-    let mut out = Vec::with_capacity(4);
+    let mut out = Vec::with_capacity(5);
     for (part, tex, color) in [
         (base, a.arm, tint(s.light, SKIN)),
         (
@@ -881,6 +947,15 @@ fn arm_stack(
             },
             armor_tex,
             tint(s.light, ARMOR_WHITE),
+        ),
+        (
+            if shoulder {
+                PlayerPart::FrontShoulderUnder
+            } else {
+                PlayerPart::FrontArmUnder
+            },
+            if s.body_armor >= 0 { None } else { a.under_arm },
+            tint(s.light, UNDER_SHIRT),
         ),
         (
             if shoulder {
@@ -924,7 +999,7 @@ pub(crate) fn front_arm_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Ve
     // `compositeFrontArm.rotation` around the front pivot; the shoulder stack
     // keeps the plain body rotation.
     let (cell, rotation) = update_composite_arm(s.front_arm, s.body_frame, false);
-    let arm = arm_stack(
+    let mut arm = arm_stack(
         s,
         a,
         PlayerPart::FrontArmSkin,
@@ -932,6 +1007,16 @@ pub(crate) fn front_arm_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Ve
         rotation,
         composite_pivot(false, s.facing),
     );
+    // `PlayerDrawLayers.cs:3604-3608`: an enabled composite front arm (column
+    // 7) shifts the arm stack one pixel towards the facing and one down
+    // (`vector += (+/-1, +/-1)`); the shoulder keeps its own anchor, built
+    // before the nudge.
+    if cell.0 >= 7 {
+        for sprite in arm.iter_mut() {
+            sprite.pos[0] += s.facing;
+            sprite.pos[1] += 1.0;
+        }
+    }
     let shoulder = arm_stack(
         s,
         a,
@@ -1520,11 +1605,12 @@ mod tests {
             .find(|l| l.part == PlayerPart::FrontArmSkin)
             .unwrap();
         // pivot = center + front offset = (100+20-5, 200+28+0);
-        // origin_c = (20-5, 28); pos = pivot - R*origin_c.
+        // origin_c = (20-5, 28); pos = pivot - R*origin_c, plus the
+        // column-7 nudge `(facing, +1)` (`PlayerDrawLayers.cs:3604-3608`).
         let (sin, cos) = 0.75f32.sin_cos();
         let expected = [
-            115.0 - (15.0 * cos - 28.0 * sin),
-            228.0 - (15.0 * sin + 28.0 * cos),
+            115.0 - (15.0 * cos - 28.0 * sin) + 1.0,
+            228.0 - (15.0 * sin + 28.0 * cos) + 1.0,
         ];
         assert!((arm.pos[0] - expected[0]).abs() < 1e-4, "{:?}", arm.pos);
         assert!((arm.pos[1] - expected[1]).abs() < 1e-4);
@@ -1535,7 +1621,8 @@ mod tests {
             .iter()
             .find(|l| l.part == PlayerPart::FrontArmSkin)
             .unwrap();
-        assert_eq!(arm0.pos, [100.0, 200.0]);
+        // The enabled arm keeps its column-7 nudge even at rotation 0.
+        assert_eq!(arm0.pos, [101.0, 201.0]);
     }
 
     #[test]
@@ -1585,9 +1672,10 @@ mod tests {
             .find(|l| l.part == PlayerPart::FrontArmSkin)
             .unwrap();
         let (sin, cos) = 0.75f32.sin_cos();
+        // Mirrored pivot (125) plus the `(-1, +1)` nudge of the enabled arm.
         let expected = [
-            125.0 - (25.0 * cos - 28.0 * sin),
-            228.0 - (25.0 * sin + 28.0 * cos),
+            125.0 - (25.0 * cos - 28.0 * sin) - 1.0,
+            228.0 - (25.0 * sin + 28.0 * cos) + 1.0,
         ];
         assert!((arm.pos[0] - expected[0]).abs() < 1e-4, "{:?}", arm.pos);
         assert!((arm.pos[1] - expected[1]).abs() < 1e-4);
@@ -1610,6 +1698,7 @@ mod tests {
             shirt: Some(sheet()),
             arm: Some(sheet()),
             undershirt: Some(sheet()),
+            under_arm: Some(sheet()),
             arm_shirt: Some(sheet()),
             legs: Some(sheet()),
             pants: Some(sheet()),
@@ -1731,6 +1820,7 @@ mod tests {
                 PlayerPart::LegsSkin,
                 PlayerPart::BackArmSkin,
                 PlayerPart::BackUnder,
+                PlayerPart::BackUnderArm,
                 PlayerPart::BackSleeve,
                 PlayerPart::Pants,
                 PlayerPart::Shoes,
@@ -1746,15 +1836,18 @@ mod tests {
     #[test]
     fn test_dw_2_3_arm_stacks() {
         let a = fixture();
-        // Frame 0 keeps the default: arm stack, then shoulder over it.
+        // Frame 0 keeps the default: arm stack, then shoulder over it. Each
+        // stack is skin, `Players[8]`, sleeve, shirt (`:3661-3706`).
         let s0 = state();
         assert_eq!(
             parts(&front_arm_layers(&s0, &a)),
             vec![
                 PlayerPart::FrontArmSkin,
+                PlayerPart::FrontArmUnder,
                 PlayerPart::FrontSleeve,
                 PlayerPart::FrontShirt,
                 PlayerPart::FrontShoulderSkin,
+                PlayerPart::FrontShoulderUnder,
                 PlayerPart::FrontShoulderSleeve,
                 PlayerPart::FrontShoulderShirt,
             ]
@@ -1765,9 +1858,10 @@ mod tests {
             ..state()
         };
         assert_eq!(
-            parts(&front_arm_layers(&s1, &a))[..3],
+            parts(&front_arm_layers(&s1, &a))[..4],
             [
                 PlayerPart::FrontShoulderSkin,
+                PlayerPart::FrontShoulderUnder,
                 PlayerPart::FrontShoulderSleeve,
                 PlayerPart::FrontShoulderShirt,
             ]
@@ -2198,5 +2292,126 @@ mod tests {
         // The zero rotation pass is a no-op (the standing player).
         apply_player_rotation(&mut sprites, pivot, 0.0);
         assert!((sprites[0].rotation - rot).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_hair_frame_is_the_body_frame_shifted_six_rows() {
+        // `PlayerDrawSet.cs:1766-1786`: `hairFrame = bodyFrame; Height -= 2;
+        // Y -= 336` — the `Player_Hair_*` strips are 14 rows (784 px), so body
+        // rows 0..6 share hair row 0 and row 19 lands on row 13. Drawing the
+        // body row directly (the pre-fix draw) walked the hair out of its own
+        // strip on every pose but standing.
+        assert_eq!(hair_row(0), 0);
+        assert_eq!(hair_row(5), 0);
+        assert_eq!(hair_row(6), 0);
+        assert_eq!(hair_row(7), 1);
+        assert_eq!(hair_row(10), 4);
+        assert_eq!(hair_row(19), 13);
+        // The hair strip itself: 40x784 = 14 frames of 56.
+        let hair = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 40.0,
+            h: 784.0,
+        };
+        let uv = hair_uv(&hair, 19);
+        // Row 13 of 14, cropped 2 px of its 56 (`Height -= 2`).
+        assert!((uv[1] - 13.0 / 14.0).abs() < 1e-6);
+        assert!((uv[3] - (13.0 / 14.0 + 54.0 / 784.0)).abs() < 1e-6);
+        // The drawn hair sprite keeps the 40x54 art box.
+        let layers = body_layers(&state(), &fixture());
+        let h = layers.iter().find(|s| s.part == PlayerPart::Hair).unwrap();
+        assert_eq!(h.size, [40.0, 54.0]);
+    }
+
+    #[test]
+    fn the_last_player_part_row_is_reachable() {
+        // `Player_0_0`/`_0_1`/`_0_2` are 1118 px = 19 full rows + a 54-px row
+        // 19. A `floor(h/56)` row count clamped the walk cycle's fastest band
+        // (row 19) back to row 18, so the head lagged the legs by one frame.
+        let head = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 40.0,
+            h: 1118.0,
+        };
+        let uv18 = player_frame_uv(&head, 18);
+        let uv19 = player_frame_uv(&head, 19);
+        assert!((uv18[1] - 18.0 * 56.0 / 1118.0).abs() < 1e-6);
+        assert!((uv19[1] - 19.0 * 56.0 / 1118.0).abs() < 1e-6);
+        // The quad's bottom edge never samples past the sheet (the atlas
+        // neighbour bleed at the chin).
+        assert!((uv19[3] - 1.0).abs() < 1e-6);
+        // A well-formed 20x56 strip still reaches row 19 exactly.
+        let strip = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 40.0,
+            h: 1120.0,
+        };
+        assert!((player_frame_uv(&strip, 19)[1] - 19.0 / 20.0).abs() < 1e-6);
+        assert!((player_frame_uv(&strip, 19)[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_torso_column_one_override_is_reachable() {
+        // `PlayerDrawSet.cs:1940,1975`: the row-5 torso cell is column 1. The
+        // sheet is 9x4 but the port crops it to the columns the draw can
+        // reach — one column made the override collapse onto column 0.
+        let sheet = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 80.0,
+            h: 224.0,
+        };
+        let cell = torso_cell(5);
+        assert_eq!(cell, (1, 0));
+        let uv = player_cell_uv(&sheet, cell.0, cell.1);
+        assert!((uv[0] - 0.5).abs() < 1e-6, "column 1 of 2: {uv:?}");
+        assert!((uv[2] - 1.0).abs() < 1e-6);
+        assert_eq!(torso_cell(4), (0, 0));
+    }
+
+    #[test]
+    fn the_enabled_front_arm_carries_the_one_pixel_nudge() {
+        // `PlayerDrawLayers.cs:3604-3608`: an enabled composite front arm
+        // (column 7) shifts the arm stack one pixel along the facing and one
+        // down; the shoulder keeps its anchor. The API exposes the nudge
+        // through the arm sprite positions only.
+        let a = fixture();
+        let mut s = state();
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.0,
+        };
+        let layers = front_arm_layers(&s, &a);
+        let arm = layers
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        let shoulder = layers
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontShoulderSkin)
+            .unwrap();
+        // Row 0 carries no head-gear shift: the arm sits on `origin` plus the
+        // nudge, the shoulder on `origin` itself.
+        assert!((arm.pos[0] - 101.0).abs() < 1e-6, "{:?}", arm.pos);
+        assert!((arm.pos[1] - 201.0).abs() < 1e-6, "{:?}", arm.pos);
+        assert!(
+            (shoulder.pos[0] - 100.0).abs() < 1e-6,
+            "no nudge on the shoulder"
+        );
+        assert!(
+            (shoulder.pos[1] - 200.0).abs() < 1e-6,
+            "no nudge on the shoulder"
+        );
+        // Facing left mirrors the nudge, the Y stays down.
+        let mut sl = state();
+        sl.facing = -1.0;
+        sl.front_arm = s.front_arm;
+        let left = front_arm_layers(&sl, &a);
+        let arm = left
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        assert!((arm.pos[0] - 99.0).abs() < 1e-6, "{:?}", arm.pos);
+        assert!((arm.pos[1] - 201.0).abs() < 1e-6, "{:?}", arm.pos);
     }
 }

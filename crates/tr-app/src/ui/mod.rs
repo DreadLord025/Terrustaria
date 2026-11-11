@@ -15,6 +15,7 @@ pub mod color;
 pub mod crafting;
 pub mod cursor;
 pub mod ingame_options;
+pub mod housing;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -650,6 +651,8 @@ pub fn draw_hud(
     equip_page: i32,
     selected: usize,
     hotbar_scales: &[f32; HOTBAR],
+    // `Main.npc[]` — the housing page's source (`Main.cs:42008-42023`).
+    npcs: &[crate::npc::Npc],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
     // `BigProgressBarSystem.ShowText` — the `ShowBossBarHealthText` key
@@ -738,6 +741,9 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
+    // layer prints instead of an item name.
+    let mut open_housing: Option<(usize, Option<usize>)> = None;
     if inventory_open {
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
@@ -751,6 +757,7 @@ pub fn draw_hud(
             equip,
             selected,
             equip_page,
+            npcs,
             mouse_pos,
             m_h,
             bank,
@@ -759,6 +766,7 @@ pub fn draw_hud(
             chest_panel.chest >= 0 || shop.is_some(),
         );
         open_hover = hit.hovered;
+        open_housing = hit.housing;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -956,7 +964,9 @@ pub fn draw_hud(
     } else {
         None
     };
-    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() {
+    let housing_hover_text: Option<String> = open_housing
+        .and_then(|(head, npc)| housing::label(head, npc, npcs));
+    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
     } else if inventory_open {
         open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
@@ -967,6 +977,9 @@ pub fn draw_hud(
     tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
     if let Some(text) = pvp_hover_text {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
+    }
+    if let Some(text) = &housing_hover_text {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last

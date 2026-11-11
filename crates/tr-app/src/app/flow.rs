@@ -625,10 +625,8 @@ impl FrontScreenBehaviours for FrontScreen {
                             app.front = None;
                             app.front_backup = Some(FrontScreen::CharCreation(state));
                             app.park_menu();
-                            app.menu = Some(menu::Menu::open_confirm_discard(
-                                app.settings.clone(),
-                                name,
-                            ));
+                            app.menu =
+                                Some(menu::Menu::open_confirm_discard(app.settings.clone(), name));
                         } else {
                             app.front = None;
                             app.enter_front(FrontScreen::CharSelect);
@@ -1125,9 +1123,9 @@ pub(crate) mod front_flow_tests {
     use crate::world_sim::step::FixedStepper;
     use std::collections::{HashMap, HashSet, VecDeque};
     use std::time::Instant;
+    use tr_core::World;
     use tr_core::lighting::{LightMap, LightMode};
     use tr_core::liquid::LiquidSystem;
-    use tr_core::World;
 
     use crate::menu::Page as P;
 
@@ -1426,11 +1424,7 @@ pub(crate) mod front_flow_tests {
         // into the play flow (routing only — the port has no per-card selection
         // state, spec §9.4).
         let players = vec![entry("Alpha", true), entry("Beta", true)];
-        let mut app = flow_app(
-            Some(FrontScreen::CharSelect),
-            players.clone(),
-            Vec::new(),
-        );
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players.clone(), Vec::new());
         // The 200 ms entry lockout from `enter_front` must be gone first.
         app.pointer.tick(300.0);
         let (sw, sh) = app.screen_size();
@@ -2003,6 +1997,7 @@ pub(crate) mod front_flow_tests {
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: false,
+            summon_shot: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
         }
