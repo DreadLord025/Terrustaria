@@ -124,6 +124,12 @@ impl PointerState {
     }
 
     /// `Update`'s `flag2` (`:204`) — the click lockout is live.
+    /// The left button's held state (`UserInterface`'s `MouseLeft`) — the
+    /// window's bar drag reads it while the lock is armed (`:424`).
+    pub fn left_held(&self) -> bool {
+        self.left.was_down
+    }
+
     pub fn clicks_disabled(&self) -> bool {
         self.click_disabled_ms > 0.0
     }

@@ -416,6 +416,18 @@ pub(crate) struct App {
     /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
     /// env var selects it for screenshots.
     pub(crate) map_style: i32,
+    /// `Main.teamCooldown` (`Main.cs:965`): ticks left before the PVP toggle
+    /// and the team cells accept another change (`teamCooldownLen = 300`,
+    /// `Main.cs:66781`). Decremented once per update (`Main.cs:17048-17051`).
+    pub(crate) team_cooldown: i32,
+    /// `Main.hidePVPAndTeamIcons` (`Main.cs:2357`): set by the NPC-heads column
+    /// overflow (`Main.cs:42046`), cleared on every non-`EquipPage == 1` draw
+    /// (`Main.cs:42656-42659`) and on world load (`Main.cs:42020`/`:67272`).
+    pub(crate) hide_pvp_and_team_icons: bool,
+    /// The `TR_PVP` pin resolved at boot ([`crate::env::pvp_icons`]) — held in a
+    /// field so tests can open the PVP draw/click gates without touching the
+    /// process environment (the pin is a `OnceLock`).
+    pub(crate) pvp_icons_forced: bool,
     pub(crate) audio: audio::Audio,
     pub(crate) music: audio::MusicSystem,
     pub(crate) last_hp: i32,
@@ -472,6 +484,17 @@ pub(crate) struct App {
     pub(crate) zoom_pinned: bool,
     pub(crate) debug: bool,
     pub(crate) keys: HashSet<KeyCode>,
+    /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
+    /// bind table, mirrored from `settings.keybinds` so a rebind in the
+    /// settings screen changes the input pass without a relaunch
+    /// ([`App::apply_settings`]).
+    pub(crate) keybinds: [String; crate::input_map::BIND_COUNT],
+    /// `Main.cMapStyle`..`Main.cMapAlphaDown` (`Main.cs:67190-67195`).
+    pub(crate) map_binds: [String; crate::input_map::MAP_BIND_COUNT],
+    /// The `controlMount` press edge's previous state (`Player.cs:24888`'s
+    /// `releaseMount` latch). An `App` field rather than a `static` so two
+    /// headless apps in one test process cannot share it.
+    pub(crate) mount_prev: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -625,12 +648,25 @@ pub(crate) struct App {
     pub(crate) lost_coin_string: String,
     /// The full death broadcast text (`{name} {text}`).
     pub(crate) death_text: String,
+    /// `Main._framesWithRespawnSkipAvailable`: the death screen's
+    /// "{InputTrigger_Jump} to skip" prompt's ramp counter
+    /// (`Main.cs:45347-45378`) — counts up while the skip is allowed and
+    /// zeroes otherwise (the C# counts it inside `DrawDeathText`).
+    pub(crate) respawn_skip_frames: i32,
+    /// `Player.AllowsRespawnTimerSkip()` for this frame, computed on the world
+    /// tick beside `UpdateDead` (`Player.cs:16919`) — the gate the prompt's
+    /// counter follows.
+    pub(crate) respawn_skip_available: bool,
     /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
     /// state — the points, the max, the icon (the group + 3), the 160-tick
     /// display timer, the fade alpha and the near-invasion flag.
     pub(crate) invasion_progress: i32,
     pub(crate) invasion_progress_max: i32,
     pub(crate) invasion_progress_icon: i32,
+    /// `Main.invasionProgressWave` (`Main.cs:1929`) — the moon-event wave
+    /// number; `0` selects `DrawInvasionProgress`'s `Game.WaveCleared` arm
+    /// (`:47806`), `> 0` the `Game.WaveMessage` arm (`:47782`).
+    pub(crate) invasion_progress_wave: i32,
     pub(crate) invasion_progress_display_left: i32,
     pub(crate) invasion_progress_alpha: f32,
     pub(crate) invasion_progress_near: bool,
@@ -767,6 +803,16 @@ impl App {
         world_sim::camera::screen_size(self)
     }
 
+    /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
+    /// clamped by the 600 px equipment push-up — the same value `frame()`
+    /// hands the inventory draw, so the HUD hit tests and the draw agree.
+    pub(crate) fn main_m_h(&self) -> f32 {
+        let minimap_live = self.settings.map_enabled
+            && self.map.as_ref().is_some_and(|m| !m.open)
+            && self.map_style == 1;
+        crate::ui::minimap::main_m_h(minimap_live, self.screen_size().1)
+    }
+
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
     }
@@ -778,24 +824,45 @@ impl App {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
         let step = 16.0 / m.scale;
+        let binds = self.keybinds.clone();
+        let map_binds = self.map_binds.clone();
         let k = |code| self.keys.contains(&code);
-        if k(KeyCode::KeyW) || k(KeyCode::ArrowUp) {
+        // The pan rows are the movement binds (`Main.cUp`..`Main.cRight`,
+        // `Main.cs:67163-67166`); the arrows stay as the port's convenience.
+        let held = |action: crate::input_map::Action, arrow: KeyCode| {
+            self.keys
+                .iter()
+                .any(|k| crate::input_map::is_bound(&binds, action, *k))
+                || k(arrow)
+        };
+        if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
             m.pos[1] -= step;
         }
-        if k(KeyCode::KeyS) || k(KeyCode::ArrowDown) {
+        if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
             m.pos[1] += step;
         }
-        if k(KeyCode::KeyA) || k(KeyCode::ArrowLeft) {
+        if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
             m.pos[0] -= step;
         }
-        if k(KeyCode::KeyD) || k(KeyCode::ArrowRight) {
+        if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
             m.pos[0] += step;
         }
-        // `Main.cs:50453-50454`: `cMapZoomIn = "Add"`, `cMapZoomOut = "Subtract"`.
-        if k(KeyCode::NumpadAdd) {
+        // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
+        // "Subtract"` — the menuMode 272727 rows, not a fixed key.
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if k(KeyCode::NumpadSubtract) {
+        if self
+            .keys
+            .iter()
+            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k))
+        {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -1179,6 +1246,34 @@ impl App {
 
     pub(crate) fn is_client(&self) -> bool {
         matches!(self.net, NetRole::Client(_))
+    }
+
+    /// `Main.DrawPVPIcons`'s state block (`Main.cs:42654-42676`): the two gates
+    /// (`ShouldPVPDraw` = `netMode == 1`, `ShouldTeamSelectDraw`), the local
+    /// player's `hostile`/`team` and `Main.teamCooldown`.
+    ///
+    /// `Main.netMode` is the port's [`App::is_client`]; `teamBasedSpawnsSeed`
+    /// (`Main.cs:351`) is not ported (no team-based spawn seeds until the
+    /// M5-seed rows), so the single-player arm reads `false` — with it off the
+    /// vanilla hides the team cells outside a multiplayer client anyway.
+    pub(crate) fn pvp_icon_state(&self) -> crate::ui::chrome::PvpIconState {
+        // `TR_PVP=1` opens the vanilla netsplit gates for screenshots (see
+        // [`crate::env::pvp_icons`]); the game rule stays `Main.netMode == 1`.
+        let pvp_draw = self.is_client() || self.pvp_icons_forced;
+        let (hostile, team) = self
+            .player
+            .as_ref()
+            .map(|p| (p.hostile, p.team))
+            .unwrap_or((false, 0));
+        crate::ui::chrome::PvpIconState {
+            pvp_draw,
+            // `Main.cs:2911-2919`: `ShouldTeamSelectDraw` — always inside the
+            // PVP gate, else the team-based-spawns seed (not ported: false).
+            team_select_draw: pvp_draw,            hide: self.hide_pvp_and_team_icons,
+            hostile,
+            team,
+            team_cooldown: self.team_cooldown,
+        }
     }
 
     /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
@@ -2539,6 +2634,9 @@ impl App {
             // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
             // out-of-range value falls back to 1).
             map_style: crate::env::map_style(),
+            team_cooldown: 0,
+            hide_pvp_and_team_icons: false,
+            pvp_icons_forced: crate::env::pvp_icons(),
             audio: audio::Audio::new(assets::content_dir()),
             music: audio::MusicSystem::new(assets::content_dir()),
             last_hp: 100,
@@ -2563,7 +2661,13 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
-            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
+            ingame_options: {
+                // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
+                // at boot so `TR_SHOT` captures the panel.
+                let mut o = crate::ui::ingame_options::IngameOptions::new();
+                o.open = crate::env::ingame_options_open();
+                o
+            },
             world_path: world_path.clone(),
             dev_break,
             dev_place,
@@ -2572,6 +2676,9 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             keys: HashSet::new(),
+            keybinds: crate::input_map::default_binds(),
+            map_binds: crate::input_map::default_map_binds(),
+            mount_prev: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
@@ -2668,9 +2775,12 @@ impl App {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            respawn_skip_frames: 0,
+            respawn_skip_available: false,
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
+            invasion_progress_wave: 0,
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
