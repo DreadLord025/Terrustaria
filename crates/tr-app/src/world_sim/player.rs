@@ -173,6 +173,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // The bind table, copied out so the player borrow below does not conflict
     // (`Main.cUp`..`Main.cMount`, `Main.cs:67163-67176`).
     let binds = app.keybinds.clone();
+    // `Player.Update`'s journey-power reads, copied out of the registry
+    // before the player borrow: `ResetEffects` clears `creativeGodMode`
+    // (`Player.cs:18789`) and the tick immediately re-reads the power
+    // (`:25493-25497`); the same `ResetEffects` block rebuilds
+    // `tileRangeX/Y` from `FarPlacementRangePower` (`:18815-18828`).
+    let power_god_mode = app.creative_powers.god_mode();
+    let power_far_placement = app.creative_powers.far_placement_range();
     let input = player_input(app, &binds, map_open, hold_right, hold_jump);
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
@@ -200,6 +207,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     if let Some(p) = app.player.as_mut() {
+        // `Player.ResetEffects`' journey block, re-run every tick: the godmode
+        // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
+        // tile-range toggle (`:18815-18828`).
+        p.creative_god_mode = power_god_mode;
+        p.far_placement_range = power_far_placement;
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
@@ -561,6 +573,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
             }
+            // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
+            // journey godmode player's three pools are refilled to their
+            // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the
+            // port's `max_hp`/`mana_max`/`BREATH_MAX`.
+            if p.creative_god_mode {
+                p.hp = p.max_hp;
+                p.mana = p.mana_max;
+                p.breath = crate::player::BREATH_MAX;
+            }
         });
         app.player_step.drop_backlog();
         // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off
@@ -624,6 +645,40 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    #[test]
+    fn the_journey_godmode_power_refreshes_the_flag_and_refills_the_pools() {
+        // The tick's creative reads (`Player.cs:18789` clears
+        // `creativeGodMode`, `:25493-25497` re-reads `GodmodePower`) plus
+        // `Main.UpdateWorld_Players`' refill (`Main.cs:17869-17873`).
+        let mut app = ammo_app();
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(true),
+        );
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 5;
+            p.mana = 0;
+            p.breath = 0;
+        }
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.creative_god_mode, "the flag is refreshed from the power");
+        assert_eq!(p.hp, p.max_hp, "statLife refilled to statLifeMax2");
+        assert_eq!(p.mana, p.mana_max, "statMana refilled");
+        assert_eq!(p.breath, crate::player::BREATH_MAX, "breath refilled");
+        // Off again: the next tick clears the flag and the hit path is live.
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(false),
+        );
+        tick_ammo(&mut app);
+        let p = app.player.as_mut().unwrap();
+        assert!(!p.creative_god_mode);
+        p.hurt_cd = 0.0;
+        assert!(p.hurt(10, 0.0), "the hurt lands once the power is off");
     }
 
     /// An equipment row carrying `kind`.
