@@ -2647,7 +2647,13 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
-            ingame_options: crate::ui::ingame_options::IngameOptions::new(),
+            ingame_options: {
+                // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
+                // at boot so `TR_SHOT` captures the panel.
+                let mut o = crate::ui::ingame_options::IngameOptions::new();
+                o.open = crate::env::ingame_options_open();
+                o
+            },
             world_path: world_path.clone(),
             dev_break,
             dev_place,

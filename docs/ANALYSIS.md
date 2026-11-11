@@ -9784,6 +9784,75 @@ the branch mechanics below; every C# site is in the report itself.
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
 
+## The in-game options window (M7-UI-4)
+
+`IngameOptions.Draw` (`IngameOptions.cs:103-1441`) is the vanilla's in-game
+settings window: a 670x480 panel (`:125-129`) split into a **left navigation
+column** and a **right page of setting rows**, both animated per row.
+
+**What landed.** The window is now the C#'s two-column shape instead of the
+port's flat six-row list:
+
+- the left column is the eight navigation rows — `Lang.menu[114]` General,
+  `[210]` Interface, `[63]` Video, `[218]` Controls, `[66]` Controls→keybinds,
+  `[131]` Achievements, `[118]` Close Menu and `Lang.inter[35]` Save & Exit
+  (`:214-330`). The `Invite Friends` row (`:257-270`) is the social-API arm and
+  stays out (AGENTS.md non-goals), so `num7 + 1 = 8` slots;
+- the right column carries the four pages as static tables — 17/14/15/15 rows
+  (`page()`, the C#'s `:400-1441` sequential `DrawRightSide` calls). Each row
+  is a `RowAct`: a header, a value bar, an on/off toggle, a multi-state cycle,
+  or a `Parked` row for a vanilla setting the port does not model;
+- both columns reproduce `DrawLeftSide`/`DrawRightSide` (`:1457-1504`): the row
+  position is `anchor + offset * (1 + i)`, the label is **centred** on it
+  (`origin 0.5, 0.5`), the tint is `Color.Lerp(Gray, White, scaleFraction)`
+  with **Gold** for the selected category, and the per-row scale animates at
+  `0.01`/frame in the left column (`0.7..0.8`, `:157-199`) and at
+  `0.001`/frame on the right (`1.0..1.001`, `:333-390`) — including the
+  culture shrink for the long translated labels (`:167-185`, `:345-357`:
+  ru/pt/pl/fr shrink the left to `0.4..0.44` and pull the right column to the
+  2/3 mark; German `0.55..0.6`; the It/Sp and German deltas are
+  category-bound);
+- the hover pass emits the vanilla's cues — `SoundEngine.PlaySound(12)` on a
+  hover change (`:187`, `:191`) and `(10)` on a category click (`:222`) —
+  through `App::audio` from the frame loop (`update()`, called beside
+  `tick_pointer_clock`), and clears `rightLock` on the button release
+  (`:385-388`);
+- the value bars drag while locked (`Main.musicVolume = ...`, `:424`) and the
+  geometry is the C#'s `valuePosition.X = vector3.X + vector2.X - num3/2 - 20`
+  (`:437`) with the label hanging 70 px left (`vector6.X -= num`, `:417`).
+
+**Deviations (all deliberate, each row cited in `page()`):**
+
+1. **Parked rows.** A vanilla row whose state the port has no field for is
+   drawn dimmed and inert rather than invented: the UI scale (`:561`), the
+   door-opening preference (`:644`), auto-reuse-all (`:677`), the map frame /
+   health style / portrait preference / opaque tooltip box (`:751-840`), the
+   window mode + resolution (`:876-910`), the cursor/border colour pickers
+   (`:1075-1371`). Their settings are the named follow-ups of M7-UI-3
+   (equipment/dye), M7-UI-5 (keybinds) and the window backend row.
+2. **The video page's slot count.** The C# sets `num11 = 14` for the video
+   category but draws 15 rows and compensates with `vector7.Y -= 2f`
+   (`:362-365`); the port keeps both verbatim (`right_slots(2) == 14`,
+   `right_pitch(2) - 2`).
+3. **The wave-quality label.** `:1022-1036` switches on the level with a
+   per-level `GameUI.*` key; the port renders `GameUI.WaveQuality` plus the
+   level ordinal instead of inventing key names.
+4. **Keybinds / Save & Exit.** The C# calls `IngameFancyUI.OpenKeybinds()` and
+   `WorldGen.SaveAndQuit()` inline (`:252-256`, `:300-310`); the port records
+   the action on `IngameOptions::pending` and closes, because the keybinding
+   screen is M7-UI-5 and the quit path belongs to the front-end flow.
+5. **Text metrics.** The vanilla measures with the retail font
+   (`DrawBorderStringBig`); the port centres with `text::hud_text_width` and
+   the font's `line_spacing`, which is the same box within a pixel.
+
+**Verification.** 13 new tests (the slot counts, the two books' pitches and the
+`1 + i` anchor, the eight navigation rows, the four pages' row counts, the
+scale bands and their clamps, the bar/toggle/cycle round trips, the label
+resolution of every row on every page, and the in-panel bounds of every row).
+The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
+captured 1600x900 frame shows the title, the eight left rows (the selected
+category in gold) at the 42.3 px pitch and the seventeen General rows inside
+the panel.
 ## The PVP toggle + team select cells (M7-UI-7)
 
 `Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:

@@ -625,8 +625,10 @@ impl FrontScreenBehaviours for FrontScreen {
                             app.front = None;
                             app.front_backup = Some(FrontScreen::CharCreation(state));
                             app.park_menu();
-                            app.menu =
-                                Some(menu::Menu::open_confirm_discard(app.settings.clone(), name));
+                            app.menu = Some(menu::Menu::open_confirm_discard(
+                                app.settings.clone(),
+                                name,
+                            ));
                         } else {
                             app.front = None;
                             app.enter_front(FrontScreen::CharSelect);
@@ -1262,6 +1264,7 @@ pub(crate) mod front_flow_tests {
         }
     }
 
+
     #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla
@@ -1311,11 +1314,7 @@ pub(crate) mod front_flow_tests {
             }
             app.front_hover_hit = hit;
         }
-        assert_eq!(
-            app.audio.played_count(),
-            before + 1,
-            "one tick on the enter"
-        );
+        assert_eq!(app.audio.played_count(), before + 1, "one tick on the enter");
         // A second hover inside the same element is silent.
         let hit2 = app.front_hit();
         if hit2 != app.front_hover_hit {
@@ -1427,7 +1426,11 @@ pub(crate) mod front_flow_tests {
         // into the play flow (routing only — the port has no per-card selection
         // state, spec §9.4).
         let players = vec![entry("Alpha", true), entry("Beta", true)];
-        let mut app = flow_app(Some(FrontScreen::CharSelect), players.clone(), Vec::new());
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            players.clone(),
+            Vec::new(),
+        );
         // The 200 ms entry lockout from `enter_front` must be gone first.
         app.pointer.tick(300.0);
         let (sw, sh) = app.screen_size();
@@ -1488,9 +1491,7 @@ pub(crate) mod front_flow_tests {
         let now = app.anim_time as f64 * 1000.0;
         let hit = app.front_hit();
         if !app.pointer.clicks_disabled() {
-            app.pointer_event = app
-                .pointer
-                .press(now, ui::pointer::PointerButton::Left, hit);
+            app.pointer_event = app.pointer.press(now, ui::pointer::PointerButton::Left, hit);
         }
         app.handle_front_click();
     }
@@ -1500,9 +1501,7 @@ pub(crate) mod front_flow_tests {
     fn front_release(app: &mut App) {
         let now = app.anim_time as f64 * 1000.0;
         let hit = app.front_hit();
-        app.pointer_event = app
-            .pointer
-            .release(now, ui::pointer::PointerButton::Left, hit);
+        app.pointer_event = app.pointer.release(now, ui::pointer::PointerButton::Left, hit);
     }
 
     /// A centre point inside `rect`, aimed the way the tests point the mouse.
@@ -1529,7 +1528,10 @@ pub(crate) mod front_flow_tests {
     /// player's real `Worlds` directory (`app/mod.rs:1105-1113`), which other
     /// tests leave files in — the click table must read the fixture, not
     /// whatever the disk held, so the list is overwritten after the entry.
-    fn open_world_select(app: &mut App, worlds: Vec<ui::save_list::WorldEntry>) {
+    fn open_world_select(
+        app: &mut App,
+        worlds: Vec<ui::save_list::WorldEntry>,
+    ) {
         app.enter_front(FrontScreen::WorldSelect);
         app.worlds = worlds;
     }
@@ -2815,10 +2817,7 @@ pub(crate) mod front_flow_tests {
             Some(std::path::Path::new("saves/Beta.trwld")),
             "the pressed card's file rides the swap"
         );
-        assert!(
-            app.front.is_none(),
-            "the launch arm closes the front screens"
-        );
+        assert!(app.front.is_none(), "the launch arm closes the front screens");
     }
 
     /// The favourites survive the save/load round (BUG-03): two slots
@@ -2838,7 +2837,10 @@ pub(crate) mod front_flow_tests {
         let mut loaded = flow_app(None, Vec::new(), Vec::new());
         loaded.hydrate_favorites(bits);
         assert!(loaded.is_favorite(3) && loaded.is_favorite(9));
-        assert!(!loaded.is_favorite(4), "the untouched slot stays unstarred");
+        assert!(
+            !loaded.is_favorite(4),
+            "the untouched slot stays unstarred"
+        );
         // The toggle is reversible and the bits follow it.
         loaded.toggle_favorite(3);
         assert_eq!(loaded.favorite_bits(), 1 << 9);
@@ -2861,10 +2863,7 @@ pub(crate) mod front_flow_tests {
         // The menu env is the menu arm regardless of which screen is up.
         let mut no_menu = flow_app(None, Vec::new(), Vec::new());
         no_menu.update_menu_music();
-        assert_eq!(
-            no_menu.music.cur_music, 51,
-            "no front screen: the plain track"
-        );
+        assert_eq!(no_menu.music.cur_music, 51, "no front screen: the plain track");
     }
 
     /// The world-creation screen's seed text feeds the menu ladder — the
