@@ -2424,6 +2424,13 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[634] = true;
     world.frame_important[3] = true;
     world.frame_important[4] = true;
+    // The water plants (`Main.cs:7366-7378`): the lily pad 518, the cattail
+    // 519, the seaweed 549 and the sea oats 529 are frame-important, so the
+    // framer keeps the frame rows their growth arms write (`GrowCatTail`
+    // `WorldGen.cs:58974-59082`, `GrowCheckSeaweed` `:58917`).
+    for kind in [518u16, 519, 529, 549] {
+        world.frame_important[kind as usize] = true;
+    }
     // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families
     // (sunflower 27 / pots 28 `Main.cs:7663-7664`, clay pot 78 `:7682`,
     // herbs 82-84 `:7685-7687`, piles 185-187 `:7415-7417`, planter box 380
