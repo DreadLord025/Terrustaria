@@ -8,9 +8,10 @@
 //! `:42008-42023`), then lays the surviving heads out in columns on the right
 //! edge, wrapping to the next column when a row would land below
 //! `screenHeight - 80` (`:42044-42058`). This module ports the head resolution
-//! and that layout; the two interactions (the mouse hover text and the
-//! `SetMouseNPC` click, `:42059-42071`) are not ported yet — the port has no
-//! `Main.mouseNPC` housing query (recorded in `docs/ANALYSIS.md`).
+//! and that layout, plus the hover text (`:42064`: `Main.npc[n].FullName`, or
+//! `Lang.inter[8]` for the query cell). The click (`SetMouseNPC` /
+//! `SetMouseNPC_ToHousingQuery`, `:42065-42071`) is not ported: it needs a
+//! `Main.mouseNPC` housing query, which the port has no model for.
 
 use tr_render::SpriteRenderer;
 
@@ -208,6 +209,66 @@ pub fn hover(cells: &[Cell], mouse: [f32; 2], scale: f32) -> Option<(usize, Opti
     })
 }
 
+/// The `NPCName` localization key of a town kind — the C# reads
+/// `Main.npc[num].FullName`, which is the *given* name ("Andrew") plus the
+/// type name; the port stores no per-NPC names, so the type name is what the
+/// tooltip can honestly show (recorded in `docs/ANALYSIS.md`).
+fn name_key(kind: NpcKind) -> Option<&'static str> {
+    Some(match kind {
+        NpcKind::Guide => "NPCName.Guide",
+        NpcKind::Merchant => "NPCName.Merchant",
+        NpcKind::Nurse => "NPCName.Nurse",
+        NpcKind::Demolitionist => "NPCName.Demolitionist",
+        NpcKind::Dryad => "NPCName.Dryad",
+        NpcKind::ArmsDealer => "NPCName.ArmsDealer",
+        NpcKind::Clothier => "NPCName.Clothier",
+        NpcKind::GoblinTinkerer => "NPCName.GoblinTinkerer",
+        NpcKind::Painter => "NPCName.Painter",
+        NpcKind::WitchDoctor => "NPCName.WitchDoctor",
+        NpcKind::Mechanic => "NPCName.Mechanic",
+        NpcKind::Wizard => "NPCName.Wizard",
+        NpcKind::DyeTrader => "NPCName.DyeTrader",
+        NpcKind::PartyGirl => "NPCName.PartyGirl",
+        NpcKind::Stylist => "NPCName.Stylist",
+        NpcKind::TravellingMerchant => "NPCName.TravellingMerchant",
+        NpcKind::Angler => "NPCName.Angler",
+        NpcKind::TaxCollector => "NPCName.TaxCollector",
+        NpcKind::Golfer => "NPCName.Golfer",
+        NpcKind::Zoologist => "NPCName.Zoologist",
+        NpcKind::Princess => "NPCName.Princess",
+        _ => return None,
+    })
+}
+
+/// `Main.cs:42062-42063`: `text = (num6 != 0) ? Main.npc[num7].FullName :
+/// Lang.inter[8].Value`. Returns the hovered cell's label, `None` when the
+/// pointer is over no cell.
+pub fn hover_text(
+    cells: &[Cell],
+    mouse: [f32; 2],
+    scale: f32,
+    npcs: &[Npc],
+) -> Option<String> {
+    let (head, npc) = hover(cells, mouse, scale)?;
+    label(head, npc, npcs)
+}
+
+/// The label of one cell — the `InventoryHit::housing` half of [`hover_text`],
+/// so the panel can hand a `Copy` pair back to the tooltip layer.
+pub fn label(head: usize, npc: Option<usize>, npcs: &[Npc]) -> Option<String> {
+    if head == HOUSING_QUERY {
+        // `Lang.inter[8]`: the housing-query label.
+        return Some(crate::lang::text("Inter.8"));
+    }
+    let kind = npcs.get(npc?)?.kind;
+    Some(match name_key(kind) {
+        Some(key) => crate::lang::text(key),
+        // A head with no key keeps its vanilla type surface rather than an
+        // empty tooltip.
+        None => crate::lang::text("Inter.8"),
+    })
+}
+
 /// `Main.inventoryBack` — the 0.863 grey every inventory background is tinted
 /// with (`Main.cs:21598`'s `new Color(220, 220, 220, 220)`).
 const INVENTORY_BACK: [f32; 4] = [220.0 / 255.0; 4];
@@ -345,6 +406,24 @@ mod tests {
         assert_eq!(hover(&cells, [1540.0, 400.0], 0.85), Some((2, Some(7))));
         assert_eq!(hover(&cells, [1540.0, 330.0], 0.85), Some((HOUSING_QUERY, None)));
         assert_eq!(hover(&cells, [1400.0, 330.0], 0.85), None);
+    }
+
+    #[test]
+    fn the_hover_text_names_the_cell() {
+        let cells = vec![
+            Cell { head: HOUSING_QUERY, npc: None, x: 1508.0, y: 324.0 },
+            Cell { head: 2, npc: Some(0), x: 1508.0, y: 371.0 },
+        ];
+        let npcs = vec![npc(NpcKind::Merchant)];
+        // `Lang.inter[8]` — the housing-query label.
+        let query = hover_text(&cells, [1530.0, 340.0], 0.85, &npcs);
+        assert_eq!(query.as_deref(), Some(crate::lang::text("Inter.8").as_str()));
+        // `Main.npc[0].FullName` → the type name while the port has no given
+        // names (`NPCName.Merchant`).
+        let merchant = hover_text(&cells, [1530.0, 390.0], 0.85, &npcs);
+        assert_eq!(merchant.as_deref(), Some(crate::lang::text("NPCName.Merchant").as_str()));
+        // Off the cells: no text.
+        assert!(hover_text(&cells, [10.0, 10.0], 0.85, &npcs).is_none());
     }
 
     #[test]

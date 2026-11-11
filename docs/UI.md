@@ -576,9 +576,11 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 * The housing page (`EquipPage == 1`) is `ui::housing`: `Main.DrawNPCHousesInUI`
   (`Main.cs:41993-42107`) with `NPCHeadID.Sets.HeadListOrder`, the vanilla
   `NPC.TypeToDefaultHeadIndex` table and the column wrap at `screenHeight - 80`.
-  Not ported yet: the hover name + `SetMouseNPC` click (`:42059-42071`, the port
-  has no `Main.mouseNPC` housing query), the `Inventory_Back14` white gamepad
-  highlight and the `hidePVPAndTeamIcons` third-column suppression.
+  The hover prints the cell's name (`:42064`; `Inter.8` for the query cell,
+  `NPCName.<Kind>` for a head — the port has no per-NPC given names). Not ported
+  yet: the `SetMouseNPC` click (`:42065-42071`, the port has no `Main.mouseNPC`
+  housing query), the `Inventory_Back14` white gamepad highlight and the
+  `hidePVPAndTeamIcons` third-column suppression.
 * Chest panel (M3-CHEST-UI) deviations are collected in `docs/ANALYSIS.md` →
   "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no lid animation,
   the rename keyboard pauses the sim, the cursor-override textures deferred …);

@@ -148,6 +148,10 @@ pub struct InventoryHit {
     /// origin and the **last** accessory row's `y` (`Main.cs:41421-41424`, where
     /// `num37 == num35`). `None` on the misc page, where the counter is not drawn.
     pub defense_anchor: Option<(f32, f32)>,
+    /// The hovered housing cell as `(head, npc)` (`Main.cs:42059-42065`) — the
+    /// tooltip layer turns it into a name (`housing::label`). Copy-friendly, so
+    /// the hit stays `Copy`.
+    pub housing: Option<(usize, Option<usize>)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +451,10 @@ pub fn draw(
             INVENTORY_SCALE,
         );
         housing::draw(r, lookups, &cells, INVENTORY_SCALE);
+        // `:42059-42065`: the mouse-text probe (`Main.mouseText = true`, then
+        // the cell's name). Vanilla also sets `player.mouseInterface`, i.e. this
+        // text is the one on screen for the page.
+        hit.housing = housing::hover(&cells, [mouse.x, mouse.y], INVENTORY_SCALE);
     } else {
         // `Main.cs:41372-41524`: equipment columns (`EquipPage == 0`, and the
         // page-3 fallthrough).

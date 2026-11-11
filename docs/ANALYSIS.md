@@ -10694,8 +10694,13 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   centred on `(x + 26*scale, y + 26*scale)` and shrunk to `36 / max(w, h)` when it
   is larger than 36 px. The shipped content pack's heads are 24x22, so they draw
   1:1.
-* **Not ported**: the hover name (`Main.npc[num].FullName`, `Lang.inter[8]` for the
-  query cell) and the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
+* **Hover** (`:42059-42065`, M7-UI-3c): the cell under the pointer prints a
+  name through the tooltip layer — `Lang.inter[8]` for the query cell, the NPC's
+  name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
+  plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
+  it prints the type name from the `NPCName.<Kind>` localization key
+  (`housing::name_key`) — the same string the bestiary entry carries.
+* **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
   still lacks (the same reason the grid's `_17` highlight is open); and
