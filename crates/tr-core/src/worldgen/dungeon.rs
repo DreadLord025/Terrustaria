@@ -682,6 +682,30 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
     }
     // The crawler from the shaft's foot.
     crawl_layout(world, x0, top + 40, setup.steps, brick, cracked, wall, world.height, r);
+    // `MakeDungeon`'s feature tail (`DungeonCrawler.cs:463-505`): the crawl
+    // only paints bricks and walls, then the `DungeonGlobal*` passes fill the
+    // rooms. The first one is `DungeonGlobalSpikes` (`:0.75`, `:477`) — the
+    // spike hazard every dungeon floor carries.
+    let fp = super::dungeon_features::DungeonFootprint::scan(
+        world,
+        (
+            0,
+            (top - 200).max(0),
+            world.width,
+            (bottom + 60).min(world.height),
+        ),
+        wall,
+        cracked,
+    );
+    if let Some(fp) = fp {
+        // `WorldGen.getGoodWorldGen` (`get fixed boi`) triples the spike
+        // count; `variants::WorldVariants` uses `FOR_THE_WORTHY` as the port's
+        // proxy for it, so the dungeon pass does too.
+        let good_world = world
+            .seeds
+            .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
+    }
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
     let _ = setup.entrance_strength_y2;
@@ -750,6 +774,35 @@ mod tests {
     }
 
     #[test]
+    /// `MakeDungeon`'s feature tail: the crawl leaves the rooms bare, then
+    /// `DungeonGlobalSpikes` (`DungeonCrawler.cs:477`) fills the floors and
+    /// ceilings with spike runs. A world wide enough for the `42 * maxTilesX /
+    /// 4200` budget (`DungeonGlobalSpikes.cs:37`) has to end with spikes.
+    #[test]
+    fn test_dungeon_features_the_spikes_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let mut spikes = 0usize;
+        let mut on_dungeon_wall = 0usize;
+        for y in 0..w.height {
+            for x in 0..w.width {
+                let t = w.tile(x, y).unwrap();
+                if t.kind == super::super::dungeon_features::SPIKE && t.active() {
+                    spikes += 1;
+                    if matches!(t.wall, 7 | 8 | 9) {
+                        on_dungeon_wall += 1;
+                    }
+                }
+            }
+        }
+        assert!(spikes > 0, "the spike pass runs inside generate_dungeon");
+        assert_eq!(
+            spikes, on_dungeon_wall,
+            "and every spike sits under a dungeon wall"
+        );
+    }
+
     fn test_dungeon_1_the_pass_carves_the_dungeon_grid() {
         // The crawler from the anchor: brick tiles, dungeon walls and
         // carved air all land inside the world bounds.
