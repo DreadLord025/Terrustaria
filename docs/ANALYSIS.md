@@ -9703,3 +9703,48 @@ the branch mechanics below; every C# site is in the report itself.
   All literal sheet indices are gone from the code (doc comments keep the
   history).
 4051db50 (BUG-11: the in-game options window — the Settings button, the panel and the Escape close)
+
+## The followup caster families (M4-PROJ-6b)
+
+The port's remaining caster AI families land beside the PROJ-6 set (rows,
+arms, shoot specials), plus the render pass: the frame state and the
+frame-sliced draw, and the trails as the C#'s cheap fallback strips.
+
+Deliberate deviations and skips:
+- **The Spectre Wrath 356's spawn stays out** — the kind is item-fired by
+  nobody in vanilla; it comes from the Spectre ghost armour set bonus
+  (`Projectile.cs:12012-12028`'s `ghostHurt`, spawn `:12060`), which needs
+  the M3-EQUIP set-bonus seam. The 59 arm itself landed, so the kind stays
+  rowless-but-armed until the set bonus lands.
+- **aiStyle 75/84 scoped to the Last Prism pair** — the guns (439/445/460/
+  595/600/611/615/630/705/714/735/927) and the remaining hostile lasers
+  (461/537/642) keep their out-of-scope status; the 633 holder and the 632
+  laser run their full machines.
+- **The trails are the `Main.DrawTrail` approximation, not the VertexStrip
+  pipeline** — the renderer has no dynamic-geometry strip; the ported strips
+  are the C#'s own fallback shape (stretched quads, the verbatim anchor and
+  `rot = delta + PI/2` geometry) with the drawers' width curves and
+  StripColors per segment. The true strip (the wgsl pass, the CatmullRom
+  padding, the TrailCache cycle) is the render row's.
+- **The drawers' shader alpha quirks are dropped** (`A /= 2`, `A /= 8`,
+  `A = 0`) — they feed the VertexStrip/shaders, and verbatim they blank
+  the Rainbow Rod's strip; the end fade alone drives the port's tint.
+- **The Nebula arm 618's parent-follow keeps the last-seen parent position
+  in `local_ai[0..2]`** — the C# reads `proj.oldPos[1]`, and the port has no
+  per-slot history until Phase 7's TrailingMode rings; the arm's accel
+  (`sign(delta) * 0.15`, clamp 6) and the parent-death kill are 1:1, with
+  one tick of spawn slack recorded.
+- **The frame-sliced and trail quads push into the ui range** like the
+  ported shuriken path — the C# draws the projectiles in the world layer,
+  but the port's world range is retained by the G6 cache
+  (`begin_frame_keep_world`) and the yoyo merge's world-range draw sits on
+  a latent staleness hole the current `WorldFrameKey` has no projectile
+  input for; the unification (and the cache-key widening) is the render
+  row's.
+- **The `projFrames` port is an in-scope slice** — every animated followup
+  kind (206/409/633 + the trail families' 34) plus the default-1 case; the
+  overrides outside the ported rows (the source's ~200-entry init) default
+  here exactly like the source's own init default.
+- Dust/sound spawns stay skipped across the new arms (no dust or sound
+  layer in the pool); the seeds' rng draws are consumed where the C# rolls
+  them mid-arm, so the ported rolls land at the source's stream positions.
