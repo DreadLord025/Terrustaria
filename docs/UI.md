@@ -123,7 +123,7 @@ row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89
 | Controls | `1127` | 250 / 52 / 0.78 | Set Bonuses @250, Quick Trash @302, Keybindings @354 (notice — the original opens the 888 UIState), Back @424 |
 | Keybindings | `27` | 176 / 22 / 0.45 | 14 left-aligned bind rows (`array5 = −80`) + Reset + Back, both scale 0.8 |
 | Map Keys | `272727` | 200 / 30 / 0.55 | 6 left-aligned bind rows (`array5 = −140`) + Reset (0.8) + Back (scale **1.0** — the branch never sets `array7[7]`) |
-| Multiplayer | `12` | 250 / 80 / 1.0 | Join @250, Host & Play @330, Back @410 — "Join via Steam" is overwritten without `SocialAPI.Network`, so Join is first |
+| Multiplayer | `12` | 250 / 80 / 1.0 | Join via IP @250, Join via Steam @330, Host & Play @410, Back @490 — `num41 = 1` (the retail build ships Steam), so `num5 = 3 + num41` = 4 rows; the `num41 == 0` build overwrites row 1 and drops to three |
 | Join IP | `13` | 180 / 30 / 1.0 | header @180, input @229 (`array4 = 19`), 7 blank recent rows @280..460 (scale 0.6), Accept @494, Back @544 |
 | Join Port | `131` | 250 / 80 / 1.0 | header @250, input @310, Accept @430 (disabled unless the text parses to 1..=65535), Back @490 |
 | Host Password | `30` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Host (fixed port 7777), Back @490 |
@@ -246,9 +246,11 @@ The pages the flow parks onto are still legacy `Main.DrawMenu` branches: `menuMo
 with Yes/No rows — `Action::{ConfirmYes, ConfirmNo}` run the erase and re-open the
 screen the confirm came from — and `menuMode` 3000 credits, a single Back row at y 500
 (scale 0.9) over the world backdrop; the `SkyManager.Activate("CreditsRoll")` cinematic
-is not ported (documented deviation). Multiplayer "Join"/"Host & Play" still open the
-input screens directly (the P5 shortcut) — the join/host paths through the character
-select stay with a future multiplayer-flow task.
+is not ported (documented deviation). Multiplayer's "Join via IP" and "Host & Play" still
+open the input screens directly (the P5 shortcut) — the join/host paths through the
+character select stay with a future multiplayer-flow task — and "Join via Steam" reports
+the not-ported notice because the port has no `SocialAPI`/Steam session to hand
+`SocialAPI.Friends.OpenJoinInterface()` to (`Main.cs:50726-50730`).
 
 ### Front-end dev hooks
 
