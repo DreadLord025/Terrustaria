@@ -178,6 +178,12 @@ pub(crate) struct App {
     pub(crate) equip: inv::EquipSlots,
     /// `Main.EquipPage`: 0 armour/vanity/dye, 2 misc equips, 3 camera.
     pub(crate) equip_page: i32,
+    /// `Main.EquipPageSelected` (`Main.cs:749`): the page the player *asked*
+    /// for with the tab icons (`DrawPageIcons`' click arm, `:42846-42858`).
+    /// `Main.EquipPage` above is the page actually drawn, recomputed every frame
+    /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
+    /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
+    pub(crate) equip_page_selected: i32,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -791,6 +797,24 @@ impl App {
             && self.map.as_ref().is_some_and(|m| !m.open)
             && self.map_style == 1;
         crate::ui::minimap::main_m_h(minimap_live, self.screen_size().1)
+    }
+
+    /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
+    /// page the held item forces (`ItemSlot.SelectEquipPage`,
+    /// `ItemSlot.cs:4622-4652`), falling back to `Main.EquipPageSelected`. Run
+    /// once per frame from `frame()` so the auto-jump is undone as soon as the
+    /// cursor stack empties.
+    pub(crate) fn resolve_equip_page(&mut self) {
+        let forced = crate::ui::chrome::select_equip_page(
+            self.mouse_item.kind,
+            self.mouse_item.count,
+            self.equip_page_selected,
+        );
+        self.equip_page = if forced == -1 {
+            self.equip_page_selected
+        } else {
+            forced
+        };
     }
 
     pub(crate) fn update_player(&mut self, dt: f32) {
@@ -2444,6 +2468,9 @@ impl App {
             // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
             // var selects the page for screenshots (0 = equipment, 2 = misc).
             equip_page: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
+            // the per-frame `SelectEquipPage` resolution below.
+            equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];

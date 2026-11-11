@@ -7,11 +7,11 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 
 use crate::achievements;
-use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
+use crate::app::flow::{next_flow_state, FlowClick, FrontScreen};
 use crate::app::{App, NetRole};
 use crate::chest;
 use crate::craft;
-use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
+use crate::item::{ItemSlot, EMPTY_SLOT, HOTBAR, MAX_STACK};
 use crate::menu;
 use crate::net;
 use crate::registry;
@@ -205,7 +205,9 @@ impl App {
             self.ui_left_press = false;
             return true;
         }
-        let Some(player) = self.player.as_ref() else { return false; };
+        let Some(player) = self.player.as_ref() else {
+            return false;
+        };
         let adj = craft::scan_adjacent(&self.world, player);
         let zones = craft::Zones {
             snow: self.scene_metrics.zone_snow,
@@ -217,35 +219,29 @@ impl App {
             &self.world_chests,
             self.settings.craft_from_nearby_chests,
         );
-        let available = craft::available(
-            &self.inventory,
-            &self.world_chests,
-            &in_range,
-            &adj,
-            &zones,
-        );
+        let available =
+            craft::available(&self.inventory, &self.world_chests, &in_range, &adj, &zones);
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
-        let Some((kind, count)) =
-            craft::try_craft(
-                &mut self.inventory,
-                &mut self.world_chests,
-                &in_range,
-                recipe,
-                &adj,
-                &zones,
-                &mut self.craft_rng,
-            )
-        else {
+        let Some((kind, count)) = craft::try_craft(
+            &mut self.inventory,
+            &mut self.world_chests,
+            &in_range,
+            recipe,
+            &adj,
+            &zones,
+            &mut self.craft_rng,
+        ) else {
             // The recipe row shows with a partial ingredient set; a click
             // without the full set does nothing (`Main.cs:42250` hover only).
             return false;
         };
         if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
-            self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
+            self.inventory[i].count =
+                (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
         // `SoundEngine.PlaySound(7)` — the grant sound
         // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
@@ -395,8 +391,8 @@ impl App {
             .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
             .count();
         let max = ui::achievements::max_scroll(rows, &list);
-        self.achievements_scroll = (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0))
-            .clamp(0.0, max);
+        self.achievements_scroll =
+            (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
     }
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
@@ -457,6 +453,27 @@ impl App {
                 }
                 return;
             }
+            // `Main.DrawPageIcons`' click handling (`Main.cs:42828-42858`): the
+            // three equipment-page tabs. Pressing the selected tab falls back to
+            // page 0; pressing another selects it. The effect is scoped to
+            // `Main.EquipPageSelected` — `Main.EquipPage` is re-derived every
+            // frame in `frame()` (`:42864-42867`).
+            let num20 = 174.0 + m_h;
+            if let Some(tab) = ui::chrome::page_tab_hit(
+                screen,
+                num20 - 32.0,
+                self.mouse_pos,
+                (self.mouse_item.kind, self.mouse_item.count),
+                false,
+                ui::chrome::page_tab_sizes(&self.lookups),
+            ) {
+                if let Some(sel) = ui::chrome::page_tab_click(tab, self.equip_page_selected) {
+                    self.equip_page_selected = sel;
+                    // `SoundEngine.PlaySound(10)` (`:42857`) — the port's cue.
+                    self.audio.play("Menu_Open");
+                }
+                return;
+            }
         }
         // `Main.cs:41087-41120`: the map-style icon row's clicks — one-shot on
         // the press (`Main.mouseLeft && Main.mouseLeftRelease`), only while the
@@ -504,8 +521,7 @@ impl App {
             let m_h = (sh as f32 - 600.0) / 2.0;
             let (mx, my) = (self.mouse_pos.x, self.mouse_pos.y);
             let in_slot = mx >= 50.0 && mx <= 106.0 && my >= 270.0 + m_h && my <= 326.0 + m_h;
-            let in_button =
-                mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
+            let in_button = mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
             if left && in_slot {
                 self.reforge_slot_click();
                 return;
@@ -599,12 +615,10 @@ impl App {
                 .as_ref()
                 .map(|p| p.chest)
                 .unwrap_or(crate::bank::CHEST_CLOSED);
-            if let Some(bank_idx) = (crate::bank::bank_for_chest(chest_open))
-                .and_then(|_| {
-                    let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
-                    ui::inventory::bank_slot_at(self.mouse_pos, m_h)
-                })
-            {
+            if let Some(bank_idx) = (crate::bank::bank_for_chest(chest_open)).and_then(|_| {
+                let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                ui::inventory::bank_slot_at(self.mouse_pos, m_h)
+            }) {
                 let Some(p) = self.player.as_mut() else {
                     return;
                 };
@@ -673,7 +687,10 @@ impl App {
         // (`:1007`) has no port cue — the recorded gap. Right-click stays
         // unported (the Journey research arm `:940-943`).
         let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
-        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
+        if left
+            && self.inventory_open
+            && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop)
+        {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
                 self.audio.play("Grab");
@@ -1087,7 +1104,7 @@ impl App {
                 },
             );
             self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
-            // `RefreshStackSplitCooldown` (`:1774-1784`).
+                                          // `RefreshStackSplitCooldown` (`:1774-1784`).
             self.stack_split = if self.stack_split == 0 {
                 30
             } else {
@@ -1123,7 +1140,11 @@ impl App {
                     .menu
                     .as_ref()
                     .map_or((None, 0usize), |m| (Some(m.page), m.confirm_index));
-                let click = if yes { FlowClick::ConfirmYes } else { FlowClick::ConfirmNo };
+                let click = if yes {
+                    FlowClick::ConfirmYes
+                } else {
+                    FlowClick::ConfirmNo
+                };
                 // Clones: `FrontScreen` is no longer `Copy`, and the erase
                 // calls below need `self` whole.
                 let (front, backup, _) =
@@ -1161,21 +1182,19 @@ impl App {
                     }
                 }
             }
-            Action::Host { port, password } => {
-                match net::Server::start(port, password) {
-                    Ok(server) => {
-                        log::info!("hosting on {}", server.addr());
-                        self.net = NetRole::Host(server);
-                        self.close_menu();
-                    }
-                    Err(e) => {
-                        if let Some(m) = self.menu.as_mut() {
-                            m.connecting = false;
-                            m.error = Some(format!("host failed: {e}"));
-                        }
+            Action::Host { port, password } => match net::Server::start(port, password) {
+                Ok(server) => {
+                    log::info!("hosting on {}", server.addr());
+                    self.net = NetRole::Host(server);
+                    self.close_menu();
+                }
+                Err(e) => {
+                    if let Some(m) = self.menu.as_mut() {
+                        m.connecting = false;
+                        m.error = Some(format!("host failed: {e}"));
                     }
                 }
-            }
+            },
             // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
             // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
             // the legacy menu live behind the overlay (the vanilla state
@@ -1299,7 +1318,7 @@ mod tests {
 
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
-    use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
+    use crate::chest::{WorldChest, DEFAULT_MAX_ITEMS};
     use tr_core::World;
 
     /// Inside the chest grid's cell (0, 0) — the drawn 52·0.755 px cell at
@@ -1833,7 +1852,10 @@ mod tests {
         // the click cancels the editor back into gameplay.
         app.mouse_pos = Vec2::new(510.0, 454.0);
         app.ui_left_press = true;
-        assert!(app.handle_chest_clicks(), "the cancel button took the click");
+        assert!(
+            app.handle_chest_clicks(),
+            "the cancel button took the click"
+        );
         assert!(!app.chest_editing(), "the editor closed");
         assert_eq!(app.front, None, "back into gameplay");
         assert!(
@@ -2216,11 +2238,7 @@ mod tests {
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         let bank = &app.player.as_ref().unwrap().banks[0];
-        assert_eq!(
-            bank[0].kind,
-            71,
-            "the grid stacks parked as plain stacks"
-        );
+        assert_eq!(bank[0].kind, 71, "the grid stacks parked as plain stacks");
         assert_eq!(bank[0].count, 40, "5 parked first, then 35 merged in");
         assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
         assert_eq!(app.inventory[20].count, 0);
@@ -2360,7 +2378,11 @@ mod tests {
         app.handle_chest_clicks();
         app.handle_inventory_clicks();
         assert!(app.favorite_slots.is_empty());
-        assert_eq!(app.inventory[5], slot(9, 4), "the C# movement places on air");
+        assert_eq!(
+            app.inventory[5],
+            slot(9, 4),
+            "the C# movement places on air"
+        );
         assert_eq!(app.mouse_item, EMPTY_SLOT);
     }
 
@@ -2374,17 +2396,30 @@ mod tests {
         assert!(chest::can_favorite_at(1));
         assert!(chest::can_favorite_at(2));
         assert!(chest::can_favorite_at(32));
-        assert!(!chest::can_favorite_at(3), "chest slots cannot be favorited");
+        assert!(
+            !chest::can_favorite_at(3),
+            "chest slots cannot be favorited"
+        );
         assert!(!chest::can_favorite_at(5));
-        assert!(!chest::can_favorite_at(6), "the trash slot cannot be favorited");
-        assert!(!chest::can_favorite_at(13), "the closed hotbar cannot either");
+        assert!(
+            !chest::can_favorite_at(6),
+            "the trash slot cannot be favorited"
+        );
+        assert!(
+            !chest::can_favorite_at(13),
+            "the closed hotbar cannot either"
+        );
 
         let mut app = inv_app();
         assert_eq!(app.toggle_favorite(7), 12);
         assert!(app.is_favorite(7));
         assert_eq!(app.toggle_favorite(7), 12, "the C# plays 12 on both flips");
         assert!(!app.is_favorite(7));
-        assert_eq!(app.toggle_favorite(crate::item::INV), 0, "the coin-row guard");
+        assert_eq!(
+            app.toggle_favorite(crate::item::INV),
+            0,
+            "the coin-row guard"
+        );
         assert_eq!(app.toggle_favorite(53), 0);
 
         // The hover gate refuses air — the cursor never lights (the click-path
@@ -2439,7 +2474,11 @@ mod tests {
         );
         app.handle_inventory_clicks();
         assert_eq!(app.mouse_item, slot(3, 10), "the fall-through pickup ran");
-        assert_eq!(app.favorite_slots, vec![5], "context 0 retains the favorite");
+        assert_eq!(
+            app.favorite_slots,
+            vec![5],
+            "context 0 retains the favorite"
+        );
     }
 
     /// DW-4.3 — direct moves on favorited slots work (the C# has no
@@ -2536,6 +2575,82 @@ mod tests {
         let mut app = inv_app();
         app.pvp_icons_forced = true;
         app
+    }
+
+    /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets
+    /// `EquipPageSelected`, the drawn page follows it on the next frame, and the
+    /// next frame's `SelectEquipPage` joins in without an item held.
+    #[test]
+    fn page_tab_click_switches_the_equipment_page() {
+        let mut app = inv_app();
+        let (sw, _sh) = app.screen_size();
+        let screen = Vec2::new(sw, app.screen_size().1);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        // The test harness loads no atlas, so stand in the native tab sheet
+        // (the `UI/DisplaySlots_*` cells are 22x18 in the retail XNB).
+        for i in [2usize, 4, 8] {
+            app.lookups.page_icons[i] = Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: 22,
+                height: 18,
+                plain_frame: (0, 0),
+            });
+        }
+        let sizes = ui::chrome::page_tab_sizes(&app.lookups);
+        assert_eq!(sizes[0], (22.0, 18.0));
+        // Tab index 0 is `EquipPageSelected = 2` (the misc page).
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_pos = tab2;
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 2);
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(10)`");
+        // The frame tail resolves `EquipPage` from the empty cursor stack.
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2, "`:42866` falls back to the selection");
+        // Pressing the same tab again falls back to page 0 (`:42853-42857`).
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0);
+    }
+
+    /// `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4647-4650`): holding a piece of
+    /// armour forces page 0 even when the misc page was selected.
+    #[test]
+    fn held_armour_forces_the_equipment_page() {
+        let mut app = inv_app();
+        app.equip_page_selected = 2;
+        let armour = (0u16..6196)
+            .find(|&k| crate::itemdata::ITEMS[k as usize].head_slot != -1)
+            .expect("a helmet exists");
+        app.mouse_item = slot(armour, 1);
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 0, "`:4647-4650`");
+        // Dropping the stack restores the selection.
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        app.resolve_equip_page();
+        assert_eq!(app.equip_page, 2);
+    }
+
+    /// `Main.cs:42793`: with the `dye > 0` half of tab 2's gate unported a held
+    /// dye is refused like any other stack — the documented deviation.
+    #[test]
+    fn a_held_stack_refuses_the_page_tabs() {
+        let mut app = inv_app();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let y = 174.0 + app.main_m_h() - 32.0;
+        let tab2 = Vec2::new(ui::chrome::page_tab_x(screen.x, 0) + 4.0, y + 4.0);
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = tab2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip_page_selected, 0, "the press was refused");
     }
 
     /// `Main.cs:42689-42694`: a press on the toggle flips `hostile`, arms the
