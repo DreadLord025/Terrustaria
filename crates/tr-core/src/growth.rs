@@ -2891,6 +2891,110 @@ mod tests {
     }
 
     #[test]
+    fn the_seaweed_grows_only_in_full_water() {
+        // `GrowCheckSeaweed` (`:58917-58973`): the cell must sit in water
+        // (`liquid >= 200`), the two cells above must be full water
+        // (`liquid == 255`, `:58938`), the `Next(1)` gate always passes and
+        // the write needs the `17 - Next(20)` depth window.
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[549] = true;
+        put(&mut w, 100, 210, 53, 0); // the sand floor
+        for y in 200..=209 {
+            let i = w.index(100, y);
+            w.tiles[i].liquid = 255;
+        }
+        let mut placed = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            grow_check_seaweed(&mut w, 100, 209, &mut rng);
+            if w.tile(100, 208).is_some_and(|t| t.active() && t.kind == 549) {
+                placed = true;
+                break;
+            }
+        }
+        assert!(placed, "the seaweed grows above the sand in full water");
+
+        // The same cell with a half-full water column: no write ever.
+        let mut w2 = world();
+        put(&mut w2, 100, 210, 53, 0);
+        for y in 200..=209 {
+            let i = w2.index(100, y);
+            w2.tiles[i].liquid = 200;
+        }
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            grow_check_seaweed(&mut w2, 100, 209, &mut rng);
+            assert!(
+                !w2.tile(100, 208).is_some_and(|t| t.active()),
+                "no growth under a 200-level column"
+            );
+        }
+    }
+
+    #[test]
+    fn the_seaweed_dies_out_of_water() {
+        // `:58925-58933`: a 549 with `liquid < 200` on itself or the cell above
+        // rolls `Next(2)` and dies.
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[549] = true;
+        put(&mut w, 100, 210, 53, 0);
+        put(&mut w, 100, 209, 549, 0);
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            grow_check_seaweed(&mut w, 100, 209, &mut rng);
+            if !w.tile(100, 209).is_some_and(|t| t.active()) {
+                break;
+            }
+        }
+        assert!(
+            !w.tile(100, 209).is_some_and(|t| t.active()),
+            "the dry stand is killed"
+        );
+    }
+
+    #[test]
+    fn the_web_grows_on_a_dungeon_wall() {
+        // `GrowWeb` (`:74088-74122`): `Next(10)` per pick, a `Next(2, 4)`
+        // radius whose box must touch a solid, then the 51 write in the empty
+        // cell. The dispatcher arm (`:73803-73806`) gates on wall 62 and no
+        // liquid.
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        for x in 98..=102 {
+            put(&mut w, x, 208, 1, 0); // the solid floor inside `Next(2, 4)`
+        }
+        for x in 98..=102 {
+            set_wall(&mut w, x, 205, 62);
+        }
+        let mut placed = false;
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            update_world_underground_tile(&mut w, 100, 205, 3, true, true, false, &mut rng);
+            if w.tile(100, 205).is_some_and(|t| t.active() && t.kind == 51) {
+                placed = true;
+                break;
+            }
+        }
+        assert!(placed, "the web fills an empty wall-62 cell");
+
+        // Without the wall the arm never fires.
+        let mut w2 = world();
+        for x in 98..=102 {
+            put(&mut w2, x, 208, 1, 0);
+        }
+        for seed in 1..64u64 {
+            let mut rng = FastRandom::new(seed);
+            update_world_underground_tile(&mut w2, 100, 205, 3, true, true, false, &mut rng);
+            assert!(
+                !w2.tile(100, 205).is_some_and(|t| t.active()),
+                "no web without the 62 wall"
+            );
+        }
+    }
+
+    #[test]
     fn the_wall_arms_convert_the_neighbour_walls() {
         // `SpreadGrassWalls`/`SpreadDesertWalls` (`:74884`/`:74984`): an evil
         // cell with its source in the wallDist box converts a neighbouring
@@ -4527,17 +4631,105 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
     crate::framing::reframe_area(world, x, num - 1, 1);
 }
 
+/// `WorldGen.GrowCheckSeaweed` (`WorldGen.cs:58917-58973`): the seaweed (549)
+/// on sand. Out of water (`liquid < 200` on the cell or the one above) a stand
+/// dies at `genRand.Next(2)`; in water the arm stands down on an occupied or
+/// over-dense neighbourhood (the 9×13 box's 30-cap) and otherwise places the
+/// next 549 above when the water below the surface is deep enough
+/// (`k - y < 17 - Next(20)`).
+pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) {
+    let Some(here) = cell(world, x, y) else { return };
+    if (here.kind == 549 && here.liquid < 200)
+        || cell(world, x, y - 1).is_some_and(|t| t.liquid < 200)
+    {
+        // `:58925-58933`: the dry-out kill.
+        if here.active() && here.kind == 549 && rng.next(2) == 0 {
+            crate::edit::kill_tile(world, x, y, false);
+        }
+        return;
+    }
+    // `:58936-58940`: the growth gates — the `Next(1)` of `maxValue` 1 still
+    // draws (vanilla consumes the roll), and both `y - 2`/`y - 3` must be full
+    // water.
+    let blocked = cell(world, x, y - 1).is_some_and(|t| t.active())
+        || cell(world, x, y - 2).is_some_and(|t| t.active());
+    let roll = rng.next(1) != 0;
+    if blocked
+        || roll
+        || !cell(world, x, y - 2).is_some_and(|t| t.liquid == 255)
+        || !cell(world, x, y - 3).is_some_and(|t| t.liquid == 255)
+    {
+        return;
+    }
+    // `:58941-58954`: the 9×13 density box's 30-cap.
+    let mut count = 0;
+    for i in (x - 4)..=(x + 4) {
+        for j in y..=(y + 12) {
+            if cell(world, i, j).is_some_and(|t| t.active() && t.kind == 549) {
+                count += 1;
+                if count > 30 {
+                    return;
+                }
+            }
+        }
+    }
+    // `:58955-58961`: the depth to the sea floor.
+    let max_y = world.height as i32 - 50;
+    let mut k = y;
+    while k < max_y && !crate::edit::solid_tile(world, x, k) {
+        k += 1;
+    }
+    // `:58962-58968`: the `17 - Next(20)` window and the write.
+    if k - y < 17 - rng.next(20) {
+        if let Some(t) = world.tile_mut(x, y - 1) {
+            if !t.active() {
+                t.kind = 549;
+                t.flags |= FLAG_ACTIVE;
+            }
+        }
+        crate::framing::reframe_area(world, x, y - 1, 1);
+    }
+}
+
+/// `WorldGen.GrowWeb` (`WorldGen.cs:74088-74122`): the dungeon web (51) — one
+/// `Next(10)` per pick, then a `Next(2, 4)` radius whose box must touch a
+/// solid; an inactive cell becomes a web and reframes. The port generates no
+/// notTheBees/getGoodWorld seeds, so that box test (the missing 62 wall) is
+/// dead here.
+fn grow_web(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+    if rng.next(10) != 0 {
+        return;
+    }
+    let num = rng.next_range(2, 4);
+    let mut flag = false;
+    'outer: for k in (i - num)..=(i + num) {
+        for l in (j - num)..=(j + num) {
+            if crate::edit::solid_tile(world, k, l) {
+                flag = true;
+                break 'outer;
+            }
+        }
+    }
+    if flag && !world.tile(i, j).is_some_and(|t| t.active()) {
+        if let Some(t) = world.tile_mut(i, j) {
+            t.kind = 51;
+            t.flags |= FLAG_ACTIVE;
+        }
+        crate::framing::reframe_area(world, i, j, 1);
+    }
+}
+
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
 /// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
 /// grass growth (underground) + the spike arms, the lily conversion, the five
 /// vine families and, behind `allowed_to_spread`, the wall arms.
 ///
 /// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
-/// `plantDye`, the 549/53 seaweed, the 444/396 moss and oyster arms
-/// (`PlayerLOS`/`AnchorValid`/`CountNearBlocksTypes` have no ports),
-/// `GrowWeb`, `TrySpawningTownNPC`, the net sides, and the C#'s dual
-/// `genRand`/`Main.rand` streams (the port's per-consumer stream carries every
-/// draw).
+/// `plantDye` (and its `Main.rand.Next(2500)`/`Next(10000)` head rolls),
+/// the 444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
+/// `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the net sides,
+/// and the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer
+/// stream carries every draw).
 pub fn update_world_underground_tile(
     world: &mut World,
     i: i32,
@@ -4563,9 +4755,13 @@ pub fn update_world_underground_tile(
         return;
     }
     if !active {
-        // The hard-mode infection arm (`:73252`); the dye/cattail/seaweed
-        // arms park.
+        // The hard-mode infection arm (`:73252`) and the tail `else`'s web arm
+        // (`:73803-73806`: wall 62, no liquid). The dye/seaweed, 444/396 and
+        // town-NPC arms park.
         crate::spread::hard_update_world(world, i, j, false, allowed_to_spread, rng);
+        if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
+            grow_web(world, i, j, rng);
+        }
         return;
     }
     // `:73263-73271`: the cattail arm — the validity sweep, then (on
@@ -4577,6 +4773,19 @@ pub fn update_world_underground_tile(
             grow_cat_tail(world, i, j, rng);
             check_cat_tail(world, i, j, rng);
         }
+    }
+    // `:73272-73282`: the seaweed arms — a 549 sweeps (and grows) every pick,
+    // a 53 sand cell with a flat top and a free cell above rolls `Next(20)`.
+    // The C#'s `else if` keeps the sand roll out of the 549 path and the
+    // `&&` chain draws only after the tile gates pass.
+    if kind == 549 {
+        grow_check_seaweed(world, i, j, rng);
+    } else if kind == 53
+        && world.tile(i, j).is_some_and(|t| !t.top_slope() && !t.half_brick())
+        && !world.tile(i, j - 1).is_some_and(|t| t.active())
+        && rng.next(20) == 0
+    {
+        grow_check_seaweed(world, i, j, rng);
     }
     // The grass family + the spikes (`:73281-73295`).
     if SPREAD_UNDERGROUND.contains(&kind) {

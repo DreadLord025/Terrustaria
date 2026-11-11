@@ -5502,13 +5502,32 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   of it (`GrowCatTail`/`CheckCatTail`, the next bullet); the pass also carries
   the creative stop-spread gate into the hard-mode head (`allowed_to_spread`
   had been hardcoded `true` there, so `M6-CREATIVE-1c`'s power never reached
-  the dispatcher). Parked arms: the 655 life-fruit
-  kill (the NPC store), `plantDye`, the 549+53 seaweed, the
+  the dispatcher). The seaweed and web arms landed on top of it (the
+  M5-SPREAD-1c bullet below). Parked arms: the 655 life-fruit
+  kill (the NPC store), `plantDye` (and its `Main.rand.Next(2500)`/
+  `Next(10000)` head rolls, which vanilla draws for every `nactive` pick), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
-  `CountNearBlocksTypes` have no ports), `GrowWeb`, `TrySpawningTownNPC`, the
-  net sides, the creative-power override on `AllowedToSpreadInfections`, and
+  `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
+  net sides, the creative-power override on `AllowedToSpreadInfections` (the
+  port passes the gate through `allowed_to_spread` instead), and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw).
+
+- **The seaweed and web arms** (`UpdateWorld_UndergroundTile`'s
+  `:73272-73282` and the tail `else`'s `:73803-73806` — the M5-SPREAD-1c
+  slice): `GrowCheckSeaweed` (`:58917-58973`) runs for every picked 549 and,
+  on a sand 53 with a flat top (no `topSlope`, no half brick) and a free cell
+  above, behind `Next(20)`. A stand out of water (`liquid < 200` on the cell
+  or the one above) dies at `Next(2)`; in water the arm stands down when the
+  cell above or two above is occupied, when the `Next(1)` gate fails (vanilla
+  still draws it — `maxValue` is 1), when either cell above is not full water
+  (`liquid == 255`), when the 9×13 box holds more than 30 seaweed, or when the
+  sea floor is further than `17 - Next(20)` rows below; otherwise it writes
+  the 549 above. `GrowWeb` (`:74088-74122`) takes one `Next(10)` per pick and
+  fills an empty cell whose `Next(2, 4)` box touches a solid when the wall is
+  62 and the cell holds no liquid. Deviations: the notTheBees/getGoodWorld
+  branch of the web box test is dead (the port generates no such seeds), the
+  net sides drop, and both writes go through the port's `reframe_area`.
 
 - **The cattail family** (the dispatcher's 519 arm `WorldGen.cs:73263-73271`,
   `CheckCatTail` `:58744-58930`, `GrowCatTail` `:58974-59082` — the
