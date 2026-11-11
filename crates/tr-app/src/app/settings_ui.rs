@@ -97,6 +97,10 @@ impl App {
 
     /// Applies the options the renderer reads right away.
     pub(crate) fn apply_settings(&mut self) {
+        // `PlayerInput.CurrentProfile`'s `KeyStatus` re-seed (`Main.cs:4602`):
+        // the settings screen's edits become the live table.
+        self.keybinds = self.settings.keybinds.clone();
+        self.map_binds = self.settings.map_binds.clone();
         self.light_mode = tr_core::lighting::LightMode::ALL
             [(self.settings.light_mode as usize).min(3)];
         if !self.zoom_pinned {

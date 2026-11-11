@@ -2495,13 +2495,6 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
-    /// `NPC.friendly` (`NPC.cs`'s field): the town/critter half of
-    /// `ProcessHitAgainstNPC`'s refusal (`Player.cs:44261-44264`) — a
-    /// FRIENDLY npc takes no player damage at all unless the hit rides the
-    /// doll/curse easter egg or the whip's 5129/3351 pair. Kept explicit
-    /// rather than derived so the Guide-doll/Clothier exceptions can be
-    /// posed on one NPC (the `killGuide`/`killClothier` flags).
-    pub friendly: bool,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -3022,11 +3015,6 @@ impl Npc {
             wants_servant: None,
             defense_override: None,
             dont_take_damage: false,
-            // `SetDefaults` sets `friendly = true` for the town NPCs and
-            // the friendly critters; the port's town kinds + the critter
-            // family cover the same set (`Main.cs:23124`'s flip already
-            // reads `spriteDirection` for both).
-            friendly: kind.is_town_npc(),
             swarm_done: false,
             moon_local: [0.0; 3],
             moon_core_alive: false,

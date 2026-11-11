@@ -111,35 +111,69 @@ pub(crate) fn grant_ammo_mastery(
     }
 }
 
+/// The `PlayerInput` the world keyboard state resolves to: `Main.cUp`..
+/// `Main.cMount` (`Main.cs:67163-67176`) through [`crate::input_map`], plus the
+/// `TR_HOLD` screenshot hook and the port's arrow-key extras.
+///
+/// Split out of [`update_player`] so the bind table can be exercised without a
+/// live world: every branch is pure `App` state, and the fullscreen map's gate
+/// (`Player.cs:24774-24793`) is a parameter.
+pub(crate) fn player_input(
+    app: &App,
+    binds: &[String; crate::input_map::BIND_COUNT],
+    map_open: bool,
+    hold_right: bool,
+    hold_jump: bool,
+) -> PlayerInput {
+    if map_open {
+        return PlayerInput {
+            left: false,
+            right: false,
+            jump: false,
+            down: false,
+            hook: false,
+        };
+    }
+    // `Player.controlLeft`/`controlRight`/`controlJump`/`controlDown` off
+    // `Main.cLeft`/`cRight`/`cJump`/`cDown` (`Main.cs:67164-67167`). The arrow
+    // keys are kept as a port convenience — vanilla binds only the four `c*`
+    // rows — so a rebind adds a key rather than replacing the arrows.
+    let held = |action: crate::input_map::Action, arrow: KeyCode| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+            || app.keys.contains(&arrow)
+    };
+    let any = |action: crate::input_map::Action| {
+        app.keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(binds, action, *k))
+    };
+    PlayerInput {
+        left: held(crate::input_map::Action::Left, KeyCode::ArrowLeft),
+        right: hold_right || held(crate::input_map::Action::Right, KeyCode::ArrowRight),
+        // `cUp` also jumps: `Player.controlUp` feeds `controlJump` in the
+        // vanilla's `Player.Update`, which is why the default `W` jumps.
+        jump: hold_jump
+            || held(crate::input_map::Action::Jump, KeyCode::ArrowUp)
+            || any(crate::input_map::Action::Up),
+        down: held(crate::input_map::Action::Down, KeyCode::ArrowDown),
+        // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
+        // the port keeps `G` as the extra quick-grapple key.
+        hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
     // `Player.cs:24772-24803`: while the map is fullscreen every movement control
     // is zeroed, so the player stands still and the WASD keys pan the map.
     let map_open = app.map.as_ref().is_some_and(|m| m.open);
-    let input = if map_open {
-        PlayerInput {
-            left: false,
-            right: false,
-            jump: false,
-            down: false,
-            hook: false,
-        }
-    } else {
-        PlayerInput {
-            left: app.keys.contains(&KeyCode::KeyA) || app.keys.contains(&KeyCode::ArrowLeft),
-            right: hold_right
-                || app.keys.contains(&KeyCode::KeyD)
-                || app.keys.contains(&KeyCode::ArrowRight),
-            jump: hold_jump
-                || app.keys.contains(&KeyCode::Space)
-                || app.keys.contains(&KeyCode::KeyW)
-                || app.keys.contains(&KeyCode::ArrowUp),
-            down: app.keys.contains(&KeyCode::KeyS) || app.keys.contains(&KeyCode::ArrowDown),
-            // `Player.controlHook` (the quick-grapple key).
-            hook: app.keys.contains(&KeyCode::KeyG),
-        }
-    };
+    // The bind table, copied out so the player borrow below does not conflict
+    // (`Main.cUp`..`Main.cMount`, `Main.cs:67163-67176`).
+    let binds = app.keybinds.clone();
+    let input = player_input(app, &binds, map_open, hold_right, hold_jump);
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -355,11 +389,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The quick-mount key: the `controlMount` press edge (the menu's
         // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
         // (`Player.cs:24888-24893` -> `:6045-6100`).
-        static MOUNT_PREV: std::sync::atomic::AtomicBool =
-            std::sync::atomic::AtomicBool::new(false);
-        let mount_key = app.keys.contains(&KeyCode::KeyR);
-        let mount_edge =
-            mount_key && !MOUNT_PREV.swap(mount_key, std::sync::atomic::Ordering::Relaxed);
+        // `Main.cMount` (`Main.cs:67176`, default `R`). The previous edge is an
+        // `App` field, not a `static`, so two headless apps in one test process
+        // cannot share it.
+        let mount_key = app
+            .keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Mount, *k));
+        let mount_edge = mount_key && !app.mount_prev;
+        app.mount_prev = mount_key;
         if mount_edge && !map_open {
             if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
                 // `ItemCheck_TryStartUse`'s animation (the saddle's

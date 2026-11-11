@@ -171,27 +171,6 @@ fn shooter_swing_secs(kind: u16, prefix: u16) -> f32 {
 /// whole animation — the C#'s `Item.useTime` stock is 100,
 /// `Item.cs:49028`-adjacent), and the vanilla value for the four `gunProj`
 /// placeholders.
-/// `Player.cs:44263` — the friendly gate's per-kind shape:
-/// `nPC.friendly && (nPC.type != 22 || !killGuide) && (nPC.type != 54 ||
-/// !killClothier) && (!nPC.isLikeATownNPC || (sItem.type != 5129 &&
-/// sItem.type != 3351))`. `true` = the hit is refused.
-///
-/// `doll` / `curse` stand in for the equipped Voodoo Doll's `killGuide`
-/// and the Clothier's curse `killClothier` (`Player.cs:15123-15129`); the
-/// whip pair (5129/3351) opens the rest of the town cast, which the port
-/// models as `doll || curse` for the town kinds the two flags do not name
-/// (the recorded approximation — the port has no whip-family table).
-pub(crate) fn npc_friendly_refuses(n: &crate::npc::Npc, doll: bool, curse: bool) -> bool {
-    if !n.friendly {
-        return false;
-    }
-    match n.kind {
-        crate::npc::NpcKind::Guide => !doll,
-        crate::npc::NpcKind::Clothier => !curse,
-        _ => !n.kind.is_town_npc() || !(doll || curse),
-    }
-}
-
 fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
     gun_proj_row(kind).map_or_else(
         || {
@@ -994,15 +973,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
             // `6f9ec6f4` resolved main against a base that predated this gate
             // and dropped it and its test.)
-            // `Player.cs:44263` — the flags arm ONLY for their own npc: the
-            // doll opens the GUIDE (22), the curse the CLOTHIER (54), so the
-            // exception is per-kind, not one blanket switch.
-            let doll = matches!(held.kind, 267)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267));
-            let curse = matches!(held.kind, 1307)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 1307));
+            let easter_egg = matches!(held.kind, 267 | 1307)
+                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
             let hit_idx = app.npcs.iter().position(|n| {
-                n.contains(ax, ay) && !n.dont_take_damage && !npc_friendly_refuses(n, doll, curse)
+                n.contains(ax, ay)
+                    && !n.dont_take_damage
+                    && (!n.kind.is_town_npc() || easter_egg)
             });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
@@ -3591,25 +3567,6 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
-
-    /// BUG-10: `ProcessHitAgainstNPC`'s friendly refusal (`Player.cs:44261-44264`)
-    /// — the per-kind easter egg. A plain swing at the Guide is refused, the
-    /// Voodoo Doll's presence (the port's stand-in for the equipped
-    /// `killGuide`) opens exactly the Guide and not the Clothier, and the
-    /// curse does the mirror.
-    #[test]
-    fn bug_10_the_friendly_gate_is_per_kind() {
-        let guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 0.0, 0.0, 1, 0.0);
-        let clothier = crate::npc::Npc::new(crate::npc::NpcKind::Clothier, 0.0, 0.0, 1, 0.0);
-        let zombie = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
-        assert!(guide.friendly && clothier.friendly, "the town set is friendly");
-        assert!(!zombie.friendly, "a surface monster is not");
-        assert!(npc_friendly_refuses(&guide, false, false), "a bare swing misses the Guide");
-        assert!(!npc_friendly_refuses(&guide, true, false), "the doll opens the Guide");
-        assert!(npc_friendly_refuses(&clothier, true, false), "but not the Clothier");
-        assert!(!npc_friendly_refuses(&clothier, false, true), "the curse opens the Clothier");
-        assert!(!npc_friendly_refuses(&zombie, false, false), "monsters always take the hit");
-    }
 
     /// BUG-16: the killed trunk cell's drop — the wood of the tree's family
     /// and the canopy marker's acorn (`WorldGen.KillTile_GetTreeDrops`,

@@ -1211,6 +1211,10 @@ impl App {
     pub(crate) fn close_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
+            // The settings screen's bind edits (`Main.cs:4602`'s `KeyStatus`
+            // re-seed): the menu owns the rebind UI, `Settings` owns the table.
+            self.settings.keybinds = m.keybinds;
+            self.settings.map_binds = m.map_binds;
         }
         self.apply_settings();
     }
@@ -1221,6 +1225,8 @@ impl App {
     pub(crate) fn park_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
+            self.settings.keybinds = m.keybinds;
+            self.settings.map_binds = m.map_binds;
         }
         self.apply_settings();
     }
