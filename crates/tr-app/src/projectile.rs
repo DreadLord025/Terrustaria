@@ -452,6 +452,62 @@ pub const SPIRIT_FLAME: u16 = 659;
 pub const SKY_FRACTURE: u16 = 660;
 /// `ProjectileID.BookOfSkullsSkull` (837) — the Book of Skulls' rider.
 pub const BOOK_OF_SKULLS: u16 = 837;
+/// The followup caster families of M4-PROJ-6b: the kind ids below are the
+/// verbatim `ProjectileID` values, their `SetDefaults` arms cited per row in
+/// [`proj_data`]. The aiStyles 27/40/51/59/71/118/119/75/84 they declare
+/// reach the dispatch in Phases 2-4; the rows alone land here.
+/// `ProjectileID.UnholyTridentFriendly` (114) — the aiStyle-27 family's own
+/// shot (`extraUpdates = 2`, `timeLeft = 180`, `armorPenetration = 25`).
+pub const UNHOLY_TRIDENT: u16 = 114;
+/// `ProjectileID.UnholyTridentHostile` (115) — the hostile twin: the same
+/// 16x16 box with `penetrate = -1` and no friendly flag.
+pub const UNHOLY_TRIDENT_HOSTILE: u16 = 115;
+/// `ProjectileID.SwordBeam` (116) — the Beam Sword's beam
+/// (`Item.cs:9827-9836`'s `shoot = 116`, melee, pen 2).
+pub const SWORD_BEAM: u16 = 116;
+/// `ProjectileID.TerraBeam` (132) — an aiStyle-27 rider carrying the family's
+/// local-immunity group (`localNPCHitCooldown = 10`).
+pub const TERRA_BEAM: u16 = 132;
+/// `ProjectileID.LightBeam` (156) — the second rider with the same local
+/// immunity group (melee, pen 2).
+pub const LIGHT_BEAM: u16 = 156;
+/// `ProjectileID.NightBeam` (157) — the 32x32 rider (`scale = 1.2f`).
+pub const NIGHT_BEAM: u16 = 157;
+/// `ProjectileID.EnchantedBeam` (173) — the Enchanted Sword's beam
+/// (`Item.cs:12756-12764`'s `shoot = 173`, melee, pen 1).
+pub const ENCHANTED_BEAM: u16 = 173;
+/// `ProjectileID.Leaf` (206) — the Leaf Blower's leaf (aiStyle 40).
+pub const LEAF: u16 = 206;
+/// `ProjectileID.LostSoulHostile` (293) — the Spectre Staff's hostile soul.
+pub const LOST_SOUL_HOSTILE: u16 = 293;
+/// `ProjectileID.LostSoulFriendly` (297) — the friendly soul: `penetrate = 3`
+/// with the id-static group (`idStaticNPCHitCooldown = 10`).
+pub const LOST_SOUL: u16 = 297;
+/// `ProjectileID.SpectreWrath` (356) — the set-bonus's ghost shot (aiStyle
+/// 59, `tileCollide = false`, `extraUpdates = 3`).
+pub const SPECTRE_WRATH: u16 = 356;
+/// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
+/// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
+pub const TYPHOON: u16 = 409;
+/// `ProjectileID.NebulaArcanum` (617) — the Arcanum's homing bolt (aiStyle
+/// 118, local-immunity 8).
+pub const NEBULA_ARCANUM: u16 = 617;
+/// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
+/// 119, 18x30, `timeLeft = 420`, local-immunity 20).
+pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+/// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
+/// 14x18, `penetrate = -1`, `tileCollide = false`).
+pub const LAST_PRISM: u16 = 633;
+/// `ProjectileID.LastPrismLaser` (632) — the holder's beam (aiStyle 84,
+/// 18x18, `alpha = 255`, `penetrate = -1`).
+pub const LAST_PRISM_LASER: u16 = 632;
+/// `ProjectileID.NebulaBlaze1` (634) — the Nebula Blaze's first arm: an
+/// aiStyle-1 rider with `extraUpdates = 2` (the plain-[`ai_arrow`] flight).
+pub const NEBULA_BLAZE_1: u16 = 634;
+/// `ProjectileID.NebulaBlaze2` (635) — the 20%-roll twin: aiStyle 1 with
+/// `extraUpdates = 3` (the C# arm sets `friendly` twice — a verbatim quirk
+/// with no effect on the port's `friendly` default).
+pub const NEBULA_BLAZE_2: u16 = 635;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -1448,6 +1504,82 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the rider hook), alpha 255, `penetrate = 3`, `timeLeft =
             // 480`, `tileCollide = false`.
             BOOK_OF_SKULLS => (26.0, 26.0, 1, 3, 480, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The followup caster families (M4-PROJ-6b, Phase 1): the verbatim
+            // `SetDefaults` rows in `ProjectileID` order, the aiStyles the
+            // Phases 2-4 arms dispatch on. The C#'s `light`, `magic`/`melee`,
+            // `hostile`, `ignoreWater`, `drawLayer` and `armorPenetration`
+            // fields have no `ProjData` consumer — dropped, as everywhere else.
+            // aiStyle 27 (`:2023-2035` UnholyTridentFriendly): 16x16, magic,
+            // light 0.5, alpha 255, `extraUpdates = 2`, `timeLeft = 180`
+            // (`armorPenetration = 25` dropped). The arm itself counts `ai[0]`
+            // up from the zeroed scratch array (`:26426-26440`), so the row
+            // sets no ai convention.
+            UNHOLY_TRIDENT => (16.0, 16.0, 27, 1, 180, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2036-2046` UnholyTridentHostile — the same 16x16 box with
+            // `penetrate = -1` and no `timeLeft`/`extraUpdates` override (the
+            // 3600 reset holds; `hostile` has no field in this port) — alpha
+            // 255, as the friendly twin's row.
+            UNHOLY_TRIDENT_HOSTILE => (16.0, 16.0, 27, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2047-2056` SwordBeam — 16x16, melee, `penetrate = 2`,
+            // light 0.5, alpha 255.
+            SWORD_BEAM => (16.0, 16.0, 27, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2209-2222` TerraBeam — 16x16, melee, `penetrate = 3`, alpha
+            // 255, the family's local-immunity group (cooldown 10).
+            TERRA_BEAM => (16.0, 16.0, 27, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `:2434-2446` LightBeam — 16x16, melee, `penetrate = 2`, alpha
+            // 255, local-immunity 10.
+            LIGHT_BEAM => (16.0, 16.0, 27, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `:2447-2456` NightBeam — the 32x32 rider with `scale = 1.2f`
+            // and light 0.5, alpha 255; no local-immunity pair (the port's
+            // overlay leaves the row's own group alone).
+            NIGHT_BEAM => (32.0, 32.0, 27, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `:2591-2600` EnchantedBeam — 16x16, melee, `penetrate = 1`,
+            // light 0.2, alpha 255.
+            ENCHANTED_BEAM => (16.0, 16.0, 27, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2937-2945` Leaf — 14x14, aiStyle 40, `penetrate = 1`, alpha
+            // 255, `timeLeft = 360`.
+            LEAF => (14.0, 14.0, 40, 1, 360, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3826-3837` LostSoulHostile — 12x12, aiStyle 51, alpha 255,
+            // `tileCollide = false`, `penetrate = -1`, `extraUpdates = 1`
+            // (the `293` arm's hunt lands in Phase 3).
+            LOST_SOUL_HOSTILE => (12.0, 12.0, 51, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3870-3882` LostSoulFriendly — 12x12, aiStyle 51, alpha 255,
+            // `penetrate = 3`, `extraUpdates = 1` and the id-static group
+            // with the 10-tick cooldown.
+            LOST_SOUL => (12.0, 12.0, 51, 3, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `:4464-4473` SpectreWrath — 6x6, aiStyle 59, alpha 255,
+            // `tileCollide = false`, `extraUpdates = 3`; the row keeps the
+            // stock `penetrate = 1` and the 3600 reset (the ghostHurt spawn
+            // is Phase 3's documented skip).
+            SPECTRE_WRATH => (6.0, 6.0, 59, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
+            // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
+            // dropped.
+            TYPHOON => (30.0, 30.0, 71, -1, 300, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, alpha 255,
+            // `penetrate = 3`, local-immunity with the 8-tick cooldown
+            // (`ignoreWater`/`drawLayer` dropped).
+            NEBULA_ARCANUM => (32.0, 32.0, 118, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 8, false, -1, 255, 1.0)),
+            // `:6658-6670` NebulaArcanumSubshot — 18x30, aiStyle 119,
+            // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
+            // local-immunity 20; alpha at the 0 reset.
+            NEBULA_ARCANUM_SUBSHOT => (18.0, 30.0, 119, -1, 420, 0, false, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `:6793-6804` LastPrism — 14x18, aiStyle 75, `penetrate = -1`,
+            // `tileCollide = false` (`drawLayer = 7`/`ignoreWater` dropped);
+            // the channel keep-alive and the 6x laser spawn are Phase 4's.
+            LAST_PRISM => (14.0, 18.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:6805-6815` LastPrismLaser — 18x18, aiStyle 84, `penetrate =
+            // -1`, alpha 255, `tileCollide = false`. Phase 4 splits the
+            // style-84 dispatch by kind so 455 keeps its own arm.
+            LAST_PRISM_LASER => (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6816-6826` NebulaBlaze1 — 40x40, aiStyle 1 (the plain
+            // [`ai_arrow`] flight), alpha 255, `extraUpdates = 2`
+            // (`ignoreWater` dropped).
+            NEBULA_BLAZE_1 => (40.0, 40.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6827-6836` NebulaBlaze2 — the same 40x40 box with
+            // `extraUpdates = 3`; the C# sets `friendly` twice (kept verbatim
+            // in the row's doc, no effect on the port).
+            NEBULA_BLAZE_2 => (40.0, 40.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false, (false, -2, false, -1, 255, 1.0)),
             CODE1_YOYO
             | WOOD_YOYO
             | CORRUPT_YOYO
@@ -12138,12 +12270,14 @@ mod widened_state_tests {
     fn test_dw_1_2_an_unported_kind_spawns_nothing() {
         // The seam Phase 2 rides: a kind without a row returns `None` instead
         // of an inert slot (the M4-PROJ-1 silent-None trap). The magic kinds
-        // have rows now (Phase 2); the follow-up aiStyles stay rowless.
+        // and the follow-up aiStyles have rows now (M4-PROJ-6 Phases 1-2 and
+        // M4-PROJ-6b Phase 1), so the examples move to the OUT list: the
+        // style-75 gun rider 600 and the flame jet 187.
         let mut pool = ProjectilePool::new();
         assert!(
-            pool.spawn_with_data(114, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
+            pool.spawn_with_data(600, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
                 .is_none(),
-            "the Unholy Trident bolt (aiStyle 27) is a follow-up row"
+            "the Last Prism gun rider (style 75) stays rowless"
         );
         assert!(
             pool.spawn_with_data(187, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
@@ -12356,14 +12490,21 @@ mod magic_data_tests {
 
     #[test]
     fn test_dw_2_1_the_out_of_scope_kinds_stay_rowless() {
-        // The follow-up aiStyles keep no row: the unported-kind spawn must
-        // reach the caller as `None`, never an inert slot (the plan's OUT
-        // list — the follow-up row and the hostile riders; the Golem's
-        // fireball 258 already rides a pre-existing row, the hostile
-        // style-8 rider of the same kind, and keeps it).
-        for kind in [114u16, 116, 206, 297, 356, 409, 502, 617, 633] {
+        // M4-PROJ-6b Phase 1 moved the boundary: the followup kinds
+        // (114/115/116/132/156/157/173, 206, 293/297, 356, 409, 617/618,
+        // 632/633, 634/635) now carry rows, so the rowless set is the plan's
+        // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
+        // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
+        // and the hostile lasers (461/537/642), plus the flame jet 187 and
+        // 502. The unported-kind spawn must still reach the caller as `None`,
+        // never an inert slot.
+        for kind in [
+            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 642, 187, 502,
+        ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        // The Golem's fireball 258 already rides a pre-existing row, the
+        // hostile style-8 rider of the same kind, and keeps it.
         assert!(proj_data(GOLEM_FIREBALL).is_some(), "the Golem's 258 row stays");
         // The saucer stand-ins (447/450, aiStyle 79/80 as style numbers) are
         // distinct from the magic kinds 79/80 — no collision.
@@ -12373,6 +12514,244 @@ mod magic_data_tests {
         assert_eq!(proj_data(ICE_BLOCK).unwrap().ai_style, 22);
         assert_eq!(proj_data(MAGIC_MISSILE).unwrap().ai_style, 9);
         assert_eq!(proj_data(BALL_OF_FROST).unwrap().ai_style, 8);
+    }
+}
+
+/// The followup caster families' data rows (M4-PROJ-6b Phase 1) — the same
+/// table pattern as `magic_data_tests`, with the immunity groups broken out
+/// so the 297/617/618/132/156 rows can be asserted field by field.
+#[cfg(test)]
+mod followup_data_tests {
+    use super::*;
+
+    /// Every in-scope followup kind with its verbatim `SetDefaults` slice:
+    /// (kind, w, h, aiStyle, penetrate, timeLeft, extraUpdates, tileCollide,
+    /// alpha, scale, usesLocalNPCImmunity, localNPCHitCooldown,
+    /// usesIDStaticNPCImmunity, idStaticNPCHitCooldown). `timeLeft`'s 3600 is
+    /// the reset value (`Projectile.cs:787`); the C# citation per arm rides
+    /// the comment under each line.
+    const FOLLOWUP_ROWS: [(
+        u16,
+        f32,
+        f32,
+        u8,
+        i32,
+        i32,
+        u32,
+        bool,
+        i32,
+        f32,
+        bool,
+        i32,
+        bool,
+        i32,
+    ); 18] = [
+        // `:2023-2035` UnholyTridentFriendly — 16x16, aiStyle 27, alpha 255,
+        // extraUpdates 2, timeLeft 180.
+        (UNHOLY_TRIDENT, 16.0, 16.0, 27, 1, 180, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:2036-2046` UnholyTridentHostile — the same box, penetrate -1,
+        // the 3600 reset (no extraUpdates), alpha 255.
+        (UNHOLY_TRIDENT_HOSTILE, 16.0, 16.0, 27, -1, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2047-2056` SwordBeam — 16x16, penetrate 2.
+        (SWORD_BEAM, 16.0, 16.0, 27, 2, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2209-2222` TerraBeam — penetrate 3, local-immunity 10.
+        (TERRA_BEAM, 16.0, 16.0, 27, 3, 3600, 0, true, 255, 1.0, true, 10, false, -1),
+        // `:2434-2446` LightBeam — penetrate 2, local-immunity 10.
+        (LIGHT_BEAM, 16.0, 16.0, 27, 2, 3600, 0, true, 255, 1.0, true, 10, false, -1),
+        // `:2447-2456` NightBeam — the 32x32 rider, scale 1.2.
+        (NIGHT_BEAM, 32.0, 32.0, 27, 1, 3600, 0, true, 255, 1.2, false, -2, false, -1),
+        // `:2591-2600` EnchantedBeam — penetrate 1.
+        (ENCHANTED_BEAM, 16.0, 16.0, 27, 1, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2937-2945` Leaf — 14x14, aiStyle 40, penetrate 1, timeLeft 360.
+        (LEAF, 14.0, 14.0, 40, 1, 360, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:3826-3837` LostSoulHostile — 12x12, aiStyle 51, penetrate -1,
+        // tileCollide false, extraUpdates 1.
+        (LOST_SOUL_HOSTILE, 12.0, 12.0, 51, -1, 3600, 1, false, 255, 1.0, false, -2, false, -1),
+        // `:3870-3882` LostSoulFriendly — penetrate 3, id-static 10.
+        (LOST_SOUL, 12.0, 12.0, 51, 3, 3600, 1, true, 255, 1.0, false, -2, true, 10),
+        // `:4464-4473` SpectreWrath — 6x6, aiStyle 59, tileCollide false,
+        // extraUpdates 3.
+        (SPECTRE_WRATH, 6.0, 6.0, 59, 1, 3600, 3, false, 255, 1.0, false, -2, false, -1),
+        // `:4903-4915` Typhoon — 30x30, aiStyle 71, penetrate -1, timeLeft
+        // 300, extraUpdates 2.
+        (TYPHOON, 30.0, 30.0, 71, -1, 300, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, penetrate 3,
+        // local-immunity 8.
+        (NEBULA_ARCANUM, 32.0, 32.0, 118, 3, 3600, 0, true, 255, 1.0, true, 8, false, -1),
+        // `:6658-6670` NebulaArcanumSubshot — 18x30, aiStyle 119, penetrate
+        // -1, timeLeft 420, tileCollide false, local-immunity 20, alpha 0.
+        (NEBULA_ARCANUM_SUBSHOT, 18.0, 30.0, 119, -1, 420, 0, false, 0, 1.0, true, 20, false, -1),
+        // `:6793-6804` LastPrism — 14x18, aiStyle 75, penetrate -1,
+        // tileCollide false, the reset state group.
+        (LAST_PRISM, 14.0, 18.0, 75, -1, 3600, 0, false, 0, 1.0, false, -2, false, -1),
+        // `:6805-6815` LastPrismLaser — 18x18, aiStyle 84, penetrate -1,
+        // alpha 255, tileCollide false.
+        (LAST_PRISM_LASER, 18.0, 18.0, 84, -1, 3600, 0, false, 255, 1.0, false, -2, false, -1),
+        // `:6816-6826` NebulaBlaze1 — 40x40, aiStyle 1, alpha 255,
+        // extraUpdates 2.
+        (NEBULA_BLAZE_1, 40.0, 40.0, 1, 1, 3600, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:6827-6836` NebulaBlaze2 — the same box, extraUpdates 3.
+        (NEBULA_BLAZE_2, 40.0, 40.0, 1, 1, 3600, 3, true, 255, 1.0, false, -2, false, -1),
+    ];
+
+    #[test]
+    fn the_followup_family_data_map_is_verbatim() {
+        // DW-1.1: every in-scope followup kind has its `proj_data` row, the
+        // verbatim `SetDefaults` slice against the C# arms cited per row.
+        for &(
+            kind,
+            w,
+            h,
+            ai,
+            pen,
+            tl,
+            ex,
+            tc,
+            alpha,
+            scale,
+            uses_local,
+            local_cd,
+            uses_id_static,
+            id_static_cd,
+        ) in &FOLLOWUP_ROWS
+        {
+            let row = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
+            assert_eq!(
+                (
+                    row.w, row.h, row.ai_style, row.penetrate, row.time_left, row.extra_updates, row.tile_collide
+                ),
+                (w, h, ai, pen, tl, ex, tc),
+                "kind {kind}"
+            );
+            assert_eq!((row.alpha, row.scale), (alpha, scale), "kind {kind}");
+            assert_eq!(
+                (row.uses_local_immunity, row.local_hit_cooldown),
+                (uses_local, local_cd),
+                "kind {kind}"
+            );
+            assert_eq!(
+                (row.uses_id_static_immunity, row.id_static_hit_cooldown),
+                (uses_id_static, id_static_cd),
+                "kind {kind}"
+            );
+            // No followup row is an arrow or a trap: every one is a magic or
+            // a melee/ranged projectile in the C# (the `arrow`/`trap` fields
+            // stay at their reset, `Projectile.cs:704-706`/`:764-765`).
+            assert!(!row.arrow && !row.trap, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_DW_1_1_every_followup_row_reaches_the_spawner() {
+        // DW-1.1's other half: the rows are not dead data — each in-scope
+        // kind spawns through `spawn_with_data` with the row's slice on the
+        // slot, and the spawner's damage/knockback ride on top. Before
+        // Phase 1 every one of these returned `None` and the shot was
+        // silently dropped.
+        let mut pool = ProjectilePool::new();
+        for (i, &(kind, w, h, ai, pen, tl, ex, tc, alpha, scale, ..)) in
+            FOLLOWUP_ROWS.iter().enumerate()
+        {
+            let slot = pool
+                .spawn_with_data(kind, 32.0 * i as f32, 32.0, 4.0, 0.0, 21, 5.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert_eq!(p.kind, kind);
+            assert_eq!(p.owner, 0, "kind {kind}");
+            assert_eq!((p.w, p.h), (w, h), "kind {kind}");
+            assert_eq!(proj_data(kind).unwrap().ai_style, ai, "kind {kind}");
+            assert_eq!((p.penetrate, p.max_penetrate), (pen, pen), "kind {kind}");
+            assert_eq!(p.time_left, tl, "kind {kind}");
+            assert_eq!(p.extra_updates, ex, "kind {kind}");
+            assert_eq!(p.tile_collide, tc, "kind {kind}");
+            assert_eq!((p.alpha, p.scale), (alpha, scale), "kind {kind}");
+            // The spawner's inputs stay the spawner's.
+            assert_eq!((p.damage, p.knock_back), (21, 5.0), "kind {kind}");
+            // `SetDefaults` zeroes the scratch arrays (`:736-740`) — the
+            // followup arms' phase counters start at 0.
+            assert_eq!(p.ai, [0.0; 4], "kind {kind}");
+            assert_eq!(p.local_ai, [0.0; 3], "kind {kind}");
+            assert_eq!(pool.active_count(), i + 1);
+        }
+    }
+
+    #[test]
+    fn test_DW_1_2_the_immunity_groups_reach_the_spawner() {
+        // DW-1.2: the four immunity groups the plan names initialise through
+        // `spawn_with_data` — 297's id-static 10 and the local-immunity pairs
+        // of 617/618 and 132/156.
+        let mut pool = ProjectilePool::new();
+        // (kind, uses_local, local_cd, uses_id_static, id_static_cd)
+        let cases: [(u16, bool, i32, bool, i32); 5] = [
+            (LOST_SOUL, false, -2, true, 10),
+            (NEBULA_ARCANUM, true, 8, false, -1),
+            (NEBULA_ARCANUM_SUBSHOT, true, 20, false, -1),
+            (TERRA_BEAM, true, 10, false, -1),
+            (LIGHT_BEAM, true, 10, false, -1),
+        ];
+        for &(kind, local, local_cd, id_static, id_static_cd) in &cases {
+            let slot = pool
+                .spawn_with_data(kind, 32.0, 32.0, 0.0, 0.0, 15, 3.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert_eq!(p.uses_local_immunity, local, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, local_cd, "kind {kind}");
+            assert_eq!(p.uses_id_static_immunity, id_static, "kind {kind}");
+            assert_eq!(p.id_static_hit_cooldown, id_static_cd, "kind {kind}");
+        }
+        // The rows that carry no immunity group keep the C# reset on the slot
+        // (`:464-466`, `:714-715`): the Trident pair's three riders, the
+        // Wrath, the Typhoon, the Prism pair and the Blaze twins.
+        for kind in [
+            UNHOLY_TRIDENT,
+            UNHOLY_TRIDENT_HOSTILE,
+            SWORD_BEAM,
+            NIGHT_BEAM,
+            ENCHANTED_BEAM,
+            LEAF,
+            LOST_SOUL_HOSTILE,
+            SPECTRE_WRATH,
+            TYPHOON,
+            LAST_PRISM,
+            LAST_PRISM_LASER,
+            NEBULA_BLAZE_1,
+            NEBULA_BLAZE_2,
+        ] {
+            let slot = pool.spawn_with_data(kind, 32.0, 32.0, 0.0, 0.0, 15, 3.0).unwrap();
+            let p = &pool.slots[slot];
+            assert!(!p.uses_local_immunity, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, -2, "kind {kind}");
+            assert!(!p.uses_id_static_immunity, "kind {kind}");
+            assert_eq!(p.id_static_hit_cooldown, -1, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_DW_1_2_the_ai_styles_reach_the_dispatch_tables() {
+        // The rows declare the aiStyles the Phase 2-4 arms dispatch on, and
+        // the Nebula Blaze pair declare the plain aiStyle-1 flight (the
+        // shared `ai_arrow`, not a rider hook). The Last Prism laser shares
+        // aiStyle 84 with the Phantasmal Deathray 455 — the per-kind split
+        // of that arm is Phase 4's, and the two keep distinct rows.
+        assert_eq!(proj_data(UNHOLY_TRIDENT).unwrap().ai_style, 27);
+        assert_eq!(proj_data(TERRA_BEAM).unwrap().ai_style, 27);
+        assert_eq!(proj_data(LEAF).unwrap().ai_style, 40);
+        assert_eq!(proj_data(LOST_SOUL).unwrap().ai_style, 51);
+        assert_eq!(proj_data(SPECTRE_WRATH).unwrap().ai_style, 59);
+        assert_eq!(proj_data(TYPHOON).unwrap().ai_style, 71);
+        assert_eq!(proj_data(NEBULA_ARCANUM).unwrap().ai_style, 118);
+        assert_eq!(proj_data(NEBULA_ARCANUM_SUBSHOT).unwrap().ai_style, 119);
+        assert_eq!(proj_data(LAST_PRISM).unwrap().ai_style, 75);
+        assert_eq!(proj_data(LAST_PRISM_LASER).unwrap().ai_style, 84);
+        assert_eq!(proj_data(NEBULA_BLAZE_1).unwrap().ai_style, 1);
+        assert_eq!(proj_data(NEBULA_BLAZE_2).unwrap().ai_style, 1);
+        // 455 keeps its own style-84 row untouched (the plan's constraint).
+        let deathray = proj_data(PHANTASMAL_DEATHRAY).unwrap();
+        assert_eq!((deathray.w, deathray.h), (36.0, 36.0));
+        assert_eq!(deathray.ai_style, 84);
+        assert_eq!(deathray.time_left, 600);
+        // The ids stay distinct across the two rows.
+        assert_ne!(proj_data(LAST_PRISM_LASER).unwrap().w, deathray.w);
     }
 }
 
