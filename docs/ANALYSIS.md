@@ -9853,6 +9853,92 @@ The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
 captured 1600x900 frame shows the title, the eight left rows (the selected
 category in gold) at the 42.3 px pitch and the seventeen General rows inside
 the panel.
+## The Settings button and window redraw (M7-UI-4b)
+
+`M7-UI-4` gave the in-game options window its vanilla *content*; the *chrome*
+was still the port's own. Three things were wrong and are now the C#'s.
+
+### The button is text, not a box
+
+`ui/ingame_options.rs` used to draw a 30x30 `Inventory_Back` sheet at a
+hard-coded `(850, 580)`, which is the vanilla's spot at 1600x900 and nowhere
+else. Vanilla never draws a box at all: `Main.DrawSettingButton`
+(`Main.cs:45532-45544`) draws the localised `Lang.inter[62]` ("Settings") in the
+**death font** with a four-way black outline, at scale `0.8`, growing to a cap
+of `0.96` by `0.02` a frame while the mouse is over it. `App` now stores that
+scale (`IngameOptions::button_scale`) and the previous frame's `mouseOver`
+latch (`button_mouse_over`), so the ramp starts one frame after the hover — the
+C#'s own lag.
+
+The **position** is `Main.RefreshSettingsButtonStatus` (`:45492-45511`), whose
+whole point is to keep the word clear of the equipment column:
+
+| condition | effect |
+| --- | --- |
+| always | `posX = UIScreenWidth - 110`, `posY = UIScreenHeight - 20` |
+| `player.dead` | `posX += 40` |
+| `PushEquipmentAreaUp` | `posY -= 30` |
+| options window **closed** | `num = 174 + Main.mH` (+ the extra-accessory slop), `num2 = num + 47.6 * (8 + extra)`; if `posY - 28 <= num2` then `posX -= 140`, `posY = num2 - 47 + 30`, `_settingsButtonIsPushedToSide = true` |
+
+`settings_button_pos` returns the point and the pushed flag; `button_layout`
+resolves it against `measure_button` (the death-font width of the word) and
+`ButtonLayout::hit` is the strict `x > pos[0] && x < pos[0] + w && y > pos[1] &&
+y < pos[1] + h / 2 - 10` box of `:17018-17026` — note the shaved bottom third.
+`app/clicks.rs` tests that box instead of the old constant rect, and
+`ui/mod.rs` draws the button from the stored layout both while the inventory is
+open and while the window is.
+
+### The panel is the nine-slice
+
+The window's background was a stretched `Inventory_Back` sheet; the vanilla uses
+`Utils.DrawInvBG(Main.spriteBatch, new Rectangle(x - 20, y - 20, 670 + 40,
+480 + 40), new Color(33, 15, 91, 255) * 0.685f)` (`IngameOptions.cs:127`), i.e.
+`Inventory_Back13` cut into nine. Both columns are `DrawInvBG` too, at the
+default tint `(63, 65, 151, 255) * 0.785f`. `ui/tooltip::draw_inv_bg` already
+ported that helper, so the window and its columns now call it.
+
+The title is `GameUI.SettingsMenu` ("Settings Menu") **centred** on the panel's
+top edge — `vector2.X = (screenWidth / 2 - 670 / 2) ... DrawString(...,
+vector2 - font.MeasureString(text) / 2 + new Vector2(0, -4), ...)`
+(`:132-137`) — where the port had left-aligned it. And the right column's **bar
+rows only** are shifted 70 px left (`vector6.X -= num`, `:417`); the port now
+applies the shift in `right_row_anchor` and centres `right_row_rect` on the
+drawn anchor.
+
+### Three rows that were placeholders
+
+The `General` page drew `UI.DoorOpeningPreference` and `UI.AutoReuseAllOn` as
+dimmed, inert `Parked` rows — and `UI.DoorOpeningPreference` is **not a key in
+the en-US file at all**, so it rendered as the literal string. The vanilla's
+three rows are back to being settings:
+
+| row | C# source | port field | save key |
+| --- | --- | --- | --- |
+| Smart Doors | `IngameOptions.cs:644-657`, cycling `DoorOpeningHelper.PreferenceSettings` (`DoorOpeningHelper.cs:262-276`: `Disabled -> EnabledForEverything -> EnabledForGamepadOnly`) | `Settings.smart_doors: u8` | `DoorAutoOpeningMode` (`Main.cs:4208`/`:4545`) |
+| Hover Controls | `:659-675`, `Player.Settings.CycleHoverControl` (`Player.cs:379-383`); the label is `Hold` only for `ButtonControlMode.Hold`, else `Click` | `Settings.hover_control: u8` | `HoverControlMode` (`:4209`/`:4546`) |
+| Autofire | `:677-684`, toggling `Main.SettingsEnabled_AutoReuseAllItems` | `Settings.auto_reuse_all: bool` | `SettingsEnabled_AutoReuseAllItems` (`:4158`/`:4544`) |
+
+That also corrected `General`'s row count: the port had merged the doors and
+hover preferences into one row, so it drew 17 rows where the C# draws 18
+(`num11 = 17` is the *last index*, exactly like the video page's quirk).
+
+### Other fixes in the same pass
+
+- `GameUI.GameZoom` takes `Math.Round(Main.GameZoomTarget * 100f)`, not the
+  bar's fraction, so the row reads "Zoom: 100%" instead of "Zoom: 0%"
+  (`:512` vs `:529`).
+- `ui/text.rs` grew `ui_font_width` / `death_font_width`, needed by
+  `measure_button` and by the title's centring.
+- `ui/inventory.rs::extra_accessory_slots()` exposes `EXTRA_ACCESSORY_SLOTS` for
+  the button's column-overlap test.
+
+**Deviations.** The port has no `PlayerInput.UsingGamepad`, so the
+`EnabledForGamepadOnly` state behaves as plain "smart doors on" would not —
+it is stored and named faithfully but nothing reads it yet (the door-opening
+helper itself is unported). `HoverControlMode` is likewise stored and named but
+unread, since the port's hover control is implicitly "hold". Both are recorded
+here rather than silently wired to a guess.
+
 ## The PVP toggle + team select cells (M7-UI-7)
 
 `Main.DrawPVPIcons` (`Main.cs:42654-42786`) was ported as a **draw-only** stub:

@@ -118,6 +118,26 @@ impl App {
         {
             self.audio.play(cue);
         }
+        // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
+        // Settings button's position, its `exitScale` hover animation and the
+        // `_settingsButtonIsPushedToSide` latch. Runs every frame the button is
+        // visible (`playerInventory || ingameOptionsWindow || dead`) because the
+        // inventory's accessory column reads the latch.
+        if self.inventory_open || self.ingame_options.open {
+            let (sw, sh) = self.screen_size();
+            let (m_h, mouse) = (self.main_m_h(), self.mouse_pos);
+            let dead = self.player.as_ref().is_some_and(|p| p.dead);
+            crate::ui::ingame_options::refresh_button(
+                &mut self.ingame_options,
+                &self.lookups,
+                Vec2::new(sw, sh),
+                m_h,
+                dead,
+                mouse,
+                crate::ui::inventory::extra_accessory_slots(),
+                false,
+            );
+        }
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;

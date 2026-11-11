@@ -309,7 +309,9 @@ impl App {
                 let _ = self.settings.save();
                 return;
             }
-        } else if self.inventory_open && ui::ingame_options::button_hit(self.mouse_pos) {
+        } else if self.inventory_open
+            && self.ingame_options.button_layout.hit(self.mouse_pos)
+        {
             self.ingame_options.open = true;
             self.ui_left_press = false;
             return;

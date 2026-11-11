@@ -65,6 +65,13 @@ const MASTER_SLOT: bool = false;
 const BASE_ACCESSORY_SLOTS: i32 = 8;
 const EXTRA_ACCESSORY_SLOTS: i32 = 0;
 
+/// `Player.GetAmountOfExtraAccessorySlotsToShow()` (`Player.cs:43950-43972`) as
+/// the layout sees it — read by `Main.RefreshSettingsButtonStatus` (`:45508`)
+/// and by the equipment column's own row count.
+pub fn extra_accessory_slots() -> i32 {
+    EXTRA_ACCESSORY_SLOTS
+}
+
 /// `Main.EquipPage == 2`: the misc-equip / misc-dye page.
 const EQUIP_PAGE_MISC: i32 = 2;
 
