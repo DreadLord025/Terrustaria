@@ -1799,18 +1799,59 @@ NpcKind::SolarSelenian => 140,
     /// frame.
     pub fn humanoid_frame_count(self) -> u32 {
         match self {
-            NpcKind::Guide | NpcKind::WitchDoctor => 26,
+            NpcKind::Guide | NpcKind::WitchDoctor | NpcKind::TravellingMerchant => 26,
             NpcKind::Merchant
             | NpcKind::ArmsDealer
             | NpcKind::Demolitionist
             | NpcKind::Painter
-            | NpcKind::GoblinTinkerer => 25,
-            NpcKind::Nurse | NpcKind::Clothier => 23,
+            | NpcKind::GoblinTinkerer
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
+            | NpcKind::DyeTrader => 25,
+            NpcKind::Nurse
+            | NpcKind::Clothier
+            | NpcKind::Angler
+            | NpcKind::Wizard
+            | NpcKind::Mechanic
+            | NpcKind::Stylist
+            | NpcKind::Zoologist
+            | NpcKind::Princess
+            | NpcKind::PartyGirl => 23,
             NpcKind::Dryad => 21,
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
             _ => 1,
+        }
+    }
+
+    /// `NPCID.Sets.ExtraFramesCount` (`NPCID.cs:10464`) — the rows the
+    /// vanilla reserves at the *bottom* of a town sheet for the attack
+    /// poses. `FindFrame`'s humanoid arm wraps the walk band at
+    /// `Main.npcFrameCount - ExtraFramesCount` (`NPC.cs:69534`'s `num57`
+    /// and the `num57`-subtracted wrap), so a walker must never reach
+    /// them: doing so animates the NPC through its attack/pose rows
+    /// while it is merely walking. Only the kinds the town machine
+    /// animates today carry a value; everything else is 0 (the C#
+    /// `CreateIntSet` default).
+    pub fn extra_frames_count(self) -> u32 {
+        match self {
+            NpcKind::Guide | NpcKind::WitchDoctor | NpcKind::TravellingMerchant => 10,
+            NpcKind::Merchant
+            | NpcKind::Nurse
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist
+            | NpcKind::Painter
+            | NpcKind::GoblinTinkerer
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
+            | NpcKind::DyeTrader
+            | NpcKind::PartyGirl
+            | NpcKind::Zoologist => 9,
+            NpcKind::Dryad | NpcKind::Clothier | NpcKind::Wizard | NpcKind::Stylist
+            | NpcKind::Princess => 7,
+            NpcKind::Angler | NpcKind::Mechanic => 9,
+            _ => 0,
         }
     }
 
@@ -4302,7 +4343,13 @@ impl Npc {
     /// states the port's town machines do not model — the follow-up.
     fn humanoid_town_frame(&mut self) {
         if self.vy == 0.0 {
-            let count = self.kind.humanoid_frame_count();
+            // The wrap band stops before the `ExtraFramesCount` attack rows
+            // (`NPC.cs:69534`'s `num57` and the `frame.Y / num >=
+            // npcFrameCount - num57` wrap below it).
+            let count = self
+                .kind
+                .humanoid_frame_count()
+                .saturating_sub(self.kind.extra_frames_count());
             if self.vx == 0.0 {
                 self.frame_counter = 0.0;
                 self.frame = 0;
@@ -5592,33 +5639,14 @@ impl Npc {
                 }
             }
             NpcKind::TravellingMerchant => {
-                // The town wander rides the Guide's 3-frame humanoid machine
-                // (`Main.npcFrameCount[368]` = 26 in the vanilla, `Main.cs:67120`,
-                // with `ExtraFramesCount` 10 / `AttackFrameCount` 5 —
-                // `NPCID.cs:10464-10465` — over the port's 3-row stand-in).
-                if self.vy != 0.0
-                    || (self.facing == -1 && self.vx > 0.0)
-                    || (self.facing == 1 && self.vx < 0.0)
-                {
-                    self.frame_counter = 0.0;
-                    self.frame = 2;
-                } else if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += self.vx.abs();
-                    if self.frame_counter < 8.0 {
-                        self.frame = 0;
-                    } else if self.frame_counter < 16.0 {
-                        self.frame = 1;
-                    } else if self.frame_counter < 24.0 {
-                        self.frame = 2;
-                    } else if self.frame_counter < 32.0 {
-                        self.frame = 1;
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                }
+                // The town wander: `case 368` is a member of the shared
+                // humanoid-group list (`NPC.cs`'s `case 22 … case 368 …
+                // case 684` block), so the walk band is rows 2..15 of the
+                // 26-row strip — `Main.npcFrameCount[368]` = 26 with
+                // `ExtraFramesCount` 10 (`Main.cs:67120`,
+                // `NPCID.cs:10464`). The earlier 3-row stand-in sampled the
+                // top of the sheet and never left rows 0-2.
+                self.humanoid_town_frame();
             }
             NpcKind::Painter => {
                 // The humanoid-group walk (the town machine's
@@ -15514,6 +15542,122 @@ mod tests {
         p.find_frame();
         assert_eq!(p.frame, 2, "the goblin's walk row");
         assert_eq!(p.kind.humanoid_frame_count(), 16, "the peon's rows");
+    }
+
+    #[test]
+    fn the_town_walk_band_stops_before_the_extra_attack_rows() {
+        // `FindFrame`'s humanoid arm wraps the walk band at
+        // `Main.npcFrameCount - NPCID.Sets.ExtraFramesCount`
+        // (`NPC.cs:69534`'s `num57`, and the `frame.Y / num >=
+        // npcFrameCount - num57` wrap just below it) — the last rows of a
+        // town sheet are the attack poses, so a walking NPC must never
+        // reach them. The Guide's strip is 26 rows with 10 extra, i.e. a
+        // walk band of rows 2..15.
+        let mut g = bare(NpcKind::Guide);
+        g.vx = 0.5;
+        g.frame = 15;
+        g.frame_counter = 6.1;
+        g.find_frame();
+        assert_eq!(g.frame, 2, "the walk wraps at 16, not at the sheet's 26");
+        // The band's top row is still reachable.
+        g.frame = 14;
+        g.frame_counter = 6.1;
+        g.find_frame();
+        assert_eq!(g.frame, 15, "row 15 is the band's last");
+        // The Merchant: 25 rows, 9 extra -> the band is rows 2..15 and the
+        // wrap threshold is 25 - 9 = 16 (exclusive).
+        let mut m = bare(NpcKind::Merchant);
+        m.vx = 0.5;
+        m.frame = 14;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 15, "the merchant's band ends at 25 - 9 - 1");
+        m.frame = 15;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "and wraps back to row 2 at 16");
+    }
+
+    #[test]
+    fn the_extra_frame_counts_match_the_vanilla_table() {
+        // `NPCID.Sets.ExtraFramesCount` (`NPCID.cs:10464`): the reserved
+        // attack rows per town sheet. Transcribed from the `CreateIntSet`
+        // literal; every kind the port's town machine animates must carry
+        // its row count or it walks through its attack poses.
+        for (kind, extra) in [
+            (NpcKind::Guide, 10),
+            (NpcKind::WitchDoctor, 10),
+            (NpcKind::TravellingMerchant, 10),
+            (NpcKind::Merchant, 9),
+            (NpcKind::Nurse, 9),
+            (NpcKind::ArmsDealer, 9),
+            (NpcKind::Demolitionist, 9),
+            (NpcKind::Painter, 9),
+            (NpcKind::GoblinTinkerer, 9),
+            (NpcKind::TaxCollector, 9),
+            (NpcKind::Golfer, 9),
+            (NpcKind::DyeTrader, 9),
+            (NpcKind::PartyGirl, 9),
+            (NpcKind::Zoologist, 9),
+            (NpcKind::Angler, 9),
+            (NpcKind::Mechanic, 9),
+            (NpcKind::Dryad, 7),
+            (NpcKind::Clothier, 7),
+            (NpcKind::Wizard, 7),
+            (NpcKind::Stylist, 7),
+            (NpcKind::Princess, 7),
+            // The kinds `CreateIntSet` leaves at the 0 default.
+            (NpcKind::Skeleton, 0),
+            (NpcKind::UndeadMiner, 0),
+            (NpcKind::GoblinPeon, 0),
+            (NpcKind::GoblinThief, 0),
+            (NpcKind::GoblinWarrior, 0),
+            (NpcKind::GoblinArcher, 0),
+            (NpcKind::Zombie, 0),
+        ] {
+            assert_eq!(
+                kind.extra_frames_count(),
+                extra,
+                "{kind:?} reserves {extra} attack rows"
+            );
+        }
+        // The walk band never empties.
+        for kind in [
+            NpcKind::Guide,
+            NpcKind::Merchant,
+            NpcKind::TravellingMerchant,
+            NpcKind::Princess,
+        ] {
+            assert!(
+                kind.humanoid_frame_count() > kind.extra_frames_count() + 2,
+                "{kind:?} keeps a walk band"
+            );
+        }
+    }
+
+    #[test]
+    fn the_travelling_merchant_walks_the_shared_humanoid_band() {
+        // `case 368` is a member of the shared humanoid-group list, so the
+        // merchant rides the same machine as the Guide (26 rows, 10 extra
+        // -> the band 2..15) instead of the old 3-row stand-in.
+        let mut m = bare(NpcKind::TravellingMerchant);
+        m.vx = 0.5;
+        m.frame = 0;
+        m.frame_counter = 0.0;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "the walk snaps up to row 2");
+        m.frame_counter = 0.0;
+        for _ in 0..9 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 4, "two advances of the `|vx|*2 + 1` accumulator");
+        m.frame = 15;
+        m.frame_counter = 6.1;
+        m.find_frame();
+        assert_eq!(m.frame, 2, "the band wraps at 16 (26 - 10)");
+        m.vx = 0.0;
+        m.find_frame();
+        assert_eq!(m.frame, 0, "standing still is row 0");
     }
 
     #[test]
