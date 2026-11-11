@@ -2499,6 +2499,35 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   they keep drawing in the tile pass (deviation). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
+- **The minecart track draw** (`TileDrawing.cs:3786-3824`, landed as
+  TILE-DRAW-7): `DrawSingleTile` hands kind 314 to `DrawTile_MinecartTrack`
+  (`:1166-1169`) instead of the generic path — the stored `frameX`/`frameY`
+  are **frame ids** (0..39), not autotile frames, so before this landing every
+  rail in the world sampled the plain sheet fallback (all track shapes looked
+  like the same sprite). `minecart::source_rect` ports
+  `Minecart.GetSourceRect` (`Minecart.cs:1519-1532`) over the existing
+  `TEXTURE_POSITION` table (`_texturePosition` ×18, `:129-436`): the 16×16
+  cell of the id, +18 px per `Main.tileFrame[314]` for the booster frames
+  (`frameID < 36 && _trackType == 2` = 30..35). `minecart::track_layers`
+  emits the vanilla order: the back layer (`frameY != -1`, `:3793`), the front
+  layer (`frameX`), the hanging ties (frames 36/37) one row **below** for the
+  "down" side connections, and the bumper (39, or the bouncy 38) one row
+  **above** (`:3797-3824`). `minecart::track_colors` ports
+  `Minecart.TrackColors` (`:1321-1437`): the front/back layer paints come from
+  the two frames' left/right connection rows, walking the four neighbours
+  (`(i∓1, j + connection-offset)`) and picking per the C#'s branch order, so a
+  painted line keeps one colour while an unpainted layer keeps the track's own
+  paint. Parked: `DrawTile_BackRope` (`:3766-3784`) — the rope strand a
+  hanging track hangs from; it needs `WorldGen.IsRope`/`GetRopeEnds`
+  (`WorldGen.cs:70074-70104`), which the port does not have, and the strand is
+  cosmetic (the `Main.tileRope[type]` fast path plus the 314/380/platform
+  `GetRopeEnds` walk). Also parked: `Main.tileFrame[314]` — the tile animator
+  is not ported, so the vanilla `t = 0` frame is passed (every other kind does
+  the same). Tests: `minecart::tests::the_track_frames_map_onto_the_sheet_cells`,
+  `only_the_booster_frames_animate`,
+  `the_track_decorations_and_bumpers_follow_the_frame_table`,
+  `the_track_layers_take_the_neighbour_paint` and
+  `the_track_arm_emits_the_vanilla_layers`.
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 

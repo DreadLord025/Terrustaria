@@ -657,6 +657,18 @@ pub(crate) fn draw_tiles(
                 if dd.skip_draw {
                     continue;
                 }
+                // `DrawSingleTile` hands the track tiles to
+                // `DrawTile_MinecartTrack` (`TileDrawing.cs:1166-1169`,
+                // `:3786-3821`) instead of the generic path: the stored
+                // `frame_x`/`frame_y` are frame IDS (0..39), not autotile
+                // frames, and the arm draws two layers plus the hanging ties
+                // and the bumpers from `Minecart.GetSourceRect`.
+                if tile.kind == 314 {
+                    stats.quads += draw_minecart_track(
+                        r, world, lookups, atlas, l, style, tx, ty, anim_time, tile,
+                    );
+                    continue;
+                }
                 let Some(tf) = tile_frame else {
                     continue;
                 };
@@ -1209,6 +1221,56 @@ fn flat_src_uv(
         })
         .unwrap_or(tf)
         .uv
+}
+
+/// `TileDrawing.DrawTile_MinecartTrack` (`TileDrawing.cs:3786-3824`): the
+/// minecart track — the back layer (`frameY`), the front layer (`frameX`), the
+/// hanging ties below the cell for the "down" side connections (frames 36/37)
+/// and the bumper above it (frames 38/39), each layer carrying its own paint
+/// from `Minecart.TrackColors` (`Minecart.cs:1321-1437`). The C# first draws
+/// `DrawTile_BackRope` (`:3766-3784`) — the rope strand a hanging track hangs
+/// from; the port has no `WorldGen.IsRope`/`GetRopeEnds`, so that strand is
+/// parked (ANALYSIS, TILE-DRAW-7) and the track layers draw on their own.
+#[allow(clippy::too_many_arguments)]
+fn draw_minecart_track(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    atlas: Option<&Atlas>,
+    light: [f32; 3],
+    style: &LightStyle,
+    tx: i32,
+    ty: i32,
+    time: f32,
+    tile: &tr_core::tile::Tile,
+) -> u32 {
+    let Some(atlas) = atlas else {
+        return 0;
+    };
+    let c = style.shade(light, tx, ty, time);
+    let mut quads = 0;
+    for (rect, dy, paint) in crate::minecart::track_layers(world, tx, ty, tile) {
+        let Some(uv) = lookups.rect_uv(
+            atlas,
+            tile.kind,
+            rect[0] as i16,
+            rect[1] as i16,
+            rect[2] as u32,
+            rect[3] as u32,
+        ) else {
+            continue;
+        };
+        r.push_sprite_paint(
+            [tx as f32 * TILE_PX, (ty + dy) as f32 * TILE_PX],
+            [TILE_PX, TILE_PX],
+            uv.uv,
+            [c[0], c[1], c[2], 1.0],
+            0.0,
+            paint,
+        );
+        quads += 1;
+    }
+    quads
 }
 
 fn push_lit(

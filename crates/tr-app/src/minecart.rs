@@ -287,6 +287,231 @@ pub(crate) const FIRST_RIGHT_BOOST_FRAME: i16 = 30;
 #[allow(dead_code)] // see above
 pub(crate) const FIRST_LEFT_BOOST_FRAME: i16 = 31;
 
+/// `Minecart.GetSourceRect` (`Minecart.cs:1519-1532`): the 16x16 sheet cell of
+/// a frame id. The booster frames (`frameID < 36 && _trackType[frameID] == 2`)
+/// animate 18 px down by `Main.tileFrame[314]`; an out-of-range id is the C#'s
+/// empty `(0, 0, 0, 0)` rectangle — `None` here.
+pub(crate) fn source_rect(frame: i32, animation: i32) -> Option<[i32; 4]> {
+    if !(0..40).contains(&frame) {
+        return None;
+    }
+    let (x, y) = TEXTURE_POSITION[frame as usize];
+    let mut ry = y as i32;
+    if frame < 36 && TRACK_FRAMES[frame as usize].track_type == 2 {
+        ry += 18 * animation;
+    }
+    Some([x as i32, ry, 16, 16])
+}
+
+/// The sprite layers `DrawTile_MinecartTrack` (`TileDrawing.cs:3786-3824`)
+/// emits for one cell, in draw order: `(source rect, row offset, paint)`.
+/// Rows are offsets from the track's own row (+1 the hanging ties, −1 the
+/// bumpers).
+pub(crate) fn track_layers(
+    world: &tr_core::World,
+    i: i32,
+    j: i32,
+    tile: &tr_core::Tile,
+) -> Vec<([i32; 4], i32, u8)> {
+    let (front_paint, back_paint) = track_colors(world, i, j);
+    // `Main.tileFrame[314]` animates the booster rows; the tile animator is not
+    // ported, so the vanilla `t = 0` state is passed like for every other kind.
+    let animation = 0;
+    let mut out = Vec::with_capacity(6);
+    // The back layer stands down on the `frameY == -1` cells (`:3793`).
+    if tile.frame_y != -1 {
+        if let Some(rect) = source_rect(tile.frame_y as i32, animation) {
+            out.push((rect, 0, back_paint));
+        }
+    }
+    if let Some(rect) = source_rect(tile.frame_x as i32, animation) {
+        out.push((rect, 0, front_paint));
+    }
+    // The hanging ties sit in the cell BELOW (`:3797-3816`).
+    if draws_left_decoration(tile.frame_y) {
+        if let Some(rect) = source_rect(36, 0) {
+            out.push((rect, 1, back_paint));
+        }
+    }
+    if draws_left_decoration(tile.frame_x) {
+        if let Some(rect) = source_rect(36, 0) {
+            out.push((rect, 1, front_paint));
+        }
+    }
+    if draws_right_decoration(tile.frame_y) {
+        if let Some(rect) = source_rect(37, animation) {
+            out.push((rect, 1, back_paint));
+        }
+    }
+    if draws_right_decoration(tile.frame_x) {
+        if let Some(rect) = source_rect(37, 0) {
+            out.push((rect, 1, front_paint));
+        }
+    }
+    // The bumper sits in the cell ABOVE (`:3817-3824`): the regular one 39,
+    // the bouncy one 38.
+    if draws_bumper(tile.frame_x) {
+        if let Some(rect) = source_rect(39, 0) {
+            out.push((rect, -1, front_paint));
+        }
+    } else if draws_bouncy_bumper(tile.frame_x) {
+        if let Some(rect) = source_rect(38, 0) {
+            out.push((rect, -1, front_paint));
+        }
+    }
+    out
+}
+
+/// `Minecart.DrawLeftDecoration` / `DrawRightDecoration`
+/// (`Minecart.cs:1442-1458`): the hanging tie is drawn when the side
+/// connection is "down" (2).
+pub(crate) fn draws_left_decoration(frame: i16) -> bool {
+    frame_connections(frame).is_some_and(|f| f.left_connection == 2)
+}
+
+pub(crate) fn draws_right_decoration(frame: i16) -> bool {
+    frame_connections(frame).is_some_and(|f| f.right_connection == 2)
+}
+
+/// `Minecart.DrawBumper` (`Minecart.cs:1460-1469`): the frame's left column
+/// carries the regular bumper (−1) sentinel.
+pub(crate) fn draws_bumper(frame: i16) -> bool {
+    frame_connections(frame).is_some_and(|f| {
+        if f.tile_height[0] != -1 {
+            f.tile_height[7] == -1
+        } else {
+            true
+        }
+    })
+}
+
+/// `Minecart.DrawBouncyBumper` (`Minecart.cs:1471-1480`): same for the bouncy
+/// bumper (−2).
+pub(crate) fn draws_bouncy_bumper(frame: i16) -> bool {
+    frame_connections(frame).is_some_and(|f| {
+        if f.tile_height[0] != -2 {
+            f.tile_height[7] == -2
+        } else {
+            true
+        }
+    })
+}
+
+/// The frame's table row (`_leftSideConnection`/`_rightSideConnection` index
+/// space is 0..36).
+fn frame_connections(frame: i16) -> Option<&'static TrackFrameData> {
+    if !(0..36).contains(&frame) {
+        return None;
+    }
+    TRACK_FRAMES.get(frame as usize)
+}
+
+/// `Tile.color()` (`Tile.cs:883-895`) — the paint byte, 0 when unpainted; the
+/// track layers share it (`Minecart.cs:1325-1326`).
+fn color_of(tile: Option<&tr_core::Tile>) -> u8 {
+    match tile {
+        Some(t) if t.active() && t.kind == 314 => t.paint(),
+        _ => 0,
+    }
+}
+
+/// `Minecart.TrackColors` (`Minecart.cs:1321-1437`): the front (`frameX`) and
+/// back (`frameY`) track layers take the neighbours' paint so a painted line
+/// keeps one colour; the side connections pick which neighbour is "in front".
+/// Returns `(front, back)` as the paint byte (`push_sprite_paint`'s input).
+pub(crate) fn track_colors(world: &tr_core::World, i: i32, j: i32) -> (u8, u8) {
+    let Some(track) = world.tile(i, j) else {
+        return (0, 0);
+    };
+    if track.kind != 314 {
+        return (0, 0);
+    }
+    let mut front = track.paint();
+    let mut back = front;
+    if track.frame_y == -1 {
+        return (front, back);
+    }
+    let (Some(fx_row), Some(fy_row)) = (frame_connections(track.frame_x), frame_connections(track.frame_y))
+    else {
+        return (front, back);
+    };
+    let num = fx_row.left_connection;
+    let num2 = fx_row.right_connection;
+    let num3 = fy_row.left_connection;
+    let num4 = fy_row.right_connection;
+    let mut num5 = 0u8;
+    let mut num6 = 0u8;
+    let mut num7 = 0u8;
+    let mut num8 = 0u8;
+    for k in 0..4 {
+        let conn = match k {
+            1 => num2,
+            2 => num3,
+            3 => num4,
+            _ => num,
+        };
+        let dy = match conn {
+            0 => -1,
+            1 => 0,
+            2 => 1,
+            _ => 0,
+        };
+        let neighbour = if k % 2 != 0 {
+            world.tile(i + 1, j + dy)
+        } else {
+            world.tile(i - 1, j + dy)
+        };
+        let paint = color_of(neighbour);
+        match k {
+            1 => num6 = paint,
+            2 => num7 = paint,
+            3 => num8 = paint,
+            _ => num5 = paint,
+        }
+    }
+    if num == num3 {
+        if num6 != 0 {
+            front = num6;
+        } else if num5 != 0 {
+            front = num5;
+        }
+        if num8 != 0 {
+            back = num8;
+        } else if num7 != 0 {
+            back = num7;
+        }
+        return (front, back);
+    }
+    if num2 == num4 {
+        if num5 != 0 {
+            front = num5;
+        } else if num6 != 0 {
+            front = num6;
+        }
+        if num7 != 0 {
+            back = num7;
+        } else if num8 != 0 {
+            back = num8;
+        }
+        return (front, back);
+    }
+    if num6 == 0 {
+        if num5 != 0 {
+            front = num5;
+        }
+    } else if num5 != 0 {
+        front = if num2 <= num { num6 } else { num5 };
+    }
+    if num8 == 0 {
+        if num7 != 0 {
+            back = num7;
+        }
+    } else if num7 != 0 {
+        back = if num4 <= num3 { num8 } else { num7 };
+    }
+    (front, back)
+}
+
 /// `tile.nactive() && tile.type == 314` (`Minecart.cs:633`) — an active,
 /// non-actuated track tile. `nactive()` = active and not actuator-hidden
 /// (`Tile.cs:240-247`); the port follows the `liquid.rs:384` shape.
@@ -1319,6 +1544,131 @@ mod tests {
     /// The straight-rail surface offset — `TRACK_FRAMES[1]` is level 5
     /// everywhere → 6 px (`Minecart.cs:117-121`, `:131-133`, `:437-447`).
     const STRAIGHT_RAIL_PX: f32 = 6.0;
+
+    // TILE-DRAW-7: `DrawTile_MinecartTrack` (`TileDrawing.cs:3786-3821`)
+    // draws the track from `Minecart.GetSourceRect` (`Minecart.cs:1519-1532`),
+    // not from the autotile frames — the frame ids are 18 px sheet cells.
+    #[test]
+    fn the_track_frames_map_onto_the_sheet_cells() {
+        // The first four frames sit on the top row (`Minecart.cs:129-149`).
+        assert_eq!(source_rect(0, 0), Some([0, 0, 16, 16]));
+        assert_eq!(source_rect(1, 0), Some([18, 0, 16, 16]));
+        assert_eq!(source_rect(2, 0), Some([36, 18, 16, 16]));
+        assert_eq!(source_rect(3, 0), Some([54, 18, 16, 16]));
+        // Frame 36/37 are the hanging ties, 38/39 the bumpers — and the C#
+        // assigns 39 before 38, so 39 is the top cell of the pair.
+        assert_eq!(source_rect(36, 0), Some([0, 108, 16, 16]));
+        assert_eq!(source_rect(37, 0), Some([18, 108, 16, 16]));
+        assert_eq!(source_rect(38, 0), Some([18, 126, 16, 16]));
+        assert_eq!(source_rect(39, 0), Some([0, 126, 16, 16]));
+        // Out of range is the empty rect (`:1521-1524`).
+        assert_eq!(source_rect(-1, 0), None);
+        assert_eq!(source_rect(40, 0), None);
+    }
+
+    // Only the booster frames (`_trackType == 2`, i.e. 30..35) animate; the
+    // animation walks the sheet 18 px down (`Minecart.cs:1527-1530`).
+    #[test]
+    fn only_the_booster_frames_animate() {
+        let straight = source_rect(1, 1).unwrap();
+        assert_eq!(straight[1], 0, "a plain straight run does not animate");
+        let booster = source_rect(30, 1).unwrap();
+        assert_eq!(booster, [36, 54 + 18, 16, 16], "the booster advances a row");
+        // 36+ are outside the animation gate.
+        assert_eq!(source_rect(37, 2).unwrap()[1], source_rect(37, 0).unwrap()[1]);
+    }
+
+    // `DrawLeftDecoration`/`DrawRightDecoration`/`DrawBumper`/
+    // `DrawBouncyBumper` (`Minecart.cs:1442-1480`) read the frame's side
+    // connections and its (-1/-2) sentinels.
+    #[test]
+    fn the_track_decorations_and_bumpers_follow_the_frame_table() {
+        // Frame 4 connects down on the left (`Minecart.cs:151-159`).
+        assert!(draws_left_decoration(4) && !draws_right_decoration(4));
+        // Frame 5 connects down on the right (`:161-169`).
+        assert!(!draws_left_decoration(5) && draws_right_decoration(5));
+        assert!(!draws_left_decoration(1) && !draws_right_decoration(1));
+        // Frame 2 is the plain bumper, frame 24 the bouncy one
+        // (`:135-141`, `:319-325`).
+        assert!(draws_bumper(2) && !draws_bouncy_bumper(2));
+        assert!(!draws_bumper(24) && draws_bouncy_bumper(24));
+        assert!(!draws_bumper(1) && !draws_bouncy_bumper(1));
+        for bad in [-1i16, 36, 39] {
+            assert!(!draws_left_decoration(bad));
+            assert!(!draws_bumper(bad));
+        }
+    }
+
+    // `Minecart.TrackColors` (`Minecart.cs:1321-1437`): a painted track takes
+    // its neighbours' paint per layer.
+    #[test]
+    fn the_track_layers_take_the_neighbour_paint() {
+        let mut w = track_world();
+        // A straight run: frame 1, back layer down (`frameY = 0`, the lone
+        // piece) — unpainted neighbours leave both layers unpainted.
+        place_track(&mut w, 10, 50, 1, -1);
+        assert_eq!(track_colors(&w, 10, 50), (0, 0));
+        // Paint the track itself: both layers inherit it before any lookup.
+        let i = w.index(10, 50);
+        w.tiles[i].set_paint(9);
+        assert_eq!(track_colors(&w, 10, 50), (9, 9), "frameY == -1 keeps both");
+        // With a back layer the neighbour walk runs: a left neighbour painted
+        // cyan (front-left = frame's left connection, straight → same row).
+        place_track(&mut w, 10, 50, 1, 0);
+        let j = w.index(9, 50);
+        w.tiles[j].kind = 314;
+        w.tiles[j].frame_x = 1;
+        w.tiles[j].frame_y = -1;
+        w.tiles[j].flags = FLAG_ACTIVE;
+        w.tiles[j].set_paint(3);
+        let (front, back) = track_colors(&w, 10, 50);
+        assert!(front == 3 || back == 3, "the painted neighbour reaches a layer");
+        assert!(front != 0 || back != 0);
+    }
+
+    // TILE-DRAW-7: the layer list `DrawTile_MinecartTrack` emits per cell
+    // (`TileDrawing.cs:3786-3824`).
+    #[test]
+    fn the_track_arm_emits_the_vanilla_layers() {
+        let mut w = track_world();
+        // A lone straight piece: one layer, its own row (`:3793` skips the
+        // `frameY == -1` back layer).
+        place_track(&mut w, 10, 50, 1, -1);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].0, [18, 0, 16, 16]);
+        assert_eq!(layers[0].1, 0);
+        // A left "down" frame (4) hangs a tie in the cell below.
+        place_track(&mut w, 10, 50, 4, -1);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[1].0, [0, 108, 16, 16], "frame 36 is the tie");
+        assert_eq!(layers[1].1, 1, "the tie draws one row down");
+        // A right "down" frame (5) uses the other tie cell.
+        place_track(&mut w, 10, 50, 5, -1);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers[1].0, [18, 108, 16, 16], "frame 37 is the right tie");
+        // The regular bumper (frame 2) sits one row UP.
+        place_track(&mut w, 10, 50, 2, -1);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[1].0, [0, 126, 16, 16], "frame 39 is the bumper");
+        assert_eq!(layers[1].1, -1);
+        // The bouncy bumper (frame 24) uses frame 38 instead.
+        place_track(&mut w, 10, 50, 24, -1);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers[1].0, [18, 126, 16, 16]);
+        assert_eq!(layers[1].1, -1);
+        // A two-layer cell draws the back layer first, then the front one.
+        place_track(&mut w, 10, 50, 1, 20);
+        let layers = track_layers(&w, 10, 50, w.tile(10, 50).unwrap());
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[0].0, [0, 72, 16, 16], "frame 20 = pressure lone");
+        assert_eq!(layers[1].0, [18, 0, 16, 16], "then the front straight");
+        // An unplaced cell (`frame_x = -1`) draws nothing at all.
+        place_track(&mut w, 10, 50, -1, -1);
+        assert!(track_layers(&w, 10, 50, w.tile(10, 50).unwrap()).is_empty());
+    }
 
     fn track_world() -> World {
         World::new("cart".into(), 200, 200)
