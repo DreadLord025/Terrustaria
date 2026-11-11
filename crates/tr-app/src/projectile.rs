@@ -6796,6 +6796,17 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // The followup caster families' frame-sliced sheet (M4-PROJ-6b Phase
+        // 6): the kind-gated arm pushes into the ui range like the stub below
+        // (the render-range decision the plan records), and a kind whose
+        // sheet never made the atlas keeps the shuriken stub.
+        if is_followup_draw(self.kind) {
+            if let Some(sheet) = lookups.proj_sheets.get(&self.kind) {
+                let q = self.frame_quad(sheet, lookups.atlas_size, light, camera, zoom, screen);
+                r.push_ui_sprite_rot(q.tl, q.size, q.uv, q.tint, self.rot);
+                return;
+            }
+        }
         let Some(uv) = lookups.shuriken_uv() else {
             return;
         };
@@ -6821,6 +6832,81 @@ impl Projectile {
             self.rot,
         );
     }
+
+    /// The followup kinds' frame-sliced quad, computed pure so the unit tests
+    /// pin it without a GPU: the ui range takes screen-px positions, so the
+    /// anchor converts like the rain pass's `to_screen`, and the returned
+    /// top-left is already shifted by `origin − R·origin` (the
+    /// `push_sprite_origin_rot` math — the pipeline rotates about the
+    /// top-left, this keeps the C# pivot pinned).
+    fn frame_quad(
+        &self,
+        sheet: &tr_render::SheetRect,
+        atlas_size: (u32, u32),
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) -> FrameQuad {
+        let frames = proj_frames(self.kind);
+        let uv = frame_slice_uv(sheet, atlas_size, self.frame, frames);
+        // The quad matches the source rect: `(sheet.width, frameH) · scale`
+        // (`Main.cs:34435`'s scale argument).
+        let frame_h = (sheet.height / frames.max(1)) as f32;
+        let size = [
+            sheet.width as f32 * self.scale * zoom,
+            frame_h * self.scale * zoom,
+        ];
+        // `Main.cs:29834`'s `num153 = (sheet.W − box.w)/2 + box.w/2` (=
+        // sheet.W/2) and the `:34435` anchor `(position.X + num153,
+        // position.Y + height/2)` carrying the origin `(num153, height/2 +
+        // num151)` — `num151`/`num152` (`Main.cs:29608+`'s per-type tweaks)
+        // are 0 for every kind this arm serves. The ui batch's globals run
+        // cam `[w/2, h/2]`, zoom 1 (`sprite.rs`), so its positions are screen
+        // pixels — the same conversion the rain pass's `to_screen` does.
+        let anchor = [
+            (self.pos.x + sheet.width as f32 * 0.5 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+        ];
+        // The origin in scaled pixels: XNA multiplies the texture-space
+        // origin by the scale, so the sprite-local pivot is
+        // `(sheet.W/2, box.h/2) · scale · zoom`.
+        let origin = [
+            sheet.width as f32 * 0.5 * self.scale * zoom,
+            self.h * 0.5 * self.scale * zoom,
+        ];
+        let (s, c) = self.rot.sin_cos();
+        let tl = [
+            anchor[0] - (origin[0] * c - origin[1] * s),
+            anchor[1] - (origin[0] * s + origin[1] * c),
+        ];
+        // The default `GetAlpha` tint (`Projectile.cs:79744-79757`): the
+        // light rgb and the alpha both scale by `(255 − alpha)/255` — alpha
+        // 255 invisible, 0 opaque — read at the box centre's tile
+        // (`Lighting.GetColor` at `(position + width/2, position +
+        // height/2) / 16`).
+        let c = crate::rain::light_at(light, Vec2::new(
+            self.pos.x + self.w * 0.5,
+            self.pos.y + self.h * 0.5,
+        ));
+        let fade = (1.0 - self.alpha as f32 / 255.0).clamp(0.0, 1.0);
+        FrameQuad {
+            tl,
+            size,
+            uv,
+            tint: [c[0] * fade, c[1] * fade, c[2] * fade, fade],
+        }
+    }
+}
+
+/// The followup kinds' frame-sliced draw quad ([`Projectile::frame_quad`]'s
+/// output): the ui pipeline's top-left, the scaled quad size, the frame-rect
+/// uv and the default-`GetAlpha` tint.
+struct FrameQuad {
+    tl: [f32; 2],
+    size: [f32; 2],
+    uv: [f32; 4],
+    tint: [f32; 4],
 }
 
 /// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
@@ -6829,6 +6915,86 @@ impl Projectile {
 pub(crate) const MAGICAL_ICE_BLOCK: u16 = 127;
 /// `Main.windPhysicsStrength` (`Main.cs:66842`).
 const WIND_PHYSICS_STRENGTH: f32 = 0.1;
+
+/// The followup caster families the frame-sliced draw arm serves (M4-PROJ-6b
+/// Phase 6): the aiStyle-27 family, the leaf, the Spectre pair, the Typhoon,
+/// the Arcanum pair, the Last Prism pair and the Nebula Blaze pair. The
+/// ported trail families are absent — their draw (the quad-ribbon trails) is
+/// Phase 7's, and kind 3 keeps the shuriken stub exactly as it shipped.
+fn is_followup_draw(kind: u16) -> bool {
+    matches!(
+        kind,
+        UNHOLY_TRIDENT
+            | UNHOLY_TRIDENT_HOSTILE
+            | SWORD_BEAM
+            | TERRA_BEAM
+            | LIGHT_BEAM
+            | NIGHT_BEAM
+            | ENCHANTED_BEAM
+            | LEAF
+            | LOST_SOUL_HOSTILE
+            | LOST_SOUL
+            | SPECTRE_WRATH
+            | TYPHOON
+            | NEBULA_ARCANUM
+            | NEBULA_ARCANUM_SUBSHOT
+            | LAST_PRISM
+            | LAST_PRISM_LASER
+            | NEBULA_BLAZE_1
+            | NEBULA_BLAZE_2
+    )
+}
+
+/// `Main.projFrames` (`Main.cs:1223` — the array `Initialize_TileAndNPCData1`
+/// fills with 1 for every id at `Main.cs:8441-8443` and overrides per kind at
+/// `:8444+`): the vertical frame count the draw slices `Projectile_<id>.xnb`
+/// by. The slice carries the animated followup kinds, the Nebula Blaze pair
+/// and the gem bolt's trail count; the 1.4.5.8 overrides outside the ported
+/// rows (72/86/87/102/111/112/127/175/…, `Main.cs:8444-8722`) default here —
+/// every id the slice omits reads 1, as the source's init sets.
+pub(crate) fn proj_frames(kind: u16) -> u32 {
+    match kind {
+        // `Main.cs:8454` — the gem bolt's 6-frame sheet (the Phase-7 trail's).
+        34 => 6,
+        // `Main.cs:8596` — the Leaf Blower's 5-frame puff (`ai_leaf` wraps 5).
+        LEAF => 5,
+        // `Main.cs:8524` — the Typhoon's 3-frame sheet (`localAI[1] / 3 % 3`).
+        TYPHOON => 3,
+        // `Main.cs:8498` — the Last Prism holder's 5-frame sheet (rate 4 → 1).
+        LAST_PRISM => 5,
+        // `Main.cs:8552-8553` — the Nebula Blaze pair. The animating AI_001
+        // hook (`Projectile.cs:54561-54569`) is unported, so `frame` stays 0.
+        NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => 4,
+        _ => 1,
+    }
+}
+
+/// The frame rect of `Main.DrawProjDirect`'s default emit — `Main.cs:34386-34388`
+/// builds it (`num474 = value134.Height / Main.projFrames[proj.type]`,
+/// `y23 = num474 * proj.frame`) and `:34435` draws it; the trail after-image's
+/// copy at `:30135-30136` slices the same way. A 1-frame kind's frame is the
+/// full sheet. `frame` clamps into the sheet: the C#'s per-type arms keep
+/// `frame` inside `projFrames` (the leaf wraps 5, the Typhoon mods 3, the
+/// holder wraps 5), so the clamp only guards a stray frame from sampling the
+/// next row.
+pub(crate) fn frame_slice_uv(
+    sheet: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    frame: i32,
+    frames: u32,
+) -> [f32; 4] {
+    let frames = frames.max(1);
+    let frame_h = (sheet.height / frames).max(1);
+    let frame = frame.clamp(0, frames as i32 - 1);
+    assets::uv_rect(
+        sheet,
+        atlas_size,
+        0,
+        frame * frame_h as i32,
+        sheet.width,
+        frame_h,
+    )
+}
 
 /// The aiStyle-1 rider kinds of M4-PROJ-6 Phase 3 (`AI_001`'s per-type hooks):
 /// GreenLaser 20, PurpleLaser 88, VenomFang 355, SkyFracture 660 — the fifth
@@ -17137,4 +17303,72 @@ mod magic_ai_tests {
             assert!(!pool.slots()[m].active, "the beams follow (`:31429`)");
         }
     }
+
+    // ---- DW-6: the render pass — frames ------------------------------------
+
+    #[test]
+    fn test_dw_6_1_the_typhoon_rides_its_frame_off_the_tick_counter() {
+        // `:30376-30377` (`Projectile.cs`): `frame = (int)(localAI[1] / 3) % 3`
+        // — the age counter into the 3-frame sheet, unwrapped by proj_frames.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 40, 5.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..7 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        // `extraUpdates = 2` runs the AI three sub-steps per tick (`:16668`),
+        // so seven ticks advance the counter 21 — the frame rides 21/3 % 3.
+        assert_eq!(p.local_ai[1], 21.0, "the sub-stepped tick counter");
+        assert_eq!(p.frame, 1, "21 / 3 = 7 % 3 — the modulo bounds the sheet");
+        assert_eq!(proj_frames(TYPHOON), 3, "the Typhoon's projFrames slice");
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        // 36 / 3 = 12 — the twelfth frame wraps to the first sheet row.
+        assert_eq!(pool.slots()[slot].frame, 0, "36 / 3 = 12 % 3 — the wrap");
+    }
+
+    #[test]
+    fn test_dw_6_1_the_unlisted_kinds_default_to_one_frame() {
+        // The C# `Main.projFrames` init sets every id to 1 (`Main.cs:8439-8441`)
+        // — the slice's default must be that value, so a kind the slice omits
+        // slices its whole sheet.
+        assert_eq!(proj_frames(WOODEN_ARROW), 1, "an unlisted arrow reads 1");
+        assert_eq!(proj_frames(SHURIKEN), 1, "the shuriken sheet is single-frame");
+        assert_eq!(proj_frames(LAST_PRISM), 5, "the holder's 5-frame sheet");
+        assert_eq!(proj_frames(LEAF), 5, "the leaf's 5-frame puff");
+    }
+
+    #[test]
+    fn test_dw_6_1_the_frame_rect_slices_the_sheet_by_proj_frames() {
+        // `Main.cs:34386-34388`'s default emit: the frame height is
+        // `sheet.height / projFrames` and the rect starts at `frame * frameH`.
+        // A synthetic 3-frame 30x90 sheet pins both divisions without the
+        // atlas: the middle frame's rect, the wrap's, and the default-1 slice.
+        let sheet = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 30,
+            height: 90,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        // Middle frame (1): rows 30..60 of 90, x 0..30.
+        let mid = frame_slice_uv(&sheet, atlas, 1, 3);
+        let (u0, v0, u1, v1) = (mid[0], mid[1], mid[2], mid[3]);
+        assert!((u1 - u0 - 30.0 / 512.0).abs() < 1e-6, "the full width rides the rect");
+        assert!((v1 - v0 - 30.0 / 512.0).abs() < 1e-6, "the third-height frame");
+        // The clamp: a frame past the count reads the LAST sheet row (the
+        // helper's `frame.clamp(0, frames - 1)`), not an empty one.
+        let clamped = frame_slice_uv(&sheet, atlas, 7, 3);
+        let last = frame_slice_uv(&sheet, atlas, 2, 3);
+        assert_eq!(clamped, last, "an out-of-range frame clamps to the last row");
+        // The default-1 kind slices the whole sheet.
+        let full = frame_slice_uv(&sheet, atlas, 0, 1);
+        assert!((full[3] - full[1] - 90.0 / 512.0).abs() < 1e-6, "one frame = the sheet");
+    }
+
 }

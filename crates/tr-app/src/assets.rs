@@ -467,6 +467,29 @@ pub fn load_world_images(
         "Projectile_560",
         "Projectile_561",
         "Projectile_1079",
+        // M4-PROJ-6b Phase 6: the followup caster families' sheets the
+        // frame-sliced draw keys on (`Lookups.proj_sheets`), plus the gem
+        // bolt's 6-frame sheet the trail pass slices (`Main.projFrames[34]`,
+        // `Main.cs:8454`).
+        "Projectile_34",
+        "Projectile_114",
+        "Projectile_115",
+        "Projectile_116",
+        "Projectile_132",
+        "Projectile_156",
+        "Projectile_157",
+        "Projectile_173",
+        "Projectile_206",
+        "Projectile_293",
+        "Projectile_297",
+        "Projectile_356",
+        "Projectile_409",
+        "Projectile_617",
+        "Projectile_618",
+        "Projectile_632",
+        "Projectile_633",
+        "Projectile_634",
+        "Projectile_635",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -1252,6 +1275,12 @@ pub struct Lookups {
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
     pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
+    /// M4-PROJ-6b Phase 6: the followup caster families' sheets, keyed by the
+    /// projectile id — the yoyo scan generalized to the whole `Projectile_`
+    /// prefix, so every `Projectile_<id>` sheet the hand-list carries enters
+    /// the map. The frame-sliced draw (`projectile.rs`'s `frame_quad`) looks
+    /// the kind up here; a kind without a sheet keeps the shuriken stub.
+    pub proj_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// The ambient leaf gores the world's trees can shed: `Gore_910`
     /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
     /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
@@ -1562,6 +1591,18 @@ impl Lookups {
                     } else {
                         None
                     }
+                })
+                .collect(),
+            // The yoyo scan with the `is_yoyo_sprite` filter dropped: every
+            // `Projectile_<id>` sheet in the atlas keys in (the followup
+            // kinds' sheets ride the hand-list below; an id whose texture
+            // file never made the atlas simply stays absent, like
+            // `item_icons`).
+            proj_sheets: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    Some((name.strip_prefix("Projectile_")?.parse::<u16>().ok()?, *rect))
                 })
                 .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
