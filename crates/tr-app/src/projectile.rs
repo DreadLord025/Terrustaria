@@ -1480,8 +1480,13 @@ impl Projectile {
         world: &World,
         player_center: Vec2,
         owner_dead: bool,
+        // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
+        // the cracked-brick break (`Projectile.cs:52586`).
+        local_owner: bool,
+        // The hook's own `u64` stream (`Main.rand`'s stand-in).
+        hook_rng: Option<&mut u64>,
     ) -> crate::grapple::HookTick {
-        crate::grapple::ai_hook(self, world, player_center, owner_dead)
+        crate::grapple::ai_hook(self, world, player_center, owner_dead, local_owner, hook_rng)
     }
     /// The box center — `Projectile.Center` (`Entity.cs`'s `Center`), the
     /// pool's uniform center for the box tests (the whip's *hit* comes from
@@ -2957,6 +2962,10 @@ pub struct ProjectilePool {
     /// entries are reachable (the `AI_007` `< 10` guard), so 10 suffice.
     hook_reg: [i16; 10],
     hook_grap_count: usize,
+    /// The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16 cracked-brick break,
+    /// `Projectile.cs:52586-52595`), seeded from the world seed like the other
+    /// per-consumer streams and interleaved with nothing else.
+    hook_rng: u64,
 }
 
 impl Default for ProjectilePool {
@@ -2993,6 +3002,7 @@ impl ProjectilePool {
             update_count: 0,
             hook_reg: [-1; 10],
             hook_grap_count: 0,
+            hook_rng: 0,
         }
     }
 
@@ -3136,6 +3146,12 @@ impl ProjectilePool {
     /// this; the AI arm and the recycle tables are the only writers.
     pub fn hook_reg(&self) -> (&[i16; 10], usize) {
         (&self.hook_reg, self.hook_grap_count)
+    }
+
+    /// Seed the hooks' `Main.rand` stand-in from the world seed — the app calls it
+    /// once at construction (the pool is built before the world exists).
+    pub fn seed_hooks(&mut self, world_seed: u64) {
+        self.hook_rng = world_seed ^ 0x606B_005B_5EED;
     }
 
     /// `Player.Update`'s `grappling[0] = -1; grapCount = 0` (`:28300-28301`):
@@ -3629,10 +3645,17 @@ impl ProjectilePool {
                             // (`Projectile.cs:24230-24233`) ->
                             // `AI_007_GrapplingHooks`.
                             let dead = player.as_ref().is_some_and(|p| p.dead);
+                            let local = self.slots[i].owner == local_owner;
                             let center = owner
                                 .map(|(x, y)| Vec2::new(x, y))
                                 .unwrap_or(self.slots[i].pos);
-                            let tick = self.slots[i].ai_hook(world, center, dead);
+                            // The stream is copied out and back so the slot borrow
+                            // and the rng borrow never overlap.
+                            let mut rng = self.hook_rng;
+                            let tick =
+                                self.slots[i].ai_hook(world, center, dead, local, Some(&mut rng));
+                            self.hook_rng = rng;
+                            let crack = tick.crack;
                             let attached = tick.attached;
                             let dead = tick.dead;
                             let latched = tick.latched;
@@ -3673,6 +3696,14 @@ impl ProjectilePool {
                                     if count > cap && worst != usize::MAX {
                                         self.kill(worst);
                                     }
+                                }
+                            }
+                            // `:52590-52593` — the 1/16 cracked-brick break, the
+                            // one `&mut World` touch the hook AI performs. The C#
+                            // sends the tile update over the wire; no MP here.
+                            if let Some((tx, ty)) = crack {
+                                if let Some(t) = world.tile_mut(tx, ty) {
+                                    t.flags &= !tr_core::tile::FLAG_ACTIVE;
                                 }
                             }
                         }

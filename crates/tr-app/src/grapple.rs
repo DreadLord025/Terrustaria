@@ -60,10 +60,15 @@ pub(crate) fn hook_spec(hook_type: i32) -> HookSpec {
         372 => (400.0, 11.0, 11.0, 2),
         396 => (300.0, 11.0, 11.0, 3),
         446 => (500.0, 20.0, 11.0, 3),
-        486..=489 => (480.0, 18.0, 11.0, 3),
+        // `:22832-22851` — the Thorn Hook (487) is the only one of the four
+        // with its own 12 pull cap; the other three share the 11 default.
+        486 => (480.0, 18.0, 11.0, 3),
+        487 => (480.0, 18.0, 12.0, 3),
+        488 | 489 => (480.0, 18.0, 11.0, 3),
         646..=649 => (550.0, 24.0, 16.0, 4),
         652 => (600.0, 24.0, 11.0, 1),
         753 => (420.0, 15.0, 11.0, 3),
+        935 => (500.0, 11.0, 11.0, 3),
         // Hook (13) and everything unlisted.
         _ => (300.0, 11.0, 11.0, 3),
     };
@@ -93,6 +98,9 @@ pub(crate) struct HookTick {
     /// The state flipped to Attached on THIS tick — the one moment
     /// `AI_007`'s attach-cap recycle (`:52719-52741`) runs.
     pub latched: bool,
+    /// The 1/16 cracked-brick break (`Projectile.cs:52586-52595`): the tile
+    /// under the hook's center, for the pool to break (it owns `&mut World`).
+    pub crack: Option<(i32, i32)>,
 }
 
 impl HookTick {
@@ -101,13 +109,15 @@ impl HookTick {
             attached: None,
             dead: false,
             latched: false,
+            crack: None,
         }
     }
-    fn attached_at(center: Vec2, fresh: bool) -> Self {
+    fn attached_at(center: Vec2, fresh: bool, crack: Option<(i32, i32)>) -> Self {
         Self {
             attached: Some(center),
             dead: false,
             latched: fresh,
+            crack,
         }
     }
 }
@@ -217,34 +227,114 @@ fn latch_center(world: &World, tx: i32, ty: i32) -> Vec2 {
     Vec2::new(x, y)
 }
 
-/// `Player.GetGrapplingForces` (`Player.cs:22757-22856`) — the multi-hook half:
-/// the pull is the vector from the player's center to the **average** of every
-/// registered hook's center, clamped to the pull speed of `grappling[0]`'s type
-/// (the C# reads the first registered slot, not each hook). The per-kind
-/// steering arms (446/652/865) are this task's next phase.
+/// What `GrappleMovement` needs from the pull (`Player.cs:22613-22740`).
+pub(crate) struct HookPull {
+    /// The velocity that replaces the player's.
+    pub vel: Vec2,
+    /// `GoingDownWithGrapple` — the pull points down, so the platforms fall
+    /// through (`:22655-22658`).
+    pub going_down: bool,
+    /// `preferredPlayerDirectionToSet` (`:22670-22676`) — only the Squirrel
+    /// Hook sets it; `ChangeDir` reads it when the pull's X is exactly 0.
+    pub dir: Option<i32>,
+}
+
+/// The direction/steering stick, normalized as the C# reads the controls
+/// (`Player.cs:22769`/`:22800`): `(right − left, (down − up) * gravDir)`.
+/// The port is upright-only, so `gravDir` is 1.
+pub(crate) fn steering_stick(left: bool, right: bool, up: bool, down: bool) -> Vec2 {
+    Vec2::new(
+        (right as i32 - left as i32) as f32,
+        // The C# multiplies by `gravDir`; the port has no flipped gravity.
+        (down as i32 - up as i32) as f32,
+    )
+}
+
+/// `Player.GetGrapplingForces` (`Player.cs:22757-22856`): the pull is the vector
+/// from the player's center to the (steering-adjusted) average of every
+/// registered hook's center, clamped to the pull speed of `grappling[0]`'s type.
 ///
-/// Returns `(velocity, going_down)`. Zero registered hooks carries the caller's
-/// velocity through unchanged, so the return mirrors the input in that case.
-pub(crate) fn grapple_pull(hooks: &[(u16, Vec2)], player_center: Vec2) -> Option<(Vec2, bool)> {
-    let (first_kind, first_center) = *hooks.first()?;
+/// Per-hook overrides, in the source's own order: the AntiGravity Hook (446)
+/// biases the average toward the held control direction, the Static Hook (652)
+/// pulls along its own line to the player with a slack arm that only engages
+/// when the dot is positive and the distance is under 600 px, and the Squirrel
+/// Hook (865) anchors the average 28 px behind its rotation and sets the
+/// preferred direction. Every other kind contributes its plain center.
+///
+/// `hooks` is `(ProjectileID, center, rotation)` per registered hook, in slot
+/// order. Zero hooks returns `None` — the caller keeps its velocity.
+pub(crate) fn grapple_pull(
+    hooks: &[(u16, Vec2, f32)],
+    player_center: Vec2,
+    stick: Vec2,
+) -> Option<HookPull> {
+    let first_kind = hooks.first()?.0;
+    let stick = if stick.length() > 0.0 {
+        stick.normalize()
+    } else {
+        Vec2::ZERO
+    };
     let mut sum = Vec2::ZERO;
-    for (_, c) in hooks {
-        sum += *c;
+    let mut dir = None;
+    for (kind, center, rot) in hooks {
+        let contribution = match kind {
+            446 => {
+                // `:22777-22788` — the control direction, scaled by 100, added
+                // to the vector from the hook, then normalized against the
+                // pull. A NaN direction falls back to -UnitY.
+                let vec = (player_center - *center + stick * 100.0).normalize_or(-Vec2::Y);
+                *center + vec * 200.0
+            }
+            652 => {
+                // `:22789-22802` — the projection of the held direction onto
+                // the hook→player line, doubled by 6, and zeroed when it
+                // fights the hook and the line is 600 px or longer.
+                let line = *center - player_center;
+                let unit = line.normalize_or(Vec2::ZERO);
+                let mut value = Vec2::ZERO;
+                if stick != Vec2::ZERO {
+                    value = unit * unit.dot(stick);
+                }
+                let mut slack = 6.0;
+                if value.dot(line) < 0.0 && line.length() >= 600.0 {
+                    slack = 0.0;
+                }
+                player_center + value * slack
+            }
+            865 => {
+                // `:22803-22812` — 28 px behind the hook's snapped rotation.
+                let fwd = (Vec2::from_angle(*rot - std::f32::consts::PI * 0.5)).normalize_or(Vec2::Y);
+                *center - fwd * 28.0
+            }
+            _ => *center,
+        };
+        if *kind == 865 && fwd_x(*rot) != 0.0 {
+            dir = Some(fwd_x(*rot).signum() as i32);
+        }
+        sum += contribution;
     }
     let avg = sum / hooks.len() as f32;
-    let _ = first_center;
     let to_hook = avg - player_center;
     let dist = to_hook.length();
     // `:22832-22851` — the cap switches on `grappling[0]`'s type.
     let pull_speed = hook_spec_id(first_kind).pull_speed;
-    let pull = if dist > 0.001 {
+    let vel = if dist > 0.001 {
         to_hook * (pull_speed / dist).min(1.0)
     } else {
         Vec2::ZERO
     };
-    Some((pull, pull.y > 0.0))
+    Some(HookPull {
+        vel,
+        going_down: vel.y > 0.0,
+        dir,
+    })
 }
 
+/// The Squirrel Hook's rotation → the x of its forward unit vector; the C#
+/// sets `preferredPlayerDirectionToSet` only when this is non-zero.
+fn fwd_x(rot: f32) -> f32 {
+    Vec2::from_angle(rot - std::f32::consts::PI * 0.5).x
+}
 /// The `AI_007` per-type tables (`Projectile.cs:52646-52665` max distances,
 /// `:52787-52842` retract speeds, `Player.cs:22832-22851` pull speeds), read
 /// off the slot's `ProjectileID`.
@@ -252,20 +342,17 @@ pub(crate) fn hook_spec_id(hook_type: u16) -> HookSpec {
     hook_spec(hook_type as i32)
 }
 
-/// One `AI_007_GrapplingHooks` tick on a pool slot. `player_center` is
-/// `Main.player[owner].MountedCenter`.
-///
-/// Trace (the C# order, `:52572-52866`): the owner-dead kill; the rotation
-/// toward the player; the 2500 px cap; the per-kind light/frame blocks (not
-/// modelled — nothing reads them yet); then the state arm — Fly (the distance
-/// trigger + the latch scan), Retract (the speed table + the `< 24f` kill) or
-/// Attached (the latch re-validation). The position integrates afterwards, and
 /// NOT at all while attached (`UpdatePosition`'s early return).
 pub(crate) fn ai_hook(
     slot: &mut crate::projectile::Projectile,
     world: &World,
     player_center: Vec2,
     owner_dead: bool,
+    // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
+    // the cracked-brick break (`:52586`).
+    local_owner: bool,
+    // The hook's own `u64` stream (None off the local player's machine).
+    hook_rng: Option<&mut u64>,
 ) -> HookTick {
     let center = slot.pos + Vec2::new(slot.w * 0.5, slot.h * 0.5);
     // `:52572-52574` — a dead owner kills the hook.
@@ -274,6 +361,7 @@ pub(crate) fn ai_hook(
             attached: None,
             dead: true,
             latched: false,
+            crack: None,
         };
     }
     let delta = player_center - center;
@@ -292,9 +380,30 @@ pub(crate) fn ai_hook(
             attached: None,
             dead: true,
             latched: false,
+            crack: None,
         };
     }
 
+    // `:52586-52595` — the local player's hook has a 1-in-16 chance per tick of
+    // breaking the cracked-brick tile under its center. The roll rides the
+    // hook's own named u64 stream (`Main.rand`'s interleaving with other
+    // consumers is not replayable; the stream choice is an ANALYSIS deviation).
+    let mut crack = None;
+    if local_owner {
+        if let Some(rng) = hook_rng {
+            let tx = tile_of(center.x, world.width);
+            let ty = tile_of(center.y, world.height);
+            if tx > 0 && ty > 0 && tx < world.width && ty < world.height {
+                let broken = world.tile(tx, ty).is_some_and(|t| {
+                    t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind)
+                });
+                let roll = crate::app::frame::next_rand(rng);
+                if broken && roll % 16 == 0 {
+                    crack = Some((tx, ty));
+                }
+            }
+        }
+    }
     let spec = hook_spec_id(slot.kind);
     match slot.ai[0] as i32 {
         0 => {
@@ -311,6 +420,7 @@ pub(crate) fn ai_hook(
                     attached: None,
                     dead: true,
                     latched: false,
+                    crack: None,
                 };
             }
             slot.vel = delta * (spec.retract_speed / dist);
@@ -323,7 +433,7 @@ pub(crate) fn ai_hook(
             if !can_latch(slot.kind, world, tx, ty) {
                 slot.ai[0] = 1.0;
             } else {
-                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), false);
+                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), false, crack);
             }
         }
     }
@@ -359,14 +469,17 @@ pub(crate) fn ai_hook(
                 slot.vel = Vec2::ZERO;
                 slot.damage = 0;
                 slot.ai[0] = 2.0;
-                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), true);
+                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), true, crack);
             }
         }
     }
     // `UpdatePosition` (`:20456`): `position += velocity`.
     slot.pos += slot.vel;
-    HookTick::alive()
+    let mut tick = HookTick::alive();
+    tick.crack = crack;
+    tick
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -414,18 +527,18 @@ mod tests {
         // Fly: 320 px out, under the Hook's 300 limit... no, 320 > 300, so the
         // very first tick retracts.
         assert_eq!(h.ai[0], 0.0);
-        let t = ai_hook(&mut h, &w, pc, false);
+        let t = ai_hook(&mut h, &w, pc, false, false, None);
         assert_eq!(h.ai[0], 1.0, "past 300 px the hook retracts");
         assert!(!t.dead);
         // The source sets the retract velocity on the following tick (the Fly
         // arm only flips `ai[0]` this one), so the speed appears after it.
-        ai_hook(&mut h, &w, pc, false);
+        ai_hook(&mut h, &w, pc, false, false, None);
         let speed = h.vel.length();
         assert!((speed - 11.0).abs() < 1e-3, "retract speed 11, got {speed}");
         assert!(h.vel.y < 0.0, "toward the player above");
         // Walk it in and watch it die at the 24 px reach.
         for _ in 0..40 {
-            if ai_hook(&mut h, &w, pc, false).dead {
+            if ai_hook(&mut h, &w, pc, false, false, None).dead {
                 break;
             }
         }
@@ -449,7 +562,7 @@ mod tests {
         // Close enough that the Fly state survives the tick (the 300 px trigger
         // would flip it to Retract before the scan).
         let pc = player(40.0 * 16.0, 61.0 * 16.0 - 240.0);
-        let t = ai_hook(&mut h, &w, pc, false);
+        let t = ai_hook(&mut h, &w, pc, false, false, None);
         assert!(t.attached.is_some(), "latched");
         assert_eq!(h.ai[0], 2.0, "attached state");
         assert_eq!(
@@ -461,7 +574,7 @@ mod tests {
         assert_eq!(h.damage, 0, "damage zeroes on latch");
         // The pinned center is the tile's, so it stops moving.
         let frozen = h.pos;
-        ai_hook(&mut h, &w, pc, false);
+        ai_hook(&mut h, &w, pc, false, false, None);
         assert_eq!(h.pos, frozen, "no integration while attached");
     }
 
@@ -473,11 +586,11 @@ mod tests {
         let mut h = hook(TRACK_HOOK, 40.0 * 16.0, 62.0 * 16.0);
         h.vel = Vec2::new(0.0, 1.0);
         let pc = player(40.0 * 16.0, 80.0 * 16.0);
-        let t = ai_hook(&mut h, &w, pc, false);
+        let t = ai_hook(&mut h, &w, pc, false, false, None);
         assert!(t.attached.is_none(), "stone is not a track");
         // Now the track tile at the same spot.
         put(&mut w, 40, 62, tr_core::smart_cursor::TRACK_TILE);
-        let t = ai_hook(&mut h, &w, pc, false);
+        let t = ai_hook(&mut h, &w, pc, false, false, None);
         assert!(t.attached.is_some(), "the track latches");
     }
 
@@ -491,13 +604,13 @@ mod tests {
         let mut plain = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
         plain.vel = Vec2::new(0.0, 1.0);
         assert!(
-            ai_hook(&mut plain, &w, pc, false).attached.is_none(),
+            ai_hook(&mut plain, &w, pc, false, false, None).attached.is_none(),
             "the plain Hook refuses the trunk"
         );
         let mut squirrel = hook(SQUIRREL_HOOK, 40.0 * 16.0, 62.0 * 16.0);
         squirrel.vel = Vec2::new(0.0, 1.0);
         assert!(
-            ai_hook(&mut squirrel, &w, pc, false).attached.is_some(),
+            ai_hook(&mut squirrel, &w, pc, false, false, None).attached.is_some(),
             "the Squirrel Hook latches it"
         );
     }
@@ -512,17 +625,17 @@ mod tests {
         let mut h = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
         h.vel = Vec2::new(0.0, 1.0);
         let pc = player(40.0 * 16.0, 80.0 * 16.0);
-        assert!(ai_hook(&mut h, &w, pc, false).attached.is_some());
+        assert!(ai_hook(&mut h, &w, pc, false, false, None).attached.is_some());
         // Break the tile.
         let i = w.index(40, 62);
         w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
-        let t = ai_hook(&mut h, &w, pc, false);
+        let t = ai_hook(&mut h, &w, pc, false, false, None);
         assert_eq!(h.ai[0], 1.0, "broken tile retracts the hook");
         assert!(t.attached.is_none());
         // An out-of-range cell never latches.
         let mut far = hook(HOOK, -500.0, -500.0);
         far.vel = Vec2::new(1.0, 0.0);
-        assert!(ai_hook(&mut far, &w, pc, false).attached.is_none());
+        assert!(ai_hook(&mut far, &w, pc, false, false, None).attached.is_none());
     }
 
     // `:52594-52596` the hard cap and `:52572-52574` the owner-death kill.
@@ -531,14 +644,14 @@ mod tests {
         let w = ground();
         let mut h = hook(HOOK, 0.0, 0.0);
         let pc = player(2600.0, 0.0);
-        assert!(ai_hook(&mut h, &w, pc, false).dead, ">2500 px kills");
+        assert!(ai_hook(&mut h, &w, pc, false, false, None).dead, ">2500 px kills");
         // The cap is `>`, so exactly 2500 survives.
         let mut edge = hook(HOOK, 0.0, 0.0);
         edge.pos = Vec2::ZERO;
-        let t = ai_hook(&mut edge, &w, player(2500.0, 0.0), false);
+        let t = ai_hook(&mut edge, &w, player(2500.0, 0.0), false, false, None);
         assert!(!t.dead, "exactly 2500 px survives");
         let mut live = hook(HOOK, 0.0, 0.0);
-        assert!(ai_hook(&mut live, &w, player(10.0, 0.0), true).dead, "a dead owner kills");
+        assert!(ai_hook(&mut live, &w, player(10.0, 0.0), true, false, None).dead, "a dead owner kills");
     }
 
     // The rotation (`:52576-52581`) — the Squirrel Hook's steering reads it, so
@@ -548,19 +661,19 @@ mod tests {
         let w = ground();
         let pc = player(100.0, -100.0);
         let mut fly = hook(SQUIRREL_HOOK, 0.0, 0.0);
-        ai_hook(&mut fly, &w, pc, false);
+        ai_hook(&mut fly, &w, pc, false, false, None);
         let snapped = |r: f32| (r.abs() / (std::f32::consts::PI * 0.5)).fract().abs() < 1e-6
             || ((r.abs() / (std::f32::consts::PI * 0.5)).fract() - 1.0).abs() < 1e-6;
         assert!(!snapped(fly.rot), "flying keeps the raw atan2");
         let mut att = hook(SQUIRREL_HOOK, 0.0, 0.0);
         att.ai[0] = 2.0;
         att.pos = Vec2::ZERO;
-        ai_hook(&mut att, &w, pc, false);
+        ai_hook(&mut att, &w, pc, false, false, None);
         assert!(snapped(att.rot), "attached snaps to a quarter turn");
         // 256's rotation is the plain base formula (the `+3.9250002` offset is
         // visual-only and stays out).
         let mut hand = hook(SKELETRON_HAND, 0.0, 0.0);
-        ai_hook(&mut hand, &w, pc, false);
+        ai_hook(&mut hand, &w, pc, false, false, None);
         assert!((hand.rot - (-100.0f32).atan2(0.0)).abs() > 0.0, "the base formula");
     }
 
@@ -796,18 +909,21 @@ mod hook_multi_tests {
     #[test]
     fn dw_4_3_the_pull_averages_them_and_caps_on_the_first() {
         let p0 = Vec2::new(100.0, 40.0);
-        let hooks: &[(u16, Vec2)] = &[(BAT_HOOK, Vec2::new(0.0, -10.0)), (HOOK, Vec2::new(40.0, -30.0))];
-        let (vel, down) = grapple_pull(hooks, p0).expect("a pull");
+        let hooks: &[(u16, Vec2, f32)] = &[
+            (BAT_HOOK, Vec2::new(0.0, -10.0), 0.0),
+            (HOOK, Vec2::new(40.0, -30.0), 0.0),
+        ];
+        let pull = grapple_pull(hooks, p0, Vec2::ZERO).expect("a pull");
         // The average of the two centers is (20, -20); the vector from the
         // player is (-80, -60) and its cap is 14 (the first hook's type).
-        assert!((vel.length() - 14.0).abs() < 1e-3, "the Bat Hook's cap 14");
-        assert!(vel.x < 0.0 && vel.y < 0.0, "toward the average");
-        assert!(!down);
+        assert!((pull.vel.length() - 14.0).abs() < 1e-3, "the Bat Hook's cap 14");
+        assert!(pull.vel.x < 0.0 && pull.vel.y < 0.0, "toward the average");
+        assert!(!pull.going_down);
         // A single hook is the PHYS-6 case unchanged.
-        let (v, _) = grapple_pull(&[(HOOK, Vec2::new(0.0, -14.0))], Vec2::ZERO).unwrap();
-        assert!((v.length() - 11.0).abs() < 1e-3, "the Hook's cap 11");
+        let p = grapple_pull(&[(HOOK, Vec2::new(0.0, -14.0), 0.0)], Vec2::ZERO, Vec2::ZERO).unwrap();
+        assert!((p.vel.length() - 11.0).abs() < 1e-3, "the Hook's cap 11");
         // Zero hooks carries the caller through.
-        assert!(grapple_pull(&[], Vec2::ZERO).is_none());
+        assert!(grapple_pull(&[], Vec2::ZERO, Vec2::ZERO).is_none());
     }
 
     // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off kills
@@ -839,5 +955,187 @@ mod hook_multi_tests {
         }
         assert_eq!(pool.hook_counts(0).1, 0, "the owner's hooks are gone");
         assert_eq!(pool.active_count(), 1, "the arrow survives");
+    }
+}
+
+
+#[cfg(test)]
+mod hook_steering_tests {
+    use super::*;
+
+    // `:22803-22812` — the Squirrel Hook's rotation anchors the average 28 px
+    // behind it and sets the preferred direction; a zero X keeps the direction.
+    #[test]
+    fn dw_4_2_the_squirrel_anchor_and_the_anti_gravity_steering() {
+        // 865: the rotation half a turn gives forward = (-1, 0); the anchor sits
+        // 28 px to the right of the hook, and `dir` is -1.
+        // A quarter-turn rotation gives forward = (0.707, 0.707); the anchor
+        // sits 28 px along it, and the direction follows its x.
+        let rot = std::f32::consts::PI * 0.75;
+        let pull = grapple_pull(
+            &[(865, Vec2::new(40.0, 0.0), rot)],
+            Vec2::ZERO,
+            Vec2::ZERO,
+        )
+        .expect("a pull");
+        assert!(pull.vel.x > 0.0, "the anchor pulls toward +x: {:?}", pull.vel);
+        assert_eq!(pull.dir, Some(1), "the direction follows the forward x");
+    }
+
+    // `:22777-22788` — the AntiGravity Hook adds the held control direction
+    // (scaled by 100) to the hook→player vector and then 200 px along its
+    // normalized result; a NaN falls back to -UnitY.
+    #[test]
+    fn dw_4_2_the_anti_gravity_control_bias() {
+        let stick = steering_stick(false, true, false, false);
+        assert_eq!(stick, Vec2::new(1.0, 0.0), "right is +x");
+        let pull = grapple_pull(
+            &[(446, Vec2::new(0.0, 100.0), 0.0)],
+            Vec2::ZERO,
+            stick,
+        )
+        .expect("a pull");
+        // The hook is below the player and right is held, so the contribution
+        // biases the average sideways as well as up.
+        assert!(pull.vel.y < 0.0, "still pulling up");
+        // The pull speed cap for 446 is the default 11.
+        assert!((pull.vel.length() - 11.0).abs() < 1e-3);
+    }
+
+    // `:22789-22802` — the Static Hook's slack: along the hook→player line,
+    // scaled by 6, and zeroed when it fights the hook and the line is 600+ px.
+    #[test]
+    fn dw_4_2_the_static_slack_zeroes_when_it_fights() {
+        // A held direction whose projection fights the hook on a 600+ px line
+        // gets `slack = 0`, which makes the contribution the player's own
+        // center — the Static Hook holds you in place.
+        let far = grapple_pull(
+            &[(652, Vec2::new(200.0, -600.0), 0.0)],
+            Vec2::ZERO,
+            Vec2::new(0.0, 1.0),
+        )
+        .expect("a pull");
+        assert_eq!(far.vel, Vec2::ZERO, "the zero slack collapses the pull: {:?}", far.vel);
+        // With no held direction `value` is zero, so the contribution is the
+        // player's own center — the Static Hook hangs you still (the 6 px slack
+        // never engages without input).
+        let plain = grapple_pull(&[(652, Vec2::new(200.0, -600.0), 0.0)], Vec2::ZERO, Vec2::ZERO)
+            .expect("a pull");
+        assert_eq!(plain.vel, Vec2::ZERO, "no input hangs the player still");
+        // Held toward the hook (along the line, positive projection) the 6 px
+        // slack engages and the pull is non-zero.
+        let along = grapple_pull(
+            &[(652, Vec2::new(200.0, -600.0), 0.0)],
+            Vec2::ZERO,
+            Vec2::new(0.316, -0.949),
+        )
+        .expect("a pull");
+        assert!(
+            along.vel.length() > 1.0,
+            "the slack engages with input: {:?}",
+            along.vel
+        );
+        // Near and with the held direction: slack 6 along the line.
+        let near = grapple_pull(
+            &[(652, Vec2::new(6.0, 0.0), 0.0)],
+            Vec2::ZERO,
+            Vec2::new(1.0, 0.0),
+        )
+        .expect("a pull");
+        assert!(near.vel.x > 0.0, "the slack keeps a positive pull");
+    }
+}
+
+#[cfg(test)]
+mod crack_tests {
+    use super::*;
+    use crate::projectile::*;
+
+    fn put_cracked(w: &mut World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = tr_core::Tile {
+            kind: 481, // a cracked brick (SET_CRACKED_BRICKS)
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    fn one_hook() -> crate::projectile::Projectile {
+        let mut p = crate::projectile::Projectile::default();
+        p.active = true;
+        p.kind = HOOK;
+        p.w = 18.0;
+        p.h = 18.0;
+        p.pos = Vec2::new(40.0 * 16.0 - 9.0, 41.0 * 16.0 - 9.0);
+        p.vel = Vec2::ZERO;
+        p
+    }
+
+    /// `:52586-52595` — 1/16 of the local player's hook ticks break the
+    /// cracked-brick tile under its center, and the roll is deterministic on the
+    /// documented stream. The gate is off for a non-local owner.
+    #[test]
+    fn dw_4_4_the_crack_roll_is_deterministic_and_local() {
+        let mut w = crate::test_world_helpers::ground();
+        put_cracked(&mut w, 40, 41);
+        let center = Vec2::new(40.0 * 16.0, 41.0 * 16.0);
+        // Count the hits over many ticks with the same seeded stream twice:
+        // both runs must agree (and be ~1/16 of 4096 ticks).
+        let mut counts = Vec::new();
+        for _ in 0..2 {
+            let mut n = 0usize;
+            let mut seed: u64 = 0xB17C_0DE5;
+            for _ in 0..4096 {
+                let mut h = one_hook();
+                let tick = ai_hook(&mut h, &w, center, false, true, Some(&mut seed));
+                if tick.crack.is_some() {
+                    n += 1;
+                }
+            }
+            counts.push(n);
+        }
+        assert_eq!(counts[0], counts[1], "the stream is deterministic");
+        assert!(
+            (180..=300).contains(&counts[0]),
+            "about 1/16 of 4096: {}",
+            counts[0]
+        );
+        // A non-local owner never rolls.
+        let mut h = one_hook();
+        let mut seed: u64 = 1;
+        assert!(ai_hook(&mut h, &w, center, false, false, Some(&mut seed)).crack.is_none());
+        // A non-cracked tile never breaks even though the roll runs.
+        let i = w.index(40, 41);
+        w.tiles[i].kind = 1;
+        let mut h2 = one_hook();
+        let mut seed2: u64 = 2;
+        let mut found = 0;
+        for _ in 0..4096 {
+            if ai_hook(&mut h2, &w, center, false, true, Some(&mut seed2)).crack.is_some() {
+                found += 1;
+            }
+        }
+        assert_eq!(found, 0, "only the cracked bricks break");
+    }
+
+    /// `:22845-22847` — no registered hook carries the caller's velocity through
+    /// rather than pulling.
+    #[test]
+    fn dw_4_5_no_hooks_carries_the_velocity() {
+        assert!(grapple_pull(&[], Vec2::ZERO, Vec2::ZERO).is_none());
+    }
+
+    /// The four corrected constants, pinned against the cited lines.
+    #[test]
+    fn dw_4_1_the_four_corrected_constants() {
+        // `:52646-52665` — 256 SkeletronHand 425 (the source's own row, previously
+        // inherited as the 300 default) and 935 QueenSlimeHook 500.
+        assert_eq!(hook_spec(256).max_distance, 425.0);
+        assert_eq!(hook_spec(935).max_distance, 500.0);
+        // `:22832-22851` — the Thorn Hook 487's cap 12 and the Lunar four's 16.
+        assert_eq!(hook_spec(487).pull_speed, 12.0);
+        for k in 646..=649 {
+            assert_eq!(hook_spec(k).pull_speed, 16.0, "Lunar {k}");
+        }
     }
 }

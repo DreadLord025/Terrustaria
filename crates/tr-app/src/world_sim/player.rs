@@ -346,12 +346,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // multi-hook registration replaces both in the next phase.
         // `AI_007`'s `grappling[]`/`grapCount` (`Projectile.cs:52705`/`:52862`):
         // the attached slots in slot order, handed to `GrappleMovement`.
+        // The tuple's third element is the hook's rotated direction — only the
+        // Squirrel Hook's steering reads it (`GetGrapplingForces :22803`).
         let (reg, count) = app.projectiles.hook_reg();
-        let grapple_for_tick: Vec<(u16, Vec2)> = reg[..count]
+        let grapple_for_tick: Vec<(u16, Vec2, f32)> = reg[..count]
             .iter()
             .map(|&i| {
                 let pr = &app.projectiles.slots()[i as usize];
-                (pr.kind, pr.grapple_center)
+                (pr.kind, pr.grapple_center, pr.rot)
             })
             .collect();
         p.grappling_active = !grapple_for_tick.is_empty();

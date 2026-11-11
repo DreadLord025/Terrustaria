@@ -2468,6 +2468,7 @@ impl App {
                 ambience
             },
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
+
             clock_rng: world_seed ^ 0x1D_A9_17_50_E5_C1_0C,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
@@ -2489,7 +2490,14 @@ impl App {
             mine_released: false,
             item_time: 0.0,
             coins,
-            projectiles: ProjectilePool::new(),
+            // The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16
+            // cracked-brick break, `Projectile.cs:52586-52595`) — seeded from
+            // the world seed beside the other per-consumer streams.
+            projectiles: {
+                let mut p = ProjectilePool::new();
+                p.seed_hooks(world_seed);
+                p
+            },
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),
