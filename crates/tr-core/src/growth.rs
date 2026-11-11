@@ -1666,6 +1666,17 @@ pub fn update_world_overground_tile(
         grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
         return;
     }
+    // `:72219-72228`: the dye-plant head — one `Main.rand.Next(3000)` behind
+    // every `nactive` pick, the exotic arm at `Next(15000)` when the cell
+    // stands outside the middle 40..60 % of the world and hardmode is on.
+    if rng.next(3000) == 0 {
+        plant_dye(world, x, y, false, rng);
+    } else if world.hard_mode
+        && ((x as f64) < world.width as f64 * 0.4 || (x as f64) > world.width as f64 * 0.6)
+        && rng.next(15000) == 0
+    {
+        plant_dye(world, x, y, true, rng);
+    }
     if TILE_ALCH.contains(&kind) {
         grow_alch(world, x, y, day_time, raining, rng);
         return;
@@ -2465,48 +2476,52 @@ mod tests {
     /// its grown tile standing on the evil grass is killed, not left rooted.
     #[test]
     fn the_vanity_saplings_die_on_the_evil_grass() {
-        let mut w = World::new("t".into(), 40, 60);
-        w.world_surface = 40.0;
-        // The evil grass at y = 30, the sapling on it at y = 29.
-        let i = w.index(10, 30);
-        w.tiles[i] = crate::tile::Tile {
-            kind: 23,
-            ..Default::default()
+        // The arm runs on a 595/615 sapling (or its grown tile) standing on the
+        // corruption/crimson grass (`:72146-72152`). The dispatcher's stream
+        // order puts the dye head (`:72219-72228`) in front of the type arms,
+        // so the sweep runs a spread of seeds and needs the kill to happen on
+        // at least one.
+        let build = |soil: u16| {
+            let mut w = World::new("t".into(), 40, 60);
+            w.world_surface = 40.0;
+            let i = w.index(10, 30);
+            w.tiles[i] = crate::tile::Tile {
+                kind: soil,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let i = w.index(10, 29);
+            w.tiles[i] = crate::tile::Tile {
+                kind: 595,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            w
         };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        let i = w.index(10, 29);
-        w.tiles[i] = crate::tile::Tile {
-            kind: 595,
-            ..Default::default()
-        };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        let mut rng = FastRandom::new(5);
-        update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
-        assert!(
-            !w.tile(10, 29).is_some_and(|t| t.active()),
-            "the sapling on the evil grass is killed"
-        );
-        // The control: on plain grass it survives the arm.
-        let mut w = World::new("t".into(), 40, 60);
-        w.world_surface = 40.0;
-        let i = w.index(10, 30);
-        w.tiles[i] = crate::tile::Tile {
-            kind: 2,
-            ..Default::default()
-        };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        let i = w.index(10, 29);
-        w.tiles[i] = crate::tile::Tile {
-            kind: 595,
-            ..Default::default()
-        };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        let mut rng = FastRandom::new(5);
-        update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
-        assert!(
-            w.tile(10, 29).is_some_and(|t| t.active()),
-            "the sapling on the plain grass survives"
-        );
+        let mut killed = false;
+        for k in 0..256u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut w = build(23);
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
+            if !w.tile(10, 29).is_some_and(|t| t.active()) {
+                killed = true;
+                break;
+            }
+        }
+        assert!(killed, "the sapling on the evil grass is killed");
+
+        // The control: on plain grass it survives the arm on every stream.
+        for k in 0..64u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut w = build(2);
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
+            assert!(
+                w.tile(10, 29).is_some_and(|t| t.active()),
+                "the sapling on the plain grass survives"
+            );
+        }
     }
 
     use super::*;
@@ -2992,6 +3007,170 @@ mod tests {
                 "no web without the 62 wall"
             );
         }
+    }
+
+    #[test]
+    fn the_dye_plant_styles_follow_the_soil() {
+        // `plantDye` band 1 (`:71303-71366`): the dirt/grass pair rolls style
+        // 3 or 4 (`frameX` 102/136), the jungle grass style 2/4, the mushroom
+        // grass 6; `PlaceDye` (`:53988-54065`) writes `frameX = 34 * style`.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 220, 2, 0);
+        let mut seen = Vec::new();
+        for k in 0..2048u64 {
+            // The port's `FastRandom` folds tiny seeds onto one style, so the
+            // sweep spreads them with the 64-bit golden ratio.
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut rng = FastRandom::new(seed);
+            plant_dye(&mut w, 100, 220, false, &mut rng);
+            let fx = w.tile(100, 219).map(|t| t.frame_x).unwrap_or(0);
+            if !seen.contains(&fx) {
+                seen.push(fx);
+            }
+            // clear the plant so the density scan stays quiet
+            if let Some(t) = w.tile_mut(100, 219) {
+                t.flags &= !FLAG_ACTIVE;
+            }
+        }
+        seen.sort_unstable();
+        assert!(
+            seen.contains(&102) && seen.contains(&136),
+            "the dirt pair takes both 3 (102) and 4 (136), saw {seen:?}"
+        );
+
+        // The jungle grass 60 rolls style 2 or 4.
+        let mut w2 = world();
+        w2.world_surface = 250.0;
+        put(&mut w2, 100, 220, 60, 0);
+        let mut jungle = Vec::new();
+        for k in 0..2048u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut rng = FastRandom::new(seed);
+            plant_dye(&mut w2, 100, 220, false, &mut rng);
+            jungle.push(w2.tile(100, 219).map(|t| t.frame_x).unwrap_or(0));
+            if let Some(t) = w2.tile_mut(100, 219) {
+                t.flags &= !FLAG_ACTIVE;
+            }
+        }
+        assert!(
+            jungle.contains(&68) && jungle.contains(&136),
+            "the jungle arm takes 2 (68) and 4 (136), saw {jungle:?}"
+        );
+
+        // The mushroom grass 80: style 6 (204) with free sides.
+        let mut w3 = world();
+        w3.world_surface = 250.0;
+        put(&mut w3, 100, 220, 80, 0);
+        let mut rng = FastRandom::new(3);
+        plant_dye(&mut w3, 100, 220, false, &mut rng);
+        assert_eq!(
+            w3.tile(100, 219).map(|t| (t.kind, t.frame_x)),
+            Some((227, 204)),
+            "the mushroom grass takes style 6"
+        );
+    }
+
+    #[test]
+    fn the_dye_plant_water_and_hanging_styles() {
+        // `:71415-71418`: the underground band's full-water style 5 (170) for a
+        // non-jungle soil over a solid, and `:71420-71436`: the hanging style 7
+        // (238) written into the empty cell BELOW a kind-0 cell.
+        let mut w = world();
+        w.world_surface = 100.0; // the cell sits in the underground band
+        put(&mut w, 100, 150, 53, 0); // sand
+        put(&mut w, 100, 151, 1, 0); // the solid floor
+        for y in 148..=149 {
+            let i = w.index(100, y);
+            w.tiles[i].liquid = 255;
+        }
+        let mut rng = FastRandom::new(5);
+        plant_dye(&mut w, 100, 150, false, &mut rng);
+        assert_eq!(
+            w.tile(100, 149).map(|t| (t.kind, t.frame_x)),
+            Some((227, 170)),
+            "the full-water cell takes style 5"
+        );
+
+        // The hanging pass: a kind-0 cell with a solid above and an empty cell
+        // below.
+        let mut w2 = world();
+        w2.world_surface = 100.0;
+        put(&mut w2, 100, 150, 0, 0); // the active dirt block the pick lands on
+        // A solid above stands band 2's free-above gate down, so the hanging
+        // pass is not blocked by the 227 band 2 would have written.
+        put(&mut w2, 100, 149, 1, 0);
+        let mut rng = FastRandom::new(5);
+        plant_dye(&mut w2, 100, 150, false, &mut rng);
+        assert_eq!(
+            w2.tile(100, 151).map(|t| (t.kind, t.frame_x)),
+            Some((227, 238)),
+            "the hanging style 7 lands below the dirt"
+        );
+    }
+
+    #[test]
+    fn the_dye_plant_exotic_styles() {
+        // `:71324-71336`: the exotic arm takes `Next(8, 12)` (styles 8-11,
+        // `frameX` 272..374) on grass/moss/dirt, and the density scan keeps the
+        // two families apart (`frameX >= 272` counts as exotic).
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 220, 2, 0);
+        let mut rng = FastRandom::new(9);
+        plant_dye(&mut w, 100, 220, true, &mut rng);
+        let fx = w.tile(100, 219).map(|t| t.frame_x).unwrap_or(0);
+        assert!(
+            (272..=374).contains(&fx) && fx % 34 == 0,
+            "the exotic arm writes a 272..374 style column, got {fx}"
+        );
+        // The exotic density scan stops a second exotic plant in the box.
+        let mut w2 = world();
+        w2.world_surface = 250.0;
+        put(&mut w2, 100, 220, 2, 0);
+        put(&mut w2, 130, 219, 227, 272);
+        let mut rng = FastRandom::new(9);
+        plant_dye(&mut w2, 100, 220, true, &mut rng);
+        assert!(
+            !w2.tile(100, 219).is_some_and(|t| t.active()),
+            "the exotic density scan blocks the neighbour"
+        );
+    }
+
+    #[test]
+    fn the_dye_plants_arrive_through_the_dispatchers() {
+        // The heads (`:72219-72228` overground `Next(3000)`, `:73255-73262`
+        // underground `Next(2500)`) sit behind every `nactive` pick.
+        let mut w = world();
+        w.world_surface = 100.0;
+        put(&mut w, 100, 150, 1, 0); // stone in the underground band
+        let mut seen = false;
+        for seed in 1..=40000u64 {
+            let mut rng = FastRandom::new(seed);
+            update_world_underground_tile(&mut w, 100, 150, 3, true, true, false, &mut rng);
+            if w.tile(100, 149).is_some_and(|t| t.active() && t.kind == 227) {
+                seen = true;
+                break;
+            }
+        }
+        assert!(seen, "the underground dye head plants a 227");
+
+        // The overground twin (`:72219-72228`, `Next(3000)`) on a surface
+        // dirt cell.
+        let mut w2 = world();
+        w2.world_surface = 200.0;
+        put(&mut w2, 100, 190, 2, 0);
+        let mut seen = false;
+        for k in 0..40000u64 {
+            let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let mut rng = FastRandom::new(seed);
+            update_world_overground_tile(&mut w2, 100, 190, true, false, 0.0, 0.0, &mut rng);
+            if w2.tile(100, 189).is_some_and(|t| t.active() && t.kind == 227) {
+                seen = true;
+                break;
+            }
+        }
+        assert!(seen, "the overground dye head plants a 227");
     }
 
     #[test]
@@ -4719,6 +4898,230 @@ fn grow_web(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
     }
 }
 
+/// The kinds a dye plant may grow over or under (`WorldGen.PlantDye` and
+/// `PlaceDye`'s free-side list, `WorldGen.cs:71300-71301`/`:53997-53998`): the
+/// grass 3, the web 51, the flower vines 697/703, the lily 61, the jungle
+/// flower 73, the flower 74 and the mushroom 184.
+const DYE_FREE_SIDES: [u16; 8] = [3, 51, 697, 703, 61, 73, 74, 184];
+
+/// `WorldGen.PlaceDye` (`WorldGen.cs:53988-54065`): the dye plant (227) write
+/// with its `frameX = 34 * style` layout. The seat rules are per style: 7
+/// hangs below a solid with a free cell below; 6 sits on the mushroom grass
+/// 80 between two free cells; 5 needs a full water cell over the solid; 8-11
+/// take any dry solid floor; 3/4 need an open (wall == 0) cell; the rest any
+/// dry solid floor. Returns whether the write happened.
+pub fn place_dye(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let Some(here) = cell(world, x, y) else { return false };
+    let Some(below) = cell(world, x, y + 1) else { return false };
+    let Some(above) = cell(world, x, y - 1) else { return false };
+    let free = |t: &crate::tile::Tile| !t.active() || DYE_FREE_SIDES.contains(&t.kind);
+    let mut flag = false;
+    if style == 7 {
+        if !free(&below) {
+            return false;
+        }
+        if crate::edit::solid_tile(world, x, y - 1) && !below.active() {
+            flag = true;
+        }
+    } else {
+        if !free(&above) {
+            return false;
+        }
+        if style == 6 {
+            if below.active()
+                && !below.inactive()
+                && below.kind == 80
+                && !cell(world, x - 1, y + 1).is_some_and(|t| t.active())
+                && !cell(world, x + 1, y + 1).is_some_and(|t| t.active())
+            {
+                flag = true;
+            }
+        } else if crate::edit::solid_tile(world, x, y + 1) && !above.active() {
+            match style {
+                // `:54038-54044`: the water style needs full, non-lava/honey/
+                // shimmer liquid in the plant's own cell.
+                5 => {
+                    flag = here.liquid == 255
+                        && here.liquid_kind() == crate::tile::LiquidKind::Water;
+                }
+                // `:54045-54047`: the exotic styles take any dry floor.
+                8 | 9 | 10 | 11 => flag = true,
+                _ => {
+                    if here.liquid != 0 {
+                        // `:54050`: the liquid break.
+                    } else if style == 3 || style == 4 {
+                        if here.wall == 0 {
+                            flag = true;
+                        }
+                    } else {
+                        flag = true;
+                    }
+                }
+            }
+        }
+    }
+    if !flag {
+        return false;
+    }
+    // `:54056-54064`: the write — active, no half brick/slope, `frameY` 0 and
+    // the style column `34 * style`.
+    if let Some(t) = world.tile_mut(x, y) {
+        t.kind = 227;
+        t.flags |= FLAG_ACTIVE;
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        t.set_slope(0);
+        t.frame_y = 0;
+        t.frame_x = (34 * style) as i16;
+    }
+    true
+}
+
+/// `WorldGen.plantDye` (`WorldGen.cs:71286-71436`): the dye-plant (227) sprout
+/// on an `nactive` cell inside the 95-tile margins. Three passes — the surface
+/// band (`j < worldSurface`), the underground band
+/// (`worldSurface <= j < UnderworldLayer`) and the hanging style 7 below an
+/// empty dirt cell. Each pass first refuses when the ±`num` box already holds
+/// a 227 of its own family (the `frameX < 272` normal / `>= 272` exotic split)
+/// and then dispatches on the soil kind to a style (2 dirt/109, 60 jungle,
+/// 53 sand in full water, 80 mushroom grass, 0/1/59 dirt/stone/clay, the
+/// full-water 5, the exotic `Next(8, 12)`).
+pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut FastRandom) {
+    let Some(here) = cell(world, i, j) else { return };
+    if !here.active() || i < 95 || i > world.width - 95 || j < 95 || j > world.height - 95 {
+        return;
+    }
+    let num = if exotic { 240 } else { 90 };
+    let water_above_full = cell(world, i, j - 1).is_some_and(|t| t.liquid == 255)
+        && cell(world, i, j - 2).is_some_and(|t| t.liquid == 255);
+    // `:71300-71301`: the free-above gate shared by both bands.
+    let free_above = |world: &World| {
+        cell(world, i, j - 1).is_some_and(|t| {
+            !t.active() || matches!(t.kind, 3 | 51 | 61 | 73 | 74 | 184 | 697 | 703)
+        })
+    };
+    // The band 1 arm (`:71303-71366`).
+    if (j as f64) < world.world_surface && free_above(world) {
+        if dye_density_blocked(world, i, j, num, exotic) {
+            return;
+        }
+        if exotic {
+            // `:71324-71336`: the grass/moss/dirt arm behind the lava/honey
+            // veto.
+            let mut ok = crate::tiledata::SET_GRASS.has(here.kind)
+                || crate::tiledata::SET_CONVERSION_MOSS.has(here.kind)
+                || here.kind == 0;
+            if let Some(t) = cell(world, i, j - 1) {
+                if t.liquid > 0 && t.liquid_kind() != crate::tile::LiquidKind::Water {
+                    ok = false;
+                }
+            }
+            if ok {
+                let style = rng.next_range(8, 12);
+                place_dye(world, i, j - 1, style);
+            }
+        } else if here.kind == 2 || here.kind == 109 {
+            // `:71339-71347`: the dirt/grass pair rolls 3 or 4.
+            let style = if rng.next(4) == 0 { 4 } else { 3 };
+            place_dye(world, i, j - 1, style);
+        } else if here.kind == 60 {
+            // `:71348-71356`: the jungle grass rolls 2 or 4.
+            let style = if rng.next(2) == 0 { 2 } else { 4 };
+            place_dye(world, i, j - 1, style);
+        } else if here.kind == 53 && water_above_full {
+            // `:71357-71360`: the sand arm's water style.
+            place_dye(world, i, j - 1, 2);
+        } else if here.kind == 80
+            && !cell(world, i - 1, j - 1).is_some_and(|t| t.active())
+            && !cell(world, i + 1, j - 1).is_some_and(|t| t.active())
+        {
+            // `:71361-71366`: the mushroom grass arm and its 11×21 evil box.
+            let mut ok = true;
+            for m in (i - 5)..=(i + 5) {
+                for n in (j - 5)..=(j + 15) {
+                    if cell(world, m, n).is_some_and(|t| t.active() && matches!(t.kind, 112 | 234)) {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                place_dye(world, i, j - 1, 6);
+            }
+        }
+    }
+    // `:71368-71371`: the underground band's gate.
+    if (j as f64) < world.world_surface || j >= world.height - 200 {
+        return;
+    }
+    if free_above(world) {
+        if dye_density_blocked(world, i, j, num, exotic) {
+            return;
+        }
+        if exotic {
+            if crate::tiledata::SET_GRASS.has(here.kind)
+                || crate::tiledata::SET_CONVERSION_MOSS.has(here.kind)
+                || here.kind == 0
+            {
+                let style = rng.next_range(8, 12);
+                place_dye(world, i, j - 1, style);
+            }
+        } else if here.kind == 60 {
+            // `:71394-71405`: the jungle arm's 2 / 0 / 1 cascade.
+            if rng.next(2) == 0 {
+                place_dye(world, i, j - 1, 2);
+            } else if rng.next(2) == 0 {
+                place_dye(world, i, j - 1, 0);
+            } else {
+                place_dye(world, i, j - 1, 1);
+            }
+        } else if matches!(here.kind, 0 | 1 | 59) {
+            // `:71406-71414`: the dirt/stone/clay arm rolls 0 or 1.
+            let style = if rng.next(2) == 0 { 0 } else { 1 };
+            place_dye(world, i, j - 1, style);
+        } else if water_above_full {
+            // `:71415-71418`: the full-water style.
+            place_dye(world, i, j - 1, 5);
+        }
+    }
+    // `:71420-71436`: the hanging pass — only below an empty cell, refused by
+    // any 227 in the ±num box, writing style 7 under a kind-0 cell.
+    if cell(world, i, j + 1).is_some_and(|t| t.active()) || exotic {
+        return;
+    }
+    for m in (i - num)..(i + num) {
+        for n in (j - num)..(j + num) {
+            if cell(world, m, n).is_some_and(|t| t.active() && t.kind == 227) {
+                return;
+            }
+        }
+    }
+    if here.kind == 0 {
+        place_dye(world, i, j + 1, 7);
+    }
+}
+
+/// The `plantDye` density scan (`WorldGen.cs:71310-71322`): any 227 in the
+/// `±num` box counts — the exotic pass matches the `frameX >= 272` styles and
+/// the normal pass the `frameX < 272` ones.
+fn dye_density_blocked(world: &World, i: i32, j: i32, num: i32, exotic: bool) -> bool {
+    let min_i = (i - num).clamp(1, world.width - 2);
+    let max_i = (i + num).clamp(1, world.width - 2);
+    let min_j = (j - num).clamp(1, world.height - 2);
+    let max_j = (j + num).clamp(1, world.height - 2);
+    for k in min_i..max_i {
+        for l in min_j..max_j {
+            if cell(world, k, l).is_some_and(|t| {
+                t.active()
+                    && t.kind == 227
+                    && (!exotic || t.frame_x >= 272)
+                    && (exotic || t.frame_x < 272)
+            }) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
 /// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
 /// grass growth (underground) + the spike arms, the lily conversion, the five
@@ -4763,6 +5166,13 @@ pub fn update_world_underground_tile(
             grow_web(world, i, j, rng);
         }
         return;
+    }
+    // `:73255-73262`: the dye-plant head — `Main.rand.Next(2500)` on every
+    // `nactive` pick, the exotic arm at `Next(10000)` in hardmode.
+    if rng.next(2500) == 0 {
+        plant_dye(world, i, j, false, rng);
+    } else if world.hard_mode && rng.next(10000) == 0 {
+        plant_dye(world, i, j, true, rng);
     }
     // `:73263-73271`: the cattail arm — the validity sweep, then (on
     // `genRand.Next(2) == 0`, the cell still live) one growth step and a
@@ -4834,4 +5244,5 @@ pub fn update_world_underground_tile(
         spread_desert_walls(world, wall_dist, i, j, rng);
     }
 }
+
 
