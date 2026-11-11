@@ -631,6 +631,10 @@ pub(crate) struct App {
     pub(crate) invasion_progress: i32,
     pub(crate) invasion_progress_max: i32,
     pub(crate) invasion_progress_icon: i32,
+    /// `Main.invasionProgressWave` (`Main.cs:1929`) — the moon-event wave
+    /// number; `0` selects `DrawInvasionProgress`'s `Game.WaveCleared` arm
+    /// (`:47806`), `> 0` the `Game.WaveMessage` arm (`:47782`).
+    pub(crate) invasion_progress_wave: i32,
     pub(crate) invasion_progress_display_left: i32,
     pub(crate) invasion_progress_alpha: f32,
     pub(crate) invasion_progress_near: bool,
@@ -2671,6 +2675,7 @@ impl App {
             invasion_progress: -1,
             invasion_progress_max: 0,
             invasion_progress_icon: 0,
+            invasion_progress_wave: 0,
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
