@@ -152,6 +152,9 @@ pub struct InventoryHit {
     /// tooltip layer turns it into a name (`housing::label`). Copy-friendly, so
     /// the hit stays `Copy`.
     pub housing: Option<(usize, Option<usize>)>,
+    /// `Main.hidePVPAndTeamIcons` (`Main.cs:42053-42056`) — set by the housing
+    /// page once its columns reach the PVP icons.
+    pub hide_pvp_icons: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +485,7 @@ pub fn draw(
         // the cell's name). Vanilla also sets `player.mouseInterface`, i.e. this
         // text is the one on screen for the page.
         hit.housing = housing::hover(&cells, [mouse.x, mouse.y], INVENTORY_SCALE);
+        hit.hide_pvp_icons = housing::hide_pvp_icons(&cells, screen.x);
     } else {
         // `Main.cs:41372-41524`: equipment columns (`EquipPage == 0`, and the
         // page-3 fallthrough).
