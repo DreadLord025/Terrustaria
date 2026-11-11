@@ -670,6 +670,22 @@ pub struct ProjData {
     pub alpha: i32,
     /// `Projectile.scale` (default `1f`, `:320`/`:785`).
     pub scale: f32,
+    /// The summon identification (M4-PROJ-8): `Projectile.minion` +
+    /// `Projectile.minionSlots` (the stock false / 0f, `Projectile.cs:775-776`).
+    pub minion: bool,
+    pub sentry: bool,
+    /// `Projectile.minionSlots` — the per-tick slot budget the pool's
+    /// accumulate block adds (`:16719`); 0.5 for the spider family (never
+    /// rounded to an integer count).
+    pub minion_slots: f32,
+    /// `Projectile.netImportant` (`:706`'s stock false) — carried on the
+    /// summon rows (the plan constraint); the MP bookkeeping consumer is out
+    /// of scope (module doc).
+    pub net_important: bool,
+    /// `Projectile.ignoreWater` (`:752`'s stock false) — carried on the summon
+    /// rows; the `wet = false` spawn write (`:10886-10889`) lands with the
+    /// projectile-liquid work.
+    pub ignore_water: bool,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -1974,6 +1990,63 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
             // `ignoreWater` dropped — its local-immunity pair
             // (`localNPCHitCooldown = 60`) rides the overlay below.
+            HORNET => (24.0, 26.0, 62, -1, 18000, 0, false, false, false, RESET_STATE),
+            FLYING_IMP => (34.0, 26.0, 62, -1, 18000, 0, false, false, false, RESET_STATE),
+            TEMPEST => (28.0, 40.0, 62, -1, 18000, 0, false, false, false, RESET_STATE),
+            UFO_MINION => (28.0, 28.0, 62, -1, 18000, 0, true, false, false, RESET_STATE),
+            STARDUST_CELL => (24.0, 24.0, 62, -1, 18000, 0, true, false, false, RESET_STATE),
+            ABIGAIL => (30.0, 48.0, 62, -1, 18000, 0, false, false, false, RESET_STATE),
+            // The 0.5-slot spider minions (`Projectile.cs:4707` Retanimini,
+            // `:4723` Spazmamini) — aiStyle 66, the slot budget halves.
+            RETANIMINI | SPAZMAMINI => (40.0, 20.0, 66, -1, 18000, 0, false, false, false, RESET_STATE),
+            // The Stardust Guardian (`Projectile.cs:6709`) — aiStyle 120, the
+            // 0-slot pet-grade minion.
+            STARDUST_GUARDIAN => (50.0, 80.0, 120, -1, 18000, 0, false, false, false, RESET_STATE),
+            // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
+            // — aiStyle 67; these three arms set neither tileCollide nor
+            // ignoreWater (the stock true / false).
+            STORM_TIGER_1 => (26.0, 20.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            STORM_TIGER_2 | STORM_TIGER_3 => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            // The baby bird (`Projectile.cs:7829-7845` — the C#
+            // `ProjectileID.BabyBird`) — the buff-216 pet-respawn minion
+            // (Phase 2's arm), aiStyle 158; the `friendly`/`drawLayer` lines
+            // have no port consumer (the module doc).
+            BABY_BIRD => (10.0, 10.0, 158, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:3516-3525` (266) — the Slime Staff's minion,
+            // aiStyle 26 (the hop family, unported — the dispatch no-ops like
+            // the other unported styles), 24x16, `penetrate = -1`,
+            // `timeLeft *= 5` and the idStatic-12 pair.
+            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // The sentries: the aiStyle-53 placeable staff sentries —
+            // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
+            // `coldDamage` lines have no port consumer, the module doc),
+            // QueenSpider (`:4615`), HoundiusShootius (`:9143`); the Moon
+            // Lord turret pair (`:6916`/`:6929` — aiStyle 123); the DD2
+            // towers (`:7130-7151` FlameBurstTower T1-T3 — aiStyle 130, the
+            // per-type box overrides T2 28×58 / T3 28×60; `:7241`
+            // BallistraTower T1-T3 — aiStyle 134; `:7325` LightningAura
+            // T1-T3 — aiStyle 137, penetrate -1 + the local pair; `:7340`
+            // ExplosiveTrap T1-T3 — aiStyle 138, penetrate -1); DeadCells
+            // Barnacle (`:9707` — aiStyle 197).
+            FROST_HYDRA => (80.0, 74.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            QUEEN_SPIDER => (66.0, 50.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            MOONLORD_TURRET | RAINBOW_CRYSTAL => {
+                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
+            }
+            FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
+            FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
+            FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
+            BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2 | BALLISTRA_TOWER_3 => {
+                (26.0, 54.0, 134, 1, 36000, 0, false, false, false, RESET_STATE)
+            }
+            LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => {
+                (16.0, 16.0, 137, -1, 36000, 0, false, false, false, RESET_STATE)
+            }
+            EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3 => {
+                (16.0, 16.0, 138, -1, 36000, 0, false, false, false, RESET_STATE)
+            }
+            DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -2049,6 +2122,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // `DefaultToFlail`'s pair (`:10753-10762`) — the ten flail kinds.
         BALL_O_HURT | BLUE_MOON | SUNFURY | DAO_OF_POW | THE_MEATBALL | FLOWER_POW
         | DRIPPLER_FLAIL | MACE | FLAMING_MACE | FLAIRON => (true, 10),
+        // The summon rows' local pairs (Phase 1): the Guardian
+        // (`Projectile.cs:6721-6722`), the Storm Tigers
+        // (`:8096-8097`/`:8110-8111`/`:8124-8125`), Abigail (`:9111-9112`),
+        // the Lightning Auras (`:7332-7333`), the baby bird (`:7841-7842`).
+        STARDUST_GUARDIAN => (true, 5),
+        STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 => (true, 10),
+        ABIGAIL => (true, 20),
+        BABY_BIRD => (true, 15),
+        SLIME_MINION => (true, 12),
+        LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
     let (
@@ -2059,6 +2142,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         alpha,
         scale,
     ) = state;
+    // The summon identification (M4-PROJ-8 Phase 1): the
+    // `minion`/`minionSlots` slice of the arms below. Everything else keeps
+    // the stock `minion = false` / `minionSlots = 0f`
+    // (`Projectile.cs:775-776`).
+    let (minion, sentry, minion_slots) = match kind {
+        HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD
+        | SLIME_MINION => (true, false, 1.0),
+        RETANIMINI | SPAZMAMINI => (true, false, 0.5),
+        STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
+            (true, false, 0.0)
+        }
+        FROST_HYDRA | QUEEN_SPIDER | MOONLORD_TURRET | RAINBOW_CRYSTAL | FLAME_BURST_TOWER_1
+        | FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 | BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2
+        | BALLISTRA_TOWER_3 | LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3
+        | EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3 | HOUNDIUS_SHOOTIUS
+        | DEAD_CELLS_BARNACLE => (false, true, 0.0),
+        _ => (false, false, 0.0),
+    };
     Some(ProjData {
         w,
         h,
@@ -2085,8 +2186,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(
                 kind,
                 TERRARIAN_YOYO | TERRARIAN_BEAM | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
+                    | TEMPEST | RETANIMINI | SPAZMAMINI
             ),
-        id_static_hit_cooldown: if uses_id_static_immunity {
+        id_static_hit_cooldown: if matches!(kind, TEMPEST | RETANIMINI | SPAZMAMINI) {
+            if kind == TEMPEST {
+                10
+            } else if kind == RETANIMINI {
+                16
+            } else {
+                12
+            }
+        } else if uses_id_static_immunity {
             id_static_hit_cooldown
         } else if matches!(kind, TERRARIAN_YOYO | TERRARIAN_BEAM | KRAKEN_WAVE) {
             10
@@ -2103,6 +2213,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         } else {
             scale
         },
+        // The summon identification (M4-PROJ-8 Phase 1): the
+        // `minion`/`minionSlots` slice; every summon arm sets `netImportant`
+        // and `ignoreWater` (but the Storm Tigers keep the stock false).
+        minion,
+        sentry,
+        minion_slots,
+        net_important: minion || sentry,
+        ignore_water: (minion || sentry)
+            && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3),
     })
 }
 
@@ -2124,6 +2243,59 @@ pub struct GemStaffFeatures {
     /// word is feature `i`.
     bits: u32,
 }
+
+
+// ===== M4-PROJ-8: the summon system constants =====
+pub const PROJ_COUNT: usize = 1136;
+
+pub const FROST_HYDRA: u16 = 308;
+pub const HORNET: u16 = 373;
+pub const FLYING_IMP: u16 = 375;
+pub const RETANIMINI: u16 = 387;
+pub const SPAZMAMINI: u16 = 388;
+pub const TEMPEST: u16 = 407;
+pub const UFO_MINION: u16 = 423;
+pub const STARDUST_CELL: u16 = 613;
+pub const STARDUST_GUARDIAN: u16 = 623;
+pub const BABY_BIRD: u16 = 759;
+pub const SLIME_MINION: u16 = 266;
+pub const STORM_TIGER_1: u16 = 833;
+pub const STORM_TIGER_2: u16 = 834;
+pub const STORM_TIGER_3: u16 = 835;
+pub const ABIGAIL: u16 = 963;
+pub const QUEEN_SPIDER: u16 = 377;
+pub const MOONLORD_TURRET: u16 = 641;
+pub const RAINBOW_CRYSTAL: u16 = 643;
+pub const FLAME_BURST_TOWER_1: u16 = 663;
+pub const FLAME_BURST_TOWER_2: u16 = 665;
+pub const FLAME_BURST_TOWER_3: u16 = 667;
+pub const BALLISTRA_TOWER_1: u16 = 677;
+pub const BALLISTRA_TOWER_2: u16 = 678;
+pub const BALLISTRA_TOWER_3: u16 = 679;
+pub const LIGHTNING_AURA_1: u16 = 688;
+pub const LIGHTNING_AURA_2: u16 = 689;
+pub const LIGHTNING_AURA_3: u16 = 690;
+pub const EXPLOSIVE_TRAP_1: u16 = 691;
+pub const EXPLOSIVE_TRAP_2: u16 = 692;
+pub const EXPLOSIVE_TRAP_3: u16 = 693;
+pub const HOUNDIUS_SHOOTIUS: u16 = 966;
+pub const DEAD_CELLS_BARNACLE: u16 = 1025;
+
+pub const MINION_SACRIFICABLE: &[u16] = &[
+    191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
+    831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625, 626, 627, 628,
+];
+
+pub const SENTRY_SHOT: &[u16] = &[
+    680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
+];
+
+pub const MINION_TARGETING_FEATURE: &[u16] = &[
+    191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 625, 755,
+    758, 759, 831, 833, 834, 835, 864, 946, 951, 963, 970, 1022, 1093, 1094, 1112, 1113, 1118,
+    1119, 377, 308, 643, 641, 663, 665, 667, 677, 678, 679, 688, 689, 690, 691, 692, 693, 966,
+    1025,
+];
 
 impl GemStaffFeatures {
     /// `Bits[0]` — `Projectile.cs:41-51`.
@@ -2363,6 +2535,26 @@ pub struct Projectile {
     /// The flag also keeps the blast itself — which rides the same style —
     /// from ever spawning a second one.
     blast_spawned: bool,
+    /// The summon identification (M4-PROJ-8): `Projectile.minion` /
+    /// `Projectile.sentry` (the stock false, `Projectile.cs:700`/`:775`) —
+    /// the flags the pool's per-tick minion/sentry block (`:16704-16740`,
+    /// Phase 3) and the AI dispatch branch on.
+    pub minion: bool,
+    pub sentry: bool,
+    /// `Projectile.minionSlots` — the slot budget this occupant consumes
+    /// (`:16719`'s `slotsMinions += this.minionSlots`); 0.5 for the spiders.
+    pub minion_slots: f32,
+    /// `Projectile.minionPos` (`:398`) — the pool's write (`:16711`, Phase 3)
+    /// orders the draw pass; carried as a plain field until the draw phase.
+    pub minion_pos: u16,
+    /// `Projectile.originalDamage` (`:352`) — the UNSCALED summon damage the
+    /// per-tick recompute reads (`:16704-16707`); the spawn seam sets it from
+    /// the summon spawn sites' post-spawn writes (`Player.cs:49601`/`:48209`).
+    pub original_damage: i32,
+    /// `Projectile.netImportant` (stock false, `:706`).
+    pub net_important: bool,
+    /// `Projectile.ignoreWater` (stock false, `:752`).
+    pub ignore_water: bool,
 }
 
 impl Default for Projectile {
@@ -2412,11 +2604,802 @@ impl Default for Projectile {
             bonus_tag_damage: 0,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
+            minion: false,
+            sentry: false,
+            minion_slots: 0.0,
+            minion_pos: 0,
+            original_damage: 0,
+            net_important: false,
+            ignore_water: false,
         }
     }
 }
 
+/// `AI_062`'s attack-shot request — the shot rides back to the pool (the AI
+/// runs on one slot and cannot reach the pool's array, the `YoyoBeamRequest`
+/// pattern). The spawn drops when the shot family (374/376/408/433/614) has no
+/// `proj_data` row yet; `target` is the scan's NPC index (the Cell's `ai1`).
+pub(crate) struct MinionShot {
+    pub kind: u16,
+    pub vx: f32,
+    pub vy: f32,
+    pub target: i32,
+}
+
+
+/// `AI_062`'s tile-solid read for the UFO/Cell dash lifts
+/// (`Main.tileSolid[...]`/`Main.tileSolidTop` at `Projectile.cs:65533-65545`
+/// and `:65565-65590`): the tile at (x, y) is an active non-top solid.
+fn tile_solid_at(world: &World, x: f32, y: i32) -> bool {
+let Some(tile) = world.tile((x / TILE_PX) as i32, y) else {
+    return false;
+};
+tile.active()
+    && tr_core::tiledata::TILE_SOLID.has(tile.kind)
+    && !tr_core::tiledata::TILE_SOLID_TOP.has(tile.kind)
+}
+/// `Collision.SolidCollision(position, width, height)` — the Tempest's alpha
+/// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
+/// its centre over active non-top solids. The C#'s exact point cloud is a
+/// margin-level difference — recorded in ANALYSIS.
+fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+let pts = [
+    (pos.x, pos.y),
+    (pos.x + w, pos.y),
+    (pos.x, pos.y + h),
+    (pos.x + w, pos.y + h),
+    (pos.x + w * 0.5, pos.y + h * 0.5),
+];
+pts.iter().any(|&(px, py)| {
+    world
+        .tile((px / TILE_PX) as i32, (py / TILE_PX) as i32)
+        .is_some_and(|t| {
+            t.active()
+                && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+        })
+})
+}
+/// The ported sentry-aim seam: the target search's result rides the slot's
+/// `local_ai` ([aim_x, aim_y, target_slot]) until the per-kind shot machines
+/// land (ANALYSIS "Minions & sentries (M4-PROJ-8)").
+fn store_sentry_aim(p: &mut Projectile, aim: Option<(usize, f32, f32)>) {
+match aim {
+    Some((t, x, y)) => {
+        p.local_ai[0] = x;
+        p.local_ai[1] = y;
+        p.local_ai[2] = t as f32;
+    }
+    None => {
+        p.local_ai[0] = p.pos.x + p.w * 0.5;
+        p.local_ai[1] = p.pos.y + p.h * 0.5;
+        p.local_ai[2] = -1.0;
+    }
+}
+}
+
 impl Projectile {
+    /// `AI_062`'s same-type separation loop (`Projectile.cs:65265-65290`): every
+    /// live slot with the same owner and kind, manhattan-closer than `width`
+    /// (the Tempest's doubled), pushes this slot away by `num10` per axis
+    /// (0.05, the Tempest's 0.1). The second return is this slot's index among
+    /// the owner's same-kind minions (the Imp's queue offset,
+    /// `Projectile.cs:65685-65695`). The pool computes both before the AI call —
+    /// the loop reads the sibling slots.
+    pub fn minion_separation(&self, all: &[Projectile], me: usize) -> (Vec2, u32) {
+        let mut sep = Vec2::ZERO;
+        let mut queue: u32 = 0;
+        let num10 = if self.kind == TEMPEST { 0.1 } else { 0.05 };
+        let num11 = if self.kind == TEMPEST {
+            self.w * 2.0
+        } else {
+            self.w
+        };
+        for (m, other) in all.iter().enumerate() {
+            if other.active && other.owner == self.owner && other.kind == self.kind {
+                if m < me {
+                    queue += 1;
+                }
+                if m == me
+                    || (self.pos.x - other.pos.x).abs() + (self.pos.y - other.pos.y).abs() >= num11
+                {
+                    continue;
+                }
+                sep.x += if self.pos.x < other.pos.x {
+                    -num10
+                } else {
+                    num10
+                };
+                sep.y += if self.pos.y < other.pos.y {
+                    -num10
+                } else {
+                    num10
+                };
+            }
+        }
+        (sep, queue)
+    }
+
+    /// `AI_062` (`Projectile.cs:65038-66128`) — the flying-minion AI over its
+    /// six kinds (373 Hornet, 375 Imp, 407 Tempest, 423 UFO, 613 Stardust Cell,
+    /// 963 Abigail): the keep-alive pin against the summon flag (the buff-loss
+    /// despawn), the same-type separation, the whip-target-then-scan target
+    /// search, the attack/follow/return state machine and the per-kind fire
+    /// cooldowns. The attack-shot spawn rides back to the pool as
+    /// [`MinionShot`] (the AI runs on one slot and cannot reach the pool).
+    ///
+    /// Not ported (recorded in ANALYSIS): the dust spawns and their `Main.rand`
+    /// rolls (no general `Main.dust` pool here), the sound gates (963's
+    /// cry/attack cues), `Lighting.AddLight` (613's glow), the frame machines
+    /// (cosmetic — the slot carries no frame fields) and `strongBees` (373's
+    /// bee cooldown cap keeps the C# default 90). The `Main.rand` rolls inside
+    /// the cooldown machines (`rand(1,4)`/`rand(3)` extra increments) stand at
+    /// their deterministic minimum, and the LOS check rides the shared
+    /// `can_hit_line` walk (`yoyo_can_hit`, the `Collision.CanHitLine`
+    /// stand-in) instead of the C#'s exact Bresenham — both recorded.
+    fn ai_flying_minion(
+        &mut self,
+        world: &World,
+        sep: Vec2,
+        queue: u32,
+        mut owner: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+    ) -> Option<MinionShot> {
+        // `:65039-65045` — the parameter block.
+        let (mut num, mut num2, mut num3, mut num4, mut num5) =
+            (0.0f32, 0.0f32, 20.0f32, 40.0f32, 0.69f32);
+        // `:65046-65060` — Abigail's parameter scaling and the originalDamage
+        // write from the owner's Abigail max.
+        if self.kind == ABIGAIL {
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = owner.as_ref().is_some_and(|p| p.abigail_minion);
+            let abigail_dmg = owner
+                .as_ref()
+                .map_or(0, |p| p.highest_abigail_counter_original_damage);
+            let abigail_count = owner
+                .as_ref()
+                .map_or(-1.0, |p| p.owned_projectile_counts[970] as f32);
+            if dead {
+                if let Some(p) = owner.as_deref_mut() {
+                    p.abigail_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            self.original_damage = abigail_dmg;
+            num2 = abigail_count - 1.0;
+            num3 = 4.0f32.max(18.0 - num2 * 1.75);
+            num = 1.4;
+            num4 = 5.0f32.max(num4 - num2 * 4.0);
+            num5 = (num5 + num2 * 0.03).min(1.0);
+        }
+        if self.kind == UFO_MINION {
+            // `:65061-65064` — the UFO's short attack counter.
+            num4 = 5.0;
+        }
+        // `:65062-65132` — the per-kind keep-alive flags: death clears the
+        // flag (no pin — the 2-tick despawn counts), the live flag pins
+        // `timeLeft = 2`.
+        if self.kind != ABIGAIL {
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = match self.kind {
+                HORNET => owner.as_ref().is_some_and(|p| p.hornet_minion),
+                FLYING_IMP => owner.as_ref().is_some_and(|p| p.imp_minion),
+                TEMPEST => owner.as_ref().is_some_and(|p| p.sharknado_minion),
+                UFO_MINION => owner.as_ref().is_some_and(|p| p.ufo_minion),
+                STARDUST_CELL => owner.as_ref().is_some_and(|p| p.stardust_minion),
+                _ => false,
+            };
+            if dead {
+                match self.kind {
+                    HORNET => owner.as_deref_mut().map(|p| p.hornet_minion = false),
+                    FLYING_IMP => owner.as_deref_mut().map(|p| p.imp_minion = false),
+                    TEMPEST => owner.as_deref_mut().map(|p| p.sharknado_minion = false),
+                    UFO_MINION => owner.as_deref_mut().map(|p| p.ufo_minion = false),
+                    STARDUST_CELL => owner.as_deref_mut().map(|p| p.stardust_minion = false),
+                    _ => None,
+                };
+            } else if held {
+                self.time_left = 2;
+            }
+        }
+        // `:65133-65262` — the UFO/Stardust Cell dash state (`ai[0] == 2`): the
+        // cooldown counts down and the return to idle damps the velocity. The
+        // dust bodies and their rolls are unported (ANALYSIS).
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.ai[0] == 2.0 {
+            self.ai[1] -= 1.0;
+            self.tile_collide = false;
+            if self.ai[1] != 0.0 {
+                return None;
+            }
+            self.ai[1] = 30.0;
+            self.ai[0] = 0.0;
+            self.vel /= 5.0;
+            self.vel.y = 0.0;
+            self.extra_updates = 0;
+        }
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.extra_updates > 1 {
+            self.extra_updates = 0;
+        }
+        // `:65254-65263` — the dash cooldown windows decay per tick.
+        if matches!(self.kind, UFO_MINION | STARDUST_CELL) && self.local_ai[0] > 0.0 {
+            self.local_ai[0] -= 1.0;
+        }
+        // `:65265-65290` — the same-type separation, from the caller.
+        self.vel += sep;
+        // `:65291-65317` — the target search: the whip target first, then the
+        // full scan. `num12` is the reach (2000, Abigail's 700).
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mut vector = self.pos;
+        let mut num12 = 2000.0f32;
+        if self.kind == ABIGAIL {
+            num12 = 700.0;
+        }
+        let mut flag_target = false;
+        let mut num13: i32 = -1;
+        self.tile_collide = true;
+        if matches!(self.kind, ABIGAIL | TEMPEST) {
+            self.tile_collide = false;
+            if self.kind == TEMPEST {
+                // `:65314-65319` — the Tempest's solid-collision alpha ramp.
+                if box_solid(world, self.pos, self.w, self.h) {
+                    self.alpha = (self.alpha + 20).min(150);
+                } else {
+                    self.alpha = (self.alpha - 50).max(60);
+                }
+            }
+        }
+        // The NPC aim point: `position + Size * 0.5`.
+        // `Projectile.cs:65323-65334` — the Tempest/UFO/Cell branch aims at
+        // `position + Size * (0.5, 0)`; the generic branch's `Center` is the
+        // same point for the ported boxes.
+        let npc_aim = |n: &Npc| {
+            let (w, h) = n.size();
+            Vec2::new(n.x + w * 0.5, n.y)
+        };
+        let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
+        let owner_center = Vec2::new(ocx, ocy);
+        // `:65322-65360` — the Tempest/UFO/Cell branch centres the distances on
+        // the OWNER; the generic branch (`:65362-65420`) on the minion itself.
+        let whip = owner.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
+        if whip >= 0 {
+            if let Some(n) = npcs.get(whip as usize) {
+                if n.can_be_chased_by() {
+                    let aim = npc_aim(n);
+                    let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
+                        owner_center
+                    } else {
+                        center
+                    };
+                    let (nw, nh) = n.size();
+                    let d = (aim - anchor).length();
+                    if d < num12 * 3.0 && can_hit_line(world, center.x, center.y, self.w, self.h, aim.x, aim.y, nw, nh) {
+                        num12 = d;
+                        vector = aim;
+                        flag_target = true;
+                        num13 = whip;
+                    }
+                }
+            }
+        }
+        if !flag_target {
+            for (idx, n) in npcs.iter().enumerate() {
+                if !n.can_be_chased_by() {
+                    continue;
+                }
+                let aim = npc_aim(n);
+                let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
+                    owner_center
+                } else {
+                    center
+                };
+                let (nw, nh) = n.size();
+                let d = (aim - anchor).length();
+                if d < num12 && can_hit_line(world, center.x, center.y, self.w, self.h, aim.x, aim.y, nw, nh) {
+                    num12 = d;
+                    vector = aim;
+                    flag_target = true;
+                    num13 = idx as i32;
+                }
+            }
+        }
+        // `:65437-65453` — the owner-distance ladder.
+        let flag5 = matches!(self.kind, UFO_MINION | TEMPEST);
+        let mut num20 = match self.kind {
+            ABIGAIL => 800.0f32,
+            _ => 500.0,
+        };
+        if flag_target {
+            num20 = 1000.0;
+        }
+        if flag_target && self.kind == UFO_MINION {
+            num20 = 1200.0;
+        }
+        if flag_target && self.kind == STARDUST_CELL {
+            num20 = 1350.0;
+        }
+        let num21 = (owner_center - center).length();
+        if self.ai[0] != 1.0 && num21 > num20 {
+            self.ai[0] = 1.0;
+        }
+        if self.ai[0] == 1.0 {
+            self.tile_collide = false;
+        }
+        // `:65463-65488` — the attack state (`ai[0] >= 2`) with Abigail's
+        // `localAI[1]` ramp.
+        let flag4 = self.kind == ABIGAIL;
+        if flag4 {
+            if self.ai[0] <= 1.0 && self.local_ai[1] <= 0.0 {
+                self.local_ai[1] = -1.0;
+            } else {
+                self.local_ai[1] = (self.local_ai[1] + 0.05).clamp(0.0, 1.0);
+                if self.local_ai[1] == 1.0 {
+                    self.local_ai[1] = -1.0;
+                }
+            }
+        }
+        if self.ai[0] >= 2.0 {
+            self.ai[0] += 1.0;
+            if flag4 {
+                self.local_ai[1] = self.ai[0] / num4;
+            }
+            if !flag_target {
+                self.ai[0] += 1.0;
+            }
+            if self.ai[0] > num4 {
+                self.ai[0] = 0.0;
+                if flag_target && self.kind == ABIGAIL && (vector - center).length() < 50.0 {
+                    self.ai[0] = 2.0;
+                }
+            }
+            self.vel *= num5;
+        } else if flag_target && (flag5 || self.ai[0] == 0.0) {
+            // `:65489-65602` — the pursue branch.
+            let mut v = vector - center;
+            let mut num22 = v.length();
+            v = v.normalize_or_zero();
+            if self.kind == UFO_MINION {
+                // `:65527-65545` — the dash trigger over the aim point lifted
+                // 80 px, with the solid-tile lift (two 16-px steps).
+                let mut lifted = vector - Vec2::new(0.0, 80.0);
+                let ty = (lifted.y / 16.0) as i32;
+                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                    lifted += Vec2::new(0.0, 16.0);
+                    let ty2 = (lifted.y / 16.0) as i32;
+                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                        lifted += Vec2::new(0.0, 16.0);
+                    }
+                }
+                lifted -= center;
+                num22 = lifted.length();
+                v = lifted.normalize_or_zero();
+                if num22 > 300.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = (num22 / 10.0) as f32;
+                    self.extra_updates = self.ai[1] as u32;
+                    self.vel = v * 10.0;
+                    self.local_ai[0] = 60.0;
+                    return None;
+                }
+            }
+            if self.kind == STARDUST_CELL {
+                // `:65552-65590` — the Cell's dash trigger: the back-off of
+                // 60 px from the aim, the same solid lift.
+                let mut lifted = vector;
+                let mut back = center - lifted;
+                back = if back == Vec2::ZERO {
+                    -Vec2::Y
+                } else {
+                    back.normalize()
+                };
+                lifted += back * 60.0;
+                let ty = (lifted.y / 16.0) as i32;
+                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                    lifted += Vec2::new(0.0, 16.0);
+                    let ty2 = (lifted.y / 16.0) as i32;
+                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                        lifted += Vec2::new(0.0, 16.0);
+                    }
+                }
+                lifted -= center;
+                num22 = lifted.length();
+                v = lifted.normalize_or_zero();
+                if num22 > 400.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = (num22 / 10.0) as f32;
+                    self.extra_updates = self.ai[1] as u32;
+                    self.vel = v * 10.0;
+                    self.local_ai[0] = 60.0;
+                    return None;
+                }
+            }
+            if self.kind == TEMPEST {
+                // `:65592-65599`.
+                if num22 > 400.0 {
+                    v *= 3.0;
+                    self.vel = (self.vel * 20.0 + v) / 21.0;
+                } else {
+                    self.vel *= 0.96;
+                }
+            }
+            if num22 > 200.0 {
+                // `:65601-65606` — the shared speed-up.
+                v *= 6.0 + num2 * num;
+                let smooth = num3 * 2.0;
+                self.vel.x = (self.vel.x * smooth + v.x) / (smooth + 1.0);
+                self.vel.y = (self.vel.y * smooth + v.y) / (smooth + 1.0);
+            } else if self.kind == ABIGAIL {
+                // `:65607-65618`.
+                if num22 < 50.0 {
+                    self.vel *= 0.5;
+                    self.ai[0] = 2.0;
+                } else {
+                    v *= 4.0 + num2 * num;
+                    self.vel = (self.vel * num3 + v) / (num3 + 1.0);
+                }
+            } else if matches!(self.kind, UFO_MINION | STARDUST_CELL) {
+                // `:65620-65636` — the orbit band.
+                if num22 > 70.0 && num22 < 130.0 {
+                    let f = if num22 < 100.0 { -3.0 } else { 7.0 };
+                    v *= f;
+                    self.vel = (self.vel * 20.0 + v) / 21.0;
+                    if v.x.abs() > v.y.abs() {
+                        self.vel.x = (self.vel.x * 10.0 + v.x) / 11.0;
+                    }
+                } else {
+                    self.vel *= 0.97;
+                }
+            } else if self.kind == FLYING_IMP {
+                // `:65638-65648`.
+                if num22 < 150.0 {
+                    v *= -4.0;
+                    self.vel.x = (self.vel.x * 40.0 + v.x) / 41.0;
+                    self.vel.y = (self.vel.y * 40.0 + v.y) / 41.0;
+                } else {
+                    self.vel *= 0.97;
+                }
+            } else if self.vel.y > -1.0 {
+                self.vel.y -= 0.1;
+            }
+        } else {
+            // `:65662-65700` — the return branch.
+            if self.ai[0] != 1.0
+                && self.kind != ABIGAIL
+                && !can_hit_line(world, center.x, center.y, self.w, self.h, owner_center.x, owner_center.y, 0.0, 0.0)
+            {
+                self.ai[0] = 1.0;
+            }
+            let mut num27 = 6.0f32;
+            if self.ai[0] == 1.0 {
+                num27 = 15.0;
+            }
+            if self.kind == TEMPEST {
+                num27 = 9.0;
+            }
+            if self.kind == ABIGAIL {
+                num27 *= 0.8;
+            }
+            let mut v2 = owner_center - center + Vec2::new(0.0, -60.0);
+            if self.kind == TEMPEST {
+                v2 += Vec2::new(0.0, 40.0);
+            }
+            if self.kind == ABIGAIL {
+                v2 += Vec2::new(
+                    -40.0 * owner.as_ref().map_or(1.0, |p| p.facing as f32),
+                    40.0,
+                );
+            }
+            if self.kind == FLYING_IMP {
+                // `:65684-65700` — the whoAmI-ordered queue offset: the nth Imp
+                // of the owner stands 40*n px to the owner's back.
+                v2 = owner_center - center;
+                let dir = owner.as_ref().map_or(1.0, |p| p.facing as f32);
+                v2.x -= 10.0 * dir;
+                // The C#'s `num28` starts at 1: the queue offset counts from
+                // one, not zero.
+                v2.x -= (queue as f32 + 1.0) * 40.0 * dir;
+                v2.y -= 10.0;
+            }
+            let num30 = v2.length();
+            if num30 > 200.0 && num27 < 9.0 {
+                num27 = 9.0;
+            }
+            if matches!(self.kind, UFO_MINION | TEMPEST) && num30 > 300.0 && num27 < 12.0 {
+                num27 = 12.0;
+            }
+            if self.kind == FLYING_IMP {
+                // `:65699` — the int cast before the float store.
+                num27 = (num27 * 0.75) as i32 as f32;
+            }
+            if num30 < 100.0 && self.ai[0] == 1.0 {
+                // `:65702-65707` — close enough: back to the follow state.
+                self.ai[0] = 0.0;
+            }
+            if num30 > 2000.0 {
+                // `:65709-65713` — the far snap onto the owner.
+                self.pos.x = owner_center.x - self.w * 0.5;
+                self.pos.y = owner_center.y - self.w * 0.5;
+            }
+            if matches!(self.kind, FLYING_IMP | ABIGAIL) {
+                // `:65715-65729`.
+                if num30 > 10.0 {
+                    let mut v2n = v2.normalize_or_zero();
+                    if num30 < 50.0 {
+                        num27 /= 2.0;
+                    }
+                    v2n *= num27;
+                    self.vel = (self.vel * 20.0 + v2n) / 21.0;
+                } else {
+                    self.direction = owner.as_ref().map_or(1, |p| p.facing);
+                    self.vel *= 0.9;
+                }
+            } else if self.kind == TEMPEST {
+                // `:65731-65751`.
+                if v2.x.abs() > 40.0 || v2.y.abs() > 10.0 {
+                    let mut v2n = v2.normalize_or_zero();
+                    v2n *= num27;
+                    v2n *= Vec2::new(1.25, 0.65);
+                    self.vel = (self.vel * 20.0 + v2n) / 21.0;
+                } else {
+                    if self.vel == Vec2::ZERO {
+                        self.vel = Vec2::new(-0.15, -0.05);
+                    }
+                    self.vel *= 1.01;
+                }
+            } else if num30 > 70.0 {
+                // `:65753-65758`.
+                let mut v2n = v2.normalize_or_zero();
+                v2n *= num27;
+                self.vel = (self.vel * 20.0 + v2n) / 21.0;
+            } else {
+                if self.vel == Vec2::ZERO {
+                    self.vel = Vec2::new(-0.15, -0.05);
+                }
+                self.vel *= 1.01;
+            }
+            if num30 > 250.0 && matches!(self.kind, UFO_MINION | TEMPEST) {
+                // `:65778-65789` — the owner-velocity matching.
+                let (px, py) = owner.as_ref().map_or((0.0, 0.0), |p| (p.vx, p.vy));
+                if (self.vel.x < 0.0 && px >= 0.0) || (self.vel.x >= 0.0 && px < 0.0) {
+                    self.vel.x *= 0.95;
+                } else {
+                    self.vel.x += px * 0.125;
+                }
+                if (self.vel.y < 0.0 && py >= 0.0) || (self.vel.y >= 0.0 && py < 0.0) {
+                    self.vel.y *= 0.95;
+                } else {
+                    self.vel.y += py * 0.125;
+                }
+                if self.vel.length() > num27 {
+                    self.vel = self.vel.normalize_or_zero() * num27;
+                }
+            }
+        }
+        // `:65791-65792` — the facing from the velocity (the C# sets
+        // `spriteDirection` beside it — the port's render reads `direction`).
+        // The frame machines (`:65794-65914`) are cosmetic and unported.
+        self.rot = self.vel.x * 0.05;
+        if self.vel.x > 0.0 {
+            self.direction = -1;
+        } else if self.vel.x < 0.0 {
+            self.direction = 1;
+        }
+        if self.kind == ABIGAIL {
+            // `:65916-65922` — the inversion and the idle face-to-owner.
+            self.direction *= -1;
+            if !flag_target && self.vel.x.abs() < 0.1 {
+                self.direction = if owner_center.x > center.x { 1 } else { -1 };
+            }
+        }
+        // `:65941-66008` — the per-kind fire cooldowns; the `Main.rand` rolls
+        // inside are dust-only and unported, the counters are 1:1.
+        match self.kind {
+            HORNET | FLYING_IMP => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 90.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            TEMPEST => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 50.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            UFO_MINION => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 45.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            STARDUST_CELL => {
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] > 60.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            _ => {}
+        }
+        if !flag5 && self.ai[0] != 0.0 {
+            return None;
+        }
+        // `:66010-66059` — the attack shot: the per-type speed/kind and the
+        // fire arms. The shot families (374/376/408/433/614) are unported
+        // `proj_data` rows, so the pool's spawn drops until those land — the
+        // state machine above runs either way.
+        let (num41, num42) = match self.kind {
+            HORNET => (10.0, 374u16),
+            FLYING_IMP => (11.0, 376),
+            TEMPEST => (20.0, 408),
+            UFO_MINION => (4.0, 433),
+            STARDUST_CELL => (14.0, 614),
+            _ => (0.0, 0),
+        };
+        if !flag_target {
+            return None;
+        }
+        if self.kind == FLYING_IMP {
+            // `:66060-66066` — the Imp's facing against the target.
+            if vector.x - center.x > 0.0 {
+                self.direction = -1;
+            } else if vector.x - center.x < 0.0 {
+                self.direction = 1;
+            }
+        }
+        if self.kind == TEMPEST && box_solid(world, self.pos, self.w, self.h) {
+            return None;
+        }
+        if self.kind == UFO_MINION {
+            // `:66067-66077` — the aim-aligned beam and the shot.
+            let aim_rot =
+                (vector - center).y.atan2((vector - center).x) - std::f32::consts::FRAC_PI_2;
+            if aim_rot.abs() > std::f32::consts::FRAC_PI_4 {
+                let dir = (vector - center - Vec2::new(0.0, 80.0)).normalize_or_zero();
+                self.vel += dir;
+            }
+            if (vector - center).length() <= 400.0 && self.ai[1] == 0.0 {
+                self.ai[1] += 1.0;
+                let mut v = (vector - center).normalize_or_zero();
+                v *= num41;
+                return Some(MinionShot {
+                    kind: num42,
+                    vx: v.x,
+                    vy: v.y,
+                    target: num13,
+                });
+            }
+            None
+        } else if self.ai[1] == 0.0 && self.kind == STARDUST_CELL {
+            // `:66078-66118` — the Cell's shot with the recoil (dust unported).
+            if (vector - center).length() > 500.0 {
+                return None;
+            }
+            self.ai[1] += 1.0;
+            let mut v = (vector - center).normalize_or_zero();
+            v *= num41;
+            self.vel -= v / 3.0;
+            Some(MinionShot {
+                kind: num42,
+                vx: v.x,
+                vy: v.y,
+                target: num13,
+            })
+        } else if self.ai[1] == 0.0 {
+            // `:66119-66128` — the generic fire: the cooldown increments
+            // before the spawn.
+            let mut v = (vector - center).normalize_or_zero();
+            v *= num41;
+            self.ai[1] += 1.0;
+            Some(MinionShot {
+                kind: num42,
+                vx: v.x,
+                vy: v.y,
+                target: num13,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// `AI_053_HandleSentryNPCTargeting` (`Projectile.cs:40194-40254`) — the
+    /// shared sentry target search: the owner's whip target first (when it is
+    /// chaseable, inside the `maxDistance` manhattan reach and behind line of
+    /// sight), otherwise the nearest-eligible NPC scan. `straight_line`
+    /// selects the C#'s `CanHitLine` over `CanHit`; the port routes both to the
+    /// shared tile walk (`can_hit_line`, the `Collision.CanHitLine`
+    /// stand-in — ANALYSIS). Returns the target slot with the aim point.
+    pub fn sentry_npc_targeting(
+        &self,
+        world: &World,
+        firing_offset: Vec2,
+        straight_line: bool,
+        max_distance: f32,
+        player_target: i32,
+        npcs: &[Npc],
+    ) -> Option<(usize, f32, f32)> {
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let origin = center + firing_offset;
+        let _ = straight_line;
+        let mut best: Option<(usize, f32, f32)> = None;
+        let mut reach = max_distance;
+        // `:40201-40219` — the whip target arm.
+        if player_target >= 0 {
+            if let Some(n) = npcs.get(player_target as usize) {
+                if n.can_be_chased_by() {
+                    let (w, h) = n.size();
+                    let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                    let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
+                    if d < reach && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, w, h) {
+                        reach = d;
+                        best = Some((player_target as usize, aim.x, aim.y));
+                    }
+                }
+            }
+        }
+        // `:40220-40251` — the full scan, ONLY when the whip target did not
+        // supply one (`if (!flag)`).
+        if best.is_some() {
+            return best;
+        }
+        for (idx, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let (w, h) = n.size();
+            let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+            let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
+            if d < reach && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, w, h) {
+                reach = d;
+                best = Some((idx, aim.x, aim.y));
+            }
+        }
+        best
+    }
+
+    /// `Projectile.WipableTurret` (`Projectile.cs:528-537`): this machine's own
+    /// sentry that `TurretShouldPersist` does not hold — the eviction
+    /// candidate of `UpdateMaxTurrets`.
+    pub fn wipable_turret(&self, local_owner: u8, dd2_ongoing: bool) -> bool {
+        self.owner == local_owner && self.sentry && !self.sentry_should_persist(dd2_ongoing)
+    }
+
+    /// `Projectile.TurretShouldPersist` (`Projectile.cs:670-690`): the O'A tower
+    /// families (663/665/667, 677-679, 688-690, 691-693) persist only while
+    /// `DD2Event.Ongoing` holds — the port's stub reports false until
+    /// M4-EVENT-5, so they are wipable like the vanilla sentries (ANALYSIS).
+    fn sentry_should_persist(&self, dd2_ongoing: bool) -> bool {
+        dd2_ongoing
+            && matches!(
+                self.kind,
+                FLAME_BURST_TOWER_1
+                    | FLAME_BURST_TOWER_2
+                    | FLAME_BURST_TOWER_3
+                    | BALLISTRA_TOWER_1
+                    | BALLISTRA_TOWER_2
+                    | BALLISTRA_TOWER_3
+                    | LIGHTNING_AURA_1
+                    | LIGHTNING_AURA_2
+                    | LIGHTNING_AURA_3
+                    | EXPLOSIVE_TRAP_1
+                    | EXPLOSIVE_TRAP_2
+                    | EXPLOSIVE_TRAP_3
+            )
+    }
+
+
+
+
+
+
+
     /// The box center — `Projectile.Center` (`Entity.cs`'s `Center`), the
     /// pool's uniform center for the box tests (the whip's *hit* comes from
     /// the swept curve, not from this).
@@ -6433,6 +7416,190 @@ impl Default for FlailInputs {
 }
 
 impl ProjectilePool {
+    /// `Projectile.Update`'s minion/sentry block (`Projectile.cs:16704-16740`),
+    /// run on the LAST sub-step only (the C# `numUpdates == -1` iteration of
+    /// `numUpdates = extraUpdates; while (numUpdates >= 0) { numUpdates--; … }`).
+    /// Both families recompute the damage from the unscaled spawn damage; the
+    /// minion arm then books `minionPos`, runs the over-cap kill and
+    /// accumulates the budget.
+    pub fn summon_tick_block(
+        &mut self,
+        i: usize,
+        player: &mut Option<&mut crate::player::Player>,
+        local_owner: u8,
+    ) {
+        let (is_minion, is_sentry, kind) = {
+            let p = &self.slots[i];
+            (p.minion, p.sentry, p.kind)
+        };
+        if !(is_minion || is_sentry) || self.slots[i].owner != local_owner {
+            // The C# block runs for the slot's owner; a foreign owner's
+            // minion is simulated on that machine, not here.
+            return;
+        }
+        let Some(pl) = player.as_deref_mut() else {
+            return;
+        };
+        // `:16704-16707` — the recompute for minions and sentries alike: the
+        // unscaled spawn damage × the owner's multiplier, plus the 5E-06
+        // epsilon (f32 verbatim, the same cast order as the C#).
+        let recomputed = (self.slots[i].original_damage as f32 * pl.minion_damage + 5.0e-6) as i32;
+        self.slots[i].damage = recomputed;
+        // `:16709` — the dragon-chain kinds (625/628) carry no block; the
+        // relink arms of 626/627 are stubbed (the chain is excluded, plan
+        // decision #3 of the Constraints), so both kinds self-kill over cap
+        // without the link surgery.
+        if is_minion && kind != 626 && kind != 627 {
+            // `:16711` — `minionPos = Main.player[owner].numMinions`.
+            self.slots[i].minion_pos = pl.num_minions as u16;
+            // `:16712` — the over-cap check, the local owner only.
+            if pl.slots_minions + self.slots[i].minion_slots > pl.max_minions as f32 {
+                self.slots[i].active = false;
+                self.slots[i].time_left = 0;
+                return;
+            }
+            // `:16736-16737` — the accumulation.
+            pl.num_minions += 1;
+            pl.slots_minions += self.slots[i].minion_slots;
+        }
+    }
+
+    /// `Player.FreeUpPetsAndMinions` (`Player.cs:51701-51830`): the summon-staff
+    /// use frees budget before the spawn. The pet pairs (1093/1112 and
+    /// 1094/1113) die outright; the `MinionSacrificable` minions sort by
+    /// `minionSlots` descending and die while the freed slots stay below
+    /// `maxMinions - StaffMinionSlotsRequired[staff]` (the const 1,
+    /// `ItemID.cs:1322`). The Stardust Dragon kinds drop out of the list and
+    /// the relink arms are stubbed per the exclusion.
+    /// `staff` is the item's `shoot` id — the C# gates on `sItem.shoot`
+    /// (`Player.cs:51734`), never the item type.
+    pub fn free_up_pets_and_minions(&mut self, p: &crate::player::Player, staff: u16, owner: u8) {
+        // `:51704-51727` — the two pet pairs die outright when their staff is
+        // re-used: the first pair kills BOTH its kinds, the second
+        // cross-kills (a used 1094 kills the 1113s and vice versa).
+        if staff == 1093 || staff == 1112 {
+            for s in self.slots.iter_mut() {
+                if s.active && s.owner == owner && s.minion && matches!(s.kind, 1093 | 1112) {
+                    s.active = false;
+                    s.time_left = 0;
+                }
+            }
+        }
+        if staff == 1094 || staff == 1113 {
+            let cross = if staff == 1094 { 1113 } else { 1094 };
+            for s in self.slots.iter_mut() {
+                if s.active && s.owner == owner && s.minion && s.kind == cross {
+                    s.active = false;
+                    s.time_left = 0;
+                }
+            }
+        }
+        // `:51828-51849` — the non-sacrificable tail: every minion of THIS
+        // shoot kind dies on a re-use (the sentry staves' own refresh), plus
+        // the two pet specials (the Slime Staff's 72 → the 86/87 pair, the
+        // 5131 → the 881/934 pair).
+        for s in self.slots.iter_mut() {
+            if !s.active || s.owner != owner {
+                continue;
+            }
+            let kill = (s.minion && s.kind == staff)
+                || (staff == 72 && matches!(s.kind, 86 | 87))
+                || (staff == 5131 && matches!(s.kind, 881 | 934));
+            if kill {
+                s.active = false;
+                s.time_left = 0;
+            }
+        }
+        if !MINION_SACRIFICABLE.contains(&staff) {
+            return;
+        }
+        // `:51731-51792` — the descending `minionSlots` sort over this owner's
+        // minions; the dragon-chain kinds leave the list (the relink arms are
+        // stubbed with the chain).
+        let mut order: Vec<usize> = (0..self.slots.len())
+            .filter(|&i| {
+                let s = &self.slots[i];
+                s.active
+                    && s.owner == owner
+                    && s.minion
+                    && MINION_SACRIFICABLE.contains(&s.kind)
+                    && !matches!(s.kind, 626 | 627)
+            })
+            .collect();
+        order.sort_by(|&a, &b| {
+            self.slots[b]
+                .minion_slots
+                .partial_cmp(&self.slots[a].minion_slots)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let total: f32 = order.iter().map(|&i| self.slots[i].minion_slots).sum();
+        let mut freed = 0.0f32;
+        let budget = p.max_minions as f32 - 1.0;
+        // `num4` — the 387/388 pair boundary: the pirate pair sacrifices one at
+        // a time.
+        let mut boundary = 388u16;
+        for &i in &order {
+            if !(total - freed > budget) {
+                break;
+            }
+            let kind = self.slots[i].kind;
+            if kind == boundary || matches!(kind, 625 | 628 | 623) {
+                continue;
+            }
+            if kind == 388 && boundary == 387 {
+                boundary = 388;
+            }
+            if kind == 387 && boundary == 388 {
+                boundary = 387;
+            }
+            freed += self.slots[i].minion_slots;
+            let s = &mut self.slots[i];
+            s.active = false;
+            s.time_left = 0;
+        }
+    }
+
+    /// `Player.UpdateMaxTurrets` (`Player.cs:53061-53090`): while the wipable
+    /// sentries exceed `max_turrets`, the one with the LOWEST `timeLeft` dies
+    /// (scan order, ≤1000 iterations). Run after the summon arms — the C#'s
+    /// three call sites sit behind buff changes (`:25711`/`:48210`/`:49092`),
+    /// so the port runs it at the head of the player's fixed step.
+    /// `Projectile.originalDamage`'s typed setter — the summon spawn sites
+    /// (`Player.cs:49601`/`:48209`/`:10713`) set the unscaled damage the
+    /// pool's recompute reads.
+    pub fn set_original_damage(&mut self, slot: usize, value: i32) {
+        self.slots[slot].original_damage = value;
+    }
+
+    pub fn update_max_turrets(&mut self, max_turrets: i32, local_owner: u8, dd2_ongoing: bool) {
+        let mut count = 0usize;
+        for p in self.slots.iter() {
+            if p.active && p.wipable_turret(local_owner, dd2_ongoing) {
+                count += 1;
+            }
+        }
+        let mut guard = 0;
+        while count > max_turrets.max(0) as usize && {
+            guard += 1;
+            guard < 1000
+        } {
+            let mut victim: Option<usize> = None;
+            for (i, p) in self.slots.iter().enumerate() {
+                if !p.active || !p.wipable_turret(local_owner, dd2_ongoing) {
+                    continue;
+                }
+                match victim {
+                    Some(v) if self.slots[v].time_left <= p.time_left => {}
+                    _ => victim = Some(i),
+                }
+            }
+            let Some(v) = victim else { break };
+            let p = &mut self.slots[v];
+            p.active = false;
+            p.time_left = 0;
+            count -= 1;
+        }
+    }
     pub fn new() -> Self {
         Self {
             slots: vec![Projectile::default(); MAX_PROJECTILES],
@@ -7011,6 +8178,13 @@ impl ProjectilePool {
             arrow: data.arrow,
             trap: data.trap,
             bounces: 0,
+            minion: data.minion,
+            sentry: data.sentry,
+            minion_slots: data.minion_slots,
+            minion_pos: 0,
+            original_damage: if data.minion || data.sentry { damage } else { 0 },
+            net_important: data.net_important,
+            ignore_water: data.ignore_water,
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
@@ -7277,7 +8451,7 @@ impl ProjectilePool {
         let tag_type = self.slots[slot].tag_effect_type;
         // `:14258-14263`: every aiStyle-165 hit retargets the minions.
         if let Some(p) = player.as_deref_mut() {
-            p.minion_attack_target_npc = npc_idx as i16;
+            p.minion_attack_target_npc = npc_idx as i32;
         }
         // `:13882-13956`: the per-type switch.
         match kind {
@@ -7373,7 +8547,41 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
-            for _ in 0..sub_steps {
+            for sub in 0..sub_steps {
+                // `Projectile.cs:16683-16703` — the out-of-world guard sits at
+                // the top of every sub-step, ahead of the AI, and skips the
+                // aiStyle-3 slots (the boomerang family legitimately leaves).
+                // Bounds are `WorldGen.cs:6553-6554` (`rightWorld = maxTilesX *
+                // 16`, `bottomWorld = maxTilesY * 16`; left/top are 0). A minion
+                // with a living owner is rescued onto the owner's centre
+                // (`Center = player.Center`), anything else deactivates; the C#
+                // `return`s, so the port `continue`s the outer loop.
+                if proj_data(self.slots[i].kind).map_or(255, |d| d.ai_style) != 3 {
+                    let p = &self.slots[i];
+                    let out = p.pos.x <= 0.0
+                        || p.pos.x + p.w >= world.width as f32 * 16.0
+                        || p.pos.y <= 0.0
+                        || p.pos.y + p.h >= world.height as f32 * 16.0
+                        || p.pos.x.is_nan()
+                        || p.pos.y.is_nan();
+                    if out {
+                        if p.minion && player.as_ref().is_some_and(|pl| !pl.dead) {
+                            let (cx, cy) = player.as_ref().unwrap().center();
+                            let p = &mut self.slots[i];
+                            p.pos = Vec2::new(cx - p.w * 0.5, cy - p.h * 0.5);
+                            continue;
+                        }
+                        self.slots[i].active = false;
+                        self.slots[i].time_left = 0;
+                        continue;
+                    }
+                }
+                // `Projectile.cs:16704-16740` — the minion/sentry block: on the
+                // last sub-step only, after the enchantment-visuals arm and
+                // ahead of the AI dispatch.
+                if sub + 1 == sub_steps {
+                    self.summon_tick_block(i, &mut player, local_owner);
+                }
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
                 }
@@ -7662,6 +8870,157 @@ impl ProjectilePool {
                                 if let Some(p) = player.as_deref_mut() {
                                     p.facing = dir;
                                 }
+                            }
+                        }
+                                                53 => {
+                            // `AI_053_FrostHydra`'s targeting call
+                            // (`Projectile.cs:37345-37353`): the firing offset
+                            // is `Vector2.Zero`, the Houndius' `-16` Y. The
+                            // per-kind shot machines are the unported half
+                            // (ANALYSIS), so the aim rides `local_ai` as the
+                            // ported seam: [aim_x, aim_y, target_slot].
+                            let player_target =
+                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                            let offset = if self.slots[i].kind == HOUNDIUS_SHOOTIUS {
+                                Vec2::new(0.0, -16.0)
+                            } else {
+                                Vec2::ZERO
+                            };
+                            let aim = {
+                                let p = &self.slots[i];
+                                p.sentry_npc_targeting(
+                                    world,
+                                    offset,
+                                    false,
+                                    1000.0,
+                                    player_target,
+                                    npcs,
+                                )
+                            };
+                            let p = &mut self.slots[i];
+                            store_sentry_aim(p, aim);
+                        }
+                        197 => {
+                            // `AI_197`'s targeting call
+                            // (`Projectile.cs:40435-40449`): the `(0, 10)`
+                            // firing offset and the `1000 + num3*16` reach (the
+                            // barnacle's own `num3` rides its unported body —
+                            // ANALYSIS).
+                            let player_target =
+                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                            let aim = {
+                                let p = &self.slots[i];
+                                p.sentry_npc_targeting(
+                                    world,
+                                    Vec2::new(0.0, 10.0),
+                                    false,
+                                    1000.0,
+                                    player_target,
+                                    npcs,
+                                )
+                            };
+                            let p = &mut self.slots[i];
+                            store_sentry_aim(p, aim);
+                        }
+                        115 => self.slots[i].ai_yoyo_beam(world),
+                        62 => {
+                            // `AI_062` (`Projectile.cs:29314-29316`'s
+                            // `else if (this.aiStyle == 62) this.AI_062();`):
+                            // the same-type separation is pre-computed from the
+                            // sibling slots (that loop reads them), the AI runs
+                            // on the slot with the owner threaded, and its
+                            // attack-shot request rides back through the pool
+                            // (the `YoyoBeamRequest` pattern) — the spawn drops
+                            // until the shot families land.
+                            let (sep, queue) = self.slots[i].minion_separation(&self.slots, i);
+                            let shot = self.slots[i].ai_flying_minion(
+                                world,
+                                sep,
+                                queue,
+                                player.as_deref_mut(),
+                                npcs,
+                            );
+                            // `HandleMovement`'s `UpdatePosition`
+                            // (`Projectile.cs:19858`/`:20433-20442`): the shared
+                            // `position += velocity` runs OUTSIDE the AI, once
+                            // per update — aiStyle 62 is not in the skip list, so
+                            // the minion integrates even when the AI arm
+                            // returned early (the dash). The wet-velocity branch
+                            // and the slope-correction block (`:20444+`, the
+                            // `aiStyle == 62` fall case included) stay unported —
+                            // ANALYSIS.
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                            if let Some(s) = shot {
+                                let (x, y, damage, kb, owner) = {
+                                    let p = &self.slots[i];
+                                    (
+                                        p.pos.x + p.w * 0.5,
+                                        p.pos.y + p.h * 0.5,
+                                        p.damage,
+                                        p.knock_back,
+                                        p.owner,
+                                    )
+                                };
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    s.kind,
+                                    owner,
+                                    x,
+                                    y,
+                                    s.vx,
+                                    s.vy,
+                                    damage,
+                                    kb,
+                                    s.target as f32,
+                                    0.0,
+                                ) {
+                                    // `Projectile.cs:66124` — the generic fire
+                                    // arms set the shot's `timeLeft = 300`.
+                                    self.slots[slot].time_left = 300;
+                                }
+                            }
+                        }
+                        99 => {
+                            // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
+                            // active slot below this index, same owner and
+                            // kind, `ai[0] >= -1f` — the double yoyo (the Yoyo
+                            // Glove's second copy).
+                            let (slot_owner, slot_kind) = {
+                                let p = &self.slots[i];
+                                (p.owner, p.kind)
+                            };
+                            let flag = self.slots[..i].iter().any(|p| {
+                                p.active
+                                    && p.owner == slot_owner
+                                    && p.kind == slot_kind
+                                    && p.ai[0] >= -1.0
+                            });
+                            let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
+                            // `:67764-67771` — the sweep flips the whole
+                            // owner's aiStyle-99 set with `ai[0] >= 0f` to the
+                            // return state.
+                            if tick.sweep {
+                                for p in self.slots.iter_mut() {
+                                    if p.active
+                                        && p.owner == slot_owner
+                                        && YOYO_KINDS.contains(&p.kind)
+                                        && p.ai[0] >= 0.0
+                                    {
+                                        p.ai[0] = -1.0;
+                                    }
+                                }
+                            }
+                            // `:67815` — the Terrarian's beam spawn.
+                            if let Some(b) = tick.beam {
+                                self.spawn_with_data(
+                                    TERRARIAN_BEAM,
+                                    b.x,
+                                    b.y,
+                                    b.vx,
+                                    b.vy,
+                                    b.damage,
+                                    b.knock_back,
+                                );
                             }
                         }
                         _ => {}
@@ -9476,7 +10835,10 @@ mod flail_tests {
     use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn world() -> tr_core::World {
-        tr_core::World::new("t".into(), 64, 64)
+        // 128 tiles: the leash arm's spawn at x = 1350 px must stay inside the
+        // world bounds (`Projectile.cs:16683-16703`'s out-of-world guard,
+        // M4-PROJ-8 Phase 3).
+        tr_core::World::new("t".into(), 128, 64)
     }
 
     /// A floor at y = 30 — the NPC fixtures spawn on the surface (the shared
@@ -12219,6 +13581,13 @@ mod phasmal_projectile_tests {
             alpha: 255,
             falling_tile: None,
             detonated: false,
+            minion: false,
+            sentry: false,
+            minion_slots: 0.0,
+            minion_pos: 0,
+            original_damage: 0,
+            net_important: false,
+            ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
             w: 14.0,
@@ -12445,6 +13814,13 @@ mod ritual_projectile_tests {
             alpha: 255,
             falling_tile: None,
             detonated: false,
+            minion: false,
+            sentry: false,
+            minion_slots: 0.0,
+            minion_pos: 0,
+            original_damage: 0,
+            net_important: false,
+            ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
             w: 32.0,
@@ -12617,7 +13993,9 @@ mod widened_state_tests {
     ];
 
     fn world() -> World {
-        World::new("t".into(), 64, 64)
+        // 512 tiles: the wind-tail test flies 319 ticks x 15.9 px (~5063 px), so the
+        // world must contain the flight (the out-of-world guard deactivates).
+        World::new("t".into(), 512, 64)
     }
 
     /// The C# `SetDefaults` reset (`Projectile.cs:736-740`, `:741-745`,
@@ -13062,7 +14440,7 @@ mod magic_ai_tests {
     /// A tile-free world: the flight tests run in open air, so the only
     /// collision that can trigger is the one the test places itself.
     fn world() -> World {
-        World::new("t".into(), 64, 64)
+        World::new("t".into(), 512, 64)
     }
 
     fn put_tile(w: &mut World, x: i32, y: i32, kind: u16) {
@@ -15035,5 +16413,1529 @@ mod magic_ai_tests {
             pool.slots()[slot].ai[0], 1.0,
             "the nearer candidate wins regardless of the scan order"
         );
+    }
+}
+#[cfg(test)]
+mod summon_tests {
+    use super::*;
+    use tr_core::tile::Tile;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    /// The 13 minion kinds (M4-PROJ-8 Phase 1's rows) — the aiStyle-62 family
+    /// plus the aiStyle-66/67/120/158 flag-minions.
+    const MINION_KINDS: [u16; 13] = [
+        HORNET,
+        FLYING_IMP,
+        TEMPEST,
+        UFO_MINION,
+        STARDUST_CELL,
+        ABIGAIL,
+        RETANIMINI,
+        SPAZMAMINI,
+        STARDUST_GUARDIAN,
+        BABY_BIRD,
+        STORM_TIGER_1,
+        STORM_TIGER_2,
+        STORM_TIGER_3,
+    ];
+
+    /// The 18 sentry kinds — the aiStyle-53 staff sentries, the Moon Lord
+    /// turret pair, the four DD2 tower families and the Dead Cells barnacle.
+    const SENTRY_KINDS: [u16; 18] = [
+        FROST_HYDRA,
+        QUEEN_SPIDER,
+        HOUNDIUS_SHOOTIUS,
+        MOONLORD_TURRET,
+        RAINBOW_CRYSTAL,
+        FLAME_BURST_TOWER_1,
+        FLAME_BURST_TOWER_2,
+        FLAME_BURST_TOWER_3,
+        BALLISTRA_TOWER_1,
+        BALLISTRA_TOWER_2,
+        BALLISTRA_TOWER_3,
+        LIGHTNING_AURA_1,
+        LIGHTNING_AURA_2,
+        LIGHTNING_AURA_3,
+        EXPLOSIVE_TRAP_1,
+        EXPLOSIVE_TRAP_2,
+        EXPLOSIVE_TRAP_3,
+        DEAD_CELLS_BARNACLE,
+    ];
+
+    /// DW-1.1: the 31 summon rows carry the verbatim `SetDefaults` slice —
+    /// the box, aiStyle, penetrate, the `timeLeft` override (18000 for the
+    /// `*= 5` minions, `SentryLifeTime` 36000 for the sentries) and the
+    /// identification flags. Data-verbatim pattern
+    /// (`the_family_data_map_is_verbatim`, `arrow_tests`).
+    #[test]
+    fn test_DW_1_1_the_summon_rows_are_verbatim() {
+        // (kind, w, h, ai_style, penetrate, time_left, tile_collide, minion,
+        //  sentry, minion_slots) — every value read off the C# arm cited in
+        // the row's comment.
+        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 31] = [
+            // `Projectile.cs:4563-4573` (373) / `:4587-4597` (375) /
+            // `:4878-4890` (407) / `:4960-4971` (423) / `:6598-6608` (613) /
+            // `:9100-9113` (963) / `:4707-4718` (387) / `:4723-4734` (388) /
+            // `:6709-6723` (623) / `:8091-8098` (833) / `:8105-8112` (834) /
+            // `:8119-8126` (835) / `:7829-7845` (759).
+            (HORNET, 24.0, 26.0, 62, -1, 18000, false, true, false, 1.0),
+            (
+                FLYING_IMP, 34.0, 26.0, 62, -1, 18000, false, true, false, 1.0,
+            ),
+            (TEMPEST, 28.0, 40.0, 62, -1, 18000, false, true, false, 1.0),
+            (
+                UFO_MINION, 28.0, 28.0, 62, -1, 18000, true, true, false, 1.0,
+            ),
+            (
+                STARDUST_CELL,
+                24.0,
+                24.0,
+                62,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                1.0,
+            ),
+            (ABIGAIL, 30.0, 48.0, 62, -1, 18000, false, true, false, 0.0),
+            (
+                RETANIMINI, 40.0, 20.0, 66, -1, 18000, false, true, false, 0.5,
+            ),
+            (
+                SPAZMAMINI, 40.0, 20.0, 66, -1, 18000, false, true, false, 0.5,
+            ),
+            (
+                STARDUST_GUARDIAN,
+                50.0,
+                80.0,
+                120,
+                -1,
+                18000,
+                false,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_1,
+                26.0,
+                20.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_2,
+                20.0,
+                30.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                STORM_TIGER_3,
+                20.0,
+                30.0,
+                67,
+                -1,
+                18000,
+                true,
+                true,
+                false,
+                0.0,
+            ),
+            // `:7829-7845` (759).
+            (
+                BABY_BIRD, 10.0, 10.0, 158, -1, 18000, true, true, false, 1.0,
+            ),
+            // `Projectile.cs:3997-4007` (308) / `:4615-4622` (377) /
+            // `:9143-9150` (966) / `:6916-6927` (641) / `:6929-6938` (643) /
+            // `:7130-7151` (663/665/667) / `:7241-7249` (677-679) /
+            // `:7325-7339` (688-690) / `:7340-7352` (691-693) /
+            // `:9707-9714` (1025).
+            (
+                FROST_HYDRA,
+                80.0,
+                74.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                QUEEN_SPIDER,
+                66.0,
+                50.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                HOUNDIUS_SHOOTIUS,
+                18.0,
+                60.0,
+                53,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                MOONLORD_TURRET,
+                32.0,
+                32.0,
+                123,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                RAINBOW_CRYSTAL,
+                32.0,
+                32.0,
+                123,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_1,
+                30.0,
+                54.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_2,
+                28.0,
+                58.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                FLAME_BURST_TOWER_3,
+                28.0,
+                60.0,
+                130,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_1,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_2,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                BALLISTRA_TOWER_3,
+                26.0,
+                54.0,
+                134,
+                1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_1,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_2,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                LIGHTNING_AURA_3,
+                16.0,
+                16.0,
+                137,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_1,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_2,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                EXPLOSIVE_TRAP_3,
+                16.0,
+                16.0,
+                138,
+                -1,
+                36000,
+                false,
+                false,
+                true,
+                0.0,
+            ),
+            (
+                DEAD_CELLS_BARNACLE,
+                42.0,
+                38.0,
+                197,
+                1,
+                36000,
+                true,
+                false,
+                true,
+                0.0,
+            ),
+        ];
+        for (kind, w, h, ai, pen, tl, tc, minion, sentry, slots) in rows {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("no row for kind {kind}"));
+            assert_eq!((d.w, d.h), (w, h), "the box for kind {kind}");
+            assert_eq!(d.ai_style, ai, "the aiStyle for kind {kind}");
+            assert_ne!(d.ai_style, 0, "no summon row dispatches aiStyle 0");
+            assert_eq!(d.penetrate, pen, "the penetrate for kind {kind}");
+            assert_eq!(d.time_left, tl, "the timeLeft for kind {kind}");
+            assert_eq!(d.tile_collide, tc, "the tileCollide for kind {kind}");
+            assert_eq!(d.minion, minion, "the minion flag for kind {kind}");
+            assert_eq!(d.sentry, sentry, "the sentry flag for kind {kind}");
+            assert_eq!(d.minion_slots, slots, "the minionSlots for kind {kind}");
+            assert!(d.net_important, "the netImportant for kind {kind}");
+            // The stocks no summon arm touches.
+            assert!(!d.arrow, "the stock arrow for kind {kind}");
+            assert!(!d.trap, "the stock trap for kind {kind}");
+            assert_eq!(d.extra_updates, 0, "the stock extraUpdates for kind {kind}");
+            assert_eq!(d.scale, 1.0, "the stock scale for kind {kind}");
+        }
+        // `ignoreWater = true` on every summon arm but the Storm Tigers
+        // (`:8091/:8105/:8119` set neither tileCollide nor ignoreWater).
+        for kind in MINION_KINDS {
+            let d = proj_data(kind).unwrap();
+            assert_eq!(
+                d.ignore_water,
+                !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3),
+                "the ignoreWater for kind {kind}"
+            );
+        }
+        for kind in SENTRY_KINDS {
+            assert!(proj_data(kind).unwrap().ignore_water, "kind {kind}");
+        }
+        // The idStatic pairs: Tempest 10 (`:4888-4889`), Retanimini 16
+        // (`:4716-4717`), Spazmamini 12 (`:4732-4733`).
+        let tempest = proj_data(TEMPEST).unwrap();
+        assert!(tempest.uses_id_static_immunity);
+        assert_eq!(tempest.id_static_hit_cooldown, 10);
+        let retanimini = proj_data(RETANIMINI).unwrap();
+        assert!(retanimini.uses_id_static_immunity);
+        assert_eq!(retanimini.id_static_hit_cooldown, 16);
+        let spazmamini = proj_data(SPAZMAMINI).unwrap();
+        assert!(spazmamini.uses_id_static_immunity);
+        assert_eq!(spazmamini.id_static_hit_cooldown, 12);
+        // The local pairs: Guardian 5 (`:6721-6722`), Storm Tigers 10
+        // (`:8096-8097` etc.), Abigail 20 (`:9111-9112`), Lightning Auras 3
+        // (`:7332-7333`).
+        let guardian = proj_data(STARDUST_GUARDIAN).unwrap();
+        assert!(guardian.uses_local_immunity);
+        assert_eq!(guardian.local_hit_cooldown, 5);
+        for kind in [STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {kind}");
+        }
+        let abigail = proj_data(ABIGAIL).unwrap();
+        assert!(abigail.uses_local_immunity);
+        assert_eq!(abigail.local_hit_cooldown, 20);
+        let baby_bird = proj_data(BABY_BIRD).unwrap();
+        assert!(baby_bird.uses_local_immunity);
+        assert_eq!(baby_bird.local_hit_cooldown, 15);
+        for kind in [LIGHTNING_AURA_1, LIGHTNING_AURA_2, LIGHTNING_AURA_3] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 3, "kind {kind}");
+        }
+        // The arms without an immunity slice keep the pool defaults
+        // (`:464`/`:466`).
+        let hornet = proj_data(HORNET).unwrap();
+        assert!(!hornet.uses_local_immunity);
+        assert_eq!(hornet.local_hit_cooldown, -2);
+        assert!(!hornet.uses_id_static_immunity);
+        assert_eq!(hornet.id_static_hit_cooldown, -1);
+        let hydra = proj_data(FROST_HYDRA).unwrap();
+        assert!(!hydra.uses_local_immunity);
+        assert!(!hydra.uses_id_static_immunity);
+        // The shot families are NOT this phase's rows (the sentry shots land
+        // with the later projectile-family tasks) — 374/376/389/614 the
+        // minion shots, 378/379 the Queen Spider's SentryShots.
+        for kind in [374, 376, 389, 614, 378, 379] {
+            assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
+        }
+    }
+
+    /// DW-1.2: the spawned slot carries the identification slice, the
+    /// `timeLeft` override and the `originalDamage` the pool's recompute
+    /// reads; a non-summon spawn keeps the stocks.
+    #[test]
+    fn test_DW_1_2_spawn_carries_the_summon_slice() {
+        let mut pool = ProjectilePool::new();
+        // The Hornet (`Player.SpawnMinionOnCursor`'s shape — the unscaled
+        // damage in, `originalDamage` carried out).
+        let hornet = pool
+            .spawn_with_data_ai_owned(HORNET, 0, 100.0, 200.0, 0.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[hornet];
+        assert!(p.minion);
+        assert!(!p.sentry);
+        assert_eq!(p.minion_slots, 1.0);
+        assert_eq!(p.time_left, 18000, "the `timeLeft *= 5` override");
+        assert_eq!(p.original_damage, 10, "the unscaled spawn damage");
+        assert_eq!(p.damage, 10);
+        assert!(p.net_important);
+        assert!(p.ignore_water);
+        assert!(!p.tile_collide);
+        assert_eq!(p.minion_pos, 0, "the pool block writes it (Phase 3)");
+        // The Frost Hydra sentry — `SentryLifeTime`.
+        let hydra = pool
+            .spawn_with_data_ai_owned(FROST_HYDRA, 0, 160.0, 200.0, 0.0, 0.0, 25, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[hydra];
+        assert!(!p.minion);
+        assert!(p.sentry);
+        assert_eq!(p.minion_slots, 0.0);
+        assert_eq!(p.time_left, 36000);
+        assert_eq!(p.original_damage, 25);
+        assert_eq!(p.penetrate, 1, "the sentry body's stock penetrate");
+        // The half-slot spider: exactly 0.5 — never rounded to an integer
+        // count (the plan's edge case).
+        let spider = pool
+            .spawn_with_data_ai_owned(RETANIMINI, 0, 220.0, 200.0, 0.0, 0.0, 8, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[spider];
+        assert_eq!(p.minion_slots, 0.5);
+        assert_eq!(p.minion_slots.fract(), 0.5, "fractional, not rounded");
+        assert!(p.uses_id_static_immunity, "the Retanimini idStatic pair");
+        assert_eq!(p.id_static_hit_cooldown, 16);
+        // The 0-slot Storm Tiger keeps `ignore_water = false` (the C# arm
+        // sets neither flag).
+        let tiger = pool
+            .spawn_with_data_ai_owned(STORM_TIGER_1, 0, 280.0, 200.0, 0.0, 0.0, 8, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[tiger];
+        assert!(p.minion);
+        assert_eq!(p.minion_slots, 0.0);
+        assert!(p.net_important);
+        assert!(!p.ignore_water);
+        // A non-summon spawn keeps the stocks: no flags, `originalDamage` 0
+        // (the C# spawn sites for the other families never write it).
+        let arrow = pool
+            .spawn_with_data_ai_owned(WOODEN_ARROW, 0, 320.0, 200.0, 4.0, 0.0, 5, 0.0, 0.0, 0.0)
+            .unwrap();
+        let p = &pool.slots[arrow];
+        assert!(!p.minion);
+        assert!(!p.sentry);
+        assert_eq!(p.minion_slots, 0.0);
+        assert_eq!(p.original_damage, 0);
+        assert!(!p.net_important);
+        assert!(!p.ignore_water);
+    }
+
+    /// DW-1.2's dirty variant (the plan's edge case): a summon row whose
+    /// aiStyle has no ported arm dispatches nothing — the slot holds
+    /// position while its `timeLeft` runs down. The Hornet's aiStyle 62 is
+    /// ported since Phase 4 (`ai_flying_minion` + the shared integration), so
+    /// the still-unported aiStyles carry the check: the Spider's 66 and the
+    /// Guardian's 120.
+    #[test]
+    fn test_edge_unported_ai_style_holds_position() {
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut w = world();
+        let spider = pool
+            .spawn_with_data_ai_owned(RETANIMINI, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let guardian = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_GUARDIAN,
+                0,
+                480.0,
+                320.0,
+                0.0,
+                -1.0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        for _ in 0..5 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let p = &pool.slots[spider];
+        assert!(p.active, "the minion outlives the 5 ticks");
+        assert_eq!(
+            (p.pos.x, p.pos.y),
+            (320.0, 320.0),
+            "no arm ran: the slot holds position"
+        );
+        assert_eq!(p.time_left, 18000 - 5, "the bookkeeping still runs");
+        assert_eq!(p.minion_pos, 0);
+        let p = &pool.slots[guardian];
+        assert!(p.active);
+        assert_eq!((p.pos.x, p.pos.y), (480.0, 320.0));
+        assert_eq!(p.time_left, 18000 - 5);
+    }
+
+    /// DW-1.3: the two identification sets match the C# lists
+    /// element-for-element (`CreateBoolSet` semantics — the lookup is
+    /// order-free, so the test compares sorted sequences and pins the
+    /// verbatim counts).
+    #[test]
+    fn test_DW_1_3_the_sets_match_the_csharp() {
+        // `ProjectileID.Sets.MinionSacrificable` (`ID/ProjectileID.cs:529`).
+        let sacrificable: [u16; 36] = [
+            191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755,
+            758, 759, 831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625,
+            626, 627, 628,
+        ];
+        assert_eq!(MINION_SACRIFICABLE.len(), 36);
+        let mut ported = MINION_SACRIFICABLE.to_vec();
+        ported.sort_unstable();
+        let mut csharp = sacrificable.to_vec();
+        csharp.sort_unstable();
+        assert_eq!(ported, csharp, "element-for-element against the C# set");
+        // The membership facts the later phases lean on: the port's own
+        // minion kinds are sacrifice-candidates (Phase 6's kill loop), the
+        // dragon chain rides along even though its AI is excluded.
+        for kind in [
+            HORNET,
+            FLYING_IMP,
+            TEMPEST,
+            UFO_MINION,
+            STARDUST_CELL,
+            ABIGAIL,
+        ] {
+            assert!(MINION_SACRIFICABLE.contains(&kind), "kind {kind}");
+        }
+        for kind in [625u16, 626, 627, 628] {
+            assert!(MINION_SACRIFICABLE.contains(&kind), "kind {kind}");
+        }
+        // `ProjectileID.Sets.SentryShot` (`ID/ProjectileID.cs:432`).
+        let sentry_shot: [u16; 14] = [
+            680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
+        ];
+        assert_eq!(SENTRY_SHOT.len(), 14);
+        let mut ported_shots = SENTRY_SHOT.to_vec();
+        ported_shots.sort_unstable();
+        let mut csharp_shots = sentry_shot.to_vec();
+        csharp_shots.sort_unstable();
+        assert_eq!(ported_shots, csharp_shots);
+        // The Queen Spider's shots (378/379) and Abigail's (967) — the
+        // SentryShot consumers the later tasks wire.
+        for kind in [378u16, 379, 967] {
+            assert!(SENTRY_SHOT.contains(&kind), "kind {kind}");
+        }
+    }
+
+    /// The new fields leave every pre-existing row on the pool defaults —
+    /// the no-behaviour-change freeze (the
+    /// `test_the_resolved_rows_leave_the_existing_spawns_untouched`
+    /// precedent, widened to the summon slice).
+    #[test]
+    fn the_summon_fields_leave_the_existing_rows_untouched() {
+        for kind in [
+            WOODEN_ARROW,
+            FLAME_ARROW,
+            MUSKET_BALL,
+            POISON_DART,
+            TRAP_SPEAR,
+            BOMB,
+        ] {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.minion, "kind {kind}");
+            assert!(!d.sentry, "kind {kind}");
+            assert_eq!(d.minion_slots, 0.0, "kind {kind}");
+            assert!(!d.net_important, "kind {kind}");
+            assert!(!d.ignore_water, "kind {kind}");
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 100.0, 200.0, 2.0, 0.0, 7, 0.0, 0.0, 0.0)
+                .unwrap();
+            let p = &pool.slots[slot];
+            assert!(!p.minion);
+            assert!(!p.sentry);
+            assert_eq!(p.minion_slots, 0.0);
+            assert_eq!(p.original_damage, 0, "kind {kind}");
+            assert_eq!(p.minion_pos, 0);
+            assert!(!p.net_important);
+            assert!(!p.ignore_water);
+        }
+    }
+
+    /// The seeded determinism pair (the Test Plan's determinism rule): two
+    /// identical 60-tick runs over a mixed summon pool settle into identical
+    /// state.
+    #[test]
+    fn the_summon_pool_state_is_deterministic() {
+        let run = || {
+            let mut pool = ProjectilePool::new();
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut w = world();
+            pool.spawn_with_data_ai_owned(HORNET, 0, 300.0, 300.0, 0.5, 0.0, 9, 0.0, 0.0, 0.0);
+            pool.spawn_with_data_ai_owned(RETANIMINI, 0, 340.0, 300.0, -0.5, 0.0, 9, 0.0, 0.0, 0.0);
+            pool.spawn_with_data_ai_owned(FROST_HYDRA, 0, 380.0, 300.0, 0.0, 0.0, 9, 0.0, 0.0, 0.0);
+            for _ in 0..60 {
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    None,
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            (
+                pool.slots[0].clone(),
+                pool.slots[1].clone(),
+                pool.slots[2].clone(),
+            )
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a.0.pos, b.0.pos);
+        assert_eq!(a.0.time_left, b.0.time_left);
+        assert_eq!(a.1.pos, b.1.pos);
+        assert_eq!(a.2.time_left, b.2.time_left);
+        assert!(a.2.active, "the sentry outlives 60 ticks");
+    }
+}
+
+#[cfg(test)]
+mod minion_tick_tests {
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    /// The player with a clean summon budget (`ResetEffects`'s 1/0/0.0 base,
+    /// `Player.cs:18448`).
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    /// One pool tick — the C#'s `UpdateWorld_Projectiles` single-player pass
+    /// with the local player threaded (owner 0 == `local_owner`). The C#
+    /// zeroes `numMinions`/`slotsMinions` at the head of every player tick
+    /// (`Player.cs:28279-28280`), so the fixture mirrors the reset before the
+    /// pool pass — without it consecutive ticks would double-count.
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, slot_x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, slot_x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn live(pool: &ProjectilePool) -> usize {
+        pool.slots.iter().filter(|p| p.active).count()
+    }
+
+    /// DW-3.1 — the over-cap self-kill (`Projectile.cs:16712-16735`): six
+    /// Hornets at cap 5 — the sixth dies on its first pool tick and the
+    /// counters return to 5/5.0.
+    #[test]
+    fn test_DW_3_1_the_sixth_minion_self_kills_over_cap() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        for n in 0..6 {
+            spawn_minion(&mut pool, HORNET, 200.0 + n as f32 * 40.0);
+        }
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 5, "the 6th self-killed");
+        assert_eq!(p.num_minions, 5);
+        assert_eq!(p.slots_minions, 5.0);
+        // The survivors keep their slot-order `minionPos` (0..4) — the C#
+        // books it before the cap check, per slot index order.
+        let active_positions: Vec<u16> = (0..6)
+            .filter(|&i| pool.slots[i].active)
+            .map(|i| pool.slots[i].minion_pos)
+            .collect();
+        assert_eq!(
+            active_positions,
+            vec![0, 1, 2, 3, 4],
+            "minionPos follows slot order"
+        );
+    }
+
+    /// DW-3.2 — the 0.5-slot spiders (`Projectile.cs:4707/:4723`): two half
+    /// slots fit in cap 1.0, the third dies. The budget stays an exact f32.
+    #[test]
+    fn test_DW_3_2_the_half_slots_share_the_budget() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 1;
+        spawn_minion(&mut pool, RETANIMINI, 200.0);
+        spawn_minion(&mut pool, SPAZMAMINI, 300.0);
+        spawn_minion(&mut pool, RETANIMINI, 400.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 2, "0.5 + 0.5 fits, the third dies");
+        assert_eq!(p.num_minions, 2);
+        assert_eq!(p.slots_minions, 1.0, "exact half-slot arithmetic");
+        // One more half-slot over the filled 1.0 dies.
+        spawn_minion(&mut pool, SPAZMAMINI, 500.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(live(&pool), 2);
+    }
+
+    /// DW-3.3 — the damage recompute (`Projectile.cs:16704-16707`): the
+    /// unscaled spawn damage × `minionDamage` plus the 5E-06 f32 epsilon, the
+    /// C# cast order verbatim.
+    #[test]
+    fn test_DW_3_3_the_damage_recompute_matches_the_csharp() {
+        // Table: (original damage, minionDamage, expected slot damage).
+        for (orig, md, expect) in [
+            (10, 1.0, 10),
+            (10, 1.5, 15),
+            (26, 2.0, 52),
+            (7, 3.33, 23),
+            (10, 0.9, 9),
+            (100, 0.53, 53),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.minion_damage = md;
+            p.max_minions = 5;
+            let slot = spawn_minion(&mut pool, HORNET, 200.0);
+            pool.slots[slot].original_damage = orig;
+            tick(&mut pool, &mut w, &mut p);
+            assert_eq!(
+                pool.slots[slot].damage, expect,
+                "orig {orig} x {md} + epsilon",
+            );
+        }
+        // The sentry rides the same recompute (`minion || sentry`).
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 1.25;
+        let slot = pool
+            .spawn_with_data_ai_owned(FROST_HYDRA, 0, 200.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(
+            pool.slots[slot].damage, 50,
+            "the sentry recompute (40 x 1.25)"
+        );
+    }
+
+    /// DW-3.3 dirty variant — the recompute reads the owner's multiplier even
+    /// when the owner is dead (the C# reads `Main.player[owner]` regardless).
+    #[test]
+    fn test_edge_the_recompute_runs_for_a_dead_owner() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 2.0;
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, 200.0);
+        p.hp = 0;
+        p.dead = true;
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(pool.slots[slot].damage, 20);
+        assert_eq!(
+            p.num_minions, 1,
+            "the dead player still accumulates this tick"
+        );
+    }
+
+    /// DW-3.5 — the out-of-world minion rescue (`Projectile.cs:16695-16703`):
+    /// a living owner pulls the slot back to their centre (no kill, no update
+    /// that tick).
+    #[test]
+    fn test_DW_3_5_out_of_world_minion_is_rescued() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, -50.0);
+        let (pcx, pcy) = p.center();
+        tick(&mut pool, &mut w, &mut p);
+        let s = &pool.slots[slot];
+        assert!(s.active, "rescued, not killed");
+        assert!(
+            (s.pos.x + s.w * 0.5 - pcx).abs() < 1e-3,
+            "center == player.Center",
+        );
+        assert!((s.pos.y + s.h * 0.5 - pcy).abs() < 1e-3);
+        // The rescue skips the tick (the C# `return`): the summon block's
+        // accumulation has not run for this slot — the next tick books it.
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(p.num_minions, 1);
+    }
+
+    /// DW-3.5 dirty variant — the same escape with a dead owner deactivates
+    /// the slot (`active = false`, `Projectile.cs:16699`).
+    #[test]
+    fn test_edge_out_of_world_with_a_dead_owner_deactivates() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let slot = spawn_minion(&mut pool, HORNET, -50.0);
+        p.dead = true;
+        p.hp = 0;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots[slot].active, "deactivated");
+        assert_eq!(p.num_minions, 0, "no accumulation for a dead escape");
+    }
+}
+
+#[cfg(test)]
+mod minion_ai_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    /// One pool tick with the C#'s per-tick counter reset (`Player.cs:28279`).
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, slot_x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, slot_x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// The minion spawned near the owner (150 px to the left of their centre):
+    /// the C#'s far snap (> 2000 px, `Projectile.cs:65709-65713`) would
+    /// teleport a world-far spawn home and mask the state under test.
+    fn spawn_near(pool: &mut ProjectilePool, kind: u16, p: &Player) -> usize {
+        let (cx, cy) = p.center();
+        spawn_at(pool, kind, cx - 150.0, cy)
+    }
+
+    fn spawn_at(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// A chaseable NPC at (x, y) — `Npc::new` with the port's defaults.
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// DW-4.1 — the follow: a Hornet beyond the 200-px pursuit threshold
+    /// accelerates toward the owner's hover offset at the shared ladder
+    /// (`v *= 6 + num2*num`, `Projectile.cs:65601-65606`), and its timer is
+    /// pinned by the summon flag (the keep-alive arm).
+    #[test]
+    fn test_DW_4_1_the_minion_follows_the_owner() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.hornet_minion = true;
+        let slot = spawn_minion(&mut pool, HORNET, 100.0);
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        let after = pool.slots[slot].pos.x;
+        assert!(after > 100.0, "the minion moves toward the owner: {after}");
+        assert_eq!(
+            pool.slots[slot].time_left, 1,
+            "the pin of 2 minus the tail's per-tick decrement (`:17201`)"
+        );
+    }
+
+    /// DW-4.2 — the whip target: with `minion_attack_target_npc` set on a
+    /// chaseable NPC the minion pursues that NPC; an unchaseable target falls
+    /// back to the owner-hover scan.
+    #[test]
+    fn test_DW_4_2_the_whip_target_leads_the_pursuit() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        let (cx, cy) = p.center();
+        let slot = spawn_at(&mut pool, HORNET, cx - 200.0, cy);
+        let mut npcs = vec![npc_at(NpcKind::Zombie, cx + 250.0, cy)];
+        p.minion_attack_target_npc = 0;
+        for _ in 0..4 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let vx = pool.slots[slot].vel.x;
+        let dx = pool.slots[slot].pos.x - 200.0;
+        assert!(
+            dx > 0.0 && vx > 0.0,
+            "pursues the whip target to the right: dx={dx} vx={vx}"
+        );
+        // A friendly town NPC is unchaseable: the whip target is ignored and
+        // the minion converges back on the owner's hover instead.
+        let mut town = npc_at(NpcKind::Guide, cx + 250.0, cy);
+        town.max_hp = 250;
+        town.hp = 250;
+        npcs.push(town);
+        p.minion_attack_target_npc = 1;
+        for _ in 0..4 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        let after_far = pool.slots[slot].pos.x;
+        assert!(
+            after_far < 380.0,
+            "the unchaseable whip target is ignored: {after_far}"
+        );
+    }
+
+    /// DW-4.3 — the despawn: clearing the summon flag stops the pin and the
+    /// minion dies on `timeLeft`'s tail.
+    #[test]
+    fn test_DW_4_3_the_buff_loss_despawns() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let slot = spawn_minion(&mut pool, HORNET, 100.0);
+        for _ in 0..2 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        assert!(pool.slots[slot].active, "the flag keeps it alive");
+        p.hornet_minion = false;
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        assert!(
+            !pool.slots[slot].active,
+            "dead within a few ticks of the loss"
+        );
+    }
+
+    /// DW-4.4 — the per-type parameters: Abigail's `originalDamage` write and
+    /// scaling off `ownedProjectileCounts[970]`, and the UFO's `num4 = 5`
+    /// attack counter.
+    #[test]
+    fn test_DW_4_4_the_per_type_params_are_verbatim() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.abigail_minion = true;
+        p.owned_projectile_counts[970] = 2;
+        p.highest_abigail_counter_original_damage = 60;
+        let slot = spawn_minion(&mut pool, ABIGAIL, 100.0);
+        tick(&mut pool, &mut w, &mut p);
+        assert_eq!(pool.slots[slot].original_damage, 60, "the max carries");
+        // The UFO's short attack counter: from `ai[0] = 2` the state returns
+        // to idle in 5 increments (the Hornet's 40 takes far longer).
+        let mut pool = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.max_minions = 5;
+        p2.ufo_minion = true;
+        let (cx, cy) = p2.center();
+        let ufo = spawn_at(&mut pool, UFO_MINION, cx - 100.0, cy);
+        pool.slots[ufo].ai[0] = 2.0;
+        pool.slots[ufo].ai[1] = 3.0;
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p2);
+        }
+        assert_eq!(pool.slots[ufo].ai[0], 0.0, "the 5-tick counter (num4 = 5)");
+        assert_eq!(
+            pool.slots[ufo].ai[1], 31.0,
+            "the reset cooldown 30 plus the cooldown machine's increment (`:65985`)"
+        );
+    }
+
+    /// DW-4.5 — the return state: `ai[0] = 1` disables the tile collision and
+    /// the slot converges on the owner's hover offset (the −60 Y lift).
+    #[test]
+    fn test_DW_4_5_the_return_state_converges() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let slot = spawn_near(&mut pool, HORNET, &p);
+        pool.slots[slot].ai[0] = 1.0;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(
+            !pool.slots[slot].tile_collide,
+            "the return state drops the tile collision (`:65455-65457`)"
+        );
+        let (pcx, pcy) = p.center();
+        let hover = |p: &Projectile| {
+            (p.pos + Vec2::new(p.w * 0.5, p.h * 0.5) - Vec2::new(pcx, pcy - 60.0)).length()
+        };
+        let d0 = hover(&pool.slots[slot]);
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut p);
+        }
+        let d1 = hover(&pool.slots[slot]);
+        assert!(d1 < d0, "converges on the hover offset: {d0} → {d1}");
+        // The Imp queue: the second Imp books a higher `minion_pos` than the
+        // first (the slot-ordered queue, `:65685-65695`).
+        let mut pool2 = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.max_minions = 5;
+        p2.imp_minion = true;
+        let a = spawn_minion(&mut pool2, FLYING_IMP, 100.0);
+        let b = spawn_minion(&mut pool2, FLYING_IMP, 100.0);
+        tick(&mut pool2, &mut w, &mut p2);
+        assert!(
+            pool2.slots[b].minion_pos > pool2.slots[a].minion_pos,
+            "the queue order follows the slot order"
+        );
+    }
+}
+
+#[cfg(test)]
+mod sentry_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_turrets = 1;
+        p.max_turrets_old = 1;
+        p
+    }
+
+    fn spawn_sentry(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32, life: i32) -> usize {
+        let slot = pool
+            .spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[slot].time_left = life;
+        slot
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// DW-5.1 — `UpdateMaxTurrets`: three Frost Hydras over `max_turrets = 2`
+    /// — the lowest-`timeLeft` wipable sentry dies, the counters settle at 2.
+    #[test]
+    fn test_DW_5_1_the_lowest_life_sentry_is_evicted() {
+        let mut pool = ProjectilePool::new();
+        let mut p = player(&world());
+        let a = spawn_sentry(&mut pool, FROST_HYDRA, 200.0, 300.0, 35000);
+        let b = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let c = spawn_sentry(&mut pool, FROST_HYDRA, 400.0, 300.0, 34000);
+        assert_eq!(a + b + c > 0, true);
+        p.max_turrets = 2;
+        pool.update_max_turrets(p.max_turrets, 0, false);
+        let live = [
+            pool.slots[a].active,
+            pool.slots[b].active,
+            pool.slots[c].active,
+        ]
+        .into_iter()
+        .filter(|&on| on)
+        .count();
+        assert_eq!(live, 2, "one evicted");
+        assert!(!pool.slots[c].active, "the lowest timeLeft (34000) dies");
+        assert!(pool.slots[a].active && pool.slots[b].active);
+        // The cap drop path: at `max_turrets = 1` the next-lowest goes too.
+        p.max_turrets = 1;
+        pool.update_max_turrets(p.max_turrets, 0, false);
+        assert_eq!(
+            pool.slots.iter().filter(|s| s.active && s.sentry).count(),
+            1,
+            "the cap drop evicts the next"
+        );
+        assert!(!pool.slots[a].active, "the 35000 sentry dies at cap 1");
+    }
+
+    /// DW-5.2 — `sentry_npc_targeting`: the whip target leads when chaseable,
+    /// in the 1000-px manhattan reach and behind LOS; otherwise the scan picks
+    /// the nearest eligible NPC; nothing eligible → None.
+    #[test]
+    fn test_DW_5_2_the_targeting_prefers_the_whip_target() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let npcs = vec![
+            npc_at(NpcKind::Zombie, 900.0, 300.0),
+            npc_at(NpcKind::DemonEye, 700.0, 400.0),
+        ];
+        let p = &pool.slots[hydra];
+        // The whip target (index 0) leads over the nearer scan candidate.
+        let aim = p.sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, 0, &npcs);
+        let (t, x, y) = aim.expect("the whip target is eligible");
+        assert_eq!(t, 0);
+        let (zw, zh) = npcs[0].size();
+        assert!((x - (900.0 + zw * 0.5)).abs() < 1e-3, "the aim x {x}");
+        assert!((y - (300.0 + zh * 0.5)).abs() < 1e-3, "the aim y {y}");
+        // No whip target: the nearest scan candidate (the DemonEye at
+        // manhattan ~437 vs the Zombie's ~615) wins.
+        let aim = p.sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, -1, &npcs);
+        assert_eq!(aim.expect("a target").0, 1);
+        // Nothing eligible (all unchaseable): None.
+        let mut cold = npc_at(NpcKind::Zombie, 900.0, 300.0);
+        cold.chaseable = false;
+        assert!(p
+            .sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 1000.0, -1, &[cold])
+            .is_none());
+        // Out of reach (a tight maxDistance): None.
+        assert!(p
+            .sentry_npc_targeting(&w, Vec2::new(0.0, -12.0), false, 100.0, -1, &npcs)
+            .is_none());
+        let _ = &mut w;
+    }
+
+    /// DW-5.3 — the lifetime: a sentry dies exactly at `SentryLifeTime` 36000
+    /// (35999 alive, 36000 dead) and its damage rides the pool's recompute.
+    #[test]
+    fn test_DW_5_3_the_sentry_lifetime_and_damage() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.minion_damage = 1.5;
+        let slot = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[slot].original_damage = 100;
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..35999 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        assert!(pool.slots[slot].active, "alive at 35999 ticks");
+        assert_eq!(pool.slots[slot].damage, 150, "the recompute rides Phase 3");
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        assert!(!pool.slots[slot].active, "dead at 36000 ticks");
+    }
+
+    /// DW-5.4 — the DD2 persistence: with `dd2_ongoing` true the O'A towers
+    /// are not wipable (they survive the sweep), and they are evicted once the
+    /// flag is false (the port's stub reports false until M4-EVENT-5).
+    #[test]
+    fn test_DW_5_4_the_dd2_towers_persist_while_ongoing() {
+        let mut pool = ProjectilePool::new();
+        let ballista = spawn_sentry(&mut pool, BALLISTRA_TOWER_1, 200.0, 300.0, 35000);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 34000);
+        assert!(
+            pool.slots[ballista].wipable_turret(0, false),
+            "wipable when offline"
+        );
+        assert!(
+            !pool.slots[ballista].wipable_turret(0, true),
+            "persistent while ongoing"
+        );
+        assert!(
+            pool.slots[hydra].wipable_turret(0, true),
+            "the vanilla sentries always wipe"
+        );
+        // At cap 1 with the event ongoing: the tower is not a wipable
+        // candidate at all, so the wipable count (1 — just the Hydra) fits the
+        // budget and both survive. Once the event is over the tower counts,
+        // and the lowest-`timeLeft` wipable (the Hydra, 34000) dies.
+        pool.update_max_turrets(1, 0, true);
+        assert!(pool.slots[ballista].active, "the tower persists");
+        assert!(pool.slots[hydra].active, "the only wipable fits the budget");
+        pool.update_max_turrets(1, 0, false);
+        assert!(pool.slots[ballista].active, "the tower outlives the Hydra");
+        assert!(
+            !pool.slots[hydra].active,
+            "the lowest timeLeft wipable dies"
+        );
+    }
+}
+
+#[cfg(test)]
+mod use_path_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 1;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    fn spawn_minion(pool: &mut ProjectilePool, kind: u16, x: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, 300.0, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn live_minions(pool: &ProjectilePool) -> usize {
+        pool.slots.iter().filter(|s| s.active && s.minion).count()
+    }
+
+    /// DW-6.1 — the sacrifice: over the budget, the descending-`minionSlots`
+    /// order kills the OTHER kinds' minions (`Projectile.cs:51738-51827`) so
+    /// the new spawn fits, while the same-shoot-kind minions die outright in
+    /// the verbatim tail (`:51828-51849` — re-using a staff never stacks its
+    /// own kind).
+    #[test]
+    fn test_DW_6_1_the_sacrifice_frees_the_budget() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 2;
+        let a = spawn_minion(&mut pool, HORNET, 100.0);
+        let b = spawn_minion(&mut pool, FLYING_IMP, 200.0);
+        assert_eq!(live_minions(&pool), 2);
+        // A third staff (the Slime Staff's shoot 266) has no kind in the pool:
+        // the tail kills nothing, the sacrifice frees one slot.
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        assert_eq!(live_minions(&pool), 1, "one sacrificed");
+        assert!(
+            !pool.slots[a].active || !pool.slots[b].active,
+            "an existing minion died"
+        );
+        // At the base cap of 1 the same use empties the budget: `total(2.0) -
+        // freed > 1 - 1 = 0` holds twice.
+        p.max_minions = 1;
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        assert_eq!(live_minions(&pool), 0, "both make room");
+        // The verbatim tail: re-using the Hornet Staff (shoot 373) kills the
+        // Hornets outright — the same kind never stacks.
+        let hornet = spawn_minion(&mut pool, HORNET, 300.0);
+        pool.free_up_pets_and_minions(&p, 373, 0);
+        assert!(!pool.slots[hornet].active, "the same-shoot kind dies");
+    }
+
+    /// DW-6.2 — the ordering: the half-slot spiders sort after the full-slot
+    /// minions (the descending `minionSlots` sort) and the protected kinds
+    /// (623) never die.
+    #[test]
+    fn test_DW_6_2_the_sacrifice_order_and_protected_kinds() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 2;
+        let spider = spawn_minion(&mut pool, RETANIMINI, 100.0); // 0.5 slots
+        let guardian = spawn_minion(&mut pool, STARDUST_GUARDIAN, 200.0); // 0 slots — protected
+        let hornet = spawn_minion(&mut pool, HORNET, 300.0); // 1.0 slot
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        // `total(1.5) > maxMinions(2) - 1 = 1` once: the full-slot Hornet dies.
+        assert!(!pool.slots[hornet].active, "the full-slot minion dies first");
+        assert!(pool.slots[spider].active, "the half slot survives at cap 2");
+        assert!(pool.slots[guardian].active, "the protected kind survives");
+        // At cap 1 the half slot follows; the 0-slot protected kind still
+        // never dies and never counts.
+        p.max_minions = 1;
+        pool.free_up_pets_and_minions(&p, 266, 0);
+        assert!(!pool.slots[spider].active, "the half slot follows at cap 1");
+        assert!(pool.slots[guardian].active, "the protected kind holds");
+    }
+
+    /// DW-6.3 — the right-click aim: the nearest chaseable NPC to the mouse
+    /// wins, a second click on the same target clears it, no NPC → −1; the
+    /// per-tick invalidation drops an unchaseable or far target.
+    #[test]
+    fn test_DW_6_3_the_right_click_aim_and_invalidation() {
+        let w = world();
+        let mut p = player(&w);
+        let npcs = vec![
+            npc_at(NpcKind::Zombie, 900.0, 300.0),
+            npc_at(NpcKind::DemonEye, 500.0, 300.0),
+        ];
+        // Mouse near the DemonEye.
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        assert_eq!(p.minion_attack_target_npc, 1, "the nearest NPC to the mouse");
+        // The same target again clears it.
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        assert_eq!(p.minion_attack_target_npc, -1, "the toggle-off");
+        // No chaseable NPC → −1.
+        p.minion_attack_target_npc = 0;
+        let mut cold = npc_at(NpcKind::Zombie, 900.0, 300.0);
+        cold.chaseable = false;
+        p.invalidate_minion_target(&[cold.clone()]);
+        assert_eq!(p.minion_attack_target_npc, -1, "the unchaseable drops");
+        // The far target (> 3000 px) drops too.
+        p.minion_attack_target_npc = 0;
+        let far = npc_at(NpcKind::Zombie, p.x + 4000.0, p.y);
+        p.invalidate_minion_target(&[far]);
+        assert_eq!(p.minion_attack_target_npc, -1, "the far target drops");
+        // A chaseable, near target survives.
+        p.minion_attack_target_npc = 0;
+        let near = npc_at(NpcKind::Zombie, p.x + 100.0, p.y);
+        p.invalidate_minion_target(&[near]);
+        assert_eq!(p.minion_attack_target_npc, 0, "the valid target holds");
+    }
+
+    /// DW-6.4 — the sentry staff: no buff (the itemdata carries buffType 0)
+    /// and the 377 spawn holds `SentryLifeTime` 36000 with the Summon damage
+    /// class multiplier.
+    #[test]
+    fn test_DW_6_4_the_sentry_staff_grants_no_buff() {
+        // The itemdata rows: the Queen Spider Staff (2366) has no buffType —
+        // verified against the generated table, so the use-path grant never
+        // fires for it.
+        let def = crate::registry::get(2366).expect("the Queen Spider Staff row");
+        assert_eq!(def.buff_type, 0, "the sentry staves carry no minion buff");
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_turrets = 1;
+        p.minion_damage = 1.0;
+        let slot = pool
+            .spawn_with_data_ai_owned(QUEEN_SPIDER, 0, 200.0, 300.0, 0.0, 0.0, 26, 7.5, 0.0, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots[slot].time_left, 36000, "SentryLifeTime");
+        assert!(!pool.slots[slot].minion && pool.slots[slot].sentry);
+        // The recompute rides the same block as the minions'.
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut world(),
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[slot].damage, 26, "26 x 1.0 + epsilon");
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
     }
 }

@@ -631,6 +631,13 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_SUMMON`: the summon draw fixture — one Hornet (373) + one Frost
+    /// Hydra (308) beside the player (the M4-PROJ-8 Phase 1 DW-1.4 pair).
+    summon_shot,
+    "TR_SUMMON"
+}
+
+pin_bool! {
     /// `TR_INV`: opens the inventory on start.
     inv_open,
     "TR_INV"
@@ -1161,7 +1168,5 @@ pin_str! {
 /// (`save_list::list_players`/`list_worlds` prepend `Player n`/`World n`).
 /// Keyed at runtime, so it keeps a live read.
 pub(crate) fn fake_count(key: &str) -> usize {
-    var_raw(key)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
+    var_raw(key).and_then(|v| v.parse().ok()).unwrap_or(0)
 }

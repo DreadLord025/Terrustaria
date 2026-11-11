@@ -915,11 +915,11 @@ should ride the same fix branches:
 | Tree drops | `tile_drop` also lacks the sword-shrine/fake-sword special cases and the palm arm (`#16`) | `registry.rs:60-88` |
 | NPC display | the `FindFrame` fallback still animates kinds with no case using a blind strip (the `#7` animation half) | `npc.rs:4361+` |
 | NPC display | `sprite_dir` write sites missing in the walker/flyer/boss machines (24 C# sites) | `npc.rs` AI arms |
-| Settings | `blood`, the smart-cursor trio, `placement_preview`, `mouse_border_color` are stored but have no consumer. **Partly closed / partly not a bug (re-checked 2026-11-12)**: `Main.placementPreview` is the *kite* placement preview only (`Player.UpdatePlacementPreview` `Player.cs:43402-43415` + `GetPlacementPreviewOpacity` `:43389-43400`), so it has no consumer until kites are ported; `blood` is `ChildSafety.Disabled` (`Main.cs:4101`), which gates gore, and the port spawns no blood gore yet — both are "nothing to gate yet", not dead wiring. The smart-cursor trio and `mouse_border_color` stay open | `settings.rs` |
-| Map | ~~the map key is a hardcoded toggle; `Main.Input` rebinding not applied~~ — **stale (re-checked 2026-11-12)**: the toggle reads `settings.map_binds` through `input_map::map_action_for`/`App::is_map_bound` (`app/loop.rs:568`), and `input_map`'s tests pin the default `M` plus a rebind | — |
+| Settings | `blood`, the smart-cursor trio, `placement_preview`, `mouse_border_color` are stored but have no consumer | `settings.rs` |
+| Map | the map key is a hardcoded toggle; `Main.Input` rebinding not applied | `app/loop.rs:298-307` |
 | Cactus | `GetTileDrawData case 80`'s `tileTop = 2` is present, but the draw-local rectangle contract is not modelled | `tr-core/drawdata.rs` |
-| Trash | ~~chest/shop scale `0.755` (vs `0.85`) not applied with the offset~~ — **closed by BUG-20**: `ui::inventory::trash_rect(chest_or_shop)` returns `(448, 258)` at 0.85 or `(453, 426)` at 0.755, and both the draw and hit test read it (`Main.cs:42351-42356`) | — |
-| Bestiary | ~~remaining literal `bestiary_npc_sheets[N]` indices besides `174`~~ — **closed by BUG-15**: every read goes through `bestiary_sheet_index`, and the sheet table lookups are indexed by `net_id` | — |
+| Trash | chest/shop scale `0.755` (vs `0.85`) not applied with the offset | `ui/inventory.rs:483-490` |
+| Bestiary | remaining literal `bestiary_npc_sheets[N]` indices besides `174` | `ui/bestiary.rs` |
 | Saves | `.trwld` still has no native twins for signs/plates/town rooms/bestiary sights (M6-SAVE-1b) | `tr-core/wld` |
 | World select | `WorldPlay` also skips the `valid`/path gates on the Play button | `app/flow.rs:186` |
 
