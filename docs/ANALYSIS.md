@@ -5503,15 +5503,38 @@ the minimap (the twins SHA256-equal); the workspace suite 1261/0.
   the creative stop-spread gate into the hard-mode head (`allowed_to_spread`
   had been hardcoded `true` there, so `M6-CREATIVE-1c`'s power never reached
   the dispatcher). The seaweed and web arms landed on top of it (the
-  M5-SPREAD-1c bullet below). Parked arms: the 655 life-fruit
-  kill (the NPC store), `plantDye` (and its `Main.rand.Next(2500)`/
-  `Next(10000)` head rolls, which vanilla draws for every `nactive` pick), the
+  M5-SPREAD-1c bullet below). The dye-plant head landed last (the
+  M5-SPREAD-1d bullet below). Parked arms: the 655 life-fruit
+  kill (the NPC store), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
   `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
   net sides, the creative-power override on `AllowedToSpreadInfections` (the
   port passes the gate through `allowed_to_spread` instead), and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
-  carries every draw).
+  carries every draw — the dye head's `Main.rand.Next(2500)`/`Next(10000)`
+  now draw from it too).
+
+- **The dye plants** (`plantDye` `WorldGen.cs:71286-71436`, `PlaceDye`
+  `:53988-54065`, and both dispatchers' heads — the M5-SPREAD-1d slice):
+  every `nactive` pick rolls `Next(2500)` (underground) or `Next(3000)`
+  (overground) and, in hard mode, `Next(10000)`/`Next(15000)` for the exotic
+  family (the overground exotic arm also needs `x` outside the middle
+  40..60 % of the world). `plantDye` runs three passes behind the 95-tile
+  margins: the surface band (`j < worldSurface`), the underground band
+  (`worldSurface <= j < height − 200`), and the hanging style 7 below an
+  empty cell. Each band first refuses when its ±`num` box (90, 240 exotic)
+  already holds a 227 of its own `frameX < 272` / `>= 272` family, then picks
+  the style by soil: dirt/grass 2/109 → 3 or 4 (`Next(4)`), jungle 60 → 2 or 4
+  (`Next(2)`, the underground band's 2 / default / 1 cascade), sand 53 in
+  full water → 2, mushroom grass 80 (11×21 box clear of 112/234) → 6,
+  dirt/stone/clay 0/1/59 → default or 1 (`Next(2)`), any full-water cell → 5,
+  the grass/moss/dirt set → `Next(8, 12)` exotic, and the hanging pass →
+  style 7 under a kind-0 cell. `PlaceDye` re-checks the seat per style
+  (free-above/free-below sets including the 1.4.5 697/703, the mushroom pair,
+  the full non-lava/honey/shimmer liquid for style 5, the open wall for 3/4)
+  and writes `frameX = 34 * style`, `frameY` 0. Deviation: vanilla's
+  `Main.rand` draws ride the port's `growth_rng` (the stream-position
+  deviation all growth arms share).
 
 - **The seaweed and web arms** (`UpdateWorld_UndergroundTile`'s
   `:73272-73282` and the tail `else`'s `:73803-73806` — the M5-SPREAD-1c
