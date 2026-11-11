@@ -10030,3 +10030,44 @@ owns the inventory click surface.
   `pos - origin * scale`. `ui::draw_anchored_text` implements that; the rest of
   the HUD uses the zero-anchor `text::border_string`.
 
+## The projectile sprites (M4-PROJ-6b render)
+
+The AI port drew every non-yoyo projectile with the same sprite: `draw_with_hand`
+asked `Lookups::shuriken_uv()` for the 22x22 `Projectile_3` frame and stamped it at
+a fixed `SIZE x SIZE` quad. The vanilla instead draws
+`TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0, frame)`
+(`Main.cs:27929-27943`) at `projectile.scale`. That gap is now closed for the kinds
+the port can spawn:
+
+- **Sheets.** `assets.rs` packs `Images/Projectile_{id}` for every kind
+  `projectile::spawnable_kinds()` reports — the set derived from the `proj_data`
+  rows themselves (a probe over the id space, `0..=1200`) rather than a second
+  hand-maintained list. ~180 small sheets; a missing file just leaves the kind
+  unpacked and the shuriken fallback covers it (the `SHURIKEN` 3 dev shot has no
+  `proj_data` row and stays on the stand-in).
+- **Frames.** `projectile::proj_frames(kind)` carries the `Main.projFrames[type]`
+  rows (`Main.cs:8441-8816`): every type defaults to 1 and only 18 of the spawned
+  ids exceed it (34 → 6, 645 → 7, 254 → 5, …). `Lookups::proj_frame` slices the
+  packed sheet into that many equal rows, clamps the frame index and returns the
+  frame's **own** pixel size, so the quad is the art's size, not the shuriken's.
+- **State.** `Projectile.frame` (`:451`, reset at `SetDefaults` `:805`) exists so
+  the AI arms can advance it; the vanilla advances `frame`/`frameCounter` per
+  family (there is no generic animator: `:23477`, `:25213`, …), so each ported AI
+  arm owns its own cadence — until one lands, a multi-frame kind draws frame 0.
+- **Scale.** The draw multiplies the frame size by `Projectile.scale` (the C#
+  `float scale = projectile.scale`), which the yoyo family already set and the
+  rest now honour.
+
+**Verification.** One test asserts that >100 sheets pack, that each kind's slice
+height equals `sheet_height / proj_frames`, that frame `frames-1` stays inside the
+sheet, that the 34/645 rows hold, and that an unpacked kind answers `None` while
+`shuriken_uv` stays live. The screenshot fixture is `TR_THROW=<id>` (one shot from
+the player's centre on the first tick, re-armed when the pool empties); a
+pixel-diff of `TR_THROW=645` against the same frame without it isolates a 35x28
+sprite in the poison dart's greens `(34,221,151)`/`(208,253,235)` at the spot the
+22 px grey shuriken used to be — `docs/screenshots/m4-proj-6b-poison-dart.png`.
+
+**Still open** (`M4-PROJ-6b`): the caster AI families themselves (Unholy Trident
+27, Spectre 59/51, Leaf Blower 40, Razorblade Typhoon 71, Nebula Arcanum 118/119,
+Last Prism 75/84) and the GemStaff/MagicMissile/RainbowRod/FlameLash trail
+shaders.
