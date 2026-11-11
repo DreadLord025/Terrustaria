@@ -749,6 +749,19 @@ struct FlailSpawnRequest {
     ai0: f32,
 }
 
+/// One Nebula Arcanum subshot spawn — the family's `Projectile.NewProjectile`
+/// (`Projectile.cs:34753-34758`: kind 618, `this.damage / 2`, `ai1 = this.key`).
+/// The arm rolls the spawn angle from the pool's rng; the key and the owner
+/// ride out through the dispatch (the slot's own `key_of`), the same shape as
+/// `FlailSpawnRequest`.
+struct NebulaSubshot {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+}
+
 /// One flail hit-side decision — the multipliers plus whether the
 /// state-0 ellipse stood in for the box test.
 struct FlailHit {
@@ -2196,6 +2209,13 @@ pub struct Projectile {
     /// is the one thing Phase 6's frame-sliced draw needs from this phase.
     /// `frameCounter` joins it with the animating kinds 206/633 (Phase 6).
     pub frame: i32,
+    /// `Projectile.frameCounter` (`:332`, reset `:787`) — the per-frame tick
+    /// accumulator of the animating kinds. The Leaf Blower's 5-frames-at-3 arm
+    /// (`AI_040_LeafBlower`, `Projectile.cs:38018-38027`) writes it now; Phase
+    /// 6's frame-sliced draw consumes it with the 633 holder. It cannot ride
+    /// `local_ai` — the leaf's C# arm owns all three `localAI` slots (the age,
+    /// the tick counter, the spin-sign latch).
+    pub frame_counter: i32,
     /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
@@ -2279,6 +2299,7 @@ impl Default for Projectile {
             alpha: 0,
             scale: 1.0,
             frame: 0,
+            frame_counter: 0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -3371,14 +3392,50 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-51 block (`Projectile.cs:28402-28503`) — the Spectre
-    /// Staff's Lost Soul. The 297 branch is this phase's; the 293 hostile twin's
-    /// player hunt (its `num362 = 200f` scan over `Main.player` and the
-    /// `(v * 100 + d) / 101` blend, `:28448-28475`) is Phase 3's, which widens
-    /// the signature with the owner centre the way the other owner-aware arms
-    /// do. Until then the 293 stays inert, as every kind whose arm has not
-    /// landed.
-    fn ai_spectre_shot(&mut self, world: &World, npcs: &[Npc]) {
+    /// Staff's Lost Soul (297) and its hostile twin (293). The 297 homes on the
+    /// tightest-Manhattan chaseable NPC inside the 400f `Distance` + `CanHit`
+    /// scan at turn speed 6; the 293 hunts the nearest living player inside the
+    /// Manhattan 200f scan (`:28448-28475`) at turn speed 3, both through the
+    /// same `(v * n + d) / (n + 1)` blend. The 297's five-dust burst
+    /// (`:28407-28416`) and the 293's nine-dust burst + one-shot sound latch
+    /// (`:28422-28437`) have no dust/sound layer — documented skips whose state
+    /// markers (`localAI[0]`) the arm keeps advancing so the C#'s tick order
+    /// stays observable.
+    fn ai_spectre_shot(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        let _ = owner;
         if self.kind != LOST_SOUL {
+            // `:28420-28437` — the 293's sound latch: `localAI[0] == 0f` plays
+            // Item8 once and increments (the sound SKIPPED, the latch kept).
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] += 1.0;
+            }
+            // `:28448-28475` — the player hunt: `num362` resets to 200f and the
+            // scan walks `Main.player` for `active && !dead`, keeping the
+            // tightest Manhattan centre-to-centre distance. The port's single
+            // player rides the `player` context; `None` reads as the C#'s
+            // inactive `Main.player[i]` — no target, no steering.
+            let Some(p) = player.filter(|p| !p.dead) else {
+                return;
+            };
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let (pcx, pcy) = p.center();
+            let target = Vec2::new(pcx, pcy);
+            let manhattan = (center.x - pcx).abs() + (center.y - pcy).abs();
+            // `:28484-28499` — the 293 blend: turn speed 3 through
+            // `(v * 100 + d) / 101`.
+            if manhattan < 200.0 {
+                self.steer_blend(target, center, 3.0, 101.0);
+            }
+            // The 293's row keeps `tileCollide = false`, so `HandleMovement`'s
+            // terminal default integrates without a collision probe — the
+            // `kill_step` shape below.
+            self.kill_step(world);
             return;
         }
         // `:28404-28412` — the dust latch: `localAI[0]++` gates the burst that
@@ -3550,6 +3607,468 @@ impl Projectile {
                 self.vel.y = -last.y;
             }
         }
+        self.pos += self.vel;
+    }
+
+    /// The C# caster families' steering blend —
+    /// `velocity = (velocity * (num - 1) + d) / num` where `d` is the
+    /// to-target direction at `speed` px per tick (`Projectile.cs:28489-28496`'s
+    /// shape). The Spectre Staff's 293 reads 101 at turn speed 3
+    /// (`:28477-28484`), the Spectre Wrath 30 at speed 4 (`:28972-28991`), the
+    /// Nebula Arcanum 8 at speed 4 (`:34779-34805`). The divisor stays clamped
+    /// by the epsilon guard the pool's other scans use — an exactly-coincident
+    /// centre would divide by zero in the C# too.
+    fn steer_blend(&mut self, target: Vec2, center: Vec2, speed: f32, num: f32) {
+        let delta = target - center;
+        let length = delta.length().max(f32::EPSILON);
+        let d = delta * (speed / length);
+        self.vel = Vec2::new(
+            (self.vel.x * (num - 1.0) + d.x) / num,
+            (self.vel.y * (num - 1.0) + d.y) / num,
+        );
+    }
+
+    /// `AI_040_LeafBlower` (`Projectile.cs:38003-38074`) — the Leaf Blower's
+    /// puff (206): the alpha fade-in over the first 50 ticks and the +2 fade-out
+    /// to the `Kill()` at 255, the 5-frames-at-3 animation, the seeded drift
+    /// deltas (`ai[0]/ai[1]`, one `Next(-100, 101)` pair at `localAI[1] == 1`)
+    /// and the spin that latches its sign on the first tick and starts at
+    /// `localAI[1] > 10`, inside the 12-16 speed band. The rotation reads
+    /// `atan2 + 3.14f` — the C#'s own literal, not PI.
+    ///
+    /// The drift rolls ride the pool's rng (the flail/yoyo seam). The two dust
+    /// bursts (`:38040-38048` at `localAI[1] == 1` and `:38050-38056` below 60)
+    /// are SKIPPED — no dust layer — but their gate and `RotatedByRandom`
+    /// draws are consumed (`Utils.cs:1697-1701` takes two values per call) so
+    /// the stream positions stay 1:1. The C#'s spawn-time ai rolls
+    /// (`NewProjectileSetup`'s case 206, `:10907-10910`) are the shoot path's
+    /// (Phase 5) — this arm re-rolls its own at `localAI[1] == 1` regardless.
+    /// `HandleMovement` has no 206 arm, so a blocked move dies through the
+    /// terminal default (`kill_step`).
+    fn ai_leaf(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:38004-38016` — the fade: the first three ticks hold the spawn
+        // alpha, ticks 4-50 pull 50 per tick toward 0, past 50 the +2 walk
+        // back to the kill.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] > 50.0 {
+            self.alpha += 2;
+            if self.alpha >= 255 {
+                // `Kill()` aborts the AI body (`:38011-38013`'s `return`).
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        } else if self.local_ai[0] > 3.0 {
+            self.alpha -= 50;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+        }
+        // `:38018-38027` — the animation: `frameCounter` rides the slot field
+        // (the C# arm owns all three `localAI` slots), 3 ticks per frame, 5
+        // frames wrapping to 0. The render pass slices the sheet (Phase 6).
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 5 {
+            self.frame = 0;
+        }
+        // `:38029-38030` — the drift deltas land in the velocity before the
+        // first roll, so the rolled values apply from the second tick on.
+        self.vel += Vec2::new(self.ai[0], self.ai[1]);
+        // `:38031-38033` — the spin-sign latch, taken once at `localAI[1] == 0`:
+        // a +X flight spins negative, everything else (including exactly 0)
+        // positive.
+        if self.local_ai[1] == 0.0 {
+            self.local_ai[2] = if self.vel.x > 0.0 { -1.0 } else { 1.0 };
+        }
+        self.local_ai[1] += 1.0;
+        // `:38034-38048` — the seeded drift: exactly one `Next(-100, 101)` pair
+        // per projectile, at `localAI[1] == 1` (the first AI tick), scaled by
+        // `6E-05f` into the per-tick acceleration.
+        if self.local_ai[1] == 1.0 {
+            self.ai[0] = rng.next_range(-100, 101) as f32 * 6.0e-5;
+            self.ai[1] = rng.next_range(-100, 101) as f32 * 6.0e-5;
+            // The ==1 dust burst — SKIPPED; the `Next(3)` gate and the taken
+            // branch's `RotatedByRandom(0.15)` pair stay on the stream.
+            if rng.next_range(0, 3) != 0 {
+                let _ = (rng.next_float(), rng.next_float());
+            }
+        }
+        // `:38050-38056` — the second dust window: one `Next(60)` per tick
+        // while `localAI[1] < 60` (the C# short-circuits past it), the taken
+        // branch's `RotatedByRandom` pair consumed.
+        if self.local_ai[1] < 60.0 && rng.next_range(0, 60) == 0 {
+            let _ = (rng.next_float(), rng.next_float());
+        }
+        // `:38057-38061` — the spin: an absolute angle that grows with the tick
+        // count (`localAI[2] * |ai[0]| * localAI[1] * 0.35f`), then the 0.97
+        // shrink — both only past the 10th tick.
+        if self.local_ai[1] > 10.0 {
+            let angle = self.local_ai[2] * self.ai[0].abs() * self.local_ai[1] * 0.35;
+            self.vel = rotate(self.vel, angle);
+            self.vel *= 0.97;
+        }
+        // `:38062-38070` — the speed band: the Manhattan |X|+|Y| over 16 pulls
+        // 0.95, under 12 pushes 1.05.
+        if self.vel.x.abs() + self.vel.y.abs() > 16.0 {
+            self.vel *= 0.95;
+        }
+        if self.vel.x.abs() + self.vel.y.abs() < 12.0 {
+            self.vel *= 1.05;
+        }
+        // `:38071-38073` — the rotation trails the flight at atan2 + 3.14f.
+        self.rot = self.vel.y.atan2(self.vel.x) + 3.14;
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-59 block (`Projectile.cs:28938-28993`) — the Spectre
+    /// Wrath (356). The ghost set bonus spawns it hostile with the victim as
+    /// `ai[0]` (`ghostHurt`, `:12060` — the spawn path itself is the
+    /// documented M3-EQUIP skip); `ai[1]` counts 60 ticks before the flip to
+    /// `friendly` arms the homing: an owner-side re-pick collects every
+    /// chaseable NPC inside the Manhattan 800f and takes a **uniform** rng
+    /// pick (`array[Main.rand.Next(num427)]`, `:28966` — `Kill()` when the
+    /// scan comes back empty), then the held target steers through the
+    /// `(v * 29 + d) / 30` blend at speed 4.
+    ///
+    /// The five-dust ring (`:28992-28996`) rolls nothing and is SKIPPED. The
+    /// re-pick gate folds `Main.myPlayer == this.owner` to `owner != 255` —
+    /// the update's simulation gate already restricts the arm to this
+    /// machine's slots, and the 255-hostile slots must not re-pick. The
+    /// stored index is the **raw** npc index (the C# keeps `num428`
+    /// verbatim — no `+ 1`, unlike the typhoon/arcanum locks). The row's
+    /// `tileCollide = false` makes `HandleMovement`'s half a plain
+    /// integration.
+    fn ai_spectre_wrath(&mut self, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng) {
+        // `:28940-28941` — the hostile window counter (the row's
+        // `extraUpdates = 3` runs the arm four times per update).
+        self.ai[1] += 1.0;
+        // `:28942` — the flip: the PVE pass reads `friendly`. The C# writes it
+        // once past 60 over `SetDefaults`' hostile reset (`:788`); the pool's
+        // slot spawns `friendly = true` by default, so the arm holds the C#
+        // state machine explicitly — hostile below 60, friendly at and past
+        // it — which is every real 356's state (the only spawner is
+        // `ghostHurt`'s SetDefaults-fresh spawn).
+        self.friendly = self.ai[1] >= 60.0;
+        if self.ai[1] >= 60.0 {
+            let mut held = self.ai[0] as i32;
+            // `:28943-28965` — the owner-only re-pick: an unset or stale
+            // target re-scans; a still-chaseable hold keeps steering without
+            // a roll.
+            if self.owner != 255
+                && (held == -1 || npcs.get(held as usize).is_none_or(|n| !chaseable(n)))
+            {
+                held = -1;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let mut candidates: Vec<usize> = Vec::new();
+                for (i, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let c = npc_center(n);
+                    let manhattan = (c.x - center.x).abs() + (c.y - center.y).abs();
+                    if manhattan < 800.0 {
+                        candidates.push(i);
+                    }
+                }
+                // `:28957-28960` — an empty scan kills and aborts the arm.
+                if candidates.is_empty() {
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+                // `:28961-28964` — the uniform pick; `netUpdate` is net code.
+                held = candidates[rng.next_range(0, candidates.len() as i32) as usize] as i32;
+                self.ai[0] = held as f32;
+            }
+            // `:28968-28991` — the steering blend: `num434 = 30`, the target
+            // direction at speed 4. The `get()` guards the owner-255 path the
+            // re-pick gate skips — a wild `ai[0]` there would be the C#'s
+            // IndexOutOfRange, which the pool answers with a steering-less
+            // tick instead of a panic.
+            if held != -1 {
+                if let Some(n) = npcs.get(held as usize) {
+                    let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                    let target = npc_center(n);
+                    self.steer_blend(target, center, 4.0, 30.0);
+                }
+            }
+        }
+        // The five-dust ring (`:28992-28996`) — SKIPPED (no dust layer, no
+        // rolls to consume).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
+    /// Arcanum (617). Two flight modes picked per tick off the speed: above
+    /// 4.0 the fast spin (`rotation -= PI/30`, the 0.98 decay + the 0.0074468083
+    /// scale climb past `ai[0] >= 30`, the re-snap to exactly 4 when the speed
+    /// falls under 4.1 with the `ai[0]` reset), at or below 4.0 the homing mode
+    /// (the 800f `Distance` + `CanHit` scan committing `ai[1] = index + 1`, the
+    /// held target's `CanBeChasedBy(ignoreDontTakeDamage: true)` + 1000f
+    /// validity — a merely distant hold keeps its index, a dead one flies dumb,
+    /// the C# never re-scans — and the `(v * 7 + d) / 8` blend at speed 4,
+    /// gated on `friendly`). The subshot (618, `damage / 2`, `ai1 = this.key`)
+    /// rolls every 30 ticks while `ai[0] < 241` and rides out through the
+    /// dispatch like `FlailSpawnRequest`.
+    ///
+    /// The per-mode dust bursts (`:34657-34673` fast, `:34693-34719` homing)
+    /// are SKIPPED — no dust layer — with every gate and `RotatedByRandom`
+    /// draw consumed on the pool's rng (`Utils.cs:1697-1701` takes two values
+    /// per call), so the subshot's angle lands at its C# stream position. The
+    /// `Lighting.AddLight` (`:34798`) and the `netUpdate` writes are skipped.
+    /// The 617's HandleMovement arm (`:18267-18276`) reflects a blocked axis
+    /// at `* 0.35f` instead of the terminal kill. The collision-box resize
+    /// (`:20002`, 20×scale) has no pool consumer.
+    ///
+    /// Deviation from the source: the mode is picked from the speed **before**
+    /// this tick's decay, exactly as the C# reads `velocity.Length() <= 4f` at
+    /// the block's top — a 4.05-speed spawn re-snaps to 4.0 on its first tick.
+    fn ai_nebula_arcanum(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<NebulaSubshot> {
+        let mut spawn = None;
+        // `:34641-34651` — the age counter, the mode pick (homing at |v| <= 4)
+        // and the fade-in: 15 per tick with the 0 floor.
+        self.ai[0] += 1.0;
+        let homing = self.vel.length() <= 4.0;
+        self.alpha -= 15;
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        if !homing {
+            // `:34655-34656` — the fast spin.
+            self.rot -= std::f32::consts::PI / 30.0;
+            // The mode-0 dust — SKIPPED; the `Next(3)` gate, the inner
+            // `Next(2)` and the taken branch's `RotatedByRandom` pair stay on
+            // the stream (both inner branches roll one pair).
+            if rng.next_range(0, 3) == 0 {
+                if rng.next_range(0, 2) == 0 {
+                    let _ = (rng.next_float(), rng.next_float());
+                } else {
+                    let _ = (rng.next_float(), rng.next_float());
+                }
+            }
+            // `:34674-34683` — the decay + the scale climb + the extra spin
+            // once the counter passes 30.
+            if self.ai[0] >= 30.0 {
+                self.vel *= 0.98;
+                self.scale += 0.0074468083;
+                if self.scale > 1.3 {
+                    self.scale = 1.3;
+                }
+                self.rot -= std::f32::consts::PI / 180.0;
+            }
+            // `:34684-34689` — the re-snap: under 4.1 the flight normalises to
+            // exactly 4 and the counter resets, which hands the next tick to
+            // the homing mode.
+            if self.vel.length() < 4.1 {
+                self.vel = safe_normalize(self.vel) * 4.0;
+                self.ai[0] = 0.0;
+            }
+        } else {
+            // `:34691-34692` — the homing spin.
+            self.rot -= std::f32::consts::PI / 30.0;
+            // The mode-1 dust — SKIPPED; the `Next(2)` gate, then the taken
+            // branch's two `RotatedByRandom` pairs (4 draws) or the else's
+            // one pair (2 draws).
+            if rng.next_range(0, 2) == 0 {
+                let _ = (rng.next_float(), rng.next_float(), rng.next_float(), rng.next_float());
+            } else {
+                let _ = (rng.next_float(), rng.next_float());
+            }
+            // `:34720-34723` — the subshot window: `ai[0] % 30 == 0` and under
+            // 241, on the owner's machine (`Main.myPlayer == owner` folds to
+            // `owner != 255`, the same fold the Wrath's re-pick uses). The
+            // angle is `UnitY.RotatedByRandom(2π) * 12` — two draws.
+            if self.ai[0] % 30.0 == 0.0 && self.ai[0] < 241.0 && self.owner != 255 {
+                let a = rng.next_float() * 6.2831854820251465
+                    - rng.next_float() * 6.2831854820251465;
+                let v = rotate(Vec2::new(0.0, 1.0), a) * 12.0;
+                spawn = Some(NebulaSubshot {
+                    x: self.pos.x + self.w * 0.5,
+                    y: self.pos.y + self.h * 0.5,
+                    vx: v.x,
+                    vy: v.y,
+                    damage: self.damage / 2,
+                });
+            }
+            // `:34724-34771` — the homing scan: the acquire only while no
+            // lock is held (`ai[1] == 0`), the tightest chaseable NPC inside
+            // 800f with a clear `CanHit` line committing `ai[1] = index + 1`;
+            // the held target re-validates every tick through the
+            // ignoreDontTakeDamage chase gate and the 1000f radius, never
+            // clearing on a miss (the C# `ai[1]` has no reset arm).
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let mut target = center;
+            let mut steer = false;
+            if self.ai[1] == 0.0 {
+                let mut scan = 800.0f32;
+                let mut best: i32 = -1;
+                for (i, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let n_center = npc_center(n);
+                    let distance = center.distance(n_center);
+                    if distance < scan
+                        && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, n.size().0, n.size().1)
+                    {
+                        scan = distance;
+                        target = n_center;
+                        best = i as i32;
+                    }
+                }
+                if best >= 0 {
+                    self.ai[1] = best as f32 + 1.0;
+                }
+            }
+            if self.ai[1] != 0.0 {
+                let held = self.ai[1] as i32 - 1;
+                if let Some(n) = npcs.get(held as usize) {
+                    if chaseable_held(n) && center.distance(npc_center(n)) < 1000.0 {
+                        steer = true;
+                        target = npc_center(n);
+                    }
+                }
+            }
+            if !self.friendly {
+                steer = false;
+            }
+            // `:34776-34805` — the blend: `num874 = 8`, the target direction
+            // at speed 4.
+            if steer {
+                self.steer_blend(target, center, 4.0, 8.0);
+            }
+        }
+        // `:34802-34806` — the 600-tick life end (the homing counter never
+        // resets once past the mode switch, so this is the mode-1 lifetime).
+        if self.ai[0] >= 600.0 {
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `HandleMovement`'s 617 arm (`:18267-18276`): a blocked axis
+        // reflects at `* 0.35f` — the typhoon's probe shape with the
+        // restitution.
+        if self.tile_collide {
+            let last = self.vel;
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.vel.x = -last.x * 0.35;
+            }
+            if hit_y {
+                self.vel.y = -last.y * 0.35;
+            }
+        }
+        self.pos += self.vel;
+        spawn
+    }
+
+    /// `AI()`'s aiStyle-119 block (`Projectile.cs:34809-34887`) — the Nebula
+    /// Arcanum's arm (618): it trails its parent 617, accelerating 0.15 per
+    /// tick toward the parent's centre (the `Math.Sign` step, capped at
+    /// speed 6), for the 420-tick window, and latches `alpha = 255` every
+    /// tick. The parent resolves through the key the spawn carried in
+    /// `ai[1]` (`nebula_parent`'s `TryGetActive` shape); a missing parent
+    /// latches `ai[0] = 420` and kills, with the AI running on into the
+    /// alpha tail exactly as the C#'s no-return `Kill()` does.
+    ///
+    /// Deviation from the source (recorded): the C# shift reads the parent's
+    /// `oldPos[1]` ring — the parent's movement since the child's previous
+    /// tick. The port's oldPos ring is Phase 7's, so the arm keeps the
+    /// last-seen parent position in `localAI[0..1]` (with the seen-flag in
+    /// `localAI[2]`) and shifts from the second sighting on: the delta
+    /// matches the C#'s per-tick movement exactly, but the first tick
+    /// carries one tick of follow slack where the C# reads the parent's
+    /// already-warm ring.
+    fn ai_nebula_arm(&mut self, parent: Option<(Vec2, Vec2)>, rng: &mut dyn tr_core::loot::DropRng) {
+        // The 618 constants (`:34817-34822`): the parent type 617, the 420
+        // window, the 0.15 per-axis accel. The C#'s `flag62`/`flag63` arms are
+        // the decompiler's always-false locals — folded.
+        // `:34831-34834` — the counter and the window: past 420 the arm is
+        // inert (the `return` skips the shift, the accel and the alpha tail).
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 420.0 {
+            return;
+        }
+        match parent {
+            Some((parent_pos, _)) => {
+                // `:34843-34847` — the parent-follow shift: the delta since the
+                // last sighting (the C#'s `position - oldPos[1]`), taken from
+                // the second tick on.
+                if self.local_ai[2] != 0.0 {
+                    let delta =
+                        parent_pos - Vec2::new(self.local_ai[0], self.local_ai[1]);
+                    self.pos += delta;
+                    // `:34848-34852` — the NaN guard: `Center.HasNaNs()` kills
+                    // and aborts.
+                    if (self.pos.x + self.w * 0.5).is_nan()
+                        || (self.pos.y + self.h * 0.5).is_nan()
+                    {
+                        self.active = false;
+                        self.time_left = 0;
+                        return;
+                    }
+                }
+                self.local_ai[0] = parent_pos.x;
+                self.local_ai[1] = parent_pos.y;
+                self.local_ai[2] = 1.0;
+            }
+            None => {
+                // `:34853-34857` — the parent-missing latch: `ai[0] = 420`,
+                // `Kill()` — and the AI runs on into the alpha tail (the C#
+                // `Kill()` does not return here).
+                self.ai[0] = 420.0;
+                self.active = false;
+                self.time_left = 0;
+            }
+        }
+        // `:34858-34864` — the accel: one `Math.Sign` step per axis toward the
+        // parent's centre (0 when exactly equal — the C# `Math.Sign`, not the
+        // ±1 signum), capped at speed 6.
+        if let Some((_, parent_center)) = parent {
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let dx = parent_center.x - center.x;
+            let dy = parent_center.y - center.y;
+            self.vel += Vec2::new(
+                if dx > 0.0 {
+                    1.0
+                } else if dx < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                } * 0.15,
+                if dy > 0.0 {
+                    1.0
+                } else if dy < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                } * 0.15,
+            );
+            let speed = self.vel.length();
+            if speed > 6.0 {
+                self.vel *= 6.0 / speed;
+            }
+        }
+        // `:34866-34875` — the dust roll (`Next(2)`) stays on the stream, the
+        // dust itself SKIPPED; the alpha latches at 255 every tick, the kill
+        // tick included.
+        if rng.next_range(0, 2) == 0 {
+            // The dust — SKIPPED.
+        }
+        self.alpha = 255;
+        // `HandleMovement`'s half for the tileCollide-false kind: the plain
+        // integration after the AI body.
         self.pos += self.vel;
     }
 
@@ -6140,6 +6659,15 @@ fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
 }
 
+/// `CanBeChasedBy(attacker, ignoreDontTakeDamage: true)` (`NPC.cs:90030-90041`)
+/// — the ignore variant the Nebula Arcanum's held-target validity reads
+/// (`Projectile.cs:34773`): a `dontTakeDamage` NPC keeps a lock it already
+/// holds, while the acquire scans (`:34764`, the Wrath's `:28954`) use the
+/// plain [`chaseable`] gate that excludes it.
+fn chaseable_held(n: &Npc) -> bool {
+    n.hp > 0 && n.max_hp > 5
+}
+
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
 fn npc_center(n: &Npc) -> Vec2 {
     let (w, h) = n.size();
@@ -6562,6 +7090,31 @@ impl ProjectilePool {
     pub fn key_of(&self, slot: usize) -> i32 {
         let p = &self.slots[slot];
         crate::net::projectile_key(p.owner, slot, p.generation)
+    }
+
+    /// `((ProjectileKey)this.ai[1]).TryGetActive(expectedType)` (`Projectile.cs:34824`,
+    /// `DataStructures/ProjectileKey.cs:100-108`): the ai slot carries the key's
+    /// **raw bit pattern** reinterpreted as f32 — the C# union's `floatBits`
+    /// member, so `from_bits`/`to_bits` round-trip every 32 bits (a numeric
+    /// cast would lose the generations above 2^24 the C# never loses). The
+    /// lookup validates the packed slot's active + owner + generation and the
+    /// expected kind; a recycled slot fails the generation match and the
+    /// caller's arm kills, exactly as `TryLookup` (`Projectile.cs:632-639`)
+    /// answers through the key equality. Returns the parent's position and
+    /// centre — the 618 arm shifts by the position and steers by the centre.
+    pub fn nebula_parent(&self, key: f32) -> Option<(Vec2, Vec2)> {
+        let (owner, slot, generation) = crate::net::projectile_key_parts(key.to_bits() as i32);
+        let p = self.slots.get(slot)?;
+        if p.active
+            && p.kind == NEBULA_ARCANUM
+            && p.owner == owner
+            && p.generation == generation
+            && crate::net::projectile_key(p.owner, slot, p.generation) == key.to_bits() as i32
+        {
+            Some((p.pos, Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)))
+        } else {
+            None
+        }
     }
 
     /// The `29` despawn: the slot dies only when the key matches its current
@@ -7412,6 +7965,15 @@ impl ProjectilePool {
                 //                 owner: Option<(f32, f32)>, player: Option<&Player>)
                 // ```
                 //
+                // The rng-rolling followup families (Phase 3) widen the
+                // contract with the pool's seeded stream — the arm takes
+                // `rng: &mut dyn tr_core::loot::DropRng` the way the flail and
+                // the yoyo do, and the pool-level spawns ride back out as a
+                // request struct (`FlailSpawnRequest`'s shape). The 119 arm
+                // receives its parent through the key lookup the dispatch
+                // resolves (`nebula_parent`) — the slot arm cannot see the
+                // slot array.
+                //
                 // `owner` is the slot's owner center (the C# `Main.player
                 // [this.owner]`); `spawn_with_data_ai` hardcodes
                 // `owner: 0` = the local player, so a `None` owner center
@@ -7455,14 +8017,55 @@ impl ProjectilePool {
                         // only the tiles, so it rides the plain
                         // `(world)` shape.
                         27 => self.slots[i].ai_unholy_trident(world),
+                        // The Leaf Blower's puff (`AI_040_LeafBlower`,
+                        // `:38003-38074`): the fade, the 5-frame anim and the
+                        // seeded spin deltas — the rng rides the dispatch.
+                        40 => self.slots[i].ai_leaf(world, rng),
                         // The aiStyle-51 Spectre Staff (`:28402-28503`): the
-                        // 297's NPC scan and blend. Phase 3 adds the 293's
-                        // player hunt, which widens the signature with the
-                        // owner centre.
-                        51 => self.slots[i].ai_spectre_shot(world, &npcs[..]),
+                        // 297's NPC scan and blend plus the 293 hostile twin's
+                        // player hunt, on the family signature (`owner` centre,
+                        // `player` for the dead gate).
+                        51 => {
+                            self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref())
+                        }
+                        // The Spectre Wrath (`:28938-28993`): the hostile
+                        // window, the uniform re-pick (one rng draw) and the
+                        // (v*29+d)/30 blend.
+                        59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
                         71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // The Nebula Arcanum pair (`:34638-34887`): the two
+                        // flight modes + the homing + the subshot roll; the
+                        // 618's spawn rides back out (`FlailTick.spawn`'s
+                        // shape) because the pool owns the slot array, and its
+                        // `ai1` carries the parent's `ProjectileKey` bit
+                        // pattern. The 119 arm resolves the parent slot
+                        // through the same key (`nebula_parent`).
+                        118 => {
+                            if let Some(s) =
+                                self.slots[i].ai_nebula_arcanum(world, &npcs[..], rng)
+                            {
+                                let owner_id = self.slots[i].owner;
+                                let key = self.key_of(i) as u32;
+                                self.spawn_with_data_ai_owned(
+                                    NEBULA_ARCANUM_SUBSHOT,
+                                    owner_id,
+                                    s.x,
+                                    s.y,
+                                    s.vx,
+                                    s.vy,
+                                    s.damage,
+                                    0.0,
+                                    0.0,
+                                    f32::from_bits(key),
+                                );
+                            }
+                        }
+                        119 => {
+                            let parent = self.nebula_parent(self.slots[i].ai[1]);
+                            self.slots[i].ai_nebula_arm(parent, rng);
+                        }
                         // The aiStyle-29 gem bolts (`Projectile.cs:37643-38001`):
                         // the owner-aware arm of the family signature — its
                         // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
@@ -12026,6 +12629,7 @@ mod phasmal_projectile_tests {
             scale: 1.0,
             alpha: 255,
             frame: 0,
+            frame_counter: 0,
             falling_tile: None,
             detonated: false,
             wants_mark_spawn: None,
@@ -12250,6 +12854,7 @@ mod ritual_projectile_tests {
             scale: 1.0,
             alpha: 255,
             frame: 0,
+            frame_counter: 0,
             falling_tile: None,
             detonated: false,
             wants_mark_spawn: None,
@@ -15086,5 +15691,660 @@ mod magic_ai_tests {
             pool.slots()[slot].ai[0], 1.0,
             "the nearer candidate wins regardless of the scan order"
         );
+    }
+
+    // ---------------------------------------------------------------- Phase 3
+    // DW-3.1: the leaf (40), the wrath (59), the arcanum pair (118/119) and
+    // the style-51 else branch. Every assertion names its `Projectile.cs` line
+    // range; the seeded rolls replay the arm's draw order off a fresh
+    // `FastRandom::new(7)` (the fixtures re-seed the stream per update call).
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_rolls_its_seeded_deltas_at_local_ai_1() {
+        // `:38034-38039`: exactly one `Next(-100, 101)` pair per projectile,
+        // at `localAI[1] == 1`, scaled by `6E-05f`. The velocity add
+        // (`:38029-38030`) runs before the roll, so the deltas apply from the
+        // second tick on.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut r = tr_core::tile_light::FastRandom::new(7);
+        let e0 = r.next_range(-100, 101) as f32 * 6.0e-5;
+        let e1 = r.next_range(-100, 101) as f32 * 6.0e-5;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert_eq!(p.ai[0], e0, "the stream's first draw is ai[0]'s drift");
+        assert_eq!(p.ai[1], e1, "the second draw is ai[1]'s drift");
+        assert!(
+            (p.vel.x - 13.0).abs() < 1e-9 && p.vel.y == 0.0,
+            "the spawn tick adds the pre-roll ai (still zeros)"
+        );
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert!(
+            (p.vel.x - (13.0 + e0)).abs() < 1e-9,
+            "the rolled deltas apply from the second tick"
+        );
+        assert!((p.vel.y - e1).abs() < 1e-9, "the y drift rides ai[1]");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_fades_in_then_out_and_kills_at_alpha_255() {
+        // `:38004-38016`: the first three ticks hold the spawn alpha 255,
+        // ticks 4..50 pull 50 per tick to the 0 floor, past 50 the +2 walk
+        // kills at alpha >= 255 — and the kill's `return` skips the tail.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        for _ in 0..3 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].alpha, 255, "`localAI[0] > 3f` gates the fade");
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].alpha, 205, "the first 50-step fade");
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].alpha, 0, "the fade clamps at the 0 floor");
+        assert_eq!(pool.slots()[0].frame, 3, "nine ticks advanced three frames");
+        pool.slots_mut()[0].local_ai[0] = 50.0;
+        pool.slots_mut()[0].alpha = 253;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert_eq!(p.alpha, 255, "the +2 walk reaches 255");
+        assert!(!p.active, "alpha >= 255 kills (`:38011-38013`)");
+        assert_eq!(p.frame, 3, "the kill's return skips the anim");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_spins_after_tick_10_and_holds_the_speed_band() {
+        // `:38057-38070`: past `localAI[1] > 10` the flight rotates by
+        // `localAI[2] * |ai[0]| * localAI[1] * 0.35f` (an absolute angle that
+        // grows with the tick count) then shrinks 0.97; the Manhattan band
+        // pulls 0.95 over 16 and pushes 1.05 under 12.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 16.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        // The drift preset: the arm re-rolls only at `localAI[1] == 1`, so the
+        // test's values survive; the counter jumps past the spin gate.
+        pool.slots_mut()[0].ai[0] = 0.006;
+        pool.slots_mut()[0].ai[1] = 0.0;
+        pool.slots_mut()[0].local_ai[1] = 10.0;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        let angle = -1.0 * 0.006 * 11.0 * 0.35;
+        let spun = rotate(Vec2::new(16.0 + 0.006, 0.0), angle) * 0.97;
+        assert!(
+            (p.vel.x - spun.x).abs() < 1e-4 && (p.vel.y - spun.y).abs() < 1e-4,
+            "the spin angle grows with the tick count, then 0.97"
+        );
+        // The over-16 pull with the spin gate closed (`localAI[1]` stays low).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 20.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.x - 19.0).abs() < 1e-6,
+            "20 pulls to 19 (`:38062-38065`)"
+        );
+        // The under-12 push.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 10.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.x - 10.5).abs() < 1e-6,
+            "10 pushes to 10.5 (`:38066-38070`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_spin_sign_latches_on_the_first_tick() {
+        // `:38031-38033`: `localAI[2] = (!(velocity.X > 0f)) ? 1 : -1` — the
+        // latch runs only while `localAI[1] == 0`, so a later sign flip of the
+        // velocity never re-latches.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, -13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].local_ai[2], 1.0, "a -X flight spins positive");
+        pool.slots_mut()[0].vel.x = 5.0;
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].local_ai[2], 1.0, "the latch holds");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_anim_cycles_5_frames_at_rate_3() {
+        // `:38018-38027`: `frameCounter` ticks 3 per frame, 5 frames wrap to 0.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        for t in 1..=15u32 {
+            step(&mut pool, &mut w);
+            let expected = match t {
+                3 => 1,
+                6 => 2,
+                9 => 3,
+                12 => 4,
+                15 => 0, // frame 5 wraps to 0
+                _ => continue,
+            };
+            assert_eq!(pool.slots()[0].frame, expected, "tick {t}");
+        }
+    }
+
+    #[test]
+    fn test_dw_3_1_style_59_the_wrath_stays_hostile_until_ai_1_60_then_flips_and_steers() {
+        // `:28940-28942`: `ai[1]++` gates the flip and the homing at 60 — the
+        // row's `extraUpdates = 3` runs four sub-steps per update, so update 15
+        // lands `ai[1] = 60` on its last sub-step (one blend). `:28968-28991`:
+        // the held target blends `(v*29 + d)/30` at speed 4.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 320.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        for _ in 0..14 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 56.0, "four sub-steps per update");
+        assert!(!p.friendly, "the hostile window holds");
+        assert!(p.vel == Vec2::ZERO, "no steering before the 60th tick");
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert!(p.friendly, "the flip at ai[1] >= 60");
+        // The 60th sub-step's single blend from rest: v = d / 30, d = the
+        // target direction at speed 4 (the wrath's box is 6x6).
+        let center = Vec2::new(20.0 * TILE_PX + 3.0, 24.0 * TILE_PX + 3.0);
+        let delta = npc_center(&npcs[0]) - center;
+        let expected = delta * (4.0 / delta.length()) / 30.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one (v*29 + d)/30 blend from rest"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_59_the_wrath_repicks_uniformly_within_manhattan_800_and_kills_on_an_empty_scan() {
+        // `:28943-28964`: an unset (`ai[0] == -1`) or stale target rescans the
+        // chaseable NPCs inside the Manhattan 800f and takes
+        // `array[Main.rand.Next(num427)]`; an empty scan kills. The dust ring
+        // rolls nothing, so the pick is the update's first stream draw.
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 100.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 200.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 300.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        for _ in 0..15 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+        }
+        let pick = tr_core::tile_light::FastRandom::new(7).next_range(0, 3) as usize;
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], pick as f32, "the uniform pick lands the raw npc index");
+        assert!(p.friendly, "the flip precedes the re-pick");
+        let center = Vec2::new(20.0 * TILE_PX + 3.0, 24.0 * TILE_PX + 3.0);
+        let delta = npc_center(&npcs[pick]) - center;
+        let expected = delta * (4.0 / delta.length()) / 30.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5,
+            "the blend targets the picked slime"
+        );
+        // An empty scan kills (`:28957-28960`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        let mut w2 = world();
+        for _ in 0..15 {
+            step(&mut pool, &mut w2);
+        }
+        assert!(!pool.slots()[slot].active, "no candidate inside 800f kills");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_51_the_293_hunts_the_player_and_blends_at_101() {
+        // `:28448-28475`: the hostile 293 hunts the nearest living player
+        // inside the Manhattan 200f; `:28484-28499`: the blend `(v*100 + d)/101`
+        // at turn speed 3. The row's `extraUpdates = 1` runs two sub-steps per
+        // update — two blends from rest — and the sound latch (`:28422-28425`)
+        // increments `localAI[0]` once.
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        // The soul's centre (pos + 6) sits exactly 100 px left of the player's,
+        // so d = (+3, 0) each blend.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 106.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 1.0, "the sound latch fires once");
+        let v1 = (1.0 * 100.0 + 3.0) / 101.0;
+        let v2 = (v1 * 100.0 + 3.0) / 101.0;
+        assert!((p.vel.x - v2).abs() < 1e-5, "two (v*100 + d)/101 blends");
+        assert!(p.vel.y.abs() < 1e-9, "the colinear hunt leaves y alone");
+        // 300f sits outside the Manhattan 200f hunt.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 306.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(
+            (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
+            "300f is out of the hunt"
+        );
+        // The dead gate (`:28459`'s `!Main.player[num368].dead`).
+        player.dead = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 106.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(
+            (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
+            "a dead player is unhunted"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_fast_mode_decays_after_30_and_snaps_below_4p1() {
+        // `:34644-34689`: the fast mode runs while |v| > 4; the 0.98 decay +
+        // the 0.0074468083 scale climb start at `ai[0] >= 30`; under 4.1 the
+        // flight snaps to exactly 4 and the counter resets, handing the next
+        // tick to the homing mode.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 6.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!((p.vel.x - 6.0).abs() < 1e-6, "no decay before ai[0] = 30");
+        assert_eq!(p.ai[0], 29.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!((p.vel.x - 6.0 * 0.98).abs() < 1e-6, "the first 0.98 decay at ai[0] = 30");
+        assert!(
+            (p.scale - (1.0 + 0.0074468083)).abs() < 1e-9,
+            "the scale climb (`:34678`)"
+        );
+        let mut speed = 6.0f32 * 0.98;
+        for _ in 0..17 {
+            speed *= 0.98;
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!(
+            (p.vel.x - speed).abs() < 1e-5 && p.vel.x > 4.1,
+            "18 decays total stay above the snap line"
+        );
+        assert_eq!(p.ai[0], 47.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.x, 4.0, "under 4.1 snaps to exactly 4 (`:34684-34689`)");
+        assert_eq!(p.ai[0], 0.0, "the counter resets on the snap");
+        // The 1.3 scale clamp (`:34679-34682`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 6.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].scale = 1.2955;
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].scale, 1.3, "the clamp at 1.3");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_resnaps_4p05_and_homes_in_mode_1() {
+        // `:34644-34646` picks the mode off `velocity.Length() <= 4f` before
+        // the tick's decay; a 4.0625-speed spawn runs the fast arm once and
+        // re-snaps on its first tick (4.0625 < 4.1), handing tick 2 to the
+        // homing scan (`:34724-34750`) and the `(v*7 + d)/8` blend
+        // (`:34776-34805`). 4.0625 is dyadic, so the snap's
+        // `Normalize() * 4f` is bit-exact.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX, 24.0 * TILE_PX + 64.0, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0625, 0.0, 100, 0.0)
+            .unwrap();
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.x, 4.0, "4.0625 re-snaps to exactly 4 on tick 1");
+        assert_eq!(p.ai[0], 0.0, "the snap resets the counter");
+        assert!(
+            (p.rot + std::f32::consts::PI / 30.0).abs() < 1e-9,
+            "the fast spin ran (`:34655`)"
+        );
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "the homing scan locks the slime (`ai[1] = idx + 1`)");
+        assert!(
+            (p.rot + 2.0 * std::f32::consts::PI / 30.0).abs() < 1e-9,
+            "the homing spin (`:34691`)"
+        );
+        // The blend reads the pre-integration centre: tick 2's tail already
+        // added the blended velocity, so back it out.
+        let center = p.pos - p.vel + Vec2::new(16.0, 16.0);
+        let delta = npc_center(&npcs[0]) - center;
+        let d = delta * (4.0 / delta.length());
+        let expected = Vec2::new((4.0 * 7.0 + d.x) / 8.0, (0.0 * 7.0 + d.y) / 8.0);
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one (v*7 + d)/8 blend from the snapped 4"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_subshot_cadence_30_and_the_key_linkage() {
+        // `:34720-34723`: the subshot rolls when `ai[0] % 30 == 0` and
+        // `ai[0] < 241`, spawning 618 with `damage / 2` and `ai1 = this.key` —
+        // the key's raw bit pattern (`DataStructures/ProjectileKey.cs:7-14`'s
+        // union). The spawn angle (`UnitY.RotatedByRandom(2PI) * 12`) replays
+        // the update's draw order: the mode-1 dust gate (1 + 2|4 draws), then
+        // the subshot's two draws. The stationary parent (speed 0 homes) keeps
+        // the geometry pinned; the child's first tick adds the one-tick
+        // 0.15 sign-step toward the parent's centre and the 6-speed cap.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            pool.slots().iter().all(|p| p.kind != NEBULA_ARCANUM_SUBSHOT),
+            "ai[0] = 29 rolls nothing"
+        );
+        step(&mut pool, &mut w);
+        let child = pool
+            .slots()
+            .iter()
+            .position(|p| p.kind == NEBULA_ARCANUM_SUBSHOT)
+            .expect("the 30th tick spawns the arm");
+        let parent = &pool.slots()[slot];
+        let child = &pool.slots()[child];
+        assert_eq!(child.damage, 50, "damage / 2 (`:34722`)");
+        assert_eq!(
+            child.ai[1].to_bits(),
+            pool.key_of(slot) as u32,
+            "ai1 carries the key's bit pattern"
+        );
+        // The child's spawn point is the parent's centre; its first tick
+        // integrates one 0.15 sign-step (-9, -15 both negative) and caps at 6.
+        let mut r = tr_core::tile_light::FastRandom::new(7);
+        if r.next_range(0, 2) == 0 {
+            let _ = (r.next_float(), r.next_float(), r.next_float(), r.next_float());
+        } else {
+            let _ = (r.next_float(), r.next_float());
+        }
+        let a = r.next_float() * 6.2831854820251465 - r.next_float() * 6.2831854820251465;
+        let mut expected = rotate(Vec2::new(0.0, 1.0), a) * 12.0 + Vec2::new(-0.15, -0.15);
+        let speed = expected.length();
+        if speed > 6.0 {
+            expected *= 6.0 / speed;
+        }
+        assert!(
+            (child.vel.x - expected.x).abs() < 1e-4 && (child.vel.y - expected.y).abs() < 1e-4,
+            "the subshot angle replays the seeded stream"
+        );
+        assert!(
+            (child.pos.x - child.vel.x - (parent.pos.x + 16.0)).abs() < 1e-5
+                && (child.pos.y - child.vel.y - (parent.pos.y + 16.0)).abs() < 1e-5,
+            "the arm spawns at the parent's centre"
+        );
+        // The < 241 gate (`:34720`): ai[0] = 270 passes the modulo and still
+        // rolls nothing.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 269.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            pool.slots().iter().all(|p| p.kind != NEBULA_ARCANUM_SUBSHOT),
+            "past 241 the cadence stops"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_119_the_arm_follows_the_parent_and_kills_when_it_dies() {
+        // `:34843-34847`: the arm shifts by the parent's movement since the
+        // child's last tick (the C# `position - oldPos[1]` — the port keeps
+        // the last-seen parent position in localAI; the recorded deviation is
+        // the first tick's slack). `:34858-34864`: the 0.15 sign-step accel;
+        // `:34853-34857`: a missing parent latches `ai[0] = 420` and kills.
+        // The boxes: the parent's centre sits +16, the child's +9/+15.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX + 16.0,
+                10.0 * TILE_PX + 16.0,
+                3.0,
+                -4.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert_eq!(c.alpha, 255, "the alpha latches every tick (`:34874`)");
+        assert!(
+            c.vel.x == 3.0 - 0.15 && c.vel.y == -4.0 - 0.15,
+            "one 0.15 sign-step toward the parent's centre"
+        );
+        assert!(
+            (c.pos.x - c.vel.x - (10.0 * TILE_PX + 16.0)).abs() < 1e-6,
+            "the first sighting stores, no shift yet"
+        );
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(
+            c.vel.x == (3.0 - 0.15) - 0.15 && c.vel.y == (-4.0 - 0.15) - 0.15,
+            "the accel steps every tick"
+        );
+        // The shift: the parent moved +4 x since the stored sighting.
+        assert!(
+            (c.pos.x - c.vel.x - (10.0 * TILE_PX + 16.0 + (3.0 - 0.15) + 4.0)).abs() < 1e-5,
+            "the second tick shifts by the parent's delta"
+        );
+        pool.slots_mut()[parent].active = false;
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(!c.active, "a dead parent kills the arm (`:34853-34857`)");
+        assert_eq!(c.ai[0], 420.0, "the missing-parent latch");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_119_the_arm_caps_speed_and_latches_the_420_window() {
+        // `:34861-34864`: the accel caps at speed 6; `:34831-34834`: past 420
+        // the arm returns before the shift, the accel and the alpha tail; the
+        // NaN guard (`:34848-34852`) kills a NaN-shifted centre.
+        let mut pool = ProjectilePool::new();
+        // The parent's centre aligns with the child's y (159 + 16 = 175), so
+        // the cap math stays one-axis.
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX + 64.0, 10.0 * TILE_PX - 1.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                10.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(
+            (c.vel.x - 6.0).abs() < 1e-5 && c.vel.y == 0.0,
+            "10 + 0.15 clamps through `* 6f / length`"
+        );
+        // The 420 window: the arm goes inert past it.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX + 16.0,
+                10.0 * TILE_PX + 16.0,
+                0.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        pool.slots_mut()[child].ai[0] = 419.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert_eq!(c.ai[0], 420.0, "the counter runs into the window");
+        assert_eq!(c.alpha, 0, "the alpha tail is skipped past 420");
+        assert!(c.vel == Vec2::ZERO, "no accel past the window");
+        assert_eq!(c.pos.x, 10.0 * TILE_PX + 16.0, "no integration past the window");
+        // The NaN guard: a NaN parent position poisons the shift on the
+        // second sighting.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        pool.slots_mut()[parent].pos = Vec2::new(f32::NAN, f32::NAN);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(pool.slots()[child].active, "the first sighting only stores");
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[child].active, "the NaN shift kills (`:34848-34852`)");
+    }
+
+    #[test]
+    fn test_edge_style_118_the_arcanum_dies_at_ai_0_600() {
+        // `:34802-34806`: `ai[0] >= 600` kills — the homing counter never
+        // resets past the mode switch, so this is the mode-1 lifetime.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 599.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "ai[0] = 600 kills");
+    }
+
+    #[test]
+    fn test_edge_style_118_the_hold_persists_past_1000f_and_the_cadence_never_rescans() {
+        // `:34753-34771`: a merely distant hold keeps its index and stops
+        // steering; a dead one keeps it too (the C# has no reset arm), and the
+        // acquire never re-runs while `ai[1] != 0`.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 64.0, 24.0 * TILE_PX + 64.0, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0625, 0.0, 100, 0.0)
+            .unwrap();
+        tick_npcs(&mut w, &mut pool, &mut npcs); // the snap
+        tick_npcs(&mut w, &mut pool, &mut npcs); // the lock + the blend
+        let held_vel = pool.slots()[slot].vel;
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "the lock lands");
+        npcs[0].x += 2000.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "a distant hold keeps its index");
+        assert!(p.vel == held_vel, "no steering past the 1000f validity");
+        npcs[0].hp = 0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "a dead hold keeps its index (no reset arm)");
+        assert!(p.vel == held_vel, "no steering on a dead hold");
+        assert!(p.active, "the arcanum flies on regardless");
     }
 }
