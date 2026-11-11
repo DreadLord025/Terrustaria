@@ -21,23 +21,6 @@ pub const DYE: usize = 10;
 /// `Player.miscEquips` / `Player.miscDyes` (`Player.cs:1488`).
 pub const MISC: usize = 5;
 
-/// `Player.inventory`'s full length: the 10x5 grid plus the four coin and four
-/// ammo slots the C# keeps in the same array (`Player.cs:55340-55362`'s 58
-/// per-slot records). The port splits the arrays (`App.inventory` vs
-/// `EquipSlots::coins`/`ammo`), so the favorite key space borrows the vanilla
-/// numbering — grid `0..50`, coins `50..54`, ammo `54..58`.
-pub const INV_SLOTS: usize = crate::item::INV + COINS + AMMO;
-
-/// The vanilla inventory index of a coin cell (`Player.inventory[50..53]`).
-pub fn coin_slot_index(k: usize) -> usize {
-    crate::item::INV + k
-}
-
-/// The vanilla inventory index of an ammo cell (`Player.inventory[54..57]`).
-pub fn ammo_slot_index(k: usize) -> usize {
-    crate::item::INV + COINS + k
-}
-
 /// The inventory slots that are not part of the main 10x5 grid.
 #[derive(Clone, Copy)]
 pub struct EquipSlots {

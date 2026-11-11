@@ -1128,12 +1128,12 @@ impl App {
     /// favorite + `PlaySound(12)`. Returns the legacy sound id (12) so the
     /// caller plays it and the tests pin it (the `chest::toggle_open`
     /// precedent — no audio capture seam), 0 when the guard refuses. The
-    /// key space is the vanilla inventory numbering — grid `0..50`, coins
-    /// `50..54`, ammo `54..58` (`crate::inv::coin_slot_index` /
-    /// `ammo_slot_index`), i.e. `canFavoriteAt`'s contexts 0/1/2
-    /// (`ItemSlot.cs:386-389`).
+    /// `idx >= INV` guard keeps the coin/ammo rows out — `canFavoriteAt`
+    /// allows contexts 1/2 in the C# (`ItemSlot.cs:386-389`), but the port's
+    /// favorites address the 10x5 grid only (the recorded coin-row gap,
+    /// Phase 5's ANALYSIS entry).
     pub(crate) fn toggle_favorite(&mut self, idx: usize) -> u32 {
-        if idx >= crate::inv::INV_SLOTS {
+        if idx >= crate::item::INV {
             return 0;
         }
         if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
@@ -1150,7 +1150,7 @@ impl App {
     /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
     pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
         let mut slots = Vec::new();
-        for i in 0..crate::inv::INV_SLOTS {
+        for i in 0..crate::item::INV {
             if bits & (1 << i) != 0 {
                 slots.push(i);
             }
@@ -1164,7 +1164,7 @@ impl App {
     pub(crate) fn favorite_bits(&self) -> u64 {
         let mut bits = 0u64;
         for &i in &self.favorite_slots {
-            if i < crate::inv::INV_SLOTS {
+            if i < crate::item::INV {
                 bits |= 1 << i;
             }
         }

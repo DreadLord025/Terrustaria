@@ -88,17 +88,6 @@ fn left_click_movement(held: &mut ItemSlot, target: &mut ItemSlot) -> bool {
     held.count > 0 || target.count > 0
 }
 
-/// The favorite key of a ctx-1/ctx-2 cell — the vanilla inventory numbering
-/// (`crate::inv::coin_slot_index`/`ammo_slot_index`), so a row favorite and a
-/// grid favorite live in one key space (`App::toggle_favorite`).
-fn row_favorite_index(context: i32, k: usize) -> usize {
-    if context == 1 {
-        crate::inv::coin_slot_index(k)
-    } else {
-        crate::inv::ammo_slot_index(k)
-    }
-}
-
 /// `ItemID.CopperCoin..PlatinumCoin` — the four kinds the ctx-1 row takes
 /// (`ItemSlot.PickItemMovementAction` `:1369-1371`).
 fn is_coin_kind(kind: u16) -> bool {
@@ -182,11 +171,6 @@ impl App {
         // favorites yet, so only the air half is theirs (`try_placing_from`
         // refuses an empty source).
         if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
-            // `:631-634`: a favorited slot answers null in every context, so a
-            // favorited coin/ammo cell never lights the transfer cursor.
-            if self.is_favorite(row_favorite_index(ctx, k)) {
-                return None;
-            }
             return Some(if ctx == 1 {
                 chest::Source::Coin(k)
             } else {
@@ -202,19 +186,12 @@ impl App {
 
     /// One coin/ammo cell's press — `ItemSlot.Handle` over the ctx-1/ctx-2
     /// cells: left runs the shared action-0 move behind
-    /// `PickItemMovementAction`'s gate, right the `:1700-1772` split, Alt the
-    /// favorite toggle on the row's own key (`row_favorite_index`).
+    /// `PickItemMovementAction`'s gate, right the `:1700-1772` split. The Alt
+    /// favorite arm stays out: the port keeps favorites as inventory indices
+    /// (`App.favorite_slots`), so the row's `canFavoriteAt[1]/[2]` has no key
+    /// space yet (the recorded gap in ANALYSIS).
     fn coin_ammo_click(&mut self, context: i32, k: usize, left: bool) {
         if k >= crate::inv::COINS {
-            return;
-        }
-        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-755`): the
-        // favorite toggle eats the press before the movement arms.
-        if left && self.cursor_override == CURSOR_FAVORITE {
-            let idx = row_favorite_index(context, k);
-            if self.toggle_favorite(idx) != 0 {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-            }
             return;
         }
         let mut held = self.mouse_item;
@@ -1066,16 +1043,11 @@ impl App {
         // favoritable click surface is the open inventory's 10x5 grid
         // (context 0; the closed hotbar is context 13 — not in the table).
         if favorite_key_held(self) && self.inventory_open {
-            // `:607-609` — air returns before the key block; `:616-619` — the
-            // canFavoriteAt gate (contexts 0/1/2, `ItemSlot.cs:386-389`).
-            if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
-                let item = if ctx == 1 { self.equip.coins[k] } else { self.equip.ammo[k] };
-                if item.count > 0 && chest::can_favorite_at(ctx) {
-                    self.cursor_override = CURSOR_FAVORITE;
-                    return;
-                }
-            }
             if let Some(slot) = self.slot_at_mouse() {
+                // `:607-609` — air returns before the key block; `:616-619`
+                // — the canFavoriteAt gate (the grid is context 0; the
+                // coin/ammo rows are not clickable here, the recorded
+                // coin-row gap).
                 if slot < crate::item::INV
                     && self.inventory[slot].count > 0
                     && chest::can_favorite_at(0)
@@ -2606,64 +2578,6 @@ mod tests {
         assert_eq!(app.inventory[0], slot(9, 3), "the grid slot is untouched");
     }
 
-    /// M7-UI-2d — Alt+left-click favorites a coin/ammo cell in the vanilla key
-    /// space (`canFavoriteAt`'s contexts 1/2, `ItemSlot.cs:386-389`: the coins
-    /// are `Player.inventory[50..53]`, the ammo `54..57`), and the `.plr`
-    /// bitfield carries the row (`Player.cs:54820-54824`'s 58 per-slot bools).
-    #[test]
-    fn ui_2d_alt_click_favorites_the_rows() {
-        let mut app = inv_app();
-        app.equip.coins[1] = slot(71, 9);
-        app.equip.ammo[0] = slot(40, 5);
-        app.keys.insert(KeyCode::AltLeft);
-        app.mouse_pos = Vec2::new(505.0, 145.0); // coin row 1
-        app.ui_left_press = true;
-        assert!(!app.handle_chest_clicks());
-        app.handle_inventory_clicks();
-        assert!(
-            app.is_favorite(crate::inv::coin_slot_index(1)),
-            "the coin cell took the favorite"
-        );
-        assert_eq!(app.equip.coins[1], slot(71, 9), "the stack stayed put");
-        // The ammo row shares the key space, at 54..58.
-        app.mouse_pos = AMMO_SLOT_0;
-        app.ui_left_press = true;
-        app.handle_inventory_clicks();
-        assert!(app.is_favorite(crate::inv::ammo_slot_index(0)));
-        assert_eq!(app.favorite_bits(), (1 << 51) | (1 << 54));
-        // The round-trip reads the same bits back.
-        let mut other = inv_app();
-        other.hydrate_favorites((1 << 51) | (1 << 54));
-        assert!(other.is_favorite(crate::inv::coin_slot_index(1)));
-        assert!(other.is_favorite(crate::inv::ammo_slot_index(0)));
-        // Alt again clears.
-        app.ui_left_press = true;
-        app.handle_inventory_clicks();
-        assert!(!app.is_favorite(crate::inv::ammo_slot_index(0)));
-    }
-
-    /// M7-UI-2d — a favorited coin/ammo cell never lights the shift-transfer
-    /// cursor (`GetAlternateClickAction`'s head guard, `ItemSlot.cs:631-634`).
-    #[test]
-    fn ui_2d_the_favorited_rows_refuse_the_shift_transfer() {
-        let mut app = chest_app(vec![]);
-        app.equip.coins[0] = slot(71, 20);
-        app.favorite_slots.push(crate::inv::coin_slot_index(0));
-        app.keys.insert(KeyCode::ShiftLeft);
-        app.mouse_pos = COIN_SLOT_0;
-        app.ui_left_press = true;
-        assert!(!app.handle_chest_clicks(), "the guarded arm takes nothing");
-        assert_eq!(app.cursor_override, -1, "the cursor stays dark");
-        app.handle_inventory_clicks();
-        // The press falls through to the plain pickup arm — the row's own
-        // left-click — so the stack lands on the cursor, never in the chest.
-        assert_eq!(app.mouse_item, slot(71, 20), "the pickup arm took it");
-        assert_eq!(
-            crate::chest::chest_slot(&app.world_chests, 0, 0),
-            Some(crate::item::EMPTY_SLOT)
-        );
-    }
-
     #[test]
     fn ui_2b_the_rows_are_dead_while_the_inventory_is_closed() {
         let mut app = inv_app();
@@ -2778,12 +2692,8 @@ mod tests {
         assert!(app.is_favorite(7));
         assert_eq!(app.toggle_favorite(7), 12, "the C# plays 12 on both flips");
         assert!(!app.is_favorite(7));
-        // M7-UI-2d moved the guard out to the vanilla array's end: the coin
-        // row (50..54) and the ammo row (54..58) are favoritable, slot 58 and
-        // beyond are not (`crate::inv::INV_SLOTS`).
-        assert_eq!(app.toggle_favorite(crate::item::INV), 12, "coin row 0");
-        assert_eq!(app.toggle_favorite(crate::inv::INV_SLOTS - 1), 12, "ammo row 3");
-        assert_eq!(app.toggle_favorite(crate::inv::INV_SLOTS), 0, "past the rows");
+        assert_eq!(app.toggle_favorite(crate::item::INV), 0, "the coin-row guard");
+        assert_eq!(app.toggle_favorite(53), 0);
 
         // The hover gate refuses air — the cursor never lights (the click-path
         // half of the gate; the table asserts above are the static half).

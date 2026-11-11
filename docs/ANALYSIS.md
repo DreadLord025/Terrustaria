@@ -2478,8 +2478,27 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   !TILE_SOLID_TOP` at `(x, y-1)` (`render/tiles.rs`); the C# analogue probed
   by case 4 is `WorldGen.SolidTile(x, y-1)` (`:4672-4679`). The predicate
   delta is a follow-up, documented on `draw_data` (Phase 4).
-- `DoNotAdjustDrawPositionBasedOnTileWidth = {711}` and the positional switch
-  of `DrawSingleTile` (`:1020-1159`) remain follow-ups (out of TILE-DRAW-1).
+- **The positional switch** (`DrawSingleTile` `:1020-1159`, landed as
+  TILE-DRAW-5): `apply_world_corrections` now carries the switch's draw-local
+  revisions on `TileDrawData` — `draw_dx`/`draw_dy` (the `vector` nudges: 751
+  (+11, −8), 752 (+8), 136 (±2 by `frameX / 18`), 442 (`frameX / 22 == 3` →
+  +2), 726 (−2 then the `Tile.blockType()` ledges ±6 and +2 for the
+  half-brick/slope arms), 723/724 (the four anchor sides), 129 (the 2 px nudge
+  away from the shard's cell) and 323 (`vector.X += frameY` for the palm
+  rows)), `skip_draw` (751/752 off their `(0, 0)` frame), `light_scale` (51/697
+  `finalColor = tileLight * 0.5`), `src_alpha` (129's 100/255, and 0 for the
+  big `frameX >= 324` shards) and `no_width_adjust`
+  (`TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth = {711}`). The
+  renderer adds the offsets to the cell origin before dispatching (every C#
+  arm shares `vector`), honours `skip_draw` before the sprite (the `return`
+  arms), folds `light_scale`/`src_alpha` into `push_lit`'s colour, and skips
+  the `(tileWidth − 16) / 2` centring for 711. Parked: the disco arms
+  (160/692, they need `Main.DiscoR/G/B` in the draw data), case 83's texture
+  override, and case 323's `return` for the frond columns 88..=132 — the port
+  has no palm canopy pass, so hiding those columns would delete the palm tops;
+  they keep drawing in the tile pass (deviation). Test:
+  `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
+  arm, the half-brick/slope `blockType` table of 726, the shard alphas).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -10583,15 +10602,6 @@ reading and writing the right array (`App.inventory` vs `App.equip.coins`/`ammo`
 `Source::Inv`. The cursor-9 light and the cursor-9 click both resolve the row
 first (`App::chest_transfer_source`).
 
-The Alt favorite toggle landed in **M7-UI-2d**: the port keeps favorites as a
-slot-index set (`App.favorite_slots`), so the rows borrow the vanilla numbering
-instead of a flag on the item — `inv::INV_SLOTS` (58), `inv::coin_slot_index`
-(50+k) and `inv::ammo_slot_index` (54+k), which is exactly what
-`Player.inventory[0..58]` gives the C#. `toggle_favorite`'s guard moved from
-`INV` to `INV_SLOTS`, `hydrate_favorites`/`favorite_bits` cover the row band (the
-`.plr` reader already collected 58 bools, `player_file.rs:275-291`, so the
-round-trip is now consistent), the Alt gate and the click arm cover contexts 1/2,
-and a favorited row draws the gold sheet and refuses the shift transfer
-(`:631-634`). Known limit: the port's `.plr` writer still stores zeros for the
-coin/ammo rows' items, so a row favorite is session-only until that writer lands
-— the grid favorites have the same shape.
+Out of scope, and why: the Alt favorite toggle on these rows needs the favorite
+flag to move from `App.favorite_slots` (a grid index set) onto the item; it stays
+in ROADMAP's M7-UI-2 remainder.
