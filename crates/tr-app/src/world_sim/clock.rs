@@ -106,7 +106,7 @@ pub(crate) fn advance_time_with_events(
     let blood_moon_was_up = app.world.blood_moon;
     let was_day = app.world.day_time;
     let (blood_moon_started, eclipse_started) = {
-        let rng = app.rngs.stream(crate::app::rng::RngKey::UpdateTime);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
         advance_time(&mut app.world, dt, rng, any_player_life_over_120)
     };
     if was_day && !app.world.day_time {
