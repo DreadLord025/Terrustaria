@@ -3309,6 +3309,12 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     ) {
         return false;
     }
+    // `Player.cs:40135-40140`: on a successful placement, an acorn's sapling
+    // (`tileToCreate == 20 | 590 | 595 | 615`) bumps CONSERVATIONIST's `Do`
+    // counter (`AchievementsHelper.cs:401-404`).
+    if matches!(kind, 20 | 590 | 595 | 615) {
+        let _ = app.achievements.notify_custom_int("Do", 1);
+    }
     app.liquids.wake_around(&app.world, tx, ty, 3);
     app.audio
         .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);

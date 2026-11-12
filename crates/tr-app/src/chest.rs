@@ -774,6 +774,17 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
     let was_closed = current == -1; // `:33239`
     open_chest(app, x, y, new_chest);
     if was_closed {
+        // `Player.cs:33243-33246`: the Shadow-chest frame band (36 <=
+        // frameX < 72) fires `AchievementsHelper.HandleSpecialEvent(16)`,
+        // which completes I_AM_LOOT's `Peek` flag
+        // (`AchievementsHelper.cs:346-348`).
+        if app
+            .world
+            .tile(x, y)
+            .is_some_and(|t| (36..72).contains(&i32::from(t.frame_x)))
+        {
+            let _ = app.achievements.notify_custom("Peek");
+        }
         10 // `:33242`
     } else {
         12 // `:33251`
@@ -1953,7 +1964,23 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().chest, 0);
     }
 
-    /// DW-2.2 — the per-tick close (`HandleBeingInChestRange`,
+    /// The Shadow-chest frame band (`Player.cs:33243-33246`,
+    /// `AchievementsHelper.cs:346-348`) completes I_AM_LOOT's `Peek` flag on a
+    /// fresh open.
+    #[test]
+    fn opening_a_shadow_chest_frame_fires_i_am_loot_peek() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 36); // style 1: frameX 36..72
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "I_AM_LOOT" && a.completed));
+    }
+
+    /// DW-2.2 - the per-tick close (`HandleBeingInChestRange`,
     /// `Player.cs:31015-31097`): out of the `Simple` reach of the chest's
     /// hitbox, or a dead tile at the origin, force-closes with sound 11 —
     /// the close is the tick's job, not an open-time guard.

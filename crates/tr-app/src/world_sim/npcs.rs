@@ -403,6 +403,13 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
         // and this player's slot in `anglerWhoFinishedToday`.
         app.world.angler_quest_finished = true;
         app.world.angler_quest_turned_in = true;
+        // `AchievementsHelper.HandleAnglerService` (`:40260`,
+        // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING (the `Finish`
+        // flag) and the four `Finish` counters. The rows share the condition
+        // name `Finish`, so the one `notify_custom_int` dispatch advances all
+        // four (`matches_kind` keys on the name).
+        let _ = app.achievements.notify_custom("Finish");
+        let _ = app.achievements.notify_custom_int("Finish", 1);
     }
     true
 }
@@ -2348,6 +2355,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // the room assigns and the homeless flag clears.
                         n.home = Some((hx, hy));
                         app.npcs.push(n);
+                        // `WorldGen.cs:5576`: the arrival fires NO_HOBO
+                        // (progression 8) — the Truffle's IT_CAN_TALK (18,
+                        // `:5580`) waits on a ported Truffle kind, and
+                        // REAL_ESTATE_AGENT (17, `:5671`) on the full
+                        // `CheckAchievement_RealEstateAndTownSlimes` roster.
+                        let _ = app.achievements.notify_progression(8);
                     }
                 }
             }
@@ -2549,7 +2562,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // flags. The player-kill gate rides the same kill path as the
         // bestiary credit above.
         match npc.kind {
-            NpcKind::KingSlime => app.world.downed_slime_king = true,
+            NpcKind::KingSlime => {
+                app.world.downed_slime_king = true;
+                // `NPC.cs:79405-79410` (case 50): the King's death while a
+                // slime rain is up calls `Main.StopSlimeRain()` and fires
+                // STICKY_SITUATION (progression 16).
+                if app.world.slime_rain {
+                    crate::world_sim::weather::stop_slime_rain(&mut app.world, &mut app.npc_rng);
+                    let _ = app.achievements.notify_progression(16);
+                }
+            }
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
@@ -2582,9 +2604,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
-                // WorldGen.cs:31707): `Main.hardMode = true` — the
-                // hardmode shop rows and the ores ride the flag.
-                app.world.hard_mode = true;
+                // `WorldGen.cs:31701-31712`): `Main.hardMode = true` — the
+                // hardmode shop rows and the ores ride the flag — then
+                // ITS_HARD (progression 9), guarded by the `!hardMode`
+                // early-return so a repeat death cannot re-fire it.
+                if !app.world.hard_mode {
+                    app.world.hard_mode = true;
+                    let _ = app.achievements.notify_progression(9);
+                }
             }
             _ => {}
         }
@@ -4110,6 +4137,20 @@ mod tests {
         assert!(app.world.angler_quest_finished, "the day closes");
         assert!(app.world.angler_quest_turned_in, "the player's slot");
         assert!(app.items.len() > before, "the reward drops spawn");
+        // `AchievementsHelper.HandleAnglerService` (`Main.cs:40260`,
+        // `AchievementsHelper.cs:411-418`): the flag and the four `Finish`
+        // counters advance on the turn-in.
+        assert!(app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "SERVANT_IN_TRAINING" && a.completed));
+        assert!(app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "GOOD_LITTLE_SLAVE"
+                && a.conditions[0].value == 1));
         // The reward lands at the Angler's centre.
         let (ax, ay) = app.npcs[idx].center();
         assert!(

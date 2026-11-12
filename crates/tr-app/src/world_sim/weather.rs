@@ -169,14 +169,22 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // (`AnyPlayerReadyToFightKingSlime`: lifeMax > 140 && defense > 8,
         // `Main.cs:65166-65174`); the classic requires ready (the
         // `(flag3 || expertMode)` arm folds to ready).
-        if world.slime_rain {
+        // `Main.cs:64848-64863`: the slime-rain clock — the positive
+        // duration decays dayRate-scaled to the stop (`StopSlimeRain`), the
+        // negative cooldown climbs back to zero.
+        if world.slime_rain_time > 0.0 {
             world.slime_rain_time -= day_rate as f64;
             if world.slime_rain_time <= 0.0 {
-                world.slime_rain = false;
-                world.slime_rain_time = 0.0;
-                world.slime_rain_kills = 0;
+                stop_slime_rain(world, &mut app.npc_rng);
             }
-        } else if !rain.is_raining()
+        } else if world.slime_rain_time < 0.0 {
+            world.slime_rain_time += day_rate as f64;
+            if world.slime_rain_time > 0.0 {
+                world.slime_rain_time = 0.0;
+            }
+        }
+        if !rain.is_raining()
+            && !world.slime_rain
             && !world.invasion_goblins
             && world.invasion_type == 0
             && world.day_time
@@ -287,6 +295,25 @@ pub(crate) fn slime_rain_roll(world: &tr_core::World, ready: bool, rng: &mut u64
         num3 *= 5.0;
     }
     ready && num3 > 0.0 && (crate::app::rand01(rng) as f64) < 1.0 / num3
+}
+
+/// `Main.rand.Next(min, max)` — the shared xorshift stream (`next_rand`),
+/// the `% range` the port uses for the C# integer draws.
+fn next_range(rng: &mut u64, min: i32, max: i32) -> i32 {
+    min + (crate::app::next_rand(rng) % (max - min).max(1) as u64) as i32
+}
+
+/// `Main.StopSlimeRain()` (`Main.cs:64787-64820`): the single-player arm —
+/// the flag down, the clock set to the negative cooldown
+/// `-Next(3024, 6048) * 100` (it climbs back to zero in the tick's slime
+/// clock). The kill counter is NOT cleared here — the C# only resets it in
+/// `StartSlimeRain`. A no-op when the rain is already down (`:64789-64792`).
+pub(crate) fn stop_slime_rain(world: &mut tr_core::World, rng: &mut u64) {
+    if !world.slime_rain {
+        return;
+    }
+    world.slime_rain_time = -(next_range(rng, 3024, 6048) as f64) * 100.0;
+    world.slime_rain = false;
 }
 
 /// `StartSlimeRain` (`Main.cs:64742-64776`): the duration

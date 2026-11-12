@@ -567,6 +567,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if cart_pin && !p.cart_mounted {
             p.mount_cart();
         }
+        let mut run_pixels = 0.0f32;
         app.player_step.tick(dt, |_| {
             // `player.itemAnimation > 0` for the sleeping state — the same
             // gate the swing render uses (`self.swing > 0.0` with a held
@@ -576,7 +577,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
             // pose's 4-tick turn cadence reads it.
             p.misc_counter = p.misc_counter.wrapping_add(1);
+            // `Player.cs:28162-28176,28233-28236`: `vector7` captures the
+            // pre-movement position, `flag34` is false on a mount or while
+            // tongued, and `HandleRunning` fires after movement when grounded.
+            let run_x0 = p.x;
+            let run_eligible = !p.mount.is_active()
+                && !(0..crate::buffs::MAX_BUFFS)
+                    .any(|i| p.buffs.buff_time[i] > 0 && p.buffs.buff_type[i] == 38);
             p.update_with_grapple(&app.world, input, &grapple_for_tick, item_in_use, false);
+            if run_eligible && p.vy == 0.0 {
+                run_pixels += (p.x - run_x0).abs();
+            }
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
@@ -644,6 +655,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        if run_pixels > 0.0 {
+            // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
+            // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
+            // advances MARATHON_MEDALIST's `Move` float accumulator.
+            let _ = app.achievements.notify_custom_float("Move", run_pixels);
+        }
         // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off
         // kills every aiStyle-7 slot this player owns. The pool-wide scan is
         // the source's own `for (i < 1000)` loop; the multi-hook phase moves it
