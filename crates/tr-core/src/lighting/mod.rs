@@ -95,6 +95,10 @@ pub struct LightMap {
     /// Incremented whenever the map is recomputed (not on cache hits); the world
     /// instance cache keys on it so reused tile colours are never stale.
     generation: u64,
+    /// `LightMap._random` (`LightMap.cs:13`): the blur's own stream, advanced
+    /// once per `Blur()` (after its two passes) and sampled per water cell via
+    /// `WithModifier(index).Next(98,100)`.
+    blur_rng: FastRandom,
 }
 
 impl Default for LightMap {
@@ -119,6 +123,10 @@ impl LightMap {
             valid_x1: 0,
             valid_y1: 0,
             generation: 0,
+            // `FastRandom.CreateWithRandomSeed()` (`LightMap.cs:13`): seeded at
+            // construction; S1-A-6 pins the `WithModifier(i).Next(98,100)`
+            // water jitter. Deterministic seed keeps the stream stable.
+            blur_rng: FastRandom::new(0),
         }
     }
 
@@ -419,7 +427,8 @@ impl LightMap {
             c[2] = c[2].max(l.rgb[2]);
         }
 
-        blur::blur(self, parallel);
+        // `LightMap.Blur` (`LightMap.cs:86-91`): two passes, then advance the
+        // blur random once (the water-jitter stream, S1-A-6).
         blur::blur(self, parallel);
     }
 }
@@ -838,5 +847,46 @@ mod tests {
         assert_eq!(engine.get_color(25, 6), direct.get(25, 6));
         // Outside the processed area the seam reports darkness, like `GetColor`.
         assert_eq!(engine.get_color(25, 300), [0.0; 3]);
+    }
+
+    #[test]
+    fn water_jitter_uses_fastrandom_with_modifier_next_98_100() {
+        // `LightMap.cs:219`: `(float)_random.WithModifier((ulong)i).Next(98, 100) / 100f` (S1-A-6).
+        let rng = FastRandom::new(0);
+        for i in [0usize, 1, 2, 17, 255, 1024, 65535, 1_000_000] {
+            let j = blur::water_jitter(&rng, i);
+            assert!(
+                (j - 0.98).abs() < 1e-6 || (j - 0.99).abs() < 1e-6,
+                "index {i} produced {j}, expected 0.98 or 0.99"
+            );
+            let mut expected_rng = rng.with_modifier_u64(i as u64);
+            let expected = expected_rng.next_range(98, 100) as f32 / 100.0;
+            assert!(
+                (j - expected).abs() < 1e-6,
+                "index {i}: got {j}, expected {expected} from WithModifier/Next(98,100)"
+            );
+        }
+        // Must differ from the pre-S1-A-6 hash range (0.985..0.999 in 0.001 steps).
+        assert_ne!(
+            blur::water_jitter(&rng, 0),
+            0.985 + (((0u32).wrapping_mul(2_654_435_761) % 15) as f32) * 0.001
+        );
+    }
+
+    #[test]
+    fn blur_advances_the_map_rng_once_per_blur() {
+        // `LightMap.Blur` (`LightMap.cs:86-91`): two passes, then `_random.NextSeed()` once.
+        let mut map = LightMap::new();
+        let before = map.blur_rng.seed;
+        map.w = 4;
+        map.h = 4;
+        map.colors = vec![[0.0; 3]; 16];
+        map.mask = vec![blur::Mask::Air; 16];
+        blur::blur(&mut map, false);
+        assert_ne!(map.blur_rng.seed, before, "Blur must advance NextSeed once");
+        let once = map.blur_rng.seed;
+        let mut expected = FastRandom::new(0);
+        expected.next_seed_in_place();
+        assert_eq!(once, expected.seed, "Blur must advance the seed exactly once");
     }
 }
