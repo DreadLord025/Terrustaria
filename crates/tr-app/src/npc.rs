@@ -4357,7 +4357,7 @@ impl Npc {
             | NpcKind::LeechBody => {}
         }
         self.find_frame();
-        self.contact(player);
+        self.contact(player, rng);
     }
 
     /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
@@ -12780,7 +12780,7 @@ impl Npc {
         }
     }
 
-    fn contact(&mut self, player: &mut Player) {
+    fn contact(&mut self, player: &mut Player, rng: &mut u64) {
         // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
         // journey godmode power returns before the whole collision pass — no
         // NPC contact damage and none of the EoC shield-dash arm below.
@@ -12852,11 +12852,31 @@ impl Npc {
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
             ) {
-                let dmg = if self.kind == NpcKind::Slime {
+                let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
+                };
+                // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
+                // S1-C-5: contact damage rolls variance with the player's luck inverted.
+                let dmg = if base_dmg > 0 {
+                    struct U64DropRng<'a>(&'a mut u64);
+                    impl tr_core::loot::DropRng for U64DropRng<'_> {
+                        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                            let range = (max - min) as u32;
+                            if range == 0 {
+                                return min;
+                            }
+                            min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
+                        }
+                        fn next_float(&mut self) -> f32 {
+                            crate::app::frame::rand01(self.0)
+                        }
+                    }
+                    tr_core::damage::damage_var(&mut U64DropRng(rng), base_dmg as f32, -player.luck_state.luck)
+                } else {
+                    0
                 };
                 if dmg > 0 && player.hurt(dmg, cx) {
                     // `Player.cs:31373-31415`: the contact that lands also
@@ -12864,6 +12884,7 @@ impl Npc {
                     // damage (2x on the Turtle set), the Cactus set adds its
                     // flat 15. `dontTakeDamage` NPCs (the dummies) refuse it,
                     // exactly like the C# `!Main.npc[i].dontTakeDamage` gate.
+                    // Thorns reflect the varied contact damage (`num3`, Player.cs:31387-31400).
                     if !self.dont_take_damage {
                         let reflect = player.thorns_damage(dmg);
                         if reflect > 0 {
@@ -13410,6 +13431,77 @@ mod tests {
     }
 
     #[test]
+    fn contact_damage_applies_damage_var_with_negative_luck_s1_c_5() {
+        // S1-C-5 / Player.cs:31387: `Main.DamageVar(npc.damage * damageMultiplier, 0f - luck)`.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+
+        // No-luck: contact damage is varied within the ±15% band (not a fixed raw value).
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(100);
+        let mut rng = 1u64;
+        let mut saw_varied = false;
+        for _ in 0..16 {
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = bat.x;
+            player.y = bat.y;
+            player.hurt_cd = 0.0;
+            player.luck_state.luck = 0.0;
+            let hp0 = player.hp;
+            bat.contact(&mut player, &mut rng);
+            let dealt = hp0 - player.hp;
+            assert!(
+                (85..=115).contains(&dealt),
+                "S1-C-5: contact damage must apply DamageVar (base 100, got {dealt})"
+            );
+            if dealt != 100 {
+                saw_varied = true;
+            }
+        }
+        assert!(saw_varied, "S1-C-5: contact damage variance never observed over samples");
+
+        // Positive player luck -> negative luck passed to DamageVar (0f - luck),
+        // which rerolls and keeps the lower damage (Player.cs:31387).
+        let mut rng_good = 7u64;
+        let mut rng_bad = 7u64;
+        let mut total_good = 0i32;
+        let mut total_bad = 0i32;
+        for _ in 0..24 {
+            let mut good = crate::player::Player::spawn(&w);
+            good.x = bat.x;
+            good.y = bat.y;
+            good.hurt_cd = 0.0;
+            good.luck_state.luck = 1.0;
+            let hp0 = good.hp;
+            bat.contact(&mut good, &mut rng_good);
+            total_good += hp0 - good.hp;
+
+            let mut bad = crate::player::Player::spawn(&w);
+            bad.x = bat.x;
+            bad.y = bat.y;
+            bad.hurt_cd = 0.0;
+            bad.luck_state.luck = -1.0;
+            let hp0 = bad.hp;
+            bat.contact(&mut bad, &mut rng_bad);
+            total_bad += hp0 - bad.hp;
+        }
+        assert!(
+            total_good <= total_bad,
+            "S1-C-5: positive player luck must not increase contact damage (good {total_good} > bad {total_bad})"
+        );
+    }
+
+    #[test]
     fn the_cave_bat_spawn_flies_and_bites() {
         // The Cave Bat (49): spawns in the cave air (the open tile), flies
         // via the flyer machine, the contact bites for 13.
@@ -13439,15 +13531,16 @@ mod tests {
         let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
             .expect("the voodoo demon spawns");
         assert_eq!(vd.max_hp, 140);
-        // The contact: an overlapping player takes 13 (the vanilla dmg).
+        // The contact: an overlapping player takes the bat's contact damage.
+        let mut rng = 0u64;
         let mut player = crate::player::Player::spawn(&w);
         player.x = bat.x;
         player.y = bat.y;
         player.hurt_cd = 0.0;
-        bat.contact(&mut player);
+        bat.contact(&mut player, &mut rng);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
         // M3-EQUIP-15 — the same contact with the Thorns potion up bounces
-        // the bat's own 13 back (`Player.cs:31373-31415`, `thorns = 1`).
+        // the varied contact damage back (`Player.cs:31373-31415,31387`).
         let mut spiky = crate::player::Player::spawn(&w);
         spiky.x = bat.x;
         spiky.y = bat.y;
@@ -13456,7 +13549,7 @@ mod tests {
         spiky.update(&w, crate::player::PlayerInput::default());
         let bat_hp = bat.hp;
         spiky.hp = spiky.max_hp; // the contact must land for the reflection
-        bat.contact(&mut spiky);
+        bat.contact(&mut spiky, &mut rng);
         assert!(
             bat.hp < bat_hp,
             "the thorns bit back: {} -> {}",
@@ -13470,7 +13563,7 @@ mod tests {
         god.y = bat.y;
         god.hurt_cd = 0.0;
         god.creative_god_mode = true;
-        bat.contact(&mut god);
+        bat.contact(&mut god, &mut rng);
         assert_eq!(
             god.hp, god.max_hp,
             "the godmode player takes no contact damage"
