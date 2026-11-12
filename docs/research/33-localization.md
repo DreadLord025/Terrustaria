@@ -1,246 +1,201 @@
 # 33 — Localization
 
-> Wave 3 · researched 2026-11-12 · sources: decompiled (`Terraria/Localization/*`, `Terraria/Lang.cs`) + crates (`tr-core/src/localization/*`, `tr-app/src/lang.rs`) + ROADMAP/ATLAS/PORT_MAP
+> Wave 3 · researched 2026-11-12 · sources: decompiled + crates + ROADMAP/ANALYSIS/PORT_MAP
 
 ## Scope
 
-| C# file | lines | responsibility |
-| --- | --- | --- |
-| `decompiled/Terraria/Localization/LanguageManager.cs` | 519 | the string table: load, categories, variations, copy commands, fallback chain |
-| `decompiled/Terraria/Localization/LocalizedText.cs` | 214 | one key/value pair, `Value`/`UnformattedValue`/`EnglishValue`/`HasValue`, `Format` overloads |
-| `decompiled/Terraria/Localization/VariableText.cs` | 123 | the `{Name}` / `{?Cond}` / `{!Cond}` substitution parser (`VariableText.TryCreate`) |
-| `decompiled/Terraria/Localization/GameCulture.cs` | 138 | the 12 cultures, their legacy ids and `CultureInfo` names |
-| `decompiled/Terraria/Localization/Language.cs` | 97 | the static facade (`Language.GetTextValue` overloads, `Exists`, `FindAll`, `SelectRandom`) |
-| `decompiled/Terraria/Localization/NetworkText.cs` | 163 | netcode carrier for a localized key (not ported — module 17) |
-| `decompiled/Terraria/Lang.cs` | 1230 | the name caches (`ItemName`/`NPCName`/`ProjectileName`/`BuffName`/`EmojiName`/`Prefix`), the 10 legacy index tables, the map-legend table, the ~60 global substitutions |
-
-The subsystem owns every user-visible string in the game. The C# keeps the strings as
-**embedded JSON resources** named `Terraria.Localization.Content.<culture>[.<Group>].json`
-— 12 cultures × 7 groups = **84 files**, a flat two-level map `Category → { Name → text }`
-(the flat key is `Category.Name`). `LanguageManager` merges the seven group files of one
-culture into one `Dictionary<string, LocalizedText>`, tracks a per-category key list
-(`_categoryGroupedKeys`, used by `IndexedFromCategory`/`RandomFromCategory`), a
-variation table (`Key$Variant`) and the copy-command expansion (`{$Category.Key}`).
-
-Rust side: `crates/tr-core/src/localization/` (`mod.rs` 613, `culture.rs` 154, `json.rs` 136,
-`format.rs` 238) = the `LanguageManager`/`LocalizedText`/`VariableText`/`GameCulture` port;
-`crates/tr-app/src/lang.rs` (236) = the process-global runtime facade (`Lang`/`Language`
-statics), the source probe and the menu/tooltip accessors.
+`Terraria.Localization` in the decompiled tree is eight files under
+`decompiled/Terraria/Localization/` — `LanguageManager.cs` (519 lines), `LocalizedText.cs` (214),
+`VariableText.cs` (123), `NetworkText.cs` (163), `GameCulture.cs` (138), `Language.cs` (79),
+`LanguageChangeCallback.cs` (3), `LanguageSearchFilter.cs` (3) — plus the legacy static facade
+`decompiled/Terraria/Lang.cs` (1230 lines). The *content* is not under
+`Terraria\Localization\Content\Language\`: in the retail build it ships as 84 **embedded resources**
+named `Terraria.Localization.Content.<culture>[.<group>].json` (declared in
+`decompiled/Terraria.csproj:133+`), which the decompiler dumped next to the csproj — 12 cultures ×
+7 groups, 13 595 376 bytes total. The Rust side is `crates/tr-core/src/localization/` (`mod.rs` 613,
+`culture.rs` 154, `format.rs` 238, `json.rs` 136) plus the runtime singleton
+`crates/tr-app/src/lang.rs` (236). Responsibility: the key→text table, the culture set, the
+`{Name}`/`{?Name}`/`{$Cat.Key}`/`{0}` substitution machinery, the culture fallback chain and the
+twelve-row language picker.
 
 ## Key entities
 
-- `Terraria/Localization/LanguageManager.cs::LanguageManager` (L21) — the table holder:
-  `_localizedTexts` (L25), `_categoryGroupedKeys` (L27), `_textVariations` (L29),
-  `_fallbackCulture` (L31), `VariationSeparatorSign = '$'` (L35), `ActiveCulture` (L37).
-- `LanguageManager.cs::LoadLanguageFromFileTextJson` (L273) — the JSON merge; builds the
-  flat `Category.Name` key and appends to the category list **only for new keys**.
-- `LanguageManager.cs::UpdateTextValue` (L294) — the `$` split → `AddVariant` (L491);
-  returns `true` for a known key (the "override" path).
-- `LanguageManager.cs::ReloadLanguage` (L101) — **the fallback chain**:
-  `if (ActiveCulture != _fallbackCulture) { SetAllTextValuesToKeys(); if (target != _fallbackCulture) LoadLanguage(_fallbackCulture); } LoadLanguage(target);`
-- `LanguageManager.cs::ProcessCopyCommandsInTexts` (L157) — the `{\$(\w+\.\w+)}` regex
-  expansion, max 100 iterations, `Invariant.Assert` on convergence.
-- `LanguageManager.cs::GetTextValue` overloads (L446 / L455 / L464 / L473 / L482) —
-  `key`, `key+arg0`, `key+arg0+arg1`, `key+arg0+arg1+arg2`, `key+params object[]`;
-  each one is `LocalizedText.Format` → `string.Format`, or the key itself when missing.
-- `LanguageManager.cs::GetText` (L437) — unknown key ⇒ inserts `LocalizedText(key, key)`.
-- `LanguageManager.cs::SetFallbackCulture` (L510) / `SetLanguage` (L91) — the culture switch.
-- `LocalizedText.cs::LocalizedText` (L7) — `Value` (L17, VariableText-formatted),
-  `UnformattedValue` (L29), `EnglishValue` (L31), `HasValue` (L33 = `EnglishValue != Key`),
-  `SetValue` (L53, records `EnglishValue` only while the **default** culture is active).
-- `VariableText.cs::VariableText.TryCreate` (L40) — regex `{(\?!?)?([a-zA-Z][\w\.]*)}` (L121);
-  `TryFormat` (L101) returns false when a variable or a condition is missing.
-- `GameCulture.cs::GameCulture` (L7) — the 12 cultures, `LegacyId` 1..12 (L72-118),
-  `DefaultCulture` = English (L120), `FromLegacyId` (L49), `FromName` (L62).
-- `Lang.cs::FillNameCacheArray` (L450) — the name-table builder: `ItemName.<ItemID const>`,
-  `ProjectileName.<ProjectileID const>`, `NPCName.<NPCID const>`, `BuffName.<BuffID const>`,
-  `EmojiName.<EmoteID const>`, `Prefix`; the const **field name** is the key suffix.
-- `Lang.cs::InitializeLegacyLocalization` (L472) — the ten legacy index tables:
-  `LegacyWorldGen` 94, `LegacyDialog` 392, `LegacyMenu` 254, `LegacyTooltip` 62,
-  `LegacyMultiplayer` 27, `LegacyMisc` 106, `LegacyInterface` 126, `LegacyChestType` 52,
-  `LegacyDresserType` 65, `LegacyChestType2` 38 (array sizes L1209-1218).
-- `Lang.cs::InitGlobalSubstitutions` (L100) — ~60 named globals (`PlayerName`, `WorldName`,
-  `Nurse`, `Guide`, `InputTrigger_*`, …).
-- `Lang.cs::BuildMapAtlas` (L554-1010) — the **tile/map-legend** table: map tile → item
-  name or `MapObject.*` key (79 `MapObject` keys in en-US).
-- `tr-core/src/localization/mod.rs::LanguageManager` (L120) — the port of the table:
-  `localized_texts` (L121), `category_grouped_keys` (L122), `text_variations` (L123),
-  `fallback_culture` (L124), `active_culture` (L127), `substitutions` (L128), `sources` (L131).
-- `tr-core/src/localization/mod.rs::reload_language` (L203) — the fallback chain;
-  `load_language` (L215), `load_files_for_culture` (L224), `process_copy_commands_in_texts` (L282).
-- `tr-core/src/localization/mod.rs::get_text_value` (L323) / `get_text_value_args` (L331) /
-  `get_text` (L314) / `exists` (L308) / `category_size` (L303) / `try_get_variation` (L273) /
-  `indexed_from_category` (L360) / `random_from_category` (L340).
-- `tr-core/src/localization/culture.rs::GameCulture` (L5) + `CULTURES` (L21) — the 12 cultures,
-  `name()` (L41), `legacy_id()` (L59), `from_legacy_id` (L78), `matches_resource` (L125).
-- `tr-core/src/localization/json.rs::load_language_from_file_text_json` (L14) — the JSON merge
-  + `strip_trailing_commas` (L49, the Newtonsoft trailing-comma shim) +
-  `expand_copy_commands` (L93).
-- `tr-core/src/localization/format.rs::VariableText` (L63) + `format_net` (L183).
-- `tr-app/src/lang.rs::init` (L67) — the source probe + `set_language`;
-  `source_dirs` (L37), `text` (L122), `text_args` (L127), `menu` (L141), `tip` (L148),
-  `inter` (L154), `item_name` (L161), `game_ui_fmt` (L133).
+- `Terraria/Localization/LanguageManager.cs::LanguageManager` (519) — the owner of
+  `_localizedTexts` / `_categoryGroupedKeys` / `_textVariations`; `SetLanguage` (`:91`),
+  `ReloadLanguage` (`:101`), `LoadLanguage` (`:118`), `LoadFilesForCulture` (`:127`),
+  `ProcessCopyCommandsInTexts` (`:157`), `UpdateTextValue` (`:294`), `AddVariant` (`:491`),
+  `GetTextValue` ×5 (`:446`–`:489`), `GetCategorySize` (`:46`), `SelectRandom` (`:392`),
+  `RandomFromCategory` (`:413`), `IndexedFromCategory` (`:422`), `TryGetVariation` (`:500`).
+- `Terraria/Localization/LocalizedText.cs::LocalizedText` (214) — `Key`, `Value` (`:17`, runs the
+  `VariableText`), `UnformattedValue` (`:29`), `EnglishValue` (`:31`), `HasValue` (`:33`),
+  `Format`/`FormatWith` (`:100`–`:169`), `EqualsCommand`/`ParseCommandPrefix` (`:176`–`:193`),
+  `ToNetworkText` (`:136`).
+- `Terraria/Localization/VariableText.cs::VariableText` (123) — `{Name}` variables, `{?Name}`/`{!Name}`
+  conditions, regex `{(\?!?)?([a-zA-Z][\w\.]*)}` (`:121`); `TryFormat` (`:101`).
+- `Terraria/Localization/GameCulture.cs::GameCulture` (138) — the twelve cultures with their
+  `en-US`-style names and legacy ids 1..12 (`:69`–`:119`), `DefaultCulture` = English (`:120`),
+  `FromLegacyId` (`:49`) / `FromName` (`:62`) / `FromCultureName` (`:40`).
+- `Terraria/Localization/Language.cs::Language` (79) — the static facade: `GetText`, `GetTextValue`
+  ×5, `GetTextValueWith` (`:40`), `Exists` (`:45`), `GetCategorySize` (`:50`), `FindAll` ×2,
+  `SelectRandom` (`:65`), `RandomFromCategory` (`:70`), `TryGetVariation` (`:75`).
+- `Terraria/Lang.cs::Lang` (1230) — the legacy caches (`menu`/`inter`/`tip`/`gen`/`misc`/`mp`/
+  `chestType`/`dresserType`/`prefix`/`_itemNameCache`/`_npcNameCache`/`_projectileNameCache`/
+  `_buffNameCache`/`_emojiNameCache`/`_mapLegendCache`), `InitializeLegacyLocalization` (`:472`),
+  `FillNameCacheArray` (reflection over `ItemID`/`NPCID`/`ProjectileID`/`BuffID`/`EmoteID` static
+  fields → key `ItemName.<FieldName>`), `GetItemNameValue` (`:220`), `GetNPCNameValue` (`:175`),
+  `GetMapObjectName` (`:77`), `InitGlobalSubstitutions` (`:100`–`:151`, **65** registrations).
+- `crates/tr-core/src/localization/mod.rs::LanguageManager` (613) — the port of the manager:
+  `set_language` (`:196`), `reload_language` (`:203`), `load_language` (`:215`),
+  `load_files_for_culture` (`:224`), `set_all_text_values_to_keys` (`:242`), `update_text_value`
+  (`:249`), `process_copy_commands_in_texts` (`:282`), `get_text` (`:314`), `get_text_value` (`:323`),
+  `get_text_value_args` (`:331`), `random_from_category` (`:340`), `indexed_from_category` (`:360`),
+  `find_all` (`:380`), `try_get_variation` (`:273`), `category_size` (`:303`),
+  `set_substitution`/`remove_substitution`/`substitution` (`:181`–`:193`).
+- `crates/tr-core/src/localization/culture.rs::GameCulture` (154) — the twelve cultures, `CULTURES`
+  (`:21`), `name` (`:41`), `legacy_id` (`:59`), `from_legacy_id` (`:78`), `language_key` (`:92`),
+  `from_name` (`:110`), `from_culture_name` (`:119`), `matches_resource` (`:125`).
+- `crates/tr-core/src/localization/format.rs::VariableText` + `format_net` (238) — the
+  `{Name}`/`{?Name}` parser (`:80`, `:146`) and the `string.Format` clone (`:183`).
+- `crates/tr-core/src/localization/json.rs::load_language_from_file_text_json` (136) — the JSON
+  loader (`:14`), the Newtonsoft trailing-comma shim (`:49`), `expand_copy_commands` (`:93`).
+- `crates/tr-app/src/lang.rs::init` (236) — the runtime: resource discovery (`:37` `source_dirs`),
+  `add_source` per file (`:87`), `set_language` (`:111`), `text`/`text_args` (`:122`/`:127`),
+  `menu`/`tip`/`inter` (`:141`/`:148`/`:154`), `item_name` (`:161`).
 
 ## Dependencies
 
-- Calls into: `Terraria.Localization.*` (the table), `Terraria/Lang.cs` (the name caches and
-  the global substitutions), `Terraria.ID.{ItemID,NPCID,BuffID,EmoteID,ProjectileID,PrefixID}`
-  (the const names that form the key suffixes), `Terraria/MapHelper.cs` (`TileToLookup` for
-  the map legend), `Main.rand` (the category random).
-- Called by: everything user-visible — `Main.cs` menu/option draws, `ItemSlot`/`Item` tooltips,
-  `NPC` dialogue, the bestiary (`BestiaryEntry.cs:46` builds
-  `Bestiary_FlavorText.npc_<NPCName key>`), the achievements menu, the shop, the chat.
-- Shared data structures: the flat key string `Category.Name` is the shared currency between
-  the table, the name caches and the legacy index tables — the port's `itemdata::NAMES`
-  (6196 entries) is the item half of it, `ui/housing.rs` the NPC half.
-- Rust call sites: 482 hits for `lang::text` / `game_ui_fmt` / `lang::menu` / `lang::tip` /
-  `lang::inter` across `tr-app` — the runtime is genuinely wired, not a stub.
+- C# calls into: `LanguageManager` → `Utils.ReadEmbeddedResource`, `Newtonsoft.Json`,
+  `CsvHelper`, `ReLogic.Content.IContentSource`; `Lang` → `LanguageManager`, `ItemID`/`NPCID`/
+  `ProjectileID`/`BuffID`/`EmoteID` reflection, `NPC.GetFirstNPCNameOrNull`, `Main.worldName`.
+- C# called by: `Main.cs` (360 references), `Lang.cs` (127), `WorldGen.cs` (46),
+  `ItemDropRules/Conditions.cs` (41), `NPC.cs` (38), `IngameOptions.cs` (34),
+  `UICharacterCreation.cs` (30), `UIWorldCreation.cs` (24) … 797 `Language.GetTextValue(` callsites
+  in total.
+- Rust: `tr-core::localization` → `serde_json` (workspace `preserve_order`) + `anyhow`;
+  `tr-app::lang` → the manager singleton + `crate::itemdata::NAMES`; consumers: `menu/pages.rs`
+  (the picker), `ui/tooltip.rs`, `ui/char_creation.rs`, `ui/keyboard.rs`, `ui/housing.rs`,
+  `ui/emotes.rs`, `death.rs`, `chat.rs`, `app/frame.rs`.
+- Shared data structures: the flat `HashMap<String, LocalizedText>` + per-category
+  `Vec<String>` (order-sensitive for `RandomFromCategory`/`IndexedFromCategory`), the
+  `text_variations` map (`$`-suffixed keys), the `Substitution` table.
 
 ## Port status
 
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
-| `LanguageManager` table + JSON merge | PORTED | `tr-core/src/localization/mod.rs::LanguageManager`, `json.rs::load_language_from_file_text_json` | Same flat key, same "later file overrides earlier", same category-list growth only for new keys (`json.rs:31`). The Newtonsoft trailing-comma shim (`json.rs:49`) is an addition the C# gets free from Newtonsoft. |
-| 12 cultures + legacy ids | PORTED | `culture.rs::GameCulture`, `CULTURES` | `GameCulture.cs:72-118` → `culture.rs:41-74`: identical names (`en-US`…`zh-Hant`) and ids (1..12); `from_legacy_id` clamps `<1` to 1 and falls back to English (`GameCulture.cs:49-60` → `culture.rs:78`). |
-| `GetTextValue` overload set | PORTED | `mod.rs::get_text_value` (L323) / `get_text_value_args` (L331) | C# has 5 overloads (L446-489); Rust folds the arity variants into one `&[String]`. The missing-key answer is the key itself in both (`LanguageManager.cs:452`). |
-| Unknown-key placeholder | PARTIAL | `mod.rs::get_text` (L314) | Value matches (`key → key`), but `HasValue` diverges: C# `GetText` creates `LocalizedText(key,key)` whose `SetValue` records `EnglishValue = key` under the default culture ⇒ `HasValue == false` (`LocalizedText.cs:33`); Rust's `LocalizedText::new(key, key, false)` leaves `english_value = ""` ⇒ `has_value() == true` (`mod.rs:81`). No vanilla consumer of `LocalizedText.HasValue` was found, so the impact is theoretical. |
-| Fallback chain (en-US → target) | PORTED | `mod.rs::reload_language` (L203) | Verbatim structure of `LanguageManager.cs:101-116`, incl. the `SetAllTextValuesToKeys` reset and the "load the fallback culture first" step. Pinned by `switching_to_a_culture_reloads_fallback_then_target` (`mod.rs:534`). The two keys every non-English culture lacks (`CreditsRollCategory_Playtesting.78/79`) resolve only through this chain — the port inherits the behaviour. |
-| `$` variations | PORTED | `mod.rs::update_text_value` (L249) / `try_get_variation` (L273) / `add_variant` (L265) | Same split rule and same "a `$` key is not a normal text" behaviour (`LanguageManager.cs:296-301`). The 1274-1468 `ItemName.X$Gender` variants in the Latin-script cultures are loaded. |
-| `{$Category.Key}` copy commands | PORTED | `json.rs::expand_copy_commands` (L93), `mod.rs::process_copy_commands_in_texts` (L282) | Hand-rolled scan instead of the C# `Regex`, same `\w+\.\w+` shape, same 100-iteration cap. The C#'s `Invariant.Assert` on convergence is not reproduced (a non-converging file loops out silently). |
-| `VariableText` `{Name}` / `{?Cond}` | PORTED | `format.rs::VariableText::try_create` (L80) / `try_format` (L126) | Same regex shape `{(\?!?)?([a-zA-Z][\w\.]*)}` (`VariableText.cs:121`); a missing variable ⇒ `None` ⇒ the original text is shown (`VariableText.cs:84-90` → `format.rs:138`). |
-| `string.Format` clone | PARTIAL | `format.rs::format_net` (L183) | Handles `{0}`, `{{`/`}}` escapes and ignores the format specifier; an out-of-range index **keeps the token** where C# throws `FormatException` (`LanguageManager.cs:455` → `string.Format`). Deliberate robustness deviation, documented in the code comment (L178-182). |
-| Global substitutions (`Lang.InitGlobalSubstitutions`) | MISSING | `mod.rs::set_substitution` (L181) exists, **no production caller** | The C# registers ~60 named globals (`Lang.cs:100-167`): `PlayerName`, `WorldName`, `Nurse`, `Guide`, `InputTrigger_*`, … **204 en-US values** contain such a token. Rust registers substitutions only in unit tests (`mod.rs:507`), so every `{PlayerName}`-style value renders with the literal token. The vanilla call site of `InitGlobalSubstitutions` was not traced in this pass. |
-| `LanguageManager.SelectRandom` / `FindAll(Regex)` | PARTIAL | `mod.rs::find_all` (L380, closure filter only), `random_from_category` (L340, explicit index) | `Language.cs:71` `FindAll(Regex)` has no Rust counterpart (closure filter only). `RandomFromCategory` takes an explicit index instead of `Main.rand` — deterministic-friendly, but the call shape differs. |
-| CSV path (`LoadLanguageFromFileTextCsv`, L229) | MISSING (out of scope) | — | Mod-only path; the module doc states it explicitly (`mod.rs:9-10`). |
-| Content sources (`UseSources`/`LoadFromContentSources`, L184/190) | MISSING (out of scope) | — | Mod-only; the `canCreateCategories: false` branch has no analogue. |
-| `NetworkText` (163 lines) | MISSING | net.rs:186 documents the literal wire mode | Belongs to module 17 (netcode). |
-| Name tables: **items** | PORTED (data-driven) | `tr-app/src/lang.rs::item_name` (L161) + `itemdata::NAMES` (L6320, 6196 entries) | `itemdata::NAMES` is **generated** by `tools/GenItemData/gen.py::emit_names` (L2369-2372) from `ID/ItemID.cs` const names — exactly the C#'s `FillNameCacheArray<ItemID,short>("ItemName",…)` key shape (`Lang.cs:515` + `Lang.cs:463`). The key is data-driven, not hardcoded. Fallback to the baked English name when the key is absent (`lang.rs:164-167`). |
-| Name tables: **NPCs** | PARTIAL (hardcoded) | `tr-app/src/ui/housing.rs:227-247` (21 keys), `tr-app/src/npc.rs::SlimeVariant::name` (L803) | C# builds the full `NPCName` cache from `NPCID` consts (`Lang.cs:517`, 703 en-US keys) + the negative cache (L521-536). The port hardcodes 21 town-NPC keys and returns **hardcoded English** for the slimes (`"Blue Slime"`), i.e. `NPCName.*` is *not* data-driven and not localized for the 682 other NPCs. |
-| Name tables: **tiles** | MISSING | — | The C# has **no** tile-name category; the tile display names live in the map-legend table (`Lang.cs:554-1010`) fed by `MapObject.*` (79 en-US keys) and item names. The port has **no map legend at all** (0 hits for `MapObject`/`map_legend`) — so those 79 keys are unreachable and the minimap legend is not localized. |
-| Other name tables (`ProjectileName` 1036, `BuffName` 352, `EmojiName` 151, `ItemTooltip` 2790, `CommonItemTooltip` 78) | MISSING | — | 0 hits for `ProjectileName`/`BuffName`; `EmojiName` appears only in a comment (`emotes.rs:10` "lands with M6-LOCALIZE") and the port uses a hardcoded `EMOTE_NAMES` table (`emotes.rs:19`). `ItemTooltip`/`CommonItemTooltip` are only touched in comments — the per-item tooltip text table is not localized. |
-| Legacy index tables | PARTIAL | `lang.rs::menu` (L141), `tip` (L148), `inter` (L154) | 3 of 10 ported. `LegacyMisc` has 2 hits, and `LegacyMultiplayer`, `LegacyDialog`, `LegacyWorldGen`, `LegacyChestType`, `LegacyDresserType`, `LegacyChestType2` have **zero** Rust accessors — those strings cannot be localized at all today (`Lang.cs:477-513`). |
-| `Lang.GetPrefixedItemName` / `Lang.prefix` | MISSING | — | `CombineFormat.Prefix` has 0 hits; the prefix display names + the `Gender` variation are absent (ATLAS's M3-PREFIX row already lists them as "out: the localization seam"). |
-| Source discovery (the data location) | PORTED | `tr-app/src/lang.rs::source_dirs` (L37) + `init` (L67) | Probe order: `TR_LOCALE` → `<content dir>/../decompiled` → `./decompiled` → `CARGO_MANIFEST_DIR/../../decompiled` → `<exe dir>/decompiled`. **The JSON data is NOT under `assets/` and NOT in the crate**: the 84 `Terraria.Localization.Content.*.json` files live in the gitignored **`decompiled/`** tree (junction → `Terraria-Rust\decompiled`); `assets/Content` holds only the `.xnb` content. `tr-core`'s test reads `CARGO_MANIFEST_DIR/../../decompiled` (`mod.rs:575`). So AGENTS.md's warning applies to the **`decompiled` junction** (all three are junctions; `assets` is the wrong one for localization). A worktree without it ⇒ 0 keys loaded ⇒ the "unknown key" failures. |
-| Culture switch at startup + menu | PORTED | `tr-app/src/main.rs:130-138`, `menu/actions.rs:213`, `settings.rs:11-16` | `TR_LANG` mirrors `-lang` (`LaunchInitializer.cs:120`), else `settings.language` (the vanilla `"Language"` key, `Main.cs:4099`/`:4345`); the menu click writes the culture name back (`actions.rs:213`). |
-| Font coverage for the localized glyphs | PORTED (claimed) | the `Mouse_Text.xnb` parse + the `covers_the_scripts_the_localizations_use` test | The ATLAS claims 159 pages / 38 636 glyphs (Cyrillic, CJK, Kana, Hangul); the test exists but the 159/38 636 figures were **not re-verified** here. |
-
-## Coverage table (the shipped resources)
-
-Key counts are measured from the 84 shipped JSON files (the exact input the C# embeds):
-`texts` = the flat keys that become `LocalizedText` entries, `variations` = the `$`-keys
-that become `TryGetVariation` entries. Rust loads the **same files**, so the Rust column is
-identical whenever the `decompiled/` junction is present — and 0 without it.
-
-| language | C# keys (texts) | C# variations | Rust keys (texts) | Rust variations | delta | verdict |
-| --- | --- | --- | --- | --- | --- | --- |
-| en-US | 20 279 | 0 | 20 279 | 0 | 0 | PASS |
-| de-DE | 20 277 | 1 468 | 20 277 | 1 468 | 0 | PASS |
-| it-IT | 20 277 | 1 274 | 20 277 | 1 274 | 0 | PASS |
-| fr-FR | 20 277 | 1 274 | 20 277 | 1 274 | 0 | PASS |
-| es-ES | 20 277 | 1 274 | 20 277 | 1 274 | 0 | PASS |
-| ru-RU | 20 277 | 1 274 | 20 277 | 1 274 | 0 | PASS |
-| zh-Hans | 20 277 | 0 | 20 277 | 0 | 0 | PASS |
-| pt-BR | 20 277 | 1 274 | 20 277 | 1 274 | 0 | PASS |
-| pl-PL | 20 277 | 1 371 | 20 277 | 1 371 | 0 | PASS |
-| ja-JP | 20 277 | 0 | 20 277 | 0 | 0 | PASS |
-| ko-KR | 20 277 | 0 | 20 277 | 0 | 0 | PASS |
-| zh-Hant | 20 277 | 0 | 20 277 | 0 | 0 | PASS |
-
-- en-US per group file (the 7 files): `Game` 35 cats / 2 337 keys, `Items` 8 / 9 209,
-  base `` 54 / 3 699, `Legacy` 10 / 1 216, `NPCs` 2 / 730, `Projectiles` 1 / 1 036,
-  `Town` 146 / 2 052 — 255 categories in total.
-- Every non-English culture is **missing 2 en-US keys** (`CreditsRollCategory_Playtesting.78`
-  and `.79`) and adds its own extra keys; the Latin-script cultures add the
-  `ItemName.X$Gender` variations, the CJK ones add none. The missing pair survives only
-  through the fallback chain — the port implements that chain correctly.
-- The 7 Latin-script cultures (de-DE, it-IT, fr-FR, es-ES, ru-RU, pt-BR, pl-PL) have
-  1 274-1 468 **extra** keys relative to en-US, all `$`
-  variations (e.g. `ItemName.AbigailsFlower$Gender`), so they are *not* extra texts.
-- **Consumption** coverage is the real gap: the table holds all 20 279 keys, but the port
-  only has accessors for 3 of the 10 legacy tables and no accessor at all for
-  `ProjectileName`, `BuffName`, `EmojiName`, `ItemTooltip`, `CommonItemTooltip`,
-  `MapObject` and `Prefix`.
+| `LanguageManager` load/reload/fallback chain | PORTED | `tr-core/src/localization/mod.rs::reload_language` (`:203`) | 1:1 with `LanguageManager.cs:101-116`: reset-to-keys → load fallback (en-US) → load target. Test `switching_to_a_culture_reloads_fallback_then_target` (mod.rs:534). |
+| `LocalizedText` value model | PORTED | `mod.rs::LocalizedText` (`:36`) | `Value`/`UnformattedValue`/`EnglishValue`/`HasValue` all present. Missing: `EqualsCommand`, `ParseCommandPrefix`, `ToNetworkText`, public `ConditionsMet` (LocalizedText.cs:70-193). |
+| `VariableText` (`{Name}`, `{?Name}`, `{!Name}`) | PORTED | `format.rs::VariableText::try_create` (`:80`), `try_format` (`:126`) | Regex shape mirrored (`format.rs:146`). C# returns the *original* text when a variable is missing — the port does too (`mod.rs:103`). |
+| `{$Category.Key}` copy commands | PORTED | `json.rs::expand_copy_commands` (`:93`), `mod.rs:282` | 2 184 tokens in en-US; 100-iteration cap kept (mod.rs:285). |
+| `LanguageManager.GetTextValue` ×5 overloads | PARTIAL | `mod.rs::get_text_value` (`:323`), `get_text_value_args` (`:331`) | One `&[String]` shape instead of 5 overloads; **no culture-aware number formatting** (C# `string.Format` under `CurrentCulture`, LanguageManager.cs:95-96) and format specifiers are dropped (`format.rs:209-215`) — the content uses `{0:+0;-#}` in `ItemTooltip.PrefixArmorPenetration` and `ItemTooltip.PrefixTagDamage`. |
+| `LanguageManager.GetText` placeholder insert | PORTED | `mod.rs::get_text` (`:314`) | Inserts key→key placeholder like C# `:437-444`. |
+| `Language.Exists` / `GetCategorySize` | PORTED | `mod.rs::exists` (`:308`), `category_size` (`:303`) | Not surfaced in `tr-app` (no CLI port). |
+| `Language.FindAll` / `SelectRandom` / `RandomFromCategory` | PARTIAL | `mod.rs::find_all` (`:380`), `random_from_category` (`:340`), `indexed_from_category` (`:360`) | `SelectRandom` is **missing**; `RandomFromCategory` takes an explicit index instead of `Main.rand` (deterministic, documented at mod.rs:338). No `Regex` overload of `FindAll`; `Lang.CreateDialogFilter` not ported. |
+| `LanguageManager.TryGetVariation` / `$` variants | PORTED | `mod.rs::try_get_variation` (`:273`), `update_text_value` (`:249`) | `$` split mirrors `:294-308`; 1 274–1 468 variant rows exist in the non-English files. |
+| `LanguageManager.LoadLanguageFromFileTextCsv` | MISSING | — | C# `:229-271`; mods-only CSV path, documented as skipped (`mod.rs:9-10`). |
+| `LanguageManager.LoadFromContentSources` / `UseSources` / `HotReloadContentFile` | MISSING | — | C# `:190`, `:184`, `:310`; mod content-source path (`AssetSourceController.cs:59`). |
+| `GameCulture` (12 cultures, ids 1..12) | PORTED | `culture.rs::GameCulture` (`:5`), `CULTURES` (`:21`) | 1:1 with `GameCulture.cs:69-119`. `CultureName.Unknown = 9999` has no Rust twin; `GameCulture.DefaultCulture` is a settable static in C# but a `const` in Rust (cosmetic, the setter is never used). |
+| `Language` selection UI (12 rows) | PORTED | `tr-app/src/menu/pages.rs::language_items` / `language_initial_items` | Same 12 `Language.<Culture>` keys in the same order as `Main.cs:48466-48477` / `:48497-48508`; `Act::SetLanguage(legacy_id)` → `menu/actions.rs:206` → `set_language` + `settings.language` + save, mirroring `Main.cs:48519-48523`. |
+| First-launch picker (`_needsLanguageSelect`) | MISSING | — | C# `Main.cs:4335` + `:10653-10656` open menuMode 1212 when the config has no `"Language"`; the port always boots `Page::Main` with `settings.language = "en-US"` (`settings.rs:243`). `Page::LanguageInitial` exists but nothing navigates to it. |
+| "auto" language detection | NOT FOUND | — | Vanilla 1.4.5.8 has **no** OS-locale auto-detect. Selection is: config `"Language"` (`Main.cs:4335-4347`), `-lang`/`-language` CLI (`LaunchInitializer.cs:118-125`), `lang=`/`language=` server args (`Main.cs:5035-5044`), the save-file byte (`Main.cs:4729-4730`) and the picker. The port adds `TR_LANG` (`env.rs:226`), which *overrides* the saved value (`main.rs:134`) — opposite precedence to C#, where the config wins over `-lang`. |
+| `Lang.InitGlobalSubstitutions` (65 entries) | MISSING | `mod.rs::set_substitution` exists, **no producer** | C# `Lang.cs:100-151` registers `{Nurse}`, `{Guide}`, `{WorldName}`, `{Day}`, `{BloodMoon}` … The port never calls `set_substitution`, so content using them renders the raw `{Nurse}` token. Affected families: `LegacyDialog` (392 keys, 8×`{Nurse}`, 5×`{Dryad}`, 5×`{ArmsDealer}`, 4×`{Guide}`, 3×`{Merchant}`, 3×`{WorldName}`), `AnglerQuestText`, `AnglerChatter`, `DyeTraderSpecialText`, `GuideHelpTextSpecific`, … (~14 categories). |
+| `Lang` name caches (item/NPC/projectile/buff/emoji/prefix/map-object) | PARTIAL | `tr-app/src/lang.rs::item_name` (`:161`) | Item names **are** data-driven: key `ItemName.{itemdata::NAMES[id]}` (`:6320`, 6 196 const names) → JSON value, falling back to the hardcoded English `itemdata::ITEMS[id].name` ("Dirt Block"). NPC names are **hardcoded English** except 20 town kinds (`ui/housing.rs::name_key`, `:225`); projectile (1 036), buff (352/356), emoji (151), prefix (97) and map-object (79) tables are not wired at all; `Lang.GetMapObjectName`/`BuildMapAtlas` missing. |
+| `NetworkText` | PARTIAL | `tr-app/src/net.rs` (literal mode only) | `NetworkText.cs` (163) key→net encoding not ported (`LocalizedText.ToNetworkText` missing). |
+| Resource discovery / packaging | PARTIAL | `tr-app/src/lang.rs::source_dirs` (`:37`) | The port loads the **same 84 JSON files at runtime** from `TR_LOCALE` / `../decompiled` / cwd / `CARGO_MANIFEST_DIR/../../decompiled` / `<exe>/decompiled`. Nothing is embedded in the crate, and no language JSON exists under `assets/Content` — the strings live in the gitignored `decompiled/` junction. The documented "sibling of the content dir" probe is off by one level: `content_dir.parent()/decompiled` = `assets/decompiled` (does not exist) instead of `<repo>/decompiled` (`lang.rs:42-46`). |
+| `LanguageManager.OnLanguageChanged` event | PARTIAL | `mod.rs:211` | No subscriber in the port (the event itself is C#-only, `LanguageManager.cs:39`). |
 
 ## Tests
 
-- `crates/tr-core/src/localization/mod.rs` — 10 tests: `json_creates_categories_and_english_values`
-  (L402), `later_files_override_earlier_values` (L421), `dollar_keys_become_variations` (L438),
-  `copy_commands_expand_into_the_referenced_value` (L458), `format_substitutes_arguments_and_keeps_escapes`
-  (L469), `variable_text_uses_substitutions_and_conditions` (L498),
-  `unknown_key_becomes_its_own_placeholder_text` (L524),
-  `switching_to_a_culture_reloads_fallback_then_target` (L534),
-  `indexed_category_walks_file_order` (L554),
-  `shipped_english_resources_match_the_game` (L574 — **skips silently when `decompiled/` is
-  absent**, so it can pass green with zero keys loaded).
-- `crates/tr-core/src/localization/culture.rs` — `cultures_match_the_original_ids_and_names` (L136).
-- `crates/tr-app/src/lang.rs` — `russian_texts_and_item_names_resolve` (L191),
-  `tip_and_inter_keys_follow_the_c_sharp_prefixes` (L223).
-- `crates/tr-app/src/menu/mod.rs` — `language_screen_lists_the_twelve_vanilla_rows` (L2022),
-  `language_initial_picker_differs_from_the_language_screen` (L2065).
-- `crates/tr-app/src/ui/ingame_options.rs` — `the_general_preferences_are_localised_and_clickable` (L2005 area).
-- `crates/tr-app/src/ui/tooltip.rs` — `tooltip_table_mirrors_the_draw_chain`,
-  `m7_ui_6_the_tooltip_rows_follow_their_gates` (the M6-LOCALIZE-wire slice).
-- A font test named `covers_the_scripts_the_localizations_use` probes Cyrillic / CJK / Kana /
-  Hangul glyphs against the shipped `Mouse_Text.xnb` (ATLAS attributes it to slice 1).
-- Gaps: **no** test asserts the key coverage against the C# en-US set (the ROADMAP S1-L-12
-  exit criterion "key coverage test (no false 'unknown key')" is still open), and no test
-  pins the per-culture variation counts.
+- `crates/tr-core/src/localization/mod.rs` — 10 tests: `json_creates_categories_and_english_values`,
+  `later_files_override_earlier_values`, `dollar_keys_become_variations`,
+  `copy_commands_expand_into_the_referenced_value`, `format_substitutes_arguments_and_keeps_escapes`,
+  `variable_text_uses_substitutions_and_conditions`, `unknown_key_becomes_its_own_placeholder_text`,
+  `switching_to_a_culture_reloads_fallback_then_target`, `indexed_category_walks_file_order`,
+  `shipped_english_resources_match_the_game` (mod.rs:573-612 — **skips** when `../../decompiled`
+  is absent, mod.rs:594).
+- `crates/tr-core/src/localization/culture.rs` — 1 test: `cultures_match_the_original_ids_and_names`.
+- `crates/tr-core/src/localization/format.rs` / `json.rs` — **0 unit tests** (the trailing-comma shim,
+  the copy-command parser and `format_net` are only covered indirectly through `mod.rs`).
+- `crates/tr-app/src/lang.rs` — 2 tests: `russian_texts_and_item_names_resolve` (`:191`, skips
+  without sources), `tip_and_inter_keys_follow_the_c_sharp_prefixes` (`:223`).
+- `crates/tr-app/src/menu/mod.rs:2028-2110` — the `Page::Language` / `Page::LanguageInitial` layout
+  and item-count tests.
+- Resource-dependent tests that **hard-fail** (not skip) without the `decompiled` junction:
+  `tr-app/src/chat.rs:301` (`"*Belsin was slain 3 times."`), `tr-app/src/ui/mod.rs:1133`
+  (`"Space to skip"`), `tr-app/src/lang.rs:219` (`menu(14) == "Settings"`),
+  `tr-app/src/ui/emotes.rs:335` (`"Back"` / `"Назад"`).
 
 ## Deviations & risks
 
-| # | Deviation | Severity | Admitted by ROADMAP/ATLAS? |
+| # | Deviation | Severity | Admitted by ROADMAP/ANALYSIS? |
 | --- | --- | --- | --- |
-| D1 | **No global substitutions registered** — `Lang.InitGlobalSubstitutions` (`Lang.cs:100-167`, ~60 names) has no port; 204 en-US values contain such a token and render it literally (`{PlayerName}`). | behavioural | No — not in ATLAS §25 nor in ANALYSIS. |
-| D2 | **No NPC-name table** — 21 hardcoded `NPCName.*` keys (`ui/housing.rs:227-247`) instead of the generated `NPCID`-const table (703 en-US keys), and the slime names are hardcoded English (`npc.rs:803`). | behavioural | Partially — ATLAS §25 claims the name tables are wired; only items are. |
-| D3 | **No map legend / tile names** — `Lang.BuildMapAtlas` (`Lang.cs:554-1010`) and the 79 `MapObject.*` keys are absent; the minimap legend is not localized. | behavioural | No. |
-| D4 | **Legacy tables 3 of 10** — `LegacyMultiplayer`, `LegacyDialog`, `LegacyWorldGen`, `LegacyChestType`, `LegacyDresserType`, `LegacyChestType2` have no accessor; `LegacyMisc` is nearly unused. ATLAS §25's "No menu/front-end labels remain to localize" is therefore **too strong**. | behavioural | No — the claim contradicts the code. |
-| D5 | **Projectile / buff / emoji / per-item tooltip names not localized** (1 036 + 352 + 151 + 2 790 + 78 keys unreachable). `emotes.rs:10` still says the `EmojiName` table "lands with M6-LOCALIZE". | behavioural | Partially — the emote comment admits it; the rest does not. |
-| D6 | **Prefix display names missing** (`Lang.prefix` + `CombineFormat.Prefix` + the `Gender` variation). | cosmetic | Yes — ATLAS's M3-PREFIX row lists them as out-of-scope "the localization seam". |
-| D7 | **Failed-file semantics differ** — the C# `catch` **breaks** the file loop (`LanguageManager.cs:145-153`); Rust logs and **continues** (`mod.rs:235-237`). Only matters for a corrupted resource file. | behavioural | Yes — the module doc calls the C# `break` a "silent skip" (the comment at `mod.rs:222-223` states the opposite of the code, which continues). |
-| D8 | **`HasValue` divergence on unknown keys** — C# `false` (EnglishValue = key under the default culture), Rust `true` (`english_value == ""`). | cosmetic | No. No vanilla consumer found. |
-| D9 | **`format_net` keeps an out-of-range `{n}` token** where C# `string.Format` throws `FormatException`. | cosmetic | Yes — documented in `format.rs:178-182`. |
-| D10 | **File registration order is filesystem order** — `lang::init` registers the 84 files in `std::fs::read_dir` order (`lang.rs:78`), while the C# uses the assembly's manifest-resource order. 256 category slots vs 255 unique categories in en-US ⇒ at least one category is split across two files, so its `IndexedFromCategory`/`RandomFromCategory` index mapping depends on the read order ⇒ **non-deterministic across filesystems**, and not the C#'s mapping either. | determinism | No. |
-| D11 | **Data location** — the strings live in the gitignored `decompiled/` junction, not `assets/` and not in the crate. A fresh worktree without the junction silently degrades every string to its key (and `shipped_english_resources_match_the_game` skips instead of failing). | determinism (test hygiene) | Partially — AGENTS.md warns about the symlinks but names `assets`; the localization-relevant one is `decompiled`. ATLAS §25 says "the same retail-derived content model as `assets/Content`" — the JSON is in `decompiled/`, `assets/Content` holds the `.xnb` files. |
-| D12 | `NetworkText` (163 lines) not ported; the netcode path resolves literals instead (`net.rs:186`, `chat.rs:243`). | behavioural | Out of scope (module 17). |
-| D13 | The copy-command loop's C# `Invariant.Assert` on convergence is not reproduced (`mod.rs:282-300`). | cosmetic | No. |
+| D1 | No global substitutions: the 65 `Lang.RegisterGlobalSubstitution` entries (`Lang.cs:100-151`) have no port-side producer, so `{Nurse}`/`{WorldName}`/`{Day}` render literally inside ~14 dialogue categories (`LegacyDialog` alone has 25 such tokens). | behavioural | No — not mentioned anywhere. |
+| D2 | The whole dialogue/chatter family is absent: `Language.SelectRandom`, `Lang.CreateDialogFilter`, `GetRandomGameTitle`, `BartenderHelpText`, `AnglerQuestChat`, `GolferChat`, `PrincessChat`, `CatChat`, `DogChat`, `BunnyChat`, `SlimeChat` (`Lang.cs:295-410`) — i.e. `AnglerChatter`, `BartenderChatter`, `GolferChatter`, `CatNames_*`, `GameTitle` (76 keys) etc. are loaded but never read. | behavioural | Partially — ROADMAP §25 marks the module 🟡 (line 77) and "sub-screen strings remain (BUG-18)". |
+| D3 | First-launch language picker unreachable: C# opens menuMode 1212 when the config has no `"Language"` (`Main.cs:4335`, `:10653`); the port boots straight into `Page::Main` with `"en-US"`. `Page::LanguageInitial` is dead code. | behavioural | No. |
+| D4 | `TR_LANG` (env) takes precedence over the saved `Settings.language` (`main.rs:134-136`); in C# the config value wins over `-lang` (the CLI sets the culture, `LoadSettings` then re-applies the config, `Main.cs:4340/4345`). | behavioural | No — the ROADMAP calls `TR_LANG` "= the `-lang` flag" (line 1014) without noting the inverted precedence. |
+| D5 | Culture-aware number/date formatting is missing: C# sets `CurrentCulture`/`CurrentUICulture` on `SetLanguage` (`LanguageManager.cs:95-96`) and formats through `string.Format`; the port pre-stringifies args (`lang.rs:133-137`) and `format_net` discards format specifiers (`format.rs:209-215`), so `{0:+0;-#}` renders as a bare number (2 shipped keys: `CommonItemTooltip.PrefixArmorPenetration`, `CommonItemTooltip.PrefixTagDamage`). | behavioural | No. |
+| D6 | Resource probe off by one directory level: `source_dirs()` pushes `content_dir.parent()/decompiled` = `assets/decompiled` (`lang.rs:42-46`), but the retail-derived JSON lives in the repo-root `decompiled/` sibling of `assets/`. The other probes mask it in the dev tree. | behavioural | No — ROADMAP line 1011 documents the probe as "the `../decompiled` sibling of the content dir", which is what the code intends but does not compute. |
+| D7 | **No embedded fallback**: the crate ships zero language bytes and the resources are read from a gitignored junction at runtime, so a deployed build without `decompiled/` next to the exe has no strings at all (every label degrades to its key). The C# embeds them in the assembly. | behavioural (packaging) | No. |
+| D8 | The `assets`-symlink note in AGENTS.md is mis-attributed for localization: no language JSON exists under `assets/` (verified — `assets/Content` holds only fonts/images/sounds/xnb). The strings live in the **`decompiled`** junction (`tr-core` mod.rs:575, `tr-app` lang.rs:49); `assets` matters for the fonts. Tests that skip vs. fail differ accordingly (`mod.rs:594`, `lang.rs:201` skip; `chat.rs:312`, `ui/mod.rs:1139` fail with false "unknown key" text). | cosmetic (docs) | No. |
+| D9 | Per-culture **file order** differs: C# loads the embedded resources in manifest order (csproj order), the port registers them in `read_dir` order (`lang.rs:74-98`). Today no key is duplicated inside a culture (verified: 0 duplicates in en-US and de-DE), so values are unaffected, but the `category_grouped_keys` order — and hence any `RandomFromCategory`/`IndexedFromCategory` index → key mapping — can diverge from C#. | determinism (latent) | No. |
+| D10 | Missing API surface: `Language.GetTextValueWith`, `Exists` (not surfaced in `tr-app`), `FindAll(Regex)`, `SelectRandom`, `RandomFromCategory`'s RNG form, `LocalizedText.FormatWith(object)`'s property-lookup (LocalizedText.cs:195-207), `LocalizedText.EqualsCommand`/`ParseCommandPrefix`/`ToNetworkText`, `LanguageManager.EstimateWordCount` (`:65`), `LoadLanguageFromFileTextCsv`, `LoadFromContentSources`, `HotReloadContentFile`. | behavioural / cosmetic | Partially — the module is 🟡 in ROADMAP line 77; none of these is listed individually. |
+| D11 | Stale ANALYSIS text: §"Localization (M6)" still says "Wiring the strings into the HUD, item names and menus is still to do" (ANALYSIS.md:1646-1647) although `lang::menu`/`lang::item_name` now drive them, and ANALYSIS.md:1526-1527 still says "localized display names stay out of scope". | cosmetic (docs) | No — the docs contradict the landed code. |
+| D12 | `assets/Content` has no language JSON, so the ROADMAP's "the same retail-derived content model as `assets/Content`" (line 1011) is inaccurate: the language files are the *decompiled embedded resources*, a different retail-derived tree from the game's own `.xnb` content. | cosmetic (docs) | No. |
+| D13 | `format.rs` and `json.rs` have **no** unit tests; the trailing-comma shim (needed because the shipped files carry Newtonsoft trailing commas — confirmed by re-parsing them) and the copy-command parser are only exercised indirectly. | determinism (test gap) | No. |
 
-## ROADMAP/ATLAS DONE rows re-verified (M6 section, `docs/ATLAS.md`)
+ROADMAP re-verification of the DONE rows in the M6 area:
 
-| Claim (ATLAS) | Verdict | Evidence |
-| --- | --- | --- |
-| §25: "the `lang` runtime (84 shipped `Terraria.Localization.Content.*` resources, 12 cultures × 7 groups, loaded from `TR_LOCALE`/the `../decompiled` sibling of the content dir)" | **PASS** | 84 files on disk (12 × 7); `lang.rs::source_dirs` (L37) probes `TR_LOCALE` then the content dir's `../decompiled` sibling, exactly as described. |
-| §25: "the `LanguageManager.SetLanguage` menu flow (`Main.cs:48519-48523`), `Settings.language` under the vanilla `"Language"` key (`Main.cs:4099`) applied at startup (`Main.cs:4345`, `TR_LANG` = the `-lang` flag)" | **PASS** | `main.rs:130-138` (`TR_LANG` → else `settings.language` → `lang::init`), `settings.rs:11-16` documents the vanilla `"Language"` key, `menu/actions.rs:213` writes the culture back on the menu click. |
-| §25: "Slice 3 localized the death texts (`DeathText.*`, `Currency.*`, `Game.DroppedCoins`), slice 4 the front-end UIState screens … **No menu/front-end labels remain to localize**" | **PARTIAL** | The death/front-end rows are localized, but 6 of the 10 legacy tables have no accessor (D4) and 4 name tables are unreachable (D2/D3/D5) ⇒ strings do remain. |
-| §25: font slice — "159 pages / 38 636 glyphs" | **PARTIAL (unverified)** | The `covers_the_scripts_the_localizations_use` test exists and probes the four scripts, but the page/glyph counts were not re-measured here. |
-| `M6-LOCALIZE-wire` (ATLAS:1607, done 2026-11-08) — `Lang.tip`/`Lang.inter` accessors + the real tooltip stat rows, 11 tests | **PASS** | `lang.rs:141-156` has `menu`/`tip`/`inter`; `ui/tooltip.rs` carries the damage/crit/use-time/knockback/tool rows; the tooltips' tests exist. The row's own exclusions (the accessory layer) are respected. |
-| `M6-LOCALIZE-wire-fonts` / `-2-settings-screens` / `-3-death-text` (named only in the ATLAS prose, no catalog row) | **PARTIAL** | The three slices' *effects* are visible (font parse, settings labels, death texts); they inherit D1/D4/D5, so "done" only holds for the strings they touch. |
-| ATLAS:84 summary row — "menus + tooltips (M6-LOCALIZE-wire); sub-screen strings remain (BUG-18)" | **PASS** | Consistent with the code; BUG-18's `UI.Back` label is resolved through `lang::text` (`ui/emotes.rs`). |
-| ROADMAP `S1-L-12` exit criterion — "key coverage test (no false 'unknown key')" | **FAIL (not met)** | No test compares the port's key set against the C# en-US set; `shipped_english_resources_match_the_game` *skips* when the resources are absent. This is the module's own open item. |
+- **`M6-LOCALIZE-wire` (ROADMAP:1600, ✅ done 2026-11-08)** — **PASS for its stated scope.**
+  `lang.rs` gained the `Lang.tip`/`Lang.inter` accessors (`LegacyTooltip.{i}` / `LegacyInterface.{i}`,
+  `Lang.cs:497`/`:485`) and `ui/tooltip.rs` uses them for the real stat rows (tooltip.rs:185-289:
+  damage suffix `tip[2]/[3]/[4]/[53]/[55]`, crit `tip[5]`, use-time ladder `tip[6..13]`, knockback
+  `tip[14..22]`, tool rows `tip[25..28]`), matching `Main.cs:20631-20800`. The row's own exclusions
+  (accessory layer) are honest.
+- **`M6-LOCALIZE-2-settings-screens` / `-3-death-text` / `-wire-fonts`** (named in prose at
+  ROADMAP:1008-1009, no separate catalog row) — **PASS.** `death.rs` uses `DeathText.*`/`Currency.*`
+  (death.rs:76-97, `:282`), `ui/char_creation.rs` + `ui/keyboard.rs` are key-driven (≈30 `UI.*`
+  keys + `menu[24..31]`, `menu[45]`, `menu[48]`), and the font fix lives in `tr-content/src/font.rs`.
+  "No menu/front-end labels remain to localize" is **not** exhaustively re-verified here (spot
+  checks of the front-end screens pass).
+- **`BUG-18` (ROADMAP:1703, ✅ done 2026-11-11)** — **PASS.** `ui/emotes.rs` now reads
+  `lang::text("UI.Back")` (`BACK_KEY`) and the ru-RU value is asserted as `"Назад"` (emotes.rs:336-354).
+- **ROADMAP §25 summary (lines 1003-1020)** — **PARTIAL.** "84 shipped resources, 12 cultures ×
+  7 groups" is verified exactly; "loaded from `TR_LOCALE`/the `../decompiled` sibling of the content
+  dir" is inaccurate (D6); "the same retail-derived content model as `assets/Content`" is
+  inaccurate (D12); the module status stays 🟡 (line 77) — correctly, given D1-D5.
+- **PORT_MAP.md:63** ("wip - sub-screens pending") — consistent with the findings above.
 
 ## Task seeds
 
-- **S** — Register the vanilla global substitutions (`Lang.InitGlobalSubstitutions`, `Lang.cs:100-167`):
-  add `lang::set_global_substitutions(&App)` at startup with at least `PlayerName`, `WorldName`,
-  the 21 town-NPC names and the `InputTrigger_*` set; pins D1 and the 204 affected strings.
-- **S** — Add the remaining legacy accessors (`lang::misc`, `lang::mp`, `lang::dialog`,
-  `lang::gen`, `lang::chest_type`, `lang::dresser_type`, `lang::chest_type2`) mirroring
-  `Lang.cs:477-513`; unblocks `Lang.mp[9]` (the chat roll line) and the death/respawn strings.
-  Dependency: none.
-- **S** — Sort the source registration by file name in `lang::init` (`lang.rs:78`) and add a
-  test that pins the per-category key order; closes D10 (determinism).
-- **S** — Turn `shipped_english_resources_match_the_game` into a real key-coverage test:
-  fail (not skip) when the resources are missing, and assert the en-US key count against the
-  shipped file set — the ROADMAP S1-L-12 exit criterion. Dependency: the `decompiled` junction.
-- **M** — Data-driven NPC names: extend `tools/GenItemData` (or add `tools/GenNpcData`) to emit
-  `npcdata::NAMES` from `ID/NPCID.cs` consts, add `lang::npc_name(net_id)` with the negative
-  cache (`Lang.cs:521-536`), and replace the 21 hardcoded `ui/housing.rs` keys and the hardcoded
-  `SlimeVariant::name` English strings. Dependency: S (substitutions) for the town-NPC names.
-- **M** — Map legend: port `Lang.BuildMapAtlas` (`Lang.cs:554-1010`) into the minimap legend
-  and resolve the 79 `MapObject.*` keys; closes D3.
-- **M** — Remaining name tables: `ProjectileName` (1 036), `BuffName` (352), `EmojiName` (151),
-  `ItemTooltip` (2 790) + `CommonItemTooltip` (78) accessors and call sites. Dependency: the
-  generator work from the NPC-name task (same shape).
-- **L** — Prefix display names: `Lang.prefix` + `CombineFormat.Prefix` + the `Gender` variation
-  (`Lang.cs:225-239`); pins D6 and the M3-PREFIX "localization seam" follow-up.
-- **L** — `NetworkText` (`Terraria/Localization/NetworkText.cs`, 163 lines) for the netcode
-  path; hand over to module 17.
+- **S** — Fix the `source_dirs()` probe: compute the *repo-root* `decompiled` sibling
+  (`content_dir.parent().parent().join("decompiled")`) and drop the dead `assets/decompiled` path
+  (`tr-app/src/lang.rs:42-46`).
+- **S** — Add unit tests for `format.rs` and `json.rs`: the trailing-comma shim on a real shipped
+  snippet, `expand_copy_commands` on a `{$Cat.Key}` chain, `format_net` on `{0}`/`{{`/`}}`/a missing
+  index.
+- **S** — Port the 65 `Lang.InitGlobalSubstitutions` entries (`Lang.cs:100-151`): a
+  `Substitution` producer in `tr-app` (world name, day counter, blood moon/eclipse flags and the
+  town-NPC given names) so `LegacyDialog`/`AnglerQuestText` stop showing `{Nurse}`.
+- **S** — Implement the first-launch picker: set a `needs_language_select` flag when the saved
+  config has no `"Language"` and boot into `Page::LanguageInitial` (`Main.cs:4335`, `:10653-10656`).
+- **S** — Sort the registered sources by file name so the per-culture load order is deterministic and
+  documented as the C# manifest order (`lang.rs:74-98`).
+- **M** — Implement `Language.SelectRandom` + `Lang.CreateDialogFilter` and port the chatter helpers
+  (`Lang.cs:295-410`), including the `Main.rand` stream discipline, so `AnglerChatter`,
+  `BartenderChatter`, `GolferChatter`, `CatChatter`, `SlimeChatter` and `GameTitle` (76 keys) can be
+  read.
+- **M** — Wire the remaining name tables through the JSON: `NPCName.*` (703 keys, incl. the
+  negative-net-id slime cache `Lang.cs:521-533`), `ProjectileName.*` (1 036), `BuffName.*`/`BuffDescription.*`
+  (352/356), `EmojiName.*` (151), `Prefix.*` (97) and `MapObject.*` (79, `Lang.GetMapObjectName`).
+- **M** — Culture-aware argument formatting: keep the `IFormatProvider` behaviour of C#
+  `string.Format` (numbers, `CurrentCulture`) and honour format specifiers, at least `{0:+0;-#}`.
+- **M** — Extend `LanguageManager` with the missing C# surface: `GetTextValueWith`,
+  `FindAll(Regex)`, `LocalizedText.FormatWith(object)`'s property lookup, `EqualsCommand`,
+  `ParseCommandPrefix`, `ToNetworkText`, `EstimateWordCount`.
+- **L** — Package the 84 language resources into the build (or a shipped `locales/` tree) so a
+  deployed binary is not dependent on a gitignored `decompiled/` junction (D7).
+- **L** — Audit and localise the remaining hardcoded English UI strings across `crates/tr-app/src/ui`
+  and `menu/` (the picker rows themselves are localised; the rest of the front-end screens are
+  spot-checked only).
+- **S** — Docs: refresh ANALYSIS.md §"Localization (M6)" (D11), the ROADMAP §25 resource-path wording
+  (D6/D12) and the AGENTS.md symlink note (D8).

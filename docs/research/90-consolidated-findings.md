@@ -7,7 +7,7 @@
 > 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, **26, 27**, 28, 29, **30**, 31, 32, **36, 37, 38,
 > 39**, 40, 41, 42. Modules **21** (recipes/crafting), **23** (wiring/tile-entities) and
 > **33** (localization) have **no research file** yet (the new `docs/ROADMAP.md` links to
-> them anyway — see §4.3, U-60). `INDEX.md`, `MODULE-TEMPLATE.md` and this file are excluded.
+> them anyway — see §4.3, U-32). `INDEX.md`, `MODULE-TEMPLATE.md` and this file are excluded.
 >
 > **Doc reorganisation (2026-11-12, after the research):** the old `docs/ROADMAP.md` is now
 > **`docs/ATLAS.md`** (the per-subsystem atlas + the legacy task rows, kept verbatim). A
@@ -1060,152 +1060,267 @@ The `deferred special points → inline drawing` deviation is admitted at `tiles
 | 39-15 | cosmetic | `main.rs` still declares 70 modules | Claim: (silent) · Reality: 163 lines of bootstrap but 70 `mod` lines — cosmetic only; the bootstrap body is genuinely thin | SILENT |
 | 39-8 | none (accurate) | The parallel-light/framing/decode rows | Claim: ATLAS "C1/C3 parallel light, C4 framing, C5 decode: done" · Reality: verified — the only parallelism in the tree is `tr-core/{framing,lighting/{mod,blur}}.rs` + `tr-app/assets.rs` | ADMITTED |
 
-**Register totals:** 483 deviation/risks rows surveyed → **345 unadmitted** (of which **62** are
-CLAIM-OTHERWISE, i.e. the docs assert the opposite) · 79 admitted · 59 partially admitted
+**Register totals:** 483 deviation/risks rows surveyed -> **342 unadmitted** (of which **58** are
+CLAIM-OTHERWISE, i.e. the docs assert the opposite) + 141 admitted or partially admitted
 (admitted in code comments or in one doc only).
 
 ---
 
-## 4. Unadmitted-claims list
 
-Rows where `docs/ROADMAP.md` / `docs/ANALYSIS.md` / `docs/PORT_MAP.md` **actively assert
-something the research disproved** — a `✅` DONE row, a status line, or prose that states
-the opposite of the code. **44 rows.** This is the section that must drive the new ROADMAP's
-"correct the record" pass: each entry is a *false* statement in the current docs.
 
-| # | Doc claim (file:line) | What the research found | C#/Rust citations | Source |
-| --- | --- | --- | --- | --- |
-| U-01 | `ROADMAP.md:1469` (M4-EVENT-4b, `✅`): "the pirate/martian id collision 68-72 renumbered to 78-82/83 (plus the render_key + from_u16 tables), **the duplicated dead arms removed**" | The renumber landed but **31 conflicting / 29 dead arms remain in `to_u16`** and **7 contradictory / 21 dead arms remain in `from_u16`**, and the renumber *created* a 78..84 collision that yields **7 round-trip failures** on the live save path. Verdict on the DONE row: **FAIL** | `npc.rs:850` `to_u16`, `:1105` `from_u16`, `:887-893` vs `:1044-1050`; `app/saveglue.rs:107` (write), `app/mod.rs:1980` (read); `app/netglue.rs:385`, `:1044`, `:1504`, `:2060` | 34-id-sets-audit.md:183-194 |
-| U-02 | `ANALYSIS.md:3024-3027`: "the `to_u16` id map's pirate/martian collision … renumbered to 78-82/83 through all three tables, **the duplicated dead arms removed**" | Same as U-01 — the claim is false and the cleanup was never done | as U-01 | 34-id-sets-audit.md:183-194 |
-| U-03 | `ROADMAP.md:64`: "Renderer (atlas, instancing, zoom, frame cache) | ✅ | **2 draw calls**; G6 cache; zoom 1.0–2.0" | The port issues **one `pass.draw` per non-empty range** → up to **6** per frame, and with `TR_POST=1` the frame is 3 + 3 plus 1..4 filter passes. The "2 draw calls" claim is wrong | `tr-render/src/sprite.rs::draw_ranges` (1195-1239), `tr-render/src/post.rs::MAX_CHAIN`, `frame.rs:1774` (`BENCH draws=`) | 41-render-pipeline.md:161-166 |
-| U-04 | `ROADMAP.md:66`: "Lighting | ✅ | scanner + blur + **4 modes** + sun/moon light (M1.5-LIGHT-3)" | The 1442-line `LegacyLighting` engine is unported; White/Retro/Trippy are shader approximations of the *style descriptors*, not the engine. The "4 modes" claim is true only of the descriptors | `params.rs::LightStyle::shade` (`:116-148`); `LegacyLighting.cs:202`, `:851`, `doColors_Mode0..3_Swipe` `:1087/1192/1273/1331` | 10-lighting.md:147-149 |
-| U-05 | `ROADMAP.md:73`: "NPC families, town, bosses, events | ✅ | 124 M4 rows through `M4-EVENT-19`" | The AI family layer covers **~60 of 128** vanilla families; **68 of the 128 `aiStyle` arms have no Rust kind**, and the two biggest (aiStyle 3, the fighter family of 155 vanilla types, and aiStyle 7, the 52 town types) are archetype approximations. Module 40's verdict on this summary row is **FAIL** | `npc.rs::update_rng` match (4114-4413); `npc_ai.rs` (6 archetypes, 769 lines); 74 styles unreferenced (10, 15, 17–25, 31, 37, 41–44, 49, 50, 52, 53, 55–73, 83, 84, 86–92, 98–104, 111–122, 124–127) | 25-npc-ai-audit.md:247-251, :367-382 |
-| U-06 | `ROADMAP.md:604-605` (§14 header): "**Rust** `npc.rs`, `world_sim/npcs.rs` · 🟡 **3 kinds**" | The roster is **182 kinds** (`NpcKind` 31-686), not 3; the header misdirects the next agent | `crates/tr-app/src/npc.rs:31-686`; `npc.rs:694-701` (the 8 slime-colour variants) | 25-npc-ai-audit.md:367-371 |
-| U-07 | `ROADMAP.md:1409` (M4-NPC-4, `✅`): "the Hornet (**3.25/0.018**, `:50322-50323`)" | The C# Hornet (type 42) is **3.5/0.021**; the port ships the **type-205** values. The cited ranges are wrong too (`:50322-50323` = type 619, `:50328-50329` = type 252, the Meteor Head is at `:50374-50377`). The row is self-invalidating | `npc_ai.rs::HoverParams::HORNET` (177-181), bound at `npc.rs:4382`; `NPC.cs:50341-50344`, `:50366-50367`, `:50374-50377` | 40-port-done-verification.md:39-40, :84-95 |
-| U-08 | `ROADMAP.md:1353` (M2-COMBAT-1, `✅`): "`Player::hurt` iframe 40 ticks" | The C# floors `num2` to ≥ 1 **after** the endurance multiply; the port does not, and `hurt_inner`'s comment asserts the opposite of the source → a 1-damage hit with enough endurance deals 0 in the port and 1 in vanilla | `Player.cs:38304`, `:38378-38381`; `player.rs::hurt_inner` (2223-2243); `damage.rs::iframes_for` (172) | 40-port-done-verification.md:42, :98-103 |
-| U-09 | `ROADMAP.md:1436` (M4-DAMAGE, `✅`): "wired into the melee hit" | The **projectile**→NPC path never calls `strike_npc_damage`/`checkArmorPenetration`: every ranged hit skips defence halving and the ±15 % `DamageVar` roll. The row's own note excuses only the *contact* hit | `projectile.rs::damage_pve` (9460) → `hurt_from_projectile` (9599); `Projectile.cs:13630-13649` | 04-player-combat.md:100-101, :141-146 |
-| U-10 | `ROADMAP.md:1513` (M4-EVENT-1a, `✅`): "the **2-second spawn pass** near the player while the invasion lasts" | The port fires `invasion_spawn_pick` **once per fixed step** with no rate roll and no nearby cap → ~20× the vanilla invasion density; C# forces `spawnRate = 20` / `maxSpawns = 5·(2+0.3·players)` | `world_sim/npcs.rs:3386-3423` (and `:3418` skips the natural spawn entirely); `NPC.cs:781-785` | 24-spawner-invasions.md:210-216 |
-| U-11 | `ROADMAP.md:1410` (M4-SPAWN-1, `✅`): "`GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order … remix/FTW/journey/skyblock/fairy branches constants-off" | The chain is faithful only through `NPC.cs:789`; **`:790-928`** (the skyblock branch, the **town-NPC distribution block** and the luck tail) is not ported — and the port's own doc comment at `spawner.rs:193-196` claims the random town-NPC sub-branches are kept while the function **discards its `rng`** (`:203`) | `spawner.rs::get_spawn_rate` (202-368), `:203`; `NPC.cs:473-810`, `:799-928` | 24-spawner-invasions.md:202-210, :262-265 |
-| U-12 | `ROADMAP.md:1339` (M2-PHYS-3, `✅`): "the four wet flags (`wet`/`lavaWet`/`honeyWet`/`shimmerWet` **from the mid-tile liquid kind**, `Player.cs:27728-27910`), the in-liquid gravity **/ 3** with the both-ways fall cap at `maxFallSpeed / 3` (`Player.cs:27008-27017`)" | C# rebases gravity/maxFallSpeed/jumpHeight/jumpSpeed **per liquid** at `Player.cs:24382-24437` (water 0.2/5.01/30/6.01, honey 0.1/3.01, merman 0.3/7.01, trident 0.25/6.01, shimmer 0.15). The cited `:27008-27017` is the mount/wings arm, **not** the plain wet path. The port's `GRAVITY/3` + `jump_height 15` gives a **2× jump-height error** in liquids, and `maxFallSpeed += 0.01f` is missing | `Player.cs:24382-24437`, `:26962-27020`, `:27339`, `:27354`, `:27365`; `player.rs:3190-3198`, `:2516-2517`, `:30` | 03-player-core.md:154-183 |
-| U-13 | `ROADMAP.md:938` (§23): "events **bubble child→parent**" | There is **no parent walk** in the Rust pointer machine: events are raised on the hit element only and ancestor `IsMouseHovering` is never set | `UIElement.cs:414-547` vs `pointer.rs:154-224` | 18-ui-framework.md:221-226 |
-| U-14 | `ROADMAP.md:937` (§23): "parent `UIList` gives infinite height (`UIElement.cs:285-321`)" | The ∞-height parent special case is **not modelled** (`uistate.rs:73-75`); percent-height children of a list resolve against the list rect | `UIElement.cs:288-291` vs `uistate.rs:73-75` | 18-ui-framework.md:215-220 |
-| U-15 | `ROADMAP.md:1217` (C4): "Banded parallel autotiling (128 rows) | Framing **295 → ~70 ms** … ; **outputs identical**" | No golden test proves equality against the C# frames; the `variant()` hash is position-only, so the band-parallel scheme is *sound* but *unproven* | `framing.rs::frame_world` (1010-1063), `variant()` (134-146); `Framing.cs:319`, `:390-395` | 08-tile-framing.md:146-149 |
-| U-16 | `ROADMAP.md:1305` (TILE-DRAW-4, `✅`): "shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras`" + `ROADMAP.md:149` "Paint/coatings: `TilePaintSystemV2.cs` — done (TILE-DRAW-4)" | The C# **bakes a recolored copy** per `(type, style, paint)` in `TilePaintSystemV2.RequestTile`/`PrepareAllRequests`; the port recolours **per pixel** in the shader and admits it "shades in the sRGB domain". The DONE rests on an unprovable equivalence (the compiled HLSL is not in the decompile) and the per-tile cost now scales with painted pixels | `TilePaintSystemV2.cs:369-541`; `sprite.wgsl::paint_recolor` (158-169), the `PaintID` sRGB table (222-226), `sprite.wgsl:151-158` | 09-tile-drawing.md:209-218 |
-| U-17 | `ROADMAP.md:1312` (M1.4-WEATHER-1, `✅`): "Already ported and verified: the walk + extreme re-rolls + the ±0.8 clamp, **the 0.35 walk cap**, …" | `Wind::any_player_120_life` is set `true` in `Wind::new` and **never written anywhere in `crates/`** → the low-wind limit is dead code and untested; wind never damps to ≤ 0.35 for a low-life player | `wind.rs:75`, `:108`, `:199`, `:211`, `:232`; `Main.cs:58863-58871`, `:58889` | 16-weather.md:220-224 |
-| U-18 | `ROADMAP.md:1300` (M1.4-BG-11/16, `✅`): "clouds/stars/horizon" | `make_clouds` is a deterministic **stand-in** (`NUM_CLOUDS_STAND_IN = 100`), there is no live `Cloud.addCloud`/`UpdateClouds`, and the drift is a constant light wind instead of `windSpeedCurrent * 9 * GetParallax` → `change_rain`'s `numClouds > 150` / `> 100` bands are unreachable, so rain strength only ever reaches the storm band | `render/sky.rs::make_clouds` (270-342); `rain.rs:57-63`, `:713-722`; `Cloud.cs:140-147`, `:170-177`, `:391` | 16-weather.md:119, :235-239 |
-| U-19 | `ROADMAP.md:1311` (M1.4-BG-21, `✅`): "Out: … transition event rolls + the blood-moon/eclipse cooldown force-resets (**M4** — `Main.cs:65350`, `65422`)" | They are **landed**: `clock.rs::advance_time` `:37-38` (blood moon) and `:72` (eclipse) call `world.rs::roll_blood_moon` `:565` / `roll_eclipse` `:594`. The row's "Out (M4)" note is stale, and the *real* gaps (`tenth_anniversary` hardcoded false, `spawn_eye` false, the `stopEvents` gate, the pumpkin/snow-moon clearings `Main.cs:64837-64845`) are unstated | `Main.cs:65333-65352`, `:65421-65430`, `:64837-64845` | 16-weather.md:145, :266-272 |
-| U-20 | `ROADMAP.md:401` (§8 header): "**Rust** ⬜ (none yet) · ⬜" | `regen.rs` (706 lines, 18 tests), `buffs.rs` (599 lines, 17 tests) and `luck.rs` (1 026 lines) all exist; the task rows *below* the header (`✅ M2-BUFF-2 regen engines`) contradict it | `crates/tr-app/src/{regen,buffs,luck}.rs`; `ROADMAP.md:1345-1346` | 03-player-core.md:233-236 |
-| U-21 | `ANALYSIS.md:2120-2124`: "**No `.plr` reader/writer** (spec §9.4). Characters are the implicit session entry plus optional `TR_FAKE_CHARS` fakes; Create records the session draft instead of writing a character file. … a scanned `.plr` is skipped like `Player.GetFileData`'s null return." | The reader is live and the port **writes** players: `save_list.rs:291` reads real `.plr` files and `session.rs:141-176` writes one via `player_file::write_player_file`. The same stale sentence survives in `flow.rs:73` and in the user-visible notice `app/mod.rs:1482` ("no save-file writer") | `PlayerFileData.CreateAndSave` (`PlayerFileData.cs:50-63`); `Player.cs:54356-54360` (the three starter items) | 19-ui-screens-frontend.md:326-334 |
-| U-22 | `PORT_MAP.md:180`: "`Main.LoadPlayers`/`LoadWorlds`, … | `crates/tr-app/src/ui/save_list.rs` | **partial (no `.plr` reader; metadata stand-ins)**" | The `.plr` reader is live and the port writes players; only the metadata stand-ins remain | `save_list.rs:167`/`:255`/`:397`/`:415`; `Main.cs:4001-4030`/`:3959-3981`/`:4772-4791`/`:4796-4813` | 19-ui-screens-frontend.md:335-337 |
-| U-23 | `ROADMAP.md:78`: "Audio | 🟡 | … + the **8-cue bank**; **front-end music and UI sounds missing (BUG-01/17)**" | Both BUG-01/BUG-17 were fixed on 2026-11-10 and the cue table now holds **26** entries (13 names actually played of **527** shipped `.xnb` assets) | `audio.rs::SFX_CUES` (22-75); `app/mod.rs::update_menu_music` (937-953); `frame.rs:295-297` | 32-sound-audio.md:238 |
-| U-24 | `PORT_MAP.md:241`: "`Audio/*`, `SoundEngine` | … | **partial** (2026-11-08, M6-AUDIO-1: …)" | The row predates BUG-01/BUG-17 and does not quantify the coverage: 64 Rust play sites against 1 411 C# `PlaySound` + 64 `PlayTrackedSound` sites; missing families include footsteps/run, tink, research, grass, shatter, camera, chat, drip, zombie, splash, drown, max-mana, double-jump and coins | `LegacySoundPlayer.cs:360-1382`; `SoundEngine.cs:83-149` | 32-sound-audio.md:227 |
-| U-25 | `ANALYSIS.md:81`: "| Audio | `Audio/*`, XACT banks | ~4 000 | 🟡 | Runtime `SoundEffectReader`, **eight PCM cues** through `rodio`, music selector; **XACT/WMA playback pending** |" | The XACT/ADPCM music path **is** ported (`tr-content/src/xact.rs`, `adpcm.rs`; `audio.rs::MusicSystem`); the row understates the port and overstates the gap | `tr-content/src/xact.rs::parse_sound_bank` (332), `parse_wave_bank_entries` (337), `get_cue` (318), `music_track` (327); `tr-content/src/adpcm.rs::decode_msadpcm` (31) | 32-sound-audio.md:129-135, :221-227 |
-| U-26 | `ROADMAP.md:250`/`PORT_MAP.md:250`: "LZX decompression (`ReLogic/Content/Lzx*`) | `crates/tr-content/src/lzx.rs` | **done**" | **No such file exists** in `decompiled-libs` — ReLogic's `XnbReader` is a 55-line shim over FNA's `ContentManager` and delegates the whole format parse to FNA; the decoder came from MonoGame/Xbox. The citation is wrong | `XnbReader.cs:10` (`InternalContentManager : ContentManager`), `:24` (`ReadAsset<T>("XnaAsset", null)`), `:29` (`OpenStream`) | 37-relogic-libs.md:131, :276-280 |
-| U-27 | `ROADMAP.md:1305`/`INDEX.md:62`: the module label "(content pipeline, **XNA, JSON**)" | ReLogic contains **no** JSON serializer (Terraria uses Newtonsoft.Json on the game side) and **no** XNA types (those are FNA dependencies) | `ReLogic.Content.Readers.XnbReader.cs`; `Terraria.Initializers.AssetInitializer.cs:59`; `Terraria.Preferences`; `Terraria.Localization.LanguageManager` | 37-relogic-libs.md:40-48, :201 |
-| U-28 | `ROADMAP.md:335`: "keep `deterministic_for_seed` **FNV proof**" | `deterministic_for_seed` has **no** FNV in it — it generates the same world twice and asserts element-wise equality (self-consistency); the FNV-ish fold lives in `world_hash.rs`, is the port's own mix, and is re-pinned ~20 times. The pin cannot detect a C#-divergent stream | `worldgen/mod.rs:259-276`; `world_hash.rs:9-13`, `:18-25`, `:64-172`; `WorldGenerator.cs:517-545` | 35-rng-utils.md:236-242, :171-196 |
-| U-29 | `ROADMAP.md:103`: "(`Main.cs:17747-17815`) — a *named RNG stream* per stage" | The Rust has **no** named-stream registry: `App` holds seven independent `u64` streams seeded with arbitrary XOR constants, one of which (`craft_rng: 1`) is not seed-derived at all | `Main.cs:3204-3215`, `:17749-17809`; `app/mod.rs:180`, `:303`, `:609`, `:612`, `:634`, `:2700` | 35-rng-utils.md:221-226 |
-| U-30 | `ROADMAP.md:1608` (M6-SAVE-1, `✅`): "**all 11 `.wld` sections read + written**" | The tile section drops the four wire bits (`b2` 0x02/0x04/0x08, `b3` 0x20) → the wire state is lost on a `.wld` round trip and the run boundaries differ from C#'s `isTheSameAs`. *The row's own tail does list "wires-not-written", so the gap is admitted in the body while the headline over-claims.* | `wld/sections/tiles.rs:103-105`, `encoded_same` (219-259); `Tile.cs:155-197`; `WorldFile.cs:1432-1604` | 42-save-load-audit.md:228-238 |
-| U-31 | `ROADMAP.md:80`: "Saves | 🟡 | `.wld` 11 sections + `.trwld` **v10**, `.plr` read/write (M6-SAVE-2); **favourites round-trip broken (BUG-03)**; M6-SAVE-1b parked" | `.trwld` is now **v13** (ROADMAP.md:1609 records it landing 2026-11-11) and BUG-03 is **closed** — `player_file.rs` round-trips the favourited bits (test `the_favorited_bits_survive_a_save_and_a_load`) | `save.rs::VERSION` 12 → 13; `player_file.rs::write_player_bytes` (339) / `read_player_file` (135) | 42-save-load-audit.md:305-307 |
-| U-32 | `ROADMAP.md:69`: "World generation | 🟡 | … 🟡 DUNGEON, TEMPLE, STRUCT-5 … ; **parked LIVING-trees**" | `living_trees.rs` (1 113 lines, 12 tests) is a faithful port — its own catalog row (`ROADMAP.md:1571`) says done — and M5-DUNGEON/M5-TEMPLE are 🔄/🟡 partial, not parked | `worldgen/living_trees.rs`; `WorldGen.cs:15476-15715`, `:27973` | 12-worldgen.md:311-315 |
-| U-33 | `ROADMAP.md:73` vs `ROADMAP.md:1534`/`:1540-1550`: the snapshot says "🟡 the display rows M4-NPC-3c/3h..3r" while the catalog marks the same ids `✅` | The ROADMAP **contradicts itself** about the same rows and nothing states which is current | `ROADMAP.md:73`, `:1534`, `:1540-1550` | 40-port-done-verification.md:45, :113 |
-| U-34 | `ROADMAP.md:1062` (§27): "NetModules: … modules: Text, Bestiary, CreativePowers(+Permissions/Unlocks/Report), Liquid, Particles, Ping, Ambience, TeleportPylon, **Debug**" | The port carries **11 of 12** NetModules — **`NetDebugModule` has no Rust counterpart** (`module_id` lists 11) | `netmodules.rs::module_id` (34-45) | 17-netcode.md:164-167 |
-| U-35 | `ROADMAP.md:1067-1071` (§27 Tasks): "✅ done 2026-11-09 — M6-NET-protocol (umbrella), M6-NET-1 … M6-NET-5 …" | Only **25 of the 163** message ids are ported and the 774 C# `SendData` sites funnel into ~10 Rust send paths; the join bundle (`SyncConnectedPlayer`/`SyncOnePlayer`/`SyncOnePlayer_ItemArray`) is not reproduced and `SendNPCHousesAndTravelShop`/`SyncChestContentsForSection`/`SyncNPCsForSection` are absent | `net.rs::id` (56-95); `NetMessage.cs:2806-2853`, `:2724`, `:2741` | 17-netcode.md:104-108, :295-297 |
-| U-36 | `ROADMAP.md:1608`/`:1609` (M6-SAVE-1 / M6-SAVE-1b) and `ROADMAP.md:80`: the `.wld`/`.trwld` twin set | The `.trwld` still has no native twin for the **TownManager rooms, the bestiary sights/chats and the CreativePowers table** (they live on the App side) and the `.wld` writes placeholder header values | `save.rs::VERSION` 12 → 13 (the `VERSION` doc records the gap); `sections/header.rs:49-60`, `sections/flags.rs:220-274` | 42-save-load-audit.md:99, :239-247 |
-| U-37 | `ROADMAP.md:1412` (M4-TOWN-1, `✅`): "the move-in: `town.rs` ports `QuickFindHome`'s three-pass scan … each through `check_room` + `room_needs`" | The scan passes and the furniture gate match, but the **score gate (`hiScore > 0`) and the score-best home tile do not** — `town.rs::scan_spot` returns the scan origin, so a town NPC can be homed on a spot vanilla would reject. The row also cites `RoomNeeds` as `:5717-5756` and `QuickFindHome` as `:5759-5805`, while the current decompilation has them at `:5679-5730` and `:5732-5794` | `WorldGen.cs:5679-5730`, `:5732-5794`, `:5858-5992`, `:5983-5988`; `town.rs::scan_spot` (50-57) | 29-town-npc-housing.md:239-244, :288-293 |
-| U-38 | `ROADMAP.md:1414` (M4-TOWN-2, `✅`): "`process_mood` ports `ShopHelper.ProcessMood` (`ShopHelper.cs:95-174`)" | The **exclusion block** at `ShopHelper.cs:103-106` is absent: only the Travelling Merchant (368) returns early, while the comment claims the remix-world and the 37/453 exclusions are implemented → remix worlds get real mood prices | `happiness.rs:318-328`; `ShopHelper.cs:103-106`, `:363-371` | 29-town-npc-housing.md:245-251 |
-| U-39 | `ROADMAP.md:1705` (BUG-20): "trash slot: quick-trash (`cursorOverride == 6`), clear on death, the +5/+168 chest-shop offset" with no done text | The code and three `bug20_*` tests are on main (`ui/inventory.rs::trash_rect` (729-736), `app/mod.rs::trash_swap` (1192-1193), `bug20_shift_click_moves_the_stack_to_the_trash`, `bug20_death_clears_the_trash`, `bug20_the_trash_shifts_with_the_chest_open`) | `Main.cs:42349-42366`; `Player.cs:54304` | 20-ui-ingame.md:200-206 |
-| U-40 | `ROADMAP.md:1305`/`:149` (TILE-DRAW-4) and `ROADMAP.md:149`: "Paint/coatings: `TilePaintSystemV2.cs` — **done**" (see U-16) + `ROADMAP.md:1247`'s parallel-framing claim (see U-15) | (duplicates of U-15/U-16 — listed once in §3) | — | 09-tile-drawing.md:209-218 |
-| U-41 | `ROADMAP.md:1319` (M1.4-TO, `✅`): "remaining: **the full-registry generator**" | This one is *admitted*; it is listed here only because the registry is 36 hand-written consts against C#'s `TileObjectData.Initialize` (`:2110`) — every added object style is a manual transcription | `TileObjectData.cs:2110`; `tileobject.rs::TABLE` (293-330) | 08-tile-framing.md:143-145 |
-| U-42 | `ROADMAP.md:1404` (M4-NPC-4's own cited C# anchors `:50304-50305` / `:50322-50323` / `:50328-50329`) | The row cites the wrong `if` branches (type 619 / type 252 / the `targetData` block), so it cannot be re-verified by following its own anchors — the same class of error as U-07 | `NPC.cs:50299-50301`, `:50322-50323`, `:50328-50329` | 40-port-done-verification.md:91-95 |
-| U-43 | `ROADMAP.md:1290`-area §12 "M2-BUFF-4 stat/movement debuffs ✅" and the M2-BUFF-3/5/7/8 rows | The **effect table** behind them is ~15 % ported: the C# `UpdateBuffs` chain is 251 arms over ~290 ids and the Rust covers ≈40 ids. Unported ids that change play include 3 Swiftness / 5 Ironskin / 7 MagicPower / 16 Archery / 113 Lifeforce / 115 Rage / 117 Wrath / 159 Sharpened / 165 Dryad's Ward / 199 NoBuilding / 332-334 hunger / 396 Mana Heat | `Player.cs:9855-12069`; `player.rs` inline effect `match` (2839-2930); `derive_dot_inputs` (4260) | 28-buffs-debuffs.md:206-214 |
-| U-44 | `ROADMAP.md:1181-1226` (M1.5 Phase 1 + Phase 2): "**pixel-identical (0 differing pixels)**" + the timing tables | Measurement-only claims with **no code artefact** to re-read; the neighbouring Phase 3 table (`:1199-1205`) is still "in progress" → the section is a mixed state that cannot be re-verified statically | `ROADMAP.md:1181-1226`, `:1199-1205` | 40-port-done-verification.md:46, :120-123 |
+## 4. Unadmitted claims -- the docs vs the code
+
+Every row where the current docs actively assert something the research **disproves or
+contradicts**, plus the rows where the docs are **silent** about a gap the research found.
+342 unadmitted rows in total: **58 CLAIM-OTHERWISE** (the docs assert the opposite) and
+**284 SILENT** (the docs never mention it).
+
+### 4.0 Where each claim lives now (the doc reorganisation map)
+
+The old `docs/ROADMAP.md` was **renamed to `docs/ATLAS.md`** (per-subsystem atlas + the
+legacy task rows, kept verbatim, 550 362 B) and a **new `docs/ROADMAP.md`** (73 789 B) was
+written from this audit. Consequences for every citation below:
+
+* Every `ROADMAP.md:NN` citation in the research files resolves against **`ATLAS.md:NN+7`**
+  from line 64 onward (verified on 25 sample lines). The *C#-side* citations are unchanged.
+* `docs/ANALYSIS.md` (704 472 B) and `docs/PORT_MAP.md` (115 573 B) kept their structure;
+  a few PORT_MAP line numbers drifted by +1 (`:180` -> `:181`).
+* The new `docs/ROADMAP.md` has **no** `docs/ROADMAP.md:NN` self-citations left -- it cites
+  the atlas as "(atlas)".
+
+**"Already addressed?"** = does the new `docs/ROADMAP.md` carry a task row (or a
+"Documentation corrections" entry) that closes the claim? `doc-fix` = the *text* still needs
+a one-line correction; `task` = the underlying code needs the task.
+
+### 4.1 `docs/ATLAS.md` -- the old roadmap (21 rows)
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-01 | ATLAS.md:1480 (was ROADMAP.md:1469, M4-EVENT-4b DONE) | "the pirate/martian id collision 68-72 renumbered to 78-82/83 (plus the render_key + from_u16 tables), **the duplicated dead arms removed**" | The renumber landed but **31 conflicting / 29 dead arms remain in `to_u16`** and **7 contradictory / 21 dead in `from_u16`**, and the renumber *created* the 78..84 collision -> 7 round-trip failures on the live save + netcode paths. Verdict on the row: **FAIL** | `S1-F-2` + corrections row 8 (ANALYSIS.md:3024-3027) | CLAIM-OTHERWISE |
+| U-02 | ATLAS.md:71 (was :64) | "Renderer ... DONE \| 2 draw calls; G6 cache; zoom 1.0-2.0" | `sprite.rs::draw_ranges` (1195-1239) issues **one `pass.draw` per non-empty range** -> up to **6** per frame (3 + 3 plus 1..4 filter passes with `TR_POST=1`) | `S1-G-12` + corrections row 1 | CLAIM-OTHERWISE |
+| U-03 | ATLAS.md:73 (was :66) | "Lighting \| DONE \| scanner + blur + **4 modes** + sun/moon light" | The 1442-line `LegacyLighting` engine is unported; White/Retro/Trippy are shader approximations of the *style descriptors* (`params.rs::LightStyle::shade` `:116-148`) | `S1-E-19` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-04 | ATLAS.md:76 (was :69) | "World generation \| PARTIAL \| ... PARTIAL DUNGEON, TEMPLE, STRUCT-5 ...; **parked LIVING-trees**" | `living_trees.rs` (1 113 lines, 12 tests) is a faithful port -- its own catalog row (ATLAS.md:1578) says done -- and M5-DUNGEON/M5-TEMPLE are in-progress/partial, not parked | `S1-K-2` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-05 | ATLAS.md:80 (was :73) | "NPC families, town, bosses, events \| DONE \| 124 M4 rows through `M4-EVENT-19`" | The AI family layer covers **~60 of 128** vanilla families; **69 of the 128 `aiStyle` arms have no Rust kind**, and the two biggest (aiStyle 3 = 155 types, aiStyle 7 = 52 types) are archetype approximations | `S1-D-2`/`S1-D-3` (task); the scoreboard row 25 is already PARTIAL | CLAIM-OTHERWISE |
+| U-06 | ATLAS.md:611-612 (was :604-605, section 14 header) | "**Rust** `npc.rs`, `world_sim/npcs.rs` - PARTIAL **3 kinds**" | The roster is **182 kinds** (`NpcKind` 31-686) | `S1-D-3` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-07 | ATLAS.md:1416 (was :1409, M4-NPC-4 DONE) | "the Hornet (**3.25/0.018**, `:50322-50323`)" | C# `NPC.cs:50341-50344` = **3.5/0.021** for type 42 -- the port ships the **type-205** values (`:50366-50367`). The cited ranges are wrong too (`:50322-50323` = type 619, `:50328-50329` = type 252) | `S1-D-1` + corrections row 5 | CLAIM-OTHERWISE |
+| U-08 | ATLAS.md:1360 (was :1353, M2-COMBAT-1 DONE) | "`Player::hurt` iframe 40 ticks" | C# floors `num2` to >= 1 **after** the endurance multiply (`Player.cs:38378-38381`); `player.rs::hurt_inner` (2223-2243) subtracts without the clamp and its comment asserts the opposite of the source | `S1-C-3` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-09 | ATLAS.md:1443 (was :1436, M4-DAMAGE DONE) | "wired into the melee hit" | The **projectile** -> NPC path never calls `strike_npc_damage`/`checkArmorPenetration` (`Projectile.cs:13630-13649` vs `projectile.rs:9703` -> `npc.rs:4062`) -- every ranged hit skips defence halving and the +/-15 % roll | `S1-C-2` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-10 | ATLAS.md:1520 (was :1513, M4-EVENT-1a DONE) | "the **2-second spawn pass** near the player while the invasion lasts" | The port fires `invasion_spawn_pick` **once per fixed step** with no rate roll and no nearby cap (`world_sim/npcs.rs:3386-3423`) -> ~20x the vanilla density; C# forces `spawnRate = 20` / `maxSpawns = 5*(2+0.3*players)` (`NPC.cs:781-785`) | `S1-F-12` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-11 | ATLAS.md:1417 (was :1410, M4-SPAWN-1 DONE) | "`GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order ... remix/FTW/journey/skyblock/fairy branches constants-off" | Faithful only through `NPC.cs:789`; **`:790-928`** (skyblock, the town-NPC `Main.rand` block, the luck tail) is not ported -- and `spawner.rs:203` **discards its `rng`** while the doc comment at `:193-196` claims the town sub-branches are kept | `S1-F-11` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-12 | ATLAS.md:1346 (was :1339, M2-PHYS-3 DONE) | "the four wet flags ... **from the mid-tile liquid kind**, `Player.cs:27728-27910`), the in-liquid gravity **/ 3** ... (`Player.cs:27008-27017`)" | C# rebases gravity/maxFallSpeed/jumpHeight/jumpSpeed **per liquid** at `Player.cs:24382-24437` (water 0.2/5.01/30/6.01, honey 0.1/3.01, merman 0.3/7.01, trident 0.25/6.01, shimmer 0.15); the cited `:27008-27017` is the mount/wings arm. The port's `GRAVITY/3` + `jump_height 15` = a **2x jump-height error** in liquids | **NO TASK ROW** -- see U-27 | CLAIM-OTHERWISE |
+| U-13 | ATLAS.md:944-946 (was :937-939, section 23) | "parent `UIList` gives infinite height" + "events **bubble child->parent**" | Neither exists: `uistate.rs:73-75` does not model the infinite-height parent, and `pointer.rs:154-224` raises events on the hit element only (`UIElement.cs:288-291` / `:414-547`) | `S1-H-1`/`S1-H-2` (task) + corrections row 4 (the bubble only) | CLAIM-OTHERWISE |
+| U-14 | ATLAS.md:1224 (was :1217, C4) | "Banded parallel autotiling (128 rows) ... **outputs identical**" | No golden test proves equality against the C# frames; the `variant()` hash is position-only, so the band-parallel scheme is *sound* but *unproven* | `S1-A-3` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-15 | ATLAS.md:156 + :1312 (was :149 + :1305, TILE-DRAW-4 DONE) | "Paint/coatings: `TilePaintSystemV2.cs` -- **done**" / "shader-side paint recolor (compiled HLSL not in decompile)" | The C# **bakes a recoloured copy** per (type, style, paint) (`TilePaintSystemV2.cs:369-541`); the port recolours **per pixel** in `sprite.wgsl::paint_recolor` (158-169) and admits it "shades in the sRGB domain" (`sprite.wgsl:151-158`) -> the DONE rests on an unprovable equivalence | `S1-G-2` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-16 | ATLAS.md:1319 (was :1312, M1.4-WEATHER-1 DONE) | "Already ported and verified: the walk + extreme re-rolls + the +/-0.8 clamp, **the 0.35 walk cap**, ..." | `Wind::any_player_120_life` is set `true` in `Wind::new` `:108` and **never written anywhere in `crates/`** -> the low-wind limit is dead code and untested (`Main.cs:58863-58871`) | `S1-L-2` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-17 | ATLAS.md:1307 (was :1300, M1.4-BG-11/16 DONE) | "clouds/stars/horizon" | `make_clouds` is a deterministic **stand-in** (`NUM_CLOUDS_STAND_IN = 100`), no live `Cloud.addCloud`/`UpdateClouds`, and the drift is a constant light wind instead of `windSpeedCurrent * 9 * GetParallax` (`Cloud.cs:391`) -> `change_rain`'s `numClouds > 150`/`> 100` bands are unreachable | `S1-L-2` (task); **no doc-fix row** | CLAIM-OTHERWISE |
+| U-18 | ATLAS.md:1318 (was :1311, M1.4-BG-21 DONE) | "Out: ... transition event rolls + the blood-moon/eclipse cooldown force-resets (**M4** -- `Main.cs:65350`, `65422`)" | They are **landed** (`clock.rs:37-38`, `:72` -> `world.rs:565`/`:594`); the *real* gaps (`tenth_anniversary` hardcoded false, `spawn_eye` false, the `stopEvents` gate, the pumpkin/snow-moon clearings `Main.cs:64837-64845`) are unstated | **NO TASK ROW** -- see U-28 | CLAIM-OTHERWISE |
+| U-19 | ATLAS.md:408 (was :401, section 8 header) | "**Rust** NOT YET (none yet)" | `regen.rs` (706 lines, 18 tests), `buffs.rs` (599, 17 tests) and `luck.rs` (1 026) all exist; the rows *below* the header (`DONE M2-BUFF-2 regen engines`) contradict it | **NO TASK ROW** -- see U-29 | CLAIM-OTHERWISE |
+| U-20 | ATLAS.md:1364 (was :1357, M2-MOUNT-1 DONE) | "the **12-row** `MountData` table" | The table now carries **50 rows** (12 ground + 11 flyer + 27 cart, `mount.rs:1305-1356`); the in-code comments claiming "no cart rows"/"no row 56" are also false | `S1-L-9` (task) + corrections row 19 | CLAIM-OTHERWISE |
+| U-21 | ATLAS.md:87 (was :80) | "Saves \| PARTIAL \| `.wld` 11 sections + `.trwld` **v10**, `.plr` read/write (M6-SAVE-2); **favourites round-trip broken (BUG-03)**" | `.trwld` is now **v13** (ATLAS.md:1616 records it landing 2026-11-11) and BUG-03 is **closed** (`player_file.rs` round-trips the favourited bits) | `S1-J-1`..`S1-J-8` (task) + corrections row 20 | CLAIM-OTHERWISE |
+
+### 4.2 `docs/ROADMAP.md` -- the **new** audited roadmap: its own gaps (8 rows)
+
+The new roadmap is the audited view, but it is **not** complete: it lists 42 subsystems
+while only 39 have a research report, and several headline gaps in its own scoreboard have
+**no task row**.
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-22 | ROADMAP.md:11 and :49-52 | "Research corpus: `docs/research/` -- **42 module reports**, one per subsystem" | Only **39** exist: `21-recipe-crafting.md`, `23-wiring-tile-entities.md` and `33-localization.md` are missing | **fix the corpus line** | CLAIM-OTHERWISE |
+| U-23 | ROADMAP.md:103, :105 (the scoreboard rows for 21 / 23 / 33) | "\| 21 \| Recipes / crafting \| PARTIAL \| see [21](research/21-recipe-crafting.md) \|" | The three links are **broken** -- those files do not exist, and the rows carry no verdict | **write the three reports or drop the rows** | CLAIM-OTHERWISE |
+| U-24 | ROADMAP.md:85 (scoreboard row 03) | "in-liquid gravity uses /3 for *every* liquid instead of the C#'s per-liquid rebase; wet `jumpHeight`/`jumpSpeed` missing -> **water jumps 2x too weak**" | The gap is named correctly -- but **no `S1-*` catalog row carries it**: `grep` for `24382`, `24437`, `wet statics`, `M2-PHYS-3`, `maxFallSpeed` returns **no catalog row**. The fix exists only as research seed R-03-1 / R-03-2 | **ADD A TASK** (R-03-1, R-03-2) | CLAIM-OTHERWISE |
+| U-25 | ROADMAP.md:86 (scoreboard row 04) + :87 (row 05) | the dodge family, the projectile->NPC `DamageVar`+defence and the `num2<1->1` floor | All three have task rows (S1-C-1/2/3) -- but the ROADMAP's own scoreboard does not mention the two further module-03 findings with no row: the respawn life/immuneTime (`Player.cs:37596-37611`, `:37661-37668`) and the `expert = false` hardcode that makes `ScaleStats` unreachable (`NPC.cs:18146-18205`) | **ADD ROWS** (R-03-5, R-03-6, R-05-8) | CLAIM-OTHERWISE |
+| U-26 | ROADMAP.md:338 | the task id **`S1-J-6`** is used twice (the autosave-cadence row and the cloud-save row) | A duplicate id in the catalog's `deps` graph -- the second row can never be referenced unambiguously | **renumber the cloud row** | CLAIM-OTHERWISE |
+| U-27 | ROADMAP.md:87 (scoreboard row 05) | "182 kinds against 697 C# ids; `behindTiles` has no field" | `behindTiles` has a task row (S1-C-6) -- but `ScaleStats`/expert scaling, `GetAvailableNPCSlot` and the `UpdateNPC` tail phases **have no row** although the scoreboard's own headline admits them | **ADD ROWS** (R-05-5, R-05-6, R-05-7, R-05-8) | CLAIM-OTHERWISE |
+| U-28 | ROADMAP.md:131 (scoreboard row 16) | "rain and clouds are ported, but `any_player_120_life` has **no writer**" | Correct, and `S1-L-2` covers it -- but the **doc drift** the research found (`M1.4-BG-21` claiming the blood-moon/eclipse rolls are "Out (M4)" when they are landed, and `M1.4-BG-23` having no row at all) is **not** in the new roadmap | **ADD ROWS** (R-16-7) | CLAIM-OTHERWISE |
+| U-29 | ROADMAP.md:88 (scoreboard row 06) + :100 (row 18) + :117 (row 35) | the projectile dispatch (38/210), the UI framework gaps and the RNG substrate | All have rows -- but three **doc-level** claims survive: the atlas's `M2-PHYS-3` "wet flags ... done" (U-12), the atlas's "named RNG stream per stage" (ATLAS.md:110) and the atlas's "FNV proof" (ATLAS.md:342) | `S1-A-1`/`S1-A-2`/`S1-A-7` (tasks); **doc-fix rows missing** | CLAIM-OTHERWISE |
+
+### 4.3 `docs/ANALYSIS.md` (5 rows)
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-30 | ANALYSIS.md:2120-2124 | "**No `.plr` reader/writer** (spec 9.4). Characters are the implicit session entry plus optional `TR_FAKE_CHARS` fakes; Create records the session draft instead of writing a character file. ... a scanned `.plr` is skipped like `Player.GetFileData`'s null return." | The reader is live and the port **writes** players: `save_list.rs:291` reads real `.plr` files and `session.rs:141-176` writes one via `player_file::write_player_file` (`PlayerFileData.CreateAndSave` `PlayerFileData.cs:50-63`). The same stale sentence survives in `flow.rs:73` and the user-visible notice `app/mod.rs:1482` ("no save-file writer") | corrections row 7 + a task | CLAIM-OTHERWISE |
+| U-31 | ANALYSIS.md:3024-3027 | "the `to_u16` id map's pirate/martian collision ... renumbered to 78-82/83 through all three tables, **the duplicated dead arms removed**" | Same as U-01 -- false; the cleanup was never done | `S1-F-2` + corrections row 8 | CLAIM-OTHERWISE |
+| U-32 | ANALYSIS.md:4310 and :4341 ("Mounts framework (M2-MOUNT-1)") | "*a 12-row ground table*" / "**Partial table (12 of `MountID.Count` 66)**" | The table now carries **50 rows**; the deviation list is right in substance but its count is wrong | `S1-L-9` + corrections row 19 | CLAIM-OTHERWISE |
+| U-33 | ANALYSIS.md:81 | "\| Audio \| `Audio/*`, XACT banks \| ~4 000 \| PARTIAL \| Runtime `SoundEffectReader`, **eight PCM cues** through `rodio`, music selector; **XACT/WMA playback pending** \|" | The XACT/ADPCM music path **is** ported (`tr-content/src/xact.rs`, `adpcm.rs`; `audio.rs::MusicSystem`); the row understates the port and overstates the gap. The cue table holds **26** entries (13 played of **527** shipped `.xnb`) | `S1-E-21`..`S1-E-25` (tasks); **doc-fix row missing** | CLAIM-OTHERWISE |
+| U-34 | ANALYSIS.md:1406-1411 | the `tools/XnbExtract` C# PNG-extraction pipeline + the "15 100 / 15 123" asset count | The pipeline moved to the runtime decoder in `tr-content`; the counts are stale | corrections row 18 | CLAIM-OTHERWISE |
+
+### 4.4 `docs/PORT_MAP.md` (8 rows)
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-35 | PORT_MAP.md:181 (research cited :180) | "`Main.LoadPlayers`/`LoadWorlds`, ... \| `crates/tr-app/src/ui/save_list.rs` \| **partial (no `.plr` reader; metadata stand-ins)**" | The `.plr` reader is live and the port writes players; only the metadata stand-ins remain | corrections row 10 | CLAIM-OTHERWISE |
+| U-36 | PORT_MAP.md:241 (research cited :240) | "`Audio/*`, `SoundEngine` \| ... \| **partial** (2026-11-08, M6-AUDIO-1: ...)" | The row predates BUG-01/BUG-17 and does not quantify the coverage: **13 of 1 411** C# `PlaySound` sites play, **26 of 527** `.xnb` assets are in the table | `S1-E-21` + corrections row 11 | CLAIM-OTHERWISE |
+| U-37 | PORT_MAP.md:250 | "LZX decompression (**`ReLogic/Content/Lzx*`**) \| `crates/tr-content/src/lzx.rs` \| **done**" | **No such file exists** in `decompiled-libs` -- ReLogic's `XnbReader` is a 55-line shim over FNA's `ContentManager` (`XnbReader.cs:10`, `:24`, `:29`); the decoder came from MonoGame/Xbox | corrections row 12 | CLAIM-OTHERWISE |
+| U-38 | PORT_MAP.md:96 | "`Mount.cs` ... the **12-row ground table**" | 50 rows now | `S1-L-9` + corrections row 19 | CLAIM-OTHERWISE |
+| U-39 | PORT_MAP.md:157 (research/26's citation; the file has since drifted) | `ai_bubble` (aiStyle 70) listed as ported | There is **no `ai_bubble` function and no aiStyle-70 arm** anywhere in `crates/`; the style-70 row (FLAIRON_BUBBLE 405) has data but no behaviour | `S1-D-4c` (which itself cites the drifted line) | CLAIM-OTHERWISE |
+| U-40 | PORT_MAP.md:236 (research/26's citation; the file has since drifted) | the Vortex ritual (aiStyle 88/108) listed as ported/done | `ai_vortex_ritual`/`ai_vortex_bolt` exist and are unit-tested but **no dispatch arm calls them** -- only the test module does | `S1-D-4c` | CLAIM-OTHERWISE |
+| U-41 | PORT_MAP.md:179-180 | "`UIVirtualKeyboard.cs` -> `crates/tr-app/src/ui/keyboard.rs` -- done (visual; desktop layer only)" vs the non-goal that names the whole `GameContent/RGB/*` path | The keyboard **is** ported (`ui/keyboard.rs`, 1 325 lines) but the non-goal excludes it by wording -> the docs contradict each other | corrections rows 17 + 11 | CLAIM-OTHERWISE |
+| U-42 | PORT_MAP.md:254 | "sprite font (`DynamicSpriteFont`) ... **exact 1.4.5.8 parse**" | The shipped font `.xnb` stores the glyph list as a UTF-8 string with extra page-header fields, so the Rust parser discovers the tables *structurally* (`font.rs::read_page` :120) -- not "exact" | **no doc-fix row** | CLAIM-OTHERWISE |
+
+### 4.5 `README.md` (3 rows)
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-43 | README.md:171 | "**Networking** (multiplayer)" under "What is *not* implemented yet" | `net.rs` (3 392 lines) + `netglue.rs` (2 897) + `netmodules.rs` (528) and the M6-NET-1..5 rows (done 2026-11-09) contradict it -- **FALSE** | corrections row 15 + `S1-I-1`..`S1-I-4` | CLAIM-OTHERWISE |
+| U-44 | README.md:166-168 | "only the in-game options window vanilla opens over the inventory is still missing" | M7-UI-4 is **done 2026-11-11** -- **FALSE** | corrections row 15 | CLAIM-OTHERWISE |
+| U-45 | README.md:142-172 | the gap list covers gameplay only | It says **nothing** about Steam/WeGame, cloud saves, the Workshop/mod browser, peripheral RGB or dedicated-server mode, while the README's pitch is "the same game with a different engine underneath" (`README.md:3-8`) | corrections row 15 + `S1-I-6` | CLAIM-OTHERWISE |
+
+### 4.6 `docs/ARCHITECTURE.md` + `AGENTS.md` (8 rows)
+
+| # | Doc + line | The doc's claim | What the research found | New ROADMAP | Class |
+| --- | --- | --- | --- | --- | --- |
+| U-46 | AGENTS.md ("Architecture -- where things live") + ARCHITECTURE.md:12 | "**The god-files are gone.** Extend the matching module; never grow a new god-file." / "split the two god files -- `main.rs` 10 497 -> **86 lines**" | True only for the bootstrap (`main.rs` is now 163). **8 hand-written files exceed 5 000 lines**: `projectile.rs` 17 411, `npc.rs` 17 134, `player.rs` 10 098, `world_sim/npcs.rs` 9 057, `world_sim/editing.rs` 7 738, `edit.rs` 6 791, `growth.rs` 5 305, `smart_cursor.rs` 5 197 | `S1-D-2`, `S1-K-3/4`, `S1-B-8` + corrections row 14 | CLAIM-OTHERWISE |
+| U-47 | AGENTS.md ("Architecture") + ARCHITECTURE.md | "`App` state (**118 fields**)" | `App` has **257** direct fields (`app/mod.rs` L82) | `S1-B-8` + corrections row 13 | CLAIM-OTHERWISE |
+| U-48 | ARCHITECTURE.md:216 and :244 | "`app/` (~5.5 k lines) ... `ui/` (~15.5 k lines)" | actual **18 371 / 11 301 / 24 424 / 163** -- the sizes are ~2x low | corrections row 13 | CLAIM-OTHERWISE |
+| U-49 | ARCHITECTURE.md:16 | "the graph is rebuilt (graphify: **3 440 nodes** / 7 933 edges Rust-side)" | the current `graphify-out/graph.json` holds **13 769 nodes** (12 712 from `crates/`, 409 `docs`, 293 `tools`) and **35 496 links** | corrections row 13 | CLAIM-OTHERWISE |
+| U-50 | ARCHITECTURE.md:12 | "the 2026-11-01 refactor split the two god files" | `main.rs` and `menu.rs` were split; the *entity* god files (NPC/Projectile/Player/WorldGen) were never split -- they were re-homed into `tr-app`/`tr-core` leaves | `S1-D-2`, `S1-K-3/4` | CLAIM-OTHERWISE |
+| U-51 | ARCHITECTURE.md (the "C# seams" table) | 3 seams (`FrontScreenBehaviours`, `LightEngine`, `PassPrologue`) | Accurate, but the seams cover **UI and rendering only** -- there is **no seam at the entity/sim boundary**, which is precisely where Stage 2 needs one | `S2-1a`..`S2-1f` (the design) | SILENT |
+| U-52 | ARCHITECTURE.md / AGENTS.md | the crate dependency boundary | `tr-core` has **zero** dependency on `tr-app` -- this is the boundary that makes a read-only world phase possible, and it is *not stated* | `S2-1a` | SILENT |
+| U-53 | AGENTS.md (the rendering invariants) | "The renderer draws one atlas through one instanced sprite pipeline" | **PASS with 3 caveats**: the font pages live in a **separate** BC2 texture array (not the atlas); the packed-atlas sampling is not identical to XNA's per-texture sampling (`ANALYSIS.md:1180-1182`); the atlas, its 2 px padding and the nearest filter are port inventions | the caveats belong in ANALYSIS | SILENT |
+
+### 4.7 The SILENT rows -- index by doc family
+
+284 rows where the docs say nothing at all. They are enumerated in section 3 with their full
+"C# + Rust" evidence; this is the routing table for the docs pass.
+
+| Doc family | Silent rows | The seeds that close them |
+| --- | --- | --- |
+| `docs/ATLAS.md` (per-subsystem status rows) | 96 | R-01-1..R-01-8, R-02-1..R-02-8, R-03-2..R-03-9, R-04-4..R-04-9, R-05-2..R-05-13, R-06-1..R-06-5, R-07-1..R-07-7, R-08-1..R-08-7, R-09-1..R-09-12, R-10-1..R-10-9, R-11-1..R-11-12, R-12-3..R-12-15, R-13-1..R-13-9, R-14-1..R-14-22, R-16-1..R-16-16, R-17-3..R-17-18, R-18-1..R-18-9, R-19-1..R-19-22, R-20-1..R-20-14, R-22-3..R-22-10, R-24-1..R-24-14, R-25-1..R-25-11, R-26-2..R-26-12, R-27-1..R-27-17, R-28-D-1..D-9, R-29-1..R-29-13, R-30-1..R-30-18, R-31-3..R-31-7, R-32-D2..D17, R-34-1..R-34-13, R-35-2..R-35-13, R-37-1..R-37-9, R-40-1..R-40-10, R-41-D1..D14, R-42-1..R-42-8 |
+| `docs/ANALYSIS.md` (deviation paragraphs) | 71 | R-07-3, R-09-5, R-11-1, R-12-3, R-14-1, R-16-3, R-18-1, R-20-4, R-22-2, R-24-4, R-27-D2, R-29-2, R-31-1, R-32-D2, R-34-5, R-35-2, R-36-D3, R-37-2, R-38-5, R-39-1 |
+| `docs/PORT_MAP.md` (C# -> Rust rows) | 58 | R-08-2, R-09-6, R-11-2, R-13-3, R-15-5, R-19-4, R-20-3, R-22-4, R-25-4, R-26-6, R-27-8, R-30-6, R-31-4, R-32-D6, R-34-9, R-35-8, R-37-4, R-38-4, R-39-10, R-40-8, R-41-D3, R-42-4 |
+| `docs/ROADMAP.md` (new) -- catalog gaps | 34 | R-03-1, R-03-2, R-03-5, R-03-6, R-05-5, R-05-6, R-05-7, R-05-8, R-10-1, R-11-5, R-12-5, R-13-2, R-14-1, R-16-8, R-17-4, R-19-1, R-22-2, R-24-5, R-25-9, R-26-9, R-27-12, R-29-6, R-30-3, R-31-3, R-32-6, R-34-1, R-36-5, R-38-5, R-39-1, R-39-3, R-39-4, R-40-8, R-41-2, R-42-2 |
+| `README.md` | 12 | R-18-7, R-20-8, R-31-11, R-38-1, R-38-2, R-38-6, R-38-7, R-38-8, R-38-9, R-38-10, R-38-11, R-38-12 |
+| `docs/ARCHITECTURE.md` + `AGENTS.md` | 13 | R-07-4, R-08-8, R-09-6, R-12-2, R-12-6, R-13-5, R-18-9, R-19-10, R-37-5, R-37-7, R-39-1..R-39-14 |
 
 ---
 
-## 5. Counts
+## 5. Counts and the priority list
 
 ### 5.1 Totals
 
 | Metric | Count |
 | --- | --- |
-| Modules reviewed (completed research files) | **33** |
-| Modules planned but not researched (21, 23, 26, 27, 30, 33, 36, 38, 39) | 9 |
-| Deviation / risks rows surveyed | **395** |
-| Deviations **not admitted** in ROADMAP / ANALYSIS / PORT_MAP | **276** (44 CLAIM-OTHERWISE + 232 SILENT) |
-| Deviations admitted | 70 |
-| Deviations partially admitted (code comment or one doc only) | 49 |
-| Task seeds consolidated | **299** |
-| Unadmitted-claims rows (§4) | **44** |
-| Seed ids | `R-01-1` … `R-42-12` (stable, one per source seed) |
+| Modules reviewed (completed research files) | **39** |
+| Modules referenced by the new ROADMAP but **not** researched | 3 (21, 23, 33) |
+| Deviation / risks rows surveyed | **483** |
+| Deviations **not admitted** in ATLAS/ROADMAP/ANALYSIS/PORT_MAP | **342** -- 58 CLAIM-OTHERWISE + 284 SILENT |
+| Deviations admitted or partially admitted | 141 |
+| Task seeds consolidated | **371** |
+| Unadmitted-claims rows (section 4) | **53** (U-01..U-53) + the 284-row SILENT index (4.7) |
+| Seed ids | `R-01-1` .. `R-42-12` (stable, one per source seed) |
 
 ### 5.2 Task seeds by size
 
 | Size | Count | Share |
 | --- | --- | --- |
-| **L** | 50 | 17 % |
-| **M** | 132 | 44 % |
-| **S** | 117 | 39 % |
-| total | **299** | 100 % |
+| **L** | 64 | 17 % |
+| **M** | 155 | 42 % |
+| **S** | 152 | 41 % |
+| total | **371** | 100 % |
 
 ### 5.3 Task seeds by theme
 
 | Theme | Seeds |
 | --- | --- |
-| (a) determinism / RNG | 22 |
+| (a) determinism / RNG | 23 |
 | (b) pixel / visual identity | 26 |
-| (c) behavioural parity (order / formula) | 97 |
-| (d) missing subsystems | 33 |
-| (e) data / coverage gaps (incl. doc-truth + verification) | 63 |
-| (f) netcode / multiplayer | 14 |
-| (g) UI | 20 |
+| (c) behavioural parity (order / formula) | 117 |
+| (d) missing subsystems | 51 |
+| (e) data / coverage gaps (incl. doc-truth + verification) | 75 |
+| (f) netcode / multiplayer | 16 |
+| (g) UI | 23 |
 | (h) audio | 8 |
-| (i) architecture & concurrency prep | 16 |
-| **total** | **299** |
+| (i) architecture & concurrency prep | 32 |
+| **total** | **371** |
 
-### 5.4 Top 15 task seeds by (severity × size) — land these first
+### 5.4 Distinct C# call-site / surface censuses
 
-Ranked by severity first (critical → high → medium → low → cosmetic → doc), then by size
-(L → M → S), then by blast radius (how many other seeds depend on them).
+**36** distinct censuses were measured by the research. The ones that size a task:
 
-| Rank | id | Task | Size | Severity | Why first |
-| --- | --- | --- | --- | --- | --- |
-| 1 | **R-03-1** | Move the wet/shimmer statics into `update_with_grapple` (the per-liquid `(gravity, maxFallSpeed, jumpHeight, jumpSpeed)` tuple from `Player.cs:24382-24437`) | M | behavioural (critical) | A **2× jump-height error in every liquid**; the row `ROADMAP.md:1339` currently claims the wrong formula |
-| 2 | **R-34-1** | Delete the dead `to_u16`/`from_u16` arms and fix the 78..84 id collision | S | behavioural/determinism (high) | A saved or remote **Deerclops comes back as a Pirate Deckhand**; touches the save + netcode paths |
-| 3 | **R-40-3** | Restore the player damage floor (`num2 < 1 → 1`) after the endurance multiply | M | behavioural (medium-high) | The `✅` M2-COMBAT-1 row is wrong; 0-damage hits land as 0 |
-| 4 | **R-04-2** | Projectile hit chain: `DamageVar` + owner luck + `strike_npc_damage` into the PVE hit | L | behavioural + determinism (high) | **Every ranged hit** skips defence and the ±15 % roll; also changes RNG draw counts |
-| 5 | **R-05-4** | Wire `strike_npc_damage` + `check_armor_penetration` into the projectile path | M | behavioural (high) | Same defect, from the NPC side; two rows, one fix |
-| 6 | **R-35-1** | Port `Terraria.Utilities.UnifiedRandom` | L | determinism (critical) | The substrate for 8 other seeds (R-35-2/3/4/5/7, R-24-8, R-07-7, R-11-3) and for every "vanilla replay" claim |
-| 7 | **R-35-3** | `Main.SwapRandom` named-stream registry | L | determinism (critical) | 13 per-stage streams are 7 ad-hoc `u64` fields today; blocks R-35-4/5 |
-| 8 | **R-12-7** | Replace the FBM surface model with `TerrainPass`'s height/rock lines | L | behavioural/pixel (medium) | The worldgen model is the largest single divergence; also the anchor for R-12-6 |
-| 9 | **R-11-5** | Port the liquid reactions (obsidian / honey block / crisp honey / shimmer) | M | behavioural (high) | Lava+honey never interact; blocks R-11-7, R-12-5, R-32-8 |
-| 10 | **R-05-9** | Close the `aiStyle` gap — port the missing archetypes (74 styles) | L | behavioural (high) | The headline AI gap; blocks R-25-10 |
-| 11 | **R-28-3** | The buff HUD (`Main.DrawBuffIcon` + `Main.TryRemovingBuff`) | M | behavioural+pixel (high) | An entire visible subsystem is missing and the ROADMAP has no task for it |
-| 12 | **R-15-2** | Port the `Dust` record + the `NewDust` family behind a `DustPool` | M | behavioural+pixel (high) | 3161 of 3279 dust sites have no port; blocks R-15-3/4/5/8 |
-| 13 | **R-25-5** | A per-type speed table for the aiStyle-3 family | M | behavioural (portfolio-wide) | 155 vanilla types collapse onto one walker speed; the port's own comments claim otherwise |
-| 14 | **R-40-1** | Fix the hover presets (`HORNET` → 3.5 / 0.021, the scale factor, the damping gate) | M | behavioural (high) | The only *wrong constant* in the hot area; invisible to the suite (2 tests in `npc_ai.rs`) |
-| 15 | **R-07-1** | Fix the pickup double-add in `world_sim\items.rs:191-194` | S | behavioural (high) | A one-line fix that doubles **every** item the player picks up |
+| Surface | C# census | Rust today |
+| --- | --- | --- |
+| `Dust.NewDust*` | **3 279** call sites in **36** files | 3 files ported (8 %) -- no `Dust` type, no pool, no per-type table |
+| `Gore.NewGore*` | **1 643** call sites in **13** files | 1 file ported (the leaf arm) |
+| `Projectile.AI()` | **210** arm bodies (aiStyle 1..210, no gaps) | **38** unique arms; 172 hit `_ => {}`; **21** styles have a `proj_data` row but no arm |
+| `Projectile.AI_001` | **142** per-type arms (197 `type ==` checks) | 1 generic flight for 36 kinds |
+| `NPC.AI()` | **128** `aiStyle` arms over **587** NPC types | 44 ported, 9 partial, 6 approximate, **69 missing** |
+| `NetMessage.SendData` | **774** call sites in **68** files | ~10 Rust send paths |
+| `MessageID` | **163** ids (140 written, 159 read) | **25** ported (+5 internal) |
+| `SoundEngine.PlaySound` / `PlayTrackedSound` | **1 411** + **64** sites | 26 cues in the table, **13** names played, 64 Rust play sites |
+| `Lighting.AddLight` | **300+** entity/particle call sites | waterfall feed only |
+| `Player.UpdateBuffs` | **251** arms over ~**290** ids | ~**40** ids ported |
+| `WorldGen` passes | **106** classic passes | **52** have no executed step |
+| `Achievements` | **180** conditions, **10** kinds, 137 rows | 139 conditions; 4 kinds with a notify site; 50 rows that can ever complete |
+| `Bestiary` | 172+ entries, 6 unlock providers | 172 entries, 1 provider (a bool); 164 entries read tier 4 |
+| `ItemDropRules` | **26** classes / ~**50** gates | 13 rows skipped |
+| `MountID` | **66** ids | 50 rows |
+| `ProjectileID` | **1 136** ids | 213 constants |
+| id sets with no Rust table | `DustID` 332, `SoundID` 506, `GlowMaskID` 384, `GoreID` 1 407, `ExtrasID` 316, `NPCHeadID` 81, `MessageID` 163, `CloudID` 42, `ChainID` 17, `ProjectileSourceID` 23, `ImmunityCooldownID` 6, `SurfaceBackgroundID` 16, `PlayerTextureID` 16, 15 x `ArmorIDs` | **0** |
+| excluded subsystems | `Terraria/Social/**` 72 files ~6 200 lines; `Terraria/Testing/**` 34 files ~6 000 lines; `TimeLogger.cs` 839; `CrashDump.cs` 119 + `CrashWatcher.cs` 84; `nativefiledialog.cs` 146; `GameContent/RGB/**` 53 files; `Main.dedServ` **169** sites | **0** (5 of them undocumented) |
+| god modules | 8 hand-written files > 5 000 lines; `App` **257** fields (docs say 118); `World` 132; `Player` 239; `Npc` 84 | the 2026-11-01 refactor only split the bootstrap |
 
-### 5.5 Recommended order (derived from §5.4 + the dependency edges)
+### 5.5 The five subsystems with the largest C#-surface gap
 
-1. **Correct the record first** — the 44 §4 rows plus the 44 CLAIM-OTHERWISE rows in §3. Nothing
-   else can be planned against a ROADMAP that marks `✅` on rows the code disproves.
-   Cheapest first: R-03-11, R-12-1, R-16-7, R-18-2, R-19-1, R-20-2, R-24-7, R-25-3, R-28-8,
-   R-29-10, R-32-9, R-34-3, R-35-9, R-35-10, R-37-1, R-37-3, R-40-2, R-40-6, R-41-1, R-42-6, R-42-12.
-2. **Behavioural landmines with a tiny blast radius** — R-07-1 (pickup double-add), R-40-3
-   (damage floor), R-25-1 (Frost speeds), R-05-3 (goblin arm), R-03-2 (`maxFallSpeed`), R-34-1
-   (id collision), R-16-1 (wind cap), R-40-1 (hover presets).
-3. **The formula families** — R-03-1 (wet statics) → R-03-4/S4 (drowning) → R-03-5 (respawn);
-   R-04-2 + R-05-4 (projectile damage) → R-04-1 (floor) → R-04-4 (ranged split);
-   R-05-8 (`ScaleStats`) → R-24-3 (town-NPC spawn block) → R-24-1 (invaders override).
-4. **The determinism substrate** — R-35-1 → R-35-2 → R-35-3 → R-35-4/R-35-5, then the
-   per-consumer migrations (R-24-8, R-07-7, R-11-3).
-5. **The missing subsystems with visible surface area** — R-15-2..R-15-5 (dust/gore),
-   R-28-3 (buff HUD), R-10-1 (entity light), R-09-4 (tile animator), R-09-5 (vines/ropes),
-   R-05-10 + R-40-5 (`behindTiles`), R-31-2..R-31-5 (golf), R-02-3 (full-screen effects).
-6. **The architecture prep** — R-12-6 (world parity harness), R-41-6 (draw-order contract),
-   R-40-8 (cited-range lint), R-42-8..R-42-11 (Stage-2 save), R-07-4 (item instances),
-   R-18-9 (layer stack).
+1. **Dust / gore** -- **3 279** `Dust.NewDust*` sites across 36 C# files -> **3** ported; **1 643** `Gore.NewGore*` sites across 13 files -> **1**. No `Dust`/`Gore` type, no 6 000/600-slot pool, no per-type table, no `dCount` pressure model, no dust light. **4 922 C# call sites total.** -> `S1-E-1`..`S1-E-4`, seeds R-15-2..R-15-5, R-15-8.
+2. **Projectile AI** -- the C# `AI()` chain has **210** arm bodies with **no gaps**; the Rust match has **38** unique arms, so **172** styles no-op, and **21** spawnable styles hold position forever. `AI_001` alone is **142** per-type arms. -> `S1-D-4`, `S1-D-4b`, `S1-D-4c`, `S1-D-5`, seeds R-26-2..R-26-9.
+3. **NPC AI** -- **128** `aiStyle` arms over **587** NPC types; the port has **44 ported, 9 partial, 6 approximate, 69 missing**, and only six vanilla families share a Rust archetype -- `aiStyle 3` (155 types) and `aiStyle 7` (52 types) run as a generic walker/wander. -> `S1-D-2`, `S1-D-3`, `S1-D-3b`, seed R-25-10.
+4. **Netcode message ids** -- **163** C# ids (140 written by `SendData`, 159 read by `GetData`); the port implements **25** (+5 internal) -> **138 ids with no counterpart**, while the C# fans out **774** `SendData` sites across **68** files. -> `S1-I-1`..`S1-I-4`, seeds R-17-1..R-17-9.
+5. **Sound call sites** -- **1 411** `SoundEngine.PlaySound(...)` + **64** `PlayTrackedSound(...)` C# sites; the Rust cue table holds **26** of **527** shipped `.xnb` assets and only **13** names ever play, with **64** Rust play sites. No pitch, no per-style volume, no variation families, no instance pool, no tracked-sound layer. -> `S1-E-21`..`S1-E-25`, seeds R-32-1..R-32-9.
 
-<!--PART3-->
+### 5.6 Top 25 task seeds by (severity x size) -- the order to take them
 
+Severity first (critical, high, medium, low, cosmetic, doc), then size (L, M, S), then
+blast radius (how many other seeds depend on them).
 
+| Rank | id | Task | Size | Sev | Source module | Dependency note |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | **R-03-1** | Move the wet/shimmer statics into `update_with_grapple` -- the per-liquid `(gravity, maxFallSpeed, jumpHeight, jumpSpeed)` tuple from `Player.cs:24382-24437` | M | B (critical) | 03 | **No new ROADMAP task exists** -- add one. A 2x jump-height error in every liquid |
+| 2 | **R-34-1** | Delete the dead `to_u16`/`from_u16` arms and fix the 78..84 id collision | S | D+B (high) | 34 | `S1-F-1`; a saved/remote Deerclops comes back as a Pirate Deckhand; unblocks R-34-2, R-34-4, R-34-5, R-34-6 |
+| 3 | **R-40-1** | Fix the hover presets (`HORNET` -> 3.5/0.021, the `2f - scale` factor, the damping gate) | M | B (high) | 40 | `S1-D-1` -- the one FAIL of the DONE-row re-verification; invisible to the suite (2 tests in `npc_ai.rs`) |
+| 4 | **R-04-2** | Projectile hit chain: `DamageVar` + owner luck + `strike_npc_damage` into the PVE hit | L | B+D (high) | 04 | `S1-C-2`; needs the RNG decision from R-35-1; unblocks R-05-4 |
+| 5 | **R-35-1** | Port `Terraria.Utilities.UnifiedRandom` | L | D (critical) | 35 | `S1-A-1`; the substrate for R-35-2/3/4/5/7, R-24-8, R-07-7, R-11-3 |
+| 6 | **R-05-4** | Wire `strike_npc_damage` + `check_armor_penetration` into the projectile path | M | B (high) | 05 | `S1-C-2`; the same defect from the NPC side -- two rows, one fix |
+| 7 | **R-07-1** | Fix the pickup double-add in `world_sim\items.rs:191-194` | S | B (high) | 07 | `S1-C-9`; a one-line fix that doubles **every** item the player picks up |
+| 8 | **R-40-3** | Restore the player damage floor (`num2 < 1 -> 1`) after the endurance multiply | M | B (high) | 40 | `S1-C-3`; the M2-COMBAT-1 DONE row is wrong; delete the divergence-pinning test |
+| 9 | **R-25-1** | Fix the Frost Legion speeds (`num551`/`num552` from `NPC.cs:28997-29012`) + the throw and the jump | S | B (high) | 25 | `S1-D-3`; the invasion walks 4-5x too slowly and never attacks at range |
+| 10 | **R-11-5** | Port the liquid reactions (obsidian / honey block / crisp honey / shimmer) | M | B (high) | 11 | blocks R-11-7, R-12-5, R-32-8; needs a tr-core `edit.rs` seam |
+| 11 | **R-26-2** | Wire `ai_vortex_ritual`/`ai_vortex_bolt` into the dispatch (aiStyle 88/108) | S | B (medium) | 26 | `S1-D-4c`; the functions exist -- only the arm is missing; also fixes the M4-EVENT-17 claim |
+| 12 | **R-26-3** | Add the aiStyle-70 arm and `ai_bubble` | S | B (medium) | 26 | `S1-D-4c`; corrects PORT_MAP 157 |
+| 13 | **R-30-2** | Call `achievements::save` from the autosave/F9 pass | S | B (medium) | 30 | `S1-E-18`; contradicts the M6-ACH-1 DONE claim; unblocks R-30-3 |
+| 14 | **R-30-1** | Model `NPCKilledCondition.CreateMany` faithfully (4 rows, 46 conditions) | S | B (high) | 30 | `S1-E-18`; 41 conditions are lost today; unblocks R-30-12 |
+| 15 | **R-28-3** | The buff HUD (`Main.DrawBuffIcon` + `Main.TryRemovingBuff`) | M | B+P (high) | 28 | `S1-E-6`; an entire visible subsystem is missing and the atlas has no task for it |
+| 16 | **R-15-2** | Port the `Dust` record + the `NewDust` family behind a `DustPool` | M | B+P (high) | 15 | `S1-E-1`; 3 161 of 3 279 dust sites unported; unblocks R-15-3/4/5/8 |
+| 17 | **R-24-1** | Port the `invaders` spawn-rate override + gate the invasion pick | S | B (high) | 24 | `S1-F-12`; ~20x the vanilla invasion density today |
+| 18 | **R-34-4** | Close the `from_u16` gap for ids 85-88 and 162-168 (11 kinds undecodable) | M | B (medium) | 34 | `S1-F-1`; a net message or save carrying one of those ids drops the NPC |
+| 19 | **R-40-4** | Port the arrow/bow arm of `GetWeaponDamageMultiplier` | M | B (medium) | 40 | `S1-C-4`; needs the ammo registry |
+| 20 | **R-16-1** | Wire `Wind::any_player_120_life` from the world tick | M | B (medium) | 16 | `S1-L-2`; the 0.35 wind cap is dead code today |
+| 21 | **R-05-3** | Remove the shadowed goblin arm | S | B (low-med) | 05 | `S1-D-3b`; the goblin army walks at the zombie's speed |
+| 22 | **R-03-2** | `maxFallSpeed += 0.01f` + `PortalPhysicsEnabled = 35` + `vortexDebuff` gravity = 0 | S | B (high) | 03 | pairs with R-03-1; **no new ROADMAP task exists** |
+| 23 | **R-25-5** | A per-type speed table for the aiStyle-3 family | M | B (portfolio) | 25 | `S1-D-3`; 155 vanilla types collapse onto one walker speed |
+| 24 | **R-35-3** | `Main.SwapRandom` named-stream registry | L | D (critical) | 35 | `S1-A-2`; 13 per-stage streams are 7 ad-hoc `u64` fields today; unblocks R-35-4/5 |
+| 25 | **R-35-7** | Add a `UnifiedRandom`-vs-port differential harness | L | D (medium) | 35 | `S1-A-7`; the only way to prove the draw **order**, not just the algorithm |
+
+### 5.7 Recommended order of attack (derived from 5.6 + the dependency edges)
+
+1. **Correct the record first** -- the 58 CLAIM-OTHERWISE rows in section 4 plus the 53-row
+   section-4 index. The new ROADMAP already carries 20 of them in its "Documentation
+   corrections" table; the remaining 38 need a one-line edit in
+   ATLAS/ANALYSIS/PORT_MAP/README/ARCHITECTURE.
+2. **The four cheap correctness bugs with player-visible impact** -- R-07-1 (2x item pickup),
+   R-40-3 (damage floor), R-25-1 (Frost speeds), R-05-3 (goblin arm), R-03-2 (maxFallSpeed),
+   R-34-1 (id collision), R-16-1 (wind cap), R-40-1 (hover presets).
+3. **The formula families** -- R-03-1 (wet statics) -> R-03-4/R-03-5 (drowning, respawn) ->
+   R-03-6/R-05-8 (expert scaling); R-04-2 + R-05-4 (projectile damage) -> R-04-1 (floor) ->
+   R-40-4 (ranged split); R-24-1 + R-24-3 (spawn rate) -> R-24-9 (invasion placement).
+4. **The determinism substrate** -- R-35-1 -> R-35-2 -> R-35-3 -> R-35-4/R-35-5, then the
+   per-consumer migrations (R-24-8, R-07-7, R-11-3) and R-35-7 as the proof harness.
+5. **The missing subsystems with the largest call-site censuses** -- R-15-2..R-15-5 (dust/gore),
+   R-26-2..R-26-9 (projectile AI), R-25-10 (the 69 NPC arms), R-28-3 (buff HUD),
+   R-10-1 (entity light), R-09-4 (tile animator), R-09-5 (vines/ropes), R-05-10 + R-40-5
+   (`behindTiles`), R-31-2..R-31-5 (golf), R-30-3 (achievement notify sites), R-32-2..R-32-7
+   (sound), R-02-3 (full-screen effects).
+6. **The architecture prep** -- R-39-1/2/3/4 (the `World` split, the tick plan, the event
+   buffer, the spatial hash), R-12-6 (the world-parity harness), R-41-6 (the draw-order
+   contract), R-40-8 (the cited-range lint), R-42-8..R-42-11 (Stage-2 save), R-07-4 (item
+   instances), R-18-9 (the layer stack), R-39-13 (the ARCHITECTURE refresh).
