@@ -1479,19 +1479,6 @@ pub(crate) fn all_town_kinds_present(npcs: &[crate::npc::Npc]) -> bool {
 /// The entry an NPC death credits — the death hook's
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
-/// Whether the bestiary carries a row for this kind/variant — the
-/// non-panicking probe `entry_for_npc` needs for callers that must tolerate a
-/// gap (the audit tests, the WIP kinds).
-pub fn has_entry(kind: NpcKind, variant: SlimeVariant) -> bool {
-    ENTRIES.iter().any(|e| {
-        e.kind == kind
-            && match (e.variant, kind) {
-                (Some(v), NpcKind::Slime) => v == variant,
-                _ => true,
-            }
-    })
-}
-
 pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryEntryDef {
     // The worm segments fold onto the head's entry (the vanilla credits the
     // whole worm to the head's bestiary id — one entry per credit).
