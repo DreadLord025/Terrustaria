@@ -35,3 +35,5 @@ crates/tr-core/src/worldgen/dungeon_features.rs|fn place_traps|M5-DUNGEON — th
 crates/tr-core/src/worldgen/dungeon.rs|fn generate_dungeon|M5-DUNGEON — the faithful dungeon crawler
 crates/tr-core/src/worldgen/world_hash.rs|fn world_hash|the world-gen determinism pins
 crates/tr-app/src/ui/housing.rs|fn |M7-UI-3c — the housing hover UI module
+docs/MAIN-RULES.md|The only merge procedure|infra — the multi-agent main rules every agent must read
+crates/tr-core/build.rs|a merge dropped landed work|infra — the build-time anchor tripwire

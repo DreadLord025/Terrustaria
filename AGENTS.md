@@ -112,6 +112,10 @@ record of who is working on what.
    wholesale; never use `git merge -X ours/theirs`. If a conflict is semantic (two
    agents changed the same behaviour differently), stop and reconcile the intent
    first — the merged result must still be 1:1 with the source.
+   **Before you land anything, read `docs/MAIN-RULES.md`** — the short version of
+   steps 1-6 above plus the four documented work-losses, the banned merge forms
+   (`commit-tree`, `read-tree`, `-s ours`, `-X ours/theirs`, force-push) and a
+   copy-paste prompt for an AI agent.
 7. **Merge graphify, then clean up.** Immediately after the merge, on main, re-run
    step 1's graphify update + merge-graphs so main's graph includes the branch's
    code — this is the step that "pulls not only the code but the graph". Then delete
