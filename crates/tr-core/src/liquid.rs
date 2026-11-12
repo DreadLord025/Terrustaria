@@ -1,13 +1,14 @@
 //! Cellular liquid simulation, ported from `Liquid.UpdateLiquid` / `Liquid.Update`.
 //!
 //! Terraria keeps a bounded list of *active* liquid tiles instead of scanning the
-//! whole world. Every second game tick it pumps one tenth of that list; each entry
+//! whole world. Every second game tick it walks one `curMaxLiquid / cycles` stride
+//! of that list (a list shorter than one stride is re-walked in full); each entry
 //! falls into the cell below and levels out with up to six horizontal neighbours.
 //! Entries retire after eight passes without a change, and cells that need work are
 //! re-queued through [`LiquidSystem::add_water`] (the original `AddWater` plus its
 //! overflow `LiquidBuffer`).
 
-use crate::tile::{FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER, LiquidKind, Tile};
+use crate::tile::{LiquidKind, Tile, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
 use crate::tiledata as td;
 use crate::world::World;
 
@@ -37,10 +38,11 @@ pub struct LiquidSystem {
     checking: Vec<u64>,
     /// `LiquidBuffer`: cells woken while the active list is full.
     buffer: Vec<(i32, i32)>,
-    /// First entry not yet updated in the current pass.
-    cursor: usize,
-    /// Active-list length when the current pass started; new entries wait it out.
-    pass_len: usize,
+    /// `Liquid.wetCounter`: the 1-based window index inside the current cycle.
+    wet_counter: usize,
+    /// `Liquid.curMaxLiquid`: 25 000 in single-player. Multiplayer scales it by the
+    /// active-player count (`Liquid.cs:998`), which stays out of scope here.
+    cur_max_liquid: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
 }
@@ -54,8 +56,8 @@ impl LiquidSystem {
             active: Vec::new(),
             checking: vec![0; bits],
             buffer: Vec::new(),
-            cursor: 0,
-            pass_len: 0,
+            wet_counter: 0,
+            cur_max_liquid: MAX_ACTIVE,
             dirty: false,
         }
     }
@@ -121,27 +123,32 @@ impl LiquidSystem {
     /// One `Liquid.UpdateLiquid` call. Tick this at 30 Hz, like the original
     /// (every second 60 Hz world tick).
     pub fn update(&mut self, world: &mut World) {
-        if self.active.is_empty() {
-            self.refill_from_buffer(world);
-            if self.active.is_empty() {
-                return;
-            }
+        // `Liquid.cs:1069-1106`: the window is a fixed `curMaxLiquid / cycles`
+        // stride and the `numLiquid` clamp re-walks the *whole* list whenever it is
+        // shorter than one stride, so a small active list is simulated every call
+        // instead of once per ten.
+        self.wet_counter += 1;
+        let stride = self.cur_max_liquid / CYCLES;
+        let mut start = stride * (self.wet_counter - 1);
+        let mut end = stride * self.wet_counter;
+        if self.wet_counter == CYCLES {
+            end = self.active.len();
         }
-        if self.pass_len == 0 {
-            self.pass_len = self.active.len();
-            self.cursor = 0;
+        if end > self.active.len() {
+            end = self.active.len();
+            self.wet_counter = CYCLES;
         }
-        let n = self.pass_len;
-        let slice = n.div_ceil(CYCLES).max(1);
-        let end = (self.cursor + slice).min(n);
+        if start > end {
+            start = end;
+        }
         self.dirty = false;
-        for i in self.cursor..end {
+        for i in start..end {
             let (x, y) = (self.active[i].x, self.active[i].y);
             let kill = self.update_tile(world, x, y, self.active[i].kill);
             self.active[i].kill = kill;
         }
-        self.cursor = end;
-        if self.cursor >= n {
+        if self.wet_counter >= CYCLES {
+            self.wet_counter = 0;
             self.end_pass(world);
         }
         if self.dirty {
@@ -159,8 +166,6 @@ impl LiquidSystem {
                 self.set_checking(e.x, e.y, false);
             }
         }
-        self.cursor = 0;
-        self.pass_len = 0;
         self.refill_from_buffer(world);
     }
 
@@ -560,6 +565,62 @@ mod tests {
         assert_eq!(sys.active_len(), 1);
         sys.add_water(&w, 2, 2);
         assert_eq!(sys.active_len(), 1, "dry cells are not queued");
+    }
+
+    /// A full-width row of equal levels is static: every `update_tile` walk returns
+    /// an unchanged cell, so `kill` grows by exactly one per walk and the entry
+    /// retires once `kill` reaches the threshold. That turns the *window* into a
+    /// directly observable quantity.
+    fn static_row(width: i32) -> (World, LiquidSystem) {
+        let mut w = basin(width, 6);
+        for x in 0..width {
+            put(&mut w, x, 5, 100);
+        }
+        let mut sys = LiquidSystem::new(&w);
+        for x in 0..width {
+            sys.add_water(&w, x, 5);
+        }
+        (w, sys)
+    }
+
+    #[test]
+    fn a_short_active_list_is_walked_in_full_every_update() {
+        // `Liquid.cs:1077-1082`: when `numLiquid <= curMaxLiquid/cycles` the end of
+        // the window is clamped to `numLiquid` and `wetCounter` jumps to `cycles`,
+        // so a short list is simulated — and its dead entries retired — on *every*
+        // call, not once per ten as the old `ceil(len/10)` slice did.
+        let (mut w, mut sys) = static_row(12);
+        assert_eq!(sys.active_len(), 12);
+        run(&mut sys, &mut w, 8);
+        assert_eq!(
+            sys.active_len(),
+            0,
+            "a short list must retire on pass 8, i.e. be walked every update"
+        );
+    }
+
+    #[test]
+    fn a_long_active_list_walks_one_stride_per_update() {
+        // `Liquid.cs:1070-1082`: the window is a fixed `curMaxLiquid / cycles`
+        // stride (2 500). A 2 600-entry list therefore walks `[0,2500)` on the odd
+        // updates and the clamped tail `[2500,2600)` on the even ones, so both
+        // strides reach the eight-pass retire threshold on the 16th update. The old
+        // `ceil(len/10)` slice would need ~80 updates for the same.
+        let width = 2600;
+        let (mut w, mut sys) = static_row(width);
+        assert_eq!(sys.active_len(), width as usize);
+        run(&mut sys, &mut w, 15);
+        assert_eq!(
+            sys.active_len(),
+            width as usize,
+            "nothing retires before the eighth pass of both strides"
+        );
+        run(&mut sys, &mut w, 1);
+        assert_eq!(
+            sys.active_len(),
+            0,
+            "the 2 500 stride retires on pass 16, not the 80th an `ceil(len/10)` slice needs"
+        );
     }
 
     #[test]
