@@ -13,7 +13,8 @@
 //! seeding below are part of the world/session contract — never "improve"
 //! them (AGENTS.md, `docs/code-standards.md`). The ported C# stream stays
 //! `tile_light::palette::FastRandom` (a 48-bit LCG) and must not be confused
-//! with this core.
+//! with this core — nor with [`crate::unified_random::UnifiedRandom`], the C#
+//! `Main.rand` Knuth subtractive generator (a third, separate algorithm).
 
 /// The xorshift64 core: the 13/7/17 triple over a `u64` state.
 ///
