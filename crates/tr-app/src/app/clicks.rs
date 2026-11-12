@@ -422,6 +422,37 @@ impl App {
             let screen = Vec2::new(sw, sh);
             // `Main.mH` as `frame()` hands it to the draw (`Main.cs:45771-45783`).
             let m_h = self.main_m_h();
+            // `Main.cs:41426-41460`: the accessory "hide the visuals" ticks beside
+            // the accessory column. Checked before the slots because the C# tick
+            // box sits over the slot's right edge, and gated on
+            // `Main.mouseItem.IsAir` exactly like the draw.
+            if self.equip_page != ui::inventory::EQUIP_PAGE_MISC {
+                let tick = self
+                    .lookups
+                    .ui_tick_on
+                    .as_ref()
+                    .map(|s| (s.width as f32, s.height as f32))
+                    .unwrap_or((16.0, 16.0));
+                let base_y = ui::inventory::equip_page_base_y(screen.y, m_h);
+                let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
+                if let Some(i) = ui::inventory::accessory_tick_click(
+                    screen,
+                    base_y,
+                    self.mouse_pos,
+                    tick,
+                    air,
+                ) {
+                    if let Some(p) = self.player.as_mut() {
+                        p.hide_visible_accessory[i] = !p.hide_visible_accessory[i];
+                    }
+                    // `SoundEngine.PlaySound(12)` (`Main.cs:41438`).
+                    self.audio.play("Menu_Tick");
+                    // `SendData(4)` in MP — the player-info packet is not ported
+                    // for this field (`net.rs`'s `hide_visible_accessory` is a
+                    // decode-only `u16`), so the flip stays local (ANALYSIS).
+                    return;
+                }
+            }
             let state = self.pvp_icon_state();
             if let Some(hit) = ui::chrome::pvp_hit(
                 screen,
@@ -2567,12 +2598,63 @@ mod tests {
         app
     }
 
+    /// `Main.cs:41426-41460`: a press on an accessory's "hide the visuals" tick
+    /// flips `Player.hideVisibleAccessory`, cues `PlaySound(12)` and is consumed
+    /// before the slot grid — while a held stack leaves the tick inert.
+    #[test]
+    fn the_accessory_tick_toggles_the_visibility() {
+        let mut app = inv_app();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let tick = ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0));
+        let (idx, rect) = tick[0];
+        assert_eq!(idx, 3, "the first tick belongs to the first accessory");
+        app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(
+            app.player.as_ref().unwrap().hide_visible_accessory[idx],
+            "the tick flipped"
+        );
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)`");
+        // Pressing it again shows the accessory.
+        app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hide_visible_accessory[idx]);
+        // `Main.mouseItem.IsAir` (`:41430`): with a stack on the cursor the tick
+        // is dead and the press falls through to the slot behind it.
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hide_visible_accessory[idx]);
+    }
+
+    /// `Main.cs:41426-41460` only exists on the equipment page: the misc page
+    /// (`EquipPage == 2`) draws no accessory column, so no tick fires there.
+    #[test]
+    fn the_misc_page_has_no_accessory_ticks() {
+        let mut app = inv_app();
+        app.equip_page = 2;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let (_, rect) =
+            ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0))[0];
+        app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hide_visible_accessory[3]);
+    }
+
     /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets
     /// `EquipPageSelected`, the drawn page follows it on the next frame, and the
     /// next frame's `SelectEquipPage` joins in without an item held.
     #[test]
-    fn page_tab_click_switches_the_equipment_page() {
-        let mut app = inv_app();
+    fn page_tab_click_switches_the_equipment_page() {        let mut app = inv_app();
         let (sw, _sh) = app.screen_size();
         let screen = Vec2::new(sw, app.screen_size().1);
         let y = 174.0 + app.main_m_h() - 32.0;

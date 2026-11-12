@@ -73,7 +73,7 @@ pub fn extra_accessory_slots() -> i32 {
 }
 
 /// `Main.EquipPage == 2`: the misc-equip / misc-dye page.
-const EQUIP_PAGE_MISC: i32 = 2;
+pub const EQUIP_PAGE_MISC: i32 = 2;
 
 /// `ItemSlot.LoadoutSlotColors[0, 0..2]` (`ItemSlot.cs:365-371`) — the loadout-1
 /// (green) palette. `TryGetSlotColor` (`ItemSlot.cs:2807-2819`) maps context 8/10
@@ -130,6 +130,9 @@ pub enum HoverRef {
     Dye(usize),
     /// `Player.miscEquips[0..4]`.
     MiscEquip(usize),
+    /// The accessory "hide the visuals" tick next to `Player.armor[i]`
+    /// (`Main.cs:41426-41445`). Carries the armour index, `3..=9`.
+    HideAccessory(usize),
     /// `Player.miscDyes[0..4]`.
     MiscDye(usize),
     /// `Player.trashItem`.
@@ -212,6 +215,94 @@ fn misc_row_y(base_y: f32, m: usize) -> f32 {
     base_y + m as f32 * MISC_PITCH
 }
 
+/// The accessory "hide the visuals" tick (`Main.cs:41425-41454`):
+///
+/// ```csharp
+/// int num41 = Main.screenWidth - 58;
+/// int num42 = (int)((float)(num20 - 2) + (float)(num37 * 56) * Main.inventoryScale);
+/// ... if (num38 > 2) { num40 += num33; num42 += num33; }
+/// ```
+///
+/// `row` is the drawn row index (`num37`, which skips the un-unlocked slots) and
+/// `lower` the `num38 > 2` shift — the same pair `equip_row_y` takes, but the
+/// `- 2` is applied **before** the truncation, so the tick and its slot can
+/// differ by a pixel.
+pub fn tick_pos(screen_w: f32, base_y: f32, row: usize, lower: bool) -> Vec2 {
+    let y = (base_y - 2.0 + row as f32 * GRID_PITCH * INVENTORY_SCALE) as i32 as f32;
+    Vec2::new(
+        screen_w - 58.0,
+        y + if lower { EQUIP_ROW_SHIFT as i32 as f32 } else { 0.0 },
+    )
+}
+
+/// `rectangle.Contains(new Point(Main.mouseX, Main.mouseY))`
+/// (`Main.cs:41428`): the tick sheet is **not** scaled, so the box is its native
+/// size, and `Rectangle.Contains` excludes the right/bottom edges.
+pub fn tick_rect(pos: Vec2, tick: (f32, f32)) -> [f32; 4] {
+    [pos.x, pos.y, tick.0, tick.1]
+}
+
+fn in_tick(mouse: Vec2, rect: [f32; 4]) -> bool {
+    mouse.x >= rect[0]
+        && mouse.x < rect[0] + rect[2]
+        && mouse.y >= rect[1]
+        && mouse.y < rect[1] + rect[3]
+}
+
+/// `Main.cs:41145`: the equipment columns' origin, `174 + Main.mH` shifted up
+/// while the screen is too short for the full column (`equip_base_y`).
+pub fn equip_page_base_y(screen_h: f32, m_h: f32) -> f32 {
+    equip_base_y(
+        screen_h,
+        m_h,
+        BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+        INVENTORY_SCALE,
+    )
+}
+
+/// Every accessory tick of the equipment page as `(Player.armor index, rect)`,
+/// in the order `ItemSlot.Draw` lays the column out — `Main.cs:41425-41460`'s
+/// `num41/num42` for the `num38 > 2` slots only (armour slots 0..2 carry none).
+pub fn accessory_tick_rects(
+    screen: Vec2,
+    base_y: f32,
+    tick: (f32, f32),
+) -> Vec<(usize, [f32; 4])> {
+    let mut out = Vec::new();
+    let mut row = 0usize;
+    for idx in 0..10usize {
+        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+            continue;
+        }
+        if idx > 2 {
+            // `num38 > 2`: the accessories are the `lower` rows (`num33 = 4`).
+            out.push((idx, tick_rect(tick_pos(screen.x, base_y, row, true), tick)));
+        }
+        row += 1;
+    }
+    out
+}
+
+/// `Main.cs:41426-41460`: a press on an accessory tick flips
+/// `Player.hideVisibleAccessory[i]` (and nothing else — the tick is checked
+/// before the slot, and the vanilla's `Main.mouseItem.IsAir` gate keeps it inert
+/// while the cursor holds a stack).
+pub fn accessory_tick_click(
+    screen: Vec2,
+    base_y: f32,
+    mouse: Vec2,
+    tick: (f32, f32),
+    mouse_air: bool,
+) -> Option<usize> {
+    if !mouse_air {
+        return None;
+    }
+    accessory_tick_rects(screen, base_y, tick)
+        .into_iter()
+        .find(|(_, r)| in_tick(mouse, *r))
+        .map(|(i, _)| i)
+}
+
 /// `Main.cs:41446`: `mouseX >= x && mouseX <= x + W*scale && mouseY >= y &&
 /// mouseY <= y + H*scale`, with `cell = W = H`. Inclusive on the right/bottom
 /// edges too — unlike `ui::in_rect`'s `Rectangle.Contains` (exclusive
@@ -243,6 +334,12 @@ pub fn draw(
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
     chest_or_shop: bool,
+    // `Player.hideVisibleAccessory` — the per-accessory visual-hide flags the
+    // ticks beside the accessory column read and flip (`Main.cs:41425-41460`).
+    hide: &[bool; 10],
+    // `Main.mouseItem.IsAir`: every tick draw and hit is gated on it
+    // (`Main.cs:41430`, `:41453`).
+    mouse_air: bool,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -431,6 +528,30 @@ pub fn draw(
             );
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
+            }
+            // `Main.cs:41425-41460`: the "hide the visuals" tick beside every
+            // **accessory** row (`num38 > 2`), drawn only while the cursor holds
+            // nothing (`Main.mouseItem.IsAir`) and at `Color.White * 0.7f`. The
+            // sheet is not scaled; the off sheet is picked when the accessory is
+            // already hidden.
+            if idx > 2 && mouse_air {
+                let pos = tick_pos(screen.x, base_y, row, lower);
+                let sheet = if hide[idx] {
+                    lookups.ui_tick_off.as_ref()
+                } else {
+                    lookups.ui_tick_on.as_ref()
+                };
+                if let Some(rect) = sheet {
+                    let (uv, tw, th) = super::chrome::sheet_frame(rect, lookups.atlas_size);
+                    
+                    r.push_ui_sprite([pos.x, pos.y], [tw, th], uv, [1.0, 1.0, 1.0, 0.7]);
+                    // `rectangle.Contains(mouse)` (`:41428`) — the tick wins the
+                    // hover over the slot under it and swaps the tooltip for the
+                    // "Visible" / "Hidden" mouse text (`:41444`).
+                    if hit.hovered.is_none() && in_tick(mouse, tick_rect(pos, (tw, th))) {
+                        hit.hovered = Some(HoverRef::HideAccessory(idx));
+                    }
+                }
             }
             row += 1;
         }
@@ -774,5 +895,75 @@ mod tests {
     fn trash_position() {
         // `Main.cs:42352-42353`.
         assert_eq!((TRASH_X, TRASH_Y), (448.0, 258.0));
+    }
+
+    /// `Main.cs:41425-41427`: `num41 = screenWidth - 58` and `num42 =
+    /// (int)((num20 - 2) + num37*56*scale)`, `+num33` (4) on the accessory rows.
+    #[test]
+    fn the_accessory_ticks_sit_at_the_vanillas_x_and_row() {
+        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        assert_eq!(base_y, 174.0, "`num20 = 174 + Main.mH` at 900 px");
+        // Row 0 is the helmet (no tick); the first accessory is row 3, so its
+        // tick is row 3's y minus 2, shifted by the 4 px lower block.
+        let tick = tick_pos(SCREEN_W, base_y, 0, false);
+        assert_eq!(tick, Vec2::new(1542.0, 172.0));
+        let rects = accessory_tick_rects(Vec2::new(SCREEN_W, SCREEN_H), base_y, (16.0, 16.0));
+        // `EQUIP_PAGE_MISC`'s sibling: with neither the Demon Heart nor master
+        // mode, `Player.armor[8]`/`[9]` are not drawn, so the column ends at
+        // index 7 — five accessories, five ticks (armour 0..2 carry none).
+        assert_eq!(rects.len(), 5, "armour 3..=7 carry the ticks");
+        assert_eq!(rects[0].0, 3, "the first accessory is `Player.armor[3]`");
+        // `(int)(174 - 2 + 3*56*0.85) + 4` = 314 + 4.
+        assert_eq!(rects[0].1[0], 1542.0);
+        assert_eq!(rects[0].1[1], 318.0);
+        // The last row is 7: `(int)(172 + 7*47.6) + 4` = 505 + 4.
+        assert_eq!(rects[4].0, 7);
+        assert_eq!(rects[4].1[1], 509.0);
+    }
+
+    /// `Rectangle.Contains` (`Main.cs:41428`) excludes the right/bottom edges and
+    /// the tick is only live while the cursor holds nothing (`:41430`).
+    #[test]
+    fn the_tick_hit_is_half_open_and_needs_an_air_cursor() {
+        let screen = Vec2::new(SCREEN_W, SCREEN_H);
+        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        let r = accessory_tick_rects(screen, base_y, (16.0, 16.0))[0].1;
+        let inside = Vec2::new(r[0] + 1.0, r[1] + 1.0);
+        assert_eq!(
+            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), true),
+            Some(3)
+        );
+        // The right and bottom edges are outside the rectangle.
+        let edge = Vec2::new(r[0] + r[2], r[1] + 1.0);
+        assert_eq!(accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true), None);
+        let edge = Vec2::new(r[0] + 1.0, r[1] + r[3]);
+        assert_eq!(accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true), None);
+        // `Main.mouseItem.IsAir` (`:41430`): a held stack disables every tick.
+        assert_eq!(
+            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), false),
+            None
+        );
+        // The armour slots 0..2 have no tick at all.
+        for (idx, _) in accessory_tick_rects(screen, base_y, (16.0, 16.0)) {
+            assert!(idx > 2, "slot {idx} must not carry a tick");
+        }
+    }
+
+    /// The `num38 > 2` gate means the tick rows are offset by the three armour
+    /// slots: row 3 of the column is the first accessory.
+    #[test]
+    fn the_tick_row_follows_the_slot_row() {
+        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        for (idx, rect) in accessory_tick_rects(Vec2::new(SCREEN_W, SCREEN_H), base_y, (16.0, 16.0))
+        {
+            // The armour column draws rows 0..=7 in `Player.armor` order, so the
+            // armour index **is** the drawn row (`num37`).
+            let slot_y = equip_row_y(base_y, idx, true, SCALE);
+            assert!(
+                (rect[1] - (slot_y - 2.0)).abs() <= 1.0,
+                "slot {idx}: tick {} vs slot {slot_y}",
+                rect[1]
+            );
+        }
     }
 }

@@ -261,6 +261,12 @@ pub struct Player {
     /// `Player.team` (`Player.cs:1430`): 0 = none, 1..=5 = Red/Green/Blue/
     /// Yellow/Pink (`PlayerTeamID`). The `DrawPVPIcons` row index.
     pub team: i32,
+    /// `Player.hideVisibleAccessory[10]` (`Player.cs:1708`): per-accessory
+    /// "hide the visuals" flags, toggled by the ticks beside the accessory
+    /// column (`Main.cs:41426-41460`) and read by the dye/visual update
+    /// (`Player.cs:9610`, `:14378`). Indices 0..2 are the armour slots and keep
+    /// their ticks switched off, exactly like the vanilla's `num38 > 2` gate.
+    pub hide_visible_accessory: [bool; 10],
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -830,6 +836,7 @@ impl Player {
             deaths_pvp: 0,
             hostile: false,
             team: 0,
+            hide_visible_accessory: [false; 10],
             dead_time: 0,
             respawn_timer: 0,
             minion_attack_target_npc: -1,

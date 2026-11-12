@@ -592,6 +592,13 @@ impl App {
         // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
         // borrow below (it reads `self.player` / `self.net`).
         let pvp_icon_state = self.pvp_icon_state();
+        // `Player.hideVisibleAccessory` (`Player.cs:1708`) — snapshotted for the
+        // same reason (the accessory ticks, `Main.cs:41425-41460`).
+        let hide_visible_accessory = self
+            .player
+            .as_ref()
+            .map(|p| p.hide_visible_accessory)
+            .unwrap_or([false; 10]);
 
         {
             let App {
@@ -1435,6 +1442,10 @@ impl App {
                         // net-mode / team-based-spawns gates, the local
                         // player's `hostile` + `team` and `Main.teamCooldown`.
                         &pvp_icon_state,
+                        // `Player.hideVisibleAccessory` (`Player.cs:1708`): the
+                        // accessory visible/hidden ticks in `DrawInventory`
+                        // (`Main.cs:41425-41460`).
+                        &hide_visible_accessory,
                     );
                     // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                     // the death broadcast + the softcore "Dropped coins"
