@@ -1708,8 +1708,8 @@ pub(crate) fn draw_player_map_icon(
     quads
 }
 
-/// First enemy pass: the blue slime, tinted and lit like the player, with an overhead
-/// health bar once damaged.
+/// NPC draw pass. `behind_tiles` selects the pass (`Main.cs:22320,22336`):
+/// `DrawNPCs(true)` draws only `npc.behindTiles`, `DrawNPCs(false)` the rest.
 #[allow(clippy::too_many_arguments)]
 // The frame arms below must stay a single `match`: an appended arm never
 // reaches the GPU when an earlier arm already covers the kind, and the compiler
@@ -1728,10 +1728,15 @@ pub(crate) fn draw_npcs(
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
+    behind_tiles: bool,
 ) -> u32 {
     let white = r.white_uv();
     let mut quads = 0;
     for npc in npcs {
+        // Main.cs:22336 — filter to the requested pass.
+        if npc.behind_tiles != behind_tiles {
+            continue;
+        }
         // The C# wraps the whole NPC draw with `position += offset`
         // (`Main.cs:22335`, restored at `:22450`) — the port clones the NPC
         // and adds the accumulator to its position, which every arm derives
@@ -2421,8 +2426,8 @@ pub(crate) fn draw_npcs(
             }
             // The worms: the single-frame segments rotated along the chain
             // (`rotation = atan2 + 1.57`), drawn only in the open — the
-            // vanilla `behindTiles` hides them under the ground (the
-            // behindTiles layer lands with the render-layers work).
+            // vanilla `behindTiles` NPCs render in the behind-tiles pass
+            // (Main.cs:22320,22336) — filtered in `draw_npcs`.
             NpcKind::DevourerHead
             | NpcKind::DevourerBody
             | NpcKind::DevourerTail

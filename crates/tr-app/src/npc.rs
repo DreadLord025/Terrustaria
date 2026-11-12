@@ -1904,7 +1904,33 @@ NpcKind::SolarSelenian => 140,
     }
 
 
-    /// The Prime's four limbs (`NPCID` 128-131, `aiStyle 33-36`) — the
+    /// `NPC.behindTiles` (`NPC.cs:6517`, `:8520` default false): kinds drawn in
+    /// the behind-tiles NPC pass (`Main.cs:22320,22336` - `DrawNPCs(true)`).
+    /// Ported subset: worms/segments and the WoF family (e.g. type 113
+    /// `NPC.cs:10355`, Devourer 7-9 `:8777/:8806/:8835`, Leech 117-118
+    /// `:10419/:10435`, Destroyer 134 `:10673`).
+    pub fn behind_tiles(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerTail
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormTail
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::EaterOfWorldsTail
+                | NpcKind::WallOfFlesh
+                | NpcKind::WallOfFleshEye
+                | NpcKind::Hungry
+                | NpcKind::LeechHead
+                | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
+        )
+    }
+
+    /// The Prime's four limbs (`NPCID` 128-131, `aiStyle 33-36`) - the
     /// kinds `AI_032`'s init spawns and the dock tether drives.
     pub fn is_prime_limb(self) -> bool {
         matches!(
@@ -2584,6 +2610,9 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.behindTiles` (`NPC.cs:6517`, default false, reset `:8520`): drawn
+    /// only in the behind-tiles pass (`Main.cs:22320,22336`).
+    pub behind_tiles: bool,
     /// `NPC.chaseable` (`NPC.cs:6261`, the `SetDefaults` default `true`) — the
     /// `CanBeChasedBy` gate's inner term: false = untargetable by minions and
     /// sentries. The C#'s only `chaseable = false` writers are the case-345
@@ -3150,6 +3179,8 @@ impl Npc {
             wants_servant: None,
             defense_override: None,
             dont_take_damage: false,
+            // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
+            behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
             // `chaseable`'s stock true (the false writers are the unported
             // case-345 family), `immortal`'s stock false, `friendly` the town
@@ -13483,6 +13514,38 @@ mod tests {
         assert_eq!(e.net_id, 21);
         let e = crate::bestiary::entry_for_npc(NpcKind::UndeadMiner, SlimeVariant::Blue);
         assert_eq!(e.net_id, 44);
+    }
+
+    #[test]
+    fn behind_tiles_field_matches_csharp_defaults_s1_c_6() {
+        // S1-C-6 / NPC.cs:6517,8520 (default false), 10355 (WoF behindTiles = true).
+        let wof = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
+        assert!(wof.behind_tiles, "WallOfFlesh (NPC.cs:10355) must draw behind tiles");
+        let eye = Npc::new(NpcKind::WallOfFleshEye, 0.0, 0.0, 1, 0.0);
+        assert!(eye.behind_tiles, "WallOfFleshEye (NPC.cs:10373) must draw behind tiles");
+        let hungry = Npc::new(NpcKind::Hungry, 0.0, 0.0, 1, 0.0);
+        assert!(hungry.behind_tiles, "Hungry/TheHungry (NPC.cs:10389) must draw behind tiles");
+        for kind in [
+            NpcKind::DevourerHead,
+            NpcKind::DevourerBody,
+            NpcKind::DevourerTail,
+            NpcKind::GiantWormHead,
+            NpcKind::GiantWormBody,
+            NpcKind::GiantWormTail,
+            NpcKind::EaterOfWorldsHead,
+            NpcKind::EaterOfWorldsBody,
+            NpcKind::EaterOfWorldsTail,
+            NpcKind::LeechHead,
+            NpcKind::LeechBody,
+            NpcKind::TheDestroyer,
+        ] {
+            assert!(
+                Npc::new(kind, 0.0, 0.0, 1, 0.0).behind_tiles,
+                "{kind:?} (worm/segment) must draw behind tiles"
+            );
+        }
+        let slime = Npc::new(NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        assert!(!slime.behind_tiles, "ordinary NPCs default behindTiles=false (NPC.cs:8520)");
     }
 
     #[test]

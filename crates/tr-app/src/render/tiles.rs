@@ -502,6 +502,21 @@ pub(crate) fn draw_tiles(
         }
     }
 
+    // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
+    // so they appear inside/behind solid tiles (worms, WoF segments).
+    stats.quads += draw_npcs(
+        r,
+        npc_assets,
+        npcs,
+        light,
+        style,
+        anim_time,
+        camera,
+        zoom,
+        screen,
+        true,
+    );
+
     scratch.open.clear();
     for ty in y0..=y1 {
         scratch.cur.clear();
@@ -959,8 +974,18 @@ pub(crate) fn draw_tiles(
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);
     }
+    // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     stats.quads += draw_npcs(
-        r, npc_assets, npcs, light, style, anim_time, camera, zoom, screen,
+        r,
+        npc_assets,
+        npcs,
+        light,
+        style,
+        anim_time,
+        camera,
+        zoom,
+        screen,
+        false,
     );
     if let Some(p) = player {
         stats.quads += draw_player(
