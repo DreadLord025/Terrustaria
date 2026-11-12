@@ -504,11 +504,12 @@ mod tests {
         m.notify(CondKind::CustomInt("Pick", 10000));
         let b = m.list.iter().find(|a| a.name == "BULLDOZER").unwrap();
         assert_eq!(b.tracker_values(), Some((1, 10000)));
-        // SLAYER_OF_WORLDS rides the conditions-completed tracker: three
-        // `Any` conditions, one kill closes the first.
+        // SLAYER_OF_WORLDS rides the conditions-completed tracker: the
+        // initializer's three `Create` groups plus the 12-id `CreateMany`
+        // (`AchievementInitializer.cs:287-291`) — one kill closes the first.
         m.notify(CondKind::NpcKilled(13));
         let s = m.list.iter().find(|a| a.name == "SLAYER_OF_WORLDS").unwrap();
-        assert_eq!(s.tracker_values(), Some((1, 3)));
+        assert_eq!(s.tracker_values(), Some((1, 15)));
     }
 
     #[test]
@@ -540,10 +541,22 @@ mod tests {
 
     #[test]
     fn the_ported_hooks_still_complete_their_rows() {
-        // GELATIN_WORLD_TOUR's tracker shape from the initializer: the
-        // three gel net ids with the conditions-completed tracker.
+        // GELATIN_WORLD_TOUR's tracker shape from the initializer: the 22-id
+        // `CreateMany`, the three-gel `Create(183, -24, -25)` and `Create(-4)`
+        // — 24 distinct conditions (`AchievementInitializer.cs:187-189`).
         let mut m = AchievementManager::registry();
-        assert_eq!(m.notify(CondKind::NpcKilled(-25)), Some("GELATIN_WORLD_TOUR"));
+        // `-25` closes only the three-gel condition; the row stays open.
+        assert_eq!(m.notify(CondKind::NpcKilled(-25)), None);
+        for id in [
+            -5, -6, 1, 81, 71, -3, 147, 138, -10, 50, 59, 16, -7, 244, -8, -1, -2, 184, 204, 225,
+            -9, 141, -4,
+        ] {
+            m.notify(CondKind::NpcKilled(id));
+        }
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "GELATIN_WORLD_TOUR" && a.completed));
         // DUNGEON_HEIST needs both of its conditions.
         let mut d = m.list.iter_mut().find(|a| a.name == "DUNGEON_HEIST").unwrap();
         assert!(!d.completed);
@@ -551,6 +564,106 @@ mod tests {
         assert!(!m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
         m.notify(CondKind::ProgressionEvent(19));
         assert!(m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
+    }
+
+    /// S1-E-18: `NPCKilledCondition.CreateMany` (`NPCKilledCondition.cs:70-79`)
+    /// builds **one condition per id**, so the port's folded `Any` sets were
+    /// lossy. Pin the four rows against `AchievementInitializer` — the full
+    /// name lists, in construction order, plus the tracker totals.
+    #[test]
+    fn the_create_many_rows_expand_to_one_condition_per_npc() {
+        let m = AchievementManager::registry();
+        let names = |name: &str| -> Vec<&str> {
+            m.list
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap()
+                .conditions
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect()
+        };
+        // `AchievementInitializer.cs:95-97`: `Create(125, 126)` is one
+        // condition, `CreateMany(127, 134)` two more.
+        assert_eq!(
+            names("BUCKETS_OF_BOLTS"),
+            ["NPC_KILLED_125", "NPC_KILLED_127", "NPC_KILLED_134"]
+        );
+        // `:130-131`.
+        assert_eq!(
+            names("STAR_DESTROYER"),
+            ["NPC_KILLED_517", "NPC_KILLED_422", "NPC_KILLED_507", "NPC_KILLED_493"]
+        );
+        // `:187-189`: the 22-id `CreateMany`, then `Create(183, -24, -25)` and
+        // `Create(-4)`.
+        assert_eq!(
+            names("GELATIN_WORLD_TOUR"),
+            [
+                "NPC_KILLED_-5",
+                "NPC_KILLED_-6",
+                "NPC_KILLED_1",
+                "NPC_KILLED_81",
+                "NPC_KILLED_71",
+                "NPC_KILLED_-3",
+                "NPC_KILLED_147",
+                "NPC_KILLED_138",
+                "NPC_KILLED_-10",
+                "NPC_KILLED_50",
+                "NPC_KILLED_59",
+                "NPC_KILLED_16",
+                "NPC_KILLED_-7",
+                "NPC_KILLED_244",
+                "NPC_KILLED_-8",
+                "NPC_KILLED_-1",
+                "NPC_KILLED_-2",
+                "NPC_KILLED_184",
+                "NPC_KILLED_204",
+                "NPC_KILLED_225",
+                "NPC_KILLED_-9",
+                "NPC_KILLED_141",
+                "NPC_KILLED_183",
+                "NPC_KILLED_-4",
+            ]
+        );
+        // `:287-291`: three `Create` groups, then the 12-id `CreateMany`.
+        assert_eq!(
+            names("SLAYER_OF_WORLDS"),
+            [
+                "NPC_KILLED_13",
+                "NPC_KILLED_113",
+                "NPC_KILLED_125",
+                "NPC_KILLED_4",
+                "NPC_KILLED_266",
+                "NPC_KILLED_35",
+                "NPC_KILLED_50",
+                "NPC_KILLED_222",
+                "NPC_KILLED_134",
+                "NPC_KILLED_127",
+                "NPC_KILLED_262",
+                "NPC_KILLED_245",
+                "NPC_KILLED_439",
+                "NPC_KILLED_398",
+                "NPC_KILLED_370",
+            ]
+        );
+        // The conditions-completed trackers report the expanded totals.
+        let tracker = |name: &str| {
+            m.list
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap()
+                .tracker_values()
+        };
+        assert_eq!(tracker("BUCKETS_OF_BOLTS"), Some((0, 3)));
+        assert_eq!(tracker("GELATIN_WORLD_TOUR"), Some((0, 24)));
+        assert_eq!(tracker("SLAYER_OF_WORLDS"), Some((0, 15)));
+        assert_eq!(tracker("STAR_DESTROYER"), None);
+        // The registry's condition total after the expansion (the audit's
+        // "139 of 180" figure).
+        assert_eq!(
+            m.list.iter().map(|a| a.conditions.len()).sum::<usize>(),
+            180
+        );
     }
 
     #[test]
@@ -571,7 +684,7 @@ mod tests {
             .iter()
             .find(|a| a.name == "SLAYER_OF_WORLDS")
             .unwrap();
-        // One of three conditions rode the save, so the row stays open.
+        // One of the fifteen conditions rode the save, so the row stays open.
         assert!(!slayer.completed);
         assert_eq!(slayer.conditions[0].completed, true);
         assert_eq!(slayer.conditions[1].completed, false);
